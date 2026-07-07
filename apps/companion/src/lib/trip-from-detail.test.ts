@@ -3,9 +3,17 @@ import {
   findOwnerId,
   tripFromDetail,
   tripSummaryFromWire,
+  type TripDetailDay,
+  type TripDetailMember,
   type TripDetailResponse,
   type TripSummaryWire,
 } from "./trip-from-detail";
+
+// The backend can serve roles outside the current `TripMemberDto` union
+// (forward-compat); the adapter defends against them. Build such fixtures via
+// a cast since the generated type only lists the known roles.
+const asMembers = (members: unknown[]): TripDetailMember[] =>
+  members as TripDetailMember[];
 
 function makeDetail(
   overrides: Partial<TripDetailResponse> = {},
@@ -17,12 +25,17 @@ function makeDetail(
     num_days: 3,
     status: "planned",
     member_count: 2,
+    owner_id: "owner-1",
+    folder_id: null,
+    distance_km: null,
+    quality_avg: null,
+    passes_count: null,
     created_at: "2026-04-24T10:00:00.000Z",
     daily_km_min: 200,
     daily_km_max: 300,
     min_quality: 4,
     road_preference: "scenic",
-    members: [
+    members: asMembers([
       {
         user_id: "owner-1",
         display_name: "Adam",
@@ -35,7 +48,7 @@ function makeDetail(
         role: "member",
         joined_at: "2026-04-24T11:00:00.000Z",
       },
-    ],
+    ]),
     days: [
       {
         id: "d-1",
@@ -48,6 +61,7 @@ function makeDetail(
         curviness_score: 75,
         scenic_score: 80,
         estimated_time_min: 270,
+        start_linked: false,
         route_geometry: [
           { lat: 46.5, lng: 11.2 },
           { lat: 46.6, lng: 11.3 },
@@ -103,7 +117,13 @@ describe("tripFromDetail", () => {
   });
 
   it("falls back to a safe status when the backend returns an unknown value", () => {
-    const trip = tripFromDetail(makeDetail({ status: "archived" }));
+    // `"archived"` is outside the `TripDetailDto.status` union; the adapter
+    // defends against a future/legacy status the client doesn't model.
+    const trip = tripFromDetail(
+      makeDetail({
+        status: "archived" as unknown as TripDetailResponse["status"],
+      }),
+    );
     expect(trip.status).toBe("draft");
   });
 
@@ -134,7 +154,12 @@ describe("tripFromDetail", () => {
   });
 
   it("falls back to the 'mixed' road preference when the value is unknown", () => {
-    const trip = tripFromDetail(makeDetail({ road_preference: "speed" }));
+    const trip = tripFromDetail(
+      makeDetail({
+        road_preference:
+          "speed" as unknown as TripDetailResponse["road_preference"],
+      }),
+    );
     expect(trip.parameters.roadPreference).toBe("mixed");
   });
 
@@ -217,7 +242,7 @@ describe("tripFromDetail", () => {
       n: number,
       start: { lat: number; lng: number },
       end: { lat: number; lng: number },
-    ) => ({
+    ): TripDetailDay => ({
       ...base,
       id: `d-${n}`,
       day_number: n,
@@ -306,12 +331,11 @@ describe("tripFromDetail", () => {
     expect(trip.folder_id).toBe("folder-abc");
   });
 
-  it("normalises a missing folder_id to null instead of undefined", () => {
-    const trip = tripFromDetail(makeDetail());
+  it("normalises a null folder_id from the wire to null", () => {
+    const trip = tripFromDetail(makeDetail({ folder_id: null }));
     // `null` matches the wire convention for "unfiled"; consumers
     // can distinguish that from an absent field with `folder_id ?? null`.
     expect(trip.folder_id).toBeNull();
-    expect(trip.owner_id).toBeUndefined();
   });
 });
 
@@ -324,14 +348,14 @@ describe("findOwnerId", () => {
     expect(
       findOwnerId(
         makeDetail({
-          members: [
+          members: asMembers([
             {
               user_id: "member-1",
               display_name: "Eve",
               role: "member",
               joined_at: "",
             },
-          ],
+          ]),
         }),
       ),
     ).toBeNull();
@@ -341,6 +365,7 @@ describe("findOwnerId", () => {
 function makeWire(overrides: Partial<TripSummaryWire> = {}): TripSummaryWire {
   return {
     id: "trip-1",
+    owner_id: "owner-1",
     title: "Italian Loop",
     region: "Dolomites",
     num_days: 3,
@@ -348,6 +373,9 @@ function makeWire(overrides: Partial<TripSummaryWire> = {}): TripSummaryWire {
     member_count: 2,
     folder_id: null,
     created_at: "2026-04-24T10:00:00.000Z",
+    distance_km: null,
+    quality_avg: null,
+    passes_count: null,
     ...overrides,
   };
 }

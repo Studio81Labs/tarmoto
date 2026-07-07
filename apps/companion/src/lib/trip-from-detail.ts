@@ -1,3 +1,4 @@
+import type { components } from "@tarmoto/openapi-client";
 import type {
   POI,
   SurfaceType,
@@ -7,85 +8,14 @@ import type {
   Waypoint,
 } from "@/lib/types";
 
-/**
- * Backend `TripDetailDto` shape (from `apps/backend/.../trip-response.dto.ts`).
- * Re-declared here so the companion isn't forced to depend on the backend
- * package directly while the OpenAPI generation rolls.
- *
- * Field names are snake_case to match what the backend serialises.
- */
-export interface TripDetailResponse {
-  id: string;
-  title: string;
-  region: string | null;
-  num_days: number;
-  status: string;
-  member_count: number;
-  created_at: string;
-  daily_km_min: number;
-  daily_km_max: number;
-  min_quality: number;
-  road_preference: string;
-  members: TripDetailMember[];
-  days: TripDetailDay[];
-  /**
-   * Surfaced because `TripDetailDto` extends `TripSummaryDto` on the
-   * backend — list-side consumers of the adapter (e.g. the duplicate
-   * flow in `(dashboard)/trips/page.tsx`) need this to keep the
-   * resulting card in the right folder. Optional here because the
-   * planner side has never relied on it.
-   */
-  owner_id?: string;
-  folder_id?: string | null;
-  /**
-   * #647 rollups. `TripDetailDto` extends `TripSummaryDto`, so the backend
-   * serves these on the detail response too. Carried through
-   * `tripFromDetail` so a detail-derived list row (the duplicate-trip flow
-   * before the list refetch) shows the same KM / quality / passes metadata
-   * a list refetch would. Optional/nullable to match the wire contract.
-   */
-  distance_km?: number | null;
-  quality_avg?: number | null;
-  passes_count?: number | null;
-}
-
-export interface TripDetailMember {
-  user_id: string;
-  display_name: string;
-  role: string; // 'owner' | 'editor' | 'viewer'
-  joined_at: string;
-}
-
-export interface TripDetailDay {
-  id: string;
-  day_number: number;
-  title: string | null;
-  distance_km: number;
-  avg_quality: number;
-  elevation_gain: number;
-  elevation_loss: number;
-  curviness_score: number;
-  scenic_score: number;
-  estimated_time_min: number;
-  route_geometry: Array<{ lat: number; lng: number }>;
-  waypoints: TripDetailWaypoint[];
-  /** True when the backend linked this day's start to the previous day's end. */
-  start_linked?: boolean;
-  /** Per-leg road-character overrides as saved (revision 3 §C), or null. */
-  leg_preferences?: string[] | null;
-}
-
-export interface TripDetailWaypoint {
-  id: string;
-  sequence: number;
-  lat: number;
-  lng: number;
-  name: string | null;
-  waypoint_type: string;
-  road_segment_id: string | null;
-  notes: string | null;
-  duration_min: number | null;
-}
+// Backend trip contract — the generated `TripDetailDto` and its member / day /
+// waypoint shapes. `tripFromDetail` adapts this snake_case wire into the
+// companion's camelCase `Trip` view model below. The adapter's helpers take
+// loose `string`s + validate, so they tolerate the stricter generated unions.
+export type TripDetailResponse = components["schemas"]["TripDetailDto"];
+export type TripDetailMember = components["schemas"]["TripMemberDto"];
+export type TripDetailDay = components["schemas"]["TripDayDto"];
+export type TripDetailWaypoint = components["schemas"]["TripWaypointDto"];
 
 const VALID_ROAD_PREFERENCES: ReadonlySet<TripParameters["roadPreference"]> =
   new Set(["curvy", "scenic", "mixed", "direct"]);
@@ -124,33 +54,15 @@ const WAYPOINT_TYPE_MAP: Record<string, Waypoint["type"]> = {
  * is dropped on purpose so the type stays the single source of truth.
  */
 /**
- * Wire shape for `GET /api/v1/trips` — `TripSummaryDto[]` items.
- * Mirrors the OpenAPI contract: `title` + `created_at` (snake_case),
- * not the camelCase `name` + `createdAt` the rest of the companion
- * uses. Adapt through `tripSummaryFromWire` before storing.
+ * Wire shape for `GET /api/v1/trips` list rows — the generated `TripSummaryDto`
+ * plus two forward-compat fields (#647) the backend ships incrementally that
+ * aren't in the DTO yet; both optional so they flow through when present.
+ * `tripSummaryFromWire` adapts snake_case → the companion's camelCase.
  */
-export interface TripSummaryWire {
-  id: string;
-  owner_id?: string;
-  title: string;
-  region: string | null;
-  num_days: number;
-  status: "draft" | "planned" | "active" | "completed";
-  member_count: number;
-  folder_id: string | null;
-  created_at: string;
-  /**
-   * Issue #647 — backend ships these incrementally on
-   * `TripSummaryDto`. All optional so older responses keep parsing
-   * cleanly; once the fields land they flow straight through to
-   * `TripSummary` via the adapter below.
-   */
+export type TripSummaryWire = components["schemas"]["TripSummaryDto"] & {
   updated_at?: string;
-  distance_km?: number | null;
-  passes_count?: number | null;
-  quality_avg?: number | null;
   warnings_count?: number;
-}
+};
 
 /**
  * Adapt a wire `TripSummaryDto` row into the companion's
