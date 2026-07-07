@@ -234,132 +234,45 @@ export type ReviewVoteResult = Schemas["ReviewVoteResultDto"];
 
 // ── Commute ──
 
-/**
- * Saved commute route. Mirrors the wire shape `CommuteRouteResponseDto`.
- * The cache fields (`distance_km`, `avg_duration_min`, `route_geometry`)
- * are nullable: a freshly-saved row stays null until the routing
- * provider resolves it, and the backend logs+leaves them null on a
- * provider outage so the screen can still render the rest of the route.
- */
-export interface CommuteRoute {
-  id: string;
-  name: string;
-  origin: LatLng;
-  destination: LatLng;
-  distance_km: number | null;
-  avg_duration_min: number | null;
-  route_geometry: LatLng[] | null;
-  avg_quality: number | null;
-  is_primary: boolean;
-  /** ISO timestamp from the backend. Optional only because pre-existing
-   *  test fixtures predate the field — the wire shape is required. */
-  created_at?: string;
-}
+/** Saved commute route — the generated `CommuteRouteResponseDto`. */
+export type CommuteRoute = Schemas["CommuteRouteResponseDto"];
 
 /**
- * Mobile-side commute status shape. Mirrors the wire DTO
- * `CommuteStatusResponseDto` — backend composes hazards + weather
- * inline (#353) so the rider gets one round-trip. Weather is
- * nullable because the backend serves the rest of the payload even
- * when the weather provider is briefly unreachable.
+ * Commute status (#353) — the generated `CommuteStatusResponseDto`. The
+ * backend composes hazards + weather inline so the rider gets one round-trip;
+ * `weather` is null when the provider is briefly unreachable.
  */
-export interface CommuteStatus {
-  route: CommuteRoute;
-  hazards: Hazard[];
-  weather: Weather | null;
-  estimated_time_min: number | null;
-  route_quality: number | null;
-  status: "clear" | "hazards" | "weather_warning" | "delays";
-}
+export type CommuteStatus = Schemas["CommuteStatusResponseDto"];
 
-/**
- * Alternative route returned by GET /commute/alternatives.
- *
- * Each candidate carries the geometry the routing engine produced plus
- * the same hazard / quality enrichment we run for the primary route, so
- * the rider can compare options side-by-side without a follow-up fetch.
- */
-export interface CommuteAlternativeRoute {
-  distance_km: number;
-  duration_min: number;
-  /** Average road quality 0–5; null when no scored segments overlap. */
-  avg_quality: number | null;
-  /** Active hazards within 500 m of the alternative geometry. */
-  hazard_count: number;
-  geometry: LatLng[];
-}
+/** Alternative commute route (`GET /commute/alternatives`) — `AlternativeRouteDto`. */
+export type CommuteAlternativeRoute = Schemas["AlternativeRouteDto"];
 
-export interface CommuteAlternativesResponse {
-  primary_route: CommuteRoute;
-  primary_hazard_count: number;
-  alternatives: CommuteAlternativeRoute[];
-}
+export type CommuteAlternativesResponse =
+  Schemas["CommuteAlternativesResponseDto"];
 
-export interface CommuteStatsPeriod {
-  total_rides: number;
-  total_km: number;
-  total_time_min: number;
-  avg_duration_min: number;
-  fuel_estimate_l: number;
-}
+export type CommuteStatsPeriod = Schemas["CommuteStatsPeriodDto"];
 
-export interface CommuteStatsDailyBreakdown {
-  date: string;
-  rides: number;
-  km: number;
-  duration_min: number;
-}
+export type CommuteStatsDailyBreakdown = Schemas["DailyBreakdownDto"];
 
-export interface CommuteStats {
-  period: "week" | "month";
-  total_rides: number;
-  total_km: number;
-  total_time_min: number;
-  avg_duration_min: number;
-  fuel_estimate_l: number;
-  daily_breakdown: CommuteStatsDailyBreakdown[];
-  /** Same shape as the current period, for the immediately prior window. */
-  previous_period: CommuteStatsPeriod;
-}
+/** Commute stats (US-24) — the generated `CommuteStatsResponseDto`. */
+export type CommuteStats = Schemas["CommuteStatsResponseDto"];
 
-export interface Weather {
-  temperature_c: number;
-  condition: "clear" | "cloudy" | "rain" | "storm" | "snow" | "fog" | "ice";
-  wind_kmh: number;
-  precipitation_chance: number;
-  road_condition: "dry" | "wet" | "icy" | "unknown";
-  description: string;
-}
+// ── Weather ──
 
-export interface RouteWeatherPoint extends Weather {
-  lat: number;
-  lng: number;
-}
+/** Weather conditions at a point — the generated `WeatherResponseDto`. */
+export type Weather = Schemas["WeatherResponseDto"];
 
-export type WeatherAlertKind = "storm" | "ice" | "wet" | "wind";
+/** Weather sampled at a route point — the generated `RouteWeatherPointDto`. */
+export type RouteWeatherPoint = Schemas["RouteWeatherPointDto"];
 
-export type WeatherAlertSeverity = "info" | "warning" | "critical";
+export type WeatherAlertKind = Schemas["WeatherAlertDto"]["kind"];
 
-export interface WeatherAlert {
-  id: string;
-  kind: WeatherAlertKind;
-  severity: WeatherAlertSeverity;
-  lat: number;
-  lng: number;
-  /** Distance from the route start (km), measured along the polyline. */
-  distance_km_from_start: number;
-  title: string;
-  message: string;
-}
+export type WeatherAlertSeverity = Schemas["WeatherAlertDto"]["severity"];
 
-export interface RouteWeatherResponse {
-  points: RouteWeatherPoint[];
-  has_alerts: boolean;
-  /** Plain-text alert summaries — kept for backwards compatibility. */
-  alerts: string[];
-  /** Structured alerts — what the navigation banner consumes. */
-  typed_alerts: WeatherAlert[];
-}
+/** Structured weather alert along a route — the generated `WeatherAlertDto`. */
+export type WeatherAlert = Schemas["WeatherAlertDto"];
+
+export type RouteWeatherResponse = Schemas["RouteWeatherResponseDto"];
 
 // ── Accommodations (US-10) ──
 
