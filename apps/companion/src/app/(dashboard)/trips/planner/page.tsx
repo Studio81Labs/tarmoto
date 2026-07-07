@@ -761,10 +761,13 @@ export default function TripPlannerPage() {
   // but a geometry restored by undo/redo (same object, no cached quality) can
   // refetch. Success sets qualitySegments (skipped above); a failed/uncovered
   // response leaves the baseline and is retried on the next change.
-  // applyRouteQuality guards the apply against a reroute landing mid-flight.
+  // applyRouteQuality guards the apply against a reroute landing mid-flight, and
+  // a superseded request is aborted so rapid edits don't pile up spatial
+  // queries (a long route fans out into one backend call per length-limit chunk).
   const qualityInFlightRef = useRef(
     new Map<number, NonNullable<TripDay["routeGeometry"]>>(),
   );
+  const qualityAbortRef = useRef(new Map<number, AbortController>());
   useEffect(() => {
     const trip = activeTrip;
     if (!trip) return;
@@ -783,22 +786,38 @@ export default function TripPlannerPage() {
       }
       if (points.length < 2) continue;
       const dayNumber = day.dayNumber;
+      // Abort a superseded in-flight request for this day (a reroute before the
+      // previous resolved) so its remaining chunk queries don't keep running.
+      qualityAbortRef.current.get(dayNumber)?.abort();
+      const controller = new AbortController();
+      qualityAbortRef.current.set(dayNumber, controller);
       qualityInFlightRef.current.set(dayNumber, geometry);
       const settle = () => {
         // Only clear if a newer request for this day hasn't taken over.
         if (qualityInFlightRef.current.get(dayNumber) === geometry) {
           qualityInFlightRef.current.delete(dayNumber);
         }
+        if (qualityAbortRef.current.get(dayNumber) === controller) {
+          qualityAbortRef.current.delete(dayNumber);
+        }
       };
       void plannerApi
-        .getRouteQuality(points, dayNumber)
+        .getRouteQuality(points, dayNumber, { signal: controller.signal })
         .then((segments) => applyRouteQuality(dayNumber, points, segments))
         .catch(() => {
-          // Uncovered route or failed query — stay on the no_data baseline.
+          // Aborted, uncovered, or failed — stay on the no_data baseline.
         })
         .finally(settle);
     }
   }, [activeTrip, applyRouteQuality]);
+  // Abort any in-flight quality fetches when the planner unmounts.
+  useEffect(() => {
+    const controllers = qualityAbortRef.current;
+    return () => {
+      for (const controller of controllers.values()) controller.abort();
+      controllers.clear();
+    };
+  }, []);
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
   // socket joins `trip:<id>`, cursors + suggestions + activity start
