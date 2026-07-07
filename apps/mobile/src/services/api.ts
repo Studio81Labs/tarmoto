@@ -720,7 +720,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load nearby roads") as RoadSegment[];
+    return unwrap(result, "Failed to load nearby roads");
   }
 
   async getRoadSegment(segmentId: string): Promise<RoadSegmentDetail> {
@@ -910,7 +910,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load trips") as TripSummary[];
+    return unwrap(result, "Failed to load trips");
   }
 
   /**
@@ -1408,10 +1408,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(
-      result,
-      "Failed to load unridden segments",
-    ) as UnriddenSegment[];
+    return unwrap(result, "Failed to load unridden segments");
   }
 
   // ── Notification preferences ──

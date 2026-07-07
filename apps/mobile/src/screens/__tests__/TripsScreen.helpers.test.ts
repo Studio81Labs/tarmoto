@@ -4,15 +4,17 @@ import type { TripFolder, TripSummary } from "@/types";
 function trip(overrides: Partial<TripSummary> = {}): TripSummary {
   return {
     id: overrides.id ?? "t1",
+    owner_id: overrides.owner_id ?? "owner-1",
     title: overrides.title ?? "Loop",
     region: overrides.region ?? null,
     num_days: overrides.num_days ?? 1,
     status: overrides.status ?? "planned",
     member_count: overrides.member_count ?? 1,
-    ...(overrides.folder_id !== undefined
-      ? { folder_id: overrides.folder_id }
-      : {}),
+    folder_id: overrides.folder_id ?? null,
     created_at: overrides.created_at ?? "2026-04-20T10:00:00Z",
+    distance_km: overrides.distance_km ?? null,
+    quality_avg: overrides.quality_avg ?? null,
+    passes_count: overrides.passes_count ?? null,
   };
 }
 
