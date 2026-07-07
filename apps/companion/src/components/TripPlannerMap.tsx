@@ -1112,7 +1112,10 @@ const TripPlannerMapContent = forwardRef<
       const originalPoi =
         poisByIdRef.current.get(poiId) ??
         [...poisByIdRef.current.values()].find(
-          (candidate) => candidate.lng === lng && candidate.lat === lat,
+          (candidate) =>
+            candidate.lng === lng &&
+            candidate.lat === lat &&
+            candidate.category === props.poiCategory,
         );
       setPoiMenu({
         poi: originalPoi ?? {

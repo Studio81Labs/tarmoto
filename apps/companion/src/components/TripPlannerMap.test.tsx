@@ -1048,6 +1048,125 @@ describe("TripPlannerMap", () => {
     );
   });
 
+  it("resolves an endpoint POI by category so same-coordinate venues do not cross-bind", async () => {
+    // A fuel station and a café can be imported at the same OSM node. An
+    // endpoint waypoint id carries no poiId, so the coordinate fallback must
+    // also match the waypoint category, or reopening the fuel endpoint binds
+    // to the café's name/category/Maps link.
+    const sharedPoi = (
+      over: Record<string, unknown>,
+    ): Record<string, unknown> => ({
+      source: "osm",
+      external_id: "osm:node:1",
+      name: null,
+      lat: 49.66,
+      lng: 15.93,
+      website: null,
+      phone: null,
+      opening_hours: null,
+      address_street: null,
+      address_city: null,
+      address_postcode: null,
+      address_country: null,
+      cuisine: null,
+      brand: null,
+      stars: null,
+      osm_url: null,
+      last_imported_at: "2026-07-06T00:00:00.000Z",
+      ...over,
+    });
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    vi.mocked(poiApi.getInBbox).mockClear();
+    // Café first, fuel second — a coord-only match would wrongly pick the café.
+    vi.mocked(poiApi.getInBbox).mockResolvedValueOnce({
+      data: {
+        count: 2,
+        pois: [
+          sharedPoi({
+            id: "cafe-x",
+            kind: "cafe",
+            name: "Kavárna",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=cafe-x",
+          }),
+          sharedPoi({
+            id: "fuel-x",
+            kind: "fuel_station",
+            name: "MOL",
+            brand: "MOL",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=fuel-x",
+          }),
+        ],
+      },
+    } as never);
+
+    const placed = trip();
+    placed.days[0]!.waypoints[0] = {
+      id: "start-1",
+      name: "MOL",
+      location: { lng: 15.93, lat: 49.66 },
+      type: "start",
+    };
+    useTripStore.setState({
+      activeTrip: placed,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["fuel", "cafe"]),
+    });
+
+    render(
+      <TripPlannerMap
+        trip={placed}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={vi.fn()}
+      />,
+    );
+
+    await waitFor(
+      () => expect(vi.mocked(poiApi.getInBbox)).toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "start-1",
+              poiCategory: "fuel",
+              label: "MOL",
+            },
+            geometry: { type: "Point", coordinates: [15.93, 49.66] },
+          },
+        ],
+        lngLat: { lng: 15.93, lat: 49.66 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    // Must bind to the FUEL POI at that coordinate, not the café.
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=fuel-x",
+    );
+  });
+
   it("adds a route-wide stop to its OWNING day, not the selected one", () => {
     // The STOPS tab opens this popover for stops anywhere along a
     // multi-day trip: adding one must target the day whose route passes
