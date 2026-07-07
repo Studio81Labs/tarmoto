@@ -56,6 +56,32 @@ export default [
       // work for those at runtime.
       "@typescript-eslint/no-require-imports": "off",
       "no-empty": ["error", { allowEmptyCatch: true }],
+      // Regression guard (mirrors apps/companion): the app talks to the backend
+      // only through the generated `@tarmoto/openapi-client` — the typed
+      // `client` from `@/services/typedClient`, consumed via `@/services/api`.
+      // Ban bare `fetch()` so a new raw backend call can't creep back in. The
+      // sanctioned raw fetches (the 401 → refresh → replay middleware and the
+      // `rawFetch` logout escape hatch) live in `services/typedClient.ts`,
+      // exempted below.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            "Don't call fetch() directly. Use the generated client — `client` from `@/services/typedClient` (via `@/services/api`). (Raw fetch is confined to services/typedClient.ts, the auth-refresh middleware.)",
+        },
+      ],
+    },
+  },
+  {
+    // `services/typedClient.ts` is the one sanctioned home for raw fetch: it
+    // wraps `createTarmotoClient` with the 401 → refresh → replay middleware
+    // (which must use raw fetch to bypass the typed client — refreshing on the
+    // refresh call itself would recurse) plus the `rawFetch` logout escape
+    // hatch.
+    files: ["src/services/typedClient.ts"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
   {
