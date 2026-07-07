@@ -26,19 +26,28 @@ function span(over: Partial<RouteQualitySegment>): RouteQualitySegment {
 }
 
 describe("mapRouteQualitySpans", () => {
-  it("returns one no-data segment covering the whole route when there are no spans", () => {
+  it("segments an uncovered route into multiple no_data slices (for splitting)", () => {
+    // A single whole-route segment would land in only the day holding its
+    // midpoint; the splitter assigns by midpoint, so uncovered multi-day routes
+    // need the no-data stretch sliced.
     const segments = mapRouteQualitySpans(ROUTE, [], 1);
-    expect(segments).toHaveLength(1);
-    expect(segments[0]).toMatchObject({
-      id: "d1-s0",
-      band: "no_data",
-      surface: "unknown",
-      score: null,
-      passes: 0,
-      dayNumber: 1,
-    });
+    expect(segments.length).toBeGreaterThan(1);
+    expect(
+      segments.every(
+        (s) =>
+          s.band === "no_data" &&
+          s.surface === "unknown" &&
+          s.score === null &&
+          s.passes === 0 &&
+          s.dayNumber === 1,
+      ),
+    ).toBe(true);
+    // Sequential ids, contiguous coverage from route start to end.
+    expect(segments.map((s) => s.id)).toEqual(
+      segments.map((_, i) => `d1-s${i}`),
+    );
     expect(segments[0]!.geometry.coordinates[0]).toEqual([0, 0]);
-    expect(segments[0]!.geometry.coordinates.at(-1)).toEqual([0.4, 0]);
+    expect(segments.at(-1)!.geometry.coordinates.at(-1)).toEqual([0.4, 0]);
   });
 
   it("maps a full-coverage span to one real segment with backend quality", () => {
@@ -76,19 +85,19 @@ describe("mapRouteQualitySpans", () => {
       ],
       1,
     );
-    expect(segments.map((s) => s.band)).toEqual([
-      "no_data",
-      "rough",
-      "no_data",
-    ]);
-    expect(segments.map((s) => s.id)).toEqual(["d1-s0", "d1-s1", "d1-s2"]);
-    expect(segments[1]).toMatchObject({
-      surface: "gravel",
-      score: 2,
-      passes: 3,
-    });
+    // Exactly one covered (rough) span, flanked by no_data on both sides
+    // (each flank may be sliced into multiple no_data segments).
+    const rough = segments.filter((s) => s.band === "rough");
+    expect(rough).toHaveLength(1);
+    expect(rough[0]).toMatchObject({ surface: "gravel", score: 2, passes: 3 });
+    expect(segments[0]!.band).toBe("no_data");
+    expect(segments.at(-1)!.band).toBe("no_data");
     // Fillers carry no surface/score — distinct from a matched-but-unscored span.
     expect(segments[0]).toMatchObject({ surface: "unknown", score: null });
+    // Ids stay sequential across the (possibly multi-slice) fillers.
+    expect(segments.map((s) => s.id)).toEqual(
+      segments.map((_, i) => `d1-s${i}`),
+    );
   });
 
   it("does not insert a filler between spans that abut", () => {
@@ -122,7 +131,10 @@ describe("mapRouteQualitySpans", () => {
     expect(segments).toHaveLength(1);
     expect(segments[0]).toMatchObject({ band: "good" });
     expect(segments[0]!.geometry.coordinates[0]).toEqual([0, 0]);
-    const whole = mapRouteQualitySpans(ROUTE, [], 1)[0]!.lengthKm;
+    const whole = mapRouteQualitySpans(ROUTE, [], 1).reduce(
+      (sum, seg) => sum + seg.lengthKm,
+      0,
+    );
     expect(segments[0]!.lengthKm).toBeCloseTo(whole, 5);
   });
 
@@ -171,7 +183,10 @@ describe("mapRouteQualitySpans", () => {
     // Second span is clipped to [0.6, 1]; nothing double-covers [0.4, 0.6].
     expect(segments.map((s) => s.band)).toEqual(["good", "rough"]);
     const total = segments.reduce((sum, s) => sum + s.lengthKm, 0);
-    const whole = mapRouteQualitySpans(ROUTE, [], 1)[0]!.lengthKm;
+    const whole = mapRouteQualitySpans(ROUTE, [], 1).reduce(
+      (sum, seg) => sum + seg.lengthKm,
+      0,
+    );
     expect(total).toBeCloseTo(whole, 5);
   });
 
@@ -190,8 +205,13 @@ describe("mapRouteQualitySpans", () => {
       [span({ start_fraction: 0.5, end_fraction: 1 })],
       3,
     );
+    expect(segments.length).toBeGreaterThanOrEqual(2);
     expect(segments.every((s) => s.dayNumber === 3)).toBe(true);
-    expect(segments.map((s) => s.id)).toEqual(["d3-s0", "d3-s1"]);
+    expect(segments.map((s) => s.id)).toEqual(
+      segments.map((_, i) => `d3-s${i}`),
+    );
+    // The covered tail is one span; everything before it is no_data.
+    expect(segments.at(-1)!.band).not.toBe("no_data");
   });
 
   it("covers the full route length across all emitted segments", () => {
@@ -201,7 +221,10 @@ describe("mapRouteQualitySpans", () => {
       1,
     );
     const total = segments.reduce((sum, s) => sum + s.lengthKm, 0);
-    const whole = mapRouteQualitySpans(ROUTE, [], 1)[0]!.lengthKm;
+    const whole = mapRouteQualitySpans(ROUTE, [], 1).reduce(
+      (sum, seg) => sum + seg.lengthKm,
+      0,
+    );
     expect(total).toBeCloseTo(whole, 5);
     expect(segments.every((s) => s.lengthKm > 0)).toBe(true);
   });

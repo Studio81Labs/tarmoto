@@ -33,6 +33,14 @@ function toSurfaceType(key: string): SurfaceType {
 // unclickable slivers between spans that already abut at cell edges.
 const MIN_FILLER_FRACTION = 1e-4;
 
+// No-data stretches are sub-divided at roughly this many km (mirroring the
+// display-slice target in `segmentize`). The day splitter assigns each segment
+// to the day holding its midpoint, so a single whole-route no_data segment
+// would give only the middle day any segments; slicing keeps every day of an
+// uncovered multi-day route covered.
+const NO_DATA_SLICE_KM = 12;
+const MAX_NO_DATA_SLICES = 12;
+
 export function mapRouteQualitySpans(
   points: ReadonlyArray<{ lat: number; lng: number }>,
   spans: readonly RouteQualitySegment[],
@@ -86,13 +94,27 @@ export function mapRouteQualitySpans(
     });
   };
 
+  // A no-data stretch is sliced into ~NO_DATA_SLICE_KM chunks so the day
+  // splitter gives every day it spans its own segment(s).
+  const pushNoData = (startFraction: number, endFraction: number) => {
+    const rangeKm = (endFraction - startFraction) * totalKm;
+    const slices = Math.min(
+      MAX_NO_DATA_SLICES,
+      Math.max(1, Math.round(rangeKm / NO_DATA_SLICE_KM)),
+    );
+    const step = (endFraction - startFraction) / slices;
+    for (let i = 0; i < slices; i += 1) {
+      push(startFraction + step * i, startFraction + step * (i + 1), null);
+    }
+  };
+
   let cursor = 0;
   for (const { span, start, end } of ordered) {
     const spanStart = Math.max(start, cursor);
     if (end <= spanStart) continue; // fully covered by an earlier span
     if (spanStart - cursor > MIN_FILLER_FRACTION) {
-      // A real gap becomes its own no_data filler.
-      push(cursor, spanStart, null);
+      // A real gap becomes its own (segmented) no_data filler.
+      pushNoData(cursor, spanStart);
       push(spanStart, end, span);
     } else {
       // Sub-threshold gap: fold the `[cursor, spanStart]` interval into this
@@ -102,9 +124,10 @@ export function mapRouteQualitySpans(
     }
     cursor = end;
   }
-  if (1 - cursor > MIN_FILLER_FRACTION) push(cursor, 1, null);
+  if (1 - cursor > MIN_FILLER_FRACTION) pushNoData(cursor, 1);
 
-  // No covering spans at all → the whole route is one no-data stretch.
-  if (out.length === 0) push(0, 1, null);
+  // No covering spans at all → segment the whole no-data route so a multi-day
+  // split still gives every day its own segments.
+  if (out.length === 0) pushNoData(0, 1);
   return out;
 }
