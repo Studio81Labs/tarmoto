@@ -551,6 +551,9 @@ export default function TripPlannerPage() {
   // Daily km is the primary input; a day count is an OPTIONAL override.
   const [forcedDays, setForcedDays] = useState<number | null>(null);
   const [splitting, setSplitting] = useState(false);
+  // Whether the last applied split derived its ids from real quality (vs the
+  // geometry-only baseline). Drives the one-shot resync effect below.
+  const splitBasisHadQualityRef = useRef(false);
   const handleSplit = useCallback(async () => {
     const trip = activeTripRef.current;
     // Splitting operates on the SINGLE working route only. A loaded
@@ -568,6 +571,10 @@ export default function TripPlannerPage() {
     setSplitting(true);
     try {
       const segments = deriveDayQualitySegments(routeDay);
+      // routeGeometry is present (checked above), so this mirrors what
+      // deriveDayQualitySegments used: real quality iff the day carries it.
+      splitBasisHadQualityRef.current =
+        (routeDay.qualitySegments?.length ?? 0) > 0;
       const totalKm = routeDay.distanceKm;
       const targets = rawBreakTargetKms(
         totalKm,
@@ -615,18 +622,20 @@ export default function TripPlannerPage() {
     void handleSplit();
   }, [dailyKmTarget, forcedDays, splitStatus, handleSplit]);
   // Real quality can land AFTER a split was computed on the geometry-only
-  // baseline (the rider hit Split within the fetch window). Once it does,
-  // deriveDayQualitySegments switches from baseline slice ids to real span ids,
-  // orphaning the plans' captured `segmentIds` (InspectTab scopes its strip by
-  // them). Re-split on that absent→present transition to resync the ids. Single
-  // working-day split only — handleSplit no-ops on materialized multi-day trips.
+  // baseline — the rider hit Split within the fetch window, or quality resolved
+  // while handleSplit was still awaiting overnight towns (before splitStatus
+  // flipped to "split"). deriveDayQualitySegments then switches from baseline
+  // slice ids to real span ids, orphaning the plans' captured `segmentIds`
+  // (InspectTab scopes its strip by them). handleSplit records whether it split
+  // on real quality; resync once when it didn't and quality has since arrived.
+  // Keying on that flag (not a quality-value transition) is robust to quality
+  // landing before splitStatus flips. Single working-day split only.
   const workingDayQuality = activeTrip?.days[0]?.qualitySegments;
-  const splitQualityRef = useRef(workingDayQuality);
   useEffect(() => {
-    const previous = splitQualityRef.current;
-    splitQualityRef.current = workingDayQuality;
     if (splitStatus !== "split") return;
-    if (previous || !workingDayQuality) return;
+    if (splitBasisHadQualityRef.current) return;
+    if (!workingDayQuality || workingDayQuality.length === 0) return;
+    splitBasisHadQualityRef.current = true; // handled — don't re-fire
     void handleSplit();
   }, [workingDayQuality, splitStatus, handleSplit]);
   // When a trip arrives already split (saved multi-day trip, planner
