@@ -11,13 +11,16 @@ import {
   formatRoadLength,
   formatRoadQuality,
 } from "@/lib/best-roads-format";
-interface Road extends BestRoadsEmbedRoad {
-  road_name: string | null;
-  road_number: string | null;
-  curviness_score: number;
-  surface_type: string;
-  length_m: number;
-}
+import type { BestRoad } from "@/lib/bestRoads";
+type Road = BestRoadsEmbedRoad &
+  Pick<
+    BestRoad,
+    | "road_name"
+    | "road_number"
+    | "curviness_score"
+    | "surface_type"
+    | "length_m"
+  >;
 interface Props {
   country: Country;
   region: Region;

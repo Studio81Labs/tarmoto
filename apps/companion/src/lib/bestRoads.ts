@@ -1,8 +1,16 @@
-import type { paths } from "@tarmoto/openapi-client";
+import type { components, paths } from "@tarmoto/openapi-client";
 import { apiServer } from "@/lib/api/server";
 
 type BestRoadsResponse =
   paths["/api/v1/roads/best"]["get"]["responses"]["200"]["content"]["application/json"];
+
+/**
+ * One road row from `GET /api/v1/roads/best` — the generated `BestRoadDto`.
+ * The best-roads UI (list, map, schema.org, embed) derives its row/label
+ * shapes from this via `Pick<>` so a backend field change propagates to every
+ * surface at typecheck time.
+ */
+export type BestRoad = components["schemas"]["BestRoadDto"];
 
 /**
  * Server-side fetcher used by the SSR region pages. The /roads/best endpoint
