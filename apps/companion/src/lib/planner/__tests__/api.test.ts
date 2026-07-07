@@ -331,17 +331,18 @@ describe("plannerApi.getRouteQuality (#862)", () => {
     });
   });
 
-  it("returns a single no_data segment when the route isn't covered", async () => {
+  it("returns no_data segments when the route isn't covered", async () => {
     routeQualityMock.mockResolvedValue({ data: { segments: [] } });
 
     const segments = await createPlannerApi().getRouteQuality(points, 1);
 
-    expect(segments).toHaveLength(1);
-    expect(segments[0]).toMatchObject({
-      band: "no_data",
-      surface: "unknown",
-      score: null,
-    });
+    expect(segments.length).toBeGreaterThanOrEqual(1);
+    expect(
+      segments.every(
+        (s) =>
+          s.band === "no_data" && s.surface === "unknown" && s.score === null,
+      ),
+    ).toBe(true);
   });
 
   it("chunks a route over the backend length limit and remaps fractions", async () => {

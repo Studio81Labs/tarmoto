@@ -40,6 +40,12 @@ const MIN_FILLER_FRACTION = 1e-4;
 // uncovered multi-day route covered.
 const NO_DATA_SLICE_KM = 12;
 
+// The planner can force a route into up to this many days (MAX_TRIP_DAYS,
+// stores/trip.ts). No-data slices must be no coarser than a day of the finest
+// forced split, or the midpoint-based splitter leaves some days of a short
+// uncovered route without a segment (empty Inspect / build-route state).
+const MAX_SPLIT_DAYS = 14;
+
 interface EmitRange {
   start: number; // route fraction [0,1]
   end: number;
@@ -96,13 +102,17 @@ export function mapRouteQualitySpans(
   }
 
   // Expand into a flat, contiguous list of emit ranges: a real span stays one
-  // range; a no_data interval is sub-divided at ~NO_DATA_SLICE_KM so a
-  // multi-day split gives every day it spans its own segment(s).
+  // range; a no_data interval is sub-divided so a multi-day split gives every
+  // day it spans its own segment(s). Slice at ~NO_DATA_SLICE_KM, but never
+  // coarser than a day of the finest forced split (so even a short route forced
+  // to MAX_SPLIT_DAYS gets a midpoint per day); ceil keeps every piece within
+  // that bound.
+  const noDataSliceKm = Math.min(NO_DATA_SLICE_KM, totalKm / MAX_SPLIT_DAYS);
   const ranges: EmitRange[] = [];
   const addNoData = (start: number, end: number) => {
     const slices = Math.max(
       1,
-      Math.round(((end - start) * totalKm) / NO_DATA_SLICE_KM),
+      Math.ceil(((end - start) * totalKm) / noDataSliceKm),
     );
     const step = (end - start) / slices;
     for (let i = 0; i < slices; i += 1) {

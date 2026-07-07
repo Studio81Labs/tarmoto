@@ -160,6 +160,18 @@ describe("mapRouteQualitySpans", () => {
     );
   });
 
+  it("slices no_data finely enough for the finest forced split on a short route", () => {
+    // ~100 km uncovered: a 14-day forced split needs ≥14 midpoints, so a ~12 km
+    // slice (≈8 slices) would leave days empty — size against the finest day.
+    const route = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 0.9 },
+    ];
+    const segments = mapRouteQualitySpans(route, [], 1);
+    expect(segments.length).toBeGreaterThanOrEqual(14);
+    expect(segments.every((s) => s.band === "no_data")).toBe(true);
+  });
+
   it("does not cap no_data slices on long routes so long splits stay populated", () => {
     // ~222 km: a capped 12 slices would be ~18 km each — coarser than a short
     // day, so a many-day split would leave some days without a segment.
@@ -205,7 +217,13 @@ describe("mapRouteQualitySpans", () => {
       ],
       1,
     );
-    expect(segments.map((s) => s.band)).toEqual(["rough", "no_data", "good"]);
+    // Ordered along the route: rough (0–0.4), then the no_data gap (0.4–0.6,
+    // possibly multi-slice), then good (0.6–1).
+    const bands = segments.map((s) => s.band);
+    expect(bands[0]).toBe("rough");
+    expect(bands.at(-1)).toBe("good");
+    expect(bands.indexOf("rough")).toBeLessThan(bands.indexOf("no_data"));
+    expect(bands.indexOf("no_data")).toBeLessThan(bands.lastIndexOf("good"));
   });
 
   it("clips a span that overlaps an earlier one so segments never double-cover", () => {
