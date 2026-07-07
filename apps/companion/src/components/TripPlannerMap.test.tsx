@@ -563,6 +563,34 @@ describe("TripPlannerMap", () => {
     ).toBeNull();
   });
 
+  it("searchAndPois shows the toolbar on a read-only map with an info-only POI popover", () => {
+    // Trip preview: the toolbar renders for browsing, but picking a POI
+    // pin must never offer route mutations — the popover keeps the info
+    // header (and Maps link) only.
+    const ref = createRef<TripPlannerMapHandle>();
+    render(<TripPlannerMap ref={ref} trip={trip()} month={7} searchAndPois />);
+
+    expect(screen.getByLabelText("Address search")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Twisty highlights/ }),
+    ).toBeInTheDocument();
+
+    act(() =>
+      ref.current?.openPoiPopover({
+        id: "fuel-1",
+        name: "ONO Brno",
+        category: "fuel",
+        source: "osm",
+        lat: 49.2,
+        lng: 16.6,
+      }),
+    );
+    expect(screen.getByText("ONO Brno")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Add as via/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Set as start/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Set as finish/ })).toBeNull();
+  });
+
   it("POI chips are multi-select and drive the SHARED store slice", () => {
     render(<TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />);
 
@@ -1208,7 +1236,14 @@ describe("TripPlannerMap", () => {
     useTripStore.setState({ activeTrip: twoDayTrip, selectedDayIndex: 0 });
 
     const ref = createRef<TripPlannerMapHandle>();
-    render(<TripPlannerMap ref={ref} trip={twoDayTrip} month={7} />);
+    render(
+      <TripPlannerMap
+        ref={ref}
+        trip={twoDayTrip}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+      />,
+    );
 
     // A stop sitting on Day 2's leg (near its middle vertex).
     act(() =>
@@ -1251,7 +1286,14 @@ describe("TripPlannerMap", () => {
     useTripStore.setState({ activeTrip: viaTrip, selectedDayIndex: 0 });
 
     const ref = createRef<TripPlannerMapHandle>();
-    render(<TripPlannerMap ref={ref} trip={viaTrip} month={7} />);
+    render(
+      <TripPlannerMap
+        ref={ref}
+        trip={viaTrip}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+      />,
+    );
 
     // A stop near the FIRST leg of the route (before the late via).
     act(() =>

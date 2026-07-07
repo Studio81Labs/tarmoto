@@ -34,8 +34,12 @@ interface InspectTabProps {
   onClearPlan?: () => void;
   /** Open a section's Road Preview + fly the map to it. */
   onInspectSegment: (segmentId: string) => void;
-  /** Insert an avoidance via around the section and re-route. */
-  onRerouteSegment: (segmentId: string) => void;
+  /**
+   * Insert an avoidance via around the section and re-route. Omit on
+   * read-only surfaces (trip preview) — flagged cards then fall back to
+   * the INSPECT action instead of offering REROUTE.
+   */
+  onRerouteSegment?: ((segmentId: string) => void) | undefined;
 }
 
 const ROLE_COLORS: Record<"start" | "via" | "finish", string> = {
