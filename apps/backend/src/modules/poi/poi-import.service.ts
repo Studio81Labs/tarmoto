@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -72,6 +77,12 @@ export interface PoiImportResult {
  * provider outage never wipes existing rows. Does not delete absent rows —
  * a partial-area response can't blank the table.
  *
+ * The POI store's reachability is checked TWICE: once up front, before the
+ * Overpass fetch, so a POI-DB outage 503s immediately instead of spending
+ * the full request budget on a bbox the weekly cron can't persist (and will
+ * retry anyway); and again around the upsert via `withPoiRepo`, in case the
+ * store drops between the fetch and the write.
+ *
  * The live planner read paths are unchanged (still per-request Overpass);
  * this only populates the store that offline packs / a POI tile layer read.
  */
@@ -97,7 +108,31 @@ export class PoiImportService {
     return this.config.bbox;
   }
 
+  /**
+   * Fail fast: if the POI store is unreachable, don't spend the Overpass
+   * request budget fetching a bbox we can't persist (the weekly cron
+   * retries, so a POI-DB outage would otherwise hammer OSM on every tick).
+   * A cheap bounded probe (`SELECT 1`) catches a runtime connection drop,
+   * not just a cold-start `isInitialized === false`. The `withPoiRepo`
+   * upsert below remains the second check, for a drop between here and the
+   * write.
+   */
+  private async assertStoreReachable(): Promise<void> {
+    try {
+      if (!this.poiDataSource.isInitialized) {
+        throw new Error('poi store not initialized');
+      }
+      await this.poiDataSource.query('SELECT 1');
+    } catch {
+      throw new ServiceUnavailableException(
+        'POI store is temporarily unavailable',
+      );
+    }
+  }
+
   async import(): Promise<PoiImportResult> {
+    await this.assertStoreReachable();
+
     // Fetch POIs + accommodations together. Promise.all so a failure on
     // either aborts before any write (the outage-safety contract) rather
     // than half-importing — and the accommodation kinds reuse the
