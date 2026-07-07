@@ -73,6 +73,7 @@ import { AddTripCollaboratorRoles1793000000000 } from '../../migrations/17930000
 import { DropTripWideInviteCode1794000000000 } from '../../migrations/1794000000000-DropTripWideInviteCode.js';
 import { AddTierFeatureEntitlements1795000000000 } from '../../migrations/1795000000000-AddTierFeatureEntitlements.js';
 import { SwapTierNamesAddLaunchMode1796000000000 } from '../../migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
+import { DropPois1797000000000 } from '../../migrations/1797000000000-DropPois.js';
 import {
   User,
   UserContact,
@@ -111,7 +112,6 @@ import {
   MountainPass,
   RoadReviewVote,
   RoadClosure,
-  Poi,
   DataExportRequest,
   GroupRide,
   GroupRideMember,
@@ -173,7 +173,6 @@ const entities = [
   MountainPass,
   RoadReviewVote,
   RoadClosure,
-  Poi,
   DataExportRequest,
   GroupRide,
   GroupRideMember,
@@ -295,6 +294,7 @@ const entities = [
             DropTripWideInviteCode1794000000000,
             AddTierFeatureEntitlements1795000000000,
             SwapTierNamesAddLaunchMode1796000000000,
+            DropPois1797000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
