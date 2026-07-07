@@ -9,6 +9,11 @@ import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations-poi/1
 
 const logger = new Logger('PoiDatabase');
 const RETRY_MS = 10_000;
+// Bound the runtime connect attempt (below) so a reachable-but-unresponsive
+// POI host (e.g. a dropped SYN) can't block boot for the OS TCP timeout
+// (~1-2 min). A failed/hung connect gives up fast instead, gets swallowed by
+// createPoiDataSource, and retries in the background.
+const CONNECT_TIMEOUT_MS = 5_000;
 
 // Build + attempt to connect the POI DataSource WITHOUT ever throwing (ADR
 // 0007). On failure the app still boots; the store services 503 until a
@@ -70,6 +75,27 @@ export async function createPoiDataSource(
           // We own retries in createPoiDataSource; don't let TypeORM's own
           // retry loop throw at boot.
           retryAttempts: 0,
+          // `@nestjs/typeorm`'s createDataSourceFactory re-initializes
+          // whatever DataSource dataSourceFactory returns unless this is
+          // set: `!dataSource.isInitialized && !options.manualInitialization
+          // ? dataSource.initialize() : dataSource`. Without it, a POI DB
+          // that's down at boot means NestJS re-runs initialize() on the
+          // very DataSource createPoiDataSource just swallowed the failure
+          // for — that second initialize() call rejects, retryAttempts: 0
+          // makes handleRetry re-throw immediately, and
+          // NestFactory.create(AppModule) crashes the whole process. With
+          // manualInitialization, NestJS returns createPoiDataSource's
+          // result as-is (an uninitialized DataSource on failure), so boot
+          // survives and the store services 503 instead (ADR 0007).
+          manualInitialization: true,
+          // See CONNECT_TIMEOUT_MS above. Both fields matter: connectTimeoutMS
+          // is TypeORM's own Postgres option; extra.connectionTimeoutMillis
+          // sets it directly on the pg Pool. Belt-and-suspenders — TypeORM's
+          // PostgresDriver#createPool merges `options.extra` over the
+          // connectTimeoutMS-derived default, so either alone would apply,
+          // but pinning both keeps this resilient to that merge order.
+          connectTimeoutMS: CONNECT_TIMEOUT_MS,
+          extra: { connectionTimeoutMillis: CONNECT_TIMEOUT_MS },
         };
       },
       dataSourceFactory: (options) => createPoiDataSource(options!),

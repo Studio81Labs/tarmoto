@@ -1,5 +1,11 @@
+import { ConfigModule } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { createPoiDataSource } from './poi-database.module.js';
+import {
+  createPoiDataSource,
+  PoiDatabaseModule,
+} from './poi-database.module.js';
 
 describe('createPoiDataSource', () => {
   it('returns an uninitialized DataSource without throwing when the DB is unreachable', async () => {
@@ -18,5 +24,58 @@ describe('createPoiDataSource', () => {
     const ds = await createPoiDataSource(options);
     expect(ds).toBeInstanceOf(DataSource);
     expect(ds.isInitialized).toBe(false);
+  });
+});
+
+describe('PoiDatabaseModule wiring (regression)', () => {
+  // MODULE-WIRING level regression test for the crash the unit test above
+  // can't see: `createPoiDataSource` swallows its own initialize() failure
+  // and returns fine on its own, but `@nestjs/typeorm`'s
+  // `TypeOrmCoreModule.createDataSourceFactory` then re-runs
+  // `dataSource.initialize()` on whatever `dataSourceFactory` returned,
+  // UNLESS the module's options carry `manualInitialization: true`:
+  //   `!dataSource.isInitialized && !options.manualInitialization
+  //     ? dataSource.initialize() : dataSource`
+  // That second initialize() rejects (retryAttempts: 0 makes handleRetry
+  // re-throw immediately instead of retrying), which is what crashed
+  // `NestFactory.create(AppModule)` at boot. Assembling the real
+  // `PoiDatabaseModule` (not just calling `createPoiDataSource` directly,
+  // like the suite above) is the only way to see that failure.
+  const ENV_KEYS = [
+    'TARMOTO_POI_DATABASE_HOST',
+    'TARMOTO_POI_DATABASE_PORT',
+  ] as const;
+  const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string>> = {};
+
+  beforeEach(() => {
+    for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
+    // Nothing listens on 127.0.0.1:1 (same dead-port shape as the suite
+    // above), but this time reached through the real ConfigService ->
+    // useFactory -> dataSourceFactory wiring instead of a hand-built
+    // options object.
+    process.env.TARMOTO_POI_DATABASE_HOST = '127.0.0.1';
+    process.env.TARMOTO_POI_DATABASE_PORT = '1';
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      const value = savedEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it('compiling the module does not throw, and leaves the "poi" DataSource uninitialized', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true }), PoiDatabaseModule],
+    }).compile();
+
+    try {
+      const dataSource = moduleRef.get<DataSource>(getDataSourceToken('poi'));
+      expect(dataSource).toBeInstanceOf(DataSource);
+      expect(dataSource.isInitialized).toBe(false);
+    } finally {
+      await moduleRef.close();
+    }
   });
 });
