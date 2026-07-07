@@ -892,6 +892,82 @@ describe("TripPlannerMap", () => {
     );
   });
 
+  it("keeps the Maps link on a POI placed as start/finish (endpoint waypoint id has no poiId)", async () => {
+    // "Set as start/finish" keeps the planner endpoint id (e.g. `start-1`),
+    // not `poi-<id>-...`, so the by-id lookup misses — resolve the original
+    // POI by its placement coordinates instead, as usedPois already does.
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string" && maybeHandler) {
+        layerHandlers.set(
+          `${event}:${layerOrHandler}`,
+          maybeHandler as (event: unknown) => void,
+        );
+      }
+      return mockMap;
+    });
+    const setData = vi.fn();
+    mockMap.getSource.mockReturnValue({ setData } as never);
+    vi.mocked(poiApi.getInBbox).mockClear();
+
+    // The viewpoint is the day's START — a used-by-coordinates POI whose
+    // waypoint id is the planner endpoint id, not `poi-<id>-...`.
+    const placed = trip();
+    placed.days[0]!.waypoints[0] = {
+      id: "start-1",
+      name: "Devět skal vista",
+      location: { lng: 15.93, lat: 49.66 },
+      type: "start",
+    };
+    useTripStore.setState({
+      activeTrip: placed,
+      selectedDayIndex: 0,
+      activePoiCategories: new Set(["viewpoint"]),
+    });
+
+    render(
+      <TripPlannerMap
+        trip={placed}
+        month={7}
+        onMoveWaypoint={vi.fn()}
+        onRemoveWaypoint={vi.fn()}
+      />,
+    );
+
+    await waitFor(
+      () => expect(vi.mocked(poiApi.getInBbox)).toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    act(() => {
+      layerHandlers.get("click:trip-planner-waypoint-pin")?.({
+        features: [
+          {
+            properties: {
+              waypointId: "start-1",
+              poiCategory: "viewpoint",
+              label: "Devět skal vista",
+            },
+            geometry: { type: "Point", coordinates: [15.93, 49.66] },
+          },
+        ],
+        lngLat: { lng: 15.93, lat: 49.66 },
+        originalEvent: { clientX: 400, clientY: 300 },
+      });
+    });
+
+    const mapsLink = screen.getByRole("link", {
+      name: /View on Google Maps/i,
+    });
+    expect(mapsLink).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=devet-skal",
+    );
+  });
+
   it("adds a route-wide stop to its OWNING day, not the selected one", () => {
     // The STOPS tab opens this popover for stops anywhere along a
     // multi-day trip: adding one must target the day whose route passes

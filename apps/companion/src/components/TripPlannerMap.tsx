@@ -1105,8 +1105,15 @@ const TripPlannerMapContent = forwardRef<
       // Prefer the original POI (still in the by-id lookup after placement)
       // so its `meta.mapsUrl` — and the Maps link that depends on it —
       // survives; the waypoint-pin properties carry no meta, so a placed
-      // contactless POI would otherwise lose its only detail link.
-      const originalPoi = poisByIdRef.current.get(poiId);
+      // contactless POI would otherwise lose its only detail link. VIA
+      // placements encode the poi id in the waypoint id; "Set as
+      // start/finish" keeps the planner endpoint id, so fall back to
+      // matching the placement coordinates (as `usedPois` does).
+      const originalPoi =
+        poisByIdRef.current.get(poiId) ??
+        [...poisByIdRef.current.values()].find(
+          (candidate) => candidate.lng === lng && candidate.lat === lat,
+        );
       setPoiMenu({
         poi: originalPoi ?? {
           id: poiId,
