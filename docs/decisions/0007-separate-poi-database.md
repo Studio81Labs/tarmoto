@@ -95,8 +95,8 @@ production; a local dev database is re-populated with one `pnpm poi:import`.
 ### Provisioning
 
 - **Local:** a new `tarmoto-poi-db` PostGIS service (+ named volume) in
-  `infra/docker/docker-compose.yml`, on host port `5433` to avoid clashing with
-  the app DB on `5432`.
+  `infra/docker/docker-compose.yml`, on host port `5434` to avoid clashing with
+  the app DB (host `5433`, container `5432`).
 - **Production:** a separate Coolify Postgres service, with the
   `TARMOTO_POI_DATABASE_*` variables set on the backend. This is where its larger
   disk lives.
