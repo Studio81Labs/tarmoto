@@ -269,10 +269,10 @@ test.describe("trip collaboration", () => {
       );
 
       await recipientPage.getByRole("button", { name: /join trip/i }).click();
+      // Joining lands on the read-only preview (never the editor) — from
+      // there the recipient opens the suggestions dialog.
       await recipientPage.waitForURL(
-        (url) =>
-          url.pathname === "/trips/planner" &&
-          url.searchParams.get("tripId") === trip.id,
+        (url) => url.pathname === `/trips/${trip.id}`,
         { timeout: 15_000 },
       );
 

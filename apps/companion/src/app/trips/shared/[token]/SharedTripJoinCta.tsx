@@ -44,8 +44,8 @@ export function SharedTripJoinCta({
       <section className="mb-8 rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5">
         <h2 className="text-lg font-semibold text-white">Join the planning</h2>
         <p className="mt-1 text-sm text-slate-300">
-          Sign in or create an account to join "{title}" and open it in the
-          collaborative planner.
+          Sign in or create an account to join "{title}" and open it in your
+          trips.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
@@ -71,7 +71,11 @@ export function SharedTripJoinCta({
     setJoining(true);
     try {
       const { data } = await tripSharesApi.joinByToken(token);
-      router.push(data.planner_url);
+      // Land on the read-only preview, never the editor: link-joiners
+      // default to viewer, and the planner would bounce them to the
+      // access-denied screen. From the preview they can open the editor
+      // if their role allows it, or leave suggestions if it doesn't.
+      router.push(`/trips/${data.trip_id}`);
     } catch (err) {
       // Persist (no auto-dismiss): the guidance asks the user to take an
       // out-of-band action (get a fresh link), so it shouldn't time out.
@@ -90,7 +94,7 @@ export function SharedTripJoinCta({
     <section className="mb-8 rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5">
       <h2 className="text-lg font-semibold text-white">Join the planning</h2>
       <p className="mt-1 text-sm text-slate-300">
-        Accept this shared trip to open the planner, submit suggestions, and
+        Accept this shared trip to open its preview, submit suggestions, and
         vote with the group.
       </p>
       <button
