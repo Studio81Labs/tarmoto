@@ -143,6 +143,7 @@ describe("RideScreen", () => {
         avg_curviness: null,
         name: null,
         max_lean_angle: null,
+        bike_id: null,
       },
     ];
     listMock.mockResolvedValueOnce({ rides: mockRecentRides, total: 1 });
@@ -169,6 +170,7 @@ describe("RideScreen", () => {
         avg_curviness: null,
         name: null,
         max_lean_angle: null,
+        bike_id: null,
       },
     ];
     listMock.mockResolvedValueOnce({

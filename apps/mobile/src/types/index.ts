@@ -46,7 +46,6 @@ export type {
 import type {
   HazardSeverity,
   HazardType,
-  RideType,
   SurfaceType,
   WaypointType,
 } from "@tarmoto/shared";
@@ -131,53 +130,15 @@ export interface EmergencyContactInput {
 
 export type QualityClass = "excellent" | "good" | "fair" | "poor" | "very_poor";
 
-export interface RoadSegment {
-  id: string;
-  road_name: string | null;
-  road_number: string | null;
-  /**
-   * 1-5 average quality. Null when no surface readings have ever been
-   * snapped to this segment (still waiting for the first ride to enrich
-   * it) — UI must render a "unscored" placeholder rather than `0`.
-   */
-  quality_score: number | null;
-  curviness_score: number;
-  surface_type: SurfaceType;
-  length_m: number;
-  confidence: number;
-  reading_count: number;
-  last_updated: string;
-  /** Optional. Present on `/roads/nearby` results, absent on detail. */
-  distance_m?: number;
-}
+/** Road segment summary from `/roads/nearby` — the generated `RoadSegmentDto`. */
+export type RoadSegment = Schemas["RoadSegmentDto"];
 
-export interface RoadSegmentDetail extends RoadSegment {
-  geometry: LatLng[];
-  elevation_min: number | null;
-  elevation_max: number | null;
-  /**
-   * Per-vertex elevation in meters, aligned 1:1 with `geometry`. Null when
-   * the backend hasn't ingested an elevation profile for this segment yet —
-   * callers should fall back to min/max stats only.
-   */
-  elevation_profile: number[] | null;
-  quality_breakdown: {
-    excellent: number;
-    good: number;
-    fair: number;
-    poor: number;
-    very_poor: number;
-  };
-  /** Top-N most-recent active hazards on this segment. */
-  active_hazards: Hazard[];
-  /** Total active hazard count (>= active_hazards.length when truncated). */
-  active_hazard_count: number;
-  /** Top-N most-recent reviews — full collection lives at /roads/:id/reviews. */
-  recent_reviews: RoadReview[];
-  review_count: number;
-  riders_per_month: number;
-  avg_review_rating: number | null;
-}
+/**
+ * Full road-segment detail (`/roads/:id`) — the generated `RoadSegmentDetailDto`.
+ * Its `active_hazards` / `recent_reviews` are the spec's nested DTOs, so a
+ * backend change to either propagates here at typecheck time.
+ */
+export type RoadSegmentDetail = Schemas["RoadSegmentDetailDto"];
 
 export interface FunZone {
   id: string;
@@ -192,97 +153,24 @@ export interface FunZone {
 
 // ── Rides ──
 
-export type RideStatus = "active" | "completed" | "cancelled";
+/** Ride lifecycle status — the `RideSummaryDto.status` union. */
+export type RideStatus = Schemas["RideSummaryDto"]["status"];
 
 /**
- * Slim ride shape returned by `/rides/start` and `/rides/stop` (the
- * backend's `RideResponseDto`). It only carries the columns owned by
- * the `rides` row itself — `name` / `duration_min` (computed at list
- * time) and the detail-only enrichments (`segments`, `route_geometry`,
- * `lean_distribution`, …) are absent. Use this when receiving a
- * just-started or just-stopped ride; call `getRide` for the full
- * `RideDetail`.
+ * Slim ride shape returned by `/rides/start` and `/rides/stop` — the generated
+ * `RideResponseDto`. Only the columns owned by the `rides` row itself; call
+ * `getRide` for the full `RideDetail`.
  */
-export interface RideResponse {
-  id: string;
-  ride_type: RideType;
-  status: RideStatus;
-  started_at: string;
-  ended_at: string | null;
-  distance_km: number | null;
-  avg_speed: number | null;
-  avg_road_quality: number | null;
-  avg_curviness: number | null;
-  /**
-   * The bike attributed to this ride. Pinned to the rider's active
-   * bike at start time, or null for legacy rides recorded before
-   * bike management shipped.
-   */
-  bike_id: string | null;
-}
+export type RideResponse = Schemas["RideResponseDto"];
 
-export interface RideSummary {
-  id: string;
-  ride_type: RideType;
-  status: RideStatus;
-  started_at: string;
-  ended_at: string | null;
-  /**
-   * Aggregated per-ride stats. All null while the ride is still active —
-   * they are computed at /stop time. UI must default with `?? 0` /
-   * `?? "—"` rather than assume a number is present.
-   */
-  distance_km: number | null;
-  avg_speed: number | null;
-  avg_road_quality: number | null;
-  /**
-   * Length-weighted average curviness across snapped segments. Null when
-   * no segments are snapped yet.
-   */
-  avg_curviness: number | null;
-  /** Rider-supplied label. Null when not renamed yet. */
-  name: string | null;
-  duration_min: number | null;
-  /**
-   * Max absolute lean angle (deg) over the ride. Promoted onto the summary so
-   * ride lists (`GET /rides`) carry it — matches the backend `RideSummaryDto`,
-   * OpenAPI, and companion. Null while active or when no lean samples exist.
-   */
-  max_lean_angle: number | null;
-}
+/** Ride list row (`GET /rides`) — the generated `RideSummaryDto`. */
+export type RideSummary = Schemas["RideSummaryDto"];
 
-export interface RideDetail extends RideSummary {
-  max_speed: number | null;
-  /** Snapped polyline. Null while the ride is still recording or empty. */
-  route_geometry: LatLng[] | null;
-  elevation_gain: number | null;
-  elevation_loss: number | null;
-  curve_count: number | null;
-  /**
-   * US-19 lean histogram. Each bucket carries the number of 1-second
-   * sensor windows the rider's absolute lean fell into that bucket.
-   * Null when the ride has no lean samples yet (still in progress, or
-   * uploaded by an old client that didn't compute lean) — surfaced as
-   * an empty distribution by the detail screen.
-   */
-  lean_distribution: {
-    "0_10": number;
-    "10_20": number;
-    "20_30": number;
-    "30_plus": number;
-  } | null;
-  fuel_estimate_l: number | null;
-  segments: RideSegment[];
-}
+/** Full ride detail (`GET /rides/:id`) — the generated `RideDetailDto`. */
+export type RideDetail = Schemas["RideDetailDto"];
 
-export interface RideSegment {
-  road_segment_id: string | null;
-  road_name: string | null;
-  quality_reading: number | null;
-  speed_avg: number | null;
-  speed_max: number | null;
-  lean_angle_max: number | null;
-}
+/** One snapped segment of a ride's detail — the generated `RideSegmentDto`. */
+export type RideSegment = Schemas["RideSegmentDto"];
 
 // ── Hazards ──
 
@@ -766,27 +654,22 @@ export interface CheckRouteForPassesResponse {
 
 // ── Sensor Data ──
 
-export interface SensorReading {
-  t: number; // Unix ms
-  ax: number; // Accelerometer X
-  ay: number; // Accelerometer Y
-  az: number; // Accelerometer Z
-  gx?: number; // Gyroscope X
-  gy?: number; // Gyroscope Y
-  gz?: number; // Gyroscope Z
-  lat?: number;
-  lng?: number;
-  speed?: number; // m/s
-  /**
-   * Estimated bike-frame roll (signed, degrees) at this sample, produced
-   * by the on-device complementary filter (US-19). Optional because the
-   * filter requires both accelerometer + gyroscope to be active and a
-   * completed calibration window — pre-calibration samples carry no
-   * lean. Backend treats the absent field as "unknown" rather than zero
-   * so a quiet sensor doesn't pollute the per-ride histogram.
-   */
-  lean_deg?: number;
-}
+/**
+ * One sensor sample. The uploaded fields (`t`, `ax/ay/az`, `lat/lng`, `speed`,
+ * `lean_deg`) are the generated `SensorReadingDto` — the wire contract the
+ * batch is posted under. The raw gyroscope axes (`gx/gy/gz`) are deliberately
+ * on-device only: they feed the complementary filter that derives `lean_deg`
+ * (US-19) and are never sent (the backend re-derives everything else from the
+ * accelerometer axes), so they extend the DTO here rather than living on it.
+ */
+export type SensorReading = Schemas["SensorReadingDto"] & {
+  /** Gyroscope X — on-device only, consumed by the lean filter. */
+  gx?: number;
+  /** Gyroscope Y — on-device only. */
+  gy?: number;
+  /** Gyroscope Z — on-device only. */
+  gz?: number;
+};
 
 export interface SegmentClassification {
   road_segment_id?: string;
@@ -931,25 +814,11 @@ export interface ExplorationStats {
   total_distance_km: number;
 }
 
-export interface UnriddenSegment {
-  id: string;
-  road_name: string | null;
-  length_m: number;
-  quality_score: number | null;
-  surface_type: string;
-  distance_m: number;
-}
+export type UnriddenSegment = Schemas["UnriddenSegmentDto"];
 
-export interface RiddenSegment {
-  id: string;
-  last_ridden_at: string;
-  last_quality_score: number | null;
-  ride_count: number;
-}
+export type RiddenSegment = Schemas["RiddenSegmentDto"];
 
-export interface RiddenSegmentsList {
-  segments: RiddenSegment[];
-}
+export type RiddenSegmentsList = Schemas["RiddenSegmentsListDto"];
 
 // ── Bikes (US-64) ──
 
