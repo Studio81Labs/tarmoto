@@ -10,10 +10,29 @@ import {
   MAX_GEOCODE_RESULTS,
   ReverseGeocodeResultDto,
 } from './dto/geocode.dto.js';
+import { TtlCache } from './ttl-cache.js';
+
+// Place data is static minute-to-minute, so a generous TTL keeps the hit rate
+// high while the entry bound caps memory. Collapses repeated typeahead prefixes
+// and common places so public Nominatim isn't re-queried for the same input
+// (#909 — the OSMF policy caps the whole app at ~1 req/s).
+const GEOCODE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const GEOCODE_CACHE_MAX_ENTRIES = 1000;
 
 @Injectable()
 export class GeocodeService {
   private readonly logger = new Logger(GeocodeService.name);
+
+  // Only SUCCESSFUL provider responses are cached — a transient provider
+  // failure must not pin an empty/null result for the whole TTL.
+  private readonly searchCache = new TtlCache<GeocodeListDto>(
+    GEOCODE_CACHE_MAX_ENTRIES,
+    GEOCODE_CACHE_TTL_MS,
+  );
+  private readonly reverseCache = new TtlCache<ReverseGeocodeResultDto>(
+    GEOCODE_CACHE_MAX_ENTRIES,
+    GEOCODE_CACHE_TTL_MS,
+  );
 
   constructor(
     @Inject(GEOCODE_PROVIDER)
@@ -26,6 +45,12 @@ export class GeocodeService {
     if (normalizedQ.length === 0) {
       return { results: [] };
     }
+
+    // Case-insensitive key (Nominatim search ignores case); `limit` is part of
+    // the key because it changes how many matches come back.
+    const cacheKey = `${normalizedLimit}:${normalizedQ.toLowerCase()}`;
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) return cached;
 
     let raw: GeocodeResult[];
     try {
@@ -57,10 +82,18 @@ export class GeocodeService {
         importance: Math.round(r.importance * 1000) / 1000,
       }));
 
-    return { results };
+    const dto: GeocodeListDto = { results };
+    this.searchCache.set(cacheKey, dto);
+    return dto;
   }
 
   async reverse(lat: number, lng: number): Promise<ReverseGeocodeResultDto> {
+    // Round to ~11 m so near-identical pins share an entry — matches the
+    // locality granularity the reverse lookup resolves to.
+    const cacheKey = `${lat.toFixed(4)}:${lng.toFixed(4)}`;
+    const cached = this.reverseCache.get(cacheKey);
+    if (cached) return cached;
+
     let result: Awaited<ReturnType<GeocodeProvider['reverse']>>;
     try {
       result = await this.provider.reverse(lat, lng);
@@ -72,7 +105,13 @@ export class GeocodeService {
       this.logger.warn(`Reverse geocoder failed (${errName})`);
       return { label: null };
     }
-    return { label: result?.label ?? null };
+
+    // A genuine "unnamed" point (provider returned null, e.g. open sea) is a
+    // stable fact worth caching; only the thrown-error path above stays
+    // uncached so a transient failure isn't pinned for the TTL.
+    const dto: ReverseGeocodeResultDto = { label: result?.label ?? null };
+    this.reverseCache.set(cacheKey, dto);
+    return dto;
   }
 
   private clampLimit(input: number | undefined): number {

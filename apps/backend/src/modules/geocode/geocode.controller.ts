@@ -5,6 +5,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { GeocodeService } from './geocode.service.js';
 import {
@@ -14,6 +15,12 @@ import {
   ReverseGeocodeResultDto,
 } from './dto/geocode.dto.js';
 
+// Explicit per-user rate limit for this Nominatim-backed proxy: pinned to the
+// app default (60/min ≈ 1 req/s) so a single client can't individually exceed
+// OSMF's ~1 req/s-per-source policy, independent of any later change to the
+// global default. Generous enough for debounced typeahead + pin naming; the
+// GeocodeService response cache is the primary upstream-load reducer (#909).
+@Throttle({ default: { ttl: 60_000, limit: 60 } })
 @ApiTags('geocode')
 @Controller('geocode')
 @UseGuards(AuthGuard)
