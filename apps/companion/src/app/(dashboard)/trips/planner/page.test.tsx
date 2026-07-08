@@ -1846,6 +1846,13 @@ describe("TripPlannerPage", () => {
     );
     expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
     expect(await screen.findByText("Names saved")).toBeInTheDocument();
+    // importRoute created the backend trip → promoted: ?tripId is written so a
+    // refresh reloads it (and role/collab state binds), like the full save.
+    await waitFor(() =>
+      expect(window.location.search).toContain(
+        "tripId=11111111-2222-4333-8444-999999999999",
+      ),
+    );
   });
 
   it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {

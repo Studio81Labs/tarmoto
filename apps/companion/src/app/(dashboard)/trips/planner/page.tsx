@@ -1399,25 +1399,37 @@ export default function TripPlannerPage() {
         ? buildImportedRoutePayload(trip)
         : null;
       let persistNames: (() => Promise<{ data: unknown }>) | null = null;
+      // Whether this persist CREATES a new backend trip (importRoute on an
+      // unsaved import) — if so it must be promoted afterwards, like the
+      // full-save creation path, to wire serverTripId + the ?tripId= URL.
+      let promotesOnCreate = false;
       if (nameTripId && waypoints.length > 0) {
         persistNames = () =>
           tripsApi.updateWaypointNames(nameTripId, { waypoints });
       } else if (importedRoutePayload) {
         const payload = importedRoutePayload;
-        persistNames = () =>
-          nameTripId
-            ? tripsApi.replaceImportedRoute(nameTripId, payload)
-            : tripsApi.importRoute(payload);
+        if (nameTripId) {
+          persistNames = () =>
+            tripsApi.replaceImportedRoute(nameTripId, payload);
+        } else {
+          promotesOnCreate = true;
+          persistNames = () => tripsApi.importRoute(payload);
+        }
       }
       if (persistNames) {
         setSavingRoute(true);
         try {
           const { data } = await persistNames();
-          setActiveTrip(
-            tripFromDetail(
-              data as unknown as Parameters<typeof tripFromDetail>[0],
-            ),
+          const hydrated = tripFromDetail(
+            data as unknown as Parameters<typeof tripFromDetail>[0],
           );
+          setActiveTrip(hydrated);
+          if (promotesOnCreate) {
+            // importRoute created the backend trip — attach collab + push the
+            // ?tripId= URL so a refresh reloads it and role state binds,
+            // mirroring the full-save first-save promotion.
+            handlePromotedToServer(hydrated.id);
+          }
           toast.success(t("Names saved"));
         } catch {
           toast.error(t("Couldn't save the names. Try again."));
