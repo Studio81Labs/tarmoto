@@ -217,13 +217,6 @@ export type Waypoint = Schemas["TripWaypointDto"];
 /** Trip collaborator — the generated `TripMemberDto`. */
 export type TripMember = Schemas["TripMemberDto"];
 
-/**
- * Public read-only payload from `GET /trip-shares/:token` (US-39 / #283) —
- * the generated `TripSharePublicDto`. `snapshot` is the companion's serialised
- * `Trip` shape, kept as an opaque record on the wire.
- */
-export type TripSharePublic = Schemas["TripSharePublicDto"];
-
 // ── Reviews ──
 
 /** Road review (`GET /roads/:id/reviews`) — the generated `ReviewResponseDto`. */

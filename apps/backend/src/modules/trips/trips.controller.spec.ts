@@ -44,7 +44,6 @@ describe('TripsController', () => {
       invite: jest.fn().mockResolvedValue(undefined),
       leaveTrip: jest.fn().mockResolvedValue(undefined),
       importFromRoute: jest.fn().mockResolvedValue(mockDetail),
-      importFromShare: jest.fn().mockResolvedValue(mockDetail),
     };
 
     const mockGenerator = {
@@ -119,13 +118,6 @@ describe('TripsController', () => {
   it('DELETE /trips/:tripId delegates to service.remove with the caller id', async () => {
     await controller.remove(mockReq, 'trip-1');
     expect(service.remove).toHaveBeenCalledWith('user-1', 'trip-1');
-  });
-
-  it('POST /trips/from-share forwards the share token to the service', async () => {
-    const dto = { share_token: 'tok-deadbeef' };
-    const result = await controller.importFromShare(mockReq, dto);
-    expect(service.importFromShare).toHaveBeenCalledWith('user-1', dto);
-    expect(result.id).toBe('trip-1');
   });
 
   it('POST /trips/:tripId/invite delegates to service.invite and returns queued status', async () => {

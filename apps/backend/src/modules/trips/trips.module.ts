@@ -44,9 +44,9 @@ import { TripCollabService } from './trip-collab.service.js';
     EmailModule,
     EventsModule,
     TripActivityModule,
-    // TripSharesModule re-exports TripSharesService so `POST /trips/
-    // from-share` (#357) can read the snapshot stored under a share
-    // token without bumping its public view counter.
+    // TripSharesModule re-exports TripSharesService so trip member removal
+    // can revoke the departing member's outstanding share links
+    // (`revokeAllForTripMember`).
     TripSharesModule,
     // CommuteModule re-exports ROUTING_PROVIDER so the trip generator
     // can reuse the configured OSRM (or other) routing engine without
