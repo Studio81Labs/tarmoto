@@ -80,8 +80,12 @@ function previewResponse(overrides = {}) {
   };
 }
 
+// The page ignores the join response (it just redirects), so a minimal stub is
+// fine — cast past the full generated response type the mock's signature wants.
 function joinedTripResponse() {
-  return { data: { id: "trip-1" } };
+  return { data: { id: "trip-1" } } as Awaited<
+    ReturnType<typeof tripsApi.join>
+  >;
 }
 
 describe("TripInviteJoinPage", () => {

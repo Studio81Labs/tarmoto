@@ -5,8 +5,8 @@ import { notFound } from "next/navigation";
 import { Eye, User } from "lucide-react";
 import {
   fetchSharedTrip,
-  flattenTripRoute,
   parseTripSnapshot,
+  tripRouteLines,
   tripSummary,
 } from "@/lib/trip-share";
 import { TripRouteOverview } from "@/components/TripRouteOverview";
@@ -31,7 +31,7 @@ export default async function SharedTripPage({
   if (!share) notFound();
   const trip = parseTripSnapshot(share.snapshot);
   const summary = trip ? tripSummary(trip) : null;
-  const route = trip ? flattenTripRoute(trip) : [];
+  const lines = trip ? tripRouteLines(trip) : [];
   return (
     <div className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
       <main className="mx-auto max-w-3xl px-6 py-10">
@@ -78,7 +78,7 @@ export default async function SharedTripPage({
         {trip && summary ? (
           <section className="mb-8">
             <TripRouteOverview
-              route={route}
+              lines={lines}
               distanceKm={summary.totalDistanceKm}
               dayCount={summary.dayCount}
               region={trip.region ?? null}

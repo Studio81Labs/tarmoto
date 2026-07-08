@@ -1,4 +1,4 @@
-import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
+import { buildRoutePreviewFromLines, type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance } from "@/lib/utils";
 import { t } from "@/i18n";
 
@@ -13,8 +13,12 @@ import { t } from "@/i18n";
  * share page, `light` for the cream dashboard join view.
  */
 export interface TripRouteOverviewProps {
-  /** Flattened route polyline ([lat,lng] points) for the preview SVG. */
-  route: readonly RoutePoint[];
+  /**
+   * Per-day route polylines ([lat,lng] points). Kept as separate lines rather
+   * than one flattened list so the preview doesn't bridge non-adjacent days
+   * with an artificial straight segment.
+   */
+  lines: ReadonlyArray<readonly RoutePoint[]>;
   distanceKm: number | null;
   dayCount: number;
   region?: string | null;
@@ -24,14 +28,14 @@ export interface TripRouteOverviewProps {
 }
 
 export function TripRouteOverview({
-  route,
+  lines,
   distanceKm,
   dayCount,
   region,
   variant = "light",
   label,
 }: TripRouteOverviewProps) {
-  const preview = buildRoutePreview(route, 960, 14);
+  const preview = buildRoutePreviewFromLines(lines, 960, 14);
   const dark = variant === "dark";
 
   const stats = [

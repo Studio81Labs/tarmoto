@@ -120,7 +120,7 @@ export default function TripInviteJoinPage() {
 
   const { preview } = state;
   const accepting = state.kind === "accepting";
-  const route = flattenLines(preview.lines);
+  const lines = toRouteLines(preview.lines);
 
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-10">
@@ -152,7 +152,7 @@ export default function TripInviteJoinPage() {
 
       <div className="mt-6">
         <TripRouteOverview
-          route={route}
+          lines={lines}
           distanceKm={preview.distance_km}
           dayCount={preview.num_days}
           region={preview.region}
@@ -186,17 +186,19 @@ export default function TripInviteJoinPage() {
   );
 }
 
-function flattenLines(lines: number[][][]): RoutePoint[] {
-  const out: RoutePoint[] = [];
-  for (const line of lines) {
+// Backend `lines` are per-day [lng,lat] polylines. Keep them separate (one
+// RoutePoint[] per day) so the preview doesn't connect non-adjacent days.
+function toRouteLines(lines: number[][][]): RoutePoint[][] {
+  return lines.map((line) => {
+    const out: RoutePoint[] = [];
     for (const point of line) {
       const [lng, lat] = point;
       if (typeof lat === "number" && typeof lng === "number") {
         out.push({ lat, lng });
       }
     }
-  }
-  return out;
+    return out;
+  });
 }
 
 function roleLabel(role: TripInvitePreview["role"]): string {
