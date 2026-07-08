@@ -1015,6 +1015,23 @@ describe("plannerApi.reverseGeocode (#864)", () => {
     });
   });
 
+  it("forwards an abort signal when given", async () => {
+    apiGetMock.mockResolvedValue({
+      data: { label: "Brno" },
+      error: undefined,
+    } as never);
+    const controller = new AbortController();
+
+    await createPlannerApi().reverseGeocode(49.2, 16.6, {
+      signal: controller.signal,
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith("/api/v1/geocode/reverse", {
+      params: { query: { lat: 49.2, lng: 16.6 } },
+      signal: controller.signal,
+    });
+  });
+
   it("falls back to trimmed coordinates when the point can't be named", async () => {
     apiGetMock.mockResolvedValue({
       data: { label: null },

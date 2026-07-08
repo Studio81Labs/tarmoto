@@ -685,22 +685,40 @@ export default function TripPlannerPage() {
   // reverse-geocode them to a place name once per placement (addendum §2).
   const reverseGeocodedRef = useRef(new Set<string>());
   useEffect(() => {
+    // Stable Set instance — capture it so the cleanup uses the same reference
+    // the effect body did (react-hooks/exhaustive-deps).
+    const seen = reverseGeocodedRef.current;
     const waypoints = selectedDay?.waypoints ?? [];
+    const controller = new AbortController();
+    const keysThisRun: string[] = [];
     for (const waypoint of waypoints) {
       const name = waypoint.name ?? "";
       if (!/^(Start|Finish|Via \d+|Reroute via)$/.test(name)) continue;
       const key = `${waypoint.id}:${waypoint.location.lat.toFixed(4)}:${waypoint.location.lng.toFixed(4)}`;
-      if (reverseGeocodedRef.current.has(key)) continue;
-      reverseGeocodedRef.current.add(key);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      keysThisRun.push(key);
       void plannerApi
-        .reverseGeocode(waypoint.location.lat, waypoint.location.lng)
+        .reverseGeocode(waypoint.location.lat, waypoint.location.lng, {
+          signal: controller.signal,
+        })
         .then((placeName) => {
+          // Ignore a stale response: the rider moved/renamed the waypoint or
+          // switched days while this real lookup was in flight, so the effect
+          // re-ran and aborted us — applying now would clobber newer state.
+          if (controller.signal.aborted) return;
           if (placeName) renameWaypoint(waypoint.id, placeName);
         })
         .catch(() => {
-          // Naming is cosmetic — keep the default label on failure.
+          // Naming is cosmetic — keep the default label on failure/abort.
         });
     }
+    return () => {
+      controller.abort();
+      // Let lookups we cut short re-fire on the next run (a resolved one has
+      // already renamed the waypoint, so its pattern no longer matches).
+      for (const key of keysThisRun) seen.delete(key);
+    };
   }, [selectedDay, renameWaypoint]);
   // Dropping a day-break marker pins that break at the drop's along-route
   // km and re-splits the surrounding days around it (addendum §6).

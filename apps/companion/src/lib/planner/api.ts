@@ -772,9 +772,14 @@ export function createPlannerApi(): PlannerApi {
       }));
     },
 
-    async reverseGeocode(lat: number, lng: number): Promise<string> {
+    async reverseGeocode(
+      lat: number,
+      lng: number,
+      init?: { signal?: AbortSignal },
+    ): Promise<string> {
       const { data, error } = await api.GET("/api/v1/geocode/reverse", {
         params: { query: { lat, lng } },
+        ...(init?.signal ? { signal: init.signal } : {}),
       });
       // Unnamed point (e.g. open sea) or a soft API error: show the
       // coordinates rather than a blank name. Hard network/abort errors

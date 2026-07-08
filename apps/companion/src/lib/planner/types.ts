@@ -263,7 +263,11 @@ export interface PlannerApi {
    * `GET /api/v1/geocode/reverse`); falls back to a coordinate label when the
    * point can't be named.
    */
-  reverseGeocode(lat: number, lng: number): Promise<string>;
+  reverseGeocode(
+    lat: number,
+    lng: number,
+    init?: { signal?: AbortSignal },
+  ): Promise<string>;
 
   /**
    * Start+finish drafting (revision 2 §E cases 2/3): measures the direct
