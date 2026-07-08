@@ -20,4 +20,23 @@ describe('CorridorBodyDto route validation', () => {
     const routeError = errors.find((e) => e.property === 'route');
     expect(routeError?.constraints?.arrayMaxSize).toBeDefined();
   });
+
+  // The STOPS tab's widest corridor is 20 km, matching the passes / fun-zones
+  // reach; buffer_km must accept it (#919) and reject beyond the cap.
+  it('accepts the 20 km STOPS corridor and rejects a wider buffer', async () => {
+    const ok = plainToInstance(CorridorBodyDto, {
+      route: [point, point],
+      buffer_km: 20,
+    });
+    expect(await validate(ok)).toHaveLength(0);
+
+    const tooWide = plainToInstance(CorridorBodyDto, {
+      route: [point, point],
+      buffer_km: 21,
+    });
+    const err = (await validate(tooWide)).find(
+      (e) => e.property === 'buffer_km',
+    );
+    expect(err?.constraints?.max).toBeDefined();
+  });
 });

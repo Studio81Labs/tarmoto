@@ -208,7 +208,11 @@ export class PoiListDto {
 }
 
 const DEFAULT_BUFFER_KM = 2;
-const MAX_BUFFER_KM = 10;
+// Matches the passes `check-route` + fun-zones corridor reach and the STOPS
+// tab's widest corridor option (20 km), so every route-corridor POI source
+// accepts the same buffer. Governs `/poi/along-route` + `/poi/in-corridor` and
+// the store/Overpass clamps (all import this constant).
+const MAX_BUFFER_KM = 20;
 
 class RoutePointDto {
   @ApiProperty()

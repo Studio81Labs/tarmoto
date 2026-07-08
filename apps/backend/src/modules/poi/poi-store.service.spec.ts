@@ -251,11 +251,11 @@ describe('PoiStoreService', () => {
         ['fuel_station'],
         999,
       );
-      expect(buffer_km).toBe(10); // MAX_BUFFER_KM
+      expect(buffer_km).toBe(20); // MAX_BUFFER_KM
       const params = (
         qb.where.mock.calls[0] as [string, Record<string, number>]
       )[1];
-      expect(params.buffer).toBe(10_000);
+      expect(params.buffer).toBe(20_000);
       expect(qb.andWhere).toHaveBeenNthCalledWith(
         1,
         'poi.deactivated_at IS NULL',
