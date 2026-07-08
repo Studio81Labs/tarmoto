@@ -515,9 +515,11 @@ export default function TripPlannerPage() {
     if (selectedPlannerSegmentId) setPanelTab("INSPECT");
   }, [selectedPlannerSegmentId]);
   useEffect(() => {
-    // Preselect the first day so "Focus day" has a target on load; a re-split
-    // renumbers days, so this also resets the pick back to day 1.
-    setSelectedPlanIndex(dayPlans && dayPlans.length > 0 ? 0 : null);
+    // Start (and re-split) with no day selected so every tab — and the map —
+    // opens on the whole route; the rider explicitly picks a day to drill in.
+    // "Focus day" stays disabled (with a hint) until then, so it can't
+    // silently focus an unpicked day 1.
+    setSelectedPlanIndex(null);
   }, [dayPlans]);
   // An interactive split on a single, not-yet-materialized day: days = [whole
   // route], dayPlans = the slices. Until `materializeSplit()` runs on save,
