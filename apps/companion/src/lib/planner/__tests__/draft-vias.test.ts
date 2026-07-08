@@ -34,6 +34,21 @@ describe("funZoneCentroid", () => {
     expect(funZoneCentroid({ boundary: [] })).toBeNull();
     expect(funZoneCentroid({ boundary: [{}, { lat: "x" }] })).toBeNull();
   });
+
+  it("drops the repeated closing vertex of a GeoJSON ring", () => {
+    // A square closed with the first vertex repeated: the naive average of all
+    // 5 points is (0.8, 0.8), dragged toward (0, 0). The real centre is (1, 1).
+    const centroid = funZoneCentroid({
+      boundary: [
+        { lat: 0, lng: 0 },
+        { lat: 0, lng: 2 },
+        { lat: 2, lng: 2 },
+        { lat: 2, lng: 0 },
+        { lat: 0, lng: 0 },
+      ],
+    });
+    expect(centroid).toEqual({ lat: 1, lng: 1 });
+  });
 });
 
 describe("draftViasThroughZones", () => {
