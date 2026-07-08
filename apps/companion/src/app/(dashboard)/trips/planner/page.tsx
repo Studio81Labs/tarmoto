@@ -2253,7 +2253,10 @@ export default function TripPlannerPage() {
             </Button>
           </Tooltip>
           <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
-          <div className="min-w-0">
+          {/* flex-col so the tooltip-wrapped rename control is a flex item
+              (blockified — no inline-flex line-box strut) and the header
+              keeps the same height as the read-only preview view. */}
+          <div className="flex min-w-0 flex-col">
             {(() => {
               const canRenameTrip =
                 Boolean(displayedTrip) && canEditTripMetadata;
