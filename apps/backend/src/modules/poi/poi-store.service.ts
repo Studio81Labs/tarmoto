@@ -154,17 +154,29 @@ export class PoiStoreService {
       Math.max(0.5, bufferKm || DEFAULT_BUFFER_KM),
       MAX_BUFFER_KM,
     );
-    // Cap the corridor read at the DB (closest-to-route first) so a wide buffer
-    // (up to MAX_BUFFER_KM, now 20 km) over a long route can't hydrate an
-    // unbounded number of rows. MAX_LIMIT is also the final slice below, so for
-    // any corridor with <= MAX_LIMIT hits the result is unchanged; a denser one
-    // keeps the closest-to-route hits, then orders them by along-route position.
-    const rows = await this.queryCorridorEntities(
-      route,
-      buffer,
-      kinds,
-      MAX_LIMIT,
-    );
+    // Bound the corridor read at the DB so a wide buffer (up to MAX_BUFFER_KM,
+    // now 20 km) over a long route can't hydrate unbounded rows. Cap PER KIND
+    // (closest-to-route first) when kinds are given, so a dense kind
+    // (restaurants) can't fill a single global cap and crowd out sparser
+    // selected kinds (fuel, campgrounds) — the fairness the store-first path
+    // uses. An all-kinds request has no list to partition, so it falls back to a
+    // single global MAX_LIMIT read. The along-route sort + slice below then
+    // order/trim whatever these return.
+    const rows =
+      kinds && kinds.length > 0
+        ? (
+            await Promise.all(
+              kinds.map((kind) =>
+                this.queryCorridorEntities(
+                  route,
+                  buffer,
+                  [kind],
+                  STORE_PER_KIND_LIMIT,
+                ),
+              ),
+            )
+          ).flat()
+        : await this.queryCorridorEntities(route, buffer, kinds, MAX_LIMIT);
 
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer
@@ -366,9 +378,9 @@ export class PoiStoreService {
       }
       // Bound every corridor read at the DB — closest-to-route first — so a
       // dense urban corridor or a wide buffer can't hydrate thousands of rows.
-      // The store-first `/poi/along-route` path caps per kind
-      // (STORE_PER_KIND_LIMIT); `findAlongRoute` caps at its own final slice
-      // (MAX_LIMIT), then re-orders the kept rows by along-route position.
+      // Callers cap per kind (STORE_PER_KIND_LIMIT) so one dense kind can't
+      // crowd out sparser ones; an all-kinds `findAlongRoute` read has no list
+      // to partition and falls back to a single global MAX_LIMIT cap.
       if (limit !== undefined) {
         qb.orderBy(`ST_Distance(poi.geom::geography, ${line})`, 'ASC').limit(
           limit,

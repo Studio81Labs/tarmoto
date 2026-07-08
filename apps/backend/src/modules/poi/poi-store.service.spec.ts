@@ -245,14 +245,23 @@ describe('PoiStoreService', () => {
       expect(pois[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
     });
 
-    it('caps the corridor read at the DB so a wide buffer stays bounded (#919)', async () => {
-      // A 20 km buffer over a long route must not hydrate every matching row:
-      // the read is closest-to-route first and capped at MAX_LIMIT (its own
-      // final slice), never an unbounded getMany().
-      await service.findAlongRoute(route, undefined, 20);
+    it('caps per kind so a dense kind cannot crowd out sparser ones (#919)', async () => {
+      // Several selected kinds → one bounded, closest-to-route query per kind,
+      // so a dense kind (restaurants) can't fill a single global cap and starve
+      // fuel / campgrounds that are also inside the buffer.
+      await service.findAlongRoute(route, ['restaurant', 'fuel_station'], 20);
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
+      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
+    });
+
+    it('falls back to a single global cap for an all-kinds read (#919)', async () => {
+      // No kind list to partition → one closest-to-route query capped at
+      // MAX_LIMIT, still bounded rather than an unbounded getMany().
+      await service.findAlongRoute(route, undefined, 20);
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
       expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
     });
 
