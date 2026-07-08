@@ -34,6 +34,15 @@ const NOMINATIM_FETCH_TIMEOUT_MS = 8_000;
 const NOMINATIM_MIN_SPACING_MS = 1_000;
 const NOMINATIM_MAX_QUEUE_WAIT_MS = 4_000;
 
+/**
+ * True when the endpoint is OSMF's public Nominatim (the default). Only the
+ * public instance is bound by the ≤1/s usage policy, so a self-hosted override
+ * (`TARMOTO_NOMINATIM_URL`) runs without upstream serialization.
+ */
+export function isDefaultPublicNominatim(endpoint: string): boolean {
+  return endpoint.startsWith('https://nominatim.openstreetmap.org');
+}
+
 // Reverse-geocode granularity: bias the matched feature toward locality
 // level (town / village / suburb) rather than a single building, so a
 // dropped pin names its area. `addressdetails` still returns the whole
@@ -71,12 +80,10 @@ const REVERSE_ADDRESS_KEYS = [
 export class NominatimProvider implements GeocodeProvider {
   private readonly endpoint: string;
   private readonly userAgent: string;
-  // One shared limiter for search + reverse — they hit the same upstream, so
-  // they draw from a single ≤ 1/s budget.
-  private readonly limiter = new MinSpacingLimiter(
-    NOMINATIM_MIN_SPACING_MS,
-    NOMINATIM_MAX_QUEUE_WAIT_MS,
-  );
+  // One shared limiter for search + reverse — they hit the same upstream. Only
+  // the public instance is serialized (gated in the constructor); a self-hosted
+  // endpoint has no ≤1/s policy.
+  private readonly limiter: MinSpacingLimiter;
 
   constructor(config: ConfigService) {
     const raw = config.get<string>(
@@ -92,11 +99,19 @@ export class NominatimProvider implements GeocodeProvider {
       'TARMOTO_NOMINATIM_UA',
       'Tarmoto/1.0 (https://tarmoto.app)',
     );
+    // The ≤1/s spacing exists only to honour OSMF's public-instance policy. A
+    // self-hosted instance has no such cap, so run it unthrottled — spacing 0
+    // makes the limiter a no-op (matches ADR-0002).
+    this.limiter = new MinSpacingLimiter(
+      isDefaultPublicNominatim(this.endpoint) ? NOMINATIM_MIN_SPACING_MS : 0,
+      NOMINATIM_MAX_QUEUE_WAIT_MS,
+    );
   }
 
   /**
-   * Rate-limited GET: serialized to ≤ 1/s upstream via {@link limiter}, with a
-   * per-request abort timeout and the policy-required `User-Agent`.
+   * Rate-limited GET via the shared {@link limiter} — ≤ 1/s for the public
+   * instance, a no-op for a self-hosted one — with a per-request abort timeout
+   * and the policy-required `User-Agent`.
    */
   private scheduledFetch(url: string): Promise<Response> {
     return this.limiter.schedule(async () => {

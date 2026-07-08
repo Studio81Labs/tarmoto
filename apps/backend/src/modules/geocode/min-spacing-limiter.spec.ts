@@ -63,4 +63,15 @@ describe('MinSpacingLimiter', () => {
     await h.limiter.schedule(() => Promise.resolve('b'));
     expect(h.sleeps).toEqual([]); // neither had to wait
   });
+
+  it('is a no-op when minSpacing is 0 (self-hosted: no spacing, no shedding)', async () => {
+    const { limiter, sleeps } = harness(0, 4000);
+    const results = await Promise.all([
+      limiter.schedule(() => Promise.resolve(1)),
+      limiter.schedule(() => Promise.resolve(2)),
+      limiter.schedule(() => Promise.resolve(3)),
+    ]);
+    expect(results).toEqual([1, 2, 3]);
+    expect(sleeps).toEqual([]);
+  });
 });

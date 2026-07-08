@@ -1,5 +1,8 @@
 import { ConfigService } from '@nestjs/config';
-import { NominatimProvider } from './nominatim.provider.js';
+import {
+  NominatimProvider,
+  isDefaultPublicNominatim,
+} from './nominatim.provider.js';
 
 // ConfigService stub — always returns the default, so the provider uses the
 // public endpoint and the built-in User-Agent.
@@ -119,5 +122,23 @@ describe('NominatimProvider', () => {
         'Nominatim API error',
       );
     });
+  });
+});
+
+describe('isDefaultPublicNominatim', () => {
+  it('is true for the public OSMF instance (with or without trailing slash)', () => {
+    expect(
+      isDefaultPublicNominatim('https://nominatim.openstreetmap.org'),
+    ).toBe(true);
+    expect(
+      isDefaultPublicNominatim('https://nominatim.openstreetmap.org/'),
+    ).toBe(true);
+  });
+
+  it('is false for a self-hosted endpoint (spacing disabled there)', () => {
+    expect(
+      isDefaultPublicNominatim('https://nominatim.internal.example.com/'),
+    ).toBe(false);
+    expect(isDefaultPublicNominatim('http://localhost:8080/')).toBe(false);
   });
 });
