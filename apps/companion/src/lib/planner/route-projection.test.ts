@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { projectOntoRoute, projectRingOntoRoute } from "./route-projection";
+import {
+  nearestPolygonContact,
+  pointInPolygon,
+  projectOntoRoute,
+  projectRingOntoRoute,
+} from "./route-projection";
 
 describe("projectOntoRoute", () => {
   // ~36 km due east at lat 49 (0.5° lng × 111.32 × cos 49°).
@@ -77,6 +82,62 @@ describe("projectRingOntoRoute", () => {
     expect(projectRingOntoRoute([], route)).toBeNull();
     expect(
       projectRingOntoRoute([{ lat: 49, lng: 18 }], [{ lat: 49, lng: 18 }]),
+    ).toBeNull();
+  });
+});
+
+describe("pointInPolygon", () => {
+  const box = [
+    { lat: 49.0, lng: 18.0 },
+    { lat: 49.0, lng: 18.2 },
+    { lat: 49.2, lng: 18.2 },
+    { lat: 49.2, lng: 18.0 },
+  ];
+
+  it("detects inside vs outside", () => {
+    expect(pointInPolygon({ lat: 49.1, lng: 18.1 }, box)).toBe(true);
+    expect(pointInPolygon({ lat: 49.3, lng: 18.1 }, box)).toBe(false);
+    expect(pointInPolygon({ lat: 49.1, lng: 18.5 }, box)).toBe(false);
+  });
+});
+
+describe("nearestPolygonContact", () => {
+  const route = [
+    { lat: 49.0, lng: 18.0 },
+    { lat: 49.0, lng: 18.5 },
+  ];
+
+  it("reports 0 km off for a hull that fully contains the route", () => {
+    // A large box surrounding the whole line — no boundary crossing, but the
+    // route sits inside, so (like the server's polygon ST_DWithin) it's on-route.
+    const box = [
+      { lat: 48.8, lng: 17.8 },
+      { lat: 48.8, lng: 18.7 },
+      { lat: 49.2, lng: 18.7 },
+      { lat: 49.2, lng: 17.8 },
+    ];
+    const p = nearestPolygonContact(box, route);
+    expect(p).not.toBeNull();
+    expect(p!.distanceFromRouteKm).toBe(0);
+    expect(p!.kmAlongRoute).toBe(0); // first contained vertex (the start)
+  });
+
+  it("falls back to the boundary distance for a zone off the route", () => {
+    const box = [
+      { lat: 49.1, lng: 18.2 },
+      { lat: 49.1, lng: 18.3 },
+      { lat: 49.12, lng: 18.3 },
+      { lat: 49.12, lng: 18.2 },
+    ];
+    expect(
+      nearestPolygonContact(box, route)!.distanceFromRouteKm,
+    ).toBeGreaterThan(10);
+  });
+
+  it("returns null on a degenerate route or empty ring", () => {
+    expect(nearestPolygonContact([], route)).toBeNull();
+    expect(
+      nearestPolygonContact([{ lat: 49, lng: 18 }], [{ lat: 49, lng: 18 }]),
     ).toBeNull();
   });
 });

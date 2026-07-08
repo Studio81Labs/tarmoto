@@ -56,6 +56,15 @@ function segmentLengthKm(a: LatLng, b: LatLng): number {
  * `twisty_highlight` corridor reads (#865) can position their points the same
  * way `/poi/in-corridor` does server-side for the OSM categories.
  */
+/** Cumulative km from the route start to each vertex. */
+function cumulativeRouteKm(route: readonly LatLng[]): number[] {
+  const cum: number[] = [0];
+  for (let i = 1; i < route.length; i++) {
+    cum.push(cum[i - 1]! + segmentLengthKm(route[i - 1]!, route[i]!));
+  }
+  return cum;
+}
+
 export function projectOntoRoute(
   point: LatLng,
   route: readonly LatLng[],
@@ -63,10 +72,7 @@ export function projectOntoRoute(
   if (route.length < 2) return null;
   // Prefix km per vertex, so the nearest segment's along-route position is
   // prefix + t * segment length.
-  const prefixKm: number[] = [0];
-  for (let i = 1; i < route.length; i++) {
-    prefixKm.push(prefixKm[i - 1]! + segmentLengthKm(route[i - 1]!, route[i]!));
-  }
+  const prefixKm = cumulativeRouteKm(route);
   let bestKm = Number.POSITIVE_INFINITY;
   let bestAlongKm = 0;
   for (let i = 1; i < route.length; i++) {
@@ -121,4 +127,51 @@ export function projectRingOntoRoute(
     }
   }
   return best;
+}
+
+/**
+ * Ray-casting point-in-polygon test on the lat/lng plane (adequate at the
+ * few-km scale these corridors operate on). `ring` is the polygon's exterior
+ * ring, open or closed.
+ */
+export function pointInPolygon(
+  point: LatLng,
+  ring: readonly LatLng[],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]!;
+    const b = ring[j]!;
+    const straddles = a.lat > point.lat !== b.lat > point.lat;
+    if (
+      straddles &&
+      point.lng <
+        ((b.lng - a.lng) * (point.lat - a.lat)) / (b.lat - a.lat) + a.lng
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Nearest contact between a route polyline and a polygon (zone): the off-route
+ * distance + its along-route km. A route vertex inside the polygon is on the
+ * zone (0 km off) — the server's polygon `ST_DWithin` counts a fully-surrounded
+ * route segment even when the boundary edges are km away. Otherwise the nearest
+ * densified-boundary contact ({@link projectRingOntoRoute}). Null on a
+ * degenerate route or empty ring.
+ */
+export function nearestPolygonContact(
+  ring: readonly LatLng[],
+  route: readonly LatLng[],
+): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
+  if (route.length < 2 || ring.length === 0) return null;
+  const cumKm = cumulativeRouteKm(route);
+  for (let i = 0; i < route.length; i++) {
+    if (pointInPolygon(route[i]!, ring)) {
+      return { distanceFromRouteKm: 0, kmAlongRoute: Math.round(cumKm[i]!) };
+    }
+  }
+  return projectRingOntoRoute(ring, route);
 }

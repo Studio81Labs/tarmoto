@@ -33,7 +33,7 @@ import {
   MAX_DRAFT_VIAS,
   type DraftZone,
 } from "./draft-vias";
-import { projectOntoRoute, projectRingOntoRoute } from "./route-projection";
+import { nearestPolygonContact, projectOntoRoute } from "./route-projection";
 import { mockRoadPreview } from "./mocks";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
@@ -420,13 +420,12 @@ function projectPointStop(
 }
 
 /**
- * Position a Fun Zone stop on the route. A zone is a polygon and the backend
- * already selected it by polygon proximity (ST_DWithin over the whole
- * boundary), so measure off-route from the nearest point of the zone's
- * densified boundary (edges, not just corner vertices) — a large or simplified
- * hull that touches the route between vertices is then measured at the real
- * contact, not a far corner. The marker keeps the centroid; only the distances
- * use the boundary. No corridor re-filter here — trust the server's selection.
+ * Position a Fun Zone stop on the route. A zone is a polygon the backend
+ * already selected by polygon proximity (ST_DWithin over the whole geometry),
+ * so measure the contact against the polygon, not the centroid: a route vertex
+ * inside the hull is on-route (0 km off), otherwise the nearest densified-edge
+ * point (not a far corner vertex). The marker keeps the centroid; only the
+ * distances use the geometry. No corridor re-filter — trust the server.
  */
 function funZoneStop(
   zone: FunZoneListItem,
@@ -434,7 +433,7 @@ function funZoneStop(
 ): RouteStop | null {
   const poi = funZoneToCategoryPoi(zone);
   if (!poi) return null;
-  const nearest = projectRingOntoRoute(zone.boundary, route);
+  const nearest = nearestPolygonContact(zone.boundary, route);
   return nearest ? { ...poi, ...nearest } : null;
 }
 
