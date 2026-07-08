@@ -1,7 +1,9 @@
+import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 import type { PoiImportRegion } from './poi-import.config.js';
 import type { StoredPoiFields } from './poi-provider.interface.js';
 import { parsePoiExtract } from './poi-extract-source.js';
+import { fsqRowToImportRow, type FsqPlaceRow } from './fsq-poi-categories.js';
 
 /**
  * The normalized row every bulk source yields — the common denominator of the
@@ -56,6 +58,33 @@ export class OsmPoiImportSource implements PoiImportSource {
   async *parse(stream: Readable): AsyncGenerator<StorableImportRow> {
     for await (const item of parsePoiExtract(stream)) {
       yield 'poi' in item ? item.poi : item.accommodation;
+    }
+  }
+}
+
+/**
+ * The Foursquare OS Places source (#869). The operator's offline DuckDB recipe
+ * (see the runbook) filters the monthly OS Places dump to a region's bbox + our
+ * categories and writes newline-delimited JSON (`<code>.fsq.jsonl`) — small and
+ * scalar, so the backend streams it line-by-line with no Parquet dependency.
+ * Each line is one {@link FsqPlaceRow}; non-category / invalid rows are dropped.
+ * A malformed line throws, aborting the import before any write — the same
+ * outage-safety contract as the OSM parser.
+ */
+export class FsqPoiImportSource implements PoiImportSource {
+  readonly source = 'fsq';
+
+  extractFilename(region: PoiImportRegion): string {
+    return `${region.code.toLowerCase()}.fsq.jsonl`;
+  }
+
+  async *parse(stream: Readable): AsyncGenerator<StorableImportRow> {
+    const lines = createInterface({ input: stream, crlfDelay: Infinity });
+    for await (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const row = fsqRowToImportRow(JSON.parse(trimmed) as FsqPlaceRow);
+      if (row) yield row;
     }
   }
 }
