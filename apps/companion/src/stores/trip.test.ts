@@ -1619,6 +1619,32 @@ describe("useTripStore routeDirty flag", () => {
     expect(useTripStore.getState().namesDirty).toBe(false);
   });
 
+  it("undoing a route edit preserves a rename that landed after it (#911)", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    useTripStore.getState().setActiveTrip(useTripStore.getState().activeTrip!);
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+
+    // Route edit FIRST (snapshot predates the rename), THEN the rename lands —
+    // e.g. a late reverse-geocode on the start pin.
+    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "add-via");
+    useTripStore.getState().renameWaypoint(start.id, "Bormio");
+    expect(useTripStore.getState().namesDirty).toBe(true);
+
+    // Undo the route edit — the via is removed, but the rename must survive
+    // (it isn't part of route history): the name, the dirty flag, and the
+    // tracked id are all preserved so the name-only save still persists it.
+    useTripStore.getState().undo();
+    const startAfterUndo = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.id === start.id)!;
+    expect(startAfterUndo.name).toBe("Bormio");
+    expect(useTripStore.getState().namesDirty).toBe(true);
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
+  });
+
   it("insertWaypointBeforeEnd marks the draft dirty so POI stops can be saved", () => {
     useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");

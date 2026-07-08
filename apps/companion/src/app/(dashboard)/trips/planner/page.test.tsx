@@ -292,15 +292,11 @@ type TripStoreSnapshot = {
   undoStack: Array<{
     trip: Trip | null;
     dirty: boolean;
-    names: boolean;
-    nameIds: string[];
     stale: number[];
   }>;
   redoStack: Array<{
     trip: Trip | null;
     dirty: boolean;
-    names: boolean;
-    nameIds: string[];
     stale: number[];
   }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
