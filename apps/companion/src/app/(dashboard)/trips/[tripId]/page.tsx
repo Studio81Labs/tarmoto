@@ -506,8 +506,15 @@ export default function TripDetailPage() {
             closuresData={closuresData}
             passesData={passesData}
             collaboratorCursors={collabSession.cursors}
-            suggestions={collabSession.suggestions}
+            collaboratorProfiles={collabSession.members}
+            // Suggestions are text-only (collaborate modal); not fed to the map
+            // — they were only ever a dot auto-anchored to the start.
             searchAndPois
+            // Emit the viewer's own cursor here too — without it, anyone on the
+            // read-only preview was visible to no one (they rendered others'
+            // cursors but never broadcast their own), so cursor awareness was
+            // one-directional between the preview and the planner.
+            onCursorMove={collabSession.emitCursor}
             {...(selectedDayNumber != null ? { selectedDayNumber } : {})}
           />
         </div>

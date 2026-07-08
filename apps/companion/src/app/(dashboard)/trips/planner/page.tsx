@@ -2625,7 +2625,10 @@ export default function TripPlannerPage() {
               }
               onRemoveWaypoint={removeWaypointById}
               collaboratorCursors={collabSession.cursors}
-              suggestions={collabSession.suggestions}
+              collaboratorProfiles={collabSession.members}
+              // Suggestions are text-only and live in the collaborate modal;
+              // don't feed them to the map (they were only ever rendered as a
+              // confusing dot auto-anchored to the start waypoint).
               dayBreaks={dayBreakMarkers}
               onMoveDayBreak={handleMoveDayBreak}
               {...(serverTripId

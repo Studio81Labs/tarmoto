@@ -244,6 +244,7 @@ function primeStores(
   useTripCollabSessionMock.mockReturnValue({
     cursors: new Map(),
     presence: new Map(),
+    members: new Map(),
     suggestions: [],
     setSuggestions: vi.fn(),
     suggestionsError: null,
