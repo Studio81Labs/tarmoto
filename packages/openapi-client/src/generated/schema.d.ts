@@ -1334,6 +1334,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips/{tripId}/waypoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename waypoints without re-routing
+         * @description Any trip editor may call this. Updates only the display names of the listed waypoints (matched by id, scoped to the trip) — geometry, order, and type are untouched and the router is NOT run. Persists e.g. a reverse-geocoded pin name on a loaded trip without reshaping its route.
+         */
+        patch: operations["TripsController_updateWaypointNames"];
+        trace?: never;
+    };
     "/api/v1/trips/{tripId}": {
         parameters: {
             query?: never;
@@ -4325,7 +4345,7 @@ export interface components {
         CorridorBodyDto: {
             route: components["schemas"]["CorridorRoutePointDto"][];
             /**
-             * @description Corridor half-width in km (default 2, capped at 10).
+             * @description Corridor half-width in km (default 2, capped at 20).
              * @default 2
              */
             buffer_km: number;
@@ -4377,7 +4397,7 @@ export interface components {
         AlongRoutePoiQueryDto: {
             route: components["schemas"]["RoutePointDto"][];
             /**
-             * @description Buffer in km around the route to consider a POI "on it". Defaults to 2 km, capped at 10 km. Values below the provider precision (0.5 km) silently fall back to the default rather than failing — matches `radius_km` on the point endpoints, which lenient-handles 0 / negative the same way.
+             * @description Buffer in km around the route to consider a POI "on it". Defaults to 2 km, capped at 20 km. Values below the provider precision (0.5 km) silently fall back to the default rather than failing — matches `radius_km` on the point endpoints, which lenient-handles 0 / negative the same way.
              * @default 2
              */
             buffer_km: number;
@@ -4824,6 +4844,19 @@ export interface components {
         SaveRouteDto: {
             days: components["schemas"]["SaveRouteDayDto"][];
             options?: components["schemas"]["RouteOptionsDto"];
+        };
+        WaypointNameDto: {
+            /**
+             * Format: uuid
+             * @description Waypoint to rename.
+             */
+            id: string;
+            /** @description New display name. Omit the field to leave the current name unchanged; send null to clear it back to the default label; send a string to set it. Same length bound as the save-route waypoint name. */
+            name?: string | null;
+        };
+        UpdateWaypointNamesDto: {
+            /** @description Waypoints to rename, matched by id and scoped to the trip. Ids not belonging to the trip are ignored. */
+            waypoints: components["schemas"]["WaypointNameDto"][];
         };
         UpdateTripDto: {
             title?: string;
@@ -6288,6 +6321,8 @@ export type SchemaSaveRouteWaypointDto = components['schemas']['SaveRouteWaypoin
 export type SchemaSaveRouteDayDto = components['schemas']['SaveRouteDayDto'];
 export type SchemaRouteOptionsDto = components['schemas']['RouteOptionsDto'];
 export type SchemaSaveRouteDto = components['schemas']['SaveRouteDto'];
+export type SchemaWaypointNameDto = components['schemas']['WaypointNameDto'];
+export type SchemaUpdateWaypointNamesDto = components['schemas']['UpdateWaypointNamesDto'];
 export type SchemaUpdateTripDto = components['schemas']['UpdateTripDto'];
 export type SchemaGenerateTripDto = components['schemas']['GenerateTripDto'];
 export type SchemaTripGenerationOptionDto = components['schemas']['TripGenerationOptionDto'];
@@ -8555,6 +8590,38 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ImportTripDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripDetailDto"];
+                };
+            };
+            /** @description Trip not found or not visible */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TripsController_updateWaypointNames: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWaypointNamesDto"];
             };
         };
         responses: {

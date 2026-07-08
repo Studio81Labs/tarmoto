@@ -35,6 +35,10 @@ export type InviteTripResponse = JsonResponse<
   202
 >;
 export type SaveRouteBody = JsonRequest<"/api/v1/trips/{tripId}/route", "put">;
+export type UpdateWaypointNamesBody = JsonRequest<
+  "/api/v1/trips/{tripId}/waypoints",
+  "patch"
+>;
 export type TripInvitePreview = JsonResponse<
   "/api/v1/trips/{tripId}/invite/{code}/preview",
   "get",
@@ -132,6 +136,16 @@ export const tripsApi = {
   saveRoute: (tripId: string, body: SaveRouteBody) =>
     openApiData<TripDetailResponse>(
       api.PUT("/api/v1/trips/{tripId}/route", {
+        params: { path: { tripId } },
+        body,
+      }),
+    ),
+  // PATCH /trips/:tripId/waypoints — rename waypoints (matched by id) WITHOUT
+  // re-routing; persists late reverse-geocoded pin names on a loaded trip
+  // without reshaping its route (#911).
+  updateWaypointNames: (tripId: string, body: UpdateWaypointNamesBody) =>
+    openApiData<TripDetailResponse>(
+      api.PATCH("/api/v1/trips/{tripId}/waypoints", {
         params: { path: { tripId } },
         body,
       }),

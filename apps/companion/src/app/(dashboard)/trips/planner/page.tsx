@@ -328,6 +328,7 @@ export default function TripPlannerPage() {
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
   const routeDirty = useTripStore((s) => s.routeDirty);
+  const namesDirty = useTripStore((s) => s.namesDirty);
   const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   const markDayRouteDirty = useTripStore((s) => s.markDayRouteDirty);
@@ -1473,16 +1474,89 @@ export default function TripPlannerPage() {
   // - at least one day is "complete" (has start + end + geometry)
   // - no day is "incomplete" (partial = blocks save until rider fixes it)
   // - no day preview is stale (geometry is current for all days)
-  // - the route has been edited (routeDirty guards no-op saves on loaded trips)
+  // - there are unsaved edits: route geometry (routeDirty) OR waypoint names
+  //   (namesDirty — persisted via the name-only path below, no re-route); both
+  //   guard no-op saves on loaded trips
   const canSaveRoute =
     canWriteRoute &&
     dayStates.some((s) => s === "complete") &&
     !dayStates.some((s) => s === "incomplete") &&
     stalePreviewDays.length === 0 &&
-    routeDirty;
+    (routeDirty || namesDirty);
   const [savingRoute, setSavingRoute] = useState(false);
   const handleSaveRoute = useCallback(async () => {
     if (savingRoute || routing) return;
+
+    // Name-only fast path (#911): when the only unsaved change is waypoint
+    // names (a late/auto reverse-geocoded pin name on a loaded trip), persist
+    // them via PATCH /waypoints so the router does NOT run — the full route
+    // save re-routes and would replace an imported / manually-adjusted route's
+    // geometry. Requires an existing server trip (a fresh draft is always
+    // routeDirty and takes the full save below).
+    const nameState = useTripStore.getState();
+    if (nameState.namesDirty && !nameState.routeDirty) {
+      const trip = nameState.activeTrip ?? activeTripRef.current;
+      const nameTripId = resolveExistingTripId(serverTripId, trip);
+      // Send ONLY the waypoints this client actually renamed — not every
+      // persisted stop. Re-sending an unchanged name would let this save
+      // revert a collaborator's concurrent rename of a different waypoint.
+      const renamedIds = new Set(nameState.renamedWaypointIds);
+      const waypoints = (trip?.days ?? [])
+        .flatMap((d) => d.waypoints)
+        .filter((w) => renamedIds.has(w.id) && UUID_RE.test(w.id))
+        .map((w) => ({ id: w.id, name: w.name ?? null }));
+      // An unsaved GPX/KML import has no server trip and no UUID waypoints to
+      // PATCH — its geometry is the imported track, which saveRoute would
+      // re-route and replace. Persist it (names + geometry) through the import
+      // endpoint instead. Both branches below skip the re-routing PUT.
+      const importedRoutePayload = trip
+        ? buildImportedRoutePayload(trip)
+        : null;
+      let persistNames: (() => Promise<{ data: unknown }>) | null = null;
+      // Whether this persist CREATES a new backend trip (importRoute on an
+      // unsaved import) — if so it must be promoted afterwards, like the
+      // full-save creation path, to wire serverTripId + the ?tripId= URL.
+      let promotesOnCreate = false;
+      if (nameTripId && waypoints.length > 0) {
+        persistNames = () =>
+          tripsApi.updateWaypointNames(nameTripId, { waypoints });
+      } else if (importedRoutePayload) {
+        const payload = importedRoutePayload;
+        if (nameTripId) {
+          persistNames = () =>
+            tripsApi.replaceImportedRoute(nameTripId, payload);
+        } else {
+          promotesOnCreate = true;
+          persistNames = () => tripsApi.importRoute(payload);
+        }
+      }
+      if (persistNames) {
+        setSavingRoute(true);
+        try {
+          const { data } = await persistNames();
+          const hydrated = tripFromDetail(
+            data as unknown as Parameters<typeof tripFromDetail>[0],
+          );
+          setActiveTrip(hydrated);
+          if (promotesOnCreate) {
+            // importRoute created the backend trip — attach collab + push the
+            // ?tripId= URL so a refresh reloads it and role state binds,
+            // mirroring the full-save first-save promotion.
+            handlePromotedToServer(hydrated.id);
+          }
+          toast.success(t("Names saved"));
+        } catch {
+          toast.error(t("Couldn't save the names. Try again."));
+        } finally {
+          setSavingRoute(false);
+        }
+        return;
+      }
+      // No persisted target yet (e.g. a planned draft, whose geometry the
+      // save re-routes idempotently) — fall through to the full save, which
+      // persists the names along with the route.
+    }
+
     // Resolve or lazily create the backend trip. Reuse the same pattern
     // as the existing handleSave so collab/deep-link trips are updated
     // in place rather than duplicated.
