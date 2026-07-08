@@ -275,23 +275,29 @@ describe("TripStopsPanel (revision 5 - route-wide corridor)", () => {
   });
 
   it("widening the corridor pulls in farther stops", async () => {
-    // The fun-zones corridor returns "Svratka esses" (~11 km off this line); the
-    // client-side projection keeps it only once the corridor is wide enough.
-    vi.mocked(fetchFunZonesInCorridor).mockResolvedValue([
-      {
-        id: "fz-svratka",
-        name: "Svratka esses",
-        composite_score: 88,
-        road_count: 6,
-        total_curve_km: 5,
-        avg_quality: 4,
-        best_season: "summer",
-        boundary: [
-          { lat: 49.61, lng: 16.19 },
-          { lat: 49.63, lng: 16.21 },
-        ],
-      },
-    ]);
+    // The server filters fun-zones by corridor width (the client no longer
+    // re-filters by centroid distance, #865 review), so "Svratka esses" only
+    // comes back once the corridor widens to 20 km.
+    vi.mocked(fetchFunZonesInCorridor).mockImplementation(
+      async (_route, bufferKm) =>
+        bufferKm >= 20
+          ? [
+              {
+                id: "fz-svratka",
+                name: "Svratka esses",
+                composite_score: 88,
+                road_count: 6,
+                total_curve_km: 5,
+                avg_quality: 4,
+                best_season: "summer",
+                boundary: [
+                  { lat: 49.61, lng: 16.19 },
+                  { lat: 49.63, lng: 16.21 },
+                ],
+              },
+            ]
+          : [],
+    );
     useTripStore.setState({
       activePoiCategories: new Set(["twisty_highlight"]),
     });

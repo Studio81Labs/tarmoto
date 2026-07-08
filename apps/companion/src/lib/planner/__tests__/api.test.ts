@@ -761,8 +761,8 @@ describe("plannerApi.getPoisByCategories (store path, #849)", () => {
       meta: { twistyScore: 92, lengthKm: 4.1 },
     });
     // Mean of the 4 boundary points (float-safe).
-    expect(zone.lat).toBeCloseTo(49.5, 6);
-    expect(zone.lng).toBeCloseTo(18.3, 6);
+    expect(zone?.lat).toBeCloseTo(49.5, 6);
+    expect(zone?.lng).toBeCloseTo(18.3, 6);
   });
 });
 

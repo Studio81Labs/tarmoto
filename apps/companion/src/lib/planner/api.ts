@@ -409,6 +409,44 @@ async function fetchNonStorePois(
  * along-route distances) for their STOPS position. Replaces `mockRouteStops`
  * for these two.
  */
+/** Project a point Poi (a pass) onto the route into a RouteStop; null on a
+ *  degenerate route. */
+function projectPointStop(
+  poi: Poi,
+  route: { lat: number; lng: number }[],
+): RouteStop | null {
+  const projected = projectOntoRoute(poi, route);
+  return projected ? { ...poi, ...projected } : null;
+}
+
+/**
+ * Position a Fun Zone stop on the route. A zone is a polygon and the backend
+ * already selected it by polygon proximity (ST_DWithin over the whole
+ * boundary), so measure off-route from the NEAREST BOUNDARY point, not the
+ * centroid — a large zone whose centroid sits outside the corridor but whose
+ * edge touches it must stay. The marker keeps the centroid; only the distances
+ * use the boundary. No corridor re-filter here — trust the server's selection.
+ */
+function funZoneStop(
+  zone: FunZoneListItem,
+  route: { lat: number; lng: number }[],
+): RouteStop | null {
+  const poi = funZoneToCategoryPoi(zone);
+  if (!poi) return null;
+  let nearest: { distanceFromRouteKm: number; kmAlongRoute: number } | null =
+    null;
+  for (const point of zone.boundary) {
+    const projected = projectOntoRoute(point, route);
+    if (
+      projected &&
+      (!nearest || projected.distanceFromRouteKm < nearest.distanceFromRouteKm)
+    ) {
+      nearest = projected;
+    }
+  }
+  return nearest ? { ...poi, ...nearest } : null;
+}
+
 async function fetchNonStoreStops(
   route: { lat: number; lng: number }[],
   categories: PoiCategory[],
@@ -417,25 +455,29 @@ async function fetchNonStoreStops(
 ): Promise<RouteStop[]> {
   const wanted = new Set(categories);
   const bufferM = Math.round(corridorKm * 1000);
-  const [passes, zones] = await Promise.all([
+  const [passStops, zoneStops] = await Promise.all([
+    // Passes are points: the server filtered by the point within `buffer_m`, so
+    // re-projecting the same point agrees — keep the corridor guard as defence.
     wanted.has("mountain_pass")
-      ? passesApi
-          .checkRoute({ route, buffer_m: bufferM }, init)
-          .then((res) => res.data.passes.map(passToCategoryPoi))
-      : Promise.resolve<Poi[]>([]),
-    wanted.has("twisty_highlight")
-      ? fetchFunZonesInCorridor(route, corridorKm, init).then((z) =>
-          z.map(funZoneToCategoryPoi).filter((p): p is Poi => p !== null),
+      ? passesApi.checkRoute({ route, buffer_m: bufferM }, init).then((res) =>
+          res.data.passes
+            .map(passToCategoryPoi)
+            .map((poi) => projectPointStop(poi, route))
+            .filter(
+              (s): s is RouteStop =>
+                s !== null && s.distanceFromRouteKm <= corridorKm,
+            ),
         )
-      : Promise.resolve<Poi[]>([]),
+      : Promise.resolve<RouteStop[]>([]),
+    wanted.has("twisty_highlight")
+      ? fetchFunZonesInCorridor(route, corridorKm, init).then((zones) =>
+          zones
+            .map((zone) => funZoneStop(zone, route))
+            .filter((s): s is RouteStop => s !== null),
+        )
+      : Promise.resolve<RouteStop[]>([]),
   ]);
-  const stops: RouteStop[] = [];
-  for (const poi of [...passes, ...zones]) {
-    const projected = projectOntoRoute(poi, route);
-    if (!projected || projected.distanceFromRouteKm > corridorKm) continue;
-    stops.push({ ...poi, ...projected });
-  }
-  return stops;
+  return [...passStops, ...zoneStops];
 }
 
 async function fetchCategoryPois(
