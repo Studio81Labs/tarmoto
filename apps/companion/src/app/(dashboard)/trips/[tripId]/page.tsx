@@ -46,7 +46,14 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { formatDistance, formatDuration } from "@/lib/utils";
-import { Button, Card, Heading, QualityBars, Stamp } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  Heading,
+  QualityBars,
+  Stamp,
+  Tooltip,
+} from "@tarmoto/ui";
 type RightTab = "route" | "inspect" | "conditions";
 interface LoadedTrip {
   detail: TripDetailResponse;
@@ -312,23 +319,24 @@ export default function TripDetailPage() {
           routes; the member count always stays. */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
         <div className="flex min-w-0 items-center gap-3">
-          <Button
-            iconOnly
-            size="sm"
-            variant="secondary"
-            renderLink={({ className, children }) => (
-              <Link
-                href="/trips"
-                aria-label={t("Back to trips")}
-                title={t("Back to trips")}
-                className={className}
-              >
-                {children}
-              </Link>
-            )}
-          >
-            <ArrowLeft size={15} />
-          </Button>
+          <Tooltip content={t("Back to trips")} placement="below">
+            <Button
+              iconOnly
+              size="sm"
+              variant="secondary"
+              renderLink={({ className, children }) => (
+                <Link
+                  href="/trips"
+                  aria-label={t("Back to trips")}
+                  className={className}
+                >
+                  {children}
+                </Link>
+              )}
+            >
+              <ArrowLeft size={15} />
+            </Button>
+          </Tooltip>
           <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
@@ -371,21 +379,22 @@ export default function TripDetailPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <TripExportButton trip={trip} />
-          <Button
-            iconOnly
-            variant="secondary"
-            size="sm"
-            aria-label={t("Fit route")}
-            title={t("Fit route")}
-            onClick={() => {
-              // Fit means the whole route — drop any day focus first so
-              // the dimming matches the framed geometry.
-              setSelectedDayNumber(null);
-              mapRef.current?.fitRoute();
-            }}
-          >
-            <Maximize2 size={15} />
-          </Button>
+          <Tooltip content={t("Fit route")} placement="below">
+            <Button
+              iconOnly
+              variant="secondary"
+              size="sm"
+              aria-label={t("Fit route")}
+              onClick={() => {
+                // Fit means the whole route — drop any day focus first so
+                // the dimming matches the framed geometry.
+                setSelectedDayNumber(null);
+                mapRef.current?.fitRoute();
+              }}
+            >
+              <Maximize2 size={15} />
+            </Button>
+          </Tooltip>
           {isCollaborator && (
             <Button
               variant="secondary"
@@ -443,17 +452,18 @@ export default function TripDetailPage() {
                 aria-hidden="true"
                 className="h-[22px] w-px shrink-0 bg-line"
               />
-              <Button
-                iconOnly
-                variant="danger"
-                size="sm"
-                loading={deleting}
-                aria-label={t("Delete trip")}
-                title={t("Delete trip")}
-                onClick={() => setConfirmDeleteOpen(true)}
-              >
-                <Trash2 size={15} />
-              </Button>
+              <Tooltip content={t("Delete trip")} placement="below">
+                <Button
+                  iconOnly
+                  variant="danger"
+                  size="sm"
+                  loading={deleting}
+                  aria-label={t("Delete trip")}
+                  onClick={() => setConfirmDeleteOpen(true)}
+                >
+                  <Trash2 size={15} />
+                </Button>
+              </Tooltip>
             </>
           )}
         </div>
