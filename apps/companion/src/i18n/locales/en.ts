@@ -214,6 +214,7 @@ export const en = {
   "Data processing consent ": "Data processing consent ",
   "Day ": "Day ",
   "Day-by-day ": "Day-by-day ",
+  Days: "Days",
   "Default ride sharing": "Default ride sharing",
   "Default ride sharing ": "Default ride sharing ",
   "Delete ": "Delete ",
@@ -295,6 +296,8 @@ export const en = {
   "Filters ": "Filters ",
   "Finding the best roads for you ": "Finding the best roads for you ",
   "Folders ": "Folders ",
+  "Focus day": "Focus day",
+  "Focus selected day": "Focus selected day",
   "Followed collections": "Followed collections",
   "Followed collections ": "Followed collections ",
   "Forgot password?": "Forgot password?",
@@ -322,6 +325,7 @@ export const en = {
     "Help us improve Tarmoto with anonymized usage analytics (screen views, feature usage). ",
   "Here's what's happening on your roads.":
     "Here's what's happening on your roads.",
+  "Hide days": "Hide days",
   "Home region ": "Home region ",
   "Hover a highlighted road for ride details ":
     "Hover a highlighted road for ride details ",
@@ -688,6 +692,7 @@ export const en = {
   Segments: "Segments",
   "Segments ": "Segments ",
   "Segments ridden": "Segments ridden",
+  "Select a day to focus": "Select a day to focus",
   "Select review photos": "Select review photos",
   "Send reset link": "Send reset link",
   "Sending...": "Sending...",
@@ -721,6 +726,7 @@ export const en = {
   "Shared via Tarmoto \u00b7": "Shared via Tarmoto \u00b7",
   "Short title (e.g. 'Scenic loop via Passo Giau')":
     "Short title (e.g. 'Scenic loop via Passo Giau')",
+  "Show days": "Show days",
   "Showing most recent 500 rides \u2014 refine filters to narrow the map. ":
     "Showing most recent 500 rides \u2014 refine filters to narrow the map. ",
   "Sign in": "Sign in",

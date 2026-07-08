@@ -153,16 +153,24 @@ export function findPlannerQualitySegment(
   segmentId: string | null,
 ): RouteSegment | null {
   if (!trip || !segmentId) return null;
-  // Coalesced strip/flagged actions target a whole run (id `run:<firstId>`) —
-  // resolve those against the run's combined geometry so a preview/reroute
-  // covers the whole run, not just its first ~100 m span. Map clicks pass fine
-  // segment ids and resolve against the per-segment line.
-  const isRun = segmentId.startsWith("run:");
+  // Coalesced strip/flagged actions target a whole run (id
+  // `run:<first>:<last>`) — resolve those against the run's combined geometry
+  // so a preview/reroute covers the whole run, not just its first ~100 m span.
+  // The whole-route INSPECT view coalesces every day's segments together, so a
+  // run can span a day boundary (`run:d1-s8:d2-s3`); resolve run ids against
+  // all days' segments concatenated in order, since findRunSegment needs both
+  // the first and last id present in one array. Map clicks pass fine
+  // per-segment ids, which resolve day by day.
+  if (segmentId.startsWith("run:")) {
+    return findRunSegment(
+      trip.days.flatMap((day) => deriveDayQualitySegments(day)),
+      segmentId,
+    );
+  }
   for (const day of trip.days) {
-    const segments = deriveDayQualitySegments(day);
-    const match = isRun
-      ? findRunSegment(segments, segmentId)
-      : (segments.find((segment) => segment.id === segmentId) ?? null);
+    const match = deriveDayQualitySegments(day).find(
+      (segment) => segment.id === segmentId,
+    );
     if (match) return match;
   }
   return null;

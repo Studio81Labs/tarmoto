@@ -591,12 +591,15 @@ describe("TripPlannerPage", () => {
     usePassesMock.mockReturnValue(passesData);
   });
 
-  it("fetches planner conditions once and shares the results with the map and sidebar panels", () => {
+  it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
 
     expect(screen.getByTestId("trip-planner-map")).toBeInTheDocument();
-    expect(useClosuresMock).toHaveBeenCalledTimes(1);
-    expect(usePassesMock).toHaveBeenCalledTimes(1);
+    // Two hook instances: whole-route for the map, day-scoped for the sidebar.
+    // With no day selected both request the same routes, so react-query serves
+    // them from a single cache entry (no double fetch).
+    expect(useClosuresMock).toHaveBeenCalledTimes(2);
+    expect(usePassesMock).toHaveBeenCalledTimes(2);
 
     expect(mockedTripPlannerMap).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -628,11 +631,11 @@ describe("TripPlannerPage", () => {
       screen.queryByRole("button", { name: /Day 1/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
-    expect(mockedTripPlannerMap).toHaveBeenCalledWith(
-      expect.objectContaining({
-        selectedDayNumber: 1,
-      }),
-    );
+    // No day is selected before a split, so the map gets no selected day.
+    const mapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
+      | { selectedDayNumber?: number }
+      | undefined;
+    expect(mapProps?.selectedDayNumber).toBeUndefined();
   });
 
   it("passes the live planner parameters into map-click waypoint creation", () => {
@@ -2747,7 +2750,9 @@ describe("TripPlannerPage", () => {
 
     // No day concept anywhere in 'single' mode (revision 2 §A/§B/§C).
     expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Day 1")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Highlight day 1 on the map"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/\d+ days ·/)).not.toBeInTheDocument();
   });
 
@@ -2789,7 +2794,7 @@ describe("TripPlannerPage", () => {
     },
   ];
 
-  it("renders DayPlans in the day column once split", () => {
+  it("renders the shared day cards once split", () => {
     storeState.activeTrip = activeTrip;
     storeState.planningMode = "multiday";
     storeState.splitStatus = "split";
@@ -2797,11 +2802,25 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
-    expect(screen.getByLabelText("Day 2")).toBeInTheDocument();
-    expect(screen.getByText("START → BRNO")).toBeInTheDocument();
+    // One card per split day, using the same preview-style "Day-by-day" card.
     expect(
-      screen.getByText(/No overnight town near this break/),
+      screen.getByLabelText("Highlight day 1 on the map"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Highlight day 2 on the map"),
+    ).toBeInTheDocument();
+    // Unmaterialized split (activeTrip still has one whole-route day): every
+    // card projects from its own DayPlan, so day 1 shows its slice's towns
+    // rather than the shared whole-route day's data.
+    expect(
+      within(screen.getByLabelText("Highlight day 1 on the map")).getByText(
+        /Start → Brno/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Highlight day 2 on the map")).getByText(
+        /Brno → Finish/,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Route changed/)).not.toBeInTheDocument();
     // Split button reads Re-split while split.
@@ -2826,7 +2845,9 @@ describe("TripPlannerPage", () => {
       screen.getByRole("button", { name: "RE-SPLIT" }),
     ).toBeInTheDocument();
     // Days remain visible (dimmed) for orientation.
-    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Highlight day 1 on the map"),
+    ).toBeInTheDocument();
   });
 
   it("shows the day count in the header only after a split", () => {
