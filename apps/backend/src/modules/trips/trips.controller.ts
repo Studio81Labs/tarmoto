@@ -35,7 +35,11 @@ import {
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDto } from './dto/save-route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
-import { TripDetailDto, TripSummaryDto } from './dto/trip-response.dto.js';
+import {
+  TripDetailDto,
+  TripInvitePreviewDto,
+  TripSummaryDto,
+} from './dto/trip-response.dto.js';
 import { GenerateTripDto } from './dto/generate-trip.dto.js';
 import { GenerateTripResponseDto } from './dto/generate-trip-response.dto.js';
 
@@ -219,6 +223,25 @@ export class TripsController {
     @Param('tripId', ParseUUIDPipe) tripId: string,
   ): Promise<void> {
     await this.tripsService.remove(req.user!.userId, tripId);
+  }
+
+  @Get(':tripId/invite/:code/preview')
+  @ApiOperation({
+    summary: 'Masked pre-join preview for an invited rider',
+    description:
+      'Read-only route overview + invite context for a logged-in but ' +
+      'not-yet-member rider, authorized by a live personal invite code (not ' +
+      'membership). Powers the "preview then accept" join screen. Does NOT ' +
+      'consume the invite. 404s when the trip or code is unknown/revoked.',
+  })
+  @ApiResponse({ status: 200, type: TripInvitePreviewDto })
+  @ApiResponse({ status: 404, description: 'Invite not found or revoked' })
+  async getInvitePreview(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('code') code: string,
+  ): Promise<TripInvitePreviewDto> {
+    return this.tripsService.getInvitePreview(req.user!.userId, tripId, code);
   }
 
   @Post(':tripId/join')
