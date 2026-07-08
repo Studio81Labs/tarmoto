@@ -1436,6 +1436,7 @@ describe("plannerApi.getSegmentImagery (#863)", () => {
       error: undefined,
     } as never);
 
+    // Default segment spans [15,49]→[15,49.1] with only two vertices.
     const imagery = await createPlannerApi().getSegmentImagery(segment({}));
 
     expect(imagery).toEqual({
@@ -1443,9 +1444,17 @@ describe("plannerApi.getSegmentImagery (#863)", () => {
       imageCapturedAt: "2024-09-15",
       imageAttribution: "© rider · Mapillary (CC BY-SA)",
     });
-    expect(apiGetMock).toHaveBeenCalledWith("/api/v1/roads/segment-imagery", {
-      params: { query: { lat: 49.1, lng: 15, bearing: 0 } },
-    });
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(apiGetMock.mock.calls[0]![0]).toBe("/api/v1/roads/segment-imagery");
+    const query = (
+      apiGetMock.mock.calls[0]![1] as {
+        params: { query: { lat: number; lng: number; bearing?: number } };
+      }
+    ).params.query;
+    // The DISTANCE midpoint (lat 49.05), not the end vertex (49.1).
+    expect(query.lng).toBeCloseTo(15, 6);
+    expect(query.lat).toBeCloseTo(49.05, 6);
+    expect(query.bearing).toBe(0);
   });
 
   it("resolves to null when there is no coverage", async () => {

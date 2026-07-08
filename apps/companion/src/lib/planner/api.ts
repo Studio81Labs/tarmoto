@@ -34,6 +34,7 @@ import {
   type DraftZone,
 } from "./draft-vias";
 import { nearestPolygonContact, projectOntoRoute } from "./route-projection";
+import { cumulativeKm, pointAtDistanceKm, type LngLat } from "./polyline";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
@@ -789,10 +790,17 @@ async function fetchSegmentImagery(segment: RouteSegment): Promise<{
   capturedAt: string | null;
   attribution: string | null;
 } | null> {
-  const coords = segment.geometry.coordinates;
-  const mid = coords[Math.floor(coords.length / 2)];
-  const [lng, lat] = mid ?? [];
-  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  const coords = segment.geometry.coordinates as LngLat[];
+  if (coords.length === 0) return null;
+  // Interpolate the point at HALF the polyline distance — not the middle
+  // vertex. A long section can be just two vertices, where an index-based
+  // midpoint lands on the segment end and queries the next road (#863 review).
+  const cum = cumulativeKm(coords);
+  const [lng, lat] = pointAtDistanceKm(
+    coords,
+    cum,
+    (cum[cum.length - 1] ?? 0) / 2,
+  );
   const bearing = segmentBearing(segment);
   const { data, error } = await api.GET("/api/v1/roads/segment-imagery", {
     params: {
