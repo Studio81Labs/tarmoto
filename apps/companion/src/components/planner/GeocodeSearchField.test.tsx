@@ -32,7 +32,11 @@ describe("GeocodeSearchField", () => {
     });
     expect(await screen.findByText("Praha")).toBeInTheDocument();
     expect(screen.getByText("Pardubice")).toBeInTheDocument();
-    await waitFor(() => expect(geocodeMock).toHaveBeenCalledWith("pra"));
+    await waitFor(() =>
+      expect(geocodeMock).toHaveBeenCalledWith("pra", {
+        signal: expect.any(AbortSignal),
+      }),
+    );
   });
 
   it("fires onSelect with the picked result and closes the dropdown", async () => {

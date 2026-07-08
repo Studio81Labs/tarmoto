@@ -2970,6 +2970,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/geocode/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Name a coordinate
+         * @description Reverse-geocodes a coordinate to the enclosing place name (town, city, or region), used by the planner to label map-placed pins. Returns { label: null } when the point cannot be named.
+         */
+        get: operations["GeocodeController_reverse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/auth/config": {
         parameters: {
             query?: never;
@@ -5865,6 +5885,10 @@ export interface components {
         GeocodeListDto: {
             results: components["schemas"]["GeocodeResultDto"][];
         };
+        ReverseGeocodeResultDto: {
+            /** @description Concise name of the place the coordinate falls in (town, city, or region), or null when the provider cannot name it (e.g. open sea). */
+            label: string | null;
+        };
         AdminAuthConfigDto: {
             /** @description Whether password login is enabled server-side */
             passwordLoginEnabled: boolean;
@@ -6308,6 +6332,7 @@ export type SchemaCheckRouteDto = components['schemas']['CheckRouteDto'];
 export type SchemaCheckRouteResponseDto = components['schemas']['CheckRouteResponseDto'];
 export type SchemaGeocodeResultDto = components['schemas']['GeocodeResultDto'];
 export type SchemaGeocodeListDto = components['schemas']['GeocodeListDto'];
+export type SchemaReverseGeocodeResultDto = components['schemas']['ReverseGeocodeResultDto'];
 export type SchemaAdminAuthConfigDto = components['schemas']['AdminAuthConfigDto'];
 export type SchemaAdminLoginDto = components['schemas']['AdminLoginDto'];
 export type SchemaAdminUserViewDto = components['schemas']['AdminUserViewDto'];
@@ -11656,6 +11681,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeocodeListDto"];
+                };
+            };
+        };
+    };
+    GeocodeController_reverse: {
+        parameters: {
+            query: {
+                /** @description Latitude in decimal degrees, WGS84. */
+                lat: number;
+                /** @description Longitude in decimal degrees, WGS84. */
+                lng: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReverseGeocodeResultDto"];
                 };
             };
         };
