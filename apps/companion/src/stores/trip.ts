@@ -761,6 +761,36 @@ function overlayRenamedNames(
   };
 }
 
+/**
+ * Carry the current name-dirty state across a route undo/redo: overlay the
+ * current renames onto the restored route, then PRUNE the tracked ids to
+ * waypoints that still exist in it. Undo/redo can drop a waypoint whose rename
+ * was still pending (e.g. a reverse-geocode on a just-added stop) — keeping its
+ * id would leave Save armed with nothing to PATCH, falling through to the
+ * re-routing save on an otherwise unchanged route (#911).
+ */
+function restoreNameStateOntoRoute(
+  restored: Trip | null,
+  current: Trip | null,
+  renamedIds: string[],
+): {
+  activeTrip: Trip | null;
+  renamedWaypointIds: string[];
+  namesDirty: boolean;
+} {
+  const activeTrip = overlayRenamedNames(restored, current, renamedIds);
+  const liveIds = new Set<string>();
+  for (const day of activeTrip?.days ?? []) {
+    for (const w of day.waypoints) liveIds.add(w.id);
+  }
+  const pruned = renamedIds.filter((id) => liveIds.has(id));
+  return {
+    activeTrip,
+    renamedWaypointIds: pruned,
+    namesDirty: pruned.length > 0,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const useTripStore = create<TripState & TripStoreHistory>(
@@ -1348,19 +1378,20 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             stale: state.stalePreviewDays,
           },
         ]);
+        // Names live outside route history: keep the current renames (overlaid
+        // onto the restored route) rather than rolling them back, but prune any
+        // whose waypoint the undo removed.
+        const restoredNames = restoreNameStateOntoRoute(
+          previous.trip,
+          state.activeTrip,
+          state.renamedWaypointIds,
+        );
         return {
-          // Re-apply current renames onto the restored route snapshot — names
-          // live outside route history, so a route undo must keep a rename
-          // that landed after this snapshot instead of rolling it back.
-          activeTrip: overlayRenamedNames(
-            previous.trip,
-            state.activeTrip,
-            state.renamedWaypointIds,
-          ),
+          activeTrip: restoredNames.activeTrip,
+          namesDirty: restoredNames.namesDirty,
+          renamedWaypointIds: restoredNames.renamedWaypointIds,
           // Restore the route dirty flag so undoing back to the loaded route
-          // clears it (re-disabling Save). `namesDirty`/`renamedWaypointIds`
-          // are deliberately NOT restored — they're preserved from current
-          // state so an unsaved rename survives a route undo.
+          // clears it (re-disabling Save).
           routeDirty: previous.dirty,
           // Restore the EXACT stale set captured with this snapshot — not a
           // reconstruction from all routable days, which would over-stale
@@ -1405,15 +1436,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             stale: state.stalePreviewDays,
           },
         ]);
+        // Names are outside route history — carried across redo, pruned to the
+        // restored route's waypoints (see undo).
+        const restoredNames = restoreNameStateOntoRoute(
+          next.trip,
+          state.activeTrip,
+          state.renamedWaypointIds,
+        );
         return {
-          // Re-apply current renames onto the restored route snapshot (see
-          // undo) — names are outside route history and are preserved, not
-          // rolled back, across redo.
-          activeTrip: overlayRenamedNames(
-            next.trip,
-            state.activeTrip,
-            state.renamedWaypointIds,
-          ),
+          activeTrip: restoredNames.activeTrip,
+          namesDirty: restoredNames.namesDirty,
+          renamedWaypointIds: restoredNames.renamedWaypointIds,
           routeDirty: next.dirty,
           // Restore the exact stale set captured with this snapshot (see undo).
           stalePreviewDays: next.stale,
