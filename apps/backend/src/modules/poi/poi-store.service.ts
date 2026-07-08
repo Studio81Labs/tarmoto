@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
@@ -89,7 +89,10 @@ export class PoiStoreService {
         .where(
           'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
           bbox,
-        );
+        )
+        // Never surface bulk-import tombstones (#850): a closed venue must drop
+        // out of the store reads, not just carry a `deactivated_at` stamp.
+        .andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
         qb.andWhere('poi.kind IN (:...kinds)', { kinds });
       }
@@ -105,7 +108,8 @@ export class PoiStoreService {
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
   async findById(id: string): Promise<StoredPoiDto | null> {
     const poi = await withPoiRepo(this.poiDataSource, (repo) =>
-      repo.findOne({ where: { id } }),
+      // `deactivated_at: IsNull()` — a tombstoned (closed) POI reads as gone.
+      repo.findOne({ where: { id, deactivated_at: IsNull() } }),
     );
     return poi ? toStoredPoiDto(poi) : null;
   }
@@ -152,6 +156,8 @@ export class PoiStoreService {
         )`,
         params,
       );
+      // Exclude bulk-import tombstones (#850) from the corridor read too.
+      qb.andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
         qb.andWhere('poi.kind IN (:...kinds)', { kinds });
       }

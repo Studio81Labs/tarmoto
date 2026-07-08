@@ -7,11 +7,21 @@ import type {
   PointOfInterest,
   StoredPoiFields,
 } from '../poi-provider.interface.js';
+import { type AccommodationKind, type PoiKind } from '@tarmoto/shared';
 import {
-  ACCOMMODATION_KINDS,
-  type AccommodationKind,
-  type PoiKind,
-} from '@tarmoto/shared';
+  IMPORT_POI_TAGS,
+  extractStoredPoiFields,
+  parseStarsTag,
+  toAccommodationPoi,
+  toImportedPoi,
+  type OsmPoiElement,
+} from './osm-poi-tags.js';
+
+// The OSM-tag → row mapping now lives in the shared, DB-free `osm-poi-tags`
+// module so the streaming `.osm` extract source (#850) reuses the exact same
+// logic. Re-export the two helpers the provider spec (and any external caller)
+// still imports from here, keeping the provider's public surface stable.
+export { extractStoredPoiFields, parseStarsTag };
 
 interface OverpassElement {
   type: 'node' | 'way' | 'relation';
@@ -26,7 +36,6 @@ interface OverpassResponse {
   elements: OverpassElement[];
 }
 
-const KIND_SET = new Set<string>(ACCOMMODATION_KINDS);
 const OVERPASS_FETCH_TIMEOUT_MS = 10_000;
 /**
  * The offline import (#745) is a full-area, uncapped query (`[timeout:180]`
@@ -36,31 +45,6 @@ const OVERPASS_FETCH_TIMEOUT_MS = 10_000;
  * the server timeout so the server's own limit is the one that fires.
  */
 const OVERPASS_IMPORT_TIMEOUT_MS = 190_000;
-
-/**
- * The §7 storage tag set for the offline import (#745) — a **superset** of
- * the live `POI_KIND_TAGS` that also covers `fast_food`, rest areas, and
- * ice cream. Decoupled from `PoiKind` on purpose: these `kind` strings are
- * written straight to `pois.kind` and must not change the live `/poi`
- * enum. Order matters — the first matching entry wins in
- * `normalizeImportedPoi`, so a dual-tagged element gets a stable category.
- * `highway=rest_area` and `highway=services` both map to `rest_area`.
- */
-const IMPORT_POI_TAGS: ReadonlyArray<{
-  key: string;
-  value: string;
-  kind: string;
-}> = [
-  { key: 'amenity', value: 'restaurant', kind: 'restaurant' },
-  { key: 'amenity', value: 'cafe', kind: 'cafe' },
-  { key: 'amenity', value: 'fast_food', kind: 'fast_food' },
-  { key: 'amenity', value: 'fuel', kind: 'fuel_station' },
-  { key: 'amenity', value: 'ice_cream', kind: 'ice_cream' },
-  { key: 'shop', value: 'ice_cream', kind: 'ice_cream' },
-  { key: 'tourism', value: 'viewpoint', kind: 'viewpoint' },
-  { key: 'highway', value: 'rest_area', kind: 'rest_area' },
-  { key: 'highway', value: 'services', kind: 'rest_area' },
-];
 
 /**
  * Map our `PoiKind` to the OSM tag key + regex of allowed values that
@@ -262,22 +246,8 @@ export class OverpassPoiProvider implements PoiProvider {
 
   /** Map an OSM element to the first §7 import kind whose tag it carries. */
   private normalizeImportedPoi(element: OverpassElement): ImportedPoi | null {
-    const tags = element.tags ?? {};
-    const match = IMPORT_POI_TAGS.find((t) => tags[t.key] === t.value);
-    if (!match) return null;
-    const lat = element.lat ?? element.center?.lat;
-    const lng = element.lon ?? element.center?.lon;
-    if (lat === undefined || lng === undefined) return null;
-    return {
-      external_id: `osm:${element.type}:${element.id}`,
-      name: tags.name ?? tags['name:en'] ?? null,
-      kind: match.kind,
-      lat,
-      lng,
-      website: tags.website ?? tags['contact:website'] ?? null,
-      phone: tags.phone ?? tags['contact:phone'] ?? null,
-      ...extractStoredPoiFields(tags),
-    };
+    const el = toOsmPoiElement(element);
+    return el ? toImportedPoi(el) : null;
   }
 
   async findAccommodationsInBbox(
@@ -352,25 +322,8 @@ export class OverpassPoiProvider implements PoiProvider {
   private normalizeAccommodation(
     element: OverpassElement,
   ): AccommodationPoi | null {
-    const tags = element.tags ?? {};
-    const tourism = tags.tourism;
-    if (!tourism || !KIND_SET.has(tourism)) return null;
-
-    const lat = element.lat ?? element.center?.lat;
-    const lng = element.lon ?? element.center?.lon;
-    if (lat === undefined || lng === undefined) return null;
-
-    return {
-      external_id: `osm:${element.type}:${element.id}`,
-      name: tags.name ?? tags['name:en'] ?? null,
-      kind: tourism as AccommodationKind,
-      lat,
-      lng,
-      website: tags.website ?? tags['contact:website'] ?? null,
-      phone: tags.phone ?? tags['contact:phone'] ?? null,
-      stars: this.parseStars(tags.stars),
-      ...extractStoredPoiFields(tags),
-    };
+    const el = toOsmPoiElement(element);
+    return el ? toAccommodationPoi(el) : null;
   }
 
   private normalizePoi(
@@ -397,10 +350,26 @@ export class OverpassPoiProvider implements PoiProvider {
       ...extractStoredPoiFields(tags),
     };
   }
+}
 
-  private parseStars(raw: string | undefined): number | null {
-    return parseStarsTag(raw);
-  }
+/**
+ * Normalize an Overpass JSON element into the shared {@link OsmPoiElement}
+ * shape the tag → row mapping consumes: resolve the representative point
+ * (`out center` fills `center` for ways/relations) and default the tag bag.
+ * Null when the element carries no usable coordinate, so a malformed element
+ * is dropped exactly as before.
+ */
+function toOsmPoiElement(element: OverpassElement): OsmPoiElement | null {
+  const lat = element.lat ?? element.center?.lat;
+  const lng = element.lon ?? element.center?.lon;
+  if (lat === undefined || lng === undefined) return null;
+  return {
+    osmType: element.type,
+    osmId: element.id,
+    lat,
+    lng,
+    tags: element.tags ?? {},
+  };
 }
 
 /**
@@ -469,106 +438,4 @@ export function extractPoiHint(
   if (!raw) return null;
   const cleaned = raw.replace(/[_;]/g, ' ').replace(/\s+/g, ' ').trim();
   return cleaned || null;
-}
-
-/**
- * Parse an OSM `stars` tag into a whole-star count in 1..5.
- *
- * The tag can carry trailing "S" (superior), fractional values
- * (e.g. "4.5"), or a range (e.g. "4-5"). We capture decimal tokens and
- * range endpoints explicitly — a naive `\d+` split would shatter "4.5"
- * into 4 and 5 and overstate the advertised rating. Pick the highest
- * endpoint, floor it to a whole star, and reject anything outside 1..5
- * so the UI never renders six stars for a "6S" tag.
- */
-export function parseStarsTag(raw: string | undefined | null): number | null {
-  if (!raw) return null;
-  const tokens = raw.match(/\d+(?:\.\d+)?/g);
-  if (!tokens) return null;
-  let max = -Infinity;
-  for (const t of tokens) {
-    const n = Number(t);
-    if (Number.isFinite(n) && n > max) max = n;
-  }
-  if (!Number.isFinite(max)) return null;
-  const floored = Math.floor(max);
-  if (floored < 1 || floored > 5) return null;
-  return floored;
-}
-
-/** Keys kept in the stored raw-tag bag, and the max length of any value —
- * a guard so a pathological element can't bloat the JSONB row. */
-const MAX_TAG_BAG_KEYS = 60;
-const MAX_TAG_VALUE_LEN = 512;
-
-/**
- * Collapse `_`/`;` separators and runs of whitespace; null when empty.
- * Mirrors the `extractPoiHint` normalization so the stored `cuisine`/`brand`
- * columns match what the mobile card renders.
- */
-function normalizeTagText(raw: string | undefined | null): string | null {
-  if (!raw) return null;
-  const cleaned = raw.replace(/[_;]/g, ' ').replace(/\s+/g, ' ').trim();
-  return cleaned || null;
-}
-
-/**
- * Copy an OSM tag map into a stored JSONB bag, bounded so a pathological
- * element can't bloat the row: keys are sorted (deterministic) and capped,
- * and any oversized value is truncated. Null when the element has no tags.
- */
-function boundedTagBag(
-  tags: Record<string, string>,
-): Record<string, string> | null {
-  const keys = Object.keys(tags).sort();
-  if (keys.length === 0) return null;
-  const out: Record<string, string> = {};
-  for (const key of keys.slice(0, MAX_TAG_BAG_KEYS)) {
-    const value = tags[key];
-    if (typeof value !== 'string') continue;
-    out[key] =
-      value.length > MAX_TAG_VALUE_LEN
-        ? value.slice(0, MAX_TAG_VALUE_LEN)
-        : value;
-  }
-  return Object.keys(out).length ? out : null;
-}
-
-/**
- * Extract the decision-support columns (#848) from an OSM element's tags:
- * opening hours, a split address, cuisine/brand, and a bounded raw tag bag.
- * Pure and provider-agnostic so both the POI and accommodation import paths
- * store identical columns. Every field is null when its tag is absent.
- */
-export function extractStoredPoiFields(
-  tags: Record<string, string>,
-): StoredPoiFields {
-  const street = tags['addr:street']?.trim() || null;
-  const housenumber = tags['addr:housenumber']?.trim() || null;
-  // A bare house number with no street is useless on a card, so only build
-  // the line when a street is present; append the number when we have both.
-  const address_street = street
-    ? housenumber
-      ? `${street} ${housenumber}`
-      : street
-    : null;
-  const country = tags['addr:country']?.trim();
-  return {
-    opening_hours: tags.opening_hours?.trim() || null,
-    address_street,
-    address_city:
-      tags['addr:city']?.trim() ||
-      tags['addr:town']?.trim() ||
-      tags['addr:village']?.trim() ||
-      null,
-    address_postcode: tags['addr:postcode']?.trim() || null,
-    // `addr:country` is usually an ISO 3166-1 alpha-2 code; store only a
-    // clean 2-letter value (upper-cased) so the varchar(2) column never
-    // holds a full country name.
-    address_country:
-      country && /^[A-Za-z]{2}$/.test(country) ? country.toUpperCase() : null,
-    cuisine: normalizeTagText(tags.cuisine),
-    brand: normalizeTagText(tags.brand ?? tags.operator),
-    tags: boundedTagBag(tags),
-  };
 }
