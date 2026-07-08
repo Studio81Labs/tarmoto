@@ -1,5 +1,6 @@
 import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
+  api,
   poiApi,
   roadsApi,
   routingApi,
@@ -25,13 +26,7 @@ import {
   MAX_DRAFT_VIAS,
   type DraftZone,
 } from "./draft-vias";
-import {
-  mockGeocode,
-  mockPoisByCategories,
-  mockReverseGeocode,
-  mockRoadPreview,
-  mockRouteStops,
-} from "./mocks";
+import { mockPoisByCategories, mockRoadPreview, mockRouteStops } from "./mocks";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
@@ -39,6 +34,7 @@ import type {
   DraftRoundtripResult,
   FlaggedSection,
   GeneratedPlannerRoute,
+  GeoResult,
   PlannerApi,
   PlannerPoi,
   PlannerPoiType,
@@ -57,10 +53,11 @@ import {
 
 /**
  * The planner's single data seam. Real sources: backend Valhalla routing
- * (`routingApi`), the `/poi/*` endpoints, and per-segment surface quality
- * (`roadsApi.getRouteQuality`, mapped in `./route-quality`). Mock sources
- * (see `./mocks/`): road previews and geocoding. Swapping a mock for its real
- * source only ever touches this file.
+ * (`routingApi`), the `/poi/*` endpoints, per-segment surface quality
+ * (`roadsApi.getRouteQuality`, mapped in `./route-quality`), and geocoding
+ * (`api` → `/api/v1/geocode` + `/geocode/reverse`). Mock sources (see
+ * `./mocks/`): road previews. Swapping a mock for its real source only ever
+ * touches this file.
  */
 
 const SURFACE_TYPE_SET: ReadonlySet<string> = new Set(SURFACE_TYPES);
@@ -589,6 +586,11 @@ export const DRAFT_CORRIDOR_FLAVOR_KM = 25;
 /** Zone candidates worth a measuring routing call while inflating. */
 const DRAFT_CANDIDATE_LIMIT = 5;
 
+/** Fallback label for a pin the geocoder can't name — trimmed coordinates. */
+function coordinateLabel(lat: number, lng: number): string {
+  return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+}
+
 export function createPlannerApi(): PlannerApi {
   return {
     generateRoute(
@@ -752,12 +754,39 @@ export function createPlannerApi(): PlannerApi {
       );
     },
 
-    geocode(query: string) {
-      return Promise.resolve(mockGeocode(query));
+    async geocode(
+      query: string,
+      init?: { signal?: AbortSignal },
+    ): Promise<GeoResult[]> {
+      const q = query.trim();
+      if (q.length < 2) return [];
+      const { data, error } = await api.GET("/api/v1/geocode", {
+        params: { query: { q } },
+        ...(init?.signal ? { signal: init.signal } : {}),
+      });
+      if (error || !data) return [];
+      return data.results.map((r) => ({
+        name: r.label,
+        lat: r.lat,
+        lng: r.lng,
+      }));
     },
 
-    reverseGeocode(lat: number, lng: number) {
-      return Promise.resolve(mockReverseGeocode(lat, lng));
+    async reverseGeocode(
+      lat: number,
+      lng: number,
+      init?: { signal?: AbortSignal },
+    ): Promise<string> {
+      const { data, error } = await api.GET("/api/v1/geocode/reverse", {
+        params: { query: { lat, lng } },
+        ...(init?.signal ? { signal: init.signal } : {}),
+      });
+      // Unnamed point (e.g. open sea) or a soft API error: show the
+      // coordinates rather than a blank name. Hard network/abort errors
+      // reject and are left to the caller — both pin-naming call sites
+      // already keep their default label on failure.
+      if (error || !data?.label) return coordinateLabel(lat, lng);
+      return data.label;
     },
 
     async draftRoundtrip(

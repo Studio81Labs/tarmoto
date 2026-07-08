@@ -8,6 +8,7 @@ import {
   GeocodeListDto,
   GeocodeResultDto,
   MAX_GEOCODE_RESULTS,
+  ReverseGeocodeResultDto,
 } from './dto/geocode.dto.js';
 
 @Injectable()
@@ -57,6 +58,21 @@ export class GeocodeService {
       }));
 
     return { results };
+  }
+
+  async reverse(lat: number, lng: number): Promise<ReverseGeocodeResultDto> {
+    let result: Awaited<ReturnType<GeocodeProvider['reverse']>>;
+    try {
+      result = await this.provider.reverse(lat, lng);
+    } catch (err) {
+      // Pin naming must degrade gracefully: the companion falls back to
+      // showing the coordinates. Log only the error class — a coordinate
+      // can reveal rider intent, so keep it out of the log line.
+      const errName = err instanceof Error ? err.name : 'unknown';
+      this.logger.warn(`Reverse geocoder failed (${errName})`);
+      return { label: null };
+    }
+    return { label: result?.label ?? null };
   }
 
   private clampLimit(input: number | undefined): number {
