@@ -117,9 +117,48 @@ This design allows POI data maintenance (migrations, backups, maintenance window
 
 ### Populating the POI store
 
-The POI store starts empty; store read endpoints return an empty result (not an error) for regions that have not been imported yet. Two ways to fill it:
+The POI store starts empty; store read endpoints return an empty result (not an error) for regions that have not been imported yet. The store is filled from **per-country Geofabrik `.osm` extracts** (produced with `osmium tags-filter` — see [Producing per-country POI extracts](#producing-per-country-poi-extracts)), **not** a live Overpass bbox: bulk extracts scale to the full 17-country coverage list without hitting the Overpass public-API limits. Overpass stays the live read-path fallback (`poi.service`), never the bulk importer. Two ways to fill the store:
 
-- **On demand:** `pnpm poi:import` runs the OSM/Overpass import once against the configured bbox (default: the CZ/Beskydy launch box; override with `TARMOTO_POI_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"`). It writes to the POI database and bypasses the scheduled-import gate.
-- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor) runs on the process where `TARMOTO_QUEUE_WORKER_ENABLED=true` — the dedicated worker process in a split API/worker deployment, **not** the API. Set `TARMOTO_POI_IMPORT_ENABLED=true` (and optionally `TARMOTO_POI_IMPORT_BBOX`) **there**; setting it only on the API app has no effect. That worker process also needs `TARMOTO_POI_DATABASE_*` (it writes the import to the POI DB). Leave `TARMOTO_POI_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a full-area Overpass fetch.
+- **On demand:** `pnpm poi:import` runs the import once over the configured regions (`TARMOTO_POI_IMPORT_REGIONS`, default all 17) from the extracts in `TARMOTO_POI_IMPORT_DIR`. It writes to the POI database and bypasses the `TARMOTO_POI_IMPORT_ENABLED` gate, so a one-off run doesn't need the flag flipped.
+- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor, `poi.import` queue, Sunday 03:00 UTC) runs on the process where `TARMOTO_QUEUE_WORKER_ENABLED=true` — the dedicated worker process in a split API/worker deployment, **not** the API. Set `TARMOTO_POI_IMPORT_ENABLED=true`, `TARMOTO_POI_IMPORT_DIR`, and (optionally) `TARMOTO_POI_IMPORT_REGIONS` **there**; setting them only on the API app has no effect. That worker process also needs `TARMOTO_POI_DATABASE_*` (it writes to the POI DB). Leave `TARMOTO_POI_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a continent-scale import.
 
-Overpass is a shared public API — keep imports region-scoped. Continent-scale coverage is a separate bulk-extract path (Geofabrik/osmium), not Overpass.
+Both paths read the per-region `.osm` files an operator prepares out-of-band; produce them first.
+
+### Producing per-country POI extracts
+
+The bulk POI import reads one `.osm` XML file per active region from `TARMOTO_POI_IMPORT_DIR`, named `<code>.osm` (lower-case ISO 3166-1 alpha-2, e.g. `cz.osm`). An operator prepares each file once per refresh from the country's Geofabrik download, mirroring the roads OSM importer's prep (`../../apps/backend/src/modules/roads/osm-import/README.md`). The importer reads `.osm` XML, not `.osm.pbf` directly — the maintained JS PBF parsers are stale; osmium decodes PBF far better.
+
+Per country:
+
+1. **Download** the Geofabrik per-country `<country>-latest.osm.pbf`.
+2. **`osmium tags-filter`** down to the §7 POI tag set (fuel, food incl. `fast_food`, accommodation, viewpoints, rest areas, ice cream) — a small fraction of the country file.
+3. **`osmium extract -b`** to the region's **authoritative bbox** from `DEFAULT_REGIONS` (`../../apps/backend/src/modules/poi/poi-import.config.ts`), writing `.osm` XML.
+4. **Place** the result in `TARMOTO_POI_IMPORT_DIR` as `<code>.osm`.
+
+The clip bbox MUST equal the region's `DEFAULT_REGIONS` bbox, because that same bbox bounds **stale-by-absence tombstoning**: a re-import soft-deactivates (`deactivated_at`, an UPDATE never a DELETE) rows _inside_ the region bbox that are absent from the new extract (closed venues), and never touches rows outside it. An extract clipped to less than its region bbox would wrongly tombstone the in-bbox rows it failed to cover. `osmium extract -b` keeps every complete object crossing the box (it doesn't cut geometries); the importer constrains generated rows to the same bbox, so edge overhang reconciles only where it belongs — the extract just has to COVER the region. (Coordinate order: `osmium extract -b` takes `minLng,minLat,maxLng,maxLat`, the reverse of Overpass's `south,west,north,east`.)
+
+**Worked example — Czech Republic (`CZ`, the launch region):**
+
+```bash
+# 1. Geofabrik per-country extract
+curl -L -o cz-latest.osm.pbf \
+  https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+
+# 2. Filter to the §7 POI tag set (nodes, ways + relations — hotels,
+#    campsites, rest areas are often mapped as areas, not just points)
+osmium tags-filter cz-latest.osm.pbf \
+  nwr/amenity=fuel,restaurant,cafe,fast_food,ice_cream \
+  nwr/tourism=hotel,guest_house,motel,hostel,chalet,apartment,camp_site,viewpoint \
+  nwr/highway=rest_area,services \
+  nwr/shop=ice_cream \
+  -o cz-poi.osm.pbf
+
+# 3. Clip to CZ's authoritative bbox from DEFAULT_REGIONS
+#    (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06) and write .osm XML
+osmium extract -b 12.09,48.55,18.86,51.06 cz-poi.osm.pbf \
+  -o "$TARMOTO_POI_IMPORT_DIR/cz.osm"
+```
+
+Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` bbox. Then enable the import on the worker process: `TARMOTO_POI_IMPORT_ENABLED=true`, point `TARMOTO_POI_IMPORT_DIR` at the folder of `.osm` files, and narrow coverage with `TARMOTO_POI_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17.
+
+**Validate volume + runtime before enabling all regions in production (#850 acceptance criterion).** Region-wide the filtered set is low millions of rows; `pois` is GiST-indexed on `geom` and GIN-indexed on `tags` (plus the `(source, external_id)` unique and `(address_country, kind)` browse index), so store reads stay bounded — but the import's fetch/upsert cost and the worker's memory/runtime scale with coverage. Bring regions online **incrementally**: validate per-country row counts and a full-run wall-clock on staging before flipping all 17 on in production at once.
