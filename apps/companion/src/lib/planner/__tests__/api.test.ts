@@ -1,5 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { poiApi, routingApi, usersApi, type RouteResponse } from "@/lib/api";
+import { haversineKm } from "@tarmoto/shared";
+import {
+  poiApi,
+  roadsApi,
+  routingApi,
+  usersApi,
+  type RouteResponse,
+} from "@/lib/api";
 import { fetchFunZonesInBbox } from "@/lib/discover";
 import {
   createPlannerApi,
@@ -10,12 +17,14 @@ import type { RouteSegment } from "../types";
 
 vi.mock("@/lib/api", () => ({
   routingApi: { route: vi.fn() },
+  roadsApi: { getRouteQuality: vi.fn() },
   poiApi: { getAlongRoute: vi.fn(), getAccommodations: vi.fn() },
   usersApi: { getMe: vi.fn(), updateMe: vi.fn() },
 }));
 vi.mock("@/lib/discover", () => ({ fetchFunZonesInBbox: vi.fn() }));
 
 const routeMock = vi.mocked(routingApi.route);
+const routeQualityMock = vi.mocked(roadsApi.getRouteQuality);
 const alongRouteMock = vi.mocked(poiApi.getAlongRoute);
 const accommodationsMock = vi.mocked(poiApi.getAccommodations);
 const getMeMock = vi.mocked(usersApi.getMe);
@@ -94,16 +103,56 @@ describe("deriveFlaggedSections", () => {
     ];
     expect(deriveFlaggedSections(segments)).toEqual([
       {
-        segmentId: "d1-s1",
+        segmentId: "run:d1-s1:d1-s1",
         kind: "rough",
         lengthKm: 4.2,
         label: "Rough · gravel, 4.2 km",
       },
       {
-        segmentId: "d1-s2",
+        segmentId: "run:d1-s2:d1-s2",
         kind: "no_data",
         lengthKm: 3.1,
         label: "No data yet · 3.1 km",
+      },
+    ]);
+  });
+
+  it("coalesces adjacent same-band segments into a single card", () => {
+    // A long rough/uncovered stretch arrives as many ~100 m segments; the
+    // flagged list must merge them, not render one card each.
+    const segments = [
+      segment({ id: "d1-s0", band: "good" }),
+      segment({ id: "d1-s1", band: "rough", surface: "gravel", lengthKm: 2 }),
+      segment({ id: "d1-s2", band: "rough", surface: "dirt", lengthKm: 3 }),
+      segment({
+        id: "d1-s3",
+        band: "no_data",
+        surface: "unknown",
+        score: null,
+        passes: 0,
+        lengthKm: 1.5,
+      }),
+      segment({
+        id: "d1-s4",
+        band: "no_data",
+        surface: "unknown",
+        score: null,
+        passes: 0,
+        lengthKm: 1.5,
+      }),
+    ];
+    expect(deriveFlaggedSections(segments)).toEqual([
+      {
+        segmentId: "run:d1-s1:d1-s2",
+        kind: "rough",
+        lengthKm: 5,
+        label: "Rough · gravel, 5 km",
+      },
+      {
+        segmentId: "run:d1-s3:d1-s4",
+        kind: "no_data",
+        lengthKm: 3,
+        label: "No data yet · 3 km",
       },
     ]);
   });
@@ -131,7 +180,7 @@ describe("plannerApi.generateRoute", () => {
     surface_mix: { asphalt: 100_000, gravel: 22_100 },
   };
 
-  it("routes for real, then joins mock per-segment quality", async () => {
+  it("routes for real and applies the geometry-only no_data baseline", async () => {
     routeMock.mockResolvedValue({ data: rawResponse });
     const api = createPlannerApi();
 
@@ -157,6 +206,10 @@ describe("plannerApi.generateRoute", () => {
     expect(result.raw).toBe(rawResponse);
     expect(result.segments.length).toBeGreaterThanOrEqual(2);
     expect(result.segments.every((s) => s.dayNumber === 2)).toBe(true);
+    // Real per-segment quality is fetched separately (getRouteQuality); the
+    // generateRoute baseline carries none — every segment is no_data.
+    expect(result.segments.every((s) => s.band === "no_data")).toBe(true);
+    expect(result.segments.every((s) => s.score === null)).toBe(true);
     expect(result.summary.distanceKm).toBe(122.1);
     expect(result.summary.timeMin).toBe(96);
     expect(result.summary.score).toBe(3.8);
@@ -164,10 +217,13 @@ describe("plannerApi.generateRoute", () => {
       { surface: "asphalt", pct: 82 },
       { surface: "gravel", pct: 18 },
     ]);
-    // Flagged sections reference real segment ids.
+    // Flagged sections reference coalesced runs (id `run:<first>:<last>`); the
+    // first segment of the range is a real segment.
     const ids = new Set(result.segments.map((s) => s.id));
     for (const flag of result.summary.flagged) {
-      expect(ids.has(flag.segmentId)).toBe(true);
+      expect(ids.has(flag.segmentId.replace(/^run:/, "").split(":")[0]!)).toBe(
+        true,
+      );
     }
   });
 
@@ -218,6 +274,190 @@ describe("plannerApi.generateRoute", () => {
         undefined,
       ),
     ).rejects.toThrow("routing down");
+  });
+});
+
+describe("plannerApi.getRouteQuality (#862)", () => {
+  const points = [
+    { lat: 49, lng: 16 },
+    { lat: 49.1, lng: 16.1 },
+  ];
+
+  beforeEach(() => {
+    routeQualityMock.mockReset();
+  });
+
+  it("requests quality for the polyline and maps the spans onto it", async () => {
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4.2,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 12,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(points, 2);
+
+    expect(routeQualityMock).toHaveBeenCalledWith({ geometry: points }, {});
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      band: "good",
+      surface: "asphalt",
+      score: 4.2,
+      passes: 12,
+      dayNumber: 2,
+    });
+  });
+
+  it("threads an abort signal through to the client", async () => {
+    routeQualityMock.mockResolvedValue({ data: { segments: [] } });
+    const controller = new AbortController();
+
+    await createPlannerApi().getRouteQuality(points, 1, {
+      signal: controller.signal,
+    });
+
+    expect(routeQualityMock).toHaveBeenCalledWith(expect.anything(), {
+      signal: controller.signal,
+    });
+  });
+
+  it("returns no_data segments when the route isn't covered", async () => {
+    routeQualityMock.mockResolvedValue({ data: { segments: [] } });
+
+    const segments = await createPlannerApi().getRouteQuality(points, 1);
+
+    expect(segments.length).toBeGreaterThanOrEqual(1);
+    expect(
+      segments.every(
+        (s) =>
+          s.band === "no_data" && s.surface === "unknown" && s.score === null,
+      ),
+    ).toBe(true);
+  });
+
+  it("chunks a route over the backend length limit and remaps fractions", async () => {
+    // ~668 km along the equator exceeds MAX_ROUTE_QUALITY_REQUEST_KM (480 km),
+    // so the request is split; each chunk reports full coverage, and remapping
+    // must tile the whole route as real quality (not a swallowed 400).
+    const longPoints = Array.from({ length: 61 }, (_, i) => ({
+      lat: 0,
+      lng: i * 0.1,
+    }));
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 5,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(longPoints, 1);
+
+    // Split into more than one request, each shorter than the full route.
+    expect(routeQualityMock.mock.calls.length).toBeGreaterThan(1);
+    const firstBody = routeQualityMock.mock.calls[0]![0] as {
+      geometry: unknown[];
+    };
+    expect(firstBody.geometry.length).toBeLessThan(longPoints.length);
+    // Whole route rendered as real quality — no undercovered no_data gap.
+    expect(segments.every((s) => s.band === "good")).toBe(true);
+  });
+
+  it("splits an over-long single edge with interpolated cut points", async () => {
+    // Two points ~1335 km apart (a sparse imported GPX line): the single edge
+    // exceeds the limit, so cut points must be interpolated inside it rather
+    // than only at existing vertices — otherwise the request 400s and the route
+    // stays no_data.
+    const sparse = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 12 },
+    ];
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 5,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(sparse, 1);
+
+    // The single edge is densified + chunked into multiple within-limit requests.
+    expect(routeQualityMock.mock.calls.length).toBeGreaterThan(1);
+    for (const call of routeQualityMock.mock.calls) {
+      const body = call[0] as { geometry: { lat: number; lng: number }[] };
+      const geometry = body.geometry;
+      const lengthKm = haversineKm(
+        geometry[0]!.lat,
+        geometry[0]!.lng,
+        geometry.at(-1)!.lat,
+        geometry.at(-1)!.lng,
+      );
+      expect(lengthKm).toBeLessThanOrEqual(500);
+    }
+    expect(segments.every((s) => s.band === "good")).toBe(true);
+  });
+
+  it("chunks a dense route by vertex count when under the length limit", async () => {
+    // ~100 km but >20 000 vertices: under the length limit yet over the DTO's
+    // point cap, so it must still be split by vertex count.
+    const dense = Array.from({ length: 20001 }, (_, i) => ({
+      lat: 0,
+      lng: (i / 20000) * 0.9,
+    }));
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 5,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+
+    const segments = await createPlannerApi().getRouteQuality(dense, 1);
+
+    expect(routeQualityMock.mock.calls.length).toBeGreaterThan(1);
+    for (const call of routeQualityMock.mock.calls) {
+      const body = call[0] as { geometry: unknown[] };
+      expect(body.geometry.length).toBeLessThanOrEqual(20000);
+    }
+    expect(segments.every((s) => s.band === "good")).toBe(true);
   });
 });
 

@@ -1,8 +1,11 @@
-import type { RoutePreviewSegment, Trip } from "@/lib/types";
+import type * as GeoJSON from "geojson";
+import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
+import type { RouteSegment } from "@/lib/planner/types";
 import {
   buildPlannerQualityRouteCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
+  deriveDayQualitySegments,
   findPlannerQualitySegment,
   getTripPlannerBounds,
   plannerRouteLineColor,
@@ -254,6 +257,75 @@ describe("buildPlannerQualityRouteCollection", () => {
   });
 });
 
+describe("deriveDayQualitySegments (#862)", () => {
+  const routedGeometry: GeoJSON.LineString = {
+    type: "LineString",
+    coordinates: [
+      [14.2, 49.4],
+      [14.6, 49.42],
+      [15.0, 49.41],
+    ],
+  };
+  const stored: RouteSegment[] = [
+    {
+      id: "d1-s0",
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [14.2, 49.4],
+          [15.0, 49.41],
+        ],
+      },
+      band: "good",
+      surface: "asphalt",
+      score: 4.2,
+      passes: 12,
+      lengthKm: 30,
+      dayNumber: 1,
+    },
+  ];
+  function dayWith(overrides: Partial<TripDay>): TripDay {
+    return {
+      dayNumber: 1,
+      waypoints: [
+        { id: "s", type: "start", location: { lng: 14.2, lat: 49.4 } },
+        { id: "e", type: "end", location: { lng: 15.0, lat: 49.41 } },
+      ],
+      routeGeometry: routedGeometry,
+      distanceKm: 30,
+      durationMinutes: 40,
+      elevationGain: 100,
+      avgQuality: 4,
+      ...overrides,
+    };
+  }
+
+  it("returns stored quality while the day still has its routed line", () => {
+    expect(deriveDayQualitySegments(dayWith({ qualitySegments: stored }))).toBe(
+      stored,
+    );
+  });
+
+  it("falls back to the no_data baseline when no quality is stored", () => {
+    const segments = deriveDayQualitySegments(dayWith({}));
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments.every((s) => s.band === "no_data")).toBe(true);
+  });
+
+  it("ignores stored quality once the route geometry is gone", () => {
+    // updatePlannerDayRoute drops routeGeometry when a day becomes unroutable;
+    // stored quality must not keep drawing a line the route no longer has.
+    const day = dayWith({
+      qualitySegments: stored,
+      routeGeometry: undefined,
+      waypoints: [
+        { id: "s", type: "start", location: { lng: 14.2, lat: 49.4 } },
+      ],
+    });
+    expect(deriveDayQualitySegments(day)).toEqual([]);
+  });
+});
+
 describe("findPlannerQualitySegment / plannerSegmentBounds", () => {
   it("resolves a segment id from the collection back to its segment", () => {
     const collection = buildPlannerQualityRouteCollection(trip());
@@ -269,6 +341,71 @@ describe("findPlannerQualitySegment / plannerSegmentBounds", () => {
     expect(findPlannerQualitySegment(trip(), "d9-s9")).toBeNull();
     expect(findPlannerQualitySegment(null, "d1-s0")).toBeNull();
     expect(findPlannerQualitySegment(trip(), null)).toBeNull();
+  });
+
+  it("resolves a run id to the whole run's combined geometry (#862)", () => {
+    const roughSeg = (
+      id: string,
+      coords: [number, number][],
+    ): RouteSegment => ({
+      id,
+      geometry: { type: "LineString", coordinates: coords },
+      band: "rough",
+      surface: "gravel",
+      score: 2,
+      passes: 3,
+      lengthKm: 5,
+      dayNumber: 1,
+    });
+    const runTrip = trip({
+      num_days: 1,
+      days: [
+        {
+          dayNumber: 1,
+          title: "Rough run",
+          distanceKm: 10,
+          durationMinutes: 20,
+          elevationGain: 0,
+          avgQuality: 2,
+          waypoints: [],
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 0],
+              [1, 0],
+              [2, 0],
+            ],
+          },
+          qualitySegments: [
+            roughSeg("d1-s0", [
+              [0, 0],
+              [1, 0],
+            ]),
+            roughSeg("d1-s1", [
+              [1, 0],
+              [2, 0],
+            ]),
+          ],
+        },
+      ],
+    });
+
+    // The coalesced run spans both spans: combined geometry + summed length,
+    // so a flagged-card reroute/preview covers the whole run.
+    const run = findPlannerQualitySegment(runTrip, "run:d1-s0:d1-s1")!;
+    expect(run.lengthKm).toBe(10);
+    expect(run.geometry.coordinates).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+    ]);
+    // A fine segment id still resolves to just that span (map clicks).
+    const fine = findPlannerQualitySegment(runTrip, "d1-s0")!;
+    expect(fine.lengthKm).toBe(5);
+    expect(fine.geometry.coordinates).toEqual([
+      [0, 0],
+      [1, 0],
+    ]);
   });
 
   it("computes a bounding box that contains the segment", () => {

@@ -25,6 +25,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
+import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import {
   TripPlannerMap,
@@ -51,6 +52,12 @@ interface LoadedTrip {
   detail: TripDetailResponse;
   members: TripDetailMember[];
 }
+
+// Persisted trips carry a UUID id; in-memory planner drafts are `planner-*` /
+// `imported-*`. Used to avoid clobbering an unsaved draft in the shared store.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function TripDetailPage() {
   const { tripId } = useParams<{
     tripId: string;
@@ -73,6 +80,8 @@ export default function TripDetailPage() {
     (s) => s.selectedPlannerSegmentId,
   );
   const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
+  const activeTrip = useTripStore((s) => s.activeTrip);
+  const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
   // INSPECT card → map: same select + fly interaction as the planner.
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
@@ -145,12 +154,35 @@ export default function TripDetailPage() {
   // Activate the trip in the store so the map's store-driven overlays
   // (quality segments, segment focus) resolve against this trip. Reset
   // on unmount so navigating to the planner doesn't inherit stale state.
+  // The planner keeps an unsaved draft (`planner-*`/`imported-*`) as the shared
+  // activeTrip across navigation; overwriting + clearing it here would destroy
+  // the rider's working state just for viewing a saved trip. Stash a
+  // non-persisted previous trip once and restore it on unmount instead of
+  // clobbering the planner store (a lingering persisted UUID trip is still
+  // cleared, matching prior behaviour).
+  const stashedDraftRef = useRef<
+    ReturnType<typeof tripFromDetail> | null | undefined
+  >(undefined);
+  // Capture the unsaved draft present before this view activates (once, on the
+  // first render — activeTrip is still the planner's working state here). null
+  // means there was no draft to preserve.
+  if (stashedDraftRef.current === undefined) {
+    stashedDraftRef.current =
+      activeTrip && !UUID_RE.test(activeTrip.id) ? activeTrip : null;
+  }
   useEffect(() => {
     setActiveTrip(trip);
     return () => {
-      setActiveTrip(null);
+      setActiveTrip(stashedDraftRef.current ?? null);
     };
   }, [trip, setActiveTrip]);
+  // Hydrate real per-segment quality for this saved trip's routed days (#862),
+  // the same way the planner does, so a covered trip shows real surface quality
+  // instead of the no_data baseline. Runs once this trip is the active store
+  // trip (set above); the map/Inspect render from that hydrated copy.
+  const storeTrip = activeTrip?.id === trip?.id ? activeTrip : null;
+  const displayedTrip = storeTrip ?? trip;
+  useRouteQualityHydration(storeTrip, applyRouteQuality);
   useEffect(() => {
     if (!tripId) return;
     // Gate on the auth store carrying a token — without this the fetch
@@ -469,7 +501,7 @@ export default function TripDetailPage() {
         <div className="relative flex-1 bg-cream">
           <TripPlannerMap
             ref={mapRef}
-            trip={trip}
+            trip={displayedTrip}
             month={travelMonth}
             closuresData={closuresData}
             passesData={passesData}
@@ -573,10 +605,10 @@ export default function TripDetailPage() {
                     no onRerouteSegment, so flagged cards offer INSPECT. */}
                 <InspectTab
                   day={
-                    trip.days[
+                    (displayedTrip ?? trip).days[
                       Math.min(
                         inspectDayIndex,
-                        Math.max(0, trip.days.length - 1),
+                        Math.max(0, (displayedTrip ?? trip).days.length - 1),
                       )
                     ] ?? null
                   }

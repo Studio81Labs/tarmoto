@@ -13,6 +13,17 @@ export type UpsertRoadReviewInput = JsonRequest<
   "post"
 >;
 
+// ── Route quality overlay (planner, #862) ──
+
+export type RouteQualityRequest = JsonRequest<
+  "/api/v1/roads/route-quality",
+  "post"
+>;
+export type RouteQualityResponse =
+  components["schemas"]["RouteQualityResponseDto"];
+export type RouteQualitySegment =
+  components["schemas"]["RouteQualitySegmentDto"];
+
 // ── Road segment detail ──
 
 export type RoadSegmentDetailResponse =
@@ -29,6 +40,19 @@ export const roadsApi = {
     openApiData<RoadSegmentDetailResponse>(
       api.GET("/api/v1/roads/{segmentId}", {
         params: { path: { segmentId } },
+        ...reqSignal(init),
+      }),
+    ),
+  /**
+   * Per-segment surface quality for a routed polyline (planner overlay).
+   * Returns quality spans ordered along the route, or an empty list when no
+   * imported segments cover the route (caller renders the whole line as
+   * "no data").
+   */
+  getRouteQuality: (data: RouteQualityRequest, init?: RequestInit) =>
+    openApiData<RouteQualityResponse>(
+      api.POST("/api/v1/roads/route-quality", {
+        body: data,
         ...reqSignal(init),
       }),
     ),

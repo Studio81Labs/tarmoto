@@ -1,8 +1,15 @@
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
-import { haversineKm } from "@tarmoto/shared";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import { deriveQualitySegments } from "@/lib/planner/derive";
-import { QUALITY_BAND_COLORS } from "@/lib/planner/quality-bands";
+import {
+  clampUnit,
+  cumulativeKm,
+  slicePolylineByDistanceKm,
+} from "@/lib/planner/polyline";
+import {
+  findRunSegment,
+  QUALITY_BAND_COLORS,
+} from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 
@@ -96,6 +103,20 @@ export function buildPlannerQualityRouteCollection(
  * — the map collection, the Inspect strip, and segment lookups always agree.
  */
 export function deriveDayQualitySegments(day: TripDay): RouteSegment[] {
+  // Prefer real per-segment quality fetched for this day's committed line
+  // (#862) — but only while the day still has that routed line. Any geometry
+  // change clears the stored quality at the source; requiring current geometry
+  // here also guards against a route that became unroutable (routeGeometry
+  // dropped) so the map can't keep drawing quality for a line that's gone.
+  // Falls back to the geometry-only `no_data` baseline otherwise.
+  if (
+    day.routeGeometry &&
+    day.routeGeometry.coordinates.length >= 2 &&
+    day.qualitySegments &&
+    day.qualitySegments.length > 0
+  ) {
+    return day.qualitySegments;
+  }
   const coordinates = getDayRouteCoordinates(day);
   if (coordinates.length < 2) return [];
   const points = coordinates.map(([lng, lat]) => ({ lat, lng }));
@@ -132,10 +153,16 @@ export function findPlannerQualitySegment(
   segmentId: string | null,
 ): RouteSegment | null {
   if (!trip || !segmentId) return null;
+  // Coalesced strip/flagged actions target a whole run (id `run:<firstId>`) —
+  // resolve those against the run's combined geometry so a preview/reroute
+  // covers the whole run, not just its first ~100 m span. Map clicks pass fine
+  // segment ids and resolve against the per-segment line.
+  const isRun = segmentId.startsWith("run:");
   for (const day of trip.days) {
-    const match = deriveDayQualitySegments(day).find(
-      (segment) => segment.id === segmentId,
-    );
+    const segments = deriveDayQualitySegments(day);
+    const match = isRun
+      ? findRunSegment(segments, segmentId)
+      : (segments.find((segment) => segment.id === segmentId) ?? null);
     if (match) return match;
   }
   return null;
@@ -326,15 +353,7 @@ function sliceDayCoordinatesForSegment(
   );
   if (segmentIndex < 0) return [];
 
-  const cumLengthsKm: number[] = [0];
-  for (let index = 1; index < dayCoordinates.length; index++) {
-    const previous = dayCoordinates[index - 1]!;
-    const current = dayCoordinates[index]!;
-    cumLengthsKm.push(
-      cumLengthsKm[index - 1]! +
-        haversineKm(previous[1], previous[0], current[1], current[0]),
-    );
-  }
+  const cumLengthsKm = cumulativeKm(dayCoordinates);
   const totalPolylineKm = cumLengthsKm[cumLengthsKm.length - 1]!;
   if (totalPolylineKm <= 0) return [];
 
@@ -367,77 +386,12 @@ function sliceDayCoordinatesForSegment(
 
   const startKm = startFraction * totalPolylineKm;
   const endKm = endFraction * totalPolylineKm;
-  return slicePolylineByDistance(dayCoordinates, cumLengthsKm, startKm, endKm);
-}
-
-function slicePolylineByDistance(
-  coordinates: [number, number][],
-  cumLengthsKm: number[],
-  startKm: number,
-  endKm: number,
-): [number, number][] {
-  if (endKm <= startKm) return [];
-  const totalKm = cumLengthsKm[cumLengthsKm.length - 1]!;
-  if (totalKm <= 0) return [];
-  const clampedStart = Math.max(0, startKm);
-  const clampedEnd = Math.min(totalKm, endKm);
-  if (clampedEnd <= clampedStart) return [];
-
-  const result: [number, number][] = [];
-  result.push(pointAtDistance(coordinates, cumLengthsKm, clampedStart));
-  for (let index = 0; index < cumLengthsKm.length; index++) {
-    const km = cumLengthsKm[index]!;
-    if (km > clampedStart && km < clampedEnd) result.push(coordinates[index]!);
-  }
-  result.push(pointAtDistance(coordinates, cumLengthsKm, clampedEnd));
-
-  return dedupeAdjacentPoints(result);
-}
-
-function pointAtDistance(
-  coordinates: [number, number][],
-  cumLengthsKm: number[],
-  targetKm: number,
-): [number, number] {
-  if (targetKm <= 0) return coordinates[0]!;
-  const lastIndex = cumLengthsKm.length - 1;
-  if (targetKm >= cumLengthsKm[lastIndex]!) return coordinates[lastIndex]!;
-
-  for (let index = 1; index < cumLengthsKm.length; index++) {
-    if (cumLengthsKm[index]! < targetKm) continue;
-    const segmentLengthKm = cumLengthsKm[index]! - cumLengthsKm[index - 1]!;
-    const t =
-      segmentLengthKm > 0
-        ? (targetKm - cumLengthsKm[index - 1]!) / segmentLengthKm
-        : 0;
-    const start = coordinates[index - 1]!;
-    const end = coordinates[index]!;
-    return [
-      start[0] + (end[0] - start[0]) * t,
-      start[1] + (end[1] - start[1]) * t,
-    ];
-  }
-  return coordinates[lastIndex]!;
-}
-
-function dedupeAdjacentPoints(points: [number, number][]): [number, number][] {
-  const result: [number, number][] = [];
-  for (const point of points) {
-    const previous = result[result.length - 1];
-    if (
-      !previous ||
-      Math.abs(previous[0] - point[0]) > 1e-9 ||
-      Math.abs(previous[1] - point[1]) > 1e-9
-    ) {
-      result.push(point);
-    }
-  }
-  return result;
-}
-
-function clampUnit(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
+  return slicePolylineByDistanceKm(
+    dayCoordinates,
+    cumLengthsKm,
+    startKm,
+    endKm,
+  );
 }
 
 export function getTripPlannerBounds(trip: Trip | null): PlannerBbox | null {
