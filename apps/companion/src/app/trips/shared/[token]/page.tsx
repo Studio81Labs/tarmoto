@@ -59,15 +59,16 @@ export default async function SharedTripPage({
       ? splitFormattedDistance(summary.totalDistanceKm, "metric")
       : null;
   // A trip is a plan, so its time is an estimate: prefer the snapshot's
-  // per-day durations, and fall back to a 55 km/h heuristic (matching the
-  // backend) when the planner didn't record any.
+  // per-day durations, and fall back to a 55 km/h heuristic with a 30-minute
+  // floor (matching the backend GPX/from-share import) when the planner didn't
+  // record any, so a short legacy share doesn't underreport at e.g. "11m".
   const estMinutes =
     summary == null
       ? null
       : summary.totalDurationMin > 0
         ? summary.totalDurationMin
         : summary.totalDistanceKm > 0
-          ? Math.round((summary.totalDistanceKm / 55) * 60)
+          ? Math.max(30, Math.round((summary.totalDistanceKm / 55) * 60))
           : null;
   const duration = splitDuration(estMinutes);
 

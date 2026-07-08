@@ -213,7 +213,7 @@ describe("tripStops", () => {
     expect(tripStops(validTrip)).toEqual([]);
   });
 
-  it("collects intermediate stops (via/fuel/rest/...) across days", () => {
+  it("collects only real stop types (fuel/rest/photo/accommodation), not start/end/via", () => {
     const withStops: Trip = {
       ...validTrip,
       days: [
@@ -221,8 +221,10 @@ describe("tripStops", () => {
           ...validTrip.days[0]!,
           waypoints: [
             { id: "s", type: "start", location: { lat: 43, lng: 1.5 } },
-            { id: "v", type: "via", location: { lat: 43.2, lng: 1.6 } },
+            // A route-shaping via is NOT a stop and must be excluded.
+            { id: "v", type: "via", location: { lat: 43.1, lng: 1.55 } },
             { id: "f", type: "fuel", location: { lat: 43.3, lng: 1.7 } },
+            { id: "r", type: "rest", location: { lat: 43.4, lng: 1.75 } },
             { id: "e", type: "end", location: { lat: 43.5, lng: 1.8 } },
           ],
         },
@@ -230,8 +232,8 @@ describe("tripStops", () => {
     };
     const stops = tripStops(withStops);
     expect(stops).toEqual([
-      { lat: 43.2, lng: 1.6 },
       { lat: 43.3, lng: 1.7 },
+      { lat: 43.4, lng: 1.75 },
     ]);
   });
 });
