@@ -22,7 +22,6 @@ import {
   ExternalLink,
   Layers3,
   MountainSnow,
-  PanelLeft,
   Plus,
   TriangleAlert,
 } from "lucide-react";
@@ -379,12 +378,6 @@ interface TripPlannerMapProps {
    * the toolbar regardless of this flag.
    */
   searchAndPois?: boolean;
-  /**
-   * Optional "Days" control rendered in the map's left toggle cluster (the
-   * planner's multi-day column show/hide). Omitted on maps with no day
-   * column (trip preview), which hides the control entirely.
-   */
-  daysColumnToggle?: { open: boolean; onToggle: () => void } | undefined;
 }
 export const TripPlannerMap = forwardRef<
   TripPlannerMapHandle,
@@ -411,7 +404,6 @@ export const TripPlannerMap = forwardRef<
     onCursorMove,
     fitRouteToken,
     searchAndPois,
-    daysColumnToggle,
   },
   ref,
 ) {
@@ -439,7 +431,6 @@ export const TripPlannerMap = forwardRef<
         onCursorMove={onCursorMove}
         fitRouteToken={fitRouteToken}
         searchAndPois={searchAndPois}
-        daysColumnToggle={daysColumnToggle}
       />
     );
   }
@@ -582,7 +573,6 @@ const TripPlannerMapContent = forwardRef<
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
     searchAndPois?: boolean | undefined;
-    daysColumnToggle?: { open: boolean; onToggle: () => void } | undefined;
   }
 >(function TripPlannerMapContent(
   {
@@ -606,7 +596,6 @@ const TripPlannerMapContent = forwardRef<
     onCursorMove,
     fitRouteToken,
     searchAndPois,
-    daysColumnToggle,
   },
   ref,
 ) {
@@ -2486,25 +2475,6 @@ const TripPlannerMapContent = forwardRef<
             {t("Conditions ")}
           </button>
         </div>
-
-        {/* Days column show/hide (planner multi-day) — a distinct third row so
-            the layout toggle reads apart from the map-layer toggles above. */}
-        {daysColumnToggle ? (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              aria-pressed={daysColumnToggle.open}
-              aria-label={
-                daysColumnToggle.open ? t("Hide days") : t("Show days")
-              }
-              onClick={daysColumnToggle.onToggle}
-              className={toggleClassName(daysColumnToggle.open)}
-            >
-              <PanelLeft size={14} />
-              {t("Days")}
-            </button>
-          </div>
-        ) : null}
 
         {drawMode === "drawing" && !outlineStarted ? (
           <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">

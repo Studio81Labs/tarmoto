@@ -49,6 +49,7 @@ import {
   Plus,
   Star,
   Pencil,
+  PanelLeft,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -2516,6 +2517,31 @@ export default function TripPlannerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Show / hide the left day column — only when there are days to
+              reveal. Filled when the column is open, outlined when hidden. */}
+          {daysVisible ? (
+            <>
+              <Tooltip
+                content={showDaysColumn ? t("Hide days") : t("Show days")}
+                placement="below"
+              >
+                <Button
+                  iconOnly
+                  variant={showDaysColumn ? "primary" : "secondary"}
+                  size="sm"
+                  aria-pressed={showDaysColumn}
+                  aria-label={showDaysColumn ? t("Hide days") : t("Show days")}
+                  onClick={() => setShowDaysColumn((v) => !v)}
+                >
+                  <PanelLeft size={15} />
+                </Button>
+              </Tooltip>
+              <span
+                aria-hidden="true"
+                className="h-[22px] w-px shrink-0 bg-line"
+              />
+            </>
+          ) : null}
           <Tooltip content={t("Undo")} placement="below">
             <Button
               iconOnly
@@ -2792,17 +2818,6 @@ export default function TripPlannerPage() {
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
               fitRouteToken={fitRouteToken}
-              // "Days" show/hide lives in the map's own left toggle cluster
-              // (third row), so it's grouped with the map controls and only
-              // renders when there are days to reveal.
-              daysColumnToggle={
-                daysVisible
-                  ? {
-                      open: showDaysColumn,
-                      onToggle: () => setShowDaysColumn((v) => !v),
-                    }
-                  : undefined
-              }
             />
           </div>
 
