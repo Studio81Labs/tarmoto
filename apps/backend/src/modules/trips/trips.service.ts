@@ -41,6 +41,7 @@ import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   TripDayDto,
   TripDetailDto,
+  TripInvitePreviewDto,
   TripMemberDto,
   TripSummaryDto,
   TripWaypointDto,
@@ -54,6 +55,10 @@ const DEFAULT_DAILY_KM_MIN = 150;
 const DEFAULT_DAILY_KM_MAX = 350;
 const DEFAULT_MIN_QUALITY = 3.0;
 const DEFAULT_ROAD_PREFERENCE = 'curvy';
+
+// ~50 m at mid-latitudes — bounds the invite-preview geometry payload while
+// keeping the overview polyline recognisable at typical zoom.
+const INVITE_PREVIEW_SIMPLIFY_TOLERANCE_DEG = 0.0005;
 
 // Roles allowed to mutate trip-wide metadata. Keeping this in one place
 // so role checks stay consistent if we ever grow the role vocabulary.
@@ -1164,6 +1169,76 @@ export class TripsService {
     return this.toDetail(trip, aggById.get(trip.id));
   }
 
+  /**
+   * Masked pre-join preview for an invited rider (`GET /trips/:tripId/invite/
+   * :code/preview`). Authorized by a live personal invite code — NOT
+   * membership — so a not-yet-member can see a raw route overview before
+   * accepting. Unlike {@link join}, this is READ-ONLY: it never consumes the
+   * invite. Folds "unknown trip" and "wrong/revoked code" into the same 404 so
+   * the endpoint can't enumerate trip ids or probe which codes are live.
+   */
+  async getInvitePreview(
+    userId: string,
+    tripId: string,
+    code: string,
+  ): Promise<TripInvitePreviewDto> {
+    const normalized = code.trim().toUpperCase();
+
+    const trip = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: ['owner'],
+    });
+    if (!trip) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    const invite = await this.inviteRepo.findOne({
+      where: { trip_id: tripId, invite_code: normalized },
+      relations: ['inviter'],
+    });
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    const alreadyMember =
+      (await this.memberRepo.findOne({
+        where: { trip_id: tripId, user_id: userId },
+      })) != null;
+
+    // Simplified per-day geometry (~50 m tolerance) so the preview payload
+    // stays bounded; the client renders it as a single overview polyline.
+    const geomRows = await this.tripRepo.manager.query<
+      Array<{ geometry: string | null }>
+    >(
+      `SELECT ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
+       FROM trip_days
+       WHERE trip_id = $2 AND route_geom IS NOT NULL
+       ORDER BY day_number`,
+      [INVITE_PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripId],
+    );
+    const lines: number[][][] = [];
+    for (const row of geomRows) {
+      const coords = parsePreviewLine(row.geometry);
+      if (coords) lines.push(coords);
+    }
+
+    const aggById = await this.computeTripAggregates([trip.id]);
+    const distance = aggById.get(trip.id)?.distance_km ?? null;
+
+    return {
+      trip_id: trip.id,
+      title: trip.title,
+      owner_name: trip.owner?.display_name ?? null,
+      invited_by_name: invite.inviter?.display_name ?? null,
+      role: invite.role as TripMemberRole,
+      region: trip.region ?? null,
+      num_days: trip.num_days,
+      distance_km: distance != null ? Number(distance) : null,
+      lines,
+      already_member: alreadyMember,
+    };
+  }
+
   async join(
     userId: string,
     tripId: string,
@@ -1547,6 +1622,35 @@ export class TripsService {
       days,
     };
   }
+}
+
+/**
+ * Parse a `ST_AsGeoJSON` LineString string into `[lng, lat]` pairs for the
+ * invite preview. Returns `null` for missing/degenerate geometry (fewer than
+ * two valid points) so a single-point simplify result doesn't render as a
+ * malformed polyline.
+ */
+function parsePreviewLine(geometry: string | null): number[][] | null {
+  if (!geometry) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(geometry);
+  } catch {
+    return null;
+  }
+  const coords = (parsed as { coordinates?: unknown }).coordinates;
+  if (!Array.isArray(coords)) return null;
+  const out: number[][] = [];
+  for (const c of coords) {
+    if (
+      Array.isArray(c) &&
+      typeof c[0] === 'number' &&
+      typeof c[1] === 'number'
+    ) {
+      out.push([c[0], c[1]]);
+    }
+  }
+  return out.length >= 2 ? out : null;
 }
 
 function lineStringToLatLngs(

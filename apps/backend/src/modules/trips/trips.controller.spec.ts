@@ -38,6 +38,7 @@ describe('TripsController', () => {
       list: jest.fn().mockResolvedValue([mockSummary]),
       create: jest.fn().mockResolvedValue(mockDetail),
       getDetail: jest.fn().mockResolvedValue(mockDetail),
+      getInvitePreview: jest.fn().mockResolvedValue({ trip_id: 'trip-1' }),
       join: jest.fn().mockResolvedValue(mockDetail),
       update: jest.fn().mockResolvedValue(mockDetail),
       remove: jest.fn().mockResolvedValue(undefined),
@@ -106,6 +107,20 @@ describe('TripsController', () => {
     });
     expect(service.join).toHaveBeenCalledWith('user-1', 'trip-1', 'ABCDEFGH');
     expect(result.id).toBe('trip-1');
+  });
+
+  it('GET /trips/:tripId/invite/:code/preview forwards trip id + code to the service', async () => {
+    const result = await controller.getInvitePreview(
+      mockReq,
+      'trip-1',
+      'ABCDEFGH',
+    );
+    expect(service.getInvitePreview).toHaveBeenCalledWith(
+      'user-1',
+      'trip-1',
+      'ABCDEFGH',
+    );
+    expect(result.trip_id).toBe('trip-1');
   });
 
   it('PATCH /trips/:tripId forwards the update DTO to the service', async () => {
