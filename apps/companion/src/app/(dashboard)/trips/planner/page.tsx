@@ -567,9 +567,13 @@ export default function TripPlannerPage() {
       if (!dayPlans) return;
       const planIndex = dayPlans.findIndex((p) => p.dayNumber === dayNumber);
       if (planIndex < 0) return;
-      // Toggle — clicking the already-selected day deselects it.
+      // Toggle — clicking the already-selected day deselects it, back to the
+      // whole-route view. Realign the store's placement/edit target to day 1
+      // so the map's context-menu endpoints (which fall back to day 1 when no
+      // day is selected) match where a newly placed waypoint actually lands.
       if (selectedPlanIndex === planIndex) {
         setSelectedPlanIndex(null);
+        setSelectedDay(0);
         return;
       }
       setSelectedPlanIndex(planIndex);
