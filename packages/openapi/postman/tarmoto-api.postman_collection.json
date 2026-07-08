@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "c31c0e53-12bd-4be7-bdae-7e0d9a701362",
+    "_postman_id": "cffce60a-1c0f-4b78-9828-5c3a8f3344aa",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -2286,32 +2286,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Materialise a shared trip into the caller's library, preserving multi-day structure (#357)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/from-share",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", "from-share"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"share_token\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

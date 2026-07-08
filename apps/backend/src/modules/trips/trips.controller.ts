@@ -25,7 +25,6 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
-import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto, InviteTripResponseDto } from './dto/invite-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
@@ -133,39 +132,6 @@ export class TripsController {
       tripId,
       dto,
     );
-  }
-
-  @Post('from-share')
-  @ApiOperation({
-    summary:
-      "Materialise a shared trip into the caller's library, preserving " +
-      'multi-day structure (#357)',
-    description:
-      'Companion-side counterpart to `POST /trips/import` for the deep-link ' +
-      'handoff (`tarmoto://trips/import?tripId=...&token=...`). The client ' +
-      'posts only the share token; the server reads the snapshot stored ' +
-      'under that token and creates one `trip_days` row per snapshot day ' +
-      "— retaining each day's route geometry, distance, and waypoints. " +
-      'Use this instead of `/trips/import` for shares from the planner so ' +
-      "multi-day itineraries land in the rider's library with their day " +
-      'breakdown intact. Returns a 404 if the token is unknown or the ' +
-      "share's owner has soft-deleted their account; a 400 if the " +
-      'snapshot has no usable route data on any day.',
-  })
-  @ApiResponse({ status: 201, type: TripDetailDto })
-  @ApiResponse({
-    status: 400,
-    description: 'Snapshot has no usable route data',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Share token unknown or owner account deleted',
-  })
-  async importFromShare(
-    @Req() req: express.Request,
-    @Body() dto: FromShareTripDto,
-  ): Promise<TripDetailDto> {
-    return this.tripsService.importFromShare(req.user!.userId, dto);
   }
 
   @Get(':tripId')

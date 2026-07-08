@@ -68,7 +68,6 @@ import type {
   ExplorationStats,
   RiddenSegmentsList,
   UnriddenSegment,
-  TripSharePublic,
   Bike,
 } from "@/types";
 import {
@@ -968,22 +967,6 @@ class ApiService {
     return unwrap(result, "Failed to load trip");
   }
 
-  /**
-   * Materialise a shared trip into the rider's library while preserving
-   * its multi-day structure (#357). Use this for the deep-link handoff
-   * flow (`tarmoto://trips/import?token=...`) instead of
-   * `importTripFromRoute`, which collapses everything to a single
-   * planned day. The backend reads the snapshot from `trip_shares`
-   * under the supplied token and reconstructs one `trip_days` row per
-   * snapshot day with the original geometry, distance, and waypoints.
-   */
-  async importTripFromShare(shareToken: string): Promise<Trip> {
-    const result = await client.POST("/api/v1/trips/from-share", {
-      body: { share_token: shareToken },
-    });
-    return unwrap(result, "Failed to import shared trip");
-  }
-
   async generateTripRoute(
     tripId: string,
     startLocation: LatLng,
@@ -1023,20 +1006,6 @@ class ApiService {
       body: { invite_code: inviteCode },
     });
     unwrapVoid(result);
-  }
-
-  /**
-   * Fetch the public read-only snapshot for a trip share token (US-39 /
-   * #283). Used by the deep-link import flow when the rider opens
-   * `tarmoto://trips/import?tripId=...&token=...` from the web companion;
-   * the snapshot is then flattened and posted to `/trips/import` to
-   * materialise the trip in the rider's library.
-   */
-  async getTripShare(token: string): Promise<TripSharePublic> {
-    const result = await client.GET("/api/v1/trip-shares/{token}", {
-      params: { path: { token } },
-    });
-    return unwrap(result, "Failed to load trip share") as TripSharePublic;
   }
 
   // ── Group Rides (US-26) ──
