@@ -15,6 +15,18 @@ function poi(meta?: Record<string, unknown>): Poi {
   };
 }
 
+function passPoi(meta: Record<string, unknown>): Poi {
+  return {
+    id: "pass-1",
+    category: "mountain_pass",
+    source: "passes",
+    name: "Pustevny",
+    lat: 49.5,
+    lng: 18.3,
+    meta,
+  };
+}
+
 describe("readPoiDetails", () => {
   it("extracts the present decision-support fields off meta", () => {
     expect(
@@ -42,6 +54,9 @@ describe("readPoiDetails", () => {
       website: "https://ulesa.example/",
       cuisine: "italian",
       brand: "Shell",
+      // Pass fields stay undefined for a non-pass (food) category.
+      passStatus: undefined,
+      elevationM: undefined,
     });
   });
 
@@ -58,11 +73,29 @@ describe("readPoiDetails", () => {
     expect(hasPoiDetails(d)).toBe(false);
   });
 
-  it("ignores mock-only meta keys (twisty score, elevation, status)", () => {
+  it("ignores a twisty score, and pass fields on a non-pass category", () => {
+    // status/elevationM only surface for mountain_pass; on a food POI (and a
+    // twisty highlight's twistyScore) they match nothing.
     const d = readPoiDetails(
       poi({ twistyScore: 8, elevationM: 900, status: "open" }),
     );
     expect(hasPoiDetails(d)).toBe(false);
+  });
+
+  it("surfaces status + elevation for a mountain_pass (#865)", () => {
+    const d = readPoiDetails(
+      passPoi({ status: "closed", elevationM: 1018, twistyScore: 3 }),
+    );
+    expect(d.passStatus).toBe("closed");
+    expect(d.elevationM).toBe(1018);
+    expect(hasPoiDetails(d)).toBe(true);
+  });
+
+  it("drops an unrecognised pass status", () => {
+    expect(
+      readPoiDetails(passPoi({ status: "melted" })).passStatus,
+    ).toBeUndefined();
+    expect(readPoiDetails(passPoi({ status: "open" })).passStatus).toBe("open");
   });
 
   it("treats an absent meta bag as no details", () => {
@@ -92,6 +125,16 @@ describe("PoiDetails", () => {
   it("renders nothing when the POI carries no decision-support fields", () => {
     const { container } = render(<PoiDetails poi={poi({ twistyScore: 8 })} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders a mountain_pass's status + elevation (#865)", () => {
+    render(
+      <PoiDetails poi={passPoi({ status: "closed", elevationM: 1018 })} />,
+    );
+    // A closed pass must read distinctly from an open one — the wired
+    // mountain_pass category previously showed neither.
+    expect(screen.getByText("Closed")).toBeInTheDocument();
+    expect(screen.getByText(/1,018/)).toBeInTheDocument();
   });
 
   it("renders the present fields with tel + website links", () => {
