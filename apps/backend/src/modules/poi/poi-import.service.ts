@@ -274,23 +274,54 @@ export class PoiImportService {
           }
         }
 
-        // 2. Stale-by-absence tombstoning. Load only live OSM rows THIS region
-        // imported (`import_region`) inside its bbox, then tombstone the ones
-        // the extract didn't carry. The `import_region` scope is load-bearing:
-        // the default region bboxes overlap at borders, so a bbox-only load
-        // would let e.g. the SK job tombstone live Czech border POIs absent from
-        // SK's extract. Rows outside the bbox — or owned by another region — are
-        // never loaded, so they can never be tombstoned.
-        const existing = await tx.query<{ id: string; external_id: string }[]>(
-          `SELECT id, external_id FROM pois
+        // 2. Stale-by-absence tombstoning. Load live OSM rows inside the bbox
+        // that either THIS region imported (`import_region`) OR are unclaimed
+        // (`import_region` null — legacy pre-#850 Overpass rows the migration
+        // couldn't attribute), then tombstone the ones the extract didn't carry.
+        // The region scope is load-bearing: the default bboxes overlap at
+        // borders, so a bbox-only load would let e.g. the SK job tombstone live
+        // Czech border POIs absent from SK's extract. A legacy (null) row is
+        // only THIS region's to tombstone when no OTHER configured region's bbox
+        // also contains it — otherwise it's an ambiguous border row, left for
+        // whichever region's extract actually claims it (present rows get an
+        // `import_region` via the upsert above; only closed legacy rows remain).
+        const existing = await tx.query<
+          {
+            id: string;
+            external_id: string;
+            lng: number;
+            lat: number;
+            import_region: string | null;
+          }[]
+        >(
+          `SELECT id, external_id, ST_X(geom) AS lng, ST_Y(geom) AS lat, import_region
+             FROM pois
              WHERE source = 'osm' AND deactivated_at IS NULL
-               AND import_region = $5
+               AND (import_region = $5 OR import_region IS NULL)
                AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
           [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat, region.code],
         );
 
+        const otherRegions = this.config.regions.filter(
+          (r) => r.code !== region.code,
+        );
+        const ownedByRegion = (row: {
+          lng: number;
+          lat: number;
+          import_region: string | null;
+        }): boolean =>
+          row.import_region === region.code ||
+          (row.import_region === null &&
+            !otherRegions.some(
+              (r) =>
+                row.lng >= r.bbox.minLng &&
+                row.lng <= r.bbox.maxLng &&
+                row.lat >= r.bbox.minLat &&
+                row.lat <= r.bbox.maxLat,
+            ));
+
         const tombstoneIds = existing
-          .filter((e) => !incomingIds.has(e.external_id))
+          .filter((e) => ownedByRegion(e) && !incomingIds.has(e.external_id))
           .map((e) => e.id);
 
         if (tombstoneIds.length > 0) {

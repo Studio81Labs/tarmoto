@@ -146,7 +146,13 @@ describe('PoiImportService', () => {
 
   /** Make the bbox-bounded stale load return these live in-bbox rows. */
   const loadInBbox = (
-    rows: Array<{ id: string; external_id: string }>,
+    rows: Array<{
+      id: string;
+      external_id: string;
+      lng?: number;
+      lat?: number;
+      import_region?: string | null;
+    }>,
   ): void => {
     txQuery.mockImplementation((sql: string) =>
       sql.includes('ST_MakeEnvelope')
@@ -277,8 +283,8 @@ describe('PoiImportService', () => {
     // Two live rows inside the bbox: node/1 is still in the extract, node/gone
     // has dropped out (closed venue).
     loadInBbox([
-      { id: 'uuid-present', external_id: 'node/1' },
-      { id: 'uuid-gone', external_id: 'node/gone' },
+      { id: 'uuid-present', external_id: 'node/1', import_region: 'CZ' },
+      { id: 'uuid-gone', external_id: 'node/gone', import_region: 'CZ' },
     ]);
     mockExtract(poi({ external_id: 'node/1' }));
 
@@ -309,7 +315,9 @@ describe('PoiImportService', () => {
     // The bounded load only surfaces the in-bbox present row. A neighbour the
     // geom-envelope filter excluded is absent from BOTH the load and the extract,
     // yet must never be tombstoned — the load is the only tombstone candidate set.
-    loadInBbox([{ id: 'uuid-present', external_id: 'node/1' }]);
+    loadInBbox([
+      { id: 'uuid-present', external_id: 'node/1', import_region: 'CZ' },
+    ]);
     mockExtract(poi({ external_id: 'node/1' }));
 
     const result = await service.importRegion(REGION);
@@ -319,6 +327,52 @@ describe('PoiImportService', () => {
     );
     expect(tombstone).toBeUndefined();
     expect(result.tombstoned).toBe(0);
+  });
+
+  it('claims legacy (null-region) rows only where no other configured region overlaps', async () => {
+    // A neighbour whose bbox overlaps CZ's eastern edge (lng >= 18.5).
+    const NEIGHBOUR: PoiImportRegion = {
+      code: 'SK',
+      bbox: { minLng: 18.5, minLat: 49.3, maxLng: 19.5, maxLat: 49.75 },
+    };
+    config = {
+      enabled: true,
+      extractDir: '/extracts',
+      regions: [REGION, NEIGHBOUR],
+    };
+    service = new PoiImportService(dataSource, config);
+
+    loadInBbox([
+      // Legacy (import_region null) rows absent from the extract:
+      // exclusive to CZ (lng 18.2, outside SK) → CZ tombstones it.
+      {
+        id: 'uuid-cz',
+        external_id: 'node/cz',
+        import_region: null,
+        lng: 18.2,
+        lat: 49.5,
+      },
+      // in the CZ∩SK overlap (lng 18.7) → ambiguous, CZ must NOT tombstone it.
+      {
+        id: 'uuid-overlap',
+        external_id: 'node/overlap',
+        import_region: null,
+        lng: 18.7,
+        lat: 49.5,
+      },
+    ]);
+    // One live in-bbox row so the empty-extract guard doesn't short-circuit.
+    mockExtract(poi({ external_id: 'node/keep' }));
+
+    const result = await service.importRegion(REGION);
+
+    const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
+      ([sql]) => /UPDATE pois SET deactivated_at = NOW\(\)/.test(sql),
+    );
+    // Only the CZ-exclusive legacy row — the overlap row is left for whichever
+    // region's extract actually claims it.
+    expect(tombstone![1]).toEqual([['uuid-cz']]);
+    expect(result.tombstoned).toBe(1);
   });
 
   it('refuses to tombstone when the extract yields zero in-bbox rows (broken/empty extract)', async () => {
