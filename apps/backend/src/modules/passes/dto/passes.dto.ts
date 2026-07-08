@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsInt,
@@ -114,10 +115,22 @@ class RoutePointDto {
   lng!: number;
 }
 
+/**
+ * Vertex cap for the check-route polyline — bounds the corridor `ST_DWithin`
+ * point count independently of the 1 MiB body limit (mirrors `route-quality`'s
+ * `MAX_ROUTE_QUALITY_POINTS`). A dense multi-day polyline stays well under this.
+ */
+export const MAX_CHECK_ROUTE_POINTS = 25000;
+
 export class CheckRouteDto {
-  @ApiProperty({ type: [RoutePointDto], minItems: 2 })
+  @ApiProperty({
+    type: [RoutePointDto],
+    minItems: 2,
+    maxItems: MAX_CHECK_ROUTE_POINTS,
+  })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_CHECK_ROUTE_POINTS)
   @ValidateNested({ each: true })
   @Type(() => RoutePointDto)
   route!: RoutePointDto[];

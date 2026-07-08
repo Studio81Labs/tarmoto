@@ -27,6 +27,7 @@ import {
   RoadSegmentDetailDto,
 } from './dto/road-segment.dto.js';
 import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
+import { CorridorFunZonesDto } from './dto/corridor-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { FunZoneDetailDto } from './dto/fun-zone-detail.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
@@ -62,6 +63,24 @@ export class RoadsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<FunZoneDetailDto> {
     return this.roadsService.findZoneById(id);
+  }
+
+  // Corridor query over a routed polyline (the STOPS-tab `twisty_highlight`
+  // layer, #865). Behind AuthGuard for the same reason as `route-quality` /
+  // `check-route`: it runs a geospatial query over an arbitrary route body, and
+  // the planner is an authenticated, post-login surface.
+  @Post('fun-zones/in-corridor')
+  @HttpCode(200)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Fun Zones within a corridor of a routed polyline (STOPS layer)',
+  })
+  @ApiResponse({ status: 200, type: [FunZoneDto] })
+  async findFunZonesInCorridor(
+    @Body() dto: CorridorFunZonesDto,
+  ): Promise<FunZoneDto[]> {
+    return this.roadsService.findFunZonesInCorridor(dto);
   }
 
   @Get('best')

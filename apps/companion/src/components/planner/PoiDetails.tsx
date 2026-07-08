@@ -3,6 +3,7 @@ import {
   Clock,
   Globe,
   MapPin,
+  Mountain,
   Phone,
   Star,
   Tag,
@@ -11,11 +12,14 @@ import {
 } from "lucide-react";
 import { t } from "@/i18n";
 import type { Poi } from "@/lib/planner/types";
+import type { PassStatus } from "@/lib/passes-summary";
 
 /**
- * Decision-support fields a store-backed POI can carry (#849). `readPoiDetails`
- * always returns every key; each is `undefined` when the underlying OSM tag is
- * absent (nodes are sparsely tagged), so callers gate on `!== undefined`.
+ * Decision-support fields a POI can carry: OSM tags for store-backed POIs
+ * (#849) plus seasonal status + elevation for `mountain_pass` POIs (#865).
+ * `readPoiDetails` always returns every key; each is `undefined` when absent
+ * (OSM nodes are sparsely tagged; the pass fields only apply to passes), so
+ * callers gate on `!== undefined`.
  */
 export interface PoiDetailFields {
   /** Accommodation star rating (OSM `stars`), 1–5. */
@@ -30,6 +34,10 @@ export interface PoiDetailFields {
   cuisine: string | undefined;
   /** OSM `brand`/operator (fuel, chains). */
   brand: string | undefined;
+  /** Seasonal open/closed/unknown status — `mountain_pass` only (#865). */
+  passStatus: PassStatus | undefined;
+  /** Summit elevation in metres — `mountain_pass` only (#865). */
+  elevationM: number | undefined;
 }
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -63,15 +71,25 @@ function safeWebsiteUrl(raw: string): string | undefined {
   }
 }
 
+function passStatusOf(meta: Record<string, unknown>): PassStatus | undefined {
+  return meta.status === "open" ||
+    meta.status === "closed" ||
+    meta.status === "unknown"
+    ? meta.status
+    : undefined;
+}
+
 /**
- * Pull the decision-support fields off a store-backed POI's `meta` bag with
- * type guards. Mock passes / twisties carry unrelated `meta` keys (twisty
- * score, elevation, pass status) — those don't match and are ignored, so the
- * details block renders nothing for them.
+ * Pull the decision-support fields off a POI's `meta` bag with type guards:
+ * OSM tags for store-backed POIs, plus seasonal status + elevation for a
+ * `mountain_pass` (#865). The pass fields are gated on the category so a stray
+ * `status`/`elevationM` on some other POI is ignored; a twisty highlight's
+ * `twistyScore` matches nothing here and renders no details.
  */
 export function readPoiDetails(poi: Poi): PoiDetailFields {
   const meta = poi.meta ?? {};
   const website = nonEmptyString(meta.website);
+  const isPass = poi.category === "mountain_pass";
   return {
     stars: typeof meta.stars === "number" ? meta.stars : undefined,
     openingHours: nonEmptyString(meta.openingHours),
@@ -81,6 +99,11 @@ export function readPoiDetails(poi: Poi): PoiDetailFields {
     website: website ? safeWebsiteUrl(website) : undefined,
     cuisine: nonEmptyString(meta.cuisine),
     brand: nonEmptyString(meta.brand),
+    passStatus: isPass ? passStatusOf(meta) : undefined,
+    elevationM:
+      isPass && typeof meta.elevationM === "number"
+        ? meta.elevationM
+        : undefined,
   };
 }
 
@@ -94,9 +117,25 @@ export function hasPoiDetails(d: PoiDetailFields): boolean {
     d.phone !== undefined ||
     d.website !== undefined ||
     d.cuisine !== undefined ||
-    d.brand !== undefined
+    d.brand !== undefined ||
+    d.passStatus !== undefined ||
+    d.elevationM !== undefined
   );
 }
+
+// Mirrors PassesPanel's status colours + labels so a pass reads consistently
+// across the planner: the passes list, the map legend, and this POI popover.
+// The labels match PassesPanel's untranslated STATUS_LABEL by design.
+const PASS_STATUS_DOT: Record<PassStatus, string> = {
+  open: "bg-[#1f8a5b]",
+  closed: "bg-quality-q1",
+  unknown: "bg-ink/40",
+};
+const PASS_STATUS_LABEL: Record<PassStatus, string> = {
+  open: "Open",
+  closed: "Closed",
+  unknown: "Unknown",
+};
 
 /** Strip protocol + leading `www.` + trailing slash for a compact label. */
 function displayHost(url: string): string {
@@ -127,10 +166,11 @@ function DetailRow({
 }
 
 /**
- * Store-backed POI decision-support rows (#849): star rating, cuisine/brand,
+ * POI decision-support rows: a `mountain_pass`'s seasonal status + elevation
+ * (#865), then store-backed OSM fields (#849) — star rating, cuisine/brand,
  * opening hours, address, phone and website — whatever the row carries. The
- * `pois` mirror populates these on OSM-sourced POIs; mock passes / twisties
- * and sparsely-tagged nodes render nothing.
+ * `pois` mirror populates the OSM fields; a twisty highlight and sparsely-tagged
+ * nodes render nothing.
  */
 export function PoiDetails({ poi }: { poi: Poi }) {
   const d = readPoiDetails(poi);
@@ -138,6 +178,23 @@ export function PoiDetails({ poi }: { poi: Poi }) {
   const address = [d.addressStreet, d.addressCity].filter(Boolean).join(", ");
   return (
     <div className="mb-1.5 flex flex-col gap-1 border-t border-line px-1.5 pt-2">
+      {d.passStatus ? (
+        <div className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink">
+          <span
+            aria-hidden
+            className={`inline-block h-2 w-2 shrink-0 rounded-full ${PASS_STATUS_DOT[d.passStatus]}`}
+          />
+          <span className="min-w-0 break-words">
+            {PASS_STATUS_LABEL[d.passStatus]}
+          </span>
+        </div>
+      ) : null}
+      {d.elevationM !== undefined ? (
+        <DetailRow icon={Mountain}>
+          {d.elevationM.toLocaleString()}
+          {t("m ")}
+        </DetailRow>
+      ) : null}
       {d.stars !== undefined ? (
         <DetailRow icon={Star}>
           {t("{stars}-star", { stars: d.stars })}

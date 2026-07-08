@@ -2,13 +2,14 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { haversineKm } from "@tarmoto/shared";
 import {
   api,
+  passesApi,
   poiApi,
   roadsApi,
   routingApi,
   usersApi,
   type RouteResponse,
 } from "@/lib/api";
-import { fetchFunZonesInBbox } from "@/lib/discover";
+import { fetchFunZonesInBbox, fetchFunZonesInCorridor } from "@/lib/discover";
 import {
   createPlannerApi,
   deriveFlaggedSections,
@@ -24,10 +25,15 @@ vi.mock("@/lib/api", () => ({
     getAlongRoute: vi.fn(),
     getAccommodations: vi.fn(),
     getInBbox: vi.fn(),
+    getInCorridor: vi.fn(),
   },
+  passesApi: { list: vi.fn(), checkRoute: vi.fn() },
   usersApi: { getMe: vi.fn(), updateMe: vi.fn() },
 }));
-vi.mock("@/lib/discover", () => ({ fetchFunZonesInBbox: vi.fn() }));
+vi.mock("@/lib/discover", () => ({
+  fetchFunZonesInBbox: vi.fn(),
+  fetchFunZonesInCorridor: vi.fn(),
+}));
 
 const routeMock = vi.mocked(routingApi.route);
 const routeQualityMock = vi.mocked(roadsApi.getRouteQuality);
@@ -37,6 +43,10 @@ const getInBboxMock = vi.mocked(poiApi.getInBbox);
 const getMeMock = vi.mocked(usersApi.getMe);
 const updateMeMock = vi.mocked(usersApi.updateMe);
 const apiGetMock = vi.mocked(api.GET);
+const passesListMock = vi.mocked(passesApi.list);
+const passesCheckRouteMock = vi.mocked(passesApi.checkRoute);
+const funZonesBboxMock = vi.mocked(fetchFunZonesInBbox);
+const funZonesCorridorMock = vi.mocked(fetchFunZonesInCorridor);
 
 function segment(overrides: Partial<RouteSegment>): RouteSegment {
   return {
@@ -601,6 +611,10 @@ describe("plannerApi.getPois", () => {
 describe("plannerApi.getPoisByCategories (store path, #849)", () => {
   beforeEach(() => {
     getInBboxMock.mockReset();
+    passesListMock.mockReset();
+    funZonesBboxMock.mockReset();
+    passesListMock.mockResolvedValue({ data: [] });
+    funZonesBboxMock.mockResolvedValue([]);
   });
 
   const bbox: [number, number, number, number] = [15, 49, 15.5, 49.5];
@@ -672,13 +686,236 @@ describe("plannerApi.getPoisByCategories (store path, #849)", () => {
     ]);
   });
 
-  it("does not query the store for non-store categories (mountain_pass)", async () => {
+  it("serves mountain_pass from the passes module, not the store (#865)", async () => {
+    passesListMock.mockResolvedValue({
+      data: [
+        {
+          id: "pass-1",
+          name: "Pustevny",
+          country_code: "CZ",
+          region: null,
+          lat: 49.49,
+          lng: 18.26,
+          elevation_m: 1018,
+          typical_open_month: 5,
+          typical_close_month: 10,
+          status: "open",
+          status_overridden: false,
+          notes: null,
+          last_updated: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    });
+
     const pois = await createPlannerApi().getPoisByCategories(bbox, [
       "mountain_pass",
     ]);
+
     expect(getInBboxMock).not.toHaveBeenCalled();
-    // Falls through to the mock source rather than erroring.
-    expect(Array.isArray(pois)).toBe(true);
+    expect(passesListMock).toHaveBeenCalledWith(bbox, undefined, undefined);
+    expect(pois).toEqual([
+      {
+        id: "pass-1",
+        category: "mountain_pass",
+        source: "passes",
+        name: "Pustevny",
+        lat: 49.49,
+        lng: 18.26,
+        meta: { status: "open", elevationM: 1018 },
+      },
+    ]);
+  });
+
+  it("threads the planner month into the pass status query (#865)", async () => {
+    // A winter-planned trip must ask the passes module for that month so the
+    // map's mountain_pass status agrees with the Conditions overlay.
+    passesListMock.mockResolvedValue({ data: [] });
+    await createPlannerApi().getPoisByCategories(bbox, ["mountain_pass"], 1);
+    expect(passesListMock).toHaveBeenCalledWith(bbox, 1, undefined);
+  });
+
+  it("serves twisty_highlight from the curviness Fun Zones at the boundary centroid (#865)", async () => {
+    funZonesBboxMock.mockResolvedValue([
+      {
+        id: "fz-1",
+        name: "Beskydy SS-bends",
+        composite_score: 92,
+        road_count: 8,
+        total_curve_km: 4.1,
+        avg_quality: 4,
+        best_season: "summer",
+        boundary: [
+          { lat: 49.4, lng: 18.2 },
+          { lat: 49.6, lng: 18.2 },
+          { lat: 49.6, lng: 18.4 },
+          { lat: 49.4, lng: 18.4 },
+        ],
+      },
+    ]);
+
+    const pois = await createPlannerApi().getPoisByCategories(bbox, [
+      "twisty_highlight",
+    ]);
+
+    expect(getInBboxMock).not.toHaveBeenCalled();
+    expect(funZonesBboxMock).toHaveBeenCalledWith(bbox, undefined);
+    expect(pois).toHaveLength(1);
+    const zone = pois[0];
+    expect(zone).toMatchObject({
+      id: "fz-1",
+      category: "twisty_highlight",
+      source: "tarmoto",
+      name: "Beskydy SS-bends",
+      meta: { twistyScore: 92, lengthKm: 4.1 },
+    });
+    // Mean of the 4 boundary points (float-safe).
+    expect(zone?.lat).toBeCloseTo(49.5, 6);
+    expect(zone?.lng).toBeCloseTo(18.3, 6);
+  });
+});
+
+describe("plannerApi.getRouteStops non-store corridor (#865)", () => {
+  const routeLine: GeoJSON.LineString = {
+    type: "LineString",
+    coordinates: [
+      [18.2, 49.4],
+      [18.4, 49.6],
+    ],
+  };
+  const route = [
+    { lat: 49.4, lng: 18.2 },
+    { lat: 49.6, lng: 18.4 },
+  ];
+
+  const pass = (over: Record<string, unknown> = {}) => ({
+    id: "pass-1",
+    name: "Pustevny",
+    country_code: "CZ",
+    region: null,
+    lat: 49.5,
+    lng: 18.3,
+    elevation_m: 1018,
+    typical_open_month: 5,
+    typical_close_month: 10,
+    status: "open" as const,
+    status_overridden: false,
+    notes: null,
+    last_updated: "2026-07-01T00:00:00.000Z",
+    ...over,
+  });
+
+  beforeEach(() => {
+    passesCheckRouteMock.mockReset();
+    funZonesCorridorMock.mockReset();
+    passesCheckRouteMock.mockResolvedValue({
+      data: { passes: [], closed_count: 0, unknown_count: 0 },
+    });
+    funZonesCorridorMock.mockResolvedValue([]);
+  });
+
+  it("fetches passes + fun-zones near the route and projects them onto it", async () => {
+    passesCheckRouteMock.mockResolvedValue({
+      data: { passes: [pass()], closed_count: 0, unknown_count: 0 },
+    });
+    funZonesCorridorMock.mockResolvedValue([
+      {
+        id: "fz-1",
+        name: "SS-bends",
+        composite_score: 90,
+        road_count: 5,
+        total_curve_km: 4,
+        avg_quality: 4,
+        best_season: "summer",
+        boundary: [
+          { lat: 49.45, lng: 18.25 },
+          { lat: 49.55, lng: 18.35 },
+        ],
+      },
+    ]);
+
+    const stops = await createPlannerApi().getRouteStops(
+      routeLine,
+      ["mountain_pass", "twisty_highlight"],
+      10,
+    );
+
+    expect(passesCheckRouteMock).toHaveBeenCalledWith(
+      { route, buffer_m: 10000 },
+      undefined,
+    );
+    expect(funZonesCorridorMock).toHaveBeenCalledWith(route, 10, undefined);
+    expect(stops.map((s) => s.id).sort()).toEqual(["fz-1", "pass-1"]);
+    const stop = stops.find((s) => s.id === "pass-1");
+    expect(stop?.category).toBe("mountain_pass");
+    expect(stop?.source).toBe("passes");
+    expect(stop?.meta).toEqual({ status: "open", elevationM: 1018 });
+    expect(typeof stop?.distanceFromRouteKm).toBe("number");
+    expect(typeof stop?.kmAlongRoute).toBe("number");
+  });
+
+  it("threads the planner month into the check-route pass query (#865)", async () => {
+    await createPlannerApi().getRouteStops(
+      routeLine,
+      ["mountain_pass"],
+      10,
+      undefined,
+      1,
+    );
+    expect(passesCheckRouteMock).toHaveBeenCalledWith(
+      { route, buffer_m: 10000, for_month: 1 },
+      undefined,
+    );
+  });
+
+  it("anchors a twisty stop at the on-route contact, not the centroid (#865)", async () => {
+    // The zone touches the route at (49.5, 18.3) but bulges north, so its
+    // centroid (~49.63, 18.33) sits ~11 km off the line. The stop's coords drop
+    // the via waypoint, so they must be the on-route contact — otherwise the
+    // rider is routed off their road even though the row reads on-route.
+    funZonesCorridorMock.mockResolvedValue([
+      {
+        id: "fz-off",
+        name: "North bulge",
+        composite_score: 80,
+        road_count: 4,
+        total_curve_km: 3,
+        avg_quality: 4,
+        best_season: "summer",
+        boundary: [
+          { lat: 49.5, lng: 18.3 },
+          { lat: 49.7, lng: 18.3 },
+          { lat: 49.7, lng: 18.4 },
+        ],
+      },
+    ]);
+
+    const stops = await createPlannerApi().getRouteStops(
+      routeLine,
+      ["twisty_highlight"],
+      10,
+    );
+    const stop = stops.find((s) => s.id === "fz-off");
+    expect(stop?.distanceFromRouteKm).toBe(0);
+    expect(stop?.lat).toBeCloseTo(49.5, 3); // the on-route contact…
+    expect(stop?.lng).toBeCloseTo(18.3, 3); // …not the centroid (~49.63, 18.33)
+  });
+
+  it("drops a pass that projects beyond the corridor half-width", async () => {
+    // ~55 km north of the route line's end → outside a 10 km corridor.
+    passesCheckRouteMock.mockResolvedValue({
+      data: {
+        passes: [pass({ id: "far", lat: 50.1, lng: 18.4 })],
+        closed_count: 0,
+        unknown_count: 0,
+      },
+    });
+
+    const stops = await createPlannerApi().getRouteStops(
+      routeLine,
+      ["mountain_pass"],
+      10,
+    );
+    expect(stops).toEqual([]);
   });
 });
 

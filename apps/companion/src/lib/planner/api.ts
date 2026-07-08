@@ -1,11 +1,13 @@
 import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
   api,
+  passesApi,
   poiApi,
   roadsApi,
   routingApi,
   usersApi,
   type AccommodationSuggestion,
+  type MountainPass,
   type RouteQualitySegment,
   type PoiKind,
   type RouteRequestBody,
@@ -16,17 +18,23 @@ import {
   type UserRoutePrefsWire,
 } from "@/lib/api";
 import { sampleRoutePoints } from "@/lib/route-sampling";
-import { fetchFunZonesInBbox } from "@/lib/discover";
+import {
+  fetchFunZonesInBbox,
+  fetchFunZonesInCorridor,
+  type FunZoneListItem,
+} from "@/lib/discover";
 import { deriveQualitySegments } from "./derive";
 import { mapRouteQualitySpans } from "./route-quality";
 import {
   corridorBbox,
   draftViasThroughZones,
+  funZoneCentroid,
   zonesNearCorridor,
   MAX_DRAFT_VIAS,
   type DraftZone,
 } from "./draft-vias";
-import { mockPoisByCategories, mockRoadPreview, mockRouteStops } from "./mocks";
+import { nearestPolygonContact, projectOntoRoute } from "./route-projection";
+import { mockRoadPreview } from "./mocks";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
@@ -332,9 +340,156 @@ function storedPoiToCategoryPoi(poi: StoredPoiSuggestion): Poi | null {
   };
 }
 
+/**
+ * Map a mountain pass (passes module) to a `mountain_pass` category Poi (#865):
+ * the pass point + its seasonal open/closed status and altitude.
+ */
+function passToCategoryPoi(pass: MountainPass): Poi {
+  return {
+    id: pass.id,
+    category: "mountain_pass",
+    source: "passes",
+    name: pass.name,
+    lat: pass.lat,
+    lng: pass.lng,
+    meta: { status: pass.status, elevationM: pass.elevation_m },
+  };
+}
+
+/**
+ * Map a Fun Zone (curviness/quality layer) to a `twisty_highlight` Poi at its
+ * boundary centroid (#865); null when the ring is unusable. `composite_score`
+ * is the twistiness signal, `total_curve_km` the length.
+ */
+function funZoneToCategoryPoi(zone: FunZoneListItem): Poi | null {
+  const centroid = funZoneCentroid(zone);
+  if (!centroid) return null;
+  return {
+    id: zone.id,
+    category: "twisty_highlight",
+    source: "tarmoto",
+    name: zone.name ?? "Twisty highlight",
+    lat: centroid.lat,
+    lng: centroid.lng,
+    meta: { twistyScore: zone.composite_score, lengthKm: zone.total_curve_km },
+  };
+}
+
+/**
+ * The two non-store categories in a bbox (#865): `mountain_pass` from the
+ * passes module (bbox-filtered server-side), `twisty_highlight` from the
+ * curviness Fun Zones. Replaces the retired `mockPoisByCategories`.
+ */
+async function fetchNonStorePois(
+  bbox: [number, number, number, number],
+  categories: PoiCategory[],
+  forMonth?: number,
+  init?: { signal?: AbortSignal },
+): Promise<Poi[]> {
+  const wanted = new Set(categories);
+  const [passes, zones] = await Promise.all([
+    wanted.has("mountain_pass")
+      ? passesApi
+          .list(bbox, forMonth, init)
+          .then((p) => p.data.map(passToCategoryPoi))
+      : Promise.resolve<Poi[]>([]),
+    wanted.has("twisty_highlight")
+      ? fetchFunZonesInBbox(bbox, init).then((z) =>
+          z.map(funZoneToCategoryPoi).filter((p): p is Poi => p !== null),
+        )
+      : Promise.resolve<Poi[]>([]),
+  ]);
+  return [...passes, ...zones];
+}
+
+/**
+ * The two non-store categories along a route (#865, the STOPS tab):
+ * `mountain_pass` via `passes/check-route`, `twisty_highlight` via
+ * `/roads/fun-zones/in-corridor` — both bounded to the corridor server-side,
+ * then projected onto the route client-side (neither corridor endpoint returns
+ * along-route distances) for their STOPS position. Replaces `mockRouteStops`
+ * for these two.
+ */
+/** Project a point Poi (a pass) onto the route into a RouteStop; null on a
+ *  degenerate route. */
+function projectPointStop(
+  poi: Poi,
+  route: { lat: number; lng: number }[],
+): RouteStop | null {
+  const projected = projectOntoRoute(poi, route);
+  return projected ? { ...poi, ...projected } : null;
+}
+
+/**
+ * Position a Fun Zone stop on the route. A zone is a polygon the backend
+ * selected by polygon proximity (ST_DWithin over the whole geometry), so both
+ * the off-route distance AND the stop's own lat/lng come from the on-route
+ * contact — NOT the centroid. The row can read "on-route" while the centroid
+ * sits far to one side; since the stop's coordinate is what drops a via
+ * waypoint and opens the popover (TripPlannerMap), anchoring on the route
+ * contact keeps that via on the rider's road instead of detouring to the
+ * polygon middle. The bbox/map layer still shows zones at their centroid. No
+ * corridor re-filter — trust the server's selection.
+ */
+function funZoneStop(
+  zone: FunZoneListItem,
+  route: { lat: number; lng: number }[],
+): RouteStop | null {
+  const poi = funZoneToCategoryPoi(zone);
+  if (!poi) return null;
+  const contact = nearestPolygonContact(zone.boundary, route);
+  return contact ? { ...poi, ...contact } : null;
+}
+
+async function fetchNonStoreStops(
+  route: { lat: number; lng: number }[],
+  categories: PoiCategory[],
+  corridorKm: number,
+  forMonth?: number,
+  init?: { signal?: AbortSignal },
+): Promise<RouteStop[]> {
+  const wanted = new Set(categories);
+  const bufferM = Math.round(corridorKm * 1000);
+  const [passStops, zoneStops] = await Promise.all([
+    // Passes are points: the server filtered by the point within `buffer_m`, so
+    // re-projecting the same point agrees — keep the corridor guard as defence.
+    // `for_month` matches the Conditions overlay's seasonal status; omit it
+    // (current month) when unset so the body stays minimal.
+    wanted.has("mountain_pass")
+      ? passesApi
+          .checkRoute(
+            {
+              route,
+              buffer_m: bufferM,
+              ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+            },
+            init,
+          )
+          .then((res) =>
+            res.data.passes
+              .map(passToCategoryPoi)
+              .map((poi) => projectPointStop(poi, route))
+              .filter(
+                (s): s is RouteStop =>
+                  s !== null && s.distanceFromRouteKm <= corridorKm,
+              ),
+          )
+      : Promise.resolve<RouteStop[]>([]),
+    wanted.has("twisty_highlight")
+      ? fetchFunZonesInCorridor(route, corridorKm, init).then((zones) =>
+          zones
+            .map((zone) => funZoneStop(zone, route))
+            .filter((s): s is RouteStop => s !== null),
+        )
+      : Promise.resolve<RouteStop[]>([]),
+  ]);
+  return [...passStops, ...zoneStops];
+}
+
 async function fetchCategoryPois(
   bbox: [number, number, number, number],
   categories: PoiCategory[],
+  forMonth?: number,
   init?: { signal?: AbortSignal },
 ): Promise<Poi[]> {
   // bbox is [west, south, east, north] = [minLng, minLat, maxLng, maxLat].
@@ -361,10 +516,10 @@ async function fetchCategoryPois(
               .filter((p): p is Poi => p !== null),
           )
       : Promise.resolve<Poi[]>([]),
-    // mountain_pass / twisty_highlight aren't OSM — keep the mock source until
-    // the passes API + curviness layer are wired (#849 follow-up).
+    // mountain_pass → passes module, twisty_highlight → curviness Fun Zones,
+    // each via its generated bbox endpoint (#865).
     nonStoreCategories.length > 0
-      ? Promise.resolve(mockPoisByCategories(bbox, nonStoreCategories))
+      ? fetchNonStorePois(bbox, nonStoreCategories, forMonth, init)
       : Promise.resolve<Poi[]>([]),
   ]);
 
@@ -398,6 +553,7 @@ async function fetchCorridorStops(
   categories: PoiCategory[],
   corridorKm: number,
   minStayRating?: number,
+  forMonth?: number,
   init?: { signal?: AbortSignal },
 ): Promise<RouteStop[]> {
   const route = routeGeometry.coordinates
@@ -428,15 +584,16 @@ async function fetchCorridorStops(
               .filter((s): s is RouteStop => s !== null),
           )
       : Promise.resolve<RouteStop[]>([]),
-    // mountain_pass / twisty_highlight aren't in the store — mock source.
-    nonStoreCategories.length > 0
-      ? Promise.resolve(
-          mockRouteStops(
-            routeGeometry,
-            nonStoreCategories,
-            corridorKm,
-            minStayRating,
-          ),
+    // mountain_pass → passes/check-route, twisty_highlight → fun-zones
+    // corridor, projected onto the route for their STOPS position (#865).
+    // `minStayRating` never applied to these (they're not accommodations).
+    nonStoreCategories.length > 0 && route.length >= 2
+      ? fetchNonStoreStops(
+          route,
+          nonStoreCategories,
+          corridorKm,
+          forMonth,
+          init,
         )
       : Promise.resolve<RouteStop[]>([]),
   ]);
@@ -741,16 +898,24 @@ export function createPlannerApi(): PlannerApi {
       return fetchPois(route, types, init);
     },
 
-    getPoisByCategories(bbox, categories, init) {
-      return fetchCategoryPois(bbox, categories, init);
+    getPoisByCategories(bbox, categories, forMonth, init) {
+      return fetchCategoryPois(bbox, categories, forMonth, init);
     },
 
-    getRouteStops(routeGeometry, categories, corridorKm, minStayRating, init) {
+    getRouteStops(
+      routeGeometry,
+      categories,
+      corridorKm,
+      minStayRating,
+      forMonth,
+      init,
+    ) {
       return fetchCorridorStops(
         routeGeometry,
         categories,
         corridorKm,
         minStayRating,
+        forMonth,
         init,
       );
     },

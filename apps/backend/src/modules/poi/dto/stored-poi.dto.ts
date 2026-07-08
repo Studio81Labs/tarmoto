@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayNotEmpty,
   ArrayUnique,
@@ -208,14 +209,29 @@ class CorridorRoutePointDto {
 }
 
 /**
+ * Vertex cap for the corridor route — bounds the `ST_MakeLine` + bind-param
+ * array independently of the body limit (mirrors `route-quality`'s
+ * `MAX_ROUTE_QUALITY_POINTS`). This endpoint is public, so without the cap the
+ * 1 MiB body limit would be the only bound on how many points an anonymous
+ * client can push into the spatial query. A dense multi-day polyline stays well
+ * under this.
+ */
+export const MAX_POI_CORRIDOR_POINTS = 25000;
+
+/**
  * Body for `POST /poi/in-corridor` — stored POIs within `buffer_km` of a route
  * polyline. POST (not GET) so a long polyline can't overflow the URL, matching
  * `/poi/along-route` and `/passes/check-route`.
  */
 export class CorridorBodyDto {
-  @ApiProperty({ type: [CorridorRoutePointDto], minItems: 2 })
+  @ApiProperty({
+    type: [CorridorRoutePointDto],
+    minItems: 2,
+    maxItems: MAX_POI_CORRIDOR_POINTS,
+  })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_POI_CORRIDOR_POINTS)
   @ValidateNested({ each: true })
   @Type(() => CorridorRoutePointDto)
   route!: CorridorRoutePointDto[];

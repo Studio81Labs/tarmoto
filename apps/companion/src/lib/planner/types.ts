@@ -231,12 +231,15 @@ export interface PlannerApi {
    * one resolver so callers don't care that fuel/food/… are OSM,
    * mountain_pass is the seasonal-pass source, and twisty_highlight is
    * Tarmoto's curviness layer. The OSM amenity categories read the `pois`
-   * store via `/poi/in-bbox` (#857); mountain_pass / twisty_highlight stay
-   * on mock fixtures until their sources exist (#865).
+   * store via `/poi/in-bbox` (#857); mountain_pass comes from the passes
+   * module and twisty_highlight from the Fun Zones layer (#865). `forMonth`
+   * (1–12) sets the seasonal pass status so it matches the Conditions overlay;
+   * omit for the current month (it only affects mountain_pass).
    */
   getPoisByCategories(
     bbox: [number, number, number, number],
     categories: PoiCategory[],
+    forMonth?: number,
     init?: { signal?: AbortSignal },
   ): Promise<Poi[]>;
 
@@ -246,15 +249,17 @@ export interface PlannerApi {
    * proximity to the route line, each with distance-from-route and
    * km-along-route, sorted by km-along-route. The OSM categories query the
    * `pois` store's PostGIS corridor via `/poi/in-corridor` (#859);
-   * mountain_pass / twisty_highlight stay on mock fixtures (#865).
-   * `minStayRating` applies only to accommodation categories
-   * (biker_hotel / campground).
+   * mountain_pass via `passes/check-route`, twisty_highlight via the Fun Zones
+   * corridor (#865). `minStayRating` applies only to accommodation categories
+   * (biker_hotel / campground); `forMonth` (1–12) sets the seasonal pass status
+   * (mountain_pass only), omit for the current month.
    */
   getRouteStops(
     routeGeometry: GeoJSON.LineString,
     categories: PoiCategory[],
     corridorKm: number,
     minStayRating?: number,
+    forMonth?: number,
     init?: { signal?: AbortSignal },
   ): Promise<RouteStop[]>;
 

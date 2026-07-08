@@ -577,7 +577,7 @@ const TripPlannerMapContent = forwardRef<
 >(function TripPlannerMapContent(
   {
     trip,
-    month: _month,
+    month,
     drawnRegion: controlledDrawnRegion,
     onDrawnRegionChange,
     onDrawModeChange,
@@ -1643,9 +1643,12 @@ const TripPlannerMapContent = forwardRef<
           bounds.getEast(),
           bounds.getNorth(),
         ];
-        const pois = await plannerApi.getPoisByCategories(bbox, categories, {
-          signal: controller.signal,
-        });
+        const pois = await plannerApi.getPoisByCategories(
+          bbox,
+          categories,
+          month,
+          { signal: controller.signal },
+        );
         if (!cancelled) applyPois(pois);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
@@ -1657,7 +1660,14 @@ const TripPlannerMapContent = forwardRef<
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [activePoiCategories, poiViewportToken, ready, poiBrowsing, usedPois]);
+  }, [
+    activePoiCategories,
+    poiViewportToken,
+    ready,
+    poiBrowsing,
+    usedPois,
+    month,
+  ]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
