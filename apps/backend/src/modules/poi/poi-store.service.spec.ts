@@ -354,6 +354,12 @@ describe('PoiStoreService', () => {
       expect(sql).toContain('ST_DWithin');
       expect(sql).toContain('ST_MakeLine');
       expect(params).toMatchObject({ buffer: 2000, lat0: 49.5, lng0: 18.4 });
+      // Bounded closest-to-route so a dense corridor can't hydrate unbounded
+      // rows (unlike findAlongRoute, which slices after projecting every hit).
+      expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
+        'ST_Distance',
+      );
+      expect(qb.limit).toHaveBeenCalledWith(500);
       // Raw shape — the service's rankAlongRoute does the projection, so no
       // along/off-route distances are computed here.
       expect(pois[0]).toMatchObject({

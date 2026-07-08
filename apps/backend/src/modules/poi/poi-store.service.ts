@@ -223,7 +223,12 @@ export class PoiStoreService {
     if (route.length < 2) {
       throw new BadRequestException('Route must have at least 2 points');
     }
-    const rows = await this.queryCorridorEntities(route, bufferKm, kinds);
+    const rows = await this.queryCorridorEntities(
+      route,
+      bufferKm,
+      kinds,
+      MAX_LIMIT,
+    );
     return rows.map(storedPoiToPointOfInterest);
   }
 
@@ -270,6 +275,7 @@ export class PoiStoreService {
     route: ReadonlyArray<RoutePoint>,
     bufferKm: number,
     kinds: string[] | undefined,
+    limit?: number,
   ): Promise<Poi[]> {
     const bufferM = Math.round(bufferKm * 1000);
     // Build the LineString via named params so user coordinates are never
@@ -283,19 +289,25 @@ export class PoiStoreService {
         return `ST_MakePoint(:lng${i}, :lat${i})`;
       })
       .join(',');
+    const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography`;
     return withPoiRepo(this.poiDataSource, (repo) => {
-      const qb = repo.createQueryBuilder('poi').where(
-        `ST_DWithin(
-          poi.geom::geography,
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
-          :buffer
-        )`,
-        params,
-      );
+      const qb = repo
+        .createQueryBuilder('poi')
+        .where(`ST_DWithin(poi.geom::geography, ${line}, :buffer)`, params);
       // Exclude bulk-import tombstones (#850) from the corridor read too.
       qb.andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
         qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      // Bound the store-first `/poi/along-route` read (#849): unlike
+      // `findAlongRoute` (which projects every hit, then sorts by along-route +
+      // slices), that path discards most rows in `rankAlongRoute`, so cap at
+      // the DB — closest-to-route first — so a dense urban corridor can't
+      // hydrate thousands of rows. `findAlongRoute` passes no limit → unchanged.
+      if (limit !== undefined) {
+        qb.orderBy(`ST_Distance(poi.geom::geography, ${line})`, 'ASC').limit(
+          limit,
+        );
       }
       return qb.getMany();
     });

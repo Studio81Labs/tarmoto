@@ -7,6 +7,7 @@ import { poiDatabaseConfig } from '../../config/poi-database.config.js';
 import { AddPois1787000000000 } from '../../migrations-poi/1787000000000-AddPois.js';
 import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations-poi/1793000000000-AddPoiDecisionSupportFields.js';
 import { AddPoiDeactivatedAt1798000000000 } from '../../migrations-poi/1798000000000-AddPoiDeactivatedAt.js';
+import { AddPoiGeographyIndex1799000000000 } from '../../migrations-poi/1799000000000-AddPoiGeographyIndex.js';
 import { isPoiConnectionError } from './poi-repo.js';
 
 const logger = new Logger('PoiDatabase');
@@ -98,6 +99,7 @@ export function buildPoiTypeOrmOptions(
       AddPois1787000000000,
       AddPoiDecisionSupportFields1793000000000,
       AddPoiDeactivatedAt1798000000000,
+      AddPoiGeographyIndex1799000000000,
     ],
     migrationsRun: !isOpenApiExport,
     synchronize: false,
