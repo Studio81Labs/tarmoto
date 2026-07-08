@@ -5,6 +5,7 @@ import type {
   GeocodeResult,
   ReverseGeocodeResult,
 } from '../geocode-provider.interface.js';
+import { MinSpacingLimiter } from '../min-spacing-limiter.js';
 
 interface NominatimRow {
   display_name?: string;
@@ -23,6 +24,15 @@ interface NominatimReverseRow {
 }
 
 const NOMINATIM_FETCH_TIMEOUT_MS = 8_000;
+
+// Public Nominatim's usage policy caps a source at ~1 req/s. Serialize all
+// upstream calls (search + reverse share one budget) so bursts — e.g. the
+// planner reverse-geocoding several waypoints at once — start ≤ 1/s apart
+// instead of firing in parallel (#909). A call that would queue longer than
+// MAX_QUEUE_WAIT is shed (GeocoderBusyError → graceful fallback) rather than
+// piling up. A self-hosted instance removes the cap; see ADR-0002.
+const NOMINATIM_MIN_SPACING_MS = 1_000;
+const NOMINATIM_MAX_QUEUE_WAIT_MS = 4_000;
 
 // Reverse-geocode granularity: bias the matched feature toward locality
 // level (town / village / suburb) rather than a single building, so a
@@ -61,6 +71,12 @@ const REVERSE_ADDRESS_KEYS = [
 export class NominatimProvider implements GeocodeProvider {
   private readonly endpoint: string;
   private readonly userAgent: string;
+  // One shared limiter for search + reverse — they hit the same upstream, so
+  // they draw from a single ≤ 1/s budget.
+  private readonly limiter = new MinSpacingLimiter(
+    NOMINATIM_MIN_SPACING_MS,
+    NOMINATIM_MAX_QUEUE_WAIT_MS,
+  );
 
   constructor(config: ConfigService) {
     const raw = config.get<string>(
@@ -78,6 +94,32 @@ export class NominatimProvider implements GeocodeProvider {
     );
   }
 
+  /**
+   * Rate-limited GET: serialized to ≤ 1/s upstream via {@link limiter}, with a
+   * per-request abort timeout and the policy-required `User-Agent`.
+   */
+  private scheduledFetch(url: string): Promise<Response> {
+    return this.limiter.schedule(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        NOMINATIM_FETCH_TIMEOUT_MS,
+      );
+      try {
+        return await fetch(url, {
+          method: 'GET',
+          headers: {
+            'User-Agent': this.userAgent,
+            Accept: 'application/json',
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+  }
+
   async search(q: string, limit: number): Promise<GeocodeResult[]> {
     const url = new URL('search', this.endpoint);
     url.searchParams.set('q', q);
@@ -89,24 +131,7 @@ export class NominatimProvider implements GeocodeProvider {
     // labels stable (English) for a predictable dropdown.
     url.searchParams.set('accept-language', 'en');
 
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      NOMINATIM_FETCH_TIMEOUT_MS,
-    );
-    let response: Response;
-    try {
-      response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'User-Agent': this.userAgent,
-          Accept: 'application/json',
-        },
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.scheduledFetch(url.toString());
 
     if (!response.ok) {
       throw new Error(
@@ -135,24 +160,7 @@ export class NominatimProvider implements GeocodeProvider {
     url.searchParams.set('zoom', String(NOMINATIM_REVERSE_ZOOM));
     url.searchParams.set('accept-language', 'en');
 
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      NOMINATIM_FETCH_TIMEOUT_MS,
-    );
-    let response: Response;
-    try {
-      response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'User-Agent': this.userAgent,
-          Accept: 'application/json',
-        },
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await this.scheduledFetch(url.toString());
 
     if (!response.ok) {
       throw new Error(

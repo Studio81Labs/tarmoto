@@ -16,12 +16,13 @@ import {
   ReverseGeocodeResultDto,
 } from './dto/geocode.dto.js';
 
-// Per-user rate limit for this Nominatim-backed proxy. @SharedThrottleBucket
-// makes the 60/min budget apply to the whole controller per user — forward +
-// reverse share ONE bucket, not one each — so a single client can't exceed
-// ~1 req/s to Nominatim (OSMF's per-source policy), independent of the global
-// default. Generous for debounced typeahead + pin naming; the GeocodeService
-// response cache is the primary upstream-load reducer (#909).
+// Per-user rate limit for this Nominatim-backed proxy — a coarse abuse
+// guardrail (60/min per user; @SharedThrottleBucket makes it apply across
+// search + reverse together, not per action, so a client can't spend the full
+// budget on each). The hard ≤ 1 req/s cap to public Nominatim is enforced
+// UPSTREAM by NominatimProvider's min-spacing limiter; this throttle just
+// bounds how much any one client can enqueue, and the GeocodeService response
+// cache collapses repeated queries (#909).
 @Throttle({ default: { ttl: 60_000, limit: 60 } })
 @SharedThrottleBucket()
 @ApiTags('geocode')
