@@ -4,7 +4,12 @@ import {
 } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
-import { PoiStoreService, toStoredPoiDto } from './poi-store.service.js';
+import {
+  PoiStoreService,
+  storedPoiToAccommodationPoi,
+  storedPoiToPointOfInterest,
+  toStoredPoiDto,
+} from './poi-store.service.js';
 
 function makePoi(over: Partial<Poi> = {}): Poi {
   return {
@@ -60,6 +65,59 @@ describe('toStoredPoiDto', () => {
         last_imported_at: '2026-07-06T00:00:00.000Z',
       }),
     );
+  });
+});
+
+describe('storedPoiToPointOfInterest', () => {
+  it('maps a stored row to the raw PointOfInterest, cuisine as the food hint', () => {
+    expect(storedPoiToPointOfInterest(makePoi())).toMatchObject({
+      external_id: 'osm:node:42',
+      kind: 'restaurant',
+      lat: 49.5,
+      lng: 18.4,
+      hint: 'regional',
+      cuisine: 'regional',
+    });
+  });
+
+  it('uses the brand column as the hint for fuel stations', () => {
+    const poi = storedPoiToPointOfInterest(
+      makePoi({ kind: 'fuel_station', cuisine: null, brand: 'Shell' }),
+    );
+    expect(poi.hint).toBe('Shell');
+  });
+
+  it('derives a viewpoint hint from the raw tags bag (description)', () => {
+    const poi = storedPoiToPointOfInterest(
+      makePoi({
+        kind: 'viewpoint',
+        cuisine: null,
+        brand: null,
+        tags: { description: 'Panorama over the valley' },
+      }),
+    );
+    expect(poi.hint).toBe('Panorama over the valley');
+  });
+
+  it('yields a null viewpoint hint when the tags bag is null', () => {
+    const poi = storedPoiToPointOfInterest(
+      makePoi({ kind: 'viewpoint', cuisine: null, brand: null, tags: null }),
+    );
+    expect(poi.hint).toBeNull();
+  });
+});
+
+describe('storedPoiToAccommodationPoi', () => {
+  it('maps a stored row to the raw AccommodationPoi with stars', () => {
+    expect(
+      storedPoiToAccommodationPoi(makePoi({ kind: 'hotel', stars: 4 })),
+    ).toMatchObject({
+      external_id: 'osm:node:42',
+      kind: 'hotel',
+      lat: 49.5,
+      lng: 18.4,
+      stars: 4,
+    });
   });
 });
 
@@ -208,6 +266,150 @@ describe('PoiStoreService', () => {
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
       expect(kindParams).toEqual({ kinds: ['fuel_station'] });
+    });
+  });
+
+  describe('findPointsOfInterestNear (store-first source)', () => {
+    it('runs a geography ST_DWithin radius, nearest-first + capped, mapped to PointOfInterest', async () => {
+      qb.getMany.mockResolvedValueOnce([makePoi()]);
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+      ]);
+      const [sql, params] = qb.where.mock.calls[0] as [
+        string,
+        Record<string, number>,
+      ];
+      expect(sql).toContain('ST_DWithin');
+      expect(sql).toContain('poi.geom::geography');
+      expect(sql).toContain('ST_MakePoint');
+      expect(params).toMatchObject({ lat: 49.5, lng: 18.4, radius: 5000 });
+      expect(qb.andWhere).toHaveBeenNthCalledWith(
+        1,
+        'poi.deactivated_at IS NULL',
+      );
+      const [kindSql, kindParams] = qb.andWhere.mock.calls[1] as [
+        string,
+        unknown,
+      ];
+      expect(kindSql).toContain('poi.kind IN (:...kinds)');
+      expect(kindParams).toEqual({ kinds: ['restaurant'] });
+      // Nearest-first + bounded per kind so a dense radius can't load unbounded
+      // rows or let one kind crowd out sparser ones before rankPois.
+      expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
+        'ST_Distance',
+      );
+      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
+      expect(pois[0]).toMatchObject({
+        external_id: 'osm:node:42',
+        kind: 'restaurant',
+        lat: 49.5,
+        lng: 18.4,
+        hint: 'regional',
+      });
+    });
+
+    it('caps each kind independently (rankPois caps per kind)', async () => {
+      await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+        'fuel_station',
+      ]);
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
+      expect(qb.limit).toHaveBeenCalledWith(100);
+      const kindFilters = qb.andWhere.mock.calls
+        .filter(([sql]) => String(sql).includes('poi.kind IN'))
+        .map(([, params]) => (params as { kinds: string[] }).kinds);
+      expect(kindFilters).toContainEqual(['restaurant']);
+      expect(kindFilters).toContainEqual(['fuel_station']);
+    });
+  });
+
+  describe('findAccommodationsNear (store-first source)', () => {
+    it('runs a single global radius query and maps to AccommodationPoi with stars', async () => {
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({ kind: 'hotel', stars: 4, cuisine: null }),
+      ]);
+      const acc = await service.findAccommodationsNear(49.5, 18.4, 10, [
+        'hotel',
+      ]);
+      // Accommodations rank globally (closest-N), so one query with the global
+      // cap — no per-kind fan-out.
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
+      const params = (
+        qb.where.mock.calls[0] as [string, Record<string, number>]
+      )[1];
+      expect(params).toMatchObject({ lat: 49.5, lng: 18.4, radius: 10_000 });
+      expect(acc[0]).toMatchObject({
+        external_id: 'osm:node:42',
+        kind: 'hotel',
+        stars: 4,
+      });
+    });
+
+    it('pushes min_stars into the query so unrated stays cannot fill the cap', async () => {
+      await service.findAccommodationsNear(49.5, 18.4, 10, ['hotel'], 3);
+      const starFilter = (
+        qb.andWhere.mock.calls as Array<[string, { minStars?: number }]>
+      ).find(([sql]) => sql.includes('poi.stars >='));
+      expect(starFilter).toBeDefined();
+      expect(starFilter?.[1]).toEqual({ minStars: 3 });
+    });
+  });
+
+  describe('findPointsOfInterestInCorridor (store-first source)', () => {
+    const route = [
+      { lat: 49.5, lng: 18.4 },
+      { lat: 49.6, lng: 18.6 },
+    ];
+
+    it('rejects a route shorter than two points', async () => {
+      await expect(
+        service.findPointsOfInterestInCorridor([{ lat: 49.5, lng: 18.4 }], 2, [
+          'restaurant',
+        ]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('queries the ST_DWithin corridor and returns raw, unprojected PointOfInterest', async () => {
+      qb.getMany.mockResolvedValueOnce([makePoi()]);
+      const pois = await service.findPointsOfInterestInCorridor(route, 2, [
+        'restaurant',
+      ]);
+      const [sql, params] = qb.where.mock.calls[0] as [
+        string,
+        Record<string, number>,
+      ];
+      expect(sql).toContain('ST_DWithin');
+      expect(sql).toContain('ST_MakeLine');
+      expect(params).toMatchObject({ buffer: 2000, lat0: 49.5, lng0: 18.4 });
+      // Bounded closest-to-route so a dense corridor can't hydrate unbounded
+      // rows (unlike findAlongRoute, which slices after projecting every hit).
+      expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
+        'ST_Distance',
+      );
+      expect(qb.limit).toHaveBeenCalledWith(100); // CORRIDOR_STORE_PER_KIND_LIMIT
+      // Raw shape — the service's rankAlongRoute does the projection, so no
+      // along/off-route distances are computed here.
+      expect(pois[0]).toMatchObject({
+        external_id: 'osm:node:42',
+        hint: 'regional',
+      });
+      expect(pois[0]).not.toHaveProperty('distance_along_route_km');
+    });
+
+    it('caps each kind independently so a dense kind cannot crowd out sparse ones', async () => {
+      await service.findPointsOfInterestInCorridor(route, 2, [
+        'restaurant',
+        'fuel_station',
+      ]);
+      // One bounded, closest-to-route query per kind — not one global cap.
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
+      expect(qb.limit).toHaveBeenCalledWith(100);
+      const kindFilters = qb.andWhere.mock.calls
+        .filter(([sql]) => String(sql).includes('poi.kind IN'))
+        .map(([, params]) => (params as { kinds: string[] }).kinds);
+      expect(kindFilters).toContainEqual(['restaurant']);
+      expect(kindFilters).toContainEqual(['fuel_station']);
     });
   });
 });
