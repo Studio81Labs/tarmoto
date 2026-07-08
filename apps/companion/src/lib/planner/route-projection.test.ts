@@ -86,6 +86,26 @@ describe("projectRingOntoRoute", () => {
     expect(p!.kmAlongRoute).toBeLessThan(40);
   });
 
+  it("anchors at the entry when one leg enters and exits a zone", () => {
+    // A single long leg passes fully through a box: it enters at lng 18.4
+    // (~km 29) and exits at lng 18.6 (~km 44). Both are 0 km contacts on the
+    // same leg; the earliest-on-tie rule must anchor at the entry, not the exit.
+    const longRoute = [
+      { lat: 49.0, lng: 18.0 },
+      { lat: 49.0, lng: 19.0 },
+    ];
+    const box = [
+      { lat: 48.9, lng: 18.4 },
+      { lat: 48.9, lng: 18.6 },
+      { lat: 49.1, lng: 18.6 },
+      { lat: 49.1, lng: 18.4 },
+    ];
+    const p = projectRingOntoRoute(box, longRoute);
+    expect(p!.distanceFromRouteKm).toBe(0);
+    expect(p!.kmAlongRoute).toBeGreaterThan(26);
+    expect(p!.kmAlongRoute).toBeLessThan(33); // ~29 (entry), not ~44 (exit)
+  });
+
   it("returns the perpendicular distance for a box entirely off the route", () => {
     // A small box ~11 km north (0.1° lat) of the line.
     const box = [

@@ -172,6 +172,7 @@ export function projectRingOntoRoute(
 ): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
   if (route.length < 2 || ring.length === 0) return null;
   const prefixKm = cumulativeRouteKm(route);
+  const EPS_KM = 1e-9;
   let bestKm = Number.POSITIVE_INFINITY;
   let bestAlongKm = 0;
   for (let i = 1; i < route.length; i++) {
@@ -183,9 +184,16 @@ export function projectRingOntoRoute(
         ring[j]!,
         ring[(j + 1) % ring.length]!, // close the ring
       );
-      if (distanceKm < bestKm) {
+      const alongKm = prefixKm[i - 1]! + s * legKm;
+      // Strictly nearer wins; on a tie (e.g. the several 0 km crossings where a
+      // route enters and exits a zone) keep the earliest along the route, so a
+      // zone is anchored at its entry rather than an arbitrary later crossing.
+      if (
+        distanceKm < bestKm - EPS_KM ||
+        (distanceKm <= bestKm + EPS_KM && alongKm < bestAlongKm)
+      ) {
         bestKm = distanceKm;
-        bestAlongKm = prefixKm[i - 1]! + s * legKm;
+        bestAlongKm = alongKm;
       }
     }
   }
