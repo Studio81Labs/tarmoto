@@ -1382,6 +1382,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips/{tripId}/invite/{code}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Masked pre-join preview for an invited rider
+         * @description Read-only route overview + invite context for a logged-in but not-yet-member rider, authorized by a live personal invite code (not membership). Powers the "preview then accept" join screen. Does NOT consume the invite. 404s when the trip or code is unknown/revoked.
+         */
+        get: operations["TripsController_getInvitePreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trips/{tripId}/join": {
         parameters: {
             query?: never;
@@ -4841,6 +4861,27 @@ export interface components {
             selected_option: "best-fit" | "scenic" | "fastest";
             options: components["schemas"]["TripGenerationOptionDto"][];
         };
+        TripInvitePreviewDto: {
+            trip_id: string;
+            title: string;
+            /** @description Display name of the trip owner. `null` when unresolved. */
+            owner_name: string | null;
+            /** @description Display name of the rider who sent this invite. `null` when unresolved. */
+            invited_by_name: string | null;
+            /**
+             * @description The role the rider will hold after accepting.
+             * @enum {string}
+             */
+            role: "owner" | "editor" | "viewer";
+            region: string | null;
+            num_days: number;
+            /** @description Total planned distance in km. `null` when unknown. */
+            distance_km: number | null;
+            /** @description Simplified per-day route polylines — each an array of [lng, lat] pairs. Empty when the trip has no geometry. */
+            lines: number[][][];
+            /** @description True when the authenticated caller is already a member — the client can skip straight to the trip instead of re-accepting. */
+            already_member: boolean;
+        };
         JoinTripDto: {
             /** @description Personal invite code from the invite email (each recipient gets their own; revoking an invite invalidates its code). Case-insensitive on input — server normalizes to uppercase. */
             invite_code: string;
@@ -6223,6 +6264,7 @@ export type SchemaUpdateTripDto = components['schemas']['UpdateTripDto'];
 export type SchemaGenerateTripDto = components['schemas']['GenerateTripDto'];
 export type SchemaTripGenerationOptionDto = components['schemas']['TripGenerationOptionDto'];
 export type SchemaGenerateTripResponseDto = components['schemas']['GenerateTripResponseDto'];
+export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePreviewDto'];
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
@@ -8621,6 +8663,35 @@ export interface operations {
                 };
             };
             /** @description Trip not found or not visible */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TripsController_getInvitePreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripInvitePreviewDto"];
+                };
+            };
+            /** @description Invite not found or revoked */
             404: {
                 headers: {
                     [name: string]: unknown;

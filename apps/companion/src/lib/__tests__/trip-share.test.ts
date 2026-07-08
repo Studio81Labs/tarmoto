@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  flattenTripRoute,
   parseTripSnapshot,
+  tripRouteLines,
   tripSummary,
 } from "@/lib/trip-share";
 import type { Trip } from "@/lib/types";
@@ -108,7 +108,7 @@ describe("parseTripSnapshot", () => {
           routeGeometry: {
             type: "LineString",
             // Flat numbers instead of [lng, lat] pairs — would crash
-            // `flattenTripRoute`'s destructure without the guard.
+            // `tripRouteLines`'s destructure without the guard.
             coordinates: [1, 2, 3],
           },
         },
@@ -135,13 +135,16 @@ describe("parseTripSnapshot", () => {
   });
 });
 
-describe("flattenTripRoute", () => {
-  it("prefers routeGeometry coordinates over waypoints when present", () => {
-    const pts = flattenTripRoute(validTrip);
-    // Day 1 has 3 geometry coords, day 2 has only waypoints (2 coords)
-    expect(pts).toHaveLength(5);
-    // First point comes from day-1 routeGeometry (lng,lat → lat,lng)
-    expect(pts[0]).toEqual({ lat: 43.0, lng: 1.5 });
+describe("tripRouteLines", () => {
+  it("keeps one polyline per day, preferring routeGeometry over waypoints", () => {
+    const lines = tripRouteLines(validTrip);
+    // Day 1 has 3 geometry coords, day 2 has only waypoints (2 coords) —
+    // each stays its own line so the preview doesn't connect them.
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toHaveLength(3);
+    expect(lines[1]).toHaveLength(2);
+    // First point comes from day-1 routeGeometry (lng,lat → lat,lng).
+    expect(lines[0]?.[0]).toEqual({ lat: 43.0, lng: 1.5 });
   });
 
   it("skips non-finite coordinates in routeGeometry", () => {
@@ -163,13 +166,14 @@ describe("flattenTripRoute", () => {
         },
       ],
     };
-    const pts = flattenTripRoute(tripWithBad);
-    expect(pts).toHaveLength(2);
+    const lines = tripRouteLines(tripWithBad);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toHaveLength(2);
   });
 
   it("skips non-pair entries in routeGeometry without throwing", () => {
     // Bypasses `parseTripSnapshot` to mirror callers that hand in a trip
-    // directly (demo trips, imports): the flattener must not destructure
+    // directly (demo trips, imports): the splitter must not destructure
     // a scalar as `[lng, lat]`.
     const tripWithScalars = {
       ...validTrip,
@@ -186,8 +190,8 @@ describe("flattenTripRoute", () => {
         },
       ],
     } as Trip;
-    expect(() => flattenTripRoute(tripWithScalars)).not.toThrow();
-    expect(flattenTripRoute(tripWithScalars)).toHaveLength(2);
+    expect(() => tripRouteLines(tripWithScalars)).not.toThrow();
+    expect(tripRouteLines(tripWithScalars)[0]).toHaveLength(2);
   });
 });
 

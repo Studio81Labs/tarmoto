@@ -210,7 +210,13 @@ describe('TripsService', () => {
       );
 
     tripRepo = {
-      manager: { transaction: transactionMock },
+      // `query` backs the raw ST_Simplify geometry read in
+      // `getInvitePreview`; default to no geometry so unrelated tests are
+      // unaffected and preview tests override per-case.
+      manager: {
+        transaction: transactionMock,
+        query: jest.fn().mockResolvedValue([]),
+      },
       create: jest.fn().mockImplementation((data: Partial<Trip>) => ({
         ...data,
       })),
@@ -1161,6 +1167,106 @@ describe('TripsService', () => {
         expect.objectContaining({ role: 'editor' }),
       );
       expect(manager.delete).toHaveBeenCalledWith(TripInvite, { id: 'inv-1' });
+    });
+  });
+
+  describe('getInvitePreview', () => {
+    const CODE = 'ABCD1234';
+    const geojson = (coords: number[][]) =>
+      JSON.stringify({ type: 'LineString', coordinates: coords });
+    const makeInvite = (over: Partial<TripInvite> = {}): TripInvite =>
+      ({
+        id: 'inv-1',
+        trip_id: TRIP_ID,
+        email: 'rider@example.com',
+        role: 'editor',
+        invite_code: CODE,
+        invited_by: OWNER_ID,
+        inviter: { display_name: 'Adam' },
+        ...over,
+      }) as unknown as TripInvite;
+    const ownedWithOwner = () =>
+      makeOwnedTrip({ owner: { display_name: 'Adam' } as never });
+
+    it('returns a masked route overview + invite context for a valid code', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(ownedWithOwner());
+      inviteRepo.findOne.mockResolvedValueOnce(makeInvite());
+      memberRepo.findOne.mockResolvedValueOnce(null);
+      (tripRepo.manager.query as jest.Mock).mockResolvedValueOnce([
+        {
+          geometry: geojson([
+            [11, 46],
+            [11.1, 46.1],
+          ]),
+        },
+        { geometry: null }, // missing-geometry day → dropped
+        { geometry: geojson([[11.1, 46.1]]) }, // single point → dropped
+      ]);
+      tripDayRepo.createQueryBuilder.mockReturnValue(
+        makeAggQbMock([
+          { trip_id: TRIP_ID, distance_km: '520' } as AggRow,
+        ]) as never,
+      );
+
+      const result = await service.getInvitePreview(
+        OTHER_ID,
+        TRIP_ID,
+        ` ${CODE.toLowerCase()} `,
+      );
+
+      expect(result.trip_id).toBe(TRIP_ID);
+      expect(result.title).toBe('Big Italian Loop');
+      expect(result.owner_name).toBe('Adam');
+      expect(result.invited_by_name).toBe('Adam');
+      expect(result.role).toBe('editor');
+      expect(result.region).toBe('Dolomites');
+      expect(result.num_days).toBe(5);
+      expect(result.distance_km).toBe(520);
+      // Only the valid (>=2 point) polyline survives.
+      expect(result.lines).toEqual([
+        [
+          [11, 46],
+          [11.1, 46.1],
+        ],
+      ]);
+      expect(result.already_member).toBe(false);
+      // Masked: the member roster never reaches this surface.
+      expect(result).not.toHaveProperty('members');
+      // Code is trimmed + upper-cased before the lookup.
+      expect(inviteRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { trip_id: TRIP_ID, invite_code: CODE },
+        }),
+      );
+      // Read-only: the invite is NOT consumed (unlike join()).
+      expect(inviteRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('404s when the trip does not exist', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(null);
+      await expect(
+        service.getInvitePreview(OTHER_ID, TRIP_ID, CODE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(inviteRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('404s when the invite code is unknown or revoked', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(ownedWithOwner());
+      inviteRepo.findOne.mockResolvedValueOnce(null);
+      await expect(
+        service.getInvitePreview(OTHER_ID, TRIP_ID, CODE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('flags already_member when the caller is already on the trip', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(ownedWithOwner());
+      inviteRepo.findOne.mockResolvedValueOnce(makeInvite());
+      memberRepo.findOne.mockResolvedValueOnce({
+        user_id: OTHER_ID,
+      } as unknown as TripMember);
+
+      const result = await service.getInvitePreview(OTHER_ID, TRIP_ID, CODE);
+      expect(result.already_member).toBe(true);
     });
   });
 

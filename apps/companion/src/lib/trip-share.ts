@@ -53,7 +53,7 @@ function isTripDay(candidate: unknown): candidate is TripDay {
   const waypoints = (candidate as { waypoints?: unknown }).waypoints;
   if (!Array.isArray(waypoints) || !waypoints.every(isWaypoint)) return false;
   // `routeGeometry` is optional (imported trips often lack it), but when
-  // present `flattenTripRoute` destructures each entry as `[lng, lat]`.
+  // present `tripRouteLines` destructures each entry as `[lng, lat]`.
   // Reject malformed coordinate arrays here so a payload like
   // `{ coordinates: [1, 2, 3] }` routes to the "unexpected format" viewer
   // branch instead of crashing SSR with a TypeError at render time.
@@ -69,7 +69,7 @@ function isLineStringGeometry(candidate: unknown): boolean {
   if (typeof candidate !== "object" || candidate === null) return false;
   const coordinates = (candidate as { coordinates?: unknown }).coordinates;
   // Geometry is only consumed when coordinates exist; absent/empty coords
-  // are allowed — `flattenTripRoute` already falls back to waypoints.
+  // are allowed — `tripRouteLines` already falls back to waypoints.
   if (coordinates === undefined) return true;
   if (!Array.isArray(coordinates)) return false;
   return coordinates.every(
@@ -108,13 +108,15 @@ function isWaypoint(candidate: unknown): candidate is Waypoint {
 }
 
 /**
- * Flatten a trip's day-level route geometry into a single polyline for the
- * preview SVG. Falls back to waypoint coordinates for days that don't carry
- * a stored `routeGeometry` (e.g. imported trips).
+ * Split a trip's route geometry into one polyline per day for the preview SVG.
+ * Falls back to a day's waypoint coordinates when it carries no stored
+ * `routeGeometry` (e.g. imported trips). Keeping days separate lets the preview
+ * avoid bridging non-adjacent days with an artificial straight segment.
  */
-export function flattenTripRoute(trip: Trip): RoutePoint[] {
-  const out: RoutePoint[] = [];
+export function tripRouteLines(trip: Trip): RoutePoint[][] {
+  const lines: RoutePoint[][] = [];
   for (const day of trip.days) {
+    const line: RoutePoint[] = [];
     if (day.routeGeometry?.coordinates?.length) {
       for (const entry of day.routeGeometry.coordinates) {
         // `parseTripSnapshot` already validates the coord shape, but this
@@ -129,16 +131,17 @@ export function flattenTripRoute(trip: Trip): RoutePoint[] {
           Number.isFinite(lat) &&
           Number.isFinite(lng)
         ) {
-          out.push({ lat, lng });
+          line.push({ lat, lng });
         }
       }
-      continue;
+    } else {
+      for (const wp of day.waypoints) {
+        line.push({ lat: wp.location.lat, lng: wp.location.lng });
+      }
     }
-    for (const wp of day.waypoints) {
-      out.push({ lat: wp.location.lat, lng: wp.location.lng });
-    }
+    if (line.length > 0) lines.push(line);
   }
-  return out;
+  return lines;
 }
 
 export function tripSummary(trip: Trip): {

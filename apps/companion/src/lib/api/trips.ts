@@ -35,6 +35,11 @@ export type InviteTripResponse = JsonResponse<
   202
 >;
 export type SaveRouteBody = JsonRequest<"/api/v1/trips/{tripId}/route", "put">;
+export type TripInvitePreview = JsonResponse<
+  "/api/v1/trips/{tripId}/invite/{code}/preview",
+  "get",
+  200
+>;
 
 export const tripsApi = {
   list: (params?: ListTripsQuery) =>
@@ -87,6 +92,15 @@ export const tripsApi = {
     openApiData<DuplicateTripResponse>(
       api.POST("/api/v1/trips/{tripId}/duplicate", {
         params: { path: { tripId } },
+      }),
+    ),
+  // GET /trips/:tripId/invite/:code/preview — masked pre-accept preview
+  // for an invited (not-yet-member) rider, authorized by the invite code.
+  // 404s on an unknown/revoked code. Read-only: does not consume the invite.
+  getInvitePreview: (tripId: string, code: string) =>
+    openApiData<TripInvitePreview>(
+      api.GET("/api/v1/trips/{tripId}/invite/{code}/preview", {
+        params: { path: { tripId, code } },
       }),
     ),
   // POST /trips/:tripId/join — accept an invite by submitting the

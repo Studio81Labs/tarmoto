@@ -99,21 +99,41 @@ export function buildRoutePreview(
   size = 400,
   padding = 8,
 ): RoutePreview | null {
-  if (!geometry || geometry.length < 2) return null;
-  const valid = geometry.filter(
-    (p) =>
-      Number.isFinite(p.lat) &&
-      Number.isFinite(p.lng) &&
-      Math.abs(p.lat) <= 90 &&
-      Math.abs(p.lng) <= 180,
+  return buildRoutePreviewFromLines(
+    geometry ? [geometry] : null,
+    size,
+    padding,
   );
-  if (valid.length < 2) return null;
+}
+
+// Multi-line variant: each entry in `lines` is projected into the SAME shared
+// viewBox but emitted as its own subpath (a fresh `M`), so a break between two
+// polylines (e.g. non-adjacent trip days) is NOT bridged by an artificial
+// straight segment. Lines with fewer than 2 valid points are skipped; returns
+// `null` when no line survives with a drawable segment.
+export function buildRoutePreviewFromLines(
+  lines: ReadonlyArray<readonly RoutePoint[]> | null | undefined,
+  size = 400,
+  padding = 8,
+): RoutePreview | null {
+  if (!lines) return null;
+  const isValid = (p: RoutePoint) =>
+    Number.isFinite(p.lat) &&
+    Number.isFinite(p.lng) &&
+    Math.abs(p.lat) <= 90 &&
+    Math.abs(p.lng) <= 180;
+
+  const validLines = lines
+    .map((line) => line.filter(isValid))
+    .filter((line) => line.length >= 2);
+  const allPoints = validLines.flat();
+  if (allPoints.length < 2) return null;
 
   let minLat = Infinity;
   let maxLat = -Infinity;
   let minLng = Infinity;
   let maxLng = -Infinity;
-  for (const p of valid) {
+  for (const p of allPoints) {
     if (p.lat < minLat) minLat = p.lat;
     if (p.lat > maxLat) maxLat = p.lat;
     if (p.lng < minLng) minLng = p.lng;
@@ -137,11 +157,15 @@ export function buildRoutePreview(
     return { x: padding + x * width, y: padding + y * height };
   };
 
-  const path = valid
-    .map((p, i) => {
-      const { x, y } = project(p);
-      return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
+  const path = validLines
+    .map((line) =>
+      line
+        .map((p, i) => {
+          const { x, y } = project(p);
+          return `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
+        })
+        .join(" "),
+    )
     .join(" ");
 
   return {
