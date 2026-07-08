@@ -321,6 +321,32 @@ describe('PoiImportService', () => {
     expect(result.tombstoned).toBe(0);
   });
 
+  it('refuses to tombstone when the extract yields zero in-bbox rows (broken/empty extract)', async () => {
+    // A valid-but-empty extract (`<osm/>`, a failed tags-filter, or points all
+    // outside the bbox) must NOT soft-deactivate the whole region — skip the
+    // write entirely so a broken extract can't wipe live data.
+    loadInBbox([
+      { id: 'uuid-a', external_id: 'node/1' },
+      { id: 'uuid-b', external_id: 'node/2' },
+    ]);
+    mockExtract(); // empty
+
+    const result = await service.importRegion(REGION);
+
+    expect(result).toEqual({
+      region: 'CZ',
+      fetched: 0,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+    });
+    expect(upsert).not.toHaveBeenCalled();
+    const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
+      ([sql]) => /UPDATE pois SET deactivated_at = NOW\(\)/.test(sql),
+    );
+    expect(tombstone).toBeUndefined();
+  });
+
   it('skips a region with no extract file yet (no parse, no write) for gradual provisioning', async () => {
     existsSyncMock.mockReturnValueOnce(false);
 

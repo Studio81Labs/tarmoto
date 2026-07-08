@@ -66,7 +66,11 @@ export interface PoiImportResult {
   fetched: number;
   upserted: number;
   tombstoned: number;
-  /** True when the region has no extract file yet (gradual provisioning). */
+  /**
+   * True when the region was not imported this run — either no extract file yet
+   * (gradual provisioning) or a valid-but-empty extract we refused to let wipe
+   * the region.
+   */
   skipped?: boolean;
 }
 
@@ -236,6 +240,28 @@ export class PoiImportService {
     const rows = [...byExternalId.values()];
     const incomingIds = new Set(byExternalId.keys());
     let tombstoned = 0;
+
+    // Guard against a broken extract wiping a region: a valid-but-empty file
+    // (`<osm/>`, a failed `osmium tags-filter`, or points all outside the bbox)
+    // yields zero in-bbox rows, and the tombstone pass would then soft-deactivate
+    // every row the region owns. Skip the write and log — a real country never
+    // has zero POIs, so zero means the extract is wrong, not that everything
+    // closed. (An empty extract for a not-yet-imported region is a harmless
+    // no-op here too.)
+    if (rows.length === 0) {
+      this.logger.warn(
+        `POI import (${region.code}): extract yielded 0 in-bbox rows ` +
+          `(fetched=${fetched}) — skipping upsert + tombstone to avoid wiping ` +
+          `the region`,
+      );
+      return {
+        region: region.code,
+        fetched,
+        upserted: 0,
+        tombstoned: 0,
+        skipped: true,
+      };
+    }
 
     await withPoiRepo(this.poiDataSource, async (repo) => {
       await repo.manager.transaction(async (tx) => {
