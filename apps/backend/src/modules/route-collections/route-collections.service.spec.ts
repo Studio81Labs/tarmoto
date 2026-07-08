@@ -25,7 +25,7 @@ describe('RouteCollectionsService', () => {
   const ownerId = 'user-1';
   const otherId = 'user-2';
   const collectionId = '00000000-0000-0000-0000-000000000001';
-  const tripId = '00000000-0000-0000-0000-000000000010';
+  const rideId = '00000000-0000-0000-0000-000000000020';
 
   const baseCollection: RouteCollection = {
     id: collectionId,
@@ -747,9 +747,8 @@ describe('RouteCollectionsService', () => {
   });
 
   describe('getPreviewBySlug (map preview geometries)', () => {
-    const tripA = '00000000-0000-0000-0000-000000000010';
-    const tripB = '00000000-0000-0000-0000-000000000011';
     const rideA = '00000000-0000-0000-0000-000000000020';
+    const rideB = '00000000-0000-0000-0000-000000000021';
 
     function lineStringJson(coords: number[][]): string {
       return JSON.stringify({ type: 'LineString', coordinates: coords });
@@ -797,30 +796,20 @@ describe('RouteCollectionsService', () => {
       expect(queryMock).not.toHaveBeenCalled();
     });
 
-    it('aggregates trip days into per-trip lines and pairs ride geometry by id', async () => {
+    it('pairs ride geometry + summary by id in collection order', async () => {
       const items = [
         {
-          id: 'item-trip-a',
+          id: 'item-ride-a',
           collection_id: collectionId,
-          trip_id: tripA,
-          ride_id: null,
+          ride_id: rideA,
           position: 0,
           created_at: new Date(),
         },
         {
-          id: 'item-ride-a',
+          id: 'item-ride-b',
           collection_id: collectionId,
-          trip_id: null,
-          ride_id: rideA,
+          ride_id: rideB,
           position: 1,
-          created_at: new Date(),
-        },
-        {
-          id: 'item-trip-b',
-          collection_id: collectionId,
-          trip_id: tripB,
-          ride_id: null,
-          position: 2,
           created_at: new Date(),
         },
       ];
@@ -831,34 +820,9 @@ describe('RouteCollectionsService', () => {
       });
       (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
 
-      // Two batched queries: trip_days first (because tripIds is not empty),
-      // then rides. Order is determined by Promise.all argument position.
+      // Two batched queries: ride geometry first, then ride metadata. Order is
+      // determined by Promise.all argument position.
       queryMock
-        .mockResolvedValueOnce([
-          // tripA has two days; tripB has one. The service must group them
-          // per trip_id, so tripA ends up with two lines and tripB with one.
-          {
-            trip_id: tripA,
-            geometry: lineStringJson([
-              [10, 50],
-              [11, 50.1],
-            ]),
-          },
-          {
-            trip_id: tripA,
-            geometry: lineStringJson([
-              [11, 50.1],
-              [12, 50.2],
-            ]),
-          },
-          {
-            trip_id: tripB,
-            geometry: lineStringJson([
-              [20, 49],
-              [21, 49.1],
-            ]),
-          },
-        ])
         .mockResolvedValueOnce([
           {
             id: rideA,
@@ -868,24 +832,12 @@ describe('RouteCollectionsService', () => {
               [14.2, 50.15],
             ]),
           },
-        ])
-        // Trip metadata: tripA distance-weighted quality, tripB no quality.
-        .mockResolvedValueOnce([
           {
-            id: tripA,
-            title: 'Trip A',
-            num_days: 2,
-            status: 'planned',
-            distance_km: '120',
-            quality_avg: '4.2',
-          },
-          {
-            id: tripB,
-            title: 'Trip B',
-            num_days: 1,
-            status: 'completed',
-            distance_km: '60',
-            quality_avg: null,
+            id: rideB,
+            geometry: lineStringJson([
+              [20, 49],
+              [21, 49.1],
+            ]),
           },
         ])
         // Ride metadata. `is_public: true` → the ride is deep-linkable.
@@ -898,74 +850,66 @@ describe('RouteCollectionsService', () => {
             avg_road_quality: 3.5,
             is_public: true,
           },
+          {
+            id: rideB,
+            name: 'Ride B',
+            status: 'active',
+            distance_km: 60,
+            avg_road_quality: null,
+            is_public: true,
+          },
         ]);
 
       const result = await service.getPreviewBySlug('abcDEF12345');
-      expect(result.routes).toHaveLength(3);
+      expect(result.routes).toHaveLength(2);
 
-      // Items remain in collection (position) order, now carrying the per-item
+      // Items remain in collection (position) order, carrying the per-item
       // summary fields a non-owner viewer renders.
       expect(result.routes[0]).toMatchObject({
-        item_id: 'item-trip-a',
-        kind: 'trip',
-        // `target_id` is the underlying trip/ride id the client deep-links to.
-        target_id: tripA,
-        position: 0,
-        title: 'Trip A',
-        num_days: 2,
-        distance_km: 120,
-        status: 'planned',
-        quality_avg: 4.2,
-      });
-      expect(result.routes[0]?.lines).toHaveLength(2);
-      expect(result.routes[1]).toMatchObject({
         item_id: 'item-ride-a',
-        kind: 'ride',
+        // `target_id` is the underlying ride id the client deep-links to.
         target_id: rideA,
-        position: 1,
+        position: 0,
         title: 'Ride A',
-        num_days: null,
         distance_km: 45,
         status: 'completed',
         quality_avg: 3.5,
       });
-      expect(result.routes[1]?.lines).toHaveLength(1);
-      expect(result.routes[2]).toMatchObject({
-        item_id: 'item-trip-b',
-        kind: 'trip',
-        target_id: tripB,
-        position: 2,
-        title: 'Trip B',
+      expect(result.routes[0]?.lines).toHaveLength(1);
+      expect(result.routes[1]).toMatchObject({
+        item_id: 'item-ride-b',
+        target_id: rideB,
+        position: 1,
+        title: 'Ride B',
         distance_km: 60,
+        status: 'active',
         quality_avg: null,
       });
-      expect(result.routes[2]?.lines).toHaveLength(1);
+      expect(result.routes[1]?.lines).toHaveLength(1);
+      // Trips are never surfaced — the row shape carries no `kind`/`num_days`.
+      expect(result.routes[0]).not.toHaveProperty('kind');
+      expect(result.routes[0]).not.toHaveProperty('num_days');
 
-      // Four queries: geometry + metadata, one each per kind.
-      expect(queryMock).toHaveBeenCalledTimes(4);
+      // Two queries: geometry + metadata, both over `rides`.
+      expect(queryMock).toHaveBeenCalledTimes(2);
       // Use the SQL text rather than positional args so refactors that re-order
       // params don't silently invalidate the assertion.
       const calls = queryMock.mock.calls.map((c) => c[0] as string);
-      expect(calls.some((sql) => /FROM\s+trip_days/i.test(sql))).toBe(true);
-      expect(calls.some((sql) => /FROM\s+rides/i.test(sql))).toBe(true);
-      // The geometry queries must apply the simplification — that's the perf
+      expect(calls.every((sql) => /FROM\s+rides/i.test(sql))).toBe(true);
+      // No trip tables must be touched.
+      expect(calls.some((sql) => /trip_days|FROM\s+trips/i.test(sql))).toBe(
+        false,
+      );
+      // The geometry query must apply the simplification — that's the perf
       // lever for 20+ item collections (the issue's acceptance criterion).
       expect(
         calls
           .filter((sql) => /ST_AsGeoJSON/.test(sql))
           .every((sql) => /ST_SimplifyPreserveTopology/.test(sql)),
       ).toBe(true);
-      // Owner-scoped so a route the owner can't access can't leak. Trips scope
-      // via a `trip_members` membership check (covers owner + collaborator
-      // trips the picker can add); rides via `user_id` (no ride sharing).
-      const tripQueries = calls.filter((sql) =>
-        /trip_days|FROM\s+trips/i.test(sql),
-      );
-      const rideQueries = calls.filter((sql) => /FROM\s+rides/i.test(sql));
-      expect(tripQueries).toHaveLength(2);
-      expect(rideQueries).toHaveLength(2);
-      expect(tripQueries.every((sql) => /trip_members/i.test(sql))).toBe(true);
-      expect(rideQueries.every((sql) => /user_id\s*=/.test(sql))).toBe(true);
+      // Owner-scoped so a ride the owner can't access can't leak — rides scope
+      // via `user_id` (no ride sharing).
+      expect(calls.every((sql) => /user_id\s*=/.test(sql))).toBe(true);
       // The owner id is threaded into each query's params.
       expect(
         queryMock.mock.calls.every((c) =>
@@ -979,7 +923,6 @@ describe('RouteCollectionsService', () => {
         {
           id: 'item-ride-private',
           collection_id: collectionId,
-          trip_id: null,
           ride_id: rideA,
           position: 0,
           created_at: new Date(),
@@ -1019,7 +962,6 @@ describe('RouteCollectionsService', () => {
       // `/community/rides/:id` would 404 a non-owner for a non-public ride.
       expect(result.routes[0]).toMatchObject({
         item_id: 'item-ride-private',
-        kind: 'ride',
         title: 'Private Ride',
         target_id: null,
       });
@@ -1031,7 +973,6 @@ describe('RouteCollectionsService', () => {
         {
           id: 'item-ride-pub',
           collection_id: collectionId,
-          trip_id: null,
           ride_id: rideA,
           position: 0,
           created_at: new Date(),
@@ -1070,26 +1011,23 @@ describe('RouteCollectionsService', () => {
       const result = await service.getPreviewBySlug('abcDEF12345');
       expect(result.routes[0]).toMatchObject({
         item_id: 'item-ride-pub',
-        kind: 'ride',
         target_id: null,
       });
     });
 
-    it('returns empty lines for items whose underlying trip/ride has been deleted', async () => {
+    it('returns empty lines for items whose underlying ride has been deleted', async () => {
       const items = [
         {
-          id: 'item-orphan-trip',
+          id: 'item-orphan-a',
           collection_id: collectionId,
-          trip_id: tripA,
-          ride_id: null,
+          ride_id: rideA,
           position: 0,
           created_at: new Date(),
         },
         {
-          id: 'item-orphan-ride',
+          id: 'item-orphan-b',
           collection_id: collectionId,
-          trip_id: null,
-          ride_id: rideA,
+          ride_id: rideB,
           position: 1,
           created_at: new Date(),
         },
@@ -1100,9 +1038,8 @@ describe('RouteCollectionsService', () => {
         visibility: 'public',
       });
       (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
-      // Both batched queries return no rows — simulates trip_days /
-      // rides rows being deleted while the collection item rows still
-      // reference the original ids.
+      // Both batched queries return no rows — simulates rides rows being
+      // deleted while the collection item rows still reference the original ids.
       queryMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
       const result = await service.getPreviewBySlug('abcDEF12345');
@@ -1117,10 +1054,9 @@ describe('RouteCollectionsService', () => {
     it('drops degenerate geometries (fewer than 2 valid points)', async () => {
       const items = [
         {
-          id: 'item-trip-a',
+          id: 'item-ride-a',
           collection_id: collectionId,
-          trip_id: tripA,
-          ride_id: null,
+          ride_id: rideA,
           position: 0,
           created_at: new Date(),
         },
@@ -1135,8 +1071,8 @@ describe('RouteCollectionsService', () => {
           // ST_SimplifyPreserveTopology can theoretically return a point
           // with only one coord, or even null. The helper must drop those
           // rather than passing them through as a malformed LineString.
-          { trip_id: tripA, geometry: lineStringJson([[10, 50]]) },
-          { trip_id: tripA, geometry: null },
+          { id: rideA, geometry: lineStringJson([[10, 50]]) },
+          { id: rideA, geometry: null },
         ])
         .mockResolvedValueOnce([]);
 
@@ -1211,19 +1147,25 @@ describe('RouteCollectionsService', () => {
   });
 
   describe('addItem', () => {
-    it('rejects when neither trip_id nor ride_id is provided', async () => {
-      await expect(service.addItem(ownerId, collectionId, {})).rejects.toThrow(
-        BadRequestException,
+    it('persists a new ride item at the next position', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
       );
-    });
+      (itemRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
-    it('rejects when both trip_id and ride_id are provided', async () => {
-      await expect(
-        service.addItem(ownerId, collectionId, {
-          trip_id: tripId,
-          ride_id: '00000000-0000-0000-0000-000000000020',
+      const result = await service.addItem(ownerId, collectionId, {
+        ride_id: rideId,
+      });
+
+      expect(itemRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          collection_id: collectionId,
+          ride_id: rideId,
+          position: 0,
         }),
-      ).rejects.toThrow(BadRequestException);
+      );
+      expect(itemRepo.save).toHaveBeenCalledTimes(1);
+      expect(result.ride_id).toBe(rideId);
     });
 
     it('returns the existing row on duplicate add (idempotent)', async () => {
@@ -1233,15 +1175,14 @@ describe('RouteCollectionsService', () => {
       const existing = {
         id: 'item-existing',
         collection_id: collectionId,
-        trip_id: tripId,
-        ride_id: null,
+        ride_id: rideId,
         position: 2,
         created_at: new Date('2026-04-19T10:00:00Z'),
       };
       (itemRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
 
       const result = await service.addItem(ownerId, collectionId, {
-        trip_id: tripId,
+        ride_id: rideId,
       });
       expect(result.id).toBe('item-existing');
       expect(itemRepo.save).not.toHaveBeenCalled();
@@ -1252,7 +1193,7 @@ describe('RouteCollectionsService', () => {
         baseCollection,
       );
       await expect(
-        service.addItem(otherId, collectionId, { trip_id: tripId }),
+        service.addItem(otherId, collectionId, { ride_id: rideId }),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -1267,7 +1208,7 @@ describe('RouteCollectionsService', () => {
       );
       (itemRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
-      await service.addItem(ownerId, collectionId, { trip_id: tripId });
+      await service.addItem(ownerId, collectionId, { ride_id: rideId });
 
       expect(collectionRepo.findOne).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1282,24 +1223,21 @@ describe('RouteCollectionsService', () => {
     const itemA = {
       id: '00000000-0000-0000-0000-0000000000a1',
       collection_id: collectionId,
-      trip_id: tripId,
-      ride_id: null,
+      ride_id: rideId,
       position: 0,
       created_at: new Date('2026-04-20T10:00:00Z'),
     } as RouteCollectionItem;
     const itemB = {
       id: '00000000-0000-0000-0000-0000000000a2',
       collection_id: collectionId,
-      trip_id: '00000000-0000-0000-0000-000000000011',
-      ride_id: null,
+      ride_id: '00000000-0000-0000-0000-000000000021',
       position: 1,
       created_at: new Date('2026-04-20T10:01:00Z'),
     } as RouteCollectionItem;
     const itemC = {
       id: '00000000-0000-0000-0000-0000000000a3',
       collection_id: collectionId,
-      trip_id: '00000000-0000-0000-0000-000000000012',
-      ride_id: null,
+      ride_id: '00000000-0000-0000-0000-000000000022',
       position: 2,
       created_at: new Date('2026-04-20T10:02:00Z'),
     } as RouteCollectionItem;
@@ -1438,8 +1376,7 @@ describe('RouteCollectionsService', () => {
       const item = {
         id: 'item-1',
         collection_id: collectionId,
-        trip_id: tripId,
-        ride_id: null,
+        ride_id: rideId,
         position: 0,
       };
       (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(

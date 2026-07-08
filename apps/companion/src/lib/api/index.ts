@@ -8,7 +8,6 @@ export { api, $api, ApiError } from "./client";
 
 export * from "./auth";
 export * from "./trips";
-export * from "./community-trips";
 export * from "./routing";
 export * from "./trip-folders";
 export * from "./trip-shares";

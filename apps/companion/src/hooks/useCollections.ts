@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   routeCollectionsApi,
@@ -6,23 +6,13 @@ import {
   type UpdateRouteCollectionInput,
 } from "@/lib/api";
 import {
-  isMigrationDone,
   mapDetailToView,
   mapSummaryToView,
-  migrateLegacyCollections,
-  migrationDoneKey,
-  readLegacyCollections,
   sortCollectionsByName,
   type RouteCollectionView,
 } from "@/lib/route-collections";
 
 export type CollectionsStatus = "idle" | "loading" | "ready" | "error";
-
-export interface MigrationOpportunity {
-  count: number;
-  accept: () => Promise<void>;
-  decline: () => void;
-}
 
 export interface UseCollectionsResult {
   collections: RouteCollectionView[];
@@ -45,7 +35,6 @@ export interface UseCollectionsResult {
   ) => Promise<RouteCollectionView>;
   removeCollection: (id: string) => Promise<void>;
   unfollowCollection: (id: string) => Promise<void>;
-  migration: MigrationOpportunity | null;
 }
 
 interface LibraryCacheShape {
@@ -78,17 +67,12 @@ const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
  * Mutations write the new row directly into the cached owned list,
  * so the UI updates synchronously without waiting on a refetch.
  *
- * The `migration` field surfaces a one-time, user-confirmed import
- * of legacy localStorage rows into the new endpoint.
- *
  * Pass `userId === null` to render an empty list (signed-out
- * visitors); the query is disabled and the migration prompt won't
- * trigger.
+ * visitors); the query is disabled.
  */
 export function useCollections(userId: string | null): UseCollectionsResult {
   const queryClient = useQueryClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [migration, setMigration] = useState<MigrationOpportunity | null>(null);
 
   const query = useQuery<LibraryCacheShape>({
     queryKey: COLLECTIONS_LIBRARY_QUERY_KEY(userId),
@@ -208,40 +192,6 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     [writeCache],
   );
 
-  // Migration prompt: one-shot per user. Surface only when the
-  // legacy localStorage key has data AND we haven't already
-  // migrated/skipped for this user. Storage helpers are no-ops
-  // server-side so the SSR pass quietly resolves to no prompt.
-  useEffect(() => {
-    setMigration(null);
-    setErrorMessage(null);
-    if (!userId) return;
-    if (isMigrationDone(userId)) return;
-    const legacy = readLegacyCollections(userId);
-    if (legacy.length === 0) return;
-    setMigration({
-      count: legacy.length,
-      accept: async () => {
-        const result = await migrateLegacyCollections(userId);
-        await refresh();
-        if (result.errorMessage) {
-          setErrorMessage(result.errorMessage);
-        }
-        setMigration(null);
-      },
-      decline: () => {
-        try {
-          if (typeof window !== "undefined") {
-            window.localStorage.setItem(migrationDoneKey(userId), "1");
-          }
-        } catch {
-          // Quota / private mode — best-effort.
-        }
-        setMigration(null);
-      },
-    });
-  }, [userId, refresh]);
-
   const data = query.data ?? EMPTY_CACHE;
   const status: CollectionsStatus =
     userId == null
@@ -268,6 +218,5 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     updateCollection,
     removeCollection,
     unfollowCollection,
-    migration,
   };
 }

@@ -108,12 +108,12 @@ export function StatusPill({ status }: { status: string }) {
  * in-app member discover view both use it. `author` is the collection owner
  * (every item belongs to them).
  *
- * `linkable` opts the row into deep-linking to the item's detail view
- * (`/community/rides/:id` or `/community/trips/:id`, both under the dashboard
- * shell). It defaults to OFF so the anonymous public shared page keeps its
- * read-only rows — those destinations require the app shell and would bounce a
- * logged-out reader to sign-in. A row with no resolvable `target_id` (deleted
- * item) stays non-interactive even when `linkable`.
+ * `linkable` opts the row into deep-linking to the ride's detail view
+ * (`/community/rides/:id`, under the dashboard shell). It defaults to OFF so
+ * the anonymous public shared page keeps its read-only rows — that destination
+ * requires the app shell and would bounce a logged-out reader to sign-in. A row
+ * with no resolvable `target_id` (deleted item) stays non-interactive even when
+ * `linkable`.
  */
 export function CollectionRouteRow({
   route,
@@ -126,22 +126,12 @@ export function CollectionRouteRow({
   author: string;
   linkable?: boolean | undefined;
 }) {
-  const isRide = route.kind === "ride";
-  const daysLabel =
-    route.num_days != null
-      ? route.num_days === 1
-        ? t("1 day")
-        : t("{count} days", { count: route.num_days })
-      : isRide
-        ? t("1 day")
-        : null;
-  const metaParts = [daysLabel, author || null].filter(Boolean);
+  // A ride is a single recorded day.
+  const metaParts = [t("1 day"), author || null].filter(Boolean);
 
   const href =
     linkable && route.target_id
-      ? isRide
-        ? `/community/rides/${encodeURIComponent(route.target_id)}`
-        : `/community/trips/${encodeURIComponent(route.target_id)}`
+      ? `/community/rides/${encodeURIComponent(route.target_id)}`
       : null;
 
   const rowClass =

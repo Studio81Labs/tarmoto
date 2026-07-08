@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Trip } from "@/lib/types";
-import {
-  buildMobileDeepLink,
-  buildTripShareUrl,
-  tripFileName,
-  tripToGpx,
-} from "../trip-export";
+import { buildTripShareUrl, tripFileName, tripToGpx } from "../trip-export";
 
 function minimalTrip(overrides: Partial<Trip> = {}): Trip {
   return {
@@ -264,30 +259,5 @@ describe("buildTripShareUrl", () => {
     expect(buildTripShareUrl(trip, "https://x.test")).toBe(
       "https://x.test/trips/a%20b%2Fc",
     );
-  });
-});
-
-describe("buildMobileDeepLink", () => {
-  it("uses the tarmoto scheme and the import route so the mobile app handles the intent", () => {
-    expect(buildMobileDeepLink("t-99", "abc123")).toBe(
-      "tarmoto://trips/import?tripId=t-99&token=abc123",
-    );
-  });
-
-  it("URL-encodes ids and tokens with reserved characters", () => {
-    expect(buildMobileDeepLink("a b/c", "tok+en/=&")).toBe(
-      "tarmoto://trips/import?tripId=a+b%2Fc&token=tok%2Ben%2F%3D%26",
-    );
-  });
-
-  it("emits a parseable URL with both query params present", () => {
-    const link = buildMobileDeepLink("trip-1", "share-token-1");
-    const url = new URL(link);
-    expect(url.protocol).toBe("tarmoto:");
-    // The custom scheme leaves the host as `trips` and path as `/import`.
-    expect(url.host).toBe("trips");
-    expect(url.pathname).toBe("/import");
-    expect(url.searchParams.get("tripId")).toBe("trip-1");
-    expect(url.searchParams.get("token")).toBe("share-token-1");
   });
 });

@@ -71,13 +71,6 @@ export default async function SharedCollectionPage({
     : [];
   const ownerName = detail.owner_name || "";
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
-  // Riding days = trip day counts; a recorded ride (`num_days: null`) counts as
-  // one day, matching the per-row "1 day" label so a ride-only collection
-  // doesn't report "0 RIDING DAYS".
-  const ridingDays = routes.reduce(
-    (sum, r) => sum + (r.num_days ?? (r.kind === "ride" ? 1 : 0)),
-    0,
-  );
 
   return (
     <div className="flex min-h-screen flex-col bg-cream text-ink">
@@ -160,8 +153,7 @@ export default async function SharedCollectionPage({
           <Stamp>{t("Routes")}</Stamp>
           {routes.length > 0 && (
             <Mono className="text-[11px] text-fg-mute">
-              {Math.round(totalKm).toLocaleString()} {t("KM")} · {ridingDays}{" "}
-              {t("RIDING DAYS")}
+              {Math.round(totalKm).toLocaleString()} {t("KM")}
             </Mono>
           )}
         </div>
