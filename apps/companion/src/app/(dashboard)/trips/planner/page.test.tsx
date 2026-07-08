@@ -612,11 +612,11 @@ describe("TripPlannerPage", () => {
       screen.queryByRole("button", { name: /Day 1/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
-    expect(mockedTripPlannerMap).toHaveBeenCalledWith(
-      expect.objectContaining({
-        selectedDayNumber: 1,
-      }),
-    );
+    // No day is selected before a split, so the map gets no selected day.
+    const mapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
+      | { selectedDayNumber?: number }
+      | undefined;
+    expect(mapProps?.selectedDayNumber).toBeUndefined();
   });
 
   it("passes the live planner parameters into map-click waypoint creation", () => {

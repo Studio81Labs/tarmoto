@@ -692,6 +692,7 @@ export const en = {
   Segments: "Segments",
   "Segments ": "Segments ",
   "Segments ridden": "Segments ridden",
+  "Select a day to focus": "Select a day to focus",
   "Select review photos": "Select review photos",
   "Send reset link": "Send reset link",
   "Sending...": "Sending...",

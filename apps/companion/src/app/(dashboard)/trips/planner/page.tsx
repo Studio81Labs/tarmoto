@@ -512,8 +512,9 @@ export default function TripPlannerPage() {
     if (selectedPlannerSegmentId) setPanelTab("INSPECT");
   }, [selectedPlannerSegmentId]);
   useEffect(() => {
-    // A re-split renumbers days — drop the day-scope selection.
-    setSelectedPlanIndex(null);
+    // Preselect the first day so "Focus day" has a target on load; a re-split
+    // renumbers days, so this also resets the pick back to day 1.
+    setSelectedPlanIndex(dayPlans && dayPlans.length > 0 ? 0 : null);
   }, [dayPlans]);
   // Left day column reuses the preview's rich "Day-by-day" cards. The card
   // count follows the split (`dayPlans`); each card's content comes from the
@@ -539,19 +540,23 @@ export default function TripPlannerPage() {
       };
     });
   }, [dayPlans, displayedTrip]);
-  // Card highlight follows an explicit pick, else the store's active day —
-  // the same day the map treats as selected (`selectedDayIndex` defaults to
-  // 0 on load). This keeps day 1 preselected so "Focus day" always has a
-  // visible target instead of silently focusing an unhighlighted first day.
+  // The day-view selection (card highlight + map day focus) is explicit and
+  // nullable: day 1 is preselected on load, and clicking the active day
+  // deselects it (all days shown again).
   const selectedCardDayNumber =
     selectedPlanIndex != null
       ? (dayPlans?.[selectedPlanIndex]?.dayNumber ?? null)
-      : (selectedDay?.dayNumber ?? null);
+      : null;
   const handleSelectDayCard = useCallback(
     (dayNumber: number) => {
       if (!dayPlans) return;
       const planIndex = dayPlans.findIndex((p) => p.dayNumber === dayNumber);
       if (planIndex < 0) return;
+      // Toggle — clicking the already-selected day deselects it.
+      if (selectedPlanIndex === planIndex) {
+        setSelectedPlanIndex(null);
+        return;
+      }
       setSelectedPlanIndex(planIndex);
       setPanelTab("INSPECT");
       // Loaded multi-day trips: the card also selects the real day (drives
@@ -560,7 +565,7 @@ export default function TripPlannerPage() {
         setSelectedDay(planIndex);
       }
     },
-    [dayPlans, activeTrip, setSelectedDay],
+    [dayPlans, activeTrip, setSelectedDay, selectedPlanIndex],
   );
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
@@ -2538,7 +2543,7 @@ export default function TripPlannerPage() {
         className={`grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out ${
           daysVisible
             ? showDaysColumn
-              ? "grid-cols-[340px_1fr_370px]"
+              ? "grid-cols-[370px_1fr_370px]"
               : "grid-cols-[0px_1fr_370px]"
             : "grid-cols-[1fr_370px]"
         }`}
@@ -2559,17 +2564,35 @@ export default function TripPlannerPage() {
                 })}
               </span>
               {/* Focus selected day — moved off the map (rider feedback):
-                  dims every non-selected day so the picked day reads clearly. */}
-              <label className="flex shrink-0 items-center gap-2">
-                <span className="whitespace-nowrap text-[11px] font-semibold text-fg-dim">
-                  {t("Focus day")}
-                </span>
-                <Toggle
-                  checked={focusSelectedDay}
-                  onChange={setFocusSelectedDay}
-                  ariaLabel={t("Focus selected day")}
-                />
-              </label>
+                  dims every non-selected day so the picked day reads clearly.
+                  Disabled (with a hint) when no day is selected — there's
+                  nothing to focus. */}
+              {(() => {
+                const focusDisabled = selectedCardDayNumber == null;
+                const control = (
+                  <label className="flex shrink-0 items-center gap-2">
+                    <span className="whitespace-nowrap text-[11px] font-semibold text-fg-dim">
+                      {t("Focus day")}
+                    </span>
+                    <Toggle
+                      checked={focusSelectedDay && !focusDisabled}
+                      onChange={setFocusSelectedDay}
+                      disabled={focusDisabled}
+                      ariaLabel={t("Focus selected day")}
+                    />
+                  </label>
+                );
+                return focusDisabled ? (
+                  <Tooltip
+                    content={t("Select a day to focus")}
+                    placement="below"
+                  >
+                    {control}
+                  </Tooltip>
+                ) : (
+                  control
+                );
+              })()}
             </div>
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
               {splitStatus === "stale" &&
@@ -2620,8 +2643,12 @@ export default function TripPlannerPage() {
               onRerouteRequested={armFitAfterRoute}
               closuresData={closuresData}
               passesData={passesData}
-              selectedDayNumber={selectedDay?.dayNumber ?? 1}
-              focusSelectedDay={focusSelectedDay}
+              {...(selectedCardDayNumber != null
+                ? { selectedDayNumber: selectedCardDayNumber }
+                : {})}
+              focusSelectedDay={
+                focusSelectedDay && selectedCardDayNumber != null
+              }
               onAddWaypoint={(location) =>
                 appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
               }
