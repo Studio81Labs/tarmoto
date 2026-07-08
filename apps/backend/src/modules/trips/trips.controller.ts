@@ -35,6 +35,7 @@ import {
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDto } from './dto/save-route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
+import { UpdateWaypointNamesDto } from './dto/update-waypoint-names.dto.js';
 import {
   TripDetailDto,
   TripInvitePreviewDto,
@@ -136,6 +137,25 @@ export class TripsController {
       tripId,
       dto,
     );
+  }
+
+  @Patch(':tripId/waypoints')
+  @ApiOperation({
+    summary: 'Rename waypoints without re-routing',
+    description:
+      'Any trip editor may call this. Updates only the display names of the ' +
+      'listed waypoints (matched by id, scoped to the trip) — geometry, order, ' +
+      'and type are untouched and the router is NOT run. Persists e.g. a ' +
+      'reverse-geocoded pin name on a loaded trip without reshaping its route.',
+  })
+  @ApiResponse({ status: 200, type: TripDetailDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  async updateWaypointNames(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Body() dto: UpdateWaypointNamesDto,
+  ): Promise<TripDetailDto> {
+    return this.tripsService.updateWaypointNames(req.user!.userId, tripId, dto);
   }
 
   @Get(':tripId')
