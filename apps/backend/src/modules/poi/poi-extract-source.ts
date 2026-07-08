@@ -76,6 +76,18 @@ interface LatLng {
 }
 
 /**
+ * A closed OSM way (the normal polygon representation) repeats its first node
+ * as its last, so drop that duplicate closing ref before averaging — otherwise
+ * the centroid is biased toward the shared vertex (a square `1,2,3,4,1` would
+ * land at 0.8,0.8, not the centre 1,1).
+ */
+function withoutClosingRef(refs: string[]): string[] {
+  return refs.length > 1 && refs[0] === refs[refs.length - 1]
+    ? refs.slice(0, -1)
+    : refs;
+}
+
+/**
  * Reduce a way to one representative point: the arithmetic mean of its resolved
  * node coordinates. Returns null (way skipped) when any referenced node is
  * absent — e.g. clipped at the extract boundary — or fewer than two resolve,
@@ -87,7 +99,7 @@ function wayCentroid(
   nodes: Map<string, LatLng>,
 ): LatLng | null {
   const coords: LatLng[] = [];
-  for (const ref of way.refs) {
+  for (const ref of withoutClosingRef(way.refs)) {
     const coord = nodes.get(ref);
     if (!coord) return null;
     coords.push(coord);
@@ -124,7 +136,7 @@ function relationCentroid(
   for (const wayId of relation.memberWayRefs) {
     const refs = wayRefs.get(wayId);
     if (!refs) continue;
-    for (const nodeRef of refs) {
+    for (const nodeRef of withoutClosingRef(refs)) {
       const coord = nodes.get(nodeRef);
       if (coord) coords.push(coord);
     }

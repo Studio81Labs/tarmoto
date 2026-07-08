@@ -121,6 +121,36 @@ describe('parsePoiExtract', () => {
     ]);
   });
 
+  it('does not double-count the closing node of a closed (polygon) way', async () => {
+    // A closed way repeats its first node as its last (1,2,3,4,1); counting the
+    // duplicate would bias the centroid toward (0,0) — it must stay the centre.
+    const results = await collect(`<osm>
+      <node id="1" lat="0" lon="0"/>
+      <node id="2" lat="0" lon="2"/>
+      <node id="3" lat="2" lon="2"/>
+      <node id="4" lat="2" lon="0"/>
+      <way id="100">
+        <nd ref="1"/>
+        <nd ref="2"/>
+        <nd ref="3"/>
+        <nd ref="4"/>
+        <nd ref="1"/>
+        <tag k="amenity" v="restaurant"/>
+        <tag k="name" v="Panorama"/>
+      </way>
+    </osm>`);
+
+    expect(results.map(summarize)).toEqual([
+      {
+        type: 'poi',
+        kind: 'restaurant',
+        external_id: 'osm:way:100',
+        lat: 1,
+        lng: 1,
+      },
+    ]);
+  });
+
   it('skips a tagged way whose nodes are missing or fewer than two', async () => {
     const results = await collect(`<osm>
       <node id="1" lat="0" lon="0"/>

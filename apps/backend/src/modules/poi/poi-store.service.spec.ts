@@ -30,6 +30,8 @@ function makePoi(over: Partial<Poi> = {}): Poi {
     fsq_id: null,
     enrichment_matched_at: null,
     last_imported_at: new Date('2026-07-06T00:00:00Z'),
+    deactivated_at: null,
+    import_region: null,
     created_at: new Date('2026-07-06T00:00:00Z'),
     updated_at: new Date('2026-07-06T00:00:00Z'),
     ...over,
@@ -102,15 +104,21 @@ describe('PoiStoreService', () => {
     expect(sql).toContain('ST_Intersects');
     expect(sql).toContain('ST_MakeEnvelope');
     expect(params).toEqual(bbox);
-    // No kinds → no extra filter.
-    expect(qb.andWhere).not.toHaveBeenCalled();
+    // No kinds → only the always-on tombstone filter (#850).
+    expect(qb.andWhere).toHaveBeenCalledWith('poi.deactivated_at IS NULL');
+    expect(qb.andWhere).toHaveBeenCalledTimes(1);
     expect(qb.limit).toHaveBeenCalledWith(200);
     expect(res[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
   });
 
   it('adds a kind IN filter when kinds are supplied', async () => {
     await service.findInBbox(bbox, ['fuel_station', 'restaurant'], 100);
-    const [sql, params] = qb.andWhere.mock.calls[0] as [string, unknown];
+    // Tombstone filter is always applied first; the kind filter follows.
+    expect(qb.andWhere).toHaveBeenNthCalledWith(
+      1,
+      'poi.deactivated_at IS NULL',
+    );
+    const [sql, params] = qb.andWhere.mock.calls[1] as [string, unknown];
     expect(sql).toContain('poi.kind IN (:...kinds)');
     expect(params).toEqual({ kinds: ['fuel_station', 'restaurant'] });
   });
@@ -190,7 +198,11 @@ describe('PoiStoreService', () => {
         qb.where.mock.calls[0] as [string, Record<string, number>]
       )[1];
       expect(params.buffer).toBe(10_000);
-      const [kindSql, kindParams] = qb.andWhere.mock.calls[0] as [
+      expect(qb.andWhere).toHaveBeenNthCalledWith(
+        1,
+        'poi.deactivated_at IS NULL',
+      );
+      const [kindSql, kindParams] = qb.andWhere.mock.calls[1] as [
         string,
         unknown,
       ];
