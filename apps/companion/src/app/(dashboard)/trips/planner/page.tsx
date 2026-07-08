@@ -49,7 +49,6 @@ import {
   Plus,
   Star,
   Pencil,
-  PanelLeft,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -2641,28 +2640,18 @@ export default function TripPlannerPage() {
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
               fitRouteToken={fitRouteToken}
+              // "Days" show/hide lives in the map's own left toggle cluster
+              // (third row), so it's grouped with the map controls and only
+              // renders when there are days to reveal.
+              daysColumnToggle={
+                daysVisible
+                  ? {
+                      open: showDaysColumn,
+                      onToggle: () => setShowDaysColumn((v) => !v),
+                    }
+                  : undefined
+              }
             />
-            {/* Show / hide the left day column. Lives on the map so it's
-                reachable once the column is collapsed; only shown when there
-                are days to reveal. Matches the map's other toggle pills. */}
-            {daysVisible && (
-              <div className="absolute right-3 top-3 z-20">
-                <button
-                  type="button"
-                  aria-pressed={showDaysColumn}
-                  aria-label={showDaysColumn ? t("Hide days") : t("Show days")}
-                  onClick={() => setShowDaysColumn((v) => !v)}
-                  className={`flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition ${
-                    showDaysColumn
-                      ? "border-ink bg-ink text-cream"
-                      : "border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink"
-                  }`}
-                >
-                  <PanelLeft size={14} />
-                  {t("Days")}
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Drop overlay */}
