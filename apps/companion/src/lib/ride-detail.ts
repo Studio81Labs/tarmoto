@@ -87,6 +87,12 @@ export interface RoutePreview {
   bounds: { minLng: number; minLat: number; maxLng: number; maxLat: number };
   width: number;
   height: number;
+  /**
+   * Optional stop markers (via / fuel / rest / … waypoints) projected into the
+   * same viewBox as `path`, so callers can dot them onto the preview. Set by
+   * `buildRoutePreviewFromLines`; absent on hand-built previews.
+   */
+  markers?: { x: number; y: number }[];
 }
 
 // Projects a route's lat/lng points to an SVG polyline fitted to `size`. Uses
@@ -110,11 +116,13 @@ export function buildRoutePreview(
 // viewBox but emitted as its own subpath (a fresh `M`), so a break between two
 // polylines (e.g. non-adjacent trip days) is NOT bridged by an artificial
 // straight segment. Lines with fewer than 2 valid points are skipped; returns
-// `null` when no line survives with a drawable segment.
+// `null` when no line survives with a drawable segment. `markers` (e.g. via
+// stops) are projected into the same viewBox and returned on `.markers`.
 export function buildRoutePreviewFromLines(
   lines: ReadonlyArray<readonly RoutePoint[]> | null | undefined,
   size = 400,
   padding = 8,
+  markers: readonly RoutePoint[] = [],
 ): RoutePreview | null {
   if (!lines) return null;
   const isValid = (p: RoutePoint) =>
@@ -168,12 +176,15 @@ export function buildRoutePreviewFromLines(
     )
     .join(" ");
 
+  const projectedMarkers = markers.filter(isValid).map(project);
+
   return {
     path,
     viewBox: `0 0 ${width + padding * 2} ${height + padding * 2}`,
     bounds: { minLng, minLat, maxLng, maxLat },
     width: width + padding * 2,
     height: height + padding * 2,
+    markers: projectedMarkers,
   };
 }
 

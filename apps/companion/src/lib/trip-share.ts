@@ -144,6 +144,32 @@ export function tripRouteLines(trip: Trip): RoutePoint[][] {
   return lines;
 }
 
+// Actual rider stops. `start`/`via`/`end` are ROUTING waypoints (they shape
+// the path, not places you stop) — see `reassignWaypointRoles` in
+// `stores/trip.ts`; only these carry a stop semantic.
+const STOP_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
+  "fuel",
+  "rest",
+  "photo",
+  "accommodation",
+]);
+
+/**
+ * Rider stops (fuel / rest / photo / accommodation) across all days, as plain
+ * points. Excludes the start/finish bookends AND route-shaping `via` points —
+ * only genuine stops. Used for the "Stops" count and the map dots.
+ */
+export function tripStops(trip: Trip): RoutePoint[] {
+  const stops: RoutePoint[] = [];
+  for (const day of trip.days) {
+    for (const wp of day.waypoints) {
+      if (!STOP_TYPES.has(wp.type)) continue;
+      stops.push({ lat: wp.location.lat, lng: wp.location.lng });
+    }
+  }
+  return stops;
+}
+
 export function tripSummary(trip: Trip): {
   totalDistanceKm: number;
   totalDurationMin: number;
