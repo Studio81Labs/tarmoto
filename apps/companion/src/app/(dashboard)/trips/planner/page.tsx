@@ -316,6 +316,7 @@ export default function TripPlannerPage() {
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
   const routeDirty = useTripStore((s) => s.routeDirty);
+  const namesDirty = useTripStore((s) => s.namesDirty);
   const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   const markDayRouteDirty = useTripStore((s) => s.markDayRouteDirty);
@@ -1359,13 +1360,15 @@ export default function TripPlannerPage() {
   // - at least one day is "complete" (has start + end + geometry)
   // - no day is "incomplete" (partial = blocks save until rider fixes it)
   // - no day preview is stale (geometry is current for all days)
-  // - the route has been edited (routeDirty guards no-op saves on loaded trips)
+  // - there are unsaved edits: route geometry (routeDirty) OR waypoint names
+  //   (namesDirty — e.g. a late reverse-geocoded pin name); both guard no-op
+  //   saves on loaded trips
   const canSaveRoute =
     canWriteRoute &&
     dayStates.some((s) => s === "complete") &&
     !dayStates.some((s) => s === "incomplete") &&
     stalePreviewDays.length === 0 &&
-    routeDirty;
+    (routeDirty || namesDirty);
   const [savingRoute, setSavingRoute] = useState(false);
   const handleSaveRoute = useCallback(async () => {
     if (savingRoute || routing) return;
