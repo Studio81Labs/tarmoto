@@ -1382,7 +1382,51 @@ describe("plannerApi.getRoadPreview (#863)", () => {
     apiGetMock.mockReset();
   });
 
-  it("builds the card from the segment and merges real Mapillary imagery", async () => {
+  it("builds the quality card from the segment without fetching imagery", async () => {
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({
+        microStrip: [
+          { score: 4.1, lengthKm: 2 },
+          { score: 4.3, lengthKm: 1 },
+        ],
+      }),
+    );
+
+    // All from the real route-quality overlay already on the segment (#862).
+    expect(preview).toMatchObject({
+      hasData: true,
+      score: 4.2,
+      band: "good",
+      surface: "asphalt",
+      passes: 20,
+      microStrip: [
+        { score: 4.1, lengthKm: 2 },
+        { score: 4.3, lengthKm: 1 },
+      ],
+    });
+    // Quality never blocks on (or triggers) the imagery lookup.
+    expect(preview.imageUrl).toBeUndefined();
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the no-data state with the real OSM surface tag", async () => {
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({ band: "no_data", score: null, surface: "gravel" }),
+    );
+
+    expect(preview.hasData).toBe(false);
+    expect(preview.osmSurfaceTag).toBe("gravel");
+    expect(preview.microStrip).toBeUndefined();
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("plannerApi.getSegmentImagery (#863)", () => {
+  beforeEach(() => {
+    apiGetMock.mockReset();
+  });
+
+  it("looks up imagery at the segment midpoint + heading and maps the fields", async () => {
     apiGetMock.mockResolvedValue({
       data: {
         imageUrl: "https://images.mapillary.example/x.jpg",
@@ -1392,57 +1436,24 @@ describe("plannerApi.getRoadPreview (#863)", () => {
       error: undefined,
     } as never);
 
-    const preview = await createPlannerApi().getRoadPreview(
-      segment({ microStrip: [4.1, 4.3, 4.0] }),
-    );
+    const imagery = await createPlannerApi().getSegmentImagery(segment({}));
 
-    // Quality/surface/strip are the real overlay values; imagery is merged in.
-    expect(preview).toMatchObject({
-      hasData: true,
-      score: 4.2,
-      band: "good",
-      surface: "asphalt",
-      passes: 20,
-      microStrip: [4.1, 4.3, 4.0],
+    expect(imagery).toEqual({
       imageUrl: "https://images.mapillary.example/x.jpg",
       imageCapturedAt: "2024-09-15",
       imageAttribution: "© rider · Mapillary (CC BY-SA)",
     });
-    // Looked up at the segment midpoint + travel heading.
     expect(apiGetMock).toHaveBeenCalledWith("/api/v1/roads/segment-imagery", {
       params: { query: { lat: 49.1, lng: 15, bearing: 0 } },
     });
   });
 
-  it("still renders the quality card when imagery is unavailable", async () => {
+  it("resolves to null when there is no coverage", async () => {
     apiGetMock.mockResolvedValue({
       data: undefined,
       error: { message: "no coverage" },
     } as never);
 
-    const preview = await createPlannerApi().getRoadPreview(
-      segment({ microStrip: [4.1, 4.3] }),
-    );
-
-    expect(preview.hasData).toBe(true);
-    expect(preview.score).toBe(4.2);
-    expect(preview.microStrip).toEqual([4.1, 4.3]);
-    expect(preview.imageUrl).toBeUndefined();
-    expect(preview.imageCapturedAt).toBeUndefined();
-  });
-
-  it("returns the no-data state with the real OSM surface tag", async () => {
-    apiGetMock.mockResolvedValue({
-      data: undefined,
-      error: { message: "x" },
-    } as never);
-
-    const preview = await createPlannerApi().getRoadPreview(
-      segment({ band: "no_data", score: null, surface: "gravel" }),
-    );
-
-    expect(preview.hasData).toBe(false);
-    expect(preview.osmSurfaceTag).toBe("gravel");
-    expect(preview.microStrip).toBeUndefined();
+    expect(await createPlannerApi().getSegmentImagery(segment({}))).toBeNull();
   });
 });

@@ -944,26 +944,15 @@ export function createPlannerApi(): PlannerApi {
       };
     },
 
-    // Road Preview card. Quality/surface/strip come from the real
-    // `/roads/route-quality` overlay already on the segment (#862); the
-    // street-level imagery + capture date are fetched from Mapillary
-    // (`getSegmentImagery`, best-effort) and merged in below (#863).
-    async getRoadPreview(segment: RouteSegment): Promise<RoadPreview> {
+    // Road Preview card quality payload — built entirely from the real
+    // `/roads/route-quality` overlay already on the segment (#862), so it
+    // resolves immediately. Street-level imagery is a SEPARATE call
+    // (`getSegmentImagery`) so a slow Mapillary lookup never blocks the
+    // actionable quality/reroute card (#863).
+    getRoadPreview(segment: RouteSegment): Promise<RoadPreview> {
       const hasData = segment.band !== "no_data" && segment.score != null;
-      const imagery = await fetchSegmentImagery(segment).catch(() => null);
-      const image = imagery
-        ? {
-            imageUrl: imagery.imageUrl,
-            ...(imagery.capturedAt
-              ? { imageCapturedAt: imagery.capturedAt }
-              : {}),
-            ...(imagery.attribution
-              ? { imageAttribution: imagery.attribution }
-              : {}),
-          }
-        : {};
       if (!hasData) {
-        return {
+        return Promise.resolve({
           segmentId: segment.id,
           hasData: false,
           surface: segment.surface,
@@ -971,10 +960,9 @@ export function createPlannerApi(): PlannerApi {
           // Real OSM surface tag (from the route-quality overlay), shown as the
           // unverified fallback where there are no measured passes.
           osmSurfaceTag: segment.surface,
-          ...image,
-        };
+        });
       }
-      return {
+      return Promise.resolve({
         segmentId: segment.id,
         hasData: true,
         ...(segment.score != null ? { score: segment.score } : {}),
@@ -982,7 +970,21 @@ export function createPlannerApi(): PlannerApi {
         surface: segment.surface,
         passes: segment.passes,
         ...(segment.microStrip ? { microStrip: segment.microStrip } : {}),
-        ...image,
+      });
+    },
+
+    // Street-level imagery, fetched separately from the quality card so it can
+    // stream in without blocking it (#863). Best-effort → null on error / no
+    // coverage. Returns the RoadPreview image fields for a shallow merge.
+    async getSegmentImagery(segment: RouteSegment) {
+      const imagery = await fetchSegmentImagery(segment).catch(() => null);
+      if (!imagery) return null;
+      return {
+        imageUrl: imagery.imageUrl,
+        ...(imagery.capturedAt ? { imageCapturedAt: imagery.capturedAt } : {}),
+        ...(imagery.attribution
+          ? { imageAttribution: imagery.attribution }
+          : {}),
       };
     },
 

@@ -184,5 +184,11 @@ describe("findRunSegment", () => {
     expect(run.score).toBeCloseTo(2.4, 1);
     expect(run.surface).toBe("dirt");
     expect(run.lengthKm).toBeCloseTo(40.1, 5);
+    // The strip carries each constituent's score AND length, so the 100 m
+    // sliver renders far narrower than the 40 km span (#863 review).
+    expect(run.microStrip).toEqual([
+      { score: 2.0, lengthKm: 0.1 },
+      { score: 2.4, lengthKm: 40 },
+    ]);
   });
 });

@@ -1,5 +1,5 @@
 import { dedupeAdjacentPoints, type LngLat } from "./polyline";
-import type { QualityBand, RouteSegment } from "./types";
+import type { QualityBand, QualitySpan, RouteSegment } from "./types";
 
 /**
  * Route-quality band vocabulary for the Plan & inspect planner, per the
@@ -127,7 +127,7 @@ export function findRunSegment(
   // taking the first span's — otherwise a run whose first ~100 m has 1 pass but
   // the rest has many would open a whole-run preview labelled low-confidence.
   const coordinates: LngLat[] = [];
-  const subScores: number[] = [];
+  const subScores: QualitySpan[] = [];
   let scoreWeighted = 0;
   let scoredLength = 0;
   let passesWeighted = 0;
@@ -143,7 +143,7 @@ export function findRunSegment(
     if (segment.score != null) {
       scoreWeighted += segment.score * length;
       scoredLength += length;
-      subScores.push(segment.score);
+      subScores.push({ score: segment.score, lengthKm: length });
     }
     surfaceLength.set(
       segment.surface,

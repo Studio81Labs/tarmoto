@@ -15,6 +15,13 @@ import type { RouteRequestBody, RouteResponse } from "@/lib/api";
 
 export type QualityBand = "good" | "fair" | "rough" | "no_data";
 
+/** One road-segment's contribution to a run's quality strip: its 0–5 score and
+ * its length, so the strip can render bars proportional to distance. */
+export interface QualitySpan {
+  score: number;
+  lengthKm: number;
+}
+
 export interface RouteSegment {
   id: string;
   geometry: GeoJSON.LineString;
@@ -26,11 +33,11 @@ export interface RouteSegment {
   passes: number;
   lengthKm: number;
   /**
-   * Per-constituent quality scores when this is a coalesced run (set by
-   * `findRunSegment`) — feeds the Road Preview "quality across section" strip.
-   * Absent for a single fine segment (nothing to vary).
+   * Per-constituent quality spans (score + length) when this is a coalesced run
+   * (set by `findRunSegment`) — feeds the Road Preview "quality across section"
+   * strip. Absent for a single fine segment (nothing to vary).
    */
-  microStrip?: number[];
+  microStrip?: QualitySpan[];
   /** Trip day the segment belongs to (1-based). */
   dayNumber: number;
   /**
@@ -64,11 +71,13 @@ export interface RoadPreview {
   surface?: SurfaceType;
   passes?: number;
   /**
-   * Per-road-segment quality scores (0–5) across a coalesced run — the real
-   * "quality across section" strip. Since a run is one band, the strip shows
-   * sub-band variation via score, not band. Absent for a single-segment run.
+   * Per-road-segment quality across a coalesced run — the real "quality across
+   * section" strip. Each entry carries its `score` (0–5, sub-band variation,
+   * since a run is one band) AND its `lengthKm`, so the strip renders bars
+   * proportional to distance along the 0→run-length axis. Absent for a
+   * single-segment run.
    */
-  microStrip?: number[];
+  microStrip?: QualitySpan[];
   /** Street-level (Mapillary) image; absent until a key is wired. */
   imageUrl?: string;
   /** ISO date the street-level image was captured, e.g. "2024-09-15". */
@@ -224,8 +233,25 @@ export interface PlannerApi {
     init?: { signal?: AbortSignal },
   ): Promise<RouteSegment[]>;
 
-  /** Road Preview Card payload for a clicked segment (MOCK). */
+  /**
+   * Road Preview card quality payload for a clicked segment — built from the
+   * segment's real overlay data (#862), so it resolves immediately. Street-level
+   * imagery is fetched separately via {@link getSegmentImagery} so a slow
+   * Mapillary lookup never blocks the actionable card (#863).
+   */
   getRoadPreview(segment: RouteSegment): Promise<RoadPreview>;
+
+  /**
+   * Street-level imagery for a segment (Mapillary via the backend proxy, #863).
+   * Best-effort — resolves to null on any error / no coverage. Merged into the
+   * preview after the quality card has already rendered.
+   */
+  getSegmentImagery(
+    segment: RouteSegment,
+  ): Promise<Pick<
+    RoadPreview,
+    "imageUrl" | "imageCapturedAt" | "imageAttribution"
+  > | null>;
 
   /**
    * POIs for the STOPS tab pin layer + suggestion lists. Delegates to the

@@ -5,10 +5,18 @@ import { plannerApi } from "@/lib/planner/api";
 import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
 
 vi.mock("@/lib/planner/api", () => ({
-  plannerApi: { getRoadPreview: vi.fn() },
+  plannerApi: { getRoadPreview: vi.fn(), getSegmentImagery: vi.fn() },
 }));
 
 const getRoadPreviewMock = vi.mocked(plannerApi.getRoadPreview);
+const getSegmentImageryMock = vi.mocked(plannerApi.getSegmentImagery);
+
+// Imagery now streams in via a separate call, merged onto the quality card.
+const IMAGE = {
+  imageUrl: "https://images.mapillary.example/thumb.jpg",
+  imageCapturedAt: "2024-09-15",
+  imageAttribution: "© rider · Mapillary (CC BY-SA)",
+};
 
 function segment(overrides?: Partial<RouteSegment>): RouteSegment {
   return {
@@ -39,11 +47,12 @@ function measuredPreview(overrides?: Partial<RoadPreview>): RoadPreview {
     band: "rough",
     surface: "gravel",
     passes: 14,
-    // Real per-road-segment scores across a "rough" run (sub-band variation).
-    microStrip: [2.1, 1.9, 2.4, 2.0, 1.8, 2.2],
-    imageUrl: "https://images.mapillary.example/thumb.jpg",
-    imageCapturedAt: "2024-09-15",
-    imageAttribution: "© rider · Mapillary (CC BY-SA)",
+    // Real per-road-segment spans across a "rough" run (score + length).
+    microStrip: [
+      { score: 2.1, lengthKm: 1.5 },
+      { score: 1.9, lengthKm: 0.8 },
+      { score: 2.4, lengthKm: 1.9 },
+    ],
     ...overrides,
   };
 }
@@ -51,6 +60,8 @@ function measuredPreview(overrides?: Partial<RoadPreview>): RoadPreview {
 describe("RoadPreviewPopover", () => {
   beforeEach(() => {
     getRoadPreviewMock.mockReset();
+    getSegmentImageryMock.mockReset();
+    getSegmentImageryMock.mockResolvedValue(IMAGE);
   });
 
   it("renders the measured state with score, passes, and micro strip", async () => {
@@ -75,16 +86,9 @@ describe("RoadPreviewPopover", () => {
   });
 
   it("shows a graceful empty state when there is no imagery coverage", async () => {
-    // No image keys at all — the Mapillary lookup found no coverage.
-    getRoadPreviewMock.mockResolvedValue({
-      segmentId: "d1-s2",
-      hasData: true,
-      score: 2.1,
-      band: "rough",
-      surface: "gravel",
-      passes: 14,
-      microStrip: [2.1, 1.9, 2.4, 2.0, 1.8, 2.2],
-    });
+    // The Mapillary lookup found no coverage.
+    getSegmentImageryMock.mockResolvedValue(null);
+    getRoadPreviewMock.mockResolvedValue(measuredPreview());
     render(<RoadPreviewPopover segment={segment()} onClose={vi.fn()} />);
 
     // Score + strip still render; the imagery slot reads as "no imagery",
@@ -114,9 +118,6 @@ describe("RoadPreviewPopover", () => {
       hasData: false,
       surface: "unknown",
       passes: 0,
-      imageUrl: "https://images.mapillary.example/nodata.jpg",
-      imageCapturedAt: "2023-08-20",
-      imageAttribution: "© rider · Mapillary (CC BY-SA)",
       osmSurfaceTag: "asphalt",
     });
     render(

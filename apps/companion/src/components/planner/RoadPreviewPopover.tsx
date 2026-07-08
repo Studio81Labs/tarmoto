@@ -158,6 +158,8 @@ export function RoadPreviewPopover({
   useEffect(() => {
     let cancelled = false;
     setPreview(null);
+    // Quality/surface/strip come straight off the segment, so this resolves
+    // immediately — the actionable card never waits on imagery.
     plannerApi
       .getRoadPreview(segment)
       .then((result) => {
@@ -167,6 +169,17 @@ export function RoadPreviewPopover({
         // Preview data is decorative — on failure just keep the card empty
         // besides its header; the close affordance still works.
         if (!cancelled) setPreview(null);
+      });
+    // Street-level imagery streams in separately and merges when it lands; a
+    // slow/absent Mapillary lookup never delays the card above (#863).
+    plannerApi
+      .getSegmentImagery(segment)
+      .then((imagery) => {
+        if (cancelled || !imagery) return;
+        setPreview((prev) => (prev ? { ...prev, ...imagery } : prev));
+      })
+      .catch(() => {
+        // No imagery — the card already renders without a thumbnail.
       });
     return () => {
       cancelled = true;
@@ -276,14 +289,20 @@ export function RoadPreviewPopover({
                     className="flex h-12 items-end gap-1 px-0.5"
                     style={{ opacity: lowConf ? 0.55 : 1 }}
                   >
-                    {preview.microStrip.map((score, index) => (
+                    {preview.microStrip.map((span, index) => (
                       <div
                         key={index}
-                        className="flex-1 rounded-sm"
-                        title={score.toFixed(1)}
+                        className="rounded-sm"
+                        title={`${span.score.toFixed(1)} · ${span.lengthKm.toFixed(1)} km`}
                         style={{
-                          height: scoreToStripHeight(score),
-                          background: QUALITY_BAND_COLORS[scoreToBand(score)],
+                          // Width ∝ length so the bars map to the 0→N km axis;
+                          // a floor keeps a short sliver visible.
+                          flexGrow: span.lengthKm,
+                          flexBasis: 0,
+                          minWidth: 2,
+                          height: scoreToStripHeight(span.score),
+                          background:
+                            QUALITY_BAND_COLORS[scoreToBand(span.score)],
                         }}
                       />
                     ))}
