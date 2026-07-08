@@ -4,7 +4,7 @@ import { Download } from "lucide-react";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
 import { tripFileName, tripToGpx } from "@/lib/trip-export";
-import { Button } from "@tarmoto/ui";
+import { Button, Tooltip } from "@tarmoto/ui";
 interface TripExportButtonProps {
   trip: Trip | null;
 }
@@ -38,16 +38,17 @@ export function TripExportButton({ trip }: TripExportButtonProps) {
     }
   }
   return (
-    <Button
-      iconOnly
-      variant="secondary"
-      size="sm"
-      onClick={handleGpx}
-      disabled={disabled}
-      aria-label={t("Export GPX")}
-      title={t("Export GPX")}
-    >
-      <Download size={15} />
-    </Button>
+    <Tooltip content={t("Export GPX")} placement="below">
+      <Button
+        iconOnly
+        variant="secondary"
+        size="sm"
+        onClick={handleGpx}
+        disabled={disabled}
+        aria-label={t("Export GPX")}
+      >
+        <Download size={15} />
+      </Button>
+    </Tooltip>
   );
 }
