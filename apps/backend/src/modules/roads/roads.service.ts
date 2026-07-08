@@ -27,6 +27,10 @@ import {
   RoadSegmentDetailDto,
 } from './dto/road-segment.dto.js';
 import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
+import {
+  CorridorFunZonesDto,
+  DEFAULT_FUN_ZONE_CORRIDOR_KM,
+} from './dto/corridor-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
 import { BestRoadsResponseDto, BestRoadDto } from './dto/best-roads.dto.js';
@@ -724,10 +728,7 @@ export class RoadsService {
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.funZoneRepo.query(
-      `SELECT
-        fz.id, fz.name, fz.composite_score, fz.road_count,
-        fz.total_curve_km, fz.avg_quality, fz.best_season,
-        ST_AsGeoJSON(fz.boundary)::json AS geojson
+      `SELECT ${FUN_ZONE_SELECT}
       FROM fun_zones fz
       WHERE ST_Intersects(
         fz.boundary,
@@ -737,21 +738,54 @@ export class RoadsService {
       [west, south, east, north],
     );
 
-    return (rows as Record<string, unknown>[]).map((row) => {
-      const geojson = row.geojson as { coordinates: number[][][] };
-      const boundary = polygonBoundaryToLatLng(geojson.coordinates);
+    return (rows as Record<string, unknown>[]).map(funZoneRowToDto);
+  }
 
-      return {
-        id: row.id as string,
-        name: (row.name as string) ?? null,
-        composite_score: row.composite_score as number,
-        road_count: row.road_count as number,
-        total_curve_km: (row.total_curve_km as number) ?? null,
-        avg_quality: (row.avg_quality as number) ?? null,
-        best_season: (row.best_season as string) ?? null,
-        boundary,
-      };
-    });
+  /**
+   * Fun Zones whose boundary falls within `buffer_km` of a routed polyline
+   * (#865 — the STOPS-tab `twisty_highlight` layer). The corridor counterpart
+   * of the bbox `findFunZones`, and the fun-zone analogue of `/poi/in-corridor`,
+   * best-first. Route coordinates are bound as positional params (never
+   * interpolated) — same pattern as `getRouteQuality`, whose indexable
+   * degree-prefilter it also reuses (a bare `geom::geography` distance can't use
+   * `idx_fun_zones_boundary`).
+   */
+  async findFunZonesInCorridor(
+    dto: CorridorFunZonesDto,
+  ): Promise<FunZoneDto[]> {
+    const bufferM = Math.round(
+      (dto.buffer_km ?? DEFAULT_FUN_ZONE_CORRIDOR_KM) * 1000,
+    );
+    const params: number[] = [];
+    const pointsSql = dto.route
+      .map((p) => {
+        params.push(p.lng, p.lat);
+        return `ST_MakePoint($${params.length - 1}, $${params.length})`;
+      })
+      .join(',');
+    params.push(bufferM);
+    const bufferParam = `$${params.length}`;
+    // Indexable degree prefilter, same pattern as getRouteQuality: the geometry
+    // `ST_DWithin` hits `idx_fun_zones_boundary`; the precise `geom::geography`
+    // check then enforces the real metre buffer. `/111320*2` covers `buffer_m`
+    // of longitude up to ~lat 60° (Tarmoto's northern coverage) — it only
+    // narrows candidates, never loosens the actual distance.
+    const bufferDegExpr = `(${bufferParam} / 111320.0 * 2)`;
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const rows = await this.funZoneRepo.query(
+      `WITH route AS (
+        SELECT ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326) AS line
+      )
+      SELECT ${FUN_ZONE_SELECT}
+      FROM fun_zones fz, route
+      WHERE ST_DWithin(fz.boundary, route.line, ${bufferDegExpr})
+        AND ST_DWithin(fz.boundary::geography, route.line::geography, ${bufferParam})
+      ORDER BY fz.composite_score DESC`,
+      params,
+    );
+
+    return (rows as Record<string, unknown>[]).map(funZoneRowToDto);
   }
 
   async findZoneById(zoneId: string): Promise<FunZoneDetailDto> {
@@ -1114,4 +1148,28 @@ function polygonBoundaryToLatLng(
     throw new Error('GeoJSON polygon has no outer ring');
   }
   return lineStringToLatLng(ring);
+}
+
+/**
+ * Columns every Fun Zone list query selects — shared by the bbox (`findFunZones`)
+ * and corridor (`findFunZonesInCorridor`) reads so their row shape and mapping
+ * stay identical.
+ */
+const FUN_ZONE_SELECT = `fz.id, fz.name, fz.composite_score, fz.road_count,
+        fz.total_curve_km, fz.avg_quality, fz.best_season,
+        ST_AsGeoJSON(fz.boundary)::json AS geojson`;
+
+/** Map a raw Fun Zone row (from {@link FUN_ZONE_SELECT}) to the served DTO. */
+function funZoneRowToDto(row: Record<string, unknown>): FunZoneDto {
+  const geojson = row.geojson as { coordinates: number[][][] };
+  return {
+    id: row.id as string,
+    name: (row.name as string) ?? null,
+    composite_score: row.composite_score as number,
+    road_count: row.road_count as number,
+    total_curve_km: (row.total_curve_km as number) ?? null,
+    avg_quality: (row.avg_quality as number) ?? null,
+    best_season: (row.best_season as string) ?? null,
+    boundary: polygonBoundaryToLatLng(geojson.coordinates),
+  };
 }

@@ -666,6 +666,64 @@ describe('RoadsService', () => {
     });
   });
 
+  describe('findFunZonesInCorridor', () => {
+    const route = [
+      { lat: 49.5, lng: 18.4 },
+      { lat: 49.6, lng: 18.6 },
+    ];
+
+    it('queries an index-prefiltered + precise geography ST_DWithin over the route line', async () => {
+      await service.findFunZonesInCorridor({ route, buffer_km: 3 });
+
+      const [sql, params] = funZoneRepo.query!.mock.calls[0] as [
+        string,
+        number[],
+      ];
+      expect(sql).toContain('ST_MakeLine');
+      expect(sql).toContain('::geography');
+      // Two predicates: the geometry degree-prefilter (index) + the precise
+      // geography check (real metres) — same pattern as getRouteQuality.
+      expect((sql.match(/ST_DWithin/g) ?? []).length).toBe(2);
+      // lng,lat bound positionally per point, then the buffer in metres.
+      expect(params).toEqual([18.4, 49.5, 18.6, 49.6, 3000]);
+    });
+
+    it('defaults the buffer to 2 km when omitted', async () => {
+      await service.findFunZonesInCorridor({ route });
+      const [, params] = funZoneRepo.query!.mock.calls[0] as [string, number[]];
+      expect(params[params.length - 1]).toBe(2000);
+    });
+
+    it('maps rows through the shared Fun Zone DTO mapping', async () => {
+      funZoneRepo.query!.mockResolvedValueOnce([
+        {
+          id: 'fz-1',
+          name: 'Beskydy switchbacks',
+          composite_score: 4.7,
+          road_count: 12,
+          total_curve_km: 40,
+          avg_quality: 4.1,
+          best_season: 'summer',
+          geojson: {
+            coordinates: [
+              [
+                [18.4, 49.5],
+                [18.6, 49.5],
+                [18.6, 49.6],
+                [18.4, 49.5],
+              ],
+            ],
+          },
+        },
+      ]);
+      const results = await service.findFunZonesInCorridor({ route });
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe('Beskydy switchbacks');
+      expect(results[0].composite_score).toBe(4.7);
+      expect(results[0].boundary[0]).toEqual({ lat: 49.5, lng: 18.4 });
+    });
+  });
+
   describe('findBest', () => {
     it('resolves the region and issues a bbox query with the composite score', async () => {
       (segmentRepo.query as jest.Mock).mockResolvedValueOnce([]);
