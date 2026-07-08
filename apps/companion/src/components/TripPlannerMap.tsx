@@ -37,6 +37,7 @@ import {
 } from "@/components/map/AerialBasemap";
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
 import { MapToolbar, poiCategoryMeta } from "@/components/planner/MapToolbar";
+import { PoiDetails } from "@/components/planner/PoiDetails";
 import { OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
@@ -2632,6 +2633,7 @@ const TripPlannerMapContent = forwardRef<
                     ) : null}
                   </div>
                 </div>
+                <PoiDetails poi={poiMenu.poi} />
                 {poiMenu.placedWaypointId ? (
                   onRemoveWaypoint ? (
                     <button

@@ -18,7 +18,11 @@ import type { RouteSegment } from "../types";
 vi.mock("@/lib/api", () => ({
   routingApi: { route: vi.fn() },
   roadsApi: { getRouteQuality: vi.fn() },
-  poiApi: { getAlongRoute: vi.fn(), getAccommodations: vi.fn() },
+  poiApi: {
+    getAlongRoute: vi.fn(),
+    getAccommodations: vi.fn(),
+    getInBbox: vi.fn(),
+  },
   usersApi: { getMe: vi.fn(), updateMe: vi.fn() },
 }));
 vi.mock("@/lib/discover", () => ({ fetchFunZonesInBbox: vi.fn() }));
@@ -27,6 +31,7 @@ const routeMock = vi.mocked(routingApi.route);
 const routeQualityMock = vi.mocked(roadsApi.getRouteQuality);
 const alongRouteMock = vi.mocked(poiApi.getAlongRoute);
 const accommodationsMock = vi.mocked(poiApi.getAccommodations);
+const getInBboxMock = vi.mocked(poiApi.getInBbox);
 const getMeMock = vi.mocked(usersApi.getMe);
 const updateMeMock = vi.mocked(usersApi.updateMe);
 
@@ -587,6 +592,90 @@ describe("plannerApi.getPois", () => {
     expect(await createPlannerApi().getPois(route, [])).toEqual([]);
     expect(alongRouteMock).not.toHaveBeenCalled();
     expect(accommodationsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("plannerApi.getPoisByCategories (store path, #849)", () => {
+  beforeEach(() => {
+    getInBboxMock.mockReset();
+  });
+
+  const bbox: [number, number, number, number] = [15, 49, 15.5, 49.5];
+
+  it("queries /poi/in-bbox and surfaces the decision-support fields into meta", async () => {
+    getInBboxMock.mockResolvedValue({
+      data: {
+        pois: [
+          {
+            id: "42",
+            source: "osm",
+            external_id: "n1",
+            name: "Restaurace U Lesa",
+            kind: "restaurant",
+            lat: 49.2,
+            lng: 15.1,
+            website: "https://ulesa.cz",
+            phone: "+420 571 000 000",
+            opening_hours: "Mo-Su 11:00-22:00",
+            address_street: "Hlavní 5",
+            address_city: "Ostrava",
+            address_postcode: "70200",
+            address_country: "CZ",
+            cuisine: "czech",
+            brand: null,
+            stars: null,
+            osm_url: "https://www.openstreetmap.org/node/1",
+            maps_url: "https://www.google.com/maps/search/?api=1&query=1",
+            last_imported_at: "2026-07-01T00:00:00.000Z",
+          },
+        ],
+        count: 1,
+      },
+    });
+
+    const pois = await createPlannerApi().getPoisByCategories(bbox, ["food"]);
+
+    expect(getInBboxMock).toHaveBeenCalledWith(
+      {
+        minLng: 15,
+        minLat: 49,
+        maxLng: 15.5,
+        maxLat: 49.5,
+        kinds: ["restaurant", "fast_food", "ice_cream"],
+      },
+      undefined,
+    );
+    expect(pois).toEqual([
+      {
+        id: "42",
+        category: "food",
+        source: "osm",
+        name: "Restaurace U Lesa",
+        lat: 49.2,
+        lng: 15.1,
+        meta: {
+          stars: null,
+          website: "https://ulesa.cz",
+          phone: "+420 571 000 000",
+          openingHours: "Mo-Su 11:00-22:00",
+          addressStreet: "Hlavní 5",
+          addressCity: "Ostrava",
+          cuisine: "czech",
+          brand: null,
+          osmUrl: "https://www.openstreetmap.org/node/1",
+          mapsUrl: "https://www.google.com/maps/search/?api=1&query=1",
+        },
+      },
+    ]);
+  });
+
+  it("does not query the store for non-store categories (mountain_pass)", async () => {
+    const pois = await createPlannerApi().getPoisByCategories(bbox, [
+      "mountain_pass",
+    ]);
+    expect(getInBboxMock).not.toHaveBeenCalled();
+    // Falls through to the mock source rather than erroring.
+    expect(Array.isArray(pois)).toBe(true);
   });
 });
 

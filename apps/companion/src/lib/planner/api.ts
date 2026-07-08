@@ -325,6 +325,7 @@ function storedPoiToCategoryPoi(poi: StoredPoiSuggestion): Poi | null {
       website: poi.website,
       phone: poi.phone,
       openingHours: poi.opening_hours,
+      addressStreet: poi.address_street,
       addressCity: poi.address_city,
       cuisine: poi.cuisine,
       brand: poi.brand,

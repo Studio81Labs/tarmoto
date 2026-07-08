@@ -2,10 +2,11 @@ import type { Poi, PoiCategory, RouteStop } from "../types";
 
 /**
  * Category-POI fixtures (revision 4 §B) — a realistic CZ spread with a
- * dense Beskydy cluster, covering every category and all three sources.
- * Real target: OSM/Overpass for the amenity categories, the seasonal
- * pass source for mountain_pass, and Tarmoto's curviness + quality
- * layer for twisty_highlight. Swap in `plannerApi.getPoisByCategories`.
+ * dense Beskydy cluster. The amenity categories (fuel/food/cafe/viewpoint/
+ * campground/biker_hotel) are now served from the `pois` store (#857/#859),
+ * so at runtime only the mountain_pass / twisty_highlight fixtures are
+ * consumed — via the non-store fallback in `api.ts` — until those two
+ * sources exist. The whole mock retires with #865.
  */
 const POI_FIXTURES: Poi[] = [
   // ── Beskydy cluster ──────────────────────────────────────────────
