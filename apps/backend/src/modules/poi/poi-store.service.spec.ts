@@ -359,7 +359,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(500);
+      expect(qb.limit).toHaveBeenCalledWith(100); // CORRIDOR_STORE_PER_KIND_LIMIT
       // Raw shape — the service's rankAlongRoute does the projection, so no
       // along/off-route distances are computed here.
       expect(pois[0]).toMatchObject({
@@ -367,6 +367,21 @@ describe('PoiStoreService', () => {
         hint: 'regional',
       });
       expect(pois[0]).not.toHaveProperty('distance_along_route_km');
+    });
+
+    it('caps each kind independently so a dense kind cannot crowd out sparse ones', async () => {
+      await service.findPointsOfInterestInCorridor(route, 2, [
+        'restaurant',
+        'fuel_station',
+      ]);
+      // One bounded, closest-to-route query per kind — not one global cap.
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
+      expect(qb.limit).toHaveBeenCalledWith(100);
+      const kindFilters = qb.andWhere.mock.calls
+        .filter(([sql]) => String(sql).includes('poi.kind IN'))
+        .map(([, params]) => (params as { kinds: string[] }).kinds);
+      expect(kindFilters).toContainEqual(['restaurant']);
+      expect(kindFilters).toContainEqual(['fuel_station']);
     });
   });
 });

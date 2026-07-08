@@ -35,6 +35,18 @@ interface RoutePoint {
 }
 
 /**
+ * Per-kind cap for the store-first corridor read (#849). Each kind is queried
+ * and bounded independently so a dense kind (restaurants) can't fill a global
+ * closest-to-route limit and crowd sparser kinds (fuel, viewpoints) out — which
+ * `readStoreFirst` would then treat as authoritative, so Overpass wouldn't
+ * backfill the dropped fuel stops the fuel-range warning relies on. Comfortably
+ * above `PoiService`'s per-kind display cap so the perpendicular-buffer filter
+ * still has the true closest rows to keep; total hydration stays bounded
+ * (this × the requested kinds).
+ */
+const CORRIDOR_STORE_PER_KIND_LIMIT = 100;
+
+/**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
  * hits Overpass live per request — this serves the mirrored PostGIS rows the
  * weekly import (#848 / #850) populates, so a pannable POI map layer and the
@@ -223,13 +235,21 @@ export class PoiStoreService {
     if (route.length < 2) {
       throw new BadRequestException('Route must have at least 2 points');
     }
-    const rows = await this.queryCorridorEntities(
-      route,
-      bufferKm,
-      kinds,
-      MAX_LIMIT,
+    // Bound per kind, not globally — one closest-to-route query per kind — so a
+    // dense kind can't crowd sparser ones out before `rankAlongRoute`'s own
+    // per-kind cap (see CORRIDOR_STORE_PER_KIND_LIMIT). Runs the per-kind
+    // queries concurrently, so it's one round-trip of latency.
+    const perKind = await Promise.all(
+      kinds.map((kind) =>
+        this.queryCorridorEntities(
+          route,
+          bufferKm,
+          [kind],
+          CORRIDOR_STORE_PER_KIND_LIMIT,
+        ),
+      ),
     );
-    return rows.map(storedPoiToPointOfInterest);
+    return perKind.flat().map(storedPoiToPointOfInterest);
   }
 
   /**
