@@ -51,6 +51,7 @@ describe("coalesceQualityRuns", () => {
     band: QualityBand,
     lengthKm: number,
     surface: RouteSegment["surface"] = "asphalt",
+    dayNumber = 1,
   ): RouteSegment {
     return {
       id,
@@ -66,7 +67,7 @@ describe("coalesceQualityRuns", () => {
       score: band === "no_data" ? null : 4,
       passes: 1,
       lengthKm,
-      dayNumber: 1,
+      dayNumber,
     };
   }
 
@@ -100,6 +101,20 @@ describe("coalesceQualityRuns", () => {
       band: "no_data",
       lengthKm: 36,
     });
+  });
+
+  it("never coalesces across a day boundary", () => {
+    const runs = coalesceQualityRuns([
+      seg("d1-s0", "no_data", 10, "unknown", 1),
+      seg("d1-s1", "no_data", 10, "unknown", 1),
+      seg("d2-s0", "no_data", 10, "unknown", 2),
+      seg("d2-s1", "no_data", 10, "unknown", 2),
+    ]);
+    // Same band throughout, but the day boundary splits it into two runs so a
+    // reroute (which targets a run's single day) can't mutate the wrong day.
+    expect(runs).toHaveLength(2);
+    expect(runs[0]!.id).toBe("run:d1-s0:d1-s1");
+    expect(runs[1]!.id).toBe("run:d2-s0:d2-s1");
   });
 
   it("returns nothing for an empty input", () => {

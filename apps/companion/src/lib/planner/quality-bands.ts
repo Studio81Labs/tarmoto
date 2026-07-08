@@ -65,9 +65,10 @@ export interface QualityRun {
  *
  * The id encodes the run's EXPLICIT segment range (`run:<first>:<last>`) so it
  * resolves the same whether coalesced over the whole day or a plan-scoped
- * subset (`findRunSegment`): a same-band run crossing a day boundary yields
- * distinct, correctly-bounded ids per plan, and inspect/reroute target exactly
- * the run — not the first span, and not beyond the selected plan.
+ * subset (`findRunSegment`): inspect/reroute target exactly the run — not the
+ * first span, and not beyond the selected plan. Runs never cross a day
+ * boundary (even in the concatenated whole-route view), so a run's single
+ * `dayNumber` is a safe reroute target.
  */
 export function coalesceQualityRuns(
   segments: readonly RouteSegment[],
@@ -78,10 +79,20 @@ export function coalesceQualityRuns(
     band: QualityBand;
     surface: RouteSegment["surface"];
     lengthKm: number;
+    dayNumber: number;
   }[] = [];
   for (const segment of segments) {
     const last = runs[runs.length - 1];
-    if (last && last.band === segment.band) {
+    // Never coalesce across a day boundary: the whole-route inspect view feeds
+    // every day's segments through here at once, and a run's target day for
+    // reroute is taken from its first segment — a cross-day run would reroute
+    // the wrong day. Keeping runs within a day also keeps their ids resolvable
+    // per day. Same-day callers (plan/day-scoped) are unaffected.
+    if (
+      last &&
+      last.band === segment.band &&
+      last.dayNumber === segment.dayNumber
+    ) {
       last.lastId = segment.id;
       last.lengthKm += segment.lengthKm;
     } else {
@@ -91,6 +102,7 @@ export function coalesceQualityRuns(
         band: segment.band,
         surface: segment.surface,
         lengthKm: segment.lengthKm,
+        dayNumber: segment.dayNumber,
       });
     }
   }
