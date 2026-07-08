@@ -100,7 +100,6 @@ import {
   updateFunZoneLayerData,
 } from "@/components/map/FunZoneLayer";
 import type { Trip, Waypoint } from "@/lib/types";
-import type { TripSuggestion } from "@/lib/api";
 import type {
   CollaboratorCursor,
   CollaboratorProfile,
@@ -286,8 +285,6 @@ const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
 const CLOSURE_LINE_LAYER = "trip-planner-closure-lines";
 const CLOSURE_MARKER_LAYER = "trip-planner-closure-markers";
 const PASS_MARKER_LAYER = "trip-planner-pass-markers";
-const SUGGESTION_SOURCE = "trip-planner-suggestions";
-const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
 const DAY_BREAK_SOURCE = "trip-planner-day-breaks";
 const DAY_BREAK_CIRCLE_LAYER = "trip-planner-day-break-circle";
 const DAY_BREAK_LABEL_LAYER = "trip-planner-day-break-label";
@@ -343,7 +340,6 @@ interface TripPlannerMapProps {
    * are filtered out at build time so only `status === 'open'` markers
    * show — resolved proposals no longer need a map affordance.
    */
-  suggestions?: TripSuggestion[];
   /**
    * Called on DOM-throttled map mousemove with the pointer's geographic
    * position so the planner page can broadcast a `trip:cursor` event.
@@ -403,7 +399,6 @@ export const TripPlannerMap = forwardRef<
     focusSelectedDay,
     collaboratorCursors,
     collaboratorProfiles,
-    suggestions,
     dayBreaks,
     onMoveDayBreak,
     onCursorMove,
@@ -431,7 +426,6 @@ export const TripPlannerMap = forwardRef<
         focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
         collaboratorProfiles={collaboratorProfiles}
-        suggestions={suggestions}
         dayBreaks={dayBreaks}
         onMoveDayBreak={onMoveDayBreak}
         onCursorMove={onCursorMove}
@@ -455,7 +449,6 @@ export const TripPlannerMap = forwardRef<
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
-      suggestions={suggestions}
       dayBreaks={dayBreaks}
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
@@ -487,7 +480,6 @@ const FetchedTripPlannerMap = forwardRef<
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     collaboratorProfiles?: Map<string, CollaboratorProfile> | undefined;
-    suggestions?: TripSuggestion[] | undefined;
     dayBreaks?: DayBreakMarker[] | undefined;
     onMoveDayBreak?:
       | ((boundary: number, location: { lng: number; lat: number }) => void)
@@ -511,7 +503,6 @@ const FetchedTripPlannerMap = forwardRef<
     focusSelectedDay,
     collaboratorCursors,
     collaboratorProfiles,
-    suggestions,
     dayBreaks,
     onMoveDayBreak,
     onCursorMove,
@@ -541,7 +532,6 @@ const FetchedTripPlannerMap = forwardRef<
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
       collaboratorProfiles={collaboratorProfiles}
-      suggestions={suggestions}
       dayBreaks={dayBreaks}
       onMoveDayBreak={onMoveDayBreak}
       onCursorMove={onCursorMove}
@@ -576,7 +566,6 @@ const TripPlannerMapContent = forwardRef<
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
     collaboratorProfiles?: Map<string, CollaboratorProfile> | undefined;
-    suggestions?: TripSuggestion[] | undefined;
     dayBreaks?: DayBreakMarker[] | undefined;
     onMoveDayBreak?:
       | ((boundary: number, location: { lng: number; lat: number }) => void)
@@ -602,7 +591,6 @@ const TripPlannerMapContent = forwardRef<
     focusSelectedDay,
     collaboratorCursors,
     collaboratorProfiles,
-    suggestions,
     dayBreaks,
     onMoveDayBreak,
     onCursorMove,
@@ -1014,10 +1002,6 @@ const TripPlannerMapContent = forwardRef<
     () => buildPlannerPassMarkerCollection(passes),
     [passes],
   );
-  const suggestionCollection = useMemo(
-    () => buildSuggestionCollection(suggestions),
-    [suggestions],
-  );
   const dayBreakCollection = useMemo(
     () => ({
       type: "FeatureCollection" as const,
@@ -1328,7 +1312,6 @@ const TripPlannerMapContent = forwardRef<
     syncGeoJsonSource(map, CLOSURE_LINE_SOURCE, closureLineCollection);
     syncGeoJsonSource(map, CLOSURE_MARKER_SOURCE, closureMarkerCollection);
     syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
-    syncGeoJsonSource(map, SUGGESTION_SOURCE, suggestionCollection);
     syncGeoJsonSource(map, DAY_BREAK_SOURCE, dayBreakCollection);
     syncGeoJsonSource(
       map,
@@ -1343,7 +1326,6 @@ const TripPlannerMapContent = forwardRef<
     ready,
     routeCollection,
     segmentHighlightCollection,
-    suggestionCollection,
     waypointCollection,
   ]);
   // ── Collaborator cursor avatars (US-35) ──
@@ -3416,59 +3398,10 @@ function ensurePlannerLayers(map: MapLibreMap): void {
     });
   }
   // ── Collaboration overlays (US-35) ──
-  if (!map.getSource(SUGGESTION_SOURCE)) {
-    map.addSource(SUGGESTION_SOURCE, {
-      type: "geojson",
-      data: buildSuggestionCollection(undefined),
-    });
-  }
-  if (!map.getLayer(SUGGESTION_LAYER)) {
-    map.addLayer({
-      id: SUGGESTION_LAYER,
-      type: "circle",
-      source: SUGGESTION_SOURCE,
-      paint: {
-        "circle-radius": 6,
-        "circle-color": "#C084FC",
-        "circle-stroke-color": "#1E1B4B",
-        "circle-stroke-width": 2,
-      },
-    });
-  }
   // Collaborator cursors are rendered as avatar HTML markers (not a GeoJSON
   // layer) so each shows the rider's photo/initials — see the cursor-marker
-  // effect in the map content component.
-}
-function buildSuggestionCollection(
-  suggestions: TripSuggestion[] | undefined,
-): GeoJSON.FeatureCollection<
-  GeoJSON.Point,
-  {
-    suggestionId: string;
-    title: string;
-  }
-> {
-  const features: Array<
-    GeoJSON.Feature<
-      GeoJSON.Point,
-      {
-        suggestionId: string;
-        title: string;
-      }
-    >
-  > = [];
-  if (suggestions) {
-    for (const s of suggestions) {
-      if (s.status !== "open") continue;
-      if (s.lat == null || s.lng == null) continue;
-      features.push({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [s.lng, s.lat] },
-        properties: { suggestionId: s.id, title: s.title },
-      });
-    }
-  }
-  return { type: "FeatureCollection", features };
+  // effect in the map content component. Suggestions are text-only and live in
+  // the collaborate modal; they have no map placement flow, so no map layer.
 }
 function syncGeoJsonSource(
   map: MapLibreMap,

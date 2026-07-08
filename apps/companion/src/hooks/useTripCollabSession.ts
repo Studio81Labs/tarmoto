@@ -117,6 +117,15 @@ export function useTripCollabSession(
   const [members, setMembers] = useState<Map<string, CollaboratorProfile>>(
     () => new Map(),
   );
+  // Roster refetch bookkeeping: a collaborator who joins AFTER the roster
+  // snapshot only shows up in cursor/presence events (user id only). When we
+  // see a user id we don't have a profile for, bump `rosterVersion` to refetch
+  // — once per unknown id (`requestedUnknownRef`) so a 12 Hz cursor stream
+  // doesn't spam the endpoint.
+  const [rosterVersion, setRosterVersion] = useState(0);
+  const membersRef = useRef<Map<string, CollaboratorProfile>>(members);
+  membersRef.current = members;
+  const requestedUnknownRef = useRef<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<TripSuggestion[]>([]);
   // When the shared list is fed into the modal via props, a silent
   // fetch failure here would leave `suggestions` empty and the modal
@@ -139,6 +148,7 @@ export function useTripCollabSession(
     setCursors(new Map());
     setPresence(new Map());
     setMembers(new Map());
+    requestedUnknownRef.current = new Set();
     setSuggestions([]);
     setSuggestionsError(null);
   }, [serverTripId]);
@@ -151,8 +161,18 @@ export function useTripCollabSession(
 
   useEffect(() => {
     if (!serverTripId) return;
+    const noteUnknownUser = (userId: string) => {
+      if (
+        !membersRef.current.has(userId) &&
+        !requestedUnknownRef.current.has(userId)
+      ) {
+        requestedUnknownRef.current.add(userId);
+        setRosterVersion((v) => v + 1);
+      }
+    };
     const offCursor = onTripCursor((evt: TripCursorEvent) => {
       if (evt.trip_id !== serverTripId) return;
+      noteUnknownUser(evt.user_id);
       setCursors((prev) => {
         const next = new Map(prev);
         next.set(evt.user_id, {
@@ -166,6 +186,7 @@ export function useTripCollabSession(
     });
     const offPresence = onTripPresence((evt: TripPresenceEvent) => {
       if (evt.trip_id !== serverTripId) return;
+      noteUnknownUser(evt.user_id);
       setPresence((prev) => {
         const next = new Map(prev);
         // Track sockets per user so multi-tab / multi-device members
@@ -310,7 +331,9 @@ export function useTripCollabSession(
     return () => {
       cancelled = true;
     };
-  }, [serverTripId, hasAuthToken]);
+    // `rosterVersion` re-runs this when a cursor/presence event surfaces a
+    // collaborator who joined after the initial snapshot.
+  }, [serverTripId, hasAuthToken, rosterVersion]);
 
   useEffect(() => {
     if (!serverTripId) return;
