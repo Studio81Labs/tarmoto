@@ -1,6 +1,10 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CorridorBodyDto, MAX_POI_CORRIDOR_POINTS } from './stored-poi.dto.js';
+import {
+  CorridorBodyDto,
+  MAX_CORRIDOR_KINDS,
+  MAX_POI_CORRIDOR_POINTS,
+} from './stored-poi.dto.js';
 
 describe('CorridorBodyDto route validation', () => {
   const point = { lat: 49.1, lng: 16.7 };
@@ -38,5 +42,19 @@ describe('CorridorBodyDto route validation', () => {
       (e) => e.property === 'buffer_km',
     );
     expect(err?.constraints?.max).toBeDefined();
+  });
+
+  // `kinds` is a free-form superset and the store read fans out one query per
+  // kind, so the list is capped to bound that fan-out on the public endpoint.
+  it('rejects a kinds list over the fan-out cap (#919)', async () => {
+    const dto = plainToInstance(CorridorBodyDto, {
+      route: [point, point],
+      kinds: Array.from(
+        { length: MAX_CORRIDOR_KINDS + 1 },
+        (_, i) => `kind_${i}`,
+      ),
+    });
+    const err = (await validate(dto)).find((e) => e.property === 'kinds');
+    expect(err?.constraints?.arrayMaxSize).toBeDefined();
   });
 });

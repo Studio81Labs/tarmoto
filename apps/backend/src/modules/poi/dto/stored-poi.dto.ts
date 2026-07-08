@@ -219,6 +219,15 @@ class CorridorRoutePointDto {
 export const MAX_POI_CORRIDOR_POINTS = 25000;
 
 /**
+ * Kind cap. `kinds` is a free-form OSM-import superset (not a closed enum like
+ * `/poi/along-route`'s), and the store read fans out one corridor query per
+ * kind, so an uncapped public list would let a caller drive an unbounded number
+ * of concurrent PostGIS queries. Comfortably above the companion's whole
+ * category→kind vocabulary (~13).
+ */
+export const MAX_CORRIDOR_KINDS = 32;
+
+/**
  * Body for `POST /poi/in-corridor` — stored POIs within `buffer_km` of a route
  * polyline. POST (not GET) so a long polyline can't overflow the URL, matching
  * `/poi/along-route` and `/passes/check-route`.
@@ -252,6 +261,7 @@ export class CorridorBodyDto {
   // again into `string[][]` in the emitted spec. Mirrors the `route` field above.
   @ApiPropertyOptional({
     type: [String],
+    maxItems: MAX_CORRIDOR_KINDS,
     description:
       'Store kinds to include (free-form OSM import superset). Omit for all.',
   })
@@ -260,6 +270,7 @@ export class CorridorBodyDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()
+  @ArrayMaxSize(MAX_CORRIDOR_KINDS)
   @IsString({ each: true })
   kinds?: string[];
 }
