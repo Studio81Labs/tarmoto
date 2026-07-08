@@ -7,6 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { SharedThrottleBucket } from '../../config/shared-throttle-bucket.decorator.js';
 import { GeocodeService } from './geocode.service.js';
 import {
   GeocodeListDto,
@@ -15,12 +16,14 @@ import {
   ReverseGeocodeResultDto,
 } from './dto/geocode.dto.js';
 
-// Explicit per-user rate limit for this Nominatim-backed proxy: pinned to the
-// app default (60/min ≈ 1 req/s) so a single client can't individually exceed
-// OSMF's ~1 req/s-per-source policy, independent of any later change to the
-// global default. Generous enough for debounced typeahead + pin naming; the
-// GeocodeService response cache is the primary upstream-load reducer (#909).
+// Per-user rate limit for this Nominatim-backed proxy. @SharedThrottleBucket
+// makes the 60/min budget apply to the whole controller per user — forward +
+// reverse share ONE bucket, not one each — so a single client can't exceed
+// ~1 req/s to Nominatim (OSMF's per-source policy), independent of the global
+// default. Generous for debounced typeahead + pin naming; the GeocodeService
+// response cache is the primary upstream-load reducer (#909).
 @Throttle({ default: { ttl: 60_000, limit: 60 } })
+@SharedThrottleBucket()
 @ApiTags('geocode')
 @Controller('geocode')
 @UseGuards(AuthGuard)
