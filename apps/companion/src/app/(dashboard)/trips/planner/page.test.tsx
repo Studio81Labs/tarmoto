@@ -1777,6 +1777,77 @@ describe("TripPlannerPage", () => {
     expect(await screen.findByText("Names saved")).toBeInTheDocument();
   });
 
+  it("persists a name-only edit on an unsaved GPX import via the import endpoint, not saveRoute (#911)", async () => {
+    // Unsaved import: `imported-*` id + `imp-wp-*` waypoints, geometry = the
+    // imported track. A label edit has no server trip / UUID waypoint to PATCH,
+    // so it must re-send the track (names + geometry) through the import
+    // endpoint — saveRoute would re-route and reshape the imported line.
+    const imported: Trip = {
+      ...activeTrip,
+      id: "imported-123",
+      importSourceFormat: "gpx",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              ...activeTrip.days[0]!.waypoints[0]!,
+              id: "imp-wp-start",
+              name: "Trailhead",
+            },
+            {
+              ...activeTrip.days[0]!.waypoints[1]!,
+              id: "imp-wp-end",
+              name: "Summit",
+            },
+          ],
+        },
+      ],
+    };
+    storeState.activeTrip = imported;
+    storeState.routeDirty = false;
+    storeState.namesDirty = true;
+    storeState.renamedWaypointIds = ["imp-wp-start"];
+    tripsApiImportRouteMock.mockResolvedValue({
+      data: buildTripDetail("Imported", {
+        id: "11111111-2222-4333-8444-999999999999",
+      }),
+    } as never);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    const saveBtn = await screen.findByRole("button", { name: "Save route" });
+    expect(saveBtn).toBeEnabled();
+    fireEvent.click(saveBtn);
+
+    await waitFor(() =>
+      expect(tripsApiImportRouteMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source_format: "gpx",
+          // Imported track geometry is preserved (not re-routed).
+          geometry: expect.arrayContaining([
+            expect.objectContaining({
+              lng: expect.any(Number),
+              lat: expect.any(Number),
+            }),
+          ]),
+          // Edited labels ride along.
+          waypoints: expect.arrayContaining([
+            expect.objectContaining({ name: "Trailhead" }),
+            expect.objectContaining({ name: "Summit" }),
+          ]),
+        }),
+      ),
+    );
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Names saved")).toBeInTheDocument();
+  });
+
   it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {
     // PUT /route replaces days but never the metadata — the PATCH keeps
     // title and planner parameters from reverting, and it runs after the

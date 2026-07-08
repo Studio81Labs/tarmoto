@@ -1391,12 +1391,28 @@ export default function TripPlannerPage() {
         .flatMap((d) => d.waypoints)
         .filter((w) => renamedIds.has(w.id) && UUID_RE.test(w.id))
         .map((w) => ({ id: w.id, name: w.name ?? null }));
+      // An unsaved GPX/KML import has no server trip and no UUID waypoints to
+      // PATCH — its geometry is the imported track, which saveRoute would
+      // re-route and replace. Persist it (names + geometry) through the import
+      // endpoint instead. Both branches below skip the re-routing PUT.
+      const importedRoutePayload = trip
+        ? buildImportedRoutePayload(trip)
+        : null;
+      let persistNames: (() => Promise<{ data: unknown }>) | null = null;
       if (nameTripId && waypoints.length > 0) {
+        persistNames = () =>
+          tripsApi.updateWaypointNames(nameTripId, { waypoints });
+      } else if (importedRoutePayload) {
+        const payload = importedRoutePayload;
+        persistNames = () =>
+          nameTripId
+            ? tripsApi.replaceImportedRoute(nameTripId, payload)
+            : tripsApi.importRoute(payload);
+      }
+      if (persistNames) {
         setSavingRoute(true);
         try {
-          const { data } = await tripsApi.updateWaypointNames(nameTripId, {
-            waypoints,
-          });
+          const { data } = await persistNames();
           setActiveTrip(
             tripFromDetail(
               data as unknown as Parameters<typeof tripFromDetail>[0],
@@ -1410,8 +1426,9 @@ export default function TripPlannerPage() {
         }
         return;
       }
-      // No server trip / no persisted waypoints yet — fall through to the full
-      // save, which persists the names along with the route.
+      // No persisted target yet (e.g. a planned draft, whose geometry the
+      // save re-routes idempotently) — fall through to the full save, which
+      // persists the names along with the route.
     }
 
     // Resolve or lazily create the backend trip. Reuse the same pattern
