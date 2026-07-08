@@ -148,13 +148,12 @@ export class TripSharesService {
   /**
    * Look up an active share by token without bumping `view_count`.
    *
-   * Used by `POST /trips/from-share` (#357) to materialise the snapshot
-   * into a real multi-day trip. The view counter is meant to track
-   * external link traffic (web preview opens) — counting an
-   * authenticated server-side import would inflate that signal and
-   * defeat its purpose. Soft-deleted owners (US-62) collapse to the
-   * same 404 the public reader returns so an importing client can't
-   * side-channel whether the owner deleted their account.
+   * Shared internal lookup behind `getByToken` and the token join flow.
+   * The view counter is meant to track external link traffic (web
+   * preview opens), so internal reads that shouldn't count toward it use
+   * this path instead. Soft-deleted owners (US-62) collapse to the same
+   * 404 the public reader returns so a caller can't side-channel whether
+   * the owner deleted their account.
    */
   async findActiveByToken(token: string): Promise<TripShare> {
     const share = await this.tripShareRepo.findOne({

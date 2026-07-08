@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Trip } from "@/lib/types";
-import { buildTripShareUrl, tripFileName, tripToGpx } from "../trip-export";
+import { tripFileName, tripToGpx } from "../trip-export";
 
 function minimalTrip(overrides: Partial<Trip> = {}): Trip {
   return {
@@ -236,28 +236,5 @@ describe("tripFileName", () => {
   it("slugifies the id fallback so filesystem-unsafe chars don't leak in", () => {
     const trip = minimalTrip({ id: "a b/c", name: "✨✨" });
     expect(tripFileName(trip, "gpx")).toBe("tarmoto-a-b-c.gpx");
-  });
-});
-
-describe("buildTripShareUrl", () => {
-  it("builds a canonical trips URL against the given origin", () => {
-    const trip = minimalTrip({ id: "t-42" });
-    expect(buildTripShareUrl(trip, "https://app.tarmoto.cc")).toBe(
-      "https://app.tarmoto.cc/trips/t-42",
-    );
-  });
-
-  it("trims a trailing slash on the origin", () => {
-    const trip = minimalTrip({ id: "t-42" });
-    expect(buildTripShareUrl(trip, "https://app.tarmoto.cc/")).toBe(
-      "https://app.tarmoto.cc/trips/t-42",
-    );
-  });
-
-  it("url-encodes trip ids that contain reserved characters", () => {
-    const trip = minimalTrip({ id: "a b/c" });
-    expect(buildTripShareUrl(trip, "https://x.test")).toBe(
-      "https://x.test/trips/a%20b%2Fc",
-    );
   });
 });

@@ -236,9 +236,9 @@ describe('TripSharesService', () => {
   });
 
   describe('findActiveByToken', () => {
-    // Internal counterpart to getByToken used by `POST /trips/from-share`
-    // (#357). Same 404 surface, but no view_count side-effect — server-
-    // side imports shouldn't inflate the public traffic counter.
+    // Internal shared lookup behind `getByToken` and the token join flow.
+    // Same 404 surface, but no view_count side-effect — internal reads
+    // shouldn't inflate the public traffic counter.
 
     it('returns the raw share row without bumping view_count', async () => {
       const result = await service.findActiveByToken('a'.repeat(32));

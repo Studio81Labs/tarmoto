@@ -1317,26 +1317,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/trips/from-share": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Materialise a shared trip into the caller's library, preserving multi-day structure (#357)
-         * @description Companion-side counterpart to `POST /trips/import` for the deep-link handoff (`tarmoto://trips/import?tripId=...&token=...`). The client posts only the share token; the server reads the snapshot stored under that token and creates one `trip_days` row per snapshot day — retaining each day's route geometry, distance, and waypoints. Use this instead of `/trips/import` for shares from the planner so multi-day itineraries land in the rider's library with their day breakdown intact. Returns a 404 if the token is unknown or the share's owner has soft-deleted their account; a 400 if the snapshot has no usable route data on any day.
-         */
-        post: operations["TripsController_importFromShare"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/trips/{tripId}": {
         parameters: {
             query?: never;
@@ -4779,10 +4759,6 @@ export interface components {
             days: components["schemas"]["SaveRouteDayDto"][];
             options?: components["schemas"]["RouteOptionsDto"];
         };
-        FromShareTripDto: {
-            /** @description The 32-char hex share token returned by `POST /trip-shares` and consumed by the `tarmoto://trips/import?token=...` deep link. */
-            share_token: string;
-        };
         UpdateTripDto: {
             title?: string;
             region?: string | null;
@@ -6219,7 +6195,6 @@ export type SchemaSaveRouteWaypointDto = components['schemas']['SaveRouteWaypoin
 export type SchemaSaveRouteDayDto = components['schemas']['SaveRouteDayDto'];
 export type SchemaRouteOptionsDto = components['schemas']['RouteOptionsDto'];
 export type SchemaSaveRouteDto = components['schemas']['SaveRouteDto'];
-export type SchemaFromShareTripDto = components['schemas']['FromShareTripDto'];
 export type SchemaUpdateTripDto = components['schemas']['UpdateTripDto'];
 export type SchemaGenerateTripDto = components['schemas']['GenerateTripDto'];
 export type SchemaTripGenerationOptionDto = components['schemas']['TripGenerationOptionDto'];
@@ -8474,43 +8449,6 @@ export interface operations {
                 };
             };
             /** @description Trip not found or not visible */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    TripsController_importFromShare: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FromShareTripDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TripDetailDto"];
-                };
-            };
-            /** @description Snapshot has no usable route data */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Share token unknown or owner account deleted */
             404: {
                 headers: {
                     [name: string]: unknown;
