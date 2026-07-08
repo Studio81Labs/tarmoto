@@ -7,6 +7,7 @@ import {
   POI_CATEGORY_META,
   poiCategoryMeta,
 } from "@/components/planner/MapToolbar";
+import { readPoiDetails } from "@/components/planner/PoiDetails";
 import { haversineKm } from "@tarmoto/shared";
 import { plannerApi } from "@/lib/planner/api";
 import type { RouteStop } from "@/lib/planner/types";
@@ -354,6 +355,20 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
                           : t("{km} km off", { km: stop.distanceFromRouteKm })
                       } · ${t("km {at}", { at: stop.kmAlongRoute })}`}
                     </span>
+                    {(() => {
+                      const d = readPoiDetails(stop);
+                      const bits = [
+                        d.stars !== undefined
+                          ? t("{stars}-star", { stars: d.stars })
+                          : null,
+                        d.cuisine ?? d.brand ?? null,
+                      ].filter((b): b is string => b !== null);
+                      return bits.length > 0 ? (
+                        <span className="mt-0.5 block truncate text-[10px] text-fg-mute">
+                          {bits.join(" · ")}
+                        </span>
+                      ) : null;
+                    })()}
                   </span>
                   <ZoomIn size={15} className="shrink-0 text-fg-mute" />
                 </button>
