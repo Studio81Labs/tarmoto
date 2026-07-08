@@ -25,8 +25,9 @@ export class WaypointNameDto {
     nullable: true,
     maxLength: 200,
     description:
-      'New display name; null clears it back to the default label. Same ' +
-      'length bound as the save-route waypoint name.',
+      'New display name. Omit the field to leave the current name unchanged; ' +
+      'send null to clear it back to the default label; send a string to set ' +
+      'it. Same length bound as the save-route waypoint name.',
   })
   @IsOptional()
   @IsString()

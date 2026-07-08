@@ -2970,5 +2970,34 @@ describe('TripsService', () => {
         { name: null },
       );
     });
+
+    it('leaves the name unchanged when name is omitted (id-only entry)', async () => {
+      memberRepo.findOne.mockResolvedValue({
+        role: 'editor',
+      } as unknown as TripMember);
+      const mgr = {
+        find: jest
+          .fn()
+          .mockResolvedValue([{ waypoints: [{ id: 'w1', name: 'Praha' }] }]),
+        update: jest.fn(),
+      };
+      transactionMock.mockImplementationOnce(
+        async (cb: (m: typeof mgr) => Promise<unknown>) => cb(mgr),
+      );
+      jest
+        .spyOn(service, 'getDetail')
+        .mockResolvedValue({ id: TRIP_ID } as never);
+
+      // An id-only entry (name omitted — e.g. a client that drops `undefined`
+      // fields) must NOT wipe the existing label; only explicit null clears.
+      await service.updateWaypointNames(
+        OWNER_ID,
+        TRIP_ID,
+        body([{ id: 'w1' }]),
+      );
+
+      expect(mgr.update).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
   });
 });

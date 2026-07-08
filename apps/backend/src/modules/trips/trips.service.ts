@@ -1170,9 +1170,12 @@ export class TripsService {
       for (const { id, name } of dto.waypoints) {
         const current = owned.get(id);
         if (!current) continue; // id not in this trip — ignore
-        const next = name ?? null;
-        if (current.name === next) continue; // unchanged — skip the write
-        await manager.update(TripWaypoint, { id }, { name: next });
+        // PATCH semantics: an omitted `name` leaves the label unchanged; only
+        // an explicit `null` clears it. Without this, a client that drops
+        // `undefined` fields (or sends an id-only entry) would wipe the name.
+        if (name === undefined) continue;
+        if (current.name === name) continue; // unchanged — skip the write
+        await manager.update(TripWaypoint, { id }, { name });
         changed = true;
       }
     });
