@@ -540,10 +540,14 @@ export default function TripPlannerPage() {
       };
     });
   }, [dayPlans, displayedTrip]);
+  // Card highlight follows an explicit pick, else the store's active day —
+  // the same day the map treats as selected (`selectedDayIndex` defaults to
+  // 0 on load). This keeps day 1 preselected so "Focus day" always has a
+  // visible target instead of silently focusing an unhighlighted first day.
   const selectedCardDayNumber =
     selectedPlanIndex != null
       ? (dayPlans?.[selectedPlanIndex]?.dayNumber ?? null)
-      : null;
+      : (selectedDay?.dayNumber ?? null);
   const handleSelectDayCard = useCallback(
     (dayNumber: number) => {
       if (!dayPlans) return;
