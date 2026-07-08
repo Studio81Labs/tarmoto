@@ -1383,9 +1383,13 @@ export default function TripPlannerPage() {
     if (nameState.namesDirty && !nameState.routeDirty) {
       const trip = nameState.activeTrip ?? activeTripRef.current;
       const nameTripId = resolveExistingTripId(serverTripId, trip);
+      // Send ONLY the waypoints this client actually renamed — not every
+      // persisted stop. Re-sending an unchanged name would let this save
+      // revert a collaborator's concurrent rename of a different waypoint.
+      const renamedIds = new Set(nameState.renamedWaypointIds);
       const waypoints = (trip?.days ?? [])
         .flatMap((d) => d.waypoints)
-        .filter((w) => UUID_RE.test(w.id)) // only persisted (server) waypoints
+        .filter((w) => renamedIds.has(w.id) && UUID_RE.test(w.id))
         .map((w) => ({ id: w.id, name: w.name ?? null }));
       if (nameTripId && waypoints.length > 0) {
         setSavingRoute(true);

@@ -283,6 +283,7 @@ type TripStoreSnapshot = {
   canRedo: boolean;
   routeDirty: boolean;
   namesDirty: boolean;
+  renamedWaypointIds: string[];
   stalePreviewDays: number[];
   selectedDayIndex: number;
   focusedSegmentId: string | null;
@@ -291,12 +292,14 @@ type TripStoreSnapshot = {
     trip: Trip | null;
     dirty: boolean;
     names: boolean;
+    nameIds: string[];
     stale: number[];
   }>;
   redoStack: Array<{
     trip: Trip | null;
     dirty: boolean;
     names: boolean;
+    nameIds: string[];
     stale: number[];
   }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
@@ -494,6 +497,7 @@ describe("TripPlannerPage", () => {
       canRedo: false,
       routeDirty: false,
       namesDirty: false,
+      renamedWaypointIds: [],
       stalePreviewDays: [],
       selectedDayIndex: 0,
       draftPlannerParameters: null,

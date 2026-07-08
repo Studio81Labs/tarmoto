@@ -1549,6 +1549,10 @@ describe("useTripStore routeDirty flag", () => {
     expect(useTripStore.getState().namesDirty).toBe(true);
     expect(useTripStore.getState().routeDirty).toBe(false);
     expect(useTripStore.getState().stalePreviewDays).toEqual([]);
+    // Only the renamed waypoint is tracked (not the untouched end) — the
+    // name-only save sends exactly this set, so a collaborator's rename of a
+    // different stop can't be clobbered by re-sending its stale name (#911).
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
   });
 
   it("setActiveTrip clears namesDirty (a saved/loaded trip is clean)", () => {
@@ -1559,9 +1563,11 @@ describe("useTripStore routeDirty flag", () => {
       .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
     useTripStore.getState().renameWaypoint(start.id, "Praha");
     expect(useTripStore.getState().namesDirty).toBe(true);
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
 
     useTripStore.getState().setActiveTrip(useTripStore.getState().activeTrip!);
     expect(useTripStore.getState().namesDirty).toBe(false);
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([]);
   });
 
   it("undo/redo restore namesDirty across a later route edit", () => {
@@ -1579,11 +1585,14 @@ describe("useTripStore routeDirty flag", () => {
     expect(useTripStore.getState().routeDirty).toBe(true);
 
     // Undo the route edit — the rename itself isn't undoable, so its unsaved
-    // name change (namesDirty) must survive so Save stays armed.
+    // name change (namesDirty + the tracked id) must survive so Save stays
+    // armed and still targets exactly the renamed waypoint.
     useTripStore.getState().undo();
     expect(useTripStore.getState().namesDirty).toBe(true);
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
     useTripStore.getState().redo();
     expect(useTripStore.getState().namesDirty).toBe(true);
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
   });
 
   it("insertWaypointBeforeEnd marks the draft dirty so POI stops can be saved", () => {

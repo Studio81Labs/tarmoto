@@ -2895,6 +2895,51 @@ describe('TripsService', () => {
       );
       expect(getDetailSpy).toHaveBeenCalledWith(OWNER_ID, TRIP_ID);
       expect(result).toBe(detail);
+      // A real change mirrors saveManualRoute: broadcast + audit so other open
+      // planners rehydrate the new names instead of keeping stale ones (#911).
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:updated',
+        detail,
+      );
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'trip_updated',
+        { fields: ['waypoint_names'] },
+      );
+    });
+
+    it('does not broadcast or record activity when nothing changed', async () => {
+      memberRepo.findOne.mockResolvedValue({
+        role: 'editor',
+      } as unknown as TripMember);
+      const mgr = {
+        find: jest
+          .fn()
+          .mockResolvedValue([{ waypoints: [{ id: 'w1', name: 'Praha' }] }]),
+        update: jest.fn(),
+      };
+      transactionMock.mockImplementationOnce(
+        async (cb: (m: typeof mgr) => Promise<unknown>) => cb(mgr),
+      );
+      jest
+        .spyOn(service, 'getDetail')
+        .mockResolvedValue({ id: TRIP_ID } as never);
+
+      await service.updateWaypointNames(
+        OWNER_ID,
+        TRIP_ID,
+        body([
+          { id: 'w1', name: 'Praha' }, // unchanged → no write
+          { id: 'ghost', name: 'X' }, // not in this trip → skip
+        ]),
+      );
+
+      // No write → no collaborator broadcast and no audit noise.
+      expect(mgr.update).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+      expect(activity.recordSafe).not.toHaveBeenCalled();
     });
 
     it('clears a name back to null', async () => {

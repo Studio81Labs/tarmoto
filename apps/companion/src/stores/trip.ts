@@ -155,6 +155,15 @@ interface TripState {
   namesDirty: boolean;
 
   /**
+   * Ids of the waypoints renamed since the last save/load — the exact set the
+   * name-only PATCH sends. Sending *only* these (not every persisted waypoint)
+   * keeps a collaborator's concurrent rename of a different stop from being
+   * clobbered by this client re-submitting its stale name (#911). Mirrors
+   * `namesDirty` (armed ⟺ non-empty), as `stalePreviewDays` mirrors `routeDirty`.
+   */
+  renamedWaypointIds: string[];
+
+  /**
    * Day numbers (1-based) whose route preview is stale — i.e. routing inputs
    * changed since the last `applyRouteResult` for that day. Replaces the
    * former boolean `routePreviewStale`. Empty means every day's preview is
@@ -427,6 +436,8 @@ interface TripHistoryEntry {
   dirty: boolean;
   /** `namesDirty` at snapshot time — restored on undo/redo like `dirty`. */
   names: boolean;
+  /** `renamedWaypointIds` at snapshot time — restored with `names` (see `stale`). */
+  nameIds: string[];
   /** The exact `stalePreviewDays` at snapshot time, restored verbatim on undo/redo. */
   stale: number[];
 }
@@ -704,6 +715,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canRedo: false,
     routeDirty: false,
     namesDirty: false,
+    renamedWaypointIds: [],
     stalePreviewDays: [],
     selectedDayIndex: 0,
     draftPlannerParameters: null,
@@ -727,6 +739,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         activeTrip,
         routeDirty: false,
         namesDirty: false,
+        renamedWaypointIds: [],
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
@@ -852,8 +865,15 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         });
         if (!changed) return state;
         // Metadata-only edit (no geometry change): mark namesDirty so Save
-        // persists the rename via the name-only path (#911), not a re-route.
-        return { activeTrip: { ...trip, days }, namesDirty: true };
+        // persists the rename via the name-only path (#911), not a re-route,
+        // and record the id so only this waypoint is sent (not every stop).
+        return {
+          activeTrip: { ...trip, days },
+          namesDirty: true,
+          renamedWaypointIds: [
+            ...new Set([...state.renamedWaypointIds, waypointId]),
+          ],
+        };
       }),
 
     setPlanningMode: (mode) =>
@@ -1260,6 +1280,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             trip: state.activeTrip,
             dirty: state.routeDirty,
             names: state.namesDirty,
+            nameIds: state.renamedWaypointIds,
             stale: state.stalePreviewDays,
           },
         ]);
@@ -1269,6 +1290,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // to the loaded route also clears them (re-disabling Save).
           routeDirty: previous.dirty,
           namesDirty: previous.names,
+          renamedWaypointIds: previous.nameIds,
           // Restore the EXACT stale set captured with this snapshot — not a
           // reconstruction from all routable days, which would over-stale
           // untouched days. Live routing only runs the selected day, so an
@@ -1310,6 +1332,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             trip: state.activeTrip,
             dirty: state.routeDirty,
             names: state.namesDirty,
+            nameIds: state.renamedWaypointIds,
             stale: state.stalePreviewDays,
           },
         ]);
@@ -1317,6 +1340,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           activeTrip: next.trip,
           routeDirty: next.dirty,
           namesDirty: next.names,
+          renamedWaypointIds: next.nameIds,
           // Restore the exact stale set captured with this snapshot (see undo).
           stalePreviewDays: next.stale,
           selectedDayIndex: Math.max(
@@ -1837,6 +1861,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canRedo: false,
         routeDirty: false,
         namesDirty: false,
+        renamedWaypointIds: [],
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
@@ -1889,6 +1914,7 @@ function commitTripChange(
       trip: state.activeTrip,
       dirty: state.routeDirty,
       names: state.namesDirty,
+      nameIds: state.renamedWaypointIds,
       stale: state.stalePreviewDays,
     },
   ]);

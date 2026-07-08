@@ -1155,6 +1155,7 @@ export class TripsService {
       );
     }
 
+    let changed = false;
     await this.tripRepo.manager.transaction(async (manager) => {
       // Scope by trip (trip_waypoints -> trip_days -> trip) so a caller can't
       // rename another trip's rows by guessing ids.
@@ -1172,10 +1173,23 @@ export class TripsService {
         const next = name ?? null;
         if (current.name === next) continue; // unchanged — skip the write
         await manager.update(TripWaypoint, { id }, { name: next });
+        changed = true;
       }
     });
 
-    return this.getDetail(userId, tripId);
+    const detail = await this.getDetail(userId, tripId);
+    // Only broadcast/audit a real change — an all-no-op call (the companion
+    // sends only the ids it renamed, but a stale retry can still land) must not
+    // spam collaborators or the Activity tab. When something did change, mirror
+    // saveManualRoute so other open planners rehydrate the new names via
+    // `trip:updated` (otherwise they keep stale names and could save over them).
+    if (changed) {
+      this.events.emitToTrip(tripId, 'trip:updated', detail);
+      await this.activity.recordSafe(tripId, userId, 'trip_updated', {
+        fields: ['waypoint_names'],
+      });
+    }
+    return detail;
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {
