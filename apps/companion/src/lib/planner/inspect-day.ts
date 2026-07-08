@@ -27,11 +27,21 @@ export function aggregateInspectDay(days: TripDay[]): TripDay | null {
     0,
   );
   const elevationGain = days.reduce((sum, day) => sum + day.elevationGain, 0);
-  const weightedQuality = days.reduce(
-    (sum, day) => sum + day.avgQuality * day.distanceKm,
+  // Weight the quality mean only over days that carry a real measurement
+  // (avgQuality > 0). A no-data / unhydrated day (avgQuality === 0) would
+  // otherwise drag the aggregate toward "rough" — e.g. a measured 4.0 day plus
+  // an unmeasured one would read 2.0 instead of the true 4.0. Falls to 0 when
+  // nothing is measured, which INSPECT renders as "—".
+  const scoredDistance = days.reduce(
+    (sum, day) => (day.avgQuality > 0 ? sum + day.distanceKm : sum),
     0,
   );
-  const avgQuality = distanceKm > 0 ? weightedQuality / distanceKm : 0;
+  const weightedQuality = days.reduce(
+    (sum, day) =>
+      day.avgQuality > 0 ? sum + day.avgQuality * day.distanceKm : sum,
+    0,
+  );
+  const avgQuality = scoredDistance > 0 ? weightedQuality / scoredDistance : 0;
 
   const surfaceMix: Record<string, number> = {};
   for (const day of days) {
