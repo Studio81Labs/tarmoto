@@ -5,7 +5,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { SharedThrottleBucket } from '../../config/shared-throttle-bucket.decorator.js';
 import { GeocodeService } from './geocode.service.js';
 import {
   GeocodeListDto,
@@ -14,6 +16,15 @@ import {
   ReverseGeocodeResultDto,
 } from './dto/geocode.dto.js';
 
+// Per-user rate limit for this Nominatim-backed proxy — a coarse abuse
+// guardrail (60/min per user; @SharedThrottleBucket makes it apply across
+// search + reverse together, not per action, so a client can't spend the full
+// budget on each). The hard ≤ 1 req/s cap to public Nominatim is enforced
+// UPSTREAM by NominatimProvider's min-spacing limiter; this throttle just
+// bounds how much any one client can enqueue, and the GeocodeService response
+// cache collapses repeated queries (#909).
+@Throttle({ default: { ttl: 60_000, limit: 60 } })
+@SharedThrottleBucket()
 @ApiTags('geocode')
 @Controller('geocode')
 @UseGuards(AuthGuard)

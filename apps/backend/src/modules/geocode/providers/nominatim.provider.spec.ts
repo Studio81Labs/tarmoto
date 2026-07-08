@@ -1,5 +1,8 @@
 import { ConfigService } from '@nestjs/config';
-import { NominatimProvider } from './nominatim.provider.js';
+import {
+  NominatimProvider,
+  isDefaultPublicNominatim,
+} from './nominatim.provider.js';
 
 // ConfigService stub — always returns the default, so the provider uses the
 // public endpoint and the built-in User-Agent.
@@ -90,15 +93,19 @@ describe('NominatimProvider', () => {
       expect(await provider.reverse(47, 11)).toEqual({ label: 'Tyrol' });
     });
 
-    it('falls back to the feature name, then the display-name head', async () => {
-      const provider = new NominatimProvider(config);
-
+    // Split into two single-call tests: a second call on the same provider
+    // would wait one real second on the upstream min-spacing limiter.
+    it('falls back to the matched feature name when the address has no settlement', async () => {
       nextPayload = { name: 'Grossglockner High Alpine Road', address: {} };
+      const provider = new NominatimProvider(config);
       expect(await provider.reverse(47.07, 12.83)).toEqual({
         label: 'Grossglockner High Alpine Road',
       });
+    });
 
+    it('falls back to the display-name head when there is no feature name', async () => {
       nextPayload = { display_name: 'Some Pass, A Region, A Country' };
+      const provider = new NominatimProvider(config);
       expect(await provider.reverse(46, 13)).toEqual({ label: 'Some Pass' });
     });
 
@@ -115,5 +122,23 @@ describe('NominatimProvider', () => {
         'Nominatim API error',
       );
     });
+  });
+});
+
+describe('isDefaultPublicNominatim', () => {
+  it('is true for the public OSMF instance (with or without trailing slash)', () => {
+    expect(
+      isDefaultPublicNominatim('https://nominatim.openstreetmap.org'),
+    ).toBe(true);
+    expect(
+      isDefaultPublicNominatim('https://nominatim.openstreetmap.org/'),
+    ).toBe(true);
+  });
+
+  it('is false for a self-hosted endpoint (spacing disabled there)', () => {
+    expect(
+      isDefaultPublicNominatim('https://nominatim.internal.example.com/'),
+    ).toBe(false);
+    expect(isDefaultPublicNominatim('http://localhost:8080/')).toBe(false);
   });
 });
