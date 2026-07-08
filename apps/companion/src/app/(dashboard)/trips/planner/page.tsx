@@ -70,6 +70,7 @@ import {
   splitIntoDays,
 } from "@/lib/planner/day-splitter";
 import { fetchOvernightTowns } from "@/lib/planner/api";
+import { aggregateInspectDay } from "@/lib/planner/inspect-day";
 import { plannerApi } from "@/lib/planner/api";
 import {
   buildPrefsSummary,
@@ -567,6 +568,34 @@ export default function TripPlannerPage() {
     },
     [dayPlans, activeTrip, setSelectedDay, selectedPlanIndex],
   );
+  // ── Tab scoping: INSPECT / CONDITIONS / STOPS follow the day-view pick.
+  // No day selected → whole route; a day selected → that day only.
+  const daySelected = selectedCardDayNumber != null;
+  // An interactive split on a single, not-yet-materialized day: days = [whole
+  // route], dayPlans = the slices. Scoping there goes through the DayPlan
+  // (segmentIds), not a per-day TripDay (which doesn't exist yet).
+  const splitOnSingleDay =
+    (displayedTrip?.days.length ?? 0) === 1 && (dayPlans?.length ?? 0) > 1;
+  // The selected, materialized day's rich TripDay (null for the whole-route
+  // view or an unmaterialized split slice).
+  const selectedTripDay =
+    daySelected && !splitOnSingleDay && selectedPlanIndex != null
+      ? (displayedTrip?.days[selectedPlanIndex] ?? null)
+      : null;
+  // INSPECT input: the selected day's own route (materialized), the whole
+  // single route + a DayPlan scope (unmaterialized split), or the all-days
+  // aggregate (whole route). A loaded day's split DayPlan has empty segmentIds
+  // and would filter every segment out, so materialized days carry no plan.
+  const inspectDay = useMemo<TripDay | null>(() => {
+    const days = displayedTrip?.days ?? [];
+    if (!daySelected) return aggregateInspectDay(days);
+    if (splitOnSingleDay) return days[0] ?? null;
+    return selectedTripDay;
+  }, [displayedTrip, daySelected, splitOnSingleDay, selectedTripDay]);
+  const inspectPlan =
+    daySelected && splitOnSingleDay && selectedPlanIndex != null
+      ? (dayPlans?.[selectedPlanIndex] ?? null)
+      : null;
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
@@ -1182,6 +1211,28 @@ export default function TripPlannerPage() {
   );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
+  // CONDITIONS + STOPS scope to the selected materialized day. The map keeps
+  // its whole-route markers (closuresData/passesData above); the tab reads a
+  // day-scoped copy. React-query keys on the route content, so when nothing is
+  // selected the two calls share a cache entry — no extra request.
+  const conditionRoutes = useMemo(
+    () =>
+      selectedTripDay
+        ? closureRoutes.filter(
+            (route) => route.id === `day-${selectedTripDay.dayNumber}`,
+          )
+        : closureRoutes,
+    [selectedTripDay, closureRoutes],
+  );
+  const tabClosuresData = useClosures(travelMonth, conditionRoutes);
+  const tabPassesData = usePasses(travelMonth, conditionRoutes);
+  const stopsTrip = useMemo(
+    () =>
+      selectedTripDay && displayedTrip
+        ? { ...displayedTrip, days: [selectedTripDay] }
+        : displayedTrip,
+    [selectedTripDay, displayedTrip],
+  );
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
@@ -3276,13 +3327,9 @@ export default function TripPlannerPage() {
           }
           inspect={
             <InspectTab
-              day={displayedTrip?.days[selectedDayIndex] ?? null}
+              day={inspectDay}
               selectedSegmentId={selectedPlannerSegmentId}
-              plan={
-                selectedPlanIndex !== null
-                  ? (dayPlans?.[selectedPlanIndex] ?? null)
-                  : null
-              }
+              plan={inspectPlan}
               onClearPlan={() => setSelectedPlanIndex(null)}
               onInspectSegment={handleInspectSegment}
               onRerouteSegment={handleRerouteSegment}
@@ -3295,8 +3342,8 @@ export default function TripPlannerPage() {
                 <PassesPanel
                   month={travelMonth}
                   onMonthChange={setTravelMonth}
-                  routes={closureRoutes}
-                  data={passesData}
+                  routes={conditionRoutes}
+                  data={tabPassesData}
                   showRegionalList={false}
                   onFocusPass={(pass) =>
                     mapRef.current?.openConditionPopover({
@@ -3311,8 +3358,8 @@ export default function TripPlannerPage() {
                 <SectionStamp n="02">{t("Closures & roadworks ")}</SectionStamp>
                 <ClosuresPanel
                   month={travelMonth}
-                  routes={closureRoutes}
-                  data={closuresData}
+                  routes={conditionRoutes}
+                  data={tabClosuresData}
                   showRegionalList={false}
                   onFocusClosure={(closure) =>
                     mapRef.current?.openConditionPopover({
@@ -3327,7 +3374,7 @@ export default function TripPlannerPage() {
           }
           stops={
             <TripStopsPanel
-              trip={displayedTrip}
+              trip={stopsTrip}
               month={travelMonth}
               onFocusStop={(stop) => mapRef.current?.openPoiPopover(stop)}
             />

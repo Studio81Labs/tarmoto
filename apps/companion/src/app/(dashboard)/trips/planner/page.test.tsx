@@ -575,12 +575,15 @@ describe("TripPlannerPage", () => {
     usePassesMock.mockReturnValue(passesData);
   });
 
-  it("fetches planner conditions once and shares the results with the map and sidebar panels", () => {
+  it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
 
     expect(screen.getByTestId("trip-planner-map")).toBeInTheDocument();
-    expect(useClosuresMock).toHaveBeenCalledTimes(1);
-    expect(usePassesMock).toHaveBeenCalledTimes(1);
+    // Two hook instances: whole-route for the map, day-scoped for the sidebar.
+    // With no day selected both request the same routes, so react-query serves
+    // them from a single cache entry (no double fetch).
+    expect(useClosuresMock).toHaveBeenCalledTimes(2);
+    expect(usePassesMock).toHaveBeenCalledTimes(2);
 
     expect(mockedTripPlannerMap).toHaveBeenCalledWith(
       expect.objectContaining({
