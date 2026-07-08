@@ -147,6 +147,14 @@ interface TripState {
   routeDirty: boolean;
 
   /**
+   * Set to true when a waypoint is renamed — a metadata-only edit that leaves
+   * geometry untouched. Tracked separately from `routeDirty` so a late/auto
+   * reverse-geocoded pin name arms Save via the name-only persist path
+   * (PATCH /trips/:id/waypoints), never a re-route (#911). Cleared on save/load.
+   */
+  namesDirty: boolean;
+
+  /**
    * Day numbers (1-based) whose route preview is stale — i.e. routing inputs
    * changed since the last `applyRouteResult` for that day. Replaces the
    * former boolean `routePreviewStale`. Empty means every day's preview is
@@ -417,6 +425,8 @@ interface TripState {
 interface TripHistoryEntry {
   trip: Trip | null;
   dirty: boolean;
+  /** `namesDirty` at snapshot time — restored on undo/redo like `dirty`. */
+  names: boolean;
   /** The exact `stalePreviewDays` at snapshot time, restored verbatim on undo/redo. */
   stale: number[];
 }
@@ -693,6 +703,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     canUndo: false,
     canRedo: false,
     routeDirty: false,
+    namesDirty: false,
     stalePreviewDays: [],
     selectedDayIndex: 0,
     draftPlannerParameters: null,
@@ -715,6 +726,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
       set({
         activeTrip,
         routeDirty: false,
+        namesDirty: false,
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
@@ -839,7 +851,9 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         });
         if (!changed) return state;
-        return { activeTrip: { ...trip, days } };
+        // Metadata-only edit (no geometry change): mark namesDirty so Save
+        // persists the rename via the name-only path (#911), not a re-route.
+        return { activeTrip: { ...trip, days }, namesDirty: true };
       }),
 
     setPlanningMode: (mode) =>
@@ -1245,14 +1259,16 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           {
             trip: state.activeTrip,
             dirty: state.routeDirty,
+            names: state.namesDirty,
             stale: state.stalePreviewDays,
           },
         ]);
         return {
           activeTrip: previous.trip,
-          // Restore the dirty flag captured with this snapshot so undoing back
-          // to the loaded route also clears routeDirty (re-disabling Save).
+          // Restore the dirty flags captured with this snapshot so undoing back
+          // to the loaded route also clears them (re-disabling Save).
           routeDirty: previous.dirty,
+          namesDirty: previous.names,
           // Restore the EXACT stale set captured with this snapshot — not a
           // reconstruction from all routable days, which would over-stale
           // untouched days. Live routing only runs the selected day, so an
@@ -1293,12 +1309,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           {
             trip: state.activeTrip,
             dirty: state.routeDirty,
+            names: state.namesDirty,
             stale: state.stalePreviewDays,
           },
         ]);
         return {
           activeTrip: next.trip,
           routeDirty: next.dirty,
+          namesDirty: next.names,
           // Restore the exact stale set captured with this snapshot (see undo).
           stalePreviewDays: next.stale,
           selectedDayIndex: Math.max(
@@ -1818,6 +1836,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         canUndo: false,
         canRedo: false,
         routeDirty: false,
+        namesDirty: false,
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
@@ -1869,6 +1888,7 @@ function commitTripChange(
     {
       trip: state.activeTrip,
       dirty: state.routeDirty,
+      names: state.namesDirty,
       stale: state.stalePreviewDays,
     },
   ]);

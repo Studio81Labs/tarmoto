@@ -316,6 +316,7 @@ export default function TripPlannerPage() {
   const applyRouteResult = useTripStore((s) => s.applyRouteResult);
   const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
   const routeDirty = useTripStore((s) => s.routeDirty);
+  const namesDirty = useTripStore((s) => s.namesDirty);
   const stalePreviewDays = useTripStore((s) => s.stalePreviewDays);
   const markRouteDirty = useTripStore((s) => s.markRouteDirty);
   const markDayRouteDirty = useTripStore((s) => s.markDayRouteDirty);
@@ -1359,16 +1360,56 @@ export default function TripPlannerPage() {
   // - at least one day is "complete" (has start + end + geometry)
   // - no day is "incomplete" (partial = blocks save until rider fixes it)
   // - no day preview is stale (geometry is current for all days)
-  // - the route has been edited (routeDirty guards no-op saves on loaded trips)
+  // - there are unsaved edits: route geometry (routeDirty) OR waypoint names
+  //   (namesDirty — persisted via the name-only path below, no re-route); both
+  //   guard no-op saves on loaded trips
   const canSaveRoute =
     canWriteRoute &&
     dayStates.some((s) => s === "complete") &&
     !dayStates.some((s) => s === "incomplete") &&
     stalePreviewDays.length === 0 &&
-    routeDirty;
+    (routeDirty || namesDirty);
   const [savingRoute, setSavingRoute] = useState(false);
   const handleSaveRoute = useCallback(async () => {
     if (savingRoute || routing) return;
+
+    // Name-only fast path (#911): when the only unsaved change is waypoint
+    // names (a late/auto reverse-geocoded pin name on a loaded trip), persist
+    // them via PATCH /waypoints so the router does NOT run — the full route
+    // save re-routes and would replace an imported / manually-adjusted route's
+    // geometry. Requires an existing server trip (a fresh draft is always
+    // routeDirty and takes the full save below).
+    const nameState = useTripStore.getState();
+    if (nameState.namesDirty && !nameState.routeDirty) {
+      const trip = nameState.activeTrip ?? activeTripRef.current;
+      const nameTripId = resolveExistingTripId(serverTripId, trip);
+      const waypoints = (trip?.days ?? [])
+        .flatMap((d) => d.waypoints)
+        .filter((w) => UUID_RE.test(w.id)) // only persisted (server) waypoints
+        .map((w) => ({ id: w.id, name: w.name ?? null }));
+      if (nameTripId && waypoints.length > 0) {
+        setSavingRoute(true);
+        try {
+          const { data } = await tripsApi.updateWaypointNames(nameTripId, {
+            waypoints,
+          });
+          setActiveTrip(
+            tripFromDetail(
+              data as unknown as Parameters<typeof tripFromDetail>[0],
+            ),
+          );
+          toast.success(t("Names saved"));
+        } catch {
+          toast.error(t("Couldn't save the names. Try again."));
+        } finally {
+          setSavingRoute(false);
+        }
+        return;
+      }
+      // No server trip / no persisted waypoints yet — fall through to the full
+      // save, which persists the names along with the route.
+    }
+
     // Resolve or lazily create the backend trip. Reuse the same pattern
     // as the existing handleSave so collab/deep-link trips are updated
     // in place rather than duplicated.

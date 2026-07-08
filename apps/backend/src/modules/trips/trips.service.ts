@@ -38,6 +38,7 @@ import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
 import type { RoutePreferenceOption } from '../routing/dto/route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
+import { UpdateWaypointNamesDto } from './dto/update-waypoint-names.dto.js';
 import {
   TripDayDto,
   TripDetailDto,
@@ -1128,6 +1129,53 @@ export class TripsService {
       fields: ['manual_route'],
     });
     return detail;
+  }
+
+  /**
+   * Rename waypoints WITHOUT re-routing. Updates only `trip_waypoints.name`
+   * for the listed ids that belong to the trip; geometry, order, and type are
+   * untouched and the router is not run. Lets a loaded trip persist late
+   * reverse-geocoded pin names without `saveManualRoute`'s re-route replacing an
+   * imported / manually-adjusted route (#911).
+   */
+  async updateWaypointNames(
+    userId: string,
+    tripId: string,
+    dto: UpdateWaypointNamesDto,
+  ): Promise<TripDetailDto> {
+    // Same membership gate as saveManualRoute — names are route content, so
+    // editors may change them; viewers are read-only.
+    const member = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!member) throw new NotFoundException('Trip not found');
+    if (member.role === 'viewer') {
+      throw new ForbiddenException(
+        'Editing the route needs editor access — ask the trip owner to upgrade your role',
+      );
+    }
+
+    await this.tripRepo.manager.transaction(async (manager) => {
+      // Scope by trip (trip_waypoints -> trip_days -> trip) so a caller can't
+      // rename another trip's rows by guessing ids.
+      const days = await manager.find(TripDay, {
+        where: { trip_id: tripId },
+        relations: ['waypoints'],
+      });
+      const owned = new Map<string, TripWaypoint>();
+      for (const day of days) {
+        for (const w of day.waypoints ?? []) owned.set(w.id, w);
+      }
+      for (const { id, name } of dto.waypoints) {
+        const current = owned.get(id);
+        if (!current) continue; // id not in this trip — ignore
+        const next = name ?? null;
+        if (current.name === next) continue; // unchanged — skip the write
+        await manager.update(TripWaypoint, { id }, { name: next });
+      }
+    });
+
+    return this.getDetail(userId, tripId);
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {

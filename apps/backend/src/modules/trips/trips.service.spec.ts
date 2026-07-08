@@ -14,6 +14,7 @@ import { In, Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
@@ -2821,6 +2822,108 @@ describe('TripsService', () => {
       const detail = await service.getDetail(OWNER_ID, TRIP_ID);
       expect(detail.days[0]?.start_linked).toBe(false);
       expect(detail.days[1]?.start_linked).toBe(true);
+    });
+  });
+
+  describe('updateWaypointNames (#911)', () => {
+    const body = (waypoints: { id: string; name?: string | null }[]) => ({
+      waypoints,
+    });
+
+    it('404s for a non-member (no id enumeration)', async () => {
+      memberRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.updateWaypointNames(
+          OWNER_ID,
+          TRIP_ID,
+          body([{ id: 'w1', name: 'X' }]),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('403s for a viewer (route content needs editor access)', async () => {
+      memberRepo.findOne.mockResolvedValue({
+        role: 'viewer',
+      } as unknown as TripMember);
+      await expect(
+        service.updateWaypointNames(
+          OWNER_ID,
+          TRIP_ID,
+          body([{ id: 'w1', name: 'X' }]),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('updates only in-trip waypoints, skipping unknown ids and no-ops', async () => {
+      memberRepo.findOne.mockResolvedValue({
+        role: 'editor',
+      } as unknown as TripMember);
+      const mgr = {
+        find: jest.fn().mockResolvedValue([
+          {
+            waypoints: [
+              { id: 'w1', name: 'Start' },
+              { id: 'w2', name: 'Brno' },
+            ],
+          },
+        ]),
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+      transactionMock.mockImplementationOnce(
+        async (cb: (m: typeof mgr) => Promise<unknown>) => cb(mgr),
+      );
+      const detail = { id: TRIP_ID };
+      const getDetailSpy = jest
+        .spyOn(service, 'getDetail')
+        .mockResolvedValue(detail as never);
+
+      const result = await service.updateWaypointNames(
+        OWNER_ID,
+        TRIP_ID,
+        body([
+          { id: 'w1', name: 'Praha' }, // changed → update
+          { id: 'w2', name: 'Brno' }, // unchanged → skip
+          { id: 'ghost', name: 'X' }, // not in this trip → skip
+        ]),
+      );
+
+      expect(mgr.update).toHaveBeenCalledTimes(1);
+      expect(mgr.update).toHaveBeenCalledWith(
+        TripWaypoint,
+        { id: 'w1' },
+        { name: 'Praha' },
+      );
+      expect(getDetailSpy).toHaveBeenCalledWith(OWNER_ID, TRIP_ID);
+      expect(result).toBe(detail);
+    });
+
+    it('clears a name back to null', async () => {
+      memberRepo.findOne.mockResolvedValue({
+        role: 'editor',
+      } as unknown as TripMember);
+      const mgr = {
+        find: jest
+          .fn()
+          .mockResolvedValue([{ waypoints: [{ id: 'w1', name: 'Praha' }] }]),
+        update: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+      transactionMock.mockImplementationOnce(
+        async (cb: (m: typeof mgr) => Promise<unknown>) => cb(mgr),
+      );
+      jest
+        .spyOn(service, 'getDetail')
+        .mockResolvedValue({ id: TRIP_ID } as never);
+
+      await service.updateWaypointNames(
+        OWNER_ID,
+        TRIP_ID,
+        body([{ id: 'w1', name: null }]),
+      );
+      expect(mgr.update).toHaveBeenCalledWith(
+        TripWaypoint,
+        { id: 'w1' },
+        { name: null },
+      );
     });
   });
 });
