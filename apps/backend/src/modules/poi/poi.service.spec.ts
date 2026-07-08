@@ -155,8 +155,10 @@ describe('PoiService', () => {
       expect(res.pois).toHaveLength(1);
     });
 
-    it('returns an empty list (never 500) when both the store and the provider fail', async () => {
-      store.findPointsOfInterestNear.mockRejectedValue(new Error('db down'));
+    it('returns an empty list (never 500) when both the store outage and the provider fail', async () => {
+      store.findPointsOfInterestNear.mockRejectedValue(
+        new ServiceUnavailableException('store down'),
+      );
       provider.findPointsOfInterest.mockRejectedValue(
         new Error('overpass down'),
       );
@@ -166,6 +168,18 @@ describe('PoiService', () => {
         5,
       );
       expect(res.pois).toEqual([]);
+    });
+
+    it('surfaces a non-connection store error (real bug) instead of masking it behind Overpass', async () => {
+      // withPoiRepo rethrows non-connection errors (e.g. a missed migration)
+      // as-is; they must surface, not silently fall back to the live provider.
+      store.findPointsOfInterestNear.mockRejectedValue(
+        new Error('column "stars" does not exist'),
+      );
+      await expect(
+        service.findPointsOfInterestNear(anchor.lat, anchor.lng, 5),
+      ).rejects.toThrow('column "stars" does not exist');
+      expect(provider.findPointsOfInterest).not.toHaveBeenCalled();
     });
 
     it('serves accommodations from the store when present', async () => {

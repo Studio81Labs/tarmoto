@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   haversineKm,
@@ -81,10 +82,15 @@ export class PoiService {
   /**
    * Store-first read with a live-provider fallback (#849). Try the offline
    * `pois` store; if it has no rows for the area (un-imported region) OR the
-   * store DB is unavailable, fall back to the live provider so coverage never
-   * regresses outside the import bbox. A provider failure (or both failing)
-   * collapses to an empty list — the endpoints never 500, and rider
-   * coordinates stay out of the logs (only the error message is logged).
+   * store is unavailable (a 503 outage — DB down / not yet connected), fall back
+   * to the live provider so coverage never regresses outside the import bbox. A
+   * provider outage (or both failing) collapses to an empty list — the endpoints
+   * never 500 on an outage, and rider coordinates stay out of the logs (only the
+   * error message is logged).
+   *
+   * A non-connection store error (a missed migration, a PostGIS/SQL bug) is a
+   * real defect `withPoiRepo` deliberately rethrows — surface it (500) rather
+   * than mask it behind Overpass while `/poi/health`'s `SELECT 1` stays green.
    */
   private async readStoreFirst<T>(
     fromStore: () => Promise<T[]>,
@@ -94,8 +100,10 @@ export class PoiService {
       const stored = await fromStore();
       if (stored.length > 0) return stored;
     } catch (err) {
+      // Only a store outage falls back; a real bug surfaces.
+      if (!(err instanceof ServiceUnavailableException)) throw err;
       this.logger.warn(
-        `POI store read failed, falling back to provider: ${err instanceof Error ? err.message : String(err)}`,
+        `POI store unavailable, falling back to provider: ${err.message}`,
       );
     }
     try {
