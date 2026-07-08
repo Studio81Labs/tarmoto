@@ -405,6 +405,7 @@ describe("TripPlannerPage", () => {
   );
   const tripsApiUpdateMock = vi.mocked(tripsApi.update);
   const tripsApiSaveRouteMock = vi.mocked(tripsApi.saveRoute);
+  const tripsApiUpdateNamesMock = vi.mocked(tripsApi.updateWaypointNames);
 
   const closuresData: ClosuresQueryResult = {
     closures: [],
@@ -1703,6 +1704,75 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({ id: "server-trip-1" }),
     );
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("persists a name-only edit via updateWaypointNames (only renamed ids, no re-route), not saveRoute (#911)", async () => {
+    // A late reverse-geocoded pin name on a loaded/imported trip: names are
+    // dirty but the route is not. Save must hit PATCH /waypoints (geometry
+    // preserved) — NOT the re-routing saveRoute — and send only the waypoint
+    // that was actually renamed so a collaborator's other rename isn't reverted.
+    const tripId = "11111111-2222-4333-8444-777777777777";
+    const WP1 = "aaaaaaaa-1111-4111-8111-111111111111";
+    const WP2 = "bbbbbbbb-2222-4222-8222-222222222222";
+    // ?tripId keeps the persisted trip mounted (the bare URL drops lingering
+    // UUID trips); owner role unlocks Save.
+    window.history.replaceState({}, "", `/trips/planner?tripId=${tripId}`);
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Loaded", { id: tripId }),
+    } as never);
+    // Loaded trip carrying server (UUID) waypoints; only WP1 was renamed.
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: tripId,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              ...activeTrip.days[0]!.waypoints[0]!,
+              id: WP1,
+              name: "Bormio (town)",
+            },
+            { ...activeTrip.days[0]!.waypoints[1]!, id: WP2 },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = false;
+    storeState.namesDirty = true;
+    storeState.renamedWaypointIds = [WP1]; // WP2 left untouched
+    tripsApiUpdateNamesMock.mockResolvedValue({
+      data: buildTripDetail("Loaded", { id: tripId }),
+    } as never);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    // Wait for the owner role to land — Save unlocks (canWriteRoute + namesDirty).
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateNamesMock).toHaveBeenCalledWith(tripId, {
+        waypoints: [{ id: WP1, name: "Bormio (town)" }],
+      }),
+    );
+    // Exactly one waypoint sent (the renamed one) — WP2 is not included.
+    expect(tripsApiUpdateNamesMock).toHaveBeenCalledTimes(1);
+    // The re-routing route save is never taken.
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Names saved")).toBeInTheDocument();
   });
 
   it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {
