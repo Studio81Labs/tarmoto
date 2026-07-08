@@ -6,8 +6,6 @@
  *
  * Currently mocked (no backend source yet):
  *  - road preview payloads incl. street-level capture metadata (`mockRoadPreview`)
- *  - map-toolbar category POIs, mixed-source (`mockPoisByCategories` —
- *    real target: OSM + seasonal passes + Tarmoto curviness layer)
  *
  * Deliberately NOT mocked, despite the original brief assuming they would
  * be: route distance/time/score/surface-mix (real routing response),
@@ -16,8 +14,9 @@
  * and closures (real passes/closures APIs already wired into the planner panels).
  *
  * Now real, previously mocked: forward + reverse geocoding (real
- * `/api/v1/geocode` + `/geocode/reverse`, Nominatim per ADR-0002, mapped in
- * `../api`).
+ * `/api/v1/geocode` + `/geocode/reverse`, Nominatim per ADR-0002); and the
+ * map-toolbar `mountain_pass` (real passes module) + `twisty_highlight` (real
+ * curviness Fun Zones — `/roads/fun-zones` + `.../in-corridor`) categories
+ * (#865) — all mapped in `../api`.
  */
 export { mockRoadPreview } from "./previews";
-export { mockPoisByCategories, mockRouteStops } from "./pois";

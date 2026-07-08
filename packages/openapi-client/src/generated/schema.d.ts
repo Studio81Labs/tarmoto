@@ -679,6 +679,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roads/fun-zones/in-corridor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fun Zones within a corridor of a routed polyline (STOPS layer) */
+        post: operations["RoadsController_findFunZonesInCorridor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roads/best": {
         parameters: {
             query?: never;
@@ -3938,6 +3955,15 @@ export interface components {
             zone: components["schemas"]["FunZoneDetailZoneDto"];
             top_roads: components["schemas"]["FunZoneRoadDto"][];
         };
+        CorridorFunZonePointDto: {
+            lat: number;
+            lng: number;
+        };
+        CorridorFunZonesDto: {
+            route: components["schemas"]["CorridorFunZonePointDto"][];
+            /** @description Corridor half-width in km (default 2, capped at 20). Applied server-side. */
+            buffer_km?: number;
+        };
         BestRoadsRegionDto: {
             /** @example beskydy */
             slug: string;
@@ -6190,6 +6216,8 @@ export type SchemaGeometryPointDto = components['schemas']['GeometryPointDto'];
 export type SchemaFunZoneDetailZoneDto = components['schemas']['FunZoneDetailZoneDto'];
 export type SchemaFunZoneRoadDto = components['schemas']['FunZoneRoadDto'];
 export type SchemaFunZoneDetailDto = components['schemas']['FunZoneDetailDto'];
+export type SchemaCorridorFunZonePointDto = components['schemas']['CorridorFunZonePointDto'];
+export type SchemaCorridorFunZonesDto = components['schemas']['CorridorFunZonesDto'];
 export type SchemaBestRoadsRegionDto = components['schemas']['BestRoadsRegionDto'];
 export type SchemaBestRoadDto = components['schemas']['BestRoadDto'];
 export type SchemaBestRoadsResponseDto = components['schemas']['BestRoadsResponseDto'];
@@ -7484,6 +7512,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    RoadsController_findFunZonesInCorridor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorridorFunZonesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunZoneDto"][];
+                };
             };
         };
     };

@@ -3287,6 +3287,7 @@ export default function TripPlannerPage() {
           stops={
             <TripStopsPanel
               trip={displayedTrip}
+              month={travelMonth}
               onFocusStop={(stop) => mapRef.current?.openPoiPopover(stop)}
             />
           }
