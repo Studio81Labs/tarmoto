@@ -1,17 +1,33 @@
 import { t } from "@/i18n";
-import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Eye, User } from "lucide-react";
+import {
+  Activity,
+  CalendarDays,
+  MapPin,
+  Route as RouteIcon,
+} from "lucide-react";
+import { Card, Stamp, MetricTile } from "@tarmoto/ui";
+import {
+  PublicShareFooter,
+  PublicShareHeader,
+  SharedRoutePreviewCard,
+  SharePill,
+  splitDuration,
+} from "@/components/public-share";
+import { buildRoutePreviewFromLines } from "@/lib/ride-detail";
 import {
   fetchSharedTrip,
   parseTripSnapshot,
   tripRouteLines,
+  tripStops,
   tripSummary,
 } from "@/lib/trip-share";
-import { TripRouteOverview } from "@/components/TripRouteOverview";
+import { splitFormattedDistance } from "@/lib/utils";
 import { SharedTripJoinCta } from "./SharedTripJoinCta";
+
 export const dynamic = "force-dynamic";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Shared trip — Tarmoto",
@@ -19,56 +35,83 @@ export async function generateMetadata(): Promise<Metadata> {
     robots: { index: false, follow: false },
   };
 }
+
 export default async function SharedTripPage({
   params,
 }: {
-  params: Promise<{
-    token: string;
-  }>;
+  params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
   const share = await fetchSharedTrip(token);
   if (!share) notFound();
   const trip = parseTripSnapshot(share.snapshot);
   const summary = trip ? tripSummary(trip) : null;
-  const lines = trip ? tripRouteLines(trip) : [];
-  return (
-    <div className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <nav className="mb-4 text-sm text-slate-400">
-          <Link href="/" className="hover:text-white">
-            {t("Tarmoto ")}
-          </Link>
-          <span className="mx-2">/</span>
-          <span>{t("Shared trip")}</span>
-        </nav>
+  const stops = trip ? tripStops(trip) : [];
+  // 640-unit space + per-day lines so the preview matches the ride page's
+  // proportions and multi-day trips don't get artificial day-to-day connectors.
+  // Stop waypoints are dotted onto the same preview.
+  const preview = trip
+    ? buildRoutePreviewFromLines(tripRouteLines(trip), 640, 48, stops)
+    : null;
 
-        <header className="mb-8 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] p-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">
-            {t("Trip invite ")}
-          </p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight">
+  const distance =
+    summary != null
+      ? splitFormattedDistance(summary.totalDistanceKm, "metric")
+      : null;
+  // A trip is a plan, so its time is an estimate: prefer the snapshot's
+  // per-day durations, and fall back to a 55 km/h heuristic with a 30-minute
+  // floor (matching the backend GPX/from-share import) when the planner didn't
+  // record any, so a short legacy share doesn't underreport at e.g. "11m".
+  const estMinutes =
+    summary == null
+      ? null
+      : summary.totalDurationMin > 0
+        ? summary.totalDurationMin
+        : summary.totalDistanceKm > 0
+          ? Math.max(30, Math.round((summary.totalDistanceKm / 55) * 60))
+          : null;
+  const duration = splitDuration(estMinutes);
+
+  return (
+    <div className="min-h-screen bg-cream text-ink">
+      <PublicShareHeader breadcrumb={t("Shared trip")} />
+
+      <main className="mx-auto max-w-[980px] px-7 pb-16 pt-8">
+        {/* Hero */}
+        <Card className="mb-6 p-[30px]">
+          <Stamp tone="accent" as="div" className="mb-3">
+            {t("Public trip share")}
+          </Stamp>
+          <h1 className="font-sans text-[42px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
             {share.title}
           </h1>
-          <p className="mt-3 max-w-3xl text-slate-300">
-            {share.trip_id
-              ? t("Trip preview shared by ")
-              : t("Read-only preview shared by ")}
-            {share.owner_name}
+          <p className="mt-3 max-w-[680px] text-[15px] leading-[1.55] text-fg-dim">
             {share.trip_id
               ? t(
-                  ". Sign in to join the group plan, suggest route changes, and vote with the riders. ",
+                  "A planned Tarmoto trip. Sign in to join the group plan, suggest route changes, and vote with the riders.",
                 )
-              : t(". You can view this trip without a Tarmoto account. ")}
+              : t(
+                  "A read-only preview of a planned Tarmoto trip. You can view the route without an account.",
+                )}
           </p>
-          <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-300">
-            <Pill icon={<User size={14} />}>{share.owner_name}</Pill>
-            <Pill icon={<Eye size={14} />}>
+          <div className="mt-[18px] flex flex-wrap gap-2.5">
+            <SharePill icon={<RouteIcon size={13} />}>
+              {share.owner_name}
+            </SharePill>
+            <SharePill icon={<Activity size={13} />}>
               {t("{count} views", { count: share.view_count })}
-            </Pill>
+            </SharePill>
+            {summary && (
+              <SharePill icon={<CalendarDays size={13} />}>
+                {summary.dayCount === 1
+                  ? t("1 day")
+                  : t("{count} days", { count: summary.dayCount })}
+              </SharePill>
+            )}
           </div>
-        </header>
+        </Card>
 
+        {/* Join */}
         <SharedTripJoinCta
           token={share.share_token}
           title={share.title}
@@ -76,45 +119,57 @@ export default async function SharedTripPage({
         />
 
         {trip && summary ? (
-          <section className="mb-8">
-            <TripRouteOverview
-              lines={lines}
-              distanceKm={summary.totalDistanceKm}
-              dayCount={summary.dayCount}
-              region={trip.region ?? null}
-              variant="dark"
-              label={share.title}
+          <>
+            {/* Route preview */}
+            <SharedRoutePreviewCard
+              preview={preview}
+              label={`${share.title} route preview`}
+              title={t("Route preview")}
+              subtitle={t(
+                "Simplified overview of the planned route across all days.",
+              )}
+              emptyText={t("Route preview unavailable for this shared trip.")}
             />
-          </section>
-        ) : (
-          <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-400">
-            {t(
-              "This shared trip's snapshot is in an unexpected format — the owner may have saved it with a newer version of the planner. Ask them to regenerate the share link. ",
-            )}
-          </section>
-        )}
 
-        <footer className="text-center text-xs text-slate-500">
-          {t("Shared via Tarmoto ·")}{" "}
-          <Link href="/trips/planner" className="hover:text-slate-300">
-            {t("Plan your own trip ")}
-          </Link>
-        </footer>
+            {/* Stat tiles */}
+            <div className="mb-6 grid grid-cols-2 gap-3.5 md:grid-cols-4">
+              <MetricTile
+                label={t("Distance")}
+                value={distance ? distance.value : "—"}
+                variant="ink"
+                accentNumber
+                {...(distance?.unit !== undefined
+                  ? { unit: distance.unit }
+                  : {})}
+              />
+              <MetricTile label={t("Days")} value={summary.dayCount} />
+              <MetricTile
+                label={t("Est. time")}
+                value={duration.value}
+                {...(duration.unit !== undefined
+                  ? { unit: duration.unit }
+                  : {})}
+              />
+              <MetricTile label={t("Stops")} value={stops.length} />
+            </div>
+          </>
+        ) : (
+          <Card className="mb-6 p-6 text-sm text-fg-dim">
+            {t(
+              "This shared trip's snapshot is in an unexpected format — the owner may have saved it with a newer version of the planner. Ask them to regenerate the share link.",
+            )}
+          </Card>
+        )}
       </main>
+
+      <PublicShareFooter
+        cta={{
+          href: "/trips/planner",
+          label: t("Plan your own trip"),
+          icon: <MapPin size={14} />,
+        }}
+        year={new Date().getFullYear()}
+      />
     </div>
-  );
-}
-function Pill({
-  icon,
-  children,
-}: {
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/60 px-2.5 py-1">
-      {icon}
-      {children}
-    </span>
   );
 }
