@@ -245,6 +245,17 @@ describe('PoiStoreService', () => {
       expect(pois[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
     });
 
+    it('caps the corridor read at the DB so a wide buffer stays bounded (#919)', async () => {
+      // A 20 km buffer over a long route must not hydrate every matching row:
+      // the read is closest-to-route first and capped at MAX_LIMIT (its own
+      // final slice), never an unbounded getMany().
+      await service.findAlongRoute(route, undefined, 20);
+      expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
+        'ST_Distance',
+      );
+      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
+    });
+
     it('clamps the buffer to the max and adds a kind filter', async () => {
       const { buffer_km } = await service.findAlongRoute(
         route,
