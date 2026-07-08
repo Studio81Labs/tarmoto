@@ -2,13 +2,19 @@ import {
   cloneElement,
   Fragment,
   isValidElement,
+  useCallback,
+  useEffect,
   useId,
+  useLayoutEffect,
+  useRef,
   useState,
+  type CSSProperties,
   type HTMLAttributes,
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../utils/cn";
 
 /**
@@ -21,16 +27,20 @@ import { cn } from "../utils/cn";
  * pointing at the bubble. That puts the AT relationship on the
  * focusable node itself rather than on the positioning wrapper, so
  * screen readers announce the content when the trigger receives focus.
+ *
+ * The bubble is portalled to `document.body` and positioned `fixed`
+ * against the trigger's viewport rect. Rendering outside the trigger's
+ * DOM subtree is deliberate: header/toolbar chrome frequently sits in a
+ * lower stacking context (or clips overflow) than an adjacent map or
+ * canvas, which would otherwise paint over an in-flow tooltip. Escaping
+ * to the body layer means the bubble is never covered or clipped by a
+ * sibling regardless of the host page's z-index topology.
  */
 export type TooltipPlacement = "above" | "below" | "left" | "right";
 export type TooltipKind = "label" | "data" | "coach";
 
-const placementClass: Record<TooltipPlacement, string> = {
-  above: "bottom-full left-1/2 mb-2 -translate-x-1/2",
-  below: "top-full left-1/2 mt-2 -translate-x-1/2",
-  right: "left-full top-1/2 ml-2 -translate-y-1/2",
-  left: "right-full top-1/2 mr-2 -translate-y-1/2",
-};
+// Gap between the trigger edge and the bubble, matching the 8 px tail.
+const GAP_PX = 8;
 
 const tailClass: Record<TooltipPlacement, string> = {
   above: "bottom-[-4px] left-1/2 -translate-x-1/2",
@@ -45,6 +55,52 @@ const kindClass: Record<TooltipKind, string> = {
   coach:
     "px-3.5 py-3 text-[12px] rounded-[10px] max-w-[280px] shadow-[0_24px_60px_rgba(14,14,16,0.4)]",
 };
+
+interface BubbleCoords {
+  top: number;
+  left: number;
+  transform: string;
+}
+
+/**
+ * Fixed-position coordinates + centring transform for the bubble, from
+ * the trigger's viewport rect. `getBoundingClientRect` is already
+ * viewport-relative, so it maps straight onto `position: fixed`.
+ */
+function bubbleCoords(
+  rect: DOMRect,
+  placement: TooltipPlacement,
+): BubbleCoords {
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  switch (placement) {
+    case "below":
+      return {
+        top: rect.bottom + GAP_PX,
+        left: centerX,
+        transform: "translate(-50%, 0)",
+      };
+    case "left":
+      return {
+        top: centerY,
+        left: rect.left - GAP_PX,
+        transform: "translate(-100%, -50%)",
+      };
+    case "right":
+      return {
+        top: centerY,
+        left: rect.right + GAP_PX,
+        transform: "translate(0, -50%)",
+      };
+    case "above":
+    default:
+      return {
+        top: rect.top - GAP_PX,
+        left: centerX,
+        transform: "translate(-50%, -100%)",
+      };
+  }
+}
 
 export interface TooltipProps {
   /**
@@ -95,12 +151,40 @@ export function Tooltip({
   const id = useId();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [coords, setCoords] = useState<BubbleCoords | null>(null);
   // `open` is a *force-open* flag, never a force-close. When `open` is
   // truthy, the tooltip is visible regardless of hover/focus; when
   // `false` or `undefined`, hover/focus still drives visibility. This
   // matches the prop docs and avoids regressing common coach-mark
   // flows that toggle `open` from `true` to `false`.
   const visible = open === true || hovered || focused;
+
+  // Portalling needs a DOM target — only render the bubble once we're
+  // mounted in the browser so SSR emits just the trigger.
+  useEffect(() => setMounted(true), []);
+
+  const measure = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    setCoords(bubbleCoords(el.getBoundingClientRect(), placement));
+  }, [placement]);
+
+  // Pin the bubble to the trigger while it's visible. Measuring in a
+  // layout effect keeps the position resolved before the browser paints
+  // (no flash at 0,0), and the scroll/resize listeners follow a trigger
+  // that moves under the fixed-position bubble.
+  useLayoutEffect(() => {
+    if (!visible) return;
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [visible, measure]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLSpanElement>): void => {
     if (e.key === "Escape") setFocused(false);
@@ -136,8 +220,36 @@ export function Tooltip({
       })
     : children;
 
+  const bubbleStyle: CSSProperties = {
+    top: coords?.top ?? 0,
+    left: coords?.left ?? 0,
+    transform: coords?.transform,
+  };
+
+  const bubble = (
+    <span
+      id={id}
+      role="tooltip"
+      aria-hidden={!visible}
+      style={bubbleStyle}
+      className={cn(
+        "pointer-events-none fixed z-[100] bg-ink text-cream font-sans",
+        "shadow-[0_8px_24px_rgba(14,14,16,0.2)] transition-opacity duration-150",
+        visible ? "opacity-100 delay-200" : "opacity-0",
+        kindClass[kind],
+      )}
+    >
+      {content}
+      <span
+        aria-hidden="true"
+        className={cn("absolute size-2 rotate-45 bg-ink", tailClass[placement])}
+      />
+    </span>
+  );
+
   return (
     <span
+      ref={triggerRef}
       className={cn("relative inline-flex", className)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -146,27 +258,7 @@ export function Tooltip({
       onKeyDown={handleKeyDown}
     >
       {triggerWithAria}
-      <span
-        id={id}
-        role="tooltip"
-        aria-hidden={!visible}
-        className={cn(
-          "pointer-events-none absolute z-20 bg-ink text-cream font-sans",
-          "shadow-[0_8px_24px_rgba(14,14,16,0.2)] transition-opacity duration-150",
-          visible ? "opacity-100 delay-200" : "opacity-0",
-          placementClass[placement],
-          kindClass[kind],
-        )}
-      >
-        {content}
-        <span
-          aria-hidden="true"
-          className={cn(
-            "absolute size-2 rotate-45 bg-ink",
-            tailClass[placement],
-          )}
-        />
-      </span>
+      {mounted ? createPortal(bubble, document.body) : null}
     </span>
   );
 }
