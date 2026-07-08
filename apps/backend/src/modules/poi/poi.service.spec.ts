@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/unbound-method */
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   cumulativeLengthKm,
@@ -7,6 +10,7 @@ import {
   projectOntoRoute,
   sampleRouteAnchors,
 } from './poi.service.js';
+import { PoiStoreService } from './poi-store.service.js';
 import {
   POI_PROVIDER,
   type PoiProvider,
@@ -30,6 +34,11 @@ const NO_STORED_FIELDS: StoredPoiFields = {
 describe('PoiService', () => {
   let service: PoiService;
   let provider: jest.Mocked<PoiProvider>;
+  let store: {
+    findPointsOfInterestNear: jest.Mock;
+    findAccommodationsNear: jest.Mock;
+    findPointsOfInterestInCorridor: jest.Mock;
+  };
 
   const anchor = { lat: 49.1, lng: 16.75 };
 
@@ -69,12 +78,150 @@ describe('PoiService', () => {
       findPointsOfInterest: jest.fn(),
       findPointsOfInterestAroundPoints: jest.fn(),
     };
+    // Store-first (#849): default every store read to empty so the existing
+    // provider-focused tests exercise the Overpass fallback path unchanged.
+    store = {
+      findPointsOfInterestNear: jest.fn().mockResolvedValue([]),
+      findAccommodationsNear: jest.fn().mockResolvedValue([]),
+      findPointsOfInterestInCorridor: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PoiService, { provide: POI_PROVIDER, useValue: provider }],
+      providers: [
+        PoiService,
+        { provide: POI_PROVIDER, useValue: provider },
+        { provide: PoiStoreService, useValue: store },
+      ],
     }).compile();
 
     service = module.get<PoiService>(PoiService);
+  });
+
+  describe('store-first with Overpass fallback (#849)', () => {
+    const route = [
+      { lat: 49.0, lng: 16.75 },
+      { lat: 50.0, lng: 16.75 },
+    ];
+
+    it('serves nearby POIs from the store and never calls the provider when the store has rows', async () => {
+      store.findPointsOfInterestNear.mockResolvedValue([
+        buildNearbyPoi({
+          external_id: 'store:1',
+          name: 'Stored café',
+          kind: 'cafe',
+        }),
+      ]);
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+      expect(store.findPointsOfInterestNear).toHaveBeenCalled();
+      expect(provider.findPointsOfInterest).not.toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id)).toEqual(['store:1']);
+    });
+
+    it('falls back to Overpass for nearby POIs when the store is empty (un-imported region)', async () => {
+      store.findPointsOfInterestNear.mockResolvedValue([]);
+      provider.findPointsOfInterest.mockResolvedValue([
+        buildNearbyPoi({
+          external_id: 'live:1',
+          name: 'Live café',
+          kind: 'cafe',
+        }),
+      ]);
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+      expect(provider.findPointsOfInterest).toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id)).toEqual(['live:1']);
+    });
+
+    it('falls back to Overpass when the store read throws (DB down), not to an empty list', async () => {
+      store.findPointsOfInterestNear.mockRejectedValue(
+        new ServiceUnavailableException('POI store is temporarily unavailable'),
+      );
+      provider.findPointsOfInterest.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'live:1' }),
+      ]);
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+      expect(provider.findPointsOfInterest).toHaveBeenCalled();
+      expect(res.pois).toHaveLength(1);
+    });
+
+    it('returns an empty list (never 500) when both the store outage and the provider fail', async () => {
+      store.findPointsOfInterestNear.mockRejectedValue(
+        new ServiceUnavailableException('store down'),
+      );
+      provider.findPointsOfInterest.mockRejectedValue(
+        new Error('overpass down'),
+      );
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+      expect(res.pois).toEqual([]);
+    });
+
+    it('surfaces a non-connection store error (real bug) instead of masking it behind Overpass', async () => {
+      // withPoiRepo rethrows non-connection errors (e.g. a missed migration)
+      // as-is; they must surface, not silently fall back to the live provider.
+      store.findPointsOfInterestNear.mockRejectedValue(
+        new Error('column "stars" does not exist'),
+      );
+      await expect(
+        service.findPointsOfInterestNear(anchor.lat, anchor.lng, 5),
+      ).rejects.toThrow('column "stars" does not exist');
+      expect(provider.findPointsOfInterest).not.toHaveBeenCalled();
+    });
+
+    it('serves accommodations from the store when present', async () => {
+      store.findAccommodationsNear.mockResolvedValue([
+        buildPoi({ external_id: 'store:h1', stars: 4 }),
+      ]);
+      const res = await service.findAccommodationsNear(
+        anchor.lat,
+        anchor.lng,
+        10,
+      );
+      expect(provider.findAccommodations).not.toHaveBeenCalled();
+      expect(res.accommodations.map((a) => a.external_id)).toEqual([
+        'store:h1',
+      ]);
+    });
+
+    it('serves along-route POIs from the store corridor without sampling Overpass anchors', async () => {
+      store.findPointsOfInterestInCorridor.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'store:r1', lat: 49.0, lng: 16.75 }),
+      ]);
+      const res = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 2,
+      });
+      expect(store.findPointsOfInterestInCorridor).toHaveBeenCalled();
+      expect(provider.findPointsOfInterestAroundPoints).not.toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id)).toContain('store:r1');
+    });
+
+    it('falls back to Overpass anchor sampling for along-route when the store corridor is empty', async () => {
+      store.findPointsOfInterestInCorridor.mockResolvedValue([]);
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'live:r1', lat: 49.0, lng: 16.75 }),
+      ]);
+      const res = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 2,
+      });
+      expect(provider.findPointsOfInterestAroundPoints).toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id)).toContain('live:r1');
+    });
   });
 
   describe('decision-support field mapping (#849)', () => {

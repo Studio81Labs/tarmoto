@@ -137,6 +137,9 @@ export class Poi {
   })
   enrichment_matched_at!: Date | null;
 
+  // A second GiST index on `(geom::geography)` (migration `idx_pois_geom_geography`,
+  // #849) backs the store-first radius/corridor reads' `ST_DWithin(geom::geography, …)`;
+  // it isn't expressible via the `@Index` decorator, so it lives in the migration.
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
   geom!: GeoJSON.Point;
 
