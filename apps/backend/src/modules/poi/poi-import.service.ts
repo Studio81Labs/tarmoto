@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
@@ -11,9 +12,13 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
-import type { StoredPoiFields } from './poi-provider.interface.js';
 import { poiImportConfig, type PoiImportRegion } from './poi-import.config.js';
-import { parsePoiExtract } from './poi-extract-source.js';
+import {
+  OsmPoiImportSource,
+  POI_IMPORT_SOURCE,
+  type PoiImportSource,
+  type StorableImportRow,
+} from './poi-import-source.js';
 import { withPoiRepo } from './poi-repo.js';
 
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
@@ -57,21 +62,6 @@ function clamp(value: string | null, max: number): string | null {
   return value.length > max ? value.slice(0, max) : value;
 }
 
-/**
- * The shape `add()` accepts — the common denominator of `ImportedPoi` and
- * `AccommodationPoi`. `stars` is optional (only accommodations carry it).
- */
-type StorableImportRow = {
-  external_id: string;
-  kind: string;
-  name: string | null;
-  website: string | null;
-  phone: string | null;
-  lat: number;
-  lng: number;
-  stars?: number | null;
-} & Partial<StoredPoiFields>;
-
 export interface PoiImportResult {
   /** ISO country code of the region this result covers. */
   region: string;
@@ -87,12 +77,15 @@ export interface PoiImportResult {
 }
 
 /**
- * Mirrors OSM POIs into the `pois` table for offline use (#745), scaled to
- * continent coverage in #850. The bulk import runs from **per-country Geofabrik
- * `.osm` extracts** the operator produces with `osmium tags-filter` (see the
- * runbook) — not a live Overpass bbox — so it survives 15+ countries without
- * hitting the Overpass public-API limits. Overpass stays the live read-path
- * fallback (`poi.service`), not the importer.
+ * Mirrors bulk POI extracts into the `pois` table for offline use (#745),
+ * scaled to continent coverage in #850. Source-agnostic: the per-source
+ * strategy ({@link PoiImportSource}) supplies the `source` string, the extract
+ * filename, and the parser, while this service owns the source-neutral core
+ * (bbox filter, dedupe, the upsert + bbox-bounded tombstone, the safety
+ * guards). The default is OSM/Geofabrik `.osm` extracts the operator produces
+ * with `osmium tags-filter` (see the runbook); #869 adds Foursquare OS Places
+ * as a second `source`. Overpass stays the live read-path fallback
+ * (`poi.service`), not the importer.
  *
  * Per region:
  *  - parse the whole extract **before any write** (a parse failure aborts
@@ -117,6 +110,12 @@ export class PoiImportService {
     private readonly poiDataSource: DataSource,
     @Inject(poiImportConfig.KEY)
     private readonly config: ConfigType<typeof poiImportConfig>,
+    // The per-source strategy: filename + parser + `source` string. Optional so
+    // the default provider + the existing tests get OSM with no wiring; the FSQ
+    // instance is constructed with its own source + config.
+    @Optional()
+    @Inject(POI_IMPORT_SOURCE)
+    private readonly importSource: PoiImportSource = new OsmPoiImportSource(),
   ) {}
 
   get enabled(): boolean {
@@ -128,14 +127,17 @@ export class PoiImportService {
     return this.config.regions;
   }
 
-  /** Resolve a region's extract path: `<extractDir>/<code>.osm` (lower-case). */
+  /** Resolve a region's extract path: `<extractDir>/<source filename>`. */
   private extractPath(region: PoiImportRegion): string {
     if (!this.config.extractDir) {
       throw new Error(
         'POI import is enabled but TARMOTO_POI_IMPORT_DIR is not set',
       );
     }
-    return join(this.config.extractDir, `${region.code.toLowerCase()}.osm`);
+    return join(
+      this.config.extractDir,
+      this.importSource.extractFilename(region),
+    );
   }
 
   /**
@@ -201,7 +203,7 @@ export class PoiImportService {
     const byExternalId = new Map<string, QueryDeepPartialEntity<Poi>>();
     const add = (p: StorableImportRow): void => {
       byExternalId.set(p.external_id, {
-        source: 'osm',
+        source: this.importSource.source,
         external_id: p.external_id,
         kind: p.kind,
         name: clamp(p.name, COLUMN_LIMITS.name),
@@ -239,10 +241,9 @@ export class PoiImportService {
 
     let fetched = 0;
     const stream = createReadStream(path);
-    for await (const item of parsePoiExtract(stream)) {
-      const row = 'poi' in item ? item.poi : item.accommodation;
+    for await (const row of this.importSource.parse(stream)) {
       fetched += 1;
-      // Drop osmium overhang: only rows whose point falls inside the region's
+      // Drop extract overhang: only rows whose point falls inside the region's
       // authoritative bbox count — so the tombstone pass (bounded to the same
       // bbox) can never wrongly delete a neighbour the extract clipped in.
       if (!inBbox(row.lng, row.lat)) continue;
@@ -302,10 +303,17 @@ export class PoiImportService {
         >(
           `SELECT id, external_id, ST_X(geom) AS lng, ST_Y(geom) AS lat, import_region
              FROM pois
-             WHERE source = 'osm' AND deactivated_at IS NULL
+             WHERE source = $6 AND deactivated_at IS NULL
                AND (import_region = $5 OR import_region IS NULL)
                AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-          [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat, region.code],
+          [
+            bbox.minLng,
+            bbox.minLat,
+            bbox.maxLng,
+            bbox.maxLat,
+            region.code,
+            this.importSource.source,
+          ],
         );
 
         const otherRegions = this.config.regions.filter(

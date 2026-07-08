@@ -298,7 +298,10 @@ describe('PoiImportService', () => {
     const load = calls.find(([sql]) => sql.includes('ST_MakeEnvelope'));
     expect(load).toBeDefined();
     expect(load![0]).toMatch(/import_region = \$5/);
-    expect(load![1]).toEqual([18, 49.3, 18.9, 49.75, 'CZ']);
+    // Scoped to the importing source ($6) so a run never tombstones another
+    // source's rows in the same bbox.
+    expect(load![0]).toMatch(/source = \$6/);
+    expect(load![1]).toEqual([18, 49.3, 18.9, 49.75, 'CZ', 'osm']);
 
     // Only the absent row's id is tombstoned — a soft UPDATE, never a DELETE.
     const tombstone = calls.find(([sql]) =>
