@@ -23,17 +23,39 @@ export interface DraftVia {
 export const MAX_DRAFT_VIAS = 3;
 
 /** Mean of a zone's boundary ring; null when the ring is unusable. */
+/** Read a loosely-typed boundary point's numeric lat/lng, or null. */
+function pointLatLng(point: unknown): { lat: number; lng: number } | null {
+  const { lat, lng } = (point ?? {}) as { lat?: unknown; lng?: unknown };
+  return typeof lat === "number" && typeof lng === "number"
+    ? { lat, lng }
+    : null;
+}
+
 export function funZoneCentroid(
   zone: Pick<DraftZone, "boundary">,
 ): { lat: number; lng: number } | null {
+  const ring = zone.boundary;
+  // A backend Fun Zone boundary is a GeoJSON polygon ring, closed with the
+  // first vertex repeated at the end. Averaging it as-is double-counts that
+  // vertex and drags the centre toward one corner (a square shifts ~20%), so
+  // drop the closing vertex when the ring is closed.
+  const first = pointLatLng(ring[0]);
+  const last = pointLatLng(ring[ring.length - 1]);
+  const closed =
+    ring.length > 1 &&
+    first !== null &&
+    last !== null &&
+    first.lat === last.lat &&
+    first.lng === last.lng;
+  const points = closed ? ring.slice(0, -1) : ring;
   let latSum = 0;
   let lngSum = 0;
   let count = 0;
-  for (const point of zone.boundary) {
-    const { lat, lng } = (point ?? {}) as { lat?: unknown; lng?: unknown };
-    if (typeof lat === "number" && typeof lng === "number") {
-      latSum += lat;
-      lngSum += lng;
+  for (const point of points) {
+    const p = pointLatLng(point);
+    if (p) {
+      latSum += p.lat;
+      lngSum += p.lng;
       count += 1;
     }
   }

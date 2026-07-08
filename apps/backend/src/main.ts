@@ -129,6 +129,22 @@ async function bootstrap() {
       verify: captureRawBody,
     }),
   );
+  // The STOPS-tab corridor endpoints carry the same routed day/leg polyline as
+  // route-quality — the OSM store (#859), the passes check, and the fun-zones
+  // corridor (#865). A dense route runs to a few thousand vertices, over the
+  // 100 kb default, so scope them up too or body-parser 413s before the
+  // controller runs (toggling any STOPS category would then fail).
+  app.use(
+    [
+      '/api/v1/poi/in-corridor',
+      '/api/v1/passes/check-route',
+      '/api/v1/roads/fun-zones/in-corridor',
+    ],
+    expressJson({
+      limit: ROUTE_QUALITY_BODY_LIMIT_BYTES,
+      verify: captureRawBody,
+    }),
+  );
   app.use(
     expressJson({ limit: DEFAULT_JSON_BODY_LIMIT, verify: captureRawBody }),
   );

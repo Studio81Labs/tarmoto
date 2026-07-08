@@ -42,6 +42,11 @@ interface TripStopsPanelProps {
    * fly to it and open the Add-as-via popover (revision 5 §D).
    */
   onFocusStop?: (stop: RouteStop) => void;
+  /**
+   * Planner travel month (1–12) — sets the seasonal `mountain_pass` status so
+   * STOPS agrees with the Conditions pass overlay; omit for the current month.
+   */
+  month?: number;
 }
 
 /**
@@ -51,7 +56,11 @@ interface TripStopsPanelProps {
  * viewport), never a second filter state. Route-gated: without a route
  * line there is nothing to be "along".
  */
-export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
+export function TripStopsPanel({
+  trip,
+  onFocusStop,
+  month,
+}: TripStopsPanelProps) {
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
   const [corridorKm, setCorridorKm] = useState<number>(5);
@@ -103,6 +112,7 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
               categories,
               corridorKm,
               minStayRating,
+              month,
               { signal: controller.signal },
             ),
           ),
@@ -143,7 +153,7 @@ export function TripStopsPanel({ trip, onFocusStop }: TripStopsPanelProps) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [routeLines, categories, corridorKm, minStayRating]);
+  }, [routeLines, categories, corridorKm, minStayRating, month]);
 
   const activeLabels = categories
     .map((category) => poiCategoryMeta(category).label.toLowerCase())
