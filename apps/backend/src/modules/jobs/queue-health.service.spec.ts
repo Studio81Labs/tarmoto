@@ -169,20 +169,20 @@ describe('QueueHealthService', () => {
   });
 
   it('passes BullMQ-auto-generated numeric jobIds through unchanged (no user data to redact)', async () => {
-    queues[QUEUE_NAMES.PUSH_NOTIFICATION].getFailed.mockResolvedValue([
+    queues[QUEUE_NAMES.FUNZONE_RECOMPUTE].getFailed.mockResolvedValue([
       {
         id: '12345',
-        name: 'send',
+        name: 'run',
         finishedOn: new Date('2026-04-30T12:00:00Z').valueOf(),
         attemptsMade: 5,
-        failedReason: 'FCM 401',
+        failedReason: 'boom',
       },
     ]);
     const snapshot = await service.snapshot(true);
-    const push = snapshot.queues.find(
-      (q) => q.queue === QUEUE_NAMES.PUSH_NOTIFICATION,
+    const entry = snapshot.queues.find(
+      (q) => q.queue === QUEUE_NAMES.FUNZONE_RECOMPUTE,
     )!;
-    expect(push.lastFailure!.job_id).toBe('12345');
+    expect(entry.lastFailure!.job_id).toBe('12345');
   });
 
   it('reports lastFailure: null when no failures are retained', async () => {

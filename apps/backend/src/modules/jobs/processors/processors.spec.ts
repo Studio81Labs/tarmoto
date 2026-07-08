@@ -8,7 +8,6 @@ import { DataExportQueueProcessor } from './data-export.processor.js';
 import { AccountDeletionSweepProcessor } from './account-deletion-sweep.processor.js';
 import { AccountDeletionFinalizeProcessor } from './account-deletion-finalize.processor.js';
 import { FunzoneRecomputeProcessor } from './funzone-recompute.processor.js';
-import { PushNotificationProcessor } from './push-notification.processor.js';
 import { ModelEvalReconcileProcessor } from './model-eval-reconcile.processor.js';
 import { ModelEvalAgreementProcessor } from './model-eval-agreement.processor.js';
 import { ModelEvalService } from '../../model-eval/model-eval.service.js';
@@ -464,23 +463,5 @@ describe('ModelEvalAgreementProcessor', () => {
       cross_bike_score: 0.77,
       cross_bike_segments: 8,
     });
-  });
-});
-
-describe('PushNotificationProcessor', () => {
-  it('happy path: returns noop while no provider is wired and redacts the device token in logs', async () => {
-    const moduleRef = await Test.createTestingModule({
-      providers: [PushNotificationProcessor],
-    }).compile();
-    const processor = moduleRef.get(PushNotificationProcessor);
-    const result = await processor.process(
-      fakeJob(JOB_NAMES.PUSH_NOTIFICATION_SEND, {
-        user_id: 'u1',
-        device_token: 'abcdefghijkl',
-        title: 'Hello',
-        body: 'World',
-      }) as never,
-    );
-    expect(result).toMatchObject({ status: 'noop' });
   });
 });
