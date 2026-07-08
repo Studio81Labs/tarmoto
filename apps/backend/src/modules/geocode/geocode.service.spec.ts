@@ -41,7 +41,8 @@ describe('GeocodeService', () => {
     await service.search('Brno');
     expect(provider.search.mock.calls[0][1]).toBe(5);
 
-    await service.search('Brno', 0);
+    // Distinct query so the response cache doesn't collapse the two calls.
+    await service.search('Praha', 0);
     expect(provider.search.mock.calls[1][1]).toBe(5);
   });
 
@@ -97,6 +98,58 @@ describe('GeocodeService', () => {
       provider.reverse.mockRejectedValue(new Error('upstream down'));
       const res = await service.reverse(49.2, 16.6);
       expect(res).toEqual({ label: null });
+    });
+  });
+
+  describe('caching (#909)', () => {
+    it('serves a repeated search from cache without re-calling the provider', async () => {
+      provider.search.mockResolvedValue([result()]);
+      const first = await service.search('Brno');
+      const second = await service.search('Brno');
+      expect(provider.search).toHaveBeenCalledTimes(1);
+      expect(second).toEqual(first);
+    });
+
+    it('keys the search cache case-insensitively and by limit', async () => {
+      provider.search.mockResolvedValue([result()]);
+      await service.search('Brno');
+      await service.search('BRNO'); // same key (case-folded) → hit
+      expect(provider.search).toHaveBeenCalledTimes(1);
+      await service.search('Brno', 3); // different limit → miss
+      expect(provider.search).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not cache a search provider failure (retries next call)', async () => {
+      provider.search.mockRejectedValueOnce(new Error('down'));
+      provider.search.mockResolvedValueOnce([result()]);
+      const first = await service.search('Brno');
+      expect(first.results).toEqual([]);
+      const second = await service.search('Brno');
+      expect(provider.search).toHaveBeenCalledTimes(2);
+      expect(second.results).toHaveLength(1);
+    });
+
+    it('serves a repeated reverse lookup from cache (coords rounded to ~11 m)', async () => {
+      provider.reverse.mockResolvedValue({ label: 'Brno' });
+      await service.reverse(49.20001, 16.60001);
+      await service.reverse(49.20002, 16.60002); // same to 4 dp → hit
+      expect(provider.reverse).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches an unnamed (null) reverse result but not a reverse failure', async () => {
+      // A provider-returned null (e.g. open sea) is a stable fact → cached.
+      provider.reverse.mockResolvedValue(null);
+      await service.reverse(0, 0);
+      await service.reverse(0, 0);
+      expect(provider.reverse).toHaveBeenCalledTimes(1);
+
+      // A thrown error is transient → not cached, retried next call.
+      provider.reverse.mockReset();
+      provider.reverse.mockRejectedValueOnce(new Error('down'));
+      provider.reverse.mockResolvedValueOnce({ label: 'Praha' });
+      expect(await service.reverse(50, 14)).toEqual({ label: null });
+      expect(await service.reverse(50, 14)).toEqual({ label: 'Praha' });
+      expect(provider.reverse).toHaveBeenCalledTimes(2);
     });
   });
 });

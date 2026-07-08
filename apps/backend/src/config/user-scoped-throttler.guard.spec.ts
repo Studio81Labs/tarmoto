@@ -1,7 +1,9 @@
+import type { ExecutionContext } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UserScopedThrottlerGuard } from './user-scoped-throttler.guard.js';
+import { SHARED_THROTTLE_BUCKET } from './shared-throttle-bucket.decorator.js';
 
 describe('UserScopedThrottlerGuard', () => {
   let guard: UserScopedThrottlerGuard;
@@ -89,5 +91,81 @@ describe('UserScopedThrottlerGuard', () => {
         headers: { authorization: `Bearer ${refresh}` },
       }),
     ).toBe('1.2.3.4:anon');
+  });
+
+  describe('generateKey (shared bucket, #909)', () => {
+    function generateKey(
+      context: ExecutionContext,
+      suffix: string,
+      name: string,
+    ): string {
+      return (
+        guard as unknown as {
+          generateKey: (c: ExecutionContext, s: string, n: string) => string;
+        }
+      ).generateKey(context, suffix, name);
+    }
+
+    function contextFor(cls: object, handler: object): ExecutionContext {
+      return {
+        getClass: () => cls,
+        getHandler: () => handler,
+      } as unknown as ExecutionContext;
+    }
+
+    it('shares one bucket across a controller’s handlers when opted in', () => {
+      class GeoController {}
+      const search = () => undefined;
+      const reverse = () => undefined;
+      Reflect.defineMetadata(SHARED_THROTTLE_BUCKET, true, GeoController);
+
+      const forward = generateKey(
+        contextFor(GeoController, search),
+        '1.2.3.4:u-1',
+        'default',
+      );
+      const back = generateKey(
+        contextFor(GeoController, reverse),
+        '1.2.3.4:u-1',
+        'default',
+      );
+      expect(forward).toBe(back); // one bucket for both actions
+    });
+
+    it('keeps per-handler buckets for routes that do not opt in', () => {
+      class OtherController {}
+      const a = () => undefined;
+      const b = () => undefined;
+
+      const ka = generateKey(
+        contextFor(OtherController, a),
+        '1.2.3.4:u-1',
+        'default',
+      );
+      const kb = generateKey(
+        contextFor(OtherController, b),
+        '1.2.3.4:u-1',
+        'default',
+      );
+      expect(ka).not.toBe(kb); // default per-handler keying preserved
+    });
+
+    it('still separates users inside a shared bucket', () => {
+      class GeoController {}
+      const search = () => undefined;
+      Reflect.defineMetadata(SHARED_THROTTLE_BUCKET, true, GeoController);
+
+      const u1 = generateKey(
+        contextFor(GeoController, search),
+        '1.2.3.4:u-1',
+        'default',
+      );
+      const u2 = generateKey(
+        contextFor(GeoController, search),
+        '1.2.3.4:u-2',
+        'default',
+      );
+      expect(u1).not.toBe(u2);
+    });
   });
 });

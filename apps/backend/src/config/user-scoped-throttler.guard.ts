@@ -1,8 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, type ExecutionContext } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerStorage } from '@nestjs/throttler';
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
+import { SHARED_THROTTLE_BUCKET } from './shared-throttle-bucket.decorator.js';
 
 /**
  * App-wide throttler that buckets by `(ip, user_id)` instead of just
@@ -31,6 +32,11 @@ import type { ThrottlerModuleOptions } from '@nestjs/throttler';
  *
  * Per-route limits are still configured via `@Throttle({ default: { ttl, limit } })`;
  * this guard only changes the keying, not the budget shape.
+ *
+ * Routes may additionally opt into a shared bucket via `@SharedThrottleBucket()`
+ * so a controller's whole `@Throttle` budget applies per user ACROSS its
+ * handlers (see `generateKey`) — needed by upstream-facing proxies like
+ * geocoding. Everything else keeps the default per-handler keying.
  */
 @Injectable()
 export class UserScopedThrottlerGuard extends ThrottlerGuard {
@@ -49,6 +55,30 @@ export class UserScopedThrottlerGuard extends ThrottlerGuard {
     const ip = typeof req['ip'] === 'string' ? req['ip'] : 'unknown-ip';
     const userId = await this.resolveUserId(req);
     return `${ip}:${userId}`;
+  }
+
+  /**
+   * Default keying is per (class, HANDLER, tracker) — a class-level `@Throttle`
+   * therefore gives each action its own bucket. Routes flagged with
+   * {@link SharedThrottleBucket} drop the handler from the key so all the
+   * controller's handlers share ONE per-user bucket (the controller's budget,
+   * not per-action). Unflagged routes fall through to the default `super`
+   * keying unchanged — this guard fronts safety-critical routes, so the shared
+   * bucket is strictly opt-in.
+   */
+  protected override generateKey(
+    context: ExecutionContext,
+    suffix: string,
+    name: string,
+  ): string {
+    const shared = this.reflector.getAllAndOverride<boolean>(
+      SHARED_THROTTLE_BUCKET,
+      [context.getHandler(), context.getClass()],
+    );
+    if (shared) {
+      return `${context.getClass().name}:shared:${name}:${suffix}`;
+    }
+    return super.generateKey(context, suffix, name);
   }
 
   /**

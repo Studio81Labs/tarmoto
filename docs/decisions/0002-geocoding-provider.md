@@ -42,3 +42,7 @@ Proxying (rather than having the companion call Nominatim directly) is intention
 - **Mapbox Geocoding.** Rejected — introduces a paid, keyed dependency for a feature that doesn't need autocomplete polish, and creates drift between map tiles (OSM) and geocoding source.
 - **Pelias (self-hosted).** Rejected — operationally too heavy for the current scale. Worth revisiting if we later need multi-source geocoding or offline installs.
 - **Companion calls Nominatim directly.** Rejected — leaks rider IPs, scatters `User-Agent` policy compliance across clients, and blocks the caching/private-instance escape hatch.
+
+## Follow-up
+
+- **#909 — backend cache, per-user throttle, and upstream 1/s serialization.** As the proxy gained more typeahead consumers (explore, ride search, planner), we landed the "rate-limited cache" this ADR anticipated, plus the serialization needed to actually honour Nominatim's ≤ 1 req/s: (1) a bounded TTL response cache on `GeocodeService` (forward + reverse) collapses repeated queries; (2) a per-user `@Throttle` on `GeocodeController`, shared across both actions via `@SharedThrottleBucket`, caps any single client; (3) a min-spacing limiter in `NominatimProvider` serializes upstream calls to ≤ 1/s **when the public instance is in use**, shedding bursts (e.g. the planner naming several pins at once) as graceful fallbacks rather than firing them in parallel. Overriding `TARMOTO_NOMINATIM_URL` to a self-hosted instance is auto-detected and disables the serializer (no OSMF cap applies) — the durable, cross-instance fix.
