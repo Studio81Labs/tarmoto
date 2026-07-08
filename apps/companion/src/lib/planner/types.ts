@@ -230,7 +230,9 @@ export interface PlannerApi {
    * Mixed-source POIs for the map-top category bar (revision 4 §B) —
    * one resolver so callers don't care that fuel/food/… are OSM,
    * mountain_pass is the seasonal-pass source, and twisty_highlight is
-   * Tarmoto's curviness layer. MOCK — CZ/Beskydy fixtures.
+   * Tarmoto's curviness layer. The OSM amenity categories read the `pois`
+   * store via `/poi/in-bbox` (#857); mountain_pass / twisty_highlight stay
+   * on mock fixtures until their sources exist (#865).
    */
   getPoisByCategories(
     bbox: [number, number, number, number],
@@ -242,10 +244,11 @@ export interface PlannerApi {
    * Route-corridor POI query for the STOPS tab (revision 5 §C): the
    * SAME category POIs as `getPoisByCategories`, but filtered by
    * proximity to the route line, each with distance-from-route and
-   * km-along-route, sorted by km-along-route. Real target: PostGIS
-   * distance against the route geometry; MOCK computes real distances
-   * against the fixtures. `minStayRating` applies only to accommodation
-   * categories (biker_hotel / campground).
+   * km-along-route, sorted by km-along-route. The OSM categories query the
+   * `pois` store's PostGIS corridor via `/poi/in-corridor` (#859);
+   * mountain_pass / twisty_highlight stay on mock fixtures (#865).
+   * `minStayRating` applies only to accommodation categories
+   * (biker_hotel / campground).
    */
   getRouteStops(
     routeGeometry: GeoJSON.LineString,
