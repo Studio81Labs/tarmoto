@@ -223,9 +223,11 @@ export function Tooltip({
   // Pin the bubble to the trigger while it's visible. Measuring in a
   // layout effect keeps the position resolved before the browser paints
   // (no flash at 0,0), and the scroll/resize listeners follow a trigger
-  // that moves under the fixed-position bubble.
+  // that moves under the fixed-position bubble. `mounted` is a dependency
+  // so a force-open (`open`) tooltip re-measures once the portalled bubble
+  // exists — the first pass runs before mount, when `bubbleRef` is null.
   useLayoutEffect(() => {
-    if (!visible) return;
+    if (!visible || !mounted) return;
     measure();
     window.addEventListener("scroll", measure, true);
     window.addEventListener("resize", measure);
@@ -233,7 +235,7 @@ export function Tooltip({
       window.removeEventListener("scroll", measure, true);
       window.removeEventListener("resize", measure);
     };
-  }, [visible, measure]);
+  }, [visible, mounted, measure]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLSpanElement>): void => {
     if (e.key === "Escape") setFocused(false);
