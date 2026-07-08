@@ -10,7 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Checkbox, NumberField, Select } from "@tarmoto/ui";
+import { Button, Checkbox, NumberField, Select, Tooltip } from "@tarmoto/ui";
 import {
   useTripStore,
   normalizeDayFinish,
@@ -2234,47 +2234,63 @@ export default function TripPlannerPage() {
             column only exists after a split, so it can't own the title.
             Header shows a day count ONLY post-split (revision 2 §C). */}
         <div className="flex min-w-0 items-center gap-3">
-          <Button
-            iconOnly
-            size="sm"
-            variant="secondary"
-            renderLink={({ className, children }) => (
-              <Link
-                href="/trips"
-                aria-label={t("Back to trips")}
-                title={t("Back to trips")}
-                className={className}
-              >
-                {children}
-              </Link>
-            )}
-          >
-            <ArrowLeft size={15} />
-          </Button>
-          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
-          <div className="min-w-0">
-            <button
-              type="button"
-              onClick={openRenameDialog}
-              disabled={!displayedTrip || !canEditTripMetadata}
-              title={
-                displayedTrip && canEditTripMetadata
-                  ? t("Rename trip")
-                  : undefined
-              }
-              className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
+          <Tooltip content={t("Back to trips")} placement="below">
+            <Button
+              iconOnly
+              size="sm"
+              variant="secondary"
+              renderLink={({ className, children }) => (
+                <Link
+                  href="/trips"
+                  aria-label={t("Back to trips")}
+                  className={className}
+                >
+                  {children}
+                </Link>
+              )}
             >
-              <h1 className="min-w-0 truncate text-[15px] font-extrabold leading-tight tracking-[-0.3px] text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
-                {tripDisplayName(displayedTrip) ?? t("New Trip")}
-              </h1>
-              {displayedTrip && canEditTripMetadata ? (
-                <Pencil
-                  size={11}
-                  aria-hidden
-                  className="shrink-0 text-fg-faint transition group-hover:text-accent"
-                />
-              ) : null}
-            </button>
+              <ArrowLeft size={15} />
+            </Button>
+          </Tooltip>
+          <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
+          {/* flex-col so the tooltip-wrapped rename control is a flex item
+              (blockified — no inline-flex line-box strut) and the header
+              keeps the same height as the read-only preview view. */}
+          <div className="flex min-w-0 flex-col">
+            {(() => {
+              const canRenameTrip =
+                Boolean(displayedTrip) && canEditTripMetadata;
+              const renameButton = (
+                <button
+                  type="button"
+                  onClick={openRenameDialog}
+                  disabled={!canRenameTrip}
+                  className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
+                >
+                  <h1 className="min-w-0 truncate text-[15px] font-extrabold leading-tight tracking-[-0.3px] text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
+                    {tripDisplayName(displayedTrip) ?? t("New Trip")}
+                  </h1>
+                  {canRenameTrip ? (
+                    <Pencil
+                      size={11}
+                      aria-hidden
+                      className="shrink-0 text-fg-faint transition group-hover:text-accent"
+                    />
+                  ) : null}
+                </button>
+              );
+              return canRenameTrip ? (
+                <Tooltip
+                  content={t("Rename trip")}
+                  placement="below"
+                  className="min-w-0 max-w-full"
+                >
+                  {renameButton}
+                </Tooltip>
+              ) : (
+                renameButton
+              );
+            })()}
             {totalDistanceKm !== null ? (
               <div className="mt-0.5 flex items-center gap-3 whitespace-nowrap text-[11px] text-fg-dim">
                 {daysVisible && dayPlans ? (
@@ -2312,51 +2328,55 @@ export default function TripPlannerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            iconOnly
-            variant="secondary"
-            size="sm"
-            aria-label={t("Undo")}
-            title={t("Undo")}
-            disabled={!canUndo}
-            onClick={undo}
-          >
-            <RotateCcw size={15} />
-          </Button>
-          <Button
-            iconOnly
-            variant="secondary"
-            size="sm"
-            aria-label={t("Redo")}
-            title={t("Redo")}
-            disabled={!canRedo}
-            onClick={redo}
-          >
-            <RotateCw size={15} />
-          </Button>
+          <Tooltip content={t("Undo")} placement="below">
+            <Button
+              iconOnly
+              variant="secondary"
+              size="sm"
+              aria-label={t("Undo")}
+              disabled={!canUndo}
+              onClick={undo}
+            >
+              <RotateCcw size={15} />
+            </Button>
+          </Tooltip>
+          <Tooltip content={t("Redo")} placement="below">
+            <Button
+              iconOnly
+              variant="secondary"
+              size="sm"
+              aria-label={t("Redo")}
+              disabled={!canRedo}
+              onClick={redo}
+            >
+              <RotateCw size={15} />
+            </Button>
+          </Tooltip>
           <span aria-hidden="true" className="h-[22px] w-px shrink-0 bg-line" />
-          <Button
-            iconOnly
-            variant="secondary"
-            size="sm"
-            aria-label={t("Import GPX")}
-            title={t("Import GPX")}
-            onClick={() => openImport()}
-          >
-            <Upload size={15} />
-          </Button>
+          <Tooltip content={t("Import GPX")} placement="below">
+            <Button
+              iconOnly
+              variant="secondary"
+              size="sm"
+              aria-label={t("Import GPX")}
+              onClick={() => openImport()}
+            >
+              <Upload size={15} />
+            </Button>
+          </Tooltip>
           <TripExportButton trip={displayedTrip} />
-          <Button
-            iconOnly
-            variant="secondary"
-            size="sm"
-            aria-label={t("Fit route")}
-            title={t("Fit route")}
-            onClick={handleFitRoute}
-            disabled={!activeTrip}
-          >
-            <Maximize2 size={15} />
-          </Button>
+          <Tooltip content={t("Fit route")} placement="below">
+            <Button
+              iconOnly
+              variant="secondary"
+              size="sm"
+              aria-label={t("Fit route")}
+              onClick={handleFitRoute}
+              disabled={!activeTrip}
+            >
+              <Maximize2 size={15} />
+            </Button>
+          </Tooltip>
           {isCollaborator && (
             <Button
               variant="secondary"
@@ -2433,16 +2453,17 @@ export default function TripPlannerPage() {
                   {t("Reset")}
                 </Button>
               ) : null}
-              <Button
-                iconOnly
-                variant="danger"
-                size="sm"
-                aria-label={t("Discard")}
-                title={t("Discard")}
-                onClick={() => setPendingConfirm("discard")}
-              >
-                <Trash2 size={15} />
-              </Button>
+              <Tooltip content={t("Discard")} placement="below">
+                <Button
+                  iconOnly
+                  variant="danger"
+                  size="sm"
+                  aria-label={t("Discard")}
+                  onClick={() => setPendingConfirm("discard")}
+                >
+                  <Trash2 size={15} />
+                </Button>
+              </Tooltip>
             </>
           )}
         </div>
