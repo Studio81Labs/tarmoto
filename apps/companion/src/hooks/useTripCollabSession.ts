@@ -32,6 +32,17 @@ export interface CollaboratorCursor {
   lastSeenAt: number;
 }
 
+/**
+ * Display profile for a trip member, keyed by user id. Loaded from the roster
+ * so the map can render each collaborator's cursor as their avatar (initials
+ * or photo) instead of a raw id.
+ */
+export interface CollaboratorProfile {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
 /** Online presence bookkeeping for the member list. */
 export interface CollaboratorPresence {
   userId: string;
@@ -103,6 +114,18 @@ export function useTripCollabSession(
   const [presence, setPresence] = useState<Map<string, CollaboratorPresence>>(
     () => new Map(),
   );
+  const [members, setMembers] = useState<Map<string, CollaboratorProfile>>(
+    () => new Map(),
+  );
+  // Roster refetch bookkeeping: a collaborator who joins AFTER the roster
+  // snapshot only shows up in cursor/presence events (user id only). When we
+  // see a user id we don't have a profile for, bump `rosterVersion` to refetch
+  // — once per unknown id (`requestedUnknownRef`) so a 12 Hz cursor stream
+  // doesn't spam the endpoint.
+  const [rosterVersion, setRosterVersion] = useState(0);
+  const membersRef = useRef<Map<string, CollaboratorProfile>>(members);
+  membersRef.current = members;
+  const requestedUnknownRef = useRef<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<TripSuggestion[]>([]);
   // When the shared list is fed into the modal via props, a silent
   // fetch failure here would leave `suggestions` empty and the modal
@@ -124,6 +147,8 @@ export function useTripCollabSession(
     previousTripIdRef.current = serverTripId;
     setCursors(new Map());
     setPresence(new Map());
+    setMembers(new Map());
+    requestedUnknownRef.current = new Set();
     setSuggestions([]);
     setSuggestionsError(null);
   }, [serverTripId]);
@@ -136,8 +161,18 @@ export function useTripCollabSession(
 
   useEffect(() => {
     if (!serverTripId) return;
+    const noteUnknownUser = (userId: string) => {
+      if (
+        !membersRef.current.has(userId) &&
+        !requestedUnknownRef.current.has(userId)
+      ) {
+        requestedUnknownRef.current.add(userId);
+        setRosterVersion((v) => v + 1);
+      }
+    };
     const offCursor = onTripCursor((evt: TripCursorEvent) => {
       if (evt.trip_id !== serverTripId) return;
+      noteUnknownUser(evt.user_id);
       setCursors((prev) => {
         const next = new Map(prev);
         next.set(evt.user_id, {
@@ -151,6 +186,7 @@ export function useTripCollabSession(
     });
     const offPresence = onTripPresence((evt: TripPresenceEvent) => {
       if (evt.trip_id !== serverTripId) return;
+      noteUnknownUser(evt.user_id);
       setPresence((prev) => {
         const next = new Map(prev);
         // Track sockets per user so multi-tab / multi-device members
@@ -268,6 +304,37 @@ export function useTripCollabSession(
     };
   }, [serverTripId, hasAuthToken]);
 
+  // Roster for the map's cursor avatars — one lookup of user id → name +
+  // avatar. Non-fatal on failure: a cursor without a profile falls back to a
+  // plain marker. `listMembers` returns the joined roster to any member, so
+  // viewers get names/avatars too (only pending invites are owner/editor-only).
+  useEffect(() => {
+    if (!serverTripId || !hasAuthToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await tripCollabApi.listMembers(serverTripId);
+        if (cancelled) return;
+        const next = new Map<string, CollaboratorProfile>();
+        for (const m of data.members) {
+          next.set(m.user_id, {
+            userId: m.user_id,
+            displayName: m.display_name,
+            avatarUrl: m.avatar_url,
+          });
+        }
+        setMembers(next);
+      } catch {
+        // Leave `members` empty; cursors render without a name/avatar.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `rosterVersion` re-runs this when a cursor/presence event surfaces a
+    // collaborator who joined after the initial snapshot.
+  }, [serverTripId, hasAuthToken, rosterVersion]);
+
   useEffect(() => {
     if (!serverTripId) return;
     const id = window.setInterval(() => {
@@ -301,6 +368,8 @@ export function useTripCollabSession(
   return {
     cursors,
     presence,
+    /** Trip roster keyed by user id — display name + avatar for cursor markers. */
+    members,
     suggestions,
     setSuggestions,
     /** Last `listSuggestions` error, or null when the fetch succeeded. */
