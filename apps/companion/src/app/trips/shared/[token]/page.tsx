@@ -149,10 +149,7 @@ export default async function SharedTripPage({
                   ? { unit: duration.unit }
                   : {})}
               />
-              <MetricTile
-                label={t("Waypoints")}
-                value={summary.waypointCount}
-              />
+              <MetricTile label={t("Stops")} value={stops.length} />
             </div>
           </>
         ) : (
