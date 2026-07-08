@@ -726,6 +726,14 @@ describe("plannerApi.getPoisByCategories (store path, #849)", () => {
     ]);
   });
 
+  it("threads the planner month into the pass status query (#865)", async () => {
+    // A winter-planned trip must ask the passes module for that month so the
+    // map's mountain_pass status agrees with the Conditions overlay.
+    passesListMock.mockResolvedValue({ data: [] });
+    await createPlannerApi().getPoisByCategories(bbox, ["mountain_pass"], 1);
+    expect(passesListMock).toHaveBeenCalledWith(bbox, 1, undefined);
+  });
+
   it("serves twisty_highlight from the curviness Fun Zones at the boundary centroid (#865)", async () => {
     funZonesBboxMock.mockResolvedValue([
       {
@@ -843,6 +851,20 @@ describe("plannerApi.getRouteStops non-store corridor (#865)", () => {
     expect(stop?.meta).toEqual({ status: "open", elevationM: 1018 });
     expect(typeof stop?.distanceFromRouteKm).toBe("number");
     expect(typeof stop?.kmAlongRoute).toBe("number");
+  });
+
+  it("threads the planner month into the check-route pass query (#865)", async () => {
+    await createPlannerApi().getRouteStops(
+      routeLine,
+      ["mountain_pass"],
+      10,
+      undefined,
+      1,
+    );
+    expect(passesCheckRouteMock).toHaveBeenCalledWith(
+      { route, buffer_m: 10000, for_month: 1 },
+      undefined,
+    );
   });
 
   it("anchors a twisty stop at the on-route contact, not the centroid (#865)", async () => {

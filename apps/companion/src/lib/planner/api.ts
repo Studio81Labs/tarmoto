@@ -383,13 +383,14 @@ function funZoneToCategoryPoi(zone: FunZoneListItem): Poi | null {
 async function fetchNonStorePois(
   bbox: [number, number, number, number],
   categories: PoiCategory[],
+  forMonth?: number,
   init?: { signal?: AbortSignal },
 ): Promise<Poi[]> {
   const wanted = new Set(categories);
   const [passes, zones] = await Promise.all([
     wanted.has("mountain_pass")
       ? passesApi
-          .list(bbox, undefined, init)
+          .list(bbox, forMonth, init)
           .then((p) => p.data.map(passToCategoryPoi))
       : Promise.resolve<Poi[]>([]),
     wanted.has("twisty_highlight")
@@ -444,6 +445,7 @@ async function fetchNonStoreStops(
   route: { lat: number; lng: number }[],
   categories: PoiCategory[],
   corridorKm: number,
+  forMonth?: number,
   init?: { signal?: AbortSignal },
 ): Promise<RouteStop[]> {
   const wanted = new Set(categories);
@@ -451,16 +453,27 @@ async function fetchNonStoreStops(
   const [passStops, zoneStops] = await Promise.all([
     // Passes are points: the server filtered by the point within `buffer_m`, so
     // re-projecting the same point agrees — keep the corridor guard as defence.
+    // `for_month` matches the Conditions overlay's seasonal status; omit it
+    // (current month) when unset so the body stays minimal.
     wanted.has("mountain_pass")
-      ? passesApi.checkRoute({ route, buffer_m: bufferM }, init).then((res) =>
-          res.data.passes
-            .map(passToCategoryPoi)
-            .map((poi) => projectPointStop(poi, route))
-            .filter(
-              (s): s is RouteStop =>
-                s !== null && s.distanceFromRouteKm <= corridorKm,
-            ),
-        )
+      ? passesApi
+          .checkRoute(
+            {
+              route,
+              buffer_m: bufferM,
+              ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+            },
+            init,
+          )
+          .then((res) =>
+            res.data.passes
+              .map(passToCategoryPoi)
+              .map((poi) => projectPointStop(poi, route))
+              .filter(
+                (s): s is RouteStop =>
+                  s !== null && s.distanceFromRouteKm <= corridorKm,
+              ),
+          )
       : Promise.resolve<RouteStop[]>([]),
     wanted.has("twisty_highlight")
       ? fetchFunZonesInCorridor(route, corridorKm, init).then((zones) =>
@@ -476,6 +489,7 @@ async function fetchNonStoreStops(
 async function fetchCategoryPois(
   bbox: [number, number, number, number],
   categories: PoiCategory[],
+  forMonth?: number,
   init?: { signal?: AbortSignal },
 ): Promise<Poi[]> {
   // bbox is [west, south, east, north] = [minLng, minLat, maxLng, maxLat].
@@ -505,7 +519,7 @@ async function fetchCategoryPois(
     // mountain_pass → passes module, twisty_highlight → curviness Fun Zones,
     // each via its generated bbox endpoint (#865).
     nonStoreCategories.length > 0
-      ? fetchNonStorePois(bbox, nonStoreCategories, init)
+      ? fetchNonStorePois(bbox, nonStoreCategories, forMonth, init)
       : Promise.resolve<Poi[]>([]),
   ]);
 
@@ -539,6 +553,7 @@ async function fetchCorridorStops(
   categories: PoiCategory[],
   corridorKm: number,
   minStayRating?: number,
+  forMonth?: number,
   init?: { signal?: AbortSignal },
 ): Promise<RouteStop[]> {
   const route = routeGeometry.coordinates
@@ -573,7 +588,13 @@ async function fetchCorridorStops(
     // corridor, projected onto the route for their STOPS position (#865).
     // `minStayRating` never applied to these (they're not accommodations).
     nonStoreCategories.length > 0 && route.length >= 2
-      ? fetchNonStoreStops(route, nonStoreCategories, corridorKm, init)
+      ? fetchNonStoreStops(
+          route,
+          nonStoreCategories,
+          corridorKm,
+          forMonth,
+          init,
+        )
       : Promise.resolve<RouteStop[]>([]),
   ]);
 
@@ -877,16 +898,24 @@ export function createPlannerApi(): PlannerApi {
       return fetchPois(route, types, init);
     },
 
-    getPoisByCategories(bbox, categories, init) {
-      return fetchCategoryPois(bbox, categories, init);
+    getPoisByCategories(bbox, categories, forMonth, init) {
+      return fetchCategoryPois(bbox, categories, forMonth, init);
     },
 
-    getRouteStops(routeGeometry, categories, corridorKm, minStayRating, init) {
+    getRouteStops(
+      routeGeometry,
+      categories,
+      corridorKm,
+      minStayRating,
+      forMonth,
+      init,
+    ) {
       return fetchCorridorStops(
         routeGeometry,
         categories,
         corridorKm,
         minStayRating,
+        forMonth,
         init,
       );
     },
