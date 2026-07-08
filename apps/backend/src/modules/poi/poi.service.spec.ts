@@ -847,7 +847,7 @@ describe('PoiService', () => {
       expect(result.route_length_km).toBeLessThan(224);
     });
 
-    it('clamps buffer_km into [0.5, 10] with a sensible default', async () => {
+    it('clamps buffer_km into [0.5, 20] with a sensible default', async () => {
       provider.findPointsOfInterestAroundPoints.mockResolvedValue([]);
 
       const zero = await service.findPointsOfInterestAlongRoute({
@@ -860,7 +860,7 @@ describe('PoiService', () => {
         route,
         buffer_km: 999,
       });
-      expect(huge.buffer_km).toBe(10);
+      expect(huge.buffer_km).toBe(20);
     });
 
     it('drops POIs outside the buffer after the provider returns them', async () => {

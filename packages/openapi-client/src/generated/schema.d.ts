@@ -4373,7 +4373,7 @@ export interface components {
         CorridorBodyDto: {
             route: components["schemas"]["CorridorRoutePointDto"][];
             /**
-             * @description Corridor half-width in km (default 2, capped at 10).
+             * @description Corridor half-width in km (default 2, capped at 20).
              * @default 2
              */
             buffer_km: number;
@@ -4425,7 +4425,7 @@ export interface components {
         AlongRoutePoiQueryDto: {
             route: components["schemas"]["RoutePointDto"][];
             /**
-             * @description Buffer in km around the route to consider a POI "on it". Defaults to 2 km, capped at 10 km. Values below the provider precision (0.5 km) silently fall back to the default rather than failing — matches `radius_km` on the point endpoints, which lenient-handles 0 / negative the same way.
+             * @description Buffer in km around the route to consider a POI "on it". Defaults to 2 km, capped at 20 km. Values below the provider precision (0.5 km) silently fall back to the default rather than failing — matches `radius_km` on the point endpoints, which lenient-handles 0 / negative the same way.
              * @default 2
              */
             buffer_km: number;
