@@ -293,11 +293,12 @@ describe('PoiStoreService', () => {
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
       expect(kindParams).toEqual({ kinds: ['restaurant'] });
-      // Nearest-first + bounded so a dense radius can't load unbounded rows.
+      // Nearest-first + bounded per kind so a dense radius can't load unbounded
+      // rows or let one kind crowd out sparser ones before rankPois.
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(500);
+      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
       expect(pois[0]).toMatchObject({
         external_id: 'osm:node:42',
         kind: 'restaurant',
@@ -306,16 +307,34 @@ describe('PoiStoreService', () => {
         hint: 'regional',
       });
     });
+
+    it('caps each kind independently (rankPois caps per kind)', async () => {
+      await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+        'fuel_station',
+      ]);
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
+      expect(qb.limit).toHaveBeenCalledWith(100);
+      const kindFilters = qb.andWhere.mock.calls
+        .filter(([sql]) => String(sql).includes('poi.kind IN'))
+        .map(([, params]) => (params as { kinds: string[] }).kinds);
+      expect(kindFilters).toContainEqual(['restaurant']);
+      expect(kindFilters).toContainEqual(['fuel_station']);
+    });
   });
 
   describe('findAccommodationsNear (store-first source)', () => {
-    it('runs the radius query and maps to AccommodationPoi with stars', async () => {
+    it('runs a single global radius query and maps to AccommodationPoi with stars', async () => {
       qb.getMany.mockResolvedValueOnce([
         makePoi({ kind: 'hotel', stars: 4, cuisine: null }),
       ]);
       const acc = await service.findAccommodationsNear(49.5, 18.4, 10, [
         'hotel',
       ]);
+      // Accommodations rank globally (closest-N), so one query with the global
+      // cap — no per-kind fan-out.
+      expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
+      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
       const params = (
         qb.where.mock.calls[0] as [string, Record<string, number>]
       )[1];
@@ -325,6 +344,15 @@ describe('PoiStoreService', () => {
         kind: 'hotel',
         stars: 4,
       });
+    });
+
+    it('pushes min_stars into the query so unrated stays cannot fill the cap', async () => {
+      await service.findAccommodationsNear(49.5, 18.4, 10, ['hotel'], 3);
+      const starFilter = (
+        qb.andWhere.mock.calls as Array<[string, { minStars?: number }]>
+      ).find(([sql]) => sql.includes('poi.stars >='));
+      expect(starFilter).toBeDefined();
+      expect(starFilter?.[1]).toEqual({ minStars: 3 });
     });
   });
 

@@ -35,16 +35,19 @@ interface RoutePoint {
 }
 
 /**
- * Per-kind cap for the store-first corridor read (#849). Each kind is queried
- * and bounded independently so a dense kind (restaurants) can't fill a global
- * closest-to-route limit and crowd sparser kinds (fuel, viewpoints) out — which
- * `readStoreFirst` would then treat as authoritative, so Overpass wouldn't
- * backfill the dropped fuel stops the fuel-range warning relies on. Comfortably
- * above `PoiService`'s per-kind display cap so the perpendicular-buffer filter
- * still has the true closest rows to keep; total hydration stays bounded
- * (this × the requested kinds).
+ * Per-kind cap for the store-first reads whose ranker is per-kind — the `nearby`
+ * POI radius (`rankPois`) and the `along-route` corridor (`rankAlongRoute`)
+ * (#849). Each kind is queried and bounded independently so a dense kind
+ * (restaurants) can't fill a global nearest-first limit and crowd sparser kinds
+ * (fuel, viewpoints) out — which `readStoreFirst` would then treat as
+ * authoritative, so Overpass wouldn't backfill the dropped fuel stops the
+ * fuel-range warning relies on. Comfortably above `PoiService`'s per-kind
+ * display caps so the post-fetch ranking still has the true closest rows to
+ * keep; total hydration stays bounded (this × the requested kinds). The
+ * accommodation radius ranks globally (closest-N, any kind) so it keeps a
+ * single global cap instead — with `min_stars` pushed into the query.
  */
-const CORRIDOR_STORE_PER_KIND_LIMIT = 100;
+const STORE_PER_KIND_LIMIT = 100;
 
 /**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
@@ -199,23 +202,46 @@ export class PoiStoreService {
     radiusKm: number,
     kinds: PoiKind[],
   ): Promise<PointOfInterest[]> {
-    const rows = await this.queryRadiusEntities(lat, lng, radiusKm, kinds);
-    return rows.map(storedPoiToPointOfInterest);
+    // Bound per kind (rankPois caps per kind) so a dense kind can't crowd out
+    // sparser ones before ranking — see STORE_PER_KIND_LIMIT. Concurrent, so
+    // it's one round-trip of latency.
+    const perKind = await Promise.all(
+      kinds.map((kind) =>
+        this.queryRadiusEntities(
+          lat,
+          lng,
+          radiusKm,
+          [kind],
+          STORE_PER_KIND_LIMIT,
+        ),
+      ),
+    );
+    return perKind.flat().map(storedPoiToPointOfInterest);
   }
 
   /**
    * Stored accommodations within `radiusKm` of a point, as the provider's raw
    * {@link AccommodationPoi} shape (#849) — the store-first source for the live
-   * `/poi/accommodations`. `minStars` filtering + ranking stay in
-   * `PoiService.rank`, so store and live share one filter/sort contract.
+   * `/poi/accommodations`. Accommodations rank globally (closest-N, any kind),
+   * so a single nearest-first cap is correct; `minStars` is pushed into the
+   * query so an unrated cluster can't fill the cap and hide rated stays farther
+   * out. `PoiService.rank` still applies the same filter to the Overpass path.
    */
   async findAccommodationsNear(
     lat: number,
     lng: number,
     radiusKm: number,
     kinds: AccommodationKind[],
+    minStars?: number,
   ): Promise<AccommodationPoi[]> {
-    const rows = await this.queryRadiusEntities(lat, lng, radiusKm, kinds);
+    const rows = await this.queryRadiusEntities(
+      lat,
+      lng,
+      radiusKm,
+      kinds,
+      MAX_LIMIT,
+      minStars,
+    );
     return rows.map(storedPoiToAccommodationPoi);
   }
 
@@ -237,7 +263,7 @@ export class PoiStoreService {
     }
     // Bound per kind, not globally — one closest-to-route query per kind — so a
     // dense kind can't crowd sparser ones out before `rankAlongRoute`'s own
-    // per-kind cap (see CORRIDOR_STORE_PER_KIND_LIMIT). Runs the per-kind
+    // per-kind cap (see STORE_PER_KIND_LIMIT). Runs the per-kind
     // queries concurrently, so it's one round-trip of latency.
     const perKind = await Promise.all(
       kinds.map((kind) =>
@@ -245,7 +271,7 @@ export class PoiStoreService {
           route,
           bufferKm,
           [kind],
-          CORRIDOR_STORE_PER_KIND_LIMIT,
+          STORE_PER_KIND_LIMIT,
         ),
       ),
     );
@@ -254,16 +280,19 @@ export class PoiStoreService {
 
   /**
    * Rows whose point is within `radiusKm` of (lat,lng): kind-filtered, live
-   * (non-tombstoned), nearest-first, capped at `MAX_LIMIT`. Shared by the
-   * nearby-POI + accommodation store reads. Uses a geography `ST_DWithin` (the
-   * passes-module pattern) so `radiusKm` is real metres-on-the-sphere, and
-   * caps + orders by distance so a dense-city radius can't load unbounded rows.
+   * (non-tombstoned), nearest-first, capped at `limit`, optionally star-filtered.
+   * Shared by the nearby-POI (per-kind cap) + accommodation (global cap +
+   * `minStars`) store reads. Uses a geography `ST_DWithin` (the passes-module
+   * pattern) so `radiusKm` is real metres-on-the-sphere, and caps + orders by
+   * distance so a dense-city radius can't load unbounded rows.
    */
   private async queryRadiusEntities(
     lat: number,
     lng: number,
     radiusKm: number,
     kinds: string[] | undefined,
+    limit: number,
+    minStars?: number,
   ): Promise<Poi[]> {
     const radiusM = Math.round(Math.max(0, radiusKm) * 1000);
     // Bind lat/lng as named params (never string-interpolated) and reuse the
@@ -278,9 +307,15 @@ export class PoiStoreService {
       if (kinds && kinds.length > 0) {
         qb.andWhere('poi.kind IN (:...kinds)', { kinds });
       }
+      // Push `min_stars` into the query so an unrated cluster can't fill the cap
+      // and starve rated accommodations (NULL stars fail `>=`, matching
+      // `PoiService.rank`'s "no rating → drop when min_stars set").
+      if (minStars !== undefined) {
+        qb.andWhere('poi.stars >= :minStars', { minStars });
+      }
       return qb
         .orderBy(`ST_Distance(poi.geom::geography, ${point})`, 'ASC')
-        .limit(MAX_LIMIT)
+        .limit(limit)
         .getMany();
     });
   }

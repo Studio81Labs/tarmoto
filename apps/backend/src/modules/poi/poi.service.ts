@@ -118,7 +118,14 @@ export class PoiService {
     const radius = this.clampRadiusKm(radiusKm);
     const resolvedKinds = this.resolveAccommodationKinds(kinds);
     const raw = await this.readStoreFirst(
-      () => this.store.findAccommodationsNear(lat, lng, radius, resolvedKinds),
+      () =>
+        this.store.findAccommodationsNear(
+          lat,
+          lng,
+          radius,
+          resolvedKinds,
+          minStars,
+        ),
       () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
     );
     return {
