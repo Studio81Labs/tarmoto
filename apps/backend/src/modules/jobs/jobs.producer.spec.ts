@@ -92,27 +92,24 @@ describe('JobsProducer', () => {
     );
   });
 
-  it('enqueues a staggered per-region POI import (delay = index * stagger, attempts 3, no jobId)', async () => {
-    await producer.enqueuePoiImportRegion('CZ', 2);
+  it('enqueues a staggered per-region POI import with a dispatch-scoped jobId (delay = index * stagger, attempts 3)', async () => {
+    await producer.enqueuePoiImportRegion('CZ', 2, 'wk-1');
     expect(poiImport.add).toHaveBeenCalledWith(
       JOB_NAMES.POI_IMPORT_REGION,
       { code: 'CZ' },
       expect.objectContaining({
+        // jobId scoped to the dispatch occurrence (wk-1): a dispatch retry
+        // re-enqueues idempotently, but next week is a fresh occurrence.
+        jobId: `${JOB_NAMES.POI_IMPORT_REGION}:wk-1:CZ`,
         delay: 2 * POI_IMPORT_STAGGER_MS,
         attempts: 3,
         backoff: { type: 'exponential', delay: 30_000 },
       }),
     );
-    // No jobId → each weekly dispatch enqueues a fresh run; a stable id would
-    // dedupe against last week's still-retained completed job and silently skip.
-    const opts = (
-      poiImport.add.mock.calls[0] as [string, unknown, { jobId?: string }]
-    )[2];
-    expect(opts.jobId).toBeUndefined();
   });
 
   it('does not stagger the first region (index 0 → no delay)', async () => {
-    await producer.enqueuePoiImportRegion('CZ', 0);
+    await producer.enqueuePoiImportRegion('CZ', 0, 'wk-1');
     const opts = (
       poiImport.add.mock.calls[0] as [string, unknown, { delay: number }]
     )[2];

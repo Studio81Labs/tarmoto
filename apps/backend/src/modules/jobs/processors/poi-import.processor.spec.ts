@@ -59,9 +59,11 @@ describe('PoiImportProcessor', () => {
     expect(enqueuePoiImportRegion).toHaveBeenCalledTimes(3);
     // Each region is passed with its 0-based fan-out index — the producer turns
     // that into the stagger delay, so a big run spreads across hours.
-    expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(1, 'CZ', 0);
-    expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(2, 'SK', 1);
-    expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(3, 'PL', 2);
+    // The 3rd arg is the dispatch occurrence id (job-1) — child jobIds are
+    // scoped to it so a dispatch retry re-enqueues idempotently.
+    expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(1, 'CZ', 0, 'job-1');
+    expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(2, 'SK', 1, 'job-1');
+    expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(3, 'PL', 2, 'job-1');
   });
 
   it('dispatch: tolerates the retired `run` job name as a dispatch alias', async () => {

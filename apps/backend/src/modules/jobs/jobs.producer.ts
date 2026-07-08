@@ -84,20 +84,27 @@ export class JobsProducer {
    * the weekly dispatcher. `staggerIndex` is the region's position in the fan-out
    * (0-based); the job is delayed `staggerIndex * POI_IMPORT_STAGGER_MS` so a
    * continent-scale run spreads across hours rather than firing every country at
-   * once. No jobId: like the quality-conflation continuation, each weekly
-   * dispatch enqueues a fresh run — a stable id would dedupe against last week's
-   * still-retained completed job and silently skip the import. `attempts: 3`
-   * (a heavy region import is retried a few times, then waits for next week).
+   * once.
+   *
+   * The jobId `poi-region:<dispatchId>:<code>` is scoped to the dispatch
+   * OCCURRENCE (`dispatchId` = the weekly dispatcher job's id — stable across its
+   * retries, fresh each week). So a dispatch that retries after enqueuing some
+   * regions re-enqueues them idempotently (BullMQ ignores a duplicate jobId)
+   * instead of doubling the heavy imports, while next week's dispatch — a new
+   * occurrence — still enqueues a fresh run. `attempts: 3` (a heavy region import
+   * is retried a few times, then waits for next week).
    */
   async enqueuePoiImportRegion(
     code: string,
     staggerIndex: number,
+    dispatchId: string,
   ): Promise<void> {
     await this.poiImport.add(
       JOB_NAMES.POI_IMPORT_REGION,
       { code },
       {
         ...DEFAULT_JOB_OPTIONS,
+        jobId: `${JOB_NAMES.POI_IMPORT_REGION}:${dispatchId}:${code}`,
         attempts: 3,
         delay: staggerIndex * POI_IMPORT_STAGGER_MS,
       },

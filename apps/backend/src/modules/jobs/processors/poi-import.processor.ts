@@ -75,10 +75,18 @@ export class PoiImportProcessor extends WorkerHost {
       return { skipped: true };
     }
     const regions = this.poiImport.regions;
+    // Scope the child jobIds to THIS dispatch occurrence (stable across the
+    // dispatch's own retries, fresh each week) so a mid-loop retry re-enqueues
+    // regions idempotently instead of doubling the imports.
+    const dispatchId = job.id ?? String(job.timestamp);
     let enqueued = 0;
     for (const [index, region] of regions.entries()) {
       // The Nth region's job is delayed N * stagger so the fan-out spreads out.
-      await this.producer.enqueuePoiImportRegion(region.code, index);
+      await this.producer.enqueuePoiImportRegion(
+        region.code,
+        index,
+        dispatchId,
+      );
       enqueued += 1;
     }
     this.logger.log(
