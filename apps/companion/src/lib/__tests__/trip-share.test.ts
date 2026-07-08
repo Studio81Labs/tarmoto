@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseTripSnapshot,
   tripRouteLines,
+  tripStops,
   tripSummary,
 } from "@/lib/trip-share";
 import type { Trip } from "@/lib/types";
@@ -204,5 +205,33 @@ describe("tripSummary", () => {
       dayCount: 2,
       waypointCount: 4,
     });
+  });
+});
+
+describe("tripStops", () => {
+  it("excludes start/end bookends (validTrip has only start+end per day)", () => {
+    expect(tripStops(validTrip)).toEqual([]);
+  });
+
+  it("collects intermediate stops (via/fuel/rest/...) across days", () => {
+    const withStops: Trip = {
+      ...validTrip,
+      days: [
+        {
+          ...validTrip.days[0]!,
+          waypoints: [
+            { id: "s", type: "start", location: { lat: 43, lng: 1.5 } },
+            { id: "v", type: "via", location: { lat: 43.2, lng: 1.6 } },
+            { id: "f", type: "fuel", location: { lat: 43.3, lng: 1.7 } },
+            { id: "e", type: "end", location: { lat: 43.5, lng: 1.8 } },
+          ],
+        },
+      ],
+    };
+    const stops = tripStops(withStops);
+    expect(stops).toEqual([
+      { lat: 43.2, lng: 1.6 },
+      { lat: 43.3, lng: 1.7 },
+    ]);
   });
 });

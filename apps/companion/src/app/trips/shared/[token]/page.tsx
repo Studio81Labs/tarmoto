@@ -20,6 +20,7 @@ import {
   fetchSharedTrip,
   parseTripSnapshot,
   tripRouteLines,
+  tripStops,
   tripSummary,
 } from "@/lib/trip-share";
 import { splitFormattedDistance } from "@/lib/utils";
@@ -45,17 +46,30 @@ export default async function SharedTripPage({
   if (!share) notFound();
   const trip = parseTripSnapshot(share.snapshot);
   const summary = trip ? tripSummary(trip) : null;
+  const stops = trip ? tripStops(trip) : [];
   // 640-unit space + per-day lines so the preview matches the ride page's
   // proportions and multi-day trips don't get artificial day-to-day connectors.
+  // Stop waypoints are dotted onto the same preview.
   const preview = trip
-    ? buildRoutePreviewFromLines(tripRouteLines(trip), 640, 48)
+    ? buildRoutePreviewFromLines(tripRouteLines(trip), 640, 48, stops)
     : null;
 
   const distance =
     summary != null
       ? splitFormattedDistance(summary.totalDistanceKm, "metric")
       : null;
-  const duration = splitDuration(summary?.totalDurationMin ?? null);
+  // A trip is a plan, so its time is an estimate: prefer the snapshot's
+  // per-day durations, and fall back to a 55 km/h heuristic (matching the
+  // backend) when the planner didn't record any.
+  const estMinutes =
+    summary == null
+      ? null
+      : summary.totalDurationMin > 0
+        ? summary.totalDurationMin
+        : summary.totalDistanceKm > 0
+          ? Math.round((summary.totalDistanceKm / 55) * 60)
+          : null;
+  const duration = splitDuration(estMinutes);
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -129,13 +143,13 @@ export default async function SharedTripPage({
               />
               <MetricTile label={t("Days")} value={summary.dayCount} />
               <MetricTile
-                label={t("Duration")}
+                label={t("Est. time")}
                 value={duration.value}
                 {...(duration.unit !== undefined
                   ? { unit: duration.unit }
                   : {})}
               />
-              <MetricTile label={t("Stops")} value={summary.waypointCount} />
+              <MetricTile label={t("Stops")} value={stops.length} />
             </div>
           </>
         ) : (

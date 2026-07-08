@@ -144,6 +144,22 @@ export function tripRouteLines(trip: Trip): RoutePoint[][] {
   return lines;
 }
 
+/**
+ * Intermediate stop waypoints (everything except the route's `start`/`end`
+ * bookends) across all days, as plain points. Used both for the "Stops" count
+ * and to dot them onto the route preview.
+ */
+export function tripStops(trip: Trip): RoutePoint[] {
+  const stops: RoutePoint[] = [];
+  for (const day of trip.days) {
+    for (const wp of day.waypoints) {
+      if (wp.type === "start" || wp.type === "end") continue;
+      stops.push({ lat: wp.location.lat, lng: wp.location.lng });
+    }
+  }
+  return stops;
+}
+
 export function tripSummary(trip: Trip): {
   totalDistanceKm: number;
   totalDurationMin: number;

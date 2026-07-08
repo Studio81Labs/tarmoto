@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRoutePreview,
+  buildRoutePreviewFromLines,
   buildSpeedProfile,
   computeQualityBreakdown,
   formatNumber,
@@ -157,6 +158,64 @@ describe("buildRoutePreview", () => {
       maxLng: 14.3,
       maxLat: 50.5,
     });
+  });
+});
+
+describe("buildRoutePreviewFromLines", () => {
+  it("emits a fresh M per line so a day break isn't bridged", () => {
+    const preview = buildRoutePreviewFromLines(
+      [
+        [
+          { lat: 50, lng: 14 },
+          { lat: 50.1, lng: 14.1 },
+        ],
+        [
+          { lat: 50.4, lng: 14.5 },
+          { lat: 50.5, lng: 14.6 },
+        ],
+      ],
+      400,
+      10,
+    );
+    expect(preview).not.toBeNull();
+    // One M per line (two subpaths), so the gap between the lines is not drawn.
+    expect(preview!.path.match(/M/g)?.length).toBe(2);
+  });
+
+  it("projects marker points into the same viewBox", () => {
+    const preview = buildRoutePreviewFromLines(
+      [
+        [
+          { lat: 50, lng: 14 },
+          { lat: 50.2, lng: 14.2 },
+        ],
+      ],
+      400,
+      10,
+      [{ lat: 50.1, lng: 14.1 }],
+    );
+    expect(preview).not.toBeNull();
+    expect(preview!.markers).toHaveLength(1);
+    const m = preview!.markers![0]!;
+    // Midpoint marker lands inside the fitted viewBox.
+    expect(m.x).toBeGreaterThanOrEqual(0);
+    expect(m.x).toBeLessThanOrEqual(preview!.width);
+    expect(m.y).toBeGreaterThanOrEqual(0);
+    expect(m.y).toBeLessThanOrEqual(preview!.height);
+  });
+
+  it("defaults markers to an empty array when none are passed", () => {
+    const preview = buildRoutePreviewFromLines(
+      [
+        [
+          { lat: 50, lng: 14 },
+          { lat: 50.2, lng: 14.2 },
+        ],
+      ],
+      400,
+      10,
+    );
+    expect(preview!.markers).toEqual([]);
   });
 });
 

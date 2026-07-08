@@ -14,12 +14,20 @@ import { formatDurationCompact } from "@/lib/utils";
  * pieces are server-renderable (plain `<Link>`, no client island).
  */
 
-/** Sticky public header: logo + a "TARMOTO / <breadcrumb>" trail + a login CTA. */
+/**
+ * Sticky public header: a home-linked logo + a "TARMOTO / <breadcrumb>" trail
+ * and a CTA into the app. Both the logo and the CTA point at `/` (the companion
+ * home, which is public) so a visitor can always reach the app.
+ */
 export function PublicShareHeader({ breadcrumb }: { breadcrumb: string }) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-cream/[0.86] backdrop-blur-[12px] backdrop-saturate-[1.4]">
       <div className="mx-auto flex h-[60px] max-w-[980px] items-center justify-between gap-4 px-7">
-        <div className="flex min-w-0 items-center gap-2.5">
+        <Link
+          href="/"
+          aria-label={t("Tarmoto home")}
+          className="flex min-w-0 items-center gap-2.5 transition hover:opacity-80"
+        >
           <span className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-lg bg-accent">
             <TarmotoMark size={17} />
           </span>
@@ -32,9 +40,9 @@ export function PublicShareHeader({ breadcrumb }: { breadcrumb: string }) {
               {breadcrumb}
             </Mono>
           </div>
-        </div>
+        </Link>
         <ShareCtaLink
-          href="/login"
+          href="/"
           variant="outline"
           icon={<ArrowUpRight size={14} />}
         >
@@ -101,11 +109,22 @@ export function SharedRoutePreviewCard({
               viewBox={preview.viewBox}
               width={preview.width}
               height={preview.height}
+              markers={preview.markers ?? []}
               label={label}
             />
             <div className="absolute bottom-4 left-4 flex gap-4 rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 shadow-[0_6px_16px_rgba(14,14,16,0.08)]">
               <LegendDot label={t("Start")} ink />
               <LegendDot label={t("Finish")} />
+              {preview.markers && preview.markers.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="grid h-4 w-4 place-items-center">
+                    <span className="h-2.5 w-2.5 rounded-full border-2 border-ink bg-cream" />
+                  </span>
+                  <span className="text-[11px] font-semibold text-ink">
+                    {t("Stops")}
+                  </span>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -129,12 +148,14 @@ function RoutePreviewSvg({
   viewBox,
   width,
   height,
+  markers = [],
   label,
 }: {
   path: string;
   viewBox: string;
   width: number;
   height: number;
+  markers?: { x: number; y: number }[];
   label: string;
 }) {
   const dim = Math.max(width, height);
@@ -143,6 +164,7 @@ function RoutePreviewSvg({
   const accentW = dim * 0.007;
   const markerR = dim * 0.02;
   const markerFont = dim * 0.019;
+  const viaR = dim * 0.0115;
   const ends = previewEndpoints(path);
   return (
     <svg
@@ -177,6 +199,17 @@ function RoutePreviewSvg({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+      {markers.map((m, i) => (
+        <circle
+          key={i}
+          cx={m.x}
+          cy={m.y}
+          r={viaR}
+          fill="#F5EFE6"
+          stroke="#0E0E10"
+          strokeWidth={viaR * 0.34}
+        />
+      ))}
       {ends && (
         <g>
           <circle
