@@ -23,5 +23,10 @@ export const PoiDataSource = new DataSource({
     AddPoiDeactivatedAt1798000000000,
     AddPoiGeographyIndex1799000000000,
   ],
+  // `AddPoiGeographyIndex` builds its index `CONCURRENTLY`, which can't run in a
+  // transaction; every POI migration is a single Postgres-atomic multi-statement
+  // query, so running migrations untransacted here loses nothing. Keep in sync
+  // with `poi-database.module.ts`.
+  migrationsTransactionMode: 'none',
   synchronize: false,
 });

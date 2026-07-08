@@ -102,6 +102,11 @@ export function buildPoiTypeOrmOptions(
       AddPoiGeographyIndex1799000000000,
     ],
     migrationsRun: !isOpenApiExport,
+    // `AddPoiGeographyIndex` builds its GiST index `CONCURRENTLY` (so a
+    // large-table boot doesn't hold a write lock), which can't run inside a
+    // transaction. Every POI migration is a single Postgres-atomic
+    // multi-statement query, so dropping TypeORM's own wrapping loses nothing.
+    migrationsTransactionMode: 'none',
     synchronize: false,
     // We own retries in createPoiDataSource; don't let TypeORM's own
     // retry loop throw at boot.
