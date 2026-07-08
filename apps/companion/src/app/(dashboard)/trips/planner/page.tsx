@@ -519,15 +519,25 @@ export default function TripPlannerPage() {
     // renumbers days, so this also resets the pick back to day 1.
     setSelectedPlanIndex(dayPlans && dayPlans.length > 0 ? 0 : null);
   }, [dayPlans]);
+  // An interactive split on a single, not-yet-materialized day: days = [whole
+  // route], dayPlans = the slices. Until `materializeSplit()` runs on save,
+  // `displayedTrip.days` still holds only the original whole-route day, so the
+  // per-day surfaces (cards, map focus, conditions/stops) can't read a real
+  // per-day TripDay — they fall back to the DayPlan (segmentIds/towns) instead.
+  const splitOnSingleDay =
+    (displayedTrip?.days.length ?? 0) === 1 && (dayPlans?.length ?? 0) > 1;
   // Left day column reuses the preview's rich "Day-by-day" cards. The card
   // count follows the split (`dayPlans`); each card's content comes from the
   // index-aligned saved day (`displayedTrip.days[i]`, the rich TripDay) when
-  // it exists, otherwise a light projection of the DayPlan for a not-yet-
-  // materialized split (which only carries distance/time/quality + towns).
+  // it exists, otherwise a light projection of the DayPlan. During an
+  // unmaterialized split `days[0]` is still the whole route, so every card
+  // (including day 1) projects from its DayPlan instead of that shared day.
   const dayCards = useMemo<TripDay[]>(() => {
     if (!dayPlans) return [];
     return dayPlans.map((plan, index) => {
-      const savedDay = displayedTrip?.days[index];
+      const savedDay = splitOnSingleDay
+        ? undefined
+        : displayedTrip?.days[index];
       if (savedDay) return savedDay;
       return {
         dayNumber: plan.dayNumber,
@@ -542,7 +552,7 @@ export default function TripPlannerPage() {
         avgQuality: plan.quality.score ?? 0,
       };
     });
-  }, [dayPlans, displayedTrip]);
+  }, [dayPlans, displayedTrip, splitOnSingleDay]);
   // The day-view selection (card highlight + map day focus) is explicit and
   // nullable: day 1 is preselected on load, and clicking the active day
   // deselects it (all days shown again).
@@ -573,11 +583,6 @@ export default function TripPlannerPage() {
   // ── Tab scoping: INSPECT / CONDITIONS / STOPS follow the day-view pick.
   // No day selected → whole route; a day selected → that day only.
   const daySelected = selectedCardDayNumber != null;
-  // An interactive split on a single, not-yet-materialized day: days = [whole
-  // route], dayPlans = the slices. Scoping there goes through the DayPlan
-  // (segmentIds), not a per-day TripDay (which doesn't exist yet).
-  const splitOnSingleDay =
-    (displayedTrip?.days.length ?? 0) === 1 && (dayPlans?.length ?? 0) > 1;
   // The selected, materialized day's rich TripDay (null for the whole-route
   // view or an unmaterialized split slice).
   const selectedTripDay =
@@ -2703,6 +2708,11 @@ export default function TripPlannerPage() {
             empty-state) before a split. */}
         {daysVisible && dayPlans ? (
           <aside
+            // Collapsed to a 0px track but kept mounted for the slide
+            // animation — `inert` pulls its controls out of the tab order and
+            // the a11y tree so keyboard users can't land on hidden buttons.
+            inert={!showDaysColumn}
+            aria-hidden={!showDaysColumn}
             className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${
               showDaysColumn ? "border-r border-line" : ""
             }`}
@@ -2719,7 +2729,13 @@ export default function TripPlannerPage() {
                   Disabled (with a hint) when no day is selected — there's
                   nothing to focus. */}
               {(() => {
-                const focusDisabled = selectedCardDayNumber == null;
+                // Focus needs a materialized day's geometry. Disabled with no
+                // pick, and also while an unmaterialized split slice is picked
+                // (its per-day route only exists after saving the split).
+                const focusDisabled = selectedTripDay == null;
+                const focusHint = daySelected
+                  ? t("Save the split to focus this day")
+                  : t("Select a day to focus");
                 const control = (
                   <label className="flex shrink-0 items-center gap-2">
                     <span className="whitespace-nowrap text-[11px] font-semibold text-fg-dim">
@@ -2734,10 +2750,7 @@ export default function TripPlannerPage() {
                   </label>
                 );
                 return focusDisabled ? (
-                  <Tooltip
-                    content={t("Select a day to focus")}
-                    placement="below"
-                  >
+                  <Tooltip content={focusHint} placement="below">
                     {control}
                   </Tooltip>
                 ) : (
@@ -2794,12 +2807,10 @@ export default function TripPlannerPage() {
               onRerouteRequested={armFitAfterRoute}
               closuresData={closuresData}
               passesData={passesData}
-              {...(selectedCardDayNumber != null
-                ? { selectedDayNumber: selectedCardDayNumber }
+              {...(selectedTripDay != null
+                ? { selectedDayNumber: selectedTripDay.dayNumber }
                 : {})}
-              focusSelectedDay={
-                focusSelectedDay && selectedCardDayNumber != null
-              }
+              focusSelectedDay={focusSelectedDay && selectedTripDay != null}
               onAddWaypoint={(location) =>
                 appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
               }

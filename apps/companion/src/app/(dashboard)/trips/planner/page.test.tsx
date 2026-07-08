@@ -2809,10 +2809,19 @@ describe("TripPlannerPage", () => {
     expect(
       screen.getByLabelText("Highlight day 2 on the map"),
     ).toBeInTheDocument();
-    // Day 1 is index-aligned with a saved rich day, so its overnight shows…
-    expect(screen.getByText(/Overnight/)).toBeInTheDocument();
-    // …day 2 has no saved day yet and falls back to the split's town label.
-    expect(screen.getByText(/Brno → Finish/)).toBeInTheDocument();
+    // Unmaterialized split (activeTrip still has one whole-route day): every
+    // card projects from its own DayPlan, so day 1 shows its slice's towns
+    // rather than the shared whole-route day's data.
+    expect(
+      within(screen.getByLabelText("Highlight day 1 on the map")).getByText(
+        /Start → Brno/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Highlight day 2 on the map")).getByText(
+        /Brno → Finish/,
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Route changed/)).not.toBeInTheDocument();
     // Split button reads Re-split while split.
     expect(

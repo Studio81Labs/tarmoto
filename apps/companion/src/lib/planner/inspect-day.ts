@@ -1,3 +1,4 @@
+import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import type { TripDay } from "@/lib/types";
 
 /**
@@ -6,6 +7,12 @@ import type { TripDay } from "@/lib/types";
  * days, quality is distance-weighted, and the per-segment quality + surface
  * inputs are concatenated so the quality strip, surface mix, and flagged
  * sections span the entire route.
+ *
+ * Quality segments are the *derived* per-day segments, so each keeps its real
+ * `d{dayNumber}-s{n}` id (never a synthetic `d0-*`). That's what lets a
+ * strip/flagged click resolve back through `findPlannerQualitySegment`, which
+ * scans the real trip days — a run coalesced across a day boundary still
+ * resolves against the day its id starts on.
  *
  * A single-day (or one-element) trip is returned as-is — there's nothing to
  * aggregate. Returns null for an empty trip.
@@ -34,7 +41,8 @@ export function aggregateInspectDay(days: TripDay[]): TripDay | null {
     }
   }
 
-  const qualitySegments = days.flatMap((day) => day.qualitySegments ?? []);
+  // Derived (not raw) so geometry-only days still emit real day-scoped ids.
+  const qualitySegments = days.flatMap((day) => deriveDayQualitySegments(day));
   const coordinates = days.flatMap(
     (day) => day.routeGeometry?.coordinates ?? [],
   );
