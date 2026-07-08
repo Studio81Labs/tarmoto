@@ -39,8 +39,11 @@ function measuredPreview(overrides?: Partial<RoadPreview>): RoadPreview {
     band: "rough",
     surface: "gravel",
     passes: 14,
-    microStrip: Array.from({ length: 10 }, () => "rough" as const),
-    imageCapturedAt: "2024-09",
+    // Real per-road-segment scores across a "rough" run (sub-band variation).
+    microStrip: [2.1, 1.9, 2.4, 2.0, 1.8, 2.2],
+    imageUrl: "https://images.mapillary.example/thumb.jpg",
+    imageCapturedAt: "2024-09-15",
+    imageAttribution: "© rider · Mapillary (CC BY-SA)",
     ...overrides,
   };
 }
@@ -61,9 +64,36 @@ describe("RoadPreviewPopover", () => {
     expect(screen.getByText("QUALITY ACROSS SECTION")).toBeInTheDocument();
     expect(screen.getByText(/captured/i)).toBeInTheDocument();
     expect(screen.getByText("Sep 2024", { exact: false })).toBeInTheDocument();
+    // Real Mapillary image + its required CC-BY-SA attribution.
+    expect(
+      screen.getByRole("img", { name: /street-level preview/i }),
+    ).toHaveAttribute("src", "https://images.mapillary.example/thumb.jpg");
+    expect(screen.getByText(/Mapillary \(CC BY-SA\)/)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /Google Street View/ }),
     ).toBeInTheDocument();
+  });
+
+  it("shows a graceful empty state when there is no imagery coverage", async () => {
+    // No image keys at all — the Mapillary lookup found no coverage.
+    getRoadPreviewMock.mockResolvedValue({
+      segmentId: "d1-s2",
+      hasData: true,
+      score: 2.1,
+      band: "rough",
+      surface: "gravel",
+      passes: 14,
+      microStrip: [2.1, 1.9, 2.4, 2.0, 1.8, 2.2],
+    });
+    render(<RoadPreviewPopover segment={segment()} onClose={vi.fn()} />);
+
+    // Score + strip still render; the imagery slot reads as "no imagery",
+    // not a fake capture date.
+    expect(await screen.findByText("2.1")).toBeInTheDocument();
+    expect(screen.getByText("QUALITY ACROSS SECTION")).toBeInTheDocument();
+    expect(screen.getByText(/NO STREET IMAGERY/)).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByText(/captured/i)).not.toBeInTheDocument();
   });
 
   it("dims the score and shows the low-confidence note at ≤3 passes", async () => {
@@ -84,7 +114,9 @@ describe("RoadPreviewPopover", () => {
       hasData: false,
       surface: "unknown",
       passes: 0,
-      imageCapturedAt: "2023-08",
+      imageUrl: "https://images.mapillary.example/nodata.jpg",
+      imageCapturedAt: "2023-08-20",
+      imageAttribution: "© rider · Mapillary (CC BY-SA)",
       osmSurfaceTag: "asphalt",
     });
     render(

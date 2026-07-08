@@ -25,6 +25,12 @@ export interface RouteSegment {
   /** Rider passes backing the score — drives the confidence treatment. */
   passes: number;
   lengthKm: number;
+  /**
+   * Per-constituent quality scores when this is a coalesced run (set by
+   * `findRunSegment`) — feeds the Road Preview "quality across section" strip.
+   * Absent for a single fine segment (nothing to vary).
+   */
+  microStrip?: number[];
   /** Trip day the segment belongs to (1-based). */
   dayNumber: number;
   /**
@@ -57,12 +63,18 @@ export interface RoadPreview {
   band?: QualityBand;
   surface?: SurfaceType;
   passes?: number;
-  /** Per-sub-segment mini graph rendered in the preview card. */
-  microStrip?: QualityBand[];
+  /**
+   * Per-road-segment quality scores (0–5) across a coalesced run — the real
+   * "quality across section" strip. Since a run is one band, the strip shows
+   * sub-band variation via score, not band. Absent for a single-segment run.
+   */
+  microStrip?: number[];
   /** Street-level (Mapillary) image; absent until a key is wired. */
   imageUrl?: string;
-  /** ISO month the street-level image was captured, e.g. "2024-09". */
+  /** ISO date the street-level image was captured, e.g. "2024-09-15". */
   imageCapturedAt?: string;
+  /** Required credit line for the imagery (Mapillary is CC-BY-SA). */
+  imageAttribution?: string;
   /** Raw OSM surface tag shown as unverified fallback, e.g. "asphalt". */
   osmSurfaceTag?: string;
 }

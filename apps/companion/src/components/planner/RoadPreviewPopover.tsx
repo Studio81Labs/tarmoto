@@ -8,12 +8,9 @@ import {
   isLowConfidence,
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
+  scoreToBand,
 } from "@/lib/planner/quality-bands";
-import type {
-  QualityBand,
-  RoadPreview,
-  RouteSegment,
-} from "@/lib/planner/types";
+import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
 
 /**
@@ -32,12 +29,11 @@ interface RoadPreviewPopoverProps {
   onReroute?: (segment: RouteSegment) => void;
 }
 
-const MICRO_STRIP_HEIGHT: Record<QualityBand, string> = {
-  good: "88%",
-  fair: "58%",
-  rough: "32%",
-  no_data: "18%",
-};
+/** Bar height for one road-segment's score (1–5 → 32%–100%, kept visible). */
+function scoreToStripHeight(score: number): string {
+  const clamped = Math.max(1, Math.min(5, score));
+  return `${Math.round(32 + ((clamped - 1) / 4) * 68)}%`;
+}
 
 function formatCapturedMonth(isoMonth: string | undefined): string | null {
   if (!isoMonth) return null;
@@ -88,9 +84,9 @@ function StreetViewLink({ segment }: { segment: RouteSegment }) {
 }
 
 /**
- * Street-level imagery placeholder: a stylised road perspective standing in
- * for the Mapillary photo until an API key is wired (out of scope). Renders
- * `imageUrl` instead once previews carry one.
+ * Street-level imagery slot. Renders the real Mapillary photo (`imageUrl`) with
+ * its required CC-BY-SA credit when there's coverage (#863); otherwise a
+ * stylised road perspective stands in and the badge reads "no street imagery".
  */
 function StreetLevelThumb({
   preview,
@@ -137,9 +133,17 @@ function StreetLevelThumb({
       <div className="absolute left-2.5 top-2 flex items-center gap-1.5 rounded-[5px] bg-ink/60 px-2 py-1">
         <Camera size={10} className="text-cream" />
         <Mono className="text-[8px] tracking-[0.4px] text-cream">
-          {t("MAPILLARY PREVIEW ")}
+          {preview.imageUrl ? t("MAPILLARY ") : t("NO STREET IMAGERY ")}
         </Mono>
       </div>
+      {/* CC-BY-SA credit, required for Mapillary imagery (ADR-0009). */}
+      {preview.imageUrl && preview.imageAttribution ? (
+        <div className="absolute bottom-1.5 right-2 rounded-[4px] bg-ink/60 px-1.5 py-0.5">
+          <Mono className="text-[7.5px] tracking-[0.3px] text-cream/90">
+            {preview.imageAttribution}
+          </Mono>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -272,13 +276,14 @@ export function RoadPreviewPopover({
                     className="flex h-12 items-end gap-1 px-0.5"
                     style={{ opacity: lowConf ? 0.55 : 1 }}
                   >
-                    {preview.microStrip.map((band, index) => (
+                    {preview.microStrip.map((score, index) => (
                       <div
                         key={index}
                         className="flex-1 rounded-sm"
+                        title={score.toFixed(1)}
                         style={{
-                          height: MICRO_STRIP_HEIGHT[band],
-                          background: QUALITY_BAND_COLORS[band],
+                          height: scoreToStripHeight(score),
+                          background: QUALITY_BAND_COLORS[scoreToBand(score)],
                         }}
                       />
                     ))}

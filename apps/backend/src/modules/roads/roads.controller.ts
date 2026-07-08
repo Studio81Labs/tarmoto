@@ -15,7 +15,13 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { MapillaryService } from '../mapillary/index.js';
+import {
+  SegmentImageryDto,
+  SegmentImageryQueryDto,
+} from '../mapillary/dto/segment-imagery.dto.js';
 import { RoadsService } from './roads.service.js';
 import {
   RouteQualityRequestDto,
@@ -37,7 +43,10 @@ import { RoadTrendDto } from './dto/road-trend.dto.js';
 @ApiTags('roads')
 @Controller('roads')
 export class RoadsController {
-  constructor(private readonly roadsService: RoadsService) {}
+  constructor(
+    private readonly roadsService: RoadsService,
+    private readonly mapillaryService: MapillaryService,
+  ) {}
 
   @Get('nearby')
   @ApiOperation({ summary: 'Get road segments near a location' })
@@ -118,6 +127,31 @@ export class RoadsController {
     @Body() dto: RouteQualityRequestDto,
   ): Promise<RouteQualityResponseDto> {
     return this.roadsService.getRouteQuality(dto);
+  }
+
+  // Declared BEFORE `:segmentId` so the static path wins — otherwise
+  // `/roads/segment-imagery` would match `:segmentId` and 400 on the UUID pipe.
+  @Get('segment-imagery')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
+  @ApiOperation({
+    summary: 'Street-level image near a coordinate (Road Preview)',
+    description:
+      'Proxies Mapillary (ADR-0009) for the nearest street-level image to a ' +
+      'point, with its capture date + required CC-BY-SA attribution. Fields ' +
+      'are null when there is no coverage or no provider token is configured. ' +
+      'The token stays server-side.',
+  })
+  @ApiResponse({ status: 200, type: SegmentImageryDto })
+  async getSegmentImagery(
+    @Query() query: SegmentImageryQueryDto,
+  ): Promise<SegmentImageryDto> {
+    return this.mapillaryService.segmentImagery(
+      query.lat,
+      query.lng,
+      query.bearing,
+    );
   }
 
   @Get(':segmentId')

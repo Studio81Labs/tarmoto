@@ -34,7 +34,6 @@ import {
   type DraftZone,
 } from "./draft-vias";
 import { nearestPolygonContact, projectOntoRoute } from "./route-projection";
-import { mockRoadPreview } from "./mocks";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
@@ -749,6 +748,65 @@ function coordinateLabel(lat: number, lng: number): string {
   return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
 }
 
+/**
+ * Local heading (deg, 0 = N) from a segment's endpoints, so the imagery lookup
+ * can prefer a frame facing the travel direction. Undefined for a degenerate
+ * (single-point / zero-length) span.
+ */
+function segmentBearing(segment: RouteSegment): number | undefined {
+  const coords = segment.geometry.coordinates;
+  const a = coords[0];
+  const b = coords[coords.length - 1];
+  if (!a || !b) return undefined;
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  if (
+    typeof lng1 !== "number" ||
+    typeof lat1 !== "number" ||
+    typeof lng2 !== "number" ||
+    typeof lat2 !== "number"
+  ) {
+    return undefined;
+  }
+  if (lng1 === lng2 && lat1 === lat2) return undefined;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lng2 - lng1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Street-level imagery near a segment's midpoint — Mapillary via the backend
+ * proxy (#863). Best-effort: resolves to null on any error / no coverage so the
+ * Road Preview renders without a thumbnail rather than failing.
+ */
+async function fetchSegmentImagery(segment: RouteSegment): Promise<{
+  imageUrl: string;
+  capturedAt: string | null;
+  attribution: string | null;
+} | null> {
+  const coords = segment.geometry.coordinates;
+  const mid = coords[Math.floor(coords.length / 2)];
+  const [lng, lat] = mid ?? [];
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  const bearing = segmentBearing(segment);
+  const { data, error } = await api.GET("/api/v1/roads/segment-imagery", {
+    params: {
+      query: { lat, lng, ...(bearing !== undefined ? { bearing } : {}) },
+    },
+  });
+  if (error || !data?.imageUrl) return null;
+  return {
+    imageUrl: data.imageUrl,
+    capturedAt: data.capturedAt,
+    attribution: data.attribution,
+  };
+}
+
 export function createPlannerApi(): PlannerApi {
   return {
     generateRoute(
@@ -886,8 +944,46 @@ export function createPlannerApi(): PlannerApi {
       };
     },
 
-    getRoadPreview(segment: RouteSegment): Promise<RoadPreview> {
-      return Promise.resolve(mockRoadPreview(segment));
+    // Road Preview card. Quality/surface/strip come from the real
+    // `/roads/route-quality` overlay already on the segment (#862); the
+    // street-level imagery + capture date are fetched from Mapillary
+    // (`getSegmentImagery`, best-effort) and merged in below (#863).
+    async getRoadPreview(segment: RouteSegment): Promise<RoadPreview> {
+      const hasData = segment.band !== "no_data" && segment.score != null;
+      const imagery = await fetchSegmentImagery(segment).catch(() => null);
+      const image = imagery
+        ? {
+            imageUrl: imagery.imageUrl,
+            ...(imagery.capturedAt
+              ? { imageCapturedAt: imagery.capturedAt }
+              : {}),
+            ...(imagery.attribution
+              ? { imageAttribution: imagery.attribution }
+              : {}),
+          }
+        : {};
+      if (!hasData) {
+        return {
+          segmentId: segment.id,
+          hasData: false,
+          surface: segment.surface,
+          passes: segment.passes,
+          // Real OSM surface tag (from the route-quality overlay), shown as the
+          // unverified fallback where there are no measured passes.
+          osmSurfaceTag: segment.surface,
+          ...image,
+        };
+      }
+      return {
+        segmentId: segment.id,
+        hasData: true,
+        ...(segment.score != null ? { score: segment.score } : {}),
+        band: segment.band,
+        surface: segment.surface,
+        passes: segment.passes,
+        ...(segment.microStrip ? { microStrip: segment.microStrip } : {}),
+        ...image,
+      };
     },
 
     getPois(

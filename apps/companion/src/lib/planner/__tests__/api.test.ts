@@ -1376,3 +1376,73 @@ describe("plannerApi.reverseGeocode (#864)", () => {
     );
   });
 });
+
+describe("plannerApi.getRoadPreview (#863)", () => {
+  beforeEach(() => {
+    apiGetMock.mockReset();
+  });
+
+  it("builds the card from the segment and merges real Mapillary imagery", async () => {
+    apiGetMock.mockResolvedValue({
+      data: {
+        imageUrl: "https://images.mapillary.example/x.jpg",
+        capturedAt: "2024-09-15",
+        attribution: "© rider · Mapillary (CC BY-SA)",
+      },
+      error: undefined,
+    } as never);
+
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({ microStrip: [4.1, 4.3, 4.0] }),
+    );
+
+    // Quality/surface/strip are the real overlay values; imagery is merged in.
+    expect(preview).toMatchObject({
+      hasData: true,
+      score: 4.2,
+      band: "good",
+      surface: "asphalt",
+      passes: 20,
+      microStrip: [4.1, 4.3, 4.0],
+      imageUrl: "https://images.mapillary.example/x.jpg",
+      imageCapturedAt: "2024-09-15",
+      imageAttribution: "© rider · Mapillary (CC BY-SA)",
+    });
+    // Looked up at the segment midpoint + travel heading.
+    expect(apiGetMock).toHaveBeenCalledWith("/api/v1/roads/segment-imagery", {
+      params: { query: { lat: 49.1, lng: 15, bearing: 0 } },
+    });
+  });
+
+  it("still renders the quality card when imagery is unavailable", async () => {
+    apiGetMock.mockResolvedValue({
+      data: undefined,
+      error: { message: "no coverage" },
+    } as never);
+
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({ microStrip: [4.1, 4.3] }),
+    );
+
+    expect(preview.hasData).toBe(true);
+    expect(preview.score).toBe(4.2);
+    expect(preview.microStrip).toEqual([4.1, 4.3]);
+    expect(preview.imageUrl).toBeUndefined();
+    expect(preview.imageCapturedAt).toBeUndefined();
+  });
+
+  it("returns the no-data state with the real OSM surface tag", async () => {
+    apiGetMock.mockResolvedValue({
+      data: undefined,
+      error: { message: "x" },
+    } as never);
+
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({ band: "no_data", score: null, surface: "gravel" }),
+    );
+
+    expect(preview.hasData).toBe(false);
+    expect(preview.osmSurfaceTag).toBe("gravel");
+    expect(preview.microStrip).toBeUndefined();
+  });
+});

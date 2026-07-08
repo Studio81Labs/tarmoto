@@ -3,12 +3,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { RoadsController } from './roads.controller.js';
 import { RoadsService } from './roads.service.js';
+import { MapillaryService } from '../mapillary/index.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 
 describe('RoadsController', () => {
   let controller: RoadsController;
   let service: jest.Mocked<RoadsService>;
+  let mapillary: jest.Mocked<MapillaryService>;
 
   const mockSegment = {
     id: 'seg-1',
@@ -67,6 +69,16 @@ describe('RoadsController', () => {
       controllers: [RoadsController],
       providers: [
         { provide: RoadsService, useValue: mockService },
+        {
+          provide: MapillaryService,
+          useValue: {
+            segmentImagery: jest.fn().mockResolvedValue({
+              imageUrl: null,
+              capturedAt: null,
+              attribution: null,
+            }),
+          },
+        },
         // `route-quality` is behind AuthGuard; provide its deps so the module
         // compiles (the unit tests call methods directly, past the guard).
         ...authGuardTestProviders,
@@ -75,6 +87,7 @@ describe('RoadsController', () => {
 
     controller = module.get<RoadsController>(RoadsController);
     service = module.get(RoadsService);
+    mapillary = module.get(MapillaryService);
   });
 
   describe('POST /roads/route-quality', () => {
@@ -158,6 +171,23 @@ describe('RoadsController', () => {
       await expect(controller.findZoneById('missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('GET /roads/segment-imagery', () => {
+    it('delegates lat/lng/bearing to the Mapillary service', async () => {
+      const result = await controller.getSegmentImagery({
+        lat: 46.5,
+        lng: 10.4,
+        bearing: 90,
+      });
+
+      expect(mapillary.segmentImagery).toHaveBeenCalledWith(46.5, 10.4, 90);
+      expect(result).toEqual({
+        imageUrl: null,
+        capturedAt: null,
+        attribution: null,
+      });
     });
   });
 });

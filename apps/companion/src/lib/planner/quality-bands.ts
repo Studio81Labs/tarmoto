@@ -127,6 +127,7 @@ export function findRunSegment(
   // taking the first span's — otherwise a run whose first ~100 m has 1 pass but
   // the rest has many would open a whole-run preview labelled low-confidence.
   const coordinates: LngLat[] = [];
+  const subScores: number[] = [];
   let scoreWeighted = 0;
   let scoredLength = 0;
   let passesWeighted = 0;
@@ -142,6 +143,7 @@ export function findRunSegment(
     if (segment.score != null) {
       scoreWeighted += segment.score * length;
       scoredLength += length;
+      subScores.push(segment.score);
     }
     surfaceLength.set(
       segment.surface,
@@ -172,5 +174,8 @@ export function findRunSegment(
     passes:
       totalLength > 0 ? Math.round(passesWeighted / totalLength) : first.passes,
     lengthKm: totalLength,
+    // Sub-band variation for the preview strip — only meaningful with ≥2
+    // measured constituents; a single one carries no "across section" story.
+    ...(subScores.length >= 2 ? { microStrip: subScores } : {}),
   };
 }
