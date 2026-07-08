@@ -304,7 +304,7 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
   });
 
-  it("anchors the created suggestion at the trip's first waypoint so the map overlay can render it", async () => {
+  it("creates a text suggestion with no coordinates (no auto-anchor to the start)", async () => {
     // Without a lat/lng, the buildSuggestionCollection builder drops
     // the suggestion from the map overlay. Anchor at the start of the
     // first day so members see the proposal as a marker by default.
@@ -358,11 +358,13 @@ describe("TripCollaborateModal — collab tabs", () => {
     fireEvent.click(screen.getByRole("button", { name: /submit suggestion/i }));
 
     await waitFor(() => {
-      expect(hoisted.createSuggestion).toHaveBeenCalledWith(
-        "server-trip-1",
-        expect.objectContaining({ lat: 42.7, lng: 0.7 }),
-      );
+      expect(hoisted.createSuggestion).toHaveBeenCalled();
     });
+    // No auto-anchor: a text suggestion carries no lat/lng (it lives in the
+    // list, not as a violet dot parked at the start waypoint).
+    const body = hoisted.createSuggestion.mock.calls[0]?.[1];
+    expect(body).not.toHaveProperty("lat");
+    expect(body).not.toHaveProperty("lng");
   });
 
   it("hides the propose form when trip is null so cold ?tripId= opens can't submit coordless suggestions", async () => {

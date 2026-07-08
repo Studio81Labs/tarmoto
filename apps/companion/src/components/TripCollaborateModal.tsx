@@ -1023,14 +1023,10 @@ function SuggestionsTab({
       setError("Give your suggestion a short title.");
       return;
     }
-    // Anchor the suggestion on the map at the first waypoint of the
-    // active trip so it's visible in the overlay. Without lat/lng the
-    // `buildSuggestionCollection` builder would drop the row from the
-    // map layer — a coordless suggestion still appears in the modal
-    // list but is invisible on the map for everyone. Callers without
-    // a loaded trip land here with `trip === null` (form is hidden),
-    // so this branch only runs with a real route to anchor to.
-    const anchor = pickSuggestionAnchor(trip);
+    // A text suggestion carries no map location — it lives in the modal list
+    // only. We deliberately DON'T auto-anchor it to the start waypoint (which
+    // dropped a confusing violet dot at the start of every trip); a suggestion
+    // only gets a map marker once it's actually placed on the map.
     setCreating(true);
     setError(null);
     try {
@@ -1038,7 +1034,6 @@ function SuggestionsTab({
       const { data } = await tripCollabApi.createSuggestion(serverTripId, {
         title: title.trim(),
         ...(trimmedDescription ? { description: trimmedDescription } : {}),
-        ...(anchor ? { lat: anchor.lat, lng: anchor.lng } : {}),
       });
       // Dedupe by id — if the broadcast landed first, replace in place.
       setSuggestions((prev) => {
@@ -1693,25 +1688,6 @@ function ErrorAlert({
       {children}
     </p>
   );
-}
-/**
- * Anchor a new suggestion to the trip's first waypoint so the map
- * overlay has somewhere to render the marker. Returns null for empty
- * trips; callers then fall back to a coordless suggestion (visible in
- * the modal list only).
- */
-function pickSuggestionAnchor(trip: Trip | null): {
-  lat: number;
-  lng: number;
-} | null {
-  if (!trip) return null;
-  for (const day of trip.days) {
-    const first = day.waypoints[0];
-    if (first) {
-      return { lat: first.location.lat, lng: first.location.lng };
-    }
-  }
-  return null;
 }
 /**
  * Action clause WITHOUT the actor — the timeline row renders the actor
