@@ -1529,63 +1529,6 @@ describe("useTripStore routeDirty flag", () => {
     expect(useTripStore.getState().routeDirty).toBe(false);
   });
 
-  it("renameWaypoint sets namesDirty but not routeDirty (metadata-only edit)", () => {
-    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
-    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
-    // Treat as a freshly-loaded (clean) trip.
-    useTripStore.setState({
-      routeDirty: false,
-      namesDirty: false,
-      stalePreviewDays: [],
-    });
-
-    const start = useTripStore
-      .getState()
-      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
-    useTripStore.getState().renameWaypoint(start.id, "Praha");
-
-    // A late reverse-geocoded pin name re-arms Save via namesDirty, without
-    // touching route geometry (no routeDirty, no stale previews / re-route).
-    expect(useTripStore.getState().namesDirty).toBe(true);
-    expect(useTripStore.getState().routeDirty).toBe(false);
-    expect(useTripStore.getState().stalePreviewDays).toEqual([]);
-  });
-
-  it("setActiveTrip clears namesDirty (a saved/loaded trip is clean)", () => {
-    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
-    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
-    const start = useTripStore
-      .getState()
-      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
-    useTripStore.getState().renameWaypoint(start.id, "Praha");
-    expect(useTripStore.getState().namesDirty).toBe(true);
-
-    useTripStore.getState().setActiveTrip(useTripStore.getState().activeTrip!);
-    expect(useTripStore.getState().namesDirty).toBe(false);
-  });
-
-  it("undo/redo restore namesDirty across a later route edit", () => {
-    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
-    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
-    const start = useTripStore
-      .getState()
-      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
-    useTripStore.setState({ routeDirty: false, namesDirty: false });
-
-    // A late pin-name lands, then the rider makes a route edit.
-    useTripStore.getState().renameWaypoint(start.id, "Praha");
-    useTripStore.getState().placeWaypoint({ lat: 9, lng: 9 }, "add-via");
-    expect(useTripStore.getState().namesDirty).toBe(true);
-    expect(useTripStore.getState().routeDirty).toBe(true);
-
-    // Undo the route edit — the rename itself isn't undoable, so its unsaved
-    // name change (namesDirty) must survive so Save stays armed.
-    useTripStore.getState().undo();
-    expect(useTripStore.getState().namesDirty).toBe(true);
-    useTripStore.getState().redo();
-    expect(useTripStore.getState().namesDirty).toBe(true);
-  });
-
   it("insertWaypointBeforeEnd marks the draft dirty so POI stops can be saved", () => {
     useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");

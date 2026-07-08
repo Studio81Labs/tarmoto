@@ -281,23 +281,12 @@ type TripStoreSnapshot = {
   canUndo: boolean;
   canRedo: boolean;
   routeDirty: boolean;
-  namesDirty: boolean;
   stalePreviewDays: number[];
   selectedDayIndex: number;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
-  undoStack: Array<{
-    trip: Trip | null;
-    dirty: boolean;
-    names: boolean;
-    stale: number[];
-  }>;
-  redoStack: Array<{
-    trip: Trip | null;
-    dirty: boolean;
-    names: boolean;
-    stale: number[];
-  }>;
+  undoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
+  redoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
@@ -492,7 +481,6 @@ describe("TripPlannerPage", () => {
       canUndo: false,
       canRedo: false,
       routeDirty: false,
-      namesDirty: false,
       stalePreviewDays: [],
       selectedDayIndex: 0,
       draftPlannerParameters: null,
