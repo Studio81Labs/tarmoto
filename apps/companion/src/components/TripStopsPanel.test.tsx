@@ -2,18 +2,30 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TripStopsPanel } from "./TripStopsPanel";
 import { plannerApi } from "@/lib/planner/api";
 import { poiApi, type StoredCorridorPoiSuggestion } from "@/lib/api";
+import { fetchFunZonesInCorridor } from "@/lib/discover";
 import { useTripStore } from "@/stores/trip";
 import type { Trip } from "@/lib/types";
 
-// The OSM corridor stops now come from the store (`/poi/in-corridor`, #859).
-// mountain_pass / twisty_highlight still resolve from their mock source, so
-// those tests are unaffected. Return the Vysočina fixtures by requested kind.
+// The OSM corridor stops come from the store (`/poi/in-corridor`, #859); these
+// tests drive that path via `getInCorridor`. The `mountain_pass` /
+// `twisty_highlight` corridor now hits the passes + fun-zones sources (#865) —
+// stub them to empty so they don't interfere here.
 vi.mock("@/lib/api", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/api")>();
   return {
     ...actual,
     poiApi: { ...actual.poiApi, getInCorridor: vi.fn() },
+    passesApi: {
+      ...actual.passesApi,
+      checkRoute: vi.fn(async () => ({
+        data: { passes: [], closed_count: 0, unknown_count: 0 },
+      })),
+    },
   };
+});
+vi.mock("@/lib/discover", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/discover")>();
+  return { ...actual, fetchFunZonesInCorridor: vi.fn(async () => []) };
 });
 
 const getInCorridorMock = vi.mocked(poiApi.getInCorridor);
@@ -156,6 +168,8 @@ describe("TripStopsPanel (revision 5 - route-wide corridor)", () => {
         );
       return { data: { buffer_km: 20, count: pois.length, pois } };
     });
+    vi.mocked(fetchFunZonesInCorridor).mockReset();
+    vi.mocked(fetchFunZonesInCorridor).mockResolvedValue([]);
   });
 
   it("is route-gated: without a route it explains instead of an empty list", () => {
@@ -261,6 +275,23 @@ describe("TripStopsPanel (revision 5 - route-wide corridor)", () => {
   });
 
   it("widening the corridor pulls in farther stops", async () => {
+    // The fun-zones corridor returns "Svratka esses" (~11 km off this line); the
+    // client-side projection keeps it only once the corridor is wide enough.
+    vi.mocked(fetchFunZonesInCorridor).mockResolvedValue([
+      {
+        id: "fz-svratka",
+        name: "Svratka esses",
+        composite_score: 88,
+        road_count: 6,
+        total_curve_km: 5,
+        avg_quality: 4,
+        best_season: "summer",
+        boundary: [
+          { lat: 49.61, lng: 16.19 },
+          { lat: 49.63, lng: 16.21 },
+        ],
+      },
+    ]);
     useTripStore.setState({
       activePoiCategories: new Set(["twisty_highlight"]),
     });
@@ -271,9 +302,7 @@ describe("TripStopsPanel (revision 5 - route-wide corridor)", () => {
       await screen.findByText(
         /No twisty highlights stops within 5 km/,
         undefined,
-        {
-          timeout: 2000,
-        },
+        { timeout: 2000 },
       ),
     ).toBeInTheDocument();
 

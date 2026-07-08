@@ -30,6 +30,36 @@ export async function fetchFunZonesInBbox(
   return data ?? [];
 }
 
+export type FunZoneCorridorInput =
+  paths["/api/v1/roads/fun-zones/in-corridor"]["post"]["requestBody"]["content"]["application/json"];
+
+/**
+ * Fun zones within `bufferKm` of a routed polyline (#865, the STOPS-tab
+ * `twisty_highlight` layer) — the corridor counterpart of
+ * {@link fetchFunZonesInBbox}. AuthGuard'd server-side (arbitrary-route
+ * geospatial compute on a post-login surface), so the shared client's
+ * Authorization header must be present.
+ */
+export async function fetchFunZonesInCorridor(
+  route: { lat: number; lng: number }[],
+  bufferKm: number,
+  init?: { signal?: AbortSignal },
+): Promise<FunZoneListItem[]> {
+  const { data, response } = await api.POST(
+    "/api/v1/roads/fun-zones/in-corridor",
+    {
+      body: { route, buffer_km: bufferKm },
+      ...(init?.signal !== undefined ? { signal: init.signal } : {}),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `POST /roads/fun-zones/in-corridor failed (${response.status})`,
+    );
+  }
+  return data ?? [];
+}
+
 /**
  * Fetch a single Fun Zone with its top contributing roads. Returns null on
  * 404 so callers can close the detail panel cleanly without treating the
