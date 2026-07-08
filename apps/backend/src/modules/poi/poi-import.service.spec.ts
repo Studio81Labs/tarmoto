@@ -401,6 +401,29 @@ describe('PoiImportService', () => {
     expect(tombstone).toBeUndefined();
   });
 
+  it('skips tombstoning when an incomplete extract would wipe more than half the region', async () => {
+    // 60 owned rows in the store; the extract carries only node/0, so the stale
+    // set would be 59/60 (>50%) — treat the extract as incomplete, don't wipe.
+    const existingRows = Array.from({ length: 60 }, (_, i) => ({
+      id: `uuid-${i}`,
+      external_id: `node/${i}`,
+      import_region: 'CZ',
+    }));
+    loadInBbox(existingRows);
+    mockExtract(poi({ external_id: 'node/0' })); // only 1 of the 60 present
+
+    const result = await service.importRegion(REGION);
+
+    const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
+      ([sql]) => /UPDATE pois SET deactivated_at = NOW\(\)/.test(sql),
+    );
+    expect(tombstone).toBeUndefined();
+    expect(result.tombstoned).toBe(0);
+    // The rows we DID get are still upserted — only the destructive delete is
+    // withheld.
+    expect(upsert).toHaveBeenCalled();
+  });
+
   it('skips a region with no extract file yet (no parse, no write) for gradual provisioning', async () => {
     existsSyncMock.mockReturnValueOnce(false);
 

@@ -19,6 +19,18 @@ import { withPoiRepo } from './poi-repo.js';
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
 const UPSERT_CHUNK = 500;
 
+/**
+ * Tombstone safety-valve: refuse a run that would soft-deactivate more than this
+ * fraction of a region's own rows. A valid-but-incomplete extract (wrong
+ * tags-filter, wrong country file clipped to the bbox, truncated output) can
+ * carry a few in-bbox rows and slip past the zero-rows check, then tombstone
+ * most of the region — a real week never closes half a country's POIs. Only
+ * applied once the region holds at least `MIN_REGION_FOR_TOMBSTONE_GUARD` rows,
+ * since small regions have noisy churn ratios.
+ */
+const MAX_TOMBSTONE_FRACTION = 0.5;
+const MIN_REGION_FOR_TOMBSTONE_GUARD = 50;
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size)
@@ -320,11 +332,26 @@ export class PoiImportService {
                 row.lat <= r.bbox.maxLat,
             ));
 
-        const tombstoneIds = existing
-          .filter((e) => ownedByRegion(e) && !incomingIds.has(e.external_id))
+        const owned = existing.filter(ownedByRegion);
+        const tombstoneIds = owned
+          .filter((e) => !incomingIds.has(e.external_id))
           .map((e) => e.id);
 
-        if (tombstoneIds.length > 0) {
+        // Near-empty guard: a valid-but-incomplete extract with a few in-bbox
+        // rows slips past the zero-rows check but would still tombstone most of
+        // the region — refuse to deactivate an implausible share in one run.
+        const wouldWipeTooMuch =
+          owned.length >= MIN_REGION_FOR_TOMBSTONE_GUARD &&
+          tombstoneIds.length > owned.length * MAX_TOMBSTONE_FRACTION;
+
+        if (wouldWipeTooMuch) {
+          this.logger.warn(
+            `POI import (${region.code}): extract would tombstone ` +
+              `${tombstoneIds.length}/${owned.length} owned rows ` +
+              `(> ${Math.round(MAX_TOMBSTONE_FRACTION * 100)}%) — skipping ` +
+              `tombstone; the extract looks incomplete`,
+          );
+        } else if (tombstoneIds.length > 0) {
           await tx.query(
             `UPDATE pois SET deactivated_at = NOW()
                WHERE id = ANY($1) AND deactivated_at IS NULL`,

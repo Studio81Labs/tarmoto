@@ -104,7 +104,12 @@ export class JobsProducer {
       { code },
       {
         ...DEFAULT_JOB_OPTIONS,
-        jobId: `${JOB_NAMES.POI_IMPORT_REGION}:${dispatchId}:${code}`,
+        // BullMQ reserves `:` as its Redis-key delimiter and scheduler `job.id`s
+        // contain colons (`repeat:<hash>:<ts>`), so strip them from the jobId.
+        jobId: `${JOB_NAMES.POI_IMPORT_REGION}:${dispatchId}:${code}`.replace(
+          /:/g,
+          '_',
+        ),
         attempts: 3,
         delay: staggerIndex * POI_IMPORT_STAGGER_MS,
       },

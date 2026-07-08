@@ -93,19 +93,24 @@ describe('JobsProducer', () => {
   });
 
   it('enqueues a staggered per-region POI import with a dispatch-scoped jobId (delay = index * stagger, attempts 3)', async () => {
-    await producer.enqueuePoiImportRegion('CZ', 2, 'wk-1');
+    // A real scheduler job.id contains colons (`repeat:<hash>:<ts>`).
+    await producer.enqueuePoiImportRegion('CZ', 2, 'repeat:sched:123');
     expect(poiImport.add).toHaveBeenCalledWith(
       JOB_NAMES.POI_IMPORT_REGION,
       { code: 'CZ' },
       expect.objectContaining({
-        // jobId scoped to the dispatch occurrence (wk-1): a dispatch retry
-        // re-enqueues idempotently, but next week is a fresh occurrence.
-        jobId: `${JOB_NAMES.POI_IMPORT_REGION}:wk-1:CZ`,
+        // jobId scoped to the dispatch occurrence + colon-free (BullMQ reserves
+        // `:`): a dispatch retry re-enqueues idempotently, next week is fresh.
+        jobId: 'import-region_repeat_sched_123_CZ',
         delay: 2 * POI_IMPORT_STAGGER_MS,
         attempts: 3,
         backoff: { type: 'exponential', delay: 30_000 },
       }),
     );
+    const opts = (
+      poiImport.add.mock.calls[0] as [string, unknown, { jobId?: string }]
+    )[2];
+    expect(opts.jobId).not.toContain(':');
   });
 
   it('does not stagger the first region (index 0 → no delay)', async () => {
