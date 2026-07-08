@@ -35,6 +35,13 @@ import {
   MAX_BUFFER_KM,
   MAX_RADIUS_KM as POI_MAX_RADIUS_KM,
 } from './dto/point-of-interest.dto.js';
+import { PoiStoreService } from './poi-store.service.js';
+import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
+
+// `cumulativeLengthKm` / `projectOntoRoute` live in `poi-geo.ts` so the store
+// service can share them without a PoiService ↔ PoiStoreService import cycle.
+// Re-exported so existing importers (the service spec) resolve them from here.
+export { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
 
 /**
  * Number of accommodations the mobile card surfaces. Anything beyond this
@@ -68,7 +75,38 @@ export class PoiService {
   constructor(
     @Inject(POI_PROVIDER)
     private readonly provider: PoiProvider,
+    private readonly store: PoiStoreService,
   ) {}
+
+  /**
+   * Store-first read with a live-provider fallback (#849). Try the offline
+   * `pois` store; if it has no rows for the area (un-imported region) OR the
+   * store DB is unavailable, fall back to the live provider so coverage never
+   * regresses outside the import bbox. A provider failure (or both failing)
+   * collapses to an empty list — the endpoints never 500, and rider
+   * coordinates stay out of the logs (only the error message is logged).
+   */
+  private async readStoreFirst<T>(
+    fromStore: () => Promise<T[]>,
+    fromProvider: () => Promise<T[]>,
+  ): Promise<T[]> {
+    try {
+      const stored = await fromStore();
+      if (stored.length > 0) return stored;
+    } catch (err) {
+      this.logger.warn(
+        `POI store read failed, falling back to provider: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      return await fromProvider();
+    } catch (err) {
+      this.logger.warn(
+        `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    }
+  }
 
   async findAccommodationsNear(
     lat: number,
@@ -79,31 +117,10 @@ export class PoiService {
   ): Promise<AccommodationListDto> {
     const radius = this.clampRadiusKm(radiusKm);
     const resolvedKinds = this.resolveAccommodationKinds(kinds);
-    let raw: AccommodationPoi[];
-    try {
-      raw = await this.provider.findAccommodations(
-        lat,
-        lng,
-        radius,
-        resolvedKinds,
-      );
-    } catch (err) {
-      // Keep trip planning resilient: if the upstream provider is down or
-      // rate-limited, the day card just shows an empty state instead of
-      // blocking the whole screen.
-      // Log only the error cause. Rider coordinates are intentionally
-      // omitted so an Overpass outage can't bulk-leak precise trip
-      // locations into backend logs.
-      this.logger.warn(
-        `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return {
-        accommodations: [],
-        radius_km: radius,
-        kinds: resolvedKinds,
-      };
-    }
-
+    const raw = await this.readStoreFirst(
+      () => this.store.findAccommodationsNear(lat, lng, radius, resolvedKinds),
+      () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
+    );
     return {
       accommodations: this.rank(raw, lat, lng, resolvedKinds, minStars),
       radius_km: radius,
@@ -179,25 +196,11 @@ export class PoiService {
   ): Promise<PoiListDto> {
     const radius = this.clampPoiRadiusKm(radiusKm);
     const resolvedKinds = this.resolveKinds(kinds);
-
-    let raw: PointOfInterest[];
-    try {
-      raw = await this.provider.findPointsOfInterest(
-        lat,
-        lng,
-        radius,
-        resolvedKinds,
-      );
-    } catch (err) {
-      // Same resilience as accommodations: an Overpass outage shows an
-      // empty state instead of breaking the day view. Coordinates are
-      // omitted from the log on purpose — see findAccommodationsNear.
-      this.logger.warn(
-        `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return { pois: [], radius_km: radius, kinds: resolvedKinds };
-    }
-
+    const raw = await this.readStoreFirst(
+      () =>
+        this.store.findPointsOfInterestNear(lat, lng, radius, resolvedKinds),
+      () => this.provider.findPointsOfInterest(lat, lng, radius, resolvedKinds),
+    );
     return {
       pois: this.rankPois(raw, lat, lng, resolvedKinds),
       radius_km: radius,
@@ -312,29 +315,26 @@ export class PoiService {
     if (totalKm === undefined) {
       throw new Error('Cumulative length table is empty for a non-empty route');
     }
-    const samples = sampleRouteAnchors(dto.route, cumKm, bufferKm);
 
-    let raw: PointOfInterest[];
-    try {
-      raw = await this.provider.findPointsOfInterestAroundPoints(
-        samples,
-        bufferKm,
-        resolvedKinds,
-      );
-    } catch (err) {
-      // Same resilience pattern as the point endpoints: a provider
-      // outage collapses to an empty payload rather than breaking the
-      // trip planner's rendering.
-      this.logger.warn(
-        `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return {
-        pois: [],
-        buffer_km: bufferKm,
-        kinds: resolvedKinds,
-        route_length_km: roundKmTenth(totalKm),
-      };
-    }
+    // Store-first: the offline corridor read needs no anchor sampling (a
+    // PostGIS ST_DWithin covers the whole line at once). Only when the store is
+    // empty for this route (un-imported region) or unavailable do we sample
+    // `around:` anchors and hit Overpass. Either way `rankAlongRoute` does the
+    // perpendicular projection, so the corridor math is identical.
+    const raw = await this.readStoreFirst(
+      () =>
+        this.store.findPointsOfInterestInCorridor(
+          dto.route,
+          bufferKm,
+          resolvedKinds,
+        ),
+      () =>
+        this.provider.findPointsOfInterestAroundPoints(
+          sampleRouteAnchors(dto.route, cumKm, bufferKm),
+          bufferKm,
+          resolvedKinds,
+        ),
+    );
 
     return {
       pois: this.rankAlongRoute(raw, dto.route, cumKm, bufferKm, resolvedKinds),
@@ -488,29 +488,6 @@ function clampRadius(
 }
 
 /**
- * Build the per-vertex cumulative-distance table for a polyline. The
- * service uses this twice: once to sample `around:` anchors at regular
- * intervals, and once to look up a POI's distance-along-route from the
- * index of its nearest vertex.
- */
-export function cumulativeLengthKm(
-  route: ReadonlyArray<{ lat: number; lng: number }>,
-): number[] {
-  const cum = new Array<number>(route.length);
-  cum[0] = 0;
-  for (let i = 1; i < route.length; i++) {
-    const prev = route[i - 1];
-    const curr = route[i];
-    const prevCum = cum[i - 1];
-    if (prev === undefined || curr === undefined || prevCum === undefined) {
-      throw new Error('Route index out of range while building length table');
-    }
-    cum[i] = prevCum + haversineKm(prev.lat, prev.lng, curr.lat, curr.lng);
-  }
-  return cum;
-}
-
-/**
  * Pick anchor points along the polyline at exact `bufferKm`-cumulative
  * boundaries such that a `bufferKm`-radius circle at each anchor covers
  * the entire route.
@@ -586,76 +563,6 @@ export function sampleRouteAnchors(
     anchors.push({ lat: last.lat, lng: last.lng });
   }
   return anchors;
-}
-
-/**
- * Mean km per degree of latitude. Longitude km per degree scales by
- * `cos(lat)`; used to build a local flat-earth frame for projection.
- */
-const LAT_KM_PER_DEGREE = 111.132;
-
-/**
- * Project `point` onto the nearest segment of `route` and return both
- * the perpendicular distance (km) and the cumulative distance-along-
- * route at the projected point (km).
- *
- * Uses a local equirectangular frame scaled by `cos(point.lat)` — for
- * the few-km buffers this endpoint operates on this is accurate to well
- * below the precision of the upstream OSM coordinates. The returned
- * distance is computed via haversine against the interpolated lat/lng,
- * not via the flat-earth distance, so the reported off-route km matches
- * the spherical distance riders expect.
- */
-export function projectOntoRoute(
-  point: { lat: number; lng: number },
-  route: ReadonlyArray<{ lat: number; lng: number }>,
-  cumKm: number[],
-): { distance_from_route_km: number; distance_along_route_km: number } {
-  const cosLat = Math.cos((point.lat * Math.PI) / 180);
-  const lngScale = LAT_KM_PER_DEGREE * cosLat;
-  const px = point.lng * lngScale;
-  const py = point.lat * LAT_KM_PER_DEGREE;
-
-  let bestDistanceKm = Infinity;
-  let bestAlongKm = 0;
-
-  for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1];
-    const b = route[i];
-    if (a === undefined || b === undefined) {
-      throw new Error('Route index out of range while projecting point');
-    }
-    const ax = a.lng * lngScale;
-    const ay = a.lat * LAT_KM_PER_DEGREE;
-    const bx = b.lng * lngScale;
-    const by = b.lat * LAT_KM_PER_DEGREE;
-    const dx = bx - ax;
-    const dy = by - ay;
-    const segLenSq = dx * dx + dy * dy;
-    let t = 0;
-    if (segLenSq > 0) {
-      t = ((px - ax) * dx + (py - ay) * dy) / segLenSq;
-      if (t < 0) t = 0;
-      else if (t > 1) t = 1;
-    }
-    const projLat = a.lat + t * (b.lat - a.lat);
-    const projLng = a.lng + t * (b.lng - a.lng);
-    const distKm = haversineKm(point.lat, point.lng, projLat, projLng);
-    if (distKm < bestDistanceKm) {
-      bestDistanceKm = distKm;
-      const cumEnd = cumKm[i];
-      const cumStart = cumKm[i - 1];
-      if (cumEnd === undefined || cumStart === undefined) {
-        throw new Error('Cumulative length table shorter than route');
-      }
-      const segLengthKm = cumEnd - cumStart;
-      bestAlongKm = cumStart + t * segLengthKm;
-    }
-  }
-  return {
-    distance_from_route_km: bestDistanceKm,
-    distance_along_route_km: bestAlongKm,
-  };
 }
 
 function roundKmTenth(km: number): number {
