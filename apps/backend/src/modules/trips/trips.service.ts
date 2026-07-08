@@ -38,6 +38,7 @@ import { ListTripsDto } from './dto/list-trips.dto.js';
 import { SaveRouteDayDto, SaveRouteDto } from './dto/save-route.dto.js';
 import type { RoutePreferenceOption } from '../routing/dto/route.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
+import { UpdateWaypointNamesDto } from './dto/update-waypoint-names.dto.js';
 import {
   TripDayDto,
   TripDetailDto,
@@ -1127,6 +1128,70 @@ export class TripsService {
     await this.activity.recordSafe(tripId, userId, 'trip_updated', {
       fields: ['manual_route'],
     });
+    return detail;
+  }
+
+  /**
+   * Rename waypoints WITHOUT re-routing. Updates only `trip_waypoints.name`
+   * for the listed ids that belong to the trip; geometry, order, and type are
+   * untouched and the router is not run. Lets a loaded trip persist late
+   * reverse-geocoded pin names without `saveManualRoute`'s re-route replacing an
+   * imported / manually-adjusted route (#911).
+   */
+  async updateWaypointNames(
+    userId: string,
+    tripId: string,
+    dto: UpdateWaypointNamesDto,
+  ): Promise<TripDetailDto> {
+    // Same membership gate as saveManualRoute — names are route content, so
+    // editors may change them; viewers are read-only.
+    const member = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!member) throw new NotFoundException('Trip not found');
+    if (member.role === 'viewer') {
+      throw new ForbiddenException(
+        'Editing the route needs editor access — ask the trip owner to upgrade your role',
+      );
+    }
+
+    let changed = false;
+    await this.tripRepo.manager.transaction(async (manager) => {
+      // Scope by trip (trip_waypoints -> trip_days -> trip) so a caller can't
+      // rename another trip's rows by guessing ids.
+      const days = await manager.find(TripDay, {
+        where: { trip_id: tripId },
+        relations: ['waypoints'],
+      });
+      const owned = new Map<string, TripWaypoint>();
+      for (const day of days) {
+        for (const w of day.waypoints ?? []) owned.set(w.id, w);
+      }
+      for (const { id, name } of dto.waypoints) {
+        const current = owned.get(id);
+        if (!current) continue; // id not in this trip — ignore
+        // PATCH semantics: an omitted `name` leaves the label unchanged; only
+        // an explicit `null` clears it. Without this, a client that drops
+        // `undefined` fields (or sends an id-only entry) would wipe the name.
+        if (name === undefined) continue;
+        if (current.name === name) continue; // unchanged — skip the write
+        await manager.update(TripWaypoint, { id }, { name });
+        changed = true;
+      }
+    });
+
+    const detail = await this.getDetail(userId, tripId);
+    // Only broadcast/audit a real change — an all-no-op call (the companion
+    // sends only the ids it renamed, but a stale retry can still land) must not
+    // spam collaborators or the Activity tab. When something did change, mirror
+    // saveManualRoute so other open planners rehydrate the new names via
+    // `trip:updated` (otherwise they keep stale names and could save over them).
+    if (changed) {
+      this.events.emitToTrip(tripId, 'trip:updated', detail);
+      await this.activity.recordSafe(tripId, userId, 'trip_updated', {
+        fields: ['waypoint_names'],
+      });
+    }
     return detail;
   }
 

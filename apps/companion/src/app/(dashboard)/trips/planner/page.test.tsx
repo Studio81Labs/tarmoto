@@ -82,6 +82,7 @@ vi.mock("@/lib/api", () => ({
     replaceImportedRoute: vi.fn(),
     generate: vi.fn(),
     saveRoute: vi.fn(),
+    updateWaypointNames: vi.fn(),
   },
 }));
 
@@ -281,12 +282,23 @@ type TripStoreSnapshot = {
   canUndo: boolean;
   canRedo: boolean;
   routeDirty: boolean;
+  namesDirty: boolean;
+  renamedWaypointIds: string[];
+  savedWaypointNames: Record<string, string | null>;
   stalePreviewDays: number[];
   selectedDayIndex: number;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
-  undoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
-  redoStack: Array<{ trip: Trip | null; dirty: boolean; stale: number[] }>;
+  undoStack: Array<{
+    trip: Trip | null;
+    dirty: boolean;
+    stale: number[];
+  }>;
+  redoStack: Array<{
+    trip: Trip | null;
+    dirty: boolean;
+    stale: number[];
+  }>;
   setTrips: (trips: TripSummary[], ownerId?: string | null) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
@@ -390,6 +402,7 @@ describe("TripPlannerPage", () => {
   );
   const tripsApiUpdateMock = vi.mocked(tripsApi.update);
   const tripsApiSaveRouteMock = vi.mocked(tripsApi.saveRoute);
+  const tripsApiUpdateNamesMock = vi.mocked(tripsApi.updateWaypointNames);
 
   const closuresData: ClosuresQueryResult = {
     closures: [],
@@ -481,6 +494,9 @@ describe("TripPlannerPage", () => {
       canUndo: false,
       canRedo: false,
       routeDirty: false,
+      namesDirty: false,
+      renamedWaypointIds: [],
+      savedWaypointNames: {},
       stalePreviewDays: [],
       selectedDayIndex: 0,
       draftPlannerParameters: null,
@@ -1686,6 +1702,153 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({ id: "server-trip-1" }),
     );
     expect(await screen.findByText("Route saved")).toBeInTheDocument();
+  });
+
+  it("persists a name-only edit via updateWaypointNames (only renamed ids, no re-route), not saveRoute (#911)", async () => {
+    // A late reverse-geocoded pin name on a loaded/imported trip: names are
+    // dirty but the route is not. Save must hit PATCH /waypoints (geometry
+    // preserved) — NOT the re-routing saveRoute — and send only the waypoint
+    // that was actually renamed so a collaborator's other rename isn't reverted.
+    const tripId = "11111111-2222-4333-8444-777777777777";
+    const WP1 = "aaaaaaaa-1111-4111-8111-111111111111";
+    const WP2 = "bbbbbbbb-2222-4222-8222-222222222222";
+    // ?tripId keeps the persisted trip mounted (the bare URL drops lingering
+    // UUID trips); owner role unlocks Save.
+    window.history.replaceState({}, "", `/trips/planner?tripId=${tripId}`);
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Loaded", { id: tripId }),
+    } as never);
+    // Loaded trip carrying server (UUID) waypoints; only WP1 was renamed.
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: tripId,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              ...activeTrip.days[0]!.waypoints[0]!,
+              id: WP1,
+              name: "Bormio (town)",
+            },
+            { ...activeTrip.days[0]!.waypoints[1]!, id: WP2 },
+          ],
+        },
+      ],
+    };
+    storeState.routeDirty = false;
+    storeState.namesDirty = true;
+    storeState.renamedWaypointIds = [WP1]; // WP2 left untouched
+    tripsApiUpdateNamesMock.mockResolvedValue({
+      data: buildTripDetail("Loaded", { id: tripId }),
+    } as never);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    // Wait for the owner role to land — Save unlocks (canWriteRoute + namesDirty).
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save route" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateNamesMock).toHaveBeenCalledWith(tripId, {
+        waypoints: [{ id: WP1, name: "Bormio (town)" }],
+      }),
+    );
+    // Exactly one waypoint sent (the renamed one) — WP2 is not included.
+    expect(tripsApiUpdateNamesMock).toHaveBeenCalledTimes(1);
+    // The re-routing route save is never taken.
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Names saved")).toBeInTheDocument();
+  });
+
+  it("persists a name-only edit on an unsaved GPX import via the import endpoint, not saveRoute (#911)", async () => {
+    // Unsaved import: `imported-*` id + `imp-wp-*` waypoints, geometry = the
+    // imported track. A label edit has no server trip / UUID waypoint to PATCH,
+    // so it must re-send the track (names + geometry) through the import
+    // endpoint — saveRoute would re-route and reshape the imported line.
+    const imported: Trip = {
+      ...activeTrip,
+      id: "imported-123",
+      importSourceFormat: "gpx",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            {
+              ...activeTrip.days[0]!.waypoints[0]!,
+              id: "imp-wp-start",
+              name: "Trailhead",
+            },
+            {
+              ...activeTrip.days[0]!.waypoints[1]!,
+              id: "imp-wp-end",
+              name: "Summit",
+            },
+          ],
+        },
+      ],
+    };
+    storeState.activeTrip = imported;
+    storeState.routeDirty = false;
+    storeState.namesDirty = true;
+    storeState.renamedWaypointIds = ["imp-wp-start"];
+    tripsApiImportRouteMock.mockResolvedValue({
+      data: buildTripDetail("Imported", {
+        id: "11111111-2222-4333-8444-999999999999",
+      }),
+    } as never);
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    const saveBtn = await screen.findByRole("button", { name: "Save route" });
+    expect(saveBtn).toBeEnabled();
+    fireEvent.click(saveBtn);
+
+    await waitFor(() =>
+      expect(tripsApiImportRouteMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source_format: "gpx",
+          // Imported track geometry is preserved (not re-routed).
+          geometry: expect.arrayContaining([
+            expect.objectContaining({
+              lng: expect.any(Number),
+              lat: expect.any(Number),
+            }),
+          ]),
+          // Edited labels ride along.
+          waypoints: expect.arrayContaining([
+            expect.objectContaining({ name: "Trailhead" }),
+            expect.objectContaining({ name: "Summit" }),
+          ]),
+        }),
+      ),
+    );
+    expect(tripsApiSaveRouteMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Names saved")).toBeInTheDocument();
+    // importRoute created the backend trip → promoted: ?tripId is written so a
+    // refresh reloads it (and role/collab state binds), like the full save.
+    await waitFor(() =>
+      expect(window.location.search).toContain(
+        "tripId=11111111-2222-4333-8444-999999999999",
+      ),
+    );
   });
 
   it("PATCHes the trip metadata AFTER a successful route save and hydrates from it", async () => {
