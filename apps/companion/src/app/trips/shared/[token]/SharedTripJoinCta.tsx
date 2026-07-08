@@ -30,8 +30,8 @@ export function SharedTripJoinCta({
 
   if (!tripId) {
     return (
-      <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-        <p className="text-sm text-slate-300">
+      <section className="mb-6 rounded-2xl border border-line bg-paper p-6">
+        <p className="text-sm text-fg-dim">
           This public preview is read-only. Ask the trip owner for a fresh group
           collaboration link if you need to suggest route changes.
         </p>
@@ -41,23 +41,25 @@ export function SharedTripJoinCta({
 
   if (!isAuthenticated) {
     return (
-      <section className="mb-8 rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5">
-        <h2 className="text-lg font-semibold text-white">Join the planning</h2>
-        <p className="mt-1 text-sm text-slate-300">
+      <section className="mb-6 rounded-2xl border border-accent/30 bg-accent/[0.06] p-6">
+        <h2 className="text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+          Join the planning
+        </h2>
+        <p className="mt-1.5 text-[13.5px] text-fg-dim">
           Sign in or create an account to join "{title}" and open it in your
           trips.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
             href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-ink transition hover:brightness-95"
           >
             <Route size={16} />
             Sign in to collaborate
           </Link>
           <Link
             href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-slate-500"
+            className="inline-flex items-center gap-2 rounded-lg border border-line-strong px-4 py-2 text-sm font-bold text-ink transition hover:bg-paper-2"
           >
             Create an account
           </Link>
@@ -91,9 +93,11 @@ export function SharedTripJoinCta({
   };
 
   return (
-    <section className="mb-8 rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-5">
-      <h2 className="text-lg font-semibold text-white">Join the planning</h2>
-      <p className="mt-1 text-sm text-slate-300">
+    <section className="mb-6 rounded-2xl border border-accent/30 bg-accent/[0.06] p-6">
+      <h2 className="text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+        Join the planning
+      </h2>
+      <p className="mt-1.5 text-[13.5px] text-fg-dim">
         Accept this shared trip to open its preview, submit suggestions, and
         vote with the group.
       </p>
@@ -101,7 +105,7 @@ export function SharedTripJoinCta({
         type="button"
         onClick={handleJoin}
         disabled={!authReady || joining}
-        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {joining ? (
           <Loader2 size={16} className="animate-spin" />
