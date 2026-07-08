@@ -24,12 +24,20 @@ import {
  * country-sized extract never accumulates in memory.
  *
  * Assembly is folded in (unlike roads, which emits flat primitives for a
- * separate `assembleWays` pass): node coordinates are buffered in a Map and
- * ways are reduced to a single representative point (the centroid of their
- * resolved nodes), because a POI needs one point, not a polyline. This relies
- * on the OSM ordering convention — all nodes precede the ways referencing them,
- * which sorted Geofabrik extracts satisfy. Untagged nodes are pure way geometry
- * and never yield a POI.
+ * separate `assembleWays` pass): node coordinates are buffered in a Map, way
+ * node-refs in a second Map, and every tagged element is reduced to a single
+ * representative point — a node's own coordinate, a way's node-centroid, or a
+ * relation's centroid over its member nodes + member ways' nodes — because a POI
+ * needs one point, not a polyline or a multipolygon. This relies on the OSM
+ * ordering convention — nodes precede ways precede the relations referencing
+ * them, which sorted Geofabrik extracts satisfy. Untagged nodes/ways are pure
+ * geometry (referenced by ways/relations) and never yield a POI themselves.
+ *
+ * Relations matter because the runbook's `osmium tags-filter nwr/...` keeps
+ * them, and the Overpass path served them via `out center`: area-mapped POIs
+ * (hotels, campsites, rest/service areas, multipolygon viewpoints) are modeled
+ * as relations, so dropping them would both lose those rows and wrongly
+ * tombstone existing `osm:relation:*` rows as absent on re-import.
  */
 
 /** Pause the source once this many mapped POI rows are buffered unconsumed. */
@@ -51,6 +59,15 @@ interface PendingWay {
   tags: Record<string, string>;
   /** Node ids in order along the way (OSM `nd` refs). */
   refs: string[];
+}
+
+interface PendingRelation {
+  id: string;
+  tags: Record<string, string>;
+  /** `<member type="node">` refs — direct point members. */
+  memberNodeRefs: string[];
+  /** `<member type="way">` refs — resolved via the buffered way→node-ref map. */
+  memberWayRefs: string[];
 }
 
 interface LatLng {
@@ -85,6 +102,43 @@ function wayCentroid(
   return { lat: sumLat / coords.length, lng: sumLng / coords.length };
 }
 
+/**
+ * Reduce a relation to one representative point: the arithmetic mean of every
+ * coordinate its members resolve to — direct `node` members plus every node of
+ * each `way` member (looked up in the buffered way→node-ref map). Best-effort,
+ * unlike {@link wayCentroid}: a multipolygon can have many members and some may
+ * be clipped, so we average whatever resolves and only skip the relation when
+ * *nothing* resolves. This mirrors the Overpass path's `out center`, which
+ * likewise gives a relation a single representative point.
+ */
+function relationCentroid(
+  relation: PendingRelation,
+  nodes: Map<string, LatLng>,
+  wayRefs: Map<string, string[]>,
+): LatLng | null {
+  const coords: LatLng[] = [];
+  for (const ref of relation.memberNodeRefs) {
+    const coord = nodes.get(ref);
+    if (coord) coords.push(coord);
+  }
+  for (const wayId of relation.memberWayRefs) {
+    const refs = wayRefs.get(wayId);
+    if (!refs) continue;
+    for (const nodeRef of refs) {
+      const coord = nodes.get(nodeRef);
+      if (coord) coords.push(coord);
+    }
+  }
+  if (coords.length < 1) return null;
+  let sumLat = 0;
+  let sumLng = 0;
+  for (const coord of coords) {
+    sumLat += coord.lat;
+    sumLng += coord.lng;
+  }
+  return { lat: sumLat / coords.length, lng: sumLng / coords.length };
+}
+
 export async function* parsePoiExtract(
   input: Readable,
 ): AsyncGenerator<PoiResult> {
@@ -94,6 +148,11 @@ export async function* parsePoiExtract(
   // Node coordinates buffered for way-centroid resolution — every valid node,
   // tagged or not, since a tagged POI node can also be a way's geometry vertex.
   const nodes = new Map<string, LatLng>();
+  // Way → its node-ref list, buffered so a relation's `way` members can be
+  // resolved once it closes. Bounded the same way as `nodes`: an osmium
+  // tag-filtered + reference-completed extract only carries the ways the kept
+  // features reference, not the whole planet.
+  const wayRefs = new Map<string, string[]>();
   let ended = false;
   let failure: unknown = null;
   let wake: (() => void) | null = null;
@@ -130,9 +189,11 @@ export async function* parsePoiExtract(
 
   // The element currently open. Node tags matter here (a node can BE a POI), so
   // unlike the roads source we accumulate a node's child `<tag>`s until its
-  // close, rather than emitting it on the opening tag.
+  // close, rather than emitting it on the opening tag. Only one of the three is
+  // ever open at a time — node/way/relation are flat siblings under `<osm>`.
   let node: PendingNode | null = null;
   let way: PendingWay | null = null;
+  let relation: PendingRelation | null = null;
 
   parser.on('opentag', (tag) => {
     // Attributes are absent-keyed, so every lookup is `string | undefined`.
@@ -154,15 +215,39 @@ export async function* parsePoiExtract(
             ? null
             : { id: attributes.id, tags: {}, refs: [] };
         break;
+      case 'relation':
+        // A relation must carry an id (its identity + conflict key); skip if
+        // absent, exactly like a way.
+        relation =
+          attributes.id === undefined
+            ? null
+            : {
+                id: attributes.id,
+                tags: {},
+                memberNodeRefs: [],
+                memberWayRefs: [],
+              };
+        break;
       case 'nd':
         if (way && attributes.ref !== undefined) way.refs.push(attributes.ref);
         break;
+      case 'member':
+        // Collect a relation's node/way members for centroid resolution; nested
+        // relation members are ignored (we don't recurse into sub-relations).
+        if (relation && attributes.ref !== undefined) {
+          if (attributes.type === 'node')
+            relation.memberNodeRefs.push(attributes.ref);
+          else if (attributes.type === 'way')
+            relation.memberWayRefs.push(attributes.ref);
+        }
+        break;
       case 'tag':
-        // A tag belongs to whichever element is open — a node before a way,
-        // since nodes precede ways in the document.
+        // A tag belongs to whichever element is open — node, then way, then
+        // relation, matching the nodes → ways → relations document order.
         if (attributes.k !== undefined && attributes.v !== undefined) {
           if (node) node.tags[attributes.k] = attributes.v;
           else if (way) way.tags[attributes.k] = attributes.v;
+          else if (relation) relation.tags[attributes.k] = attributes.v;
         }
         break;
       default:
@@ -186,6 +271,10 @@ export async function* parsePoiExtract(
       }
       node = null;
     } else if (name === 'way' && way) {
+      // Buffer the node-ref list for any relation that references this way
+      // later — every way, tagged or not, since a relation's geometry ways are
+      // usually untagged (the tags live on the relation).
+      wayRefs.set(way.id, way.refs);
       // Only tagged ways can be a POI; resolve the centroid of their nodes.
       if (Object.keys(way.tags).length > 0) {
         const centre = wayCentroid(way, nodes);
@@ -200,6 +289,22 @@ export async function* parsePoiExtract(
         }
       }
       way = null;
+    } else if (name === 'relation' && relation) {
+      // Only tagged relations are POI candidates; reduce their member geometry
+      // (direct nodes + member ways' nodes) to one representative centroid.
+      if (Object.keys(relation.tags).length > 0) {
+        const centre = relationCentroid(relation, nodes, wayRefs);
+        if (centre) {
+          emit({
+            osmType: 'relation',
+            osmId: relation.id,
+            lat: centre.lat,
+            lng: centre.lng,
+            tags: relation.tags,
+          });
+        }
+      }
+      relation = null;
     }
   });
 

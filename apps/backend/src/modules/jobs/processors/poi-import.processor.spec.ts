@@ -64,6 +64,20 @@ describe('PoiImportProcessor', () => {
     expect(enqueuePoiImportRegion).toHaveBeenNthCalledWith(3, 'PL', 2);
   });
 
+  it('dispatch: tolerates the retired `run` job name as a dispatch alias', async () => {
+    // A deploy that renamed run→dispatch can leave an old `poi.import.run` job
+    // queued; it must fan out, not crash the worker with "unknown job name".
+    const { processor, enqueuePoiImportRegion } = build({
+      enabled: true,
+      regions: REGIONS,
+    });
+
+    const result = await processor.process(jobNamed('run'));
+
+    expect(result).toEqual({ regions_enqueued: 3 });
+    expect(enqueuePoiImportRegion).toHaveBeenCalledTimes(3);
+  });
+
   it('import-region: resolves the region by code and runs importRegion', async () => {
     const importResult: PoiImportResult = {
       region: 'SK',

@@ -185,6 +185,8 @@ describe('PoiImportService', () => {
         kind: 'restaurant',
         // Revive: a re-import clears any prior tombstone via the upsert.
         deactivated_at: null,
+        // Region ownership drives the overlap-safe tombstone scope.
+        import_region: 'CZ',
         geom: { type: 'Point', coordinates: [18.4, 49.5] },
       }),
     );
@@ -284,11 +286,13 @@ describe('PoiImportService', () => {
 
     const calls = txQuery.mock.calls as Array<[string, unknown[]]>;
 
-    // The stale-load is bbox-scoped: ST_MakeEnvelope with the region's bbox as
-    // its four params (proving tombstoning can only touch rows inside the box).
+    // The stale-load is scoped to the region's bbox AND to `import_region` — so
+    // it can only ever tombstone rows THIS region imported inside its box, never
+    // a neighbour's border POI that overlaps the rectangle (the P1 fix).
     const load = calls.find(([sql]) => sql.includes('ST_MakeEnvelope'));
     expect(load).toBeDefined();
-    expect(load![1]).toEqual([18, 49.3, 18.9, 49.75]);
+    expect(load![0]).toMatch(/import_region = \$5/);
+    expect(load![1]).toEqual([18, 49.3, 18.9, 49.75, 'CZ']);
 
     // Only the absent row's id is tombstoned — a soft UPDATE, never a DELETE.
     const tombstone = calls.find(([sql]) =>

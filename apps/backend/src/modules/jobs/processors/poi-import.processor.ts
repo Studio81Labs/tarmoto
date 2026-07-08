@@ -13,6 +13,14 @@ export interface PoiImportDispatchResult {
 }
 
 /**
+ * The pre-#850 weekly job name (single-bbox import). It was renamed to
+ * `dispatch`; the scheduler removes its old repeatable on boot, but a `run` job
+ * already queued before that — or a scheduler not yet reconciled — must not
+ * crash the worker, so it's tolerated here as a `dispatch` alias.
+ */
+const LEGACY_POI_IMPORT_RUN = 'run';
+
+/**
  * Two-stage offline POI import (#850), continent-scaled from the single-bbox
  * #745 job.
  *
@@ -45,7 +53,10 @@ export class PoiImportProcessor extends WorkerHost {
   async process(
     job: Job,
   ): Promise<{ skipped: true } | PoiImportDispatchResult | PoiImportResult> {
-    if (job.name === JOB_NAMES.POI_IMPORT_DISPATCH) {
+    if (
+      job.name === JOB_NAMES.POI_IMPORT_DISPATCH ||
+      job.name === LEGACY_POI_IMPORT_RUN
+    ) {
       return this.dispatch(job);
     }
     if (job.name === JOB_NAMES.POI_IMPORT_REGION) {

@@ -98,6 +98,35 @@ export class JobsScheduler implements OnApplicationBootstrap {
         );
       }
     }
+
+    await this.removeRetiredSchedulers();
+  }
+
+  /**
+   * Remove repeatables whose job was renamed. BullMQ keys a scheduler by
+   * `${queue}.${name}`, so a rename registers a NEW key and leaves the old one
+   * firing forever — its job then reaches a processor that no longer knows the
+   * name. #850 renamed the POI import's weekly `run` job to `dispatch`; drop the
+   * orphaned `poi.import.run` so it stops firing (the processor tolerates a
+   * still-queued `run` as a dispatch alias in the meantime).
+   */
+  private async removeRetiredSchedulers(): Promise<void> {
+    const retired: Array<{ queue: Queue; schedulerId: string }> = [
+      { queue: this.poiImport, schedulerId: `${this.poiImport.name}.run` },
+    ];
+    for (const { queue, schedulerId } of retired) {
+      try {
+        const removed = await queue.removeJobScheduler(schedulerId);
+        if (removed) {
+          this.logger.log(`Removed retired scheduler ${schedulerId}`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(
+          `Failed to remove retired scheduler ${schedulerId}: ${msg}`,
+        );
+      }
+    }
   }
 
   private specs(): RecurringJobSpec[] {

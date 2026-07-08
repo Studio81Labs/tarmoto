@@ -215,6 +215,9 @@ export class PoiImportService {
         // Revive: a re-import of a previously-tombstoned (reopened) venue
         // clears the tombstone via this upsert.
         deactivated_at: null,
+        // Region ownership — the tombstone pass only considers rows this region
+        // imported, so overlapping border bboxes can't tombstone a neighbour.
+        import_region: region.code,
       });
     };
 
@@ -245,15 +248,19 @@ export class PoiImportService {
           }
         }
 
-        // 2. Stale-by-absence tombstoning, bounded to the region's bbox. Load
-        // only live OSM rows *inside* the bbox (`geom &&` = point-in-envelope
-        // for a Point), then tombstone the ones the extract didn't carry. Rows
-        // outside the bbox are never loaded, so they can never be tombstoned.
+        // 2. Stale-by-absence tombstoning. Load only live OSM rows THIS region
+        // imported (`import_region`) inside its bbox, then tombstone the ones
+        // the extract didn't carry. The `import_region` scope is load-bearing:
+        // the default region bboxes overlap at borders, so a bbox-only load
+        // would let e.g. the SK job tombstone live Czech border POIs absent from
+        // SK's extract. Rows outside the bbox — or owned by another region — are
+        // never loaded, so they can never be tombstoned.
         const existing = await tx.query<{ id: string; external_id: string }[]>(
           `SELECT id, external_id FROM pois
              WHERE source = 'osm' AND deactivated_at IS NULL
+               AND import_region = $5
                AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-          [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat],
+          [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat, region.code],
         );
 
         const tombstoneIds = existing

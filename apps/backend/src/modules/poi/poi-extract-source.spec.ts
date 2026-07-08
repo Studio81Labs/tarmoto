@@ -138,6 +138,133 @@ describe('parsePoiExtract', () => {
     expect(results).toEqual([]);
   });
 
+  it('reduces a multipolygon relation to the centroid of its member ways', async () => {
+    // A hotel mapped as an area: an untagged member way (the building outline)
+    // whose four nodes form a box, with the POI tags on the relation. The
+    // relation must yield one accommodation at the box centroid; the untagged
+    // member way must not yield a POI of its own.
+    const results = await collect(`<osm>
+      <node id="1" lat="0" lon="0"/>
+      <node id="2" lat="0" lon="2"/>
+      <node id="3" lat="2" lon="2"/>
+      <node id="4" lat="2" lon="0"/>
+      <way id="100">
+        <nd ref="1"/>
+        <nd ref="2"/>
+        <nd ref="3"/>
+        <nd ref="4"/>
+      </way>
+      <relation id="500">
+        <member type="way" ref="100" role="outer"/>
+        <tag k="tourism" v="hotel"/>
+        <tag k="name" v="Grand"/>
+        <tag k="stars" v="5"/>
+      </relation>
+    </osm>`);
+
+    expect(results.map(summarize)).toEqual([
+      {
+        type: 'accommodation',
+        kind: 'hotel',
+        external_id: 'osm:relation:500',
+        lat: 1,
+        lng: 1,
+      },
+    ]);
+    const [only] = results;
+    if (!only || !('accommodation' in only)) {
+      throw new Error('expected an accommodation');
+    }
+    expect(only.accommodation.name).toBe('Grand');
+    expect(only.accommodation.stars).toBe(5);
+  });
+
+  it('averages direct node members with member-way nodes (best-effort resolve)', async () => {
+    // A relation whose members are a direct node plus a member way; a second
+    // member way is missing entirely and simply drops out of the average.
+    const results = await collect(`<osm>
+      <node id="1" lat="0" lon="0"/>
+      <node id="2" lat="0" lon="4"/>
+      <node id="3" lat="4" lon="4"/>
+      <node id="4" lat="4" lon="0"/>
+      <node id="9" lat="10" lon="10"/>
+      <way id="100">
+        <nd ref="1"/>
+        <nd ref="2"/>
+        <nd ref="3"/>
+        <nd ref="4"/>
+      </way>
+      <relation id="500">
+        <member type="way" ref="100" role="outer"/>
+        <member type="way" ref="404" role="outer"/>
+        <member type="node" ref="9" role="label"/>
+        <tag k="tourism" v="camp_site"/>
+      </relation>
+    </osm>`);
+
+    // Coords: way 100's four corners (0,0)(0,4)(4,4)(4,0) + node 9 (10,10);
+    // way 404 is absent and ignored. Mean lat = (0+0+4+4+10)/5 = 3.6,
+    // mean lng = (0+4+4+0+10)/5 = 3.6.
+    expect(results.map(summarize)).toEqual([
+      {
+        type: 'accommodation',
+        kind: 'camp_site',
+        external_id: 'osm:relation:500',
+        lat: 3.6,
+        lng: 3.6,
+      },
+    ]);
+  });
+
+  it('skips a relation whose members resolve to no coordinates', async () => {
+    const results = await collect(`<osm>
+      <relation id="500">
+        <member type="way" ref="999" role="outer"/>
+        <member type="node" ref="888" role="label"/>
+        <tag k="tourism" v="hotel"/>
+      </relation>
+    </osm>`);
+    // Neither the member way nor the member node exists in the extract.
+    expect(results).toEqual([]);
+  });
+
+  it('interleaves node, way and relation POIs in document order', async () => {
+    const results = await collect(`<osm>
+      <node id="1" lat="49.5" lon="18.4">
+        <tag k="amenity" v="fuel"/>
+      </node>
+      <node id="10" lat="0" lon="0"/>
+      <node id="11" lat="0" lon="2"/>
+      <node id="12" lat="2" lon="2"/>
+      <node id="13" lat="2" lon="0"/>
+      <way id="100">
+        <nd ref="10"/>
+        <nd ref="11"/>
+        <nd ref="12"/>
+        <nd ref="13"/>
+        <tag k="amenity" v="restaurant"/>
+      </way>
+      <relation id="500">
+        <member type="way" ref="100" role="outer"/>
+        <tag k="tourism" v="camp_site"/>
+      </relation>
+    </osm>`);
+
+    // A tagged member way is both a standalone POI (its own centroid) and part
+    // of the relation's centroid — confirming way refs are buffered for tagged
+    // ways too, and that emission order follows the document.
+    expect(results.map((r) => summarize(r).external_id)).toEqual([
+      'osm:node:1',
+      'osm:way:100',
+      'osm:relation:500',
+    ]);
+    expect(results.map((r) => summarize(r).kind)).toEqual([
+      'fuel_station',
+      'restaurant',
+      'camp_site',
+    ]);
+  });
+
   it('rejects malformed XML', async () => {
     await expect(collect('<osm><node id="1" <<>')).rejects.toBeDefined();
   });
