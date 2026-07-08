@@ -1595,6 +1595,30 @@ describe("useTripStore routeDirty flag", () => {
     expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
   });
 
+  it("clears a reverted rename: back-to-baseline drops the id and disarms Save (#911)", () => {
+    useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");
+    const start = useTripStore
+      .getState()
+      .activeTrip!.days[0]!.waypoints.find((w) => w.type === "start")!;
+    // Give it a name, then lock it in as the loaded/saved baseline.
+    useTripStore.getState().renameWaypoint(start.id, "Bormio");
+    useTripStore.getState().setActiveTrip(useTripStore.getState().activeTrip!);
+    expect(useTripStore.getState().namesDirty).toBe(false);
+
+    // Rename away from the baseline → dirty, id tracked.
+    useTripStore.getState().renameWaypoint(start.id, "Bormio (town)");
+    expect(useTripStore.getState().namesDirty).toBe(true);
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([start.id]);
+
+    // Rename back to the loaded name → net-zero: the id drops out and Save
+    // disarms, so a stale tab can't PATCH the old label over a collaborator's
+    // newer rename of the same waypoint.
+    useTripStore.getState().renameWaypoint(start.id, "Bormio");
+    expect(useTripStore.getState().renamedWaypointIds).toEqual([]);
+    expect(useTripStore.getState().namesDirty).toBe(false);
+  });
+
   it("insertWaypointBeforeEnd marks the draft dirty so POI stops can be saved", () => {
     useTripStore.getState().placeWaypoint({ lat: 1, lng: 1 }, "set-start");
     useTripStore.getState().placeWaypoint({ lat: 5, lng: 5 }, "set-end");

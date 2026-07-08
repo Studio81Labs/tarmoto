@@ -284,6 +284,7 @@ type TripStoreSnapshot = {
   routeDirty: boolean;
   namesDirty: boolean;
   renamedWaypointIds: string[];
+  savedWaypointNames: Record<string, string | null>;
   stalePreviewDays: number[];
   selectedDayIndex: number;
   focusedSegmentId: string | null;
@@ -499,6 +500,7 @@ describe("TripPlannerPage", () => {
       routeDirty: false,
       namesDirty: false,
       renamedWaypointIds: [],
+      savedWaypointNames: {},
       stalePreviewDays: [],
       selectedDayIndex: 0,
       draftPlannerParameters: null,

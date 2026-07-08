@@ -164,6 +164,16 @@ interface TripState {
   renamedWaypointIds: string[];
 
   /**
+   * Waypoint names as of the last load / save-hydration — the server baseline
+   * `renameWaypoint` diffs against. Renaming a waypoint back to its baseline
+   * drops it from `renamedWaypointIds` (a NET-zero edit), so the name-only save
+   * never PATCHes it and can't revert a collaborator's newer rename of that
+   * same stop. Reset on every load/save; not snapshotted for undo/redo — it's
+   * the server truth, and the trip + dirty set are restored together anyway.
+   */
+  savedWaypointNames: Record<string, string | null>;
+
+  /**
    * Day numbers (1-based) whose route preview is stale — i.e. routing inputs
    * changed since the last `applyRouteResult` for that day. Replaces the
    * former boolean `routePreviewStale`. Empty means every day's preview is
@@ -703,6 +713,20 @@ function applyPostCommitSync(
   };
 }
 
+/**
+ * Snapshot every waypoint's current name by id — the baseline a subsequent
+ * rename is diffed against so only NET name changes stay dirty (#911).
+ */
+function waypointNameBaseline(
+  trip: Trip | null,
+): Record<string, string | null> {
+  const baseline: Record<string, string | null> = {};
+  for (const day of trip?.days ?? []) {
+    for (const w of day.waypoints) baseline[w.id] = w.name ?? null;
+  }
+  return baseline;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const useTripStore = create<TripState & TripStoreHistory>(
@@ -716,6 +740,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     routeDirty: false,
     namesDirty: false,
     renamedWaypointIds: [],
+    savedWaypointNames: {},
     stalePreviewDays: [],
     selectedDayIndex: 0,
     draftPlannerParameters: null,
@@ -740,6 +765,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: false,
         namesDirty: false,
         renamedWaypointIds: [],
+        savedWaypointNames: waypointNameBaseline(activeTrip),
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
@@ -864,15 +890,21 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           };
         });
         if (!changed) return state;
-        // Metadata-only edit (no geometry change): mark namesDirty so Save
-        // persists the rename via the name-only path (#911), not a re-route,
-        // and record the id so only this waypoint is sent (not every stop).
+        // Metadata-only edit (no geometry change): track the id so the
+        // name-only save (#911) sends just this stop, not a re-route. Diff
+        // against the loaded/last-saved baseline rather than appending — a
+        // rename back to the baseline name is a NET-zero edit and drops out, so
+        // it never PATCHes (which would revert a collaborator's newer rename).
+        const nextIds = new Set(state.renamedWaypointIds);
+        if (name === (state.savedWaypointNames[waypointId] ?? null)) {
+          nextIds.delete(waypointId);
+        } else {
+          nextIds.add(waypointId);
+        }
         return {
           activeTrip: { ...trip, days },
-          namesDirty: true,
-          renamedWaypointIds: [
-            ...new Set([...state.renamedWaypointIds, waypointId]),
-          ],
+          namesDirty: nextIds.size > 0,
+          renamedWaypointIds: [...nextIds],
         };
       }),
 
@@ -1862,6 +1894,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         routeDirty: false,
         namesDirty: false,
         renamedWaypointIds: [],
+        savedWaypointNames: {},
         stalePreviewDays: [],
         selectedDayIndex: 0,
         focusedSegmentId: null,
