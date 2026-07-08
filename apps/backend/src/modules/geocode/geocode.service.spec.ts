@@ -20,7 +20,7 @@ describe('GeocodeService', () => {
   });
 
   beforeEach(async () => {
-    provider = { search: jest.fn() };
+    provider = { search: jest.fn(), reverse: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GeocodeService,
@@ -77,5 +77,26 @@ describe('GeocodeService', () => {
     provider.search.mockResolvedValue([]);
     await service.search('  Brno  ');
     expect(provider.search.mock.calls[0][0]).toBe('Brno');
+  });
+
+  describe('reverse', () => {
+    it('returns the place label the provider resolves', async () => {
+      provider.reverse.mockResolvedValue({ label: 'Brno' });
+      const res = await service.reverse(49.2, 16.6);
+      expect(provider.reverse).toHaveBeenCalledWith(49.2, 16.6);
+      expect(res).toEqual({ label: 'Brno' });
+    });
+
+    it('returns a null label when the provider cannot name the point', async () => {
+      provider.reverse.mockResolvedValue(null);
+      const res = await service.reverse(0, 0);
+      expect(res).toEqual({ label: null });
+    });
+
+    it('returns a null label on provider failure and does not throw', async () => {
+      provider.reverse.mockRejectedValue(new Error('upstream down'));
+      const res = await service.reverse(49.2, 16.6);
+      expect(res).toEqual({ label: null });
+    });
   });
 });

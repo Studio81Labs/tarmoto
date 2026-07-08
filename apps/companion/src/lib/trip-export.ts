@@ -67,16 +67,10 @@ export function tripToGpx(trip: Trip, now: Date = new Date()): string {
 
 export function tripFileName(trip: Trip, ext: string): string {
   // Slugify the id as well — trip ids are opaque and can contain slashes or
-  // spaces (see `buildTripShareUrl` which url-encodes them), which would
-  // otherwise leak into the download filename.
+  // spaces, which would otherwise leak into the download filename.
   const slug = slugify(trip.name) || slugify(trip.id) || "trip";
   const cleanExt = ext.replace(/^\./, "");
   return `tarmoto-${slug}.${cleanExt}`;
-}
-
-export function buildTripShareUrl(trip: Trip, origin: string): string {
-  const base = origin.replace(/\/$/, "");
-  return `${base}/trips/${encodeURIComponent(trip.id)}`;
 }
 
 function formatDayLabel(day: TripDay): string {

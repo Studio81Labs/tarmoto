@@ -152,6 +152,31 @@ vi.mock("@/lib/api", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/api")>();
   return {
     ...actual,
+    api: {
+      ...actual.api,
+      // Planner waypoint search + pin naming now hit the real geocode
+      // endpoints; return a deterministic Jihlava match so the address-search
+      // test doesn't depend on a live Nominatim. Other paths (incl. reverse)
+      // resolve empty, which the seam turns into a coordinate label.
+      GET: vi.fn(async (path: string) => {
+        if (path === "/api/v1/geocode") {
+          return {
+            data: {
+              results: [
+                {
+                  label: "Jihlava",
+                  lat: 49.3961,
+                  lng: 15.5912,
+                  importance: 0.7,
+                },
+              ],
+            },
+            error: undefined,
+          };
+        }
+        return { data: undefined, error: undefined };
+      }),
+    },
     poiApi: {
       ...actual.poiApi,
       getInBbox: vi.fn(async (params: { kinds?: string[] }) => ({

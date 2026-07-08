@@ -1646,6 +1646,9 @@ const TripPlannerMapContent = forwardRef<
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, ready]);
+  // Cancels the previous reverse-geocode so a slow response for an earlier
+  // menu can't overwrite a newer one's address (real backend round-trip).
+  const reverseAddressCtrlRef = useRef<AbortController | null>(null);
   // Shared opener for the waypoint point dialog — reached by right-click
   // AND left-click on a pin (rider feedback). Everything it touches is
   // referentially stable, so ready-time closures may capture it.
@@ -1674,10 +1677,15 @@ const TripPlannerMapContent = forwardRef<
         y: clientY,
         address: null,
       });
-      // Resolve the place name lazily; keep the menu snappy meanwhile.
+      // Resolve the place name lazily; keep the menu snappy meanwhile. Abort
+      // any prior lookup so its late response can't overwrite this menu.
+      reverseAddressCtrlRef.current?.abort();
+      const controller = new AbortController();
+      reverseAddressCtrlRef.current = controller;
       void plannerApi
-        .reverseGeocode(lat, lng)
+        .reverseGeocode(lat, lng, { signal: controller.signal })
         .then((address) => {
+          if (controller.signal.aborted) return;
           setWaypointMenu((menu) =>
             menu && menu.waypointId === waypointId
               ? { ...menu, address }

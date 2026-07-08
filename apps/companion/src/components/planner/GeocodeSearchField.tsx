@@ -46,21 +46,21 @@ export function GeocodeSearchField({
       setOpen(false);
       return;
     }
-    let cancelled = false;
+    const controller = new AbortController();
     const handle = window.setTimeout(() => {
       plannerApi
-        .geocode(query)
+        .geocode(query, { signal: controller.signal })
         .then((matches) => {
-          if (cancelled) return;
+          if (controller.signal.aborted) return;
           setResults(matches);
           setOpen(matches.length > 0);
         })
         .catch(() => {
-          if (!cancelled) setOpen(false);
+          if (!controller.signal.aborted) setOpen(false);
         });
     }, DEBOUNCE_MS);
     return () => {
-      cancelled = true;
+      controller.abort();
       window.clearTimeout(handle);
     };
   }, [query]);

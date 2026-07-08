@@ -685,17 +685,43 @@ export default function TripPlannerPage() {
   // reverse-geocode them to a place name once per placement (addendum §2).
   const reverseGeocodedRef = useRef(new Set<string>());
   useEffect(() => {
+    const seen = reverseGeocodedRef.current;
     const waypoints = selectedDay?.waypoints ?? [];
+    const isAutoName = (name: string) =>
+      /^(Start|Finish|Via \d+|Reroute via)$/.test(name);
+    const keyFor = (w: {
+      id: string;
+      location: { lat: number; lng: number };
+    }) => `${w.id}:${w.location.lat.toFixed(4)}:${w.location.lng.toFixed(4)}`;
     for (const waypoint of waypoints) {
-      const name = waypoint.name ?? "";
-      if (!/^(Start|Finish|Via \d+|Reroute via)$/.test(name)) continue;
-      const key = `${waypoint.id}:${waypoint.location.lat.toFixed(4)}:${waypoint.location.lng.toFixed(4)}`;
-      if (reverseGeocodedRef.current.has(key)) continue;
-      reverseGeocodedRef.current.add(key);
+      if (!isAutoName(waypoint.name ?? "")) continue;
+      const key = keyFor(waypoint);
+      // Fire once per (waypoint, position) ever. We deliberately do NOT abort +
+      // re-issue on cleanup: with several default-named waypoints, the first
+      // rename changes `selectedDay`, and re-firing the others would re-send
+      // their already-dispatched upstream requests — costly against public
+      // Nominatim (1 req/s). Staleness is handled at apply time instead.
+      if (seen.has(key)) continue;
+      seen.add(key);
       void plannerApi
         .reverseGeocode(waypoint.location.lat, waypoint.location.lng)
         .then((placeName) => {
-          if (placeName) renameWaypoint(waypoint.id, placeName);
+          if (!placeName) return;
+          // Apply only if the waypoint still exists at the same position and
+          // still carries an auto-generated name — i.e. the rider hasn't
+          // moved/renamed it and no earlier response already named it. A moved
+          // waypoint gets its own fresh key + lookup; this stale one is dropped.
+          const current = useTripStore
+            .getState()
+            .activeTrip?.days.flatMap((d) => d.waypoints)
+            .find((w) => w.id === waypoint.id);
+          if (
+            current &&
+            keyFor(current) === key &&
+            isAutoName(current.name ?? "")
+          ) {
+            renameWaypoint(waypoint.id, placeName);
+          }
         })
         .catch(() => {
           // Naming is cosmetic — keep the default label on failure.

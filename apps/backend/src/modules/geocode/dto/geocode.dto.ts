@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -69,4 +70,39 @@ export class GeocodeResultDto {
 export class GeocodeListDto {
   @ApiProperty({ type: [GeocodeResultDto] })
   results!: GeocodeResultDto[];
+}
+
+export class ReverseGeocodeQueryDto {
+  @ApiProperty({
+    description: 'Latitude in decimal degrees, WGS84.',
+    minimum: -90,
+    maximum: 90,
+  })
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat!: number;
+
+  @ApiProperty({
+    description: 'Longitude in decimal degrees, WGS84.',
+    minimum: -180,
+    maximum: 180,
+  })
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng!: number;
+}
+
+export class ReverseGeocodeResultDto {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Concise name of the place the coordinate falls in (town, city, or ' +
+      'region), or null when the provider cannot name it (e.g. open sea).',
+  })
+  label!: string | null;
 }
