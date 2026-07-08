@@ -30,6 +30,7 @@ import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
 import {
   CorridorFunZonesDto,
   DEFAULT_FUN_ZONE_CORRIDOR_KM,
+  MAX_FUN_ZONE_CORRIDOR_RESULTS,
 } from './dto/corridor-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
@@ -745,10 +746,12 @@ export class RoadsService {
    * Fun Zones whose boundary falls within `buffer_km` of a routed polyline
    * (#865 — the STOPS-tab `twisty_highlight` layer). The corridor counterpart
    * of the bbox `findFunZones`, and the fun-zone analogue of `/poi/in-corridor`,
-   * best-first. Route coordinates are bound as positional params (never
-   * interpolated) — same pattern as `getRouteQuality`, whose indexable
-   * degree-prefilter it also reuses (a bare `geom::geography` distance can't use
-   * `idx_fun_zones_boundary`).
+   * best-first and capped at `MAX_FUN_ZONE_CORRIDOR_RESULTS` — the client
+   * projects each returned zone against the route on its UI thread, so an
+   * unbounded corridor would lock up the tab. Route coordinates are bound as
+   * positional params (never interpolated) — same pattern as `getRouteQuality`,
+   * whose indexable degree-prefilter it also reuses (a bare `geom::geography`
+   * distance can't use `idx_fun_zones_boundary`).
    */
   async findFunZonesInCorridor(
     dto: CorridorFunZonesDto,
@@ -781,7 +784,8 @@ export class RoadsService {
       FROM fun_zones fz, route
       WHERE ST_DWithin(fz.boundary, route.line, ${bufferDegExpr})
         AND ST_DWithin(fz.boundary::geography, route.line::geography, ${bufferParam})
-      ORDER BY fz.composite_score DESC`,
+      ORDER BY fz.composite_score DESC
+      LIMIT ${MAX_FUN_ZONE_CORRIDOR_RESULTS}`,
       params,
     );
 

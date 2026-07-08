@@ -26,6 +26,14 @@ export const MAX_FUN_ZONE_CORRIDOR_KM = 20;
 export const MAX_FUN_ZONE_CORRIDOR_POINTS = 25000;
 
 /**
+ * Result cap (best-first by `composite_score`). The STOPS tab projects every
+ * returned zone's polygon against the route on the client's UI thread, so an
+ * unbounded corridor of hundreds of zones would lock it up; the twistiest N are
+ * what the tab surfaces anyway. Applied server-side as a `LIMIT`.
+ */
+export const MAX_FUN_ZONE_CORRIDOR_RESULTS = 50;
+
+/**
  * One point of the routed polyline (request side). Mirrors the passes /
  * route-quality point DTOs — validated lat/lng so a malformed body is rejected
  * at the DTO boundary before it reaches the spatial query.

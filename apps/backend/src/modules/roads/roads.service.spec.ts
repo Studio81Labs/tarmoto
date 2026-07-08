@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { RoadsService } from './roads.service.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
+import { MAX_FUN_ZONE_CORRIDOR_RESULTS } from './dto/corridor-fun-zones.dto.js';
 
 describe('RoadsService', () => {
   let service: RoadsService;
@@ -692,6 +693,12 @@ describe('RoadsService', () => {
       await service.findFunZonesInCorridor({ route });
       const [, params] = funZoneRepo.query!.mock.calls[0] as [string, number[]];
       expect(params[params.length - 1]).toBe(2000);
+    });
+
+    it('caps the result set so the client projection stays bounded', async () => {
+      await service.findFunZonesInCorridor({ route });
+      const [sql] = funZoneRepo.query!.mock.calls[0] as [string, number[]];
+      expect(sql).toContain(`LIMIT ${MAX_FUN_ZONE_CORRIDOR_RESULTS}`);
     });
 
     it('maps rows through the shared Fun Zone DTO mapping', async () => {
