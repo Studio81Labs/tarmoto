@@ -46,7 +46,7 @@ export function PublicShareHeader({ breadcrumb }: { breadcrumb: string }) {
           variant="outline"
           icon={<ArrowUpRight size={14} />}
         >
-          {t("Open in Tarmoto")}
+          {t("Open Tarmoto")}
         </ShareCtaLink>
       </div>
     </header>
