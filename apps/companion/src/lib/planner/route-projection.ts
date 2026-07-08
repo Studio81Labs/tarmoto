@@ -81,3 +81,44 @@ export function projectOntoRoute(
     kmAlongRoute: Math.round(bestAlongKm),
   };
 }
+
+/**
+ * Project a polygon boundary ring onto the route and return the NEAREST
+ * contact — the min off-route distance + its along-route km. The ring is
+ * densified to ~`stepKm` along each edge (and closed) before projecting, so a
+ * route that runs alongside or through a long edge *between* the ring's own
+ * vertices is measured at the real contact, not a far corner vertex. Returns
+ * null on a degenerate route or empty ring.
+ */
+export function projectRingOntoRoute(
+  ring: readonly LatLng[],
+  route: readonly LatLng[],
+  stepKm = 1,
+): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
+  if (route.length < 2 || ring.length === 0) return null;
+  let best: { distanceFromRouteKm: number; kmAlongRoute: number } | null = null;
+  const consider = (point: LatLng): void => {
+    const projected = projectOntoRoute(point, route);
+    if (
+      projected &&
+      (!best || projected.distanceFromRouteKm < best.distanceFromRouteKm)
+    ) {
+      best = projected;
+    }
+  };
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % ring.length]!; // close the ring
+    consider(a);
+    // Interpolate along the edge so a contact point between vertices is caught.
+    const steps = Math.floor(segmentLengthKm(a, b) / stepKm);
+    for (let k = 1; k <= steps; k++) {
+      const t = k / (steps + 1);
+      consider({
+        lat: a.lat + t * (b.lat - a.lat),
+        lng: a.lng + t * (b.lng - a.lng),
+      });
+    }
+  }
+  return best;
+}
