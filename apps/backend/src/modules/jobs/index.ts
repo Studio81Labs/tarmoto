@@ -5,7 +5,6 @@ export type {
   BadgesRecheckUserJobData,
   DataExportJobData,
   DigestWeeklyComposeJobData,
-  PushNotificationJobData,
 } from './jobs.producer.js';
 export { QUEUE_NAMES, JOB_NAMES, ALL_QUEUE_NAMES } from './jobs.constants.js';
 export type { QueueName } from './jobs.constants.js';

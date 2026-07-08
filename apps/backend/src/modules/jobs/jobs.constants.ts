@@ -60,14 +60,6 @@ export const QUEUE_NAMES = {
   FUNZONE_RECOMPUTE: 'funzone-recompute',
 
   /**
-   * One-shot. Dispatches a push notification to a single device token.
-   * Stub processor today (no FCM/APNS integration yet) — the queue
-   * exists so callers can already enqueue and the wiring is in place
-   * once the push provider lands.
-   */
-  PUSH_NOTIFICATION: 'push-notification',
-
-  /**
    * Recurring (daily). Sweeps raw GPS / sensor data older than each
    * user's `location_retention` preference (#279). Drops rows from
    * `surface_readings`, `ride_segments`, and `ride_stats`-linked
@@ -164,7 +156,6 @@ export const JOB_NAMES = {
   ACCOUNT_DELETION_SWEEP_RUN: 'run',
   ACCOUNT_DELETION_FINALIZE_USER: 'finalize-user',
   FUNZONE_RECOMPUTE_RUN: 'run',
-  PUSH_NOTIFICATION_SEND: 'send',
   LOCATION_RETENTION_SWEEP_RUN: 'run',
   WEATHER_ALERT_SWEEP_RUN: 'run',
   MODEL_EVAL_RECONCILE_RUN: 'run',

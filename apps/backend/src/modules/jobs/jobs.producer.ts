@@ -28,14 +28,6 @@ export interface AccountDeletionFinalizeJobData {
   user_id: string;
 }
 
-export interface PushNotificationJobData {
-  user_id: string;
-  device_token: string;
-  title: string;
-  body: string;
-  data?: Record<string, string>;
-}
-
 export interface BadgesRecheckUserJobData {
   user_id: string;
 }
