@@ -228,3 +228,73 @@ export class TripDetailDto extends TripSummaryDto {
   @ApiProperty({ type: [TripDayDto] })
   days!: TripDayDto[];
 }
+
+/**
+ * Masked pre-join preview for an invited (not-yet-member) rider, served by
+ * `GET /trips/:tripId/invite/:code/preview`. Authorized by a live invite code,
+ * NOT membership — a trip is otherwise private/collaborator-only. Carries only
+ * a raw route overview (geometry + totals) plus the invite context so the
+ * companion can render a "preview + accept" screen; it deliberately omits the
+ * member roster, invite codes, and per-day waypoint detail so accepting the
+ * invite is what actually opens the trip.
+ */
+export class TripInvitePreviewDto {
+  @ApiProperty()
+  trip_id!: string;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Display name of the trip owner. `null` when unresolved.',
+  })
+  owner_name!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Display name of the rider who sent this invite. `null` when unresolved.',
+  })
+  invited_by_name!: string | null;
+
+  @ApiProperty({
+    enum: TRIP_MEMBER_ROLES,
+    description: 'The role the rider will hold after accepting.',
+  })
+  role!: TripMemberRole;
+
+  @ApiProperty({ nullable: true })
+  region!: string | null;
+
+  @ApiProperty()
+  num_days!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Total planned distance in km. `null` when unknown.',
+  })
+  distance_km!: number | null;
+
+  @ApiProperty({
+    type: 'array',
+    items: {
+      type: 'array',
+      items: {
+        type: 'array',
+        items: { type: 'number' },
+        minItems: 2,
+        maxItems: 2,
+      },
+    },
+    description:
+      'Simplified per-day route polylines — each an array of [lng, lat] pairs. Empty when the trip has no geometry.',
+  })
+  lines!: number[][][];
+
+  @ApiProperty({
+    description:
+      'True when the authenticated caller is already a member — the client can skip straight to the trip instead of re-accepting.',
+  })
+  already_member!: boolean;
+}

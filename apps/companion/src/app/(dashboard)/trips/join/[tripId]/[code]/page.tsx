@@ -1,155 +1,230 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Check, Loader2 } from "lucide-react";
-import { ApiError, tripsApi } from "@/lib/api";
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  Route as RouteIcon,
+} from "lucide-react";
+import { ApiError, tripsApi, type TripInvitePreview } from "@/lib/api";
+import type { RoutePoint } from "@/lib/ride-detail";
+import { TripRouteOverview } from "@/components/TripRouteOverview";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useAuthStore } from "@/stores/auth";
+import { t } from "@/i18n";
 
 type JoinState =
-  | { kind: "joining" }
-  | { kind: "success" }
-  | { kind: "error"; status: number | null; message: string };
+  | { kind: "loading" }
+  | { kind: "preview"; preview: TripInvitePreview }
+  | { kind: "accepting"; preview: TripInvitePreview }
+  | { kind: "error"; message: string };
 
 /**
  * Landing page for trip-invite emails. The invite mail (sent by
- * `POST /trips/:tripId/invite`) links here with both segments in the
- * path so the auth middleware's pathname-only `callbackUrl` can
- * round-trip an unauthenticated invitee through `/login` without
- * dropping the code.
+ * `POST /trips/:tripId/invite`) links here with both segments in the path so
+ * the auth middleware's pathname-only `callbackUrl` can round-trip an
+ * unauthenticated invitee through `/login` without dropping the code.
  *
- * On mount we POST `/trips/:tripId/join` with the invite code, and
- * either redirect to the trip detail (success / already a member —
- * the backend dedupes via the `(trip_id, user_id)` unique index) or
- * surface a clear error UI when the code is wrong or the trip no
- * longer exists.
+ * Once signed in we fetch a masked preview of the trip (route overview + who
+ * invited them + the role they'll get) and let the rider review it before an
+ * explicit "Accept invitation" — accepting is what POSTs `/trips/:id/join` and
+ * actually adds them to the (otherwise private) trip. An already-member is
+ * sent straight to the trip.
  */
 export default function TripInviteJoinPage() {
   const { tripId, code } = useParams<{ tripId: string; code: string }>();
   const router = useRouter();
-  const [state, setState] = useState<JoinState>({ kind: "joining" });
-  // Wait for `AuthSync` to hydrate the bearer token into
-  // `useAuthStore` before posting. On a hard navigation right after
-  // login/register the NextAuth session is mid-flight while the
-  // landing component already mounts; if the join effect ran now
-  // `apiFetch` would read `accessToken === null`, send an
-  // unauthenticated POST, hit the global 401 handler, and
-  // `clearSession` — wiping the just-issued credentials. Mirrors the
-  // `authReady` gate the trip detail page already uses for the same
-  // race.
+  const [state, setState] = useState<JoinState>({ kind: "loading" });
+  // Wait for `AuthSync` to hydrate the bearer token before calling the API —
+  // on a hard navigation right after login the NextAuth session is mid-flight
+  // while this component already mounts; firing now would send an
+  // unauthenticated request, hit the global 401 handler, and wipe the
+  // just-issued credentials.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
-  // Stash the router on a ref so the join effect doesn't list it in
-  // its dep array. Each `useRouter()` call returns a fresh object
-  // identity in jsdom-mocked tests (and at the framework level,
-  // referential stability isn't guaranteed) — including it in deps
-  // would re-fire the effect on every render and tight-loop the
-  // setState path.
   const routerRef = useRef(router);
   routerRef.current = router;
-  // StrictMode double-invokes effects in dev — without this guard the
-  // second pass would fire a second POST that the backend dedupes,
-  // but it would also flicker the user from "joining" to "success"
-  // twice. The ref scopes the dedupe to the lifetime of this client
-  // mount.
-  const joinedOnce = useRef(false);
+  // StrictMode double-invokes effects in dev; keep the preview fetch
+  // single-shot for the lifetime of this mount.
+  const fetchedOnce = useRef(false);
 
   useEffect(() => {
     if (!tripId || !code) {
       setState({
         kind: "error",
-        status: null,
-        message: "Missing trip id or invite code in the URL.",
+        message: t("Missing trip id or invite code in the URL."),
       });
       return;
     }
-    // Hold the spinner until AuthSync writes the bearer into the auth
-    // store. The effect re-fires when `authReady` flips to true, and
-    // `joinedOnce` keeps the actual POST single-shot afterwards.
     if (!authReady) return;
-    if (joinedOnce.current) return;
-    joinedOnce.current = true;
+    if (fetchedOnce.current) return;
+    fetchedOnce.current = true;
 
-    // No `cancelled` flag + cleanup pair here: under React StrictMode
-    // the dev double-invoke runs the cleanup of the first effect
-    // before the second pass, then the second pass exits early
-    // because `joinedOnce.current` is already `true`. With a
-    // `cancelled` gate, the first POST's resolution would hit the
-    // gate and skip the setState, leaving the page stuck on the
-    // "Accepting…" spinner forever (Bugbot #38db6ed2). React 18+
-    // silently ignores setState on unmounted components, so it's
-    // safe to drop the gate entirely — the worst case is one extra
-    // setState that React no-ops.
     void (async () => {
       try {
-        await tripsApi.join(tripId, code);
-        setState({ kind: "success" });
-        routerRef.current.replace(`/trips/${tripId}`);
-      } catch (err) {
-        if (err instanceof ApiError) {
-          setState({
-            kind: "error",
-            status: err.status,
-            message:
-              err.status === 403
-                ? "This invite link is invalid or has been revoked. Ask the trip owner for a new one."
-                : err.status === 401
-                  ? "Sign in to accept this trip invite."
-                  : err.message ||
-                    "Could not accept this invite. Please try again later.",
-          });
-        } else {
-          setState({
-            kind: "error",
-            status: null,
-            message:
-              err instanceof Error
-                ? err.message
-                : "Could not accept this invite. Please try again later.",
-          });
+        const { data } = await tripsApi.getInvitePreview(tripId, code);
+        // Already a member — nothing to accept; go straight to the trip.
+        if (data.already_member) {
+          routerRef.current.replace(`/trips/${tripId}`);
+          return;
         }
+        setState({ kind: "preview", preview: data });
+      } catch (err) {
+        setState({ kind: "error", message: messageForError(err) });
       }
     })();
   }, [tripId, code, authReady]);
 
+  const handleAccept = useCallback(async () => {
+    if (state.kind !== "preview") return;
+    setState({ kind: "accepting", preview: state.preview });
+    try {
+      await tripsApi.join(tripId, code);
+      routerRef.current.replace(`/trips/${tripId}`);
+    } catch (err) {
+      setState({ kind: "error", message: messageForError(err) });
+    }
+  }, [state, tripId, code]);
+
+  if (state.kind === "loading") {
+    return (
+      <Centered>
+        <Loader2 className="mb-4 h-10 w-10 animate-spin text-accent" />
+        <h1 className="text-xl font-semibold text-ink">
+          {t("Loading your invite…")}
+        </h1>
+      </Centered>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <Centered>
+        <AlertTriangle className="mb-4 h-10 w-10 text-amber-400" />
+        <h1 className="text-xl font-semibold text-ink">
+          {t("We couldn't open this invite")}
+        </h1>
+        <p className="mt-2 text-sm text-fg-dim">{state.message}</p>
+        <div className="mt-6">
+          <Link
+            href="/trips"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95"
+          >
+            {t("Go to my trips")}
+          </Link>
+        </div>
+      </Centered>
+    );
+  }
+
+  const { preview } = state;
+  const accepting = state.kind === "accepting";
+  const route = flattenLines(preview.lines);
+
+  return (
+    <div className="mx-auto w-full max-w-xl px-4 py-10">
+      <div className="mb-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-accent">
+        <RouteIcon size={14} />
+        {t("Trip invitation")}
+      </div>
+      <h1 className="text-2xl font-extrabold tracking-tight text-ink">
+        {preview.title}
+      </h1>
+      <div className="mt-3 flex items-center gap-2.5 text-sm text-fg-dim">
+        <UserAvatar
+          name={preview.invited_by_name ?? t("A rider")}
+          size={22}
+          fontSize={10}
+          accent
+        />
+        <span>
+          {preview.invited_by_name
+            ? t("{name} invited you to collaborate as {role}.", {
+                name: preview.invited_by_name,
+                role: roleLabel(preview.role),
+              })
+            : t("You've been invited to collaborate as {role}.", {
+                role: roleLabel(preview.role),
+              })}
+        </span>
+      </div>
+
+      <div className="mt-6">
+        <TripRouteOverview
+          route={route}
+          distanceKm={preview.distance_km}
+          dayCount={preview.num_days}
+          region={preview.region}
+          variant="light"
+          label={preview.title}
+        />
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => void handleAccept()}
+          disabled={accepting}
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-[11px] font-bold uppercase tracking-[0.2px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {accepting ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <Check size={16} />
+          )}
+          {accepting ? t("Accepting…") : t("Accept invitation")}
+        </button>
+        <Link
+          href="/trips"
+          className="inline-flex items-center rounded-lg border border-line-strong px-5 py-2.5 text-[11px] font-bold uppercase tracking-[0.2px] text-fg-dim transition hover:border-fg-mute hover:text-ink"
+        >
+          {t("Not now")}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function flattenLines(lines: number[][][]): RoutePoint[] {
+  const out: RoutePoint[] = [];
+  for (const line of lines) {
+    for (const point of line) {
+      const [lng, lat] = point;
+      if (typeof lat === "number" && typeof lng === "number") {
+        out.push({ lat, lng });
+      }
+    }
+  }
+  return out;
+}
+
+function roleLabel(role: TripInvitePreview["role"]): string {
+  if (role === "editor") return t("an editor");
+  if (role === "viewer") return t("a viewer");
+  return role;
+}
+
+function messageForError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 404) {
+      return t(
+        "This invite link is invalid or has been revoked. Ask the trip owner for a new one.",
+      );
+    }
+    if (err.status === 401) {
+      return t("Sign in to open this trip invite.");
+    }
+  }
+  return err instanceof Error
+    ? err.message
+    : t("Could not open this invite. Please try again later.");
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4 py-12 text-center">
-      {state.kind === "joining" && (
-        <>
-          <Loader2 className="mb-4 h-10 w-10 animate-spin text-accent" />
-          <h1 className="text-xl font-semibold text-ink">
-            Accepting your trip invite…
-          </h1>
-          <p className="mt-2 text-sm text-fg-dim">
-            Hang tight while we add you to the trip.
-          </p>
-        </>
-      )}
-
-      {state.kind === "success" && (
-        <>
-          <Check className="mb-4 h-10 w-10 text-quality-excellent" />
-          <h1 className="text-xl font-semibold text-ink">You&apos;re in!</h1>
-          <p className="mt-2 text-sm text-fg-dim">Taking you to the trip…</p>
-        </>
-      )}
-
-      {state.kind === "error" && (
-        <>
-          <AlertTriangle className="mb-4 h-10 w-10 text-amber-400" />
-          <h1 className="text-xl font-semibold text-ink">
-            We couldn&apos;t accept this invite
-          </h1>
-          <p className="mt-2 text-sm text-fg-dim">{state.message}</p>
-          <div className="mt-6 flex gap-3">
-            <Link
-              href="/trips"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-ink font-bold text-[11px] uppercase tracking-[0.2px] hover:brightness-95 transition"
-            >
-              Go to my trips
-            </Link>
-          </div>
-        </>
-      )}
+      {children}
     </div>
   );
 }

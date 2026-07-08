@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const mockReplace = vi.fn();
 let routeParams: { tripId?: string | null; code?: string | null } = {
@@ -12,12 +12,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: vi.fn(), back: vi.fn() }),
 }));
 
-// Self-contained module mock — `vi.mock` is hoisted, so referencing a
-// top-level identifier in the factory body would trip "cannot access
-// X before initialization". We deliberately do NOT `vi.importActual`
-// the real `@/lib/api`: it transitively pulls every endpoint surface
-// (hazards, closures, exploration, poi, …), which OOMs jsdom on Node
-// 22 under vitest 4 — `import 660ms, tests 0ms` is the symptom.
+// Self-contained module mock — `vi.mock` is hoisted, so we can't reference a
+// top-level identifier in the factory. We deliberately do NOT `vi.importActual`
+// the real `@/lib/api`: it transitively pulls every endpoint surface, which
+// OOMs jsdom under vitest.
 vi.mock("@/lib/api", () => {
   class ApiError extends Error {
     readonly status: number;
@@ -31,15 +29,19 @@ vi.mock("@/lib/api", () => {
   }
   return {
     ApiError,
-    tripsApi: { join: vi.fn() },
+    tripsApi: { getInvitePreview: vi.fn(), join: vi.fn() },
   };
 });
 
-// Mutable auth-store stub so individual tests can flip between
-// "AuthSync hasn't hydrated yet" (`accessToken: null`) and "hydrated"
-// (`accessToken: "..."`). The selector form mirrors the real zustand
-// store so the page's `useAuthStore((s) => Boolean(s.accessToken))`
-// hook works unchanged.
+// Light stubs so the page test doesn't drag in the route-preview SVG math or
+// the avatar's colour hashing — this test is about the preview→accept flow.
+vi.mock("@/components/TripRouteOverview", () => ({
+  TripRouteOverview: () => <div data-testid="route-overview" />,
+}));
+vi.mock("@/components/UserAvatar", () => ({
+  UserAvatar: () => <span data-testid="avatar" />,
+}));
+
 let authState: { accessToken: string | null } = { accessToken: "token" };
 vi.mock("@/stores/auth", () => ({
   useAuthStore: <T,>(selector: (s: { accessToken: string | null }) => T): T =>
@@ -55,36 +57,49 @@ beforeEach(() => {
   authState = { accessToken: "token" };
 });
 
-function joinedTripResponse() {
+function previewResponse(overrides = {}) {
   return {
     data: {
-      id: "trip-1",
-      owner_id: "owner-1",
+      trip_id: "trip-1",
       title: "Alps Loop",
-      region: null,
-      num_days: 1,
-      status: "draft" as const,
-      member_count: 1,
-      folder_id: null,
-      created_at: "2026-05-14T00:00:00.000Z",
-      distance_km: null,
-      quality_avg: null,
-      passes_count: null,
-      daily_km_min: 150,
-      daily_km_max: 250,
-      min_quality: 3,
-      road_preference: "mixed" as const,
-      invite_code: "ABCDEFGH",
-      members: [],
-      days: [],
+      owner_name: "Jane Rider",
+      invited_by_name: "Jane Rider",
+      role: "editor" as const,
+      region: "Tirol",
+      num_days: 3,
+      distance_km: 520,
+      lines: [
+        [
+          [11, 46],
+          [11.1, 46.1],
+        ],
+      ],
+      already_member: false,
+      ...overrides,
     },
   };
 }
 
+function joinedTripResponse() {
+  return { data: { id: "trip-1" } };
+}
+
 describe("TripInviteJoinPage", () => {
-  it("posts the invite code to /trips/:id/join and redirects to the trip detail on success", async () => {
+  it("renders the preview and only joins after an explicit accept", async () => {
+    vi.mocked(tripsApi.getInvitePreview).mockResolvedValue(previewResponse());
     vi.mocked(tripsApi.join).mockResolvedValue(joinedTripResponse());
     render(<TripInviteJoinPage />);
+
+    // Preview shows the trip title, the inviter + role, and the route overview.
+    await screen.findByText("Alps Loop");
+    expect(
+      screen.getByText(/Jane Rider invited you to collaborate as an editor/i),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("route-overview")).toBeInTheDocument();
+    // Crucially, no join has fired yet — accepting is an explicit action.
+    expect(tripsApi.join).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Accept invitation/i }));
 
     await waitFor(() => {
       expect(tripsApi.join).toHaveBeenCalledWith("trip-1", "ABCDEFGH");
@@ -94,41 +109,59 @@ describe("TripInviteJoinPage", () => {
     });
   });
 
-  it("surfaces an actionable error when the invite code is rejected (403)", async () => {
-    vi.mocked(tripsApi.join).mockRejectedValue(
-      new ApiError("Invalid trip or invite code", 403, {}),
+  it("redirects an existing member straight to the trip without an accept step", async () => {
+    vi.mocked(tripsApi.getInvitePreview).mockResolvedValue(
+      previewResponse({ already_member: true }),
+    );
+    render(<TripInviteJoinPage />);
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/trips/trip-1");
+    });
+    expect(tripsApi.join).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: /Accept invitation/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("surfaces an actionable error when the invite is invalid/revoked (404)", async () => {
+    vi.mocked(tripsApi.getInvitePreview).mockRejectedValue(
+      new ApiError("Invite not found", 404, {}),
     );
     render(<TripInviteJoinPage />);
 
     await screen.findByText(/This invite link is invalid or has been revoked/i);
-    expect(mockReplace).not.toHaveBeenCalled();
-    // Recovery action: a "Go to my trips" link, since the user is
-    // signed in (otherwise the middleware would have intercepted the
-    // page before it loaded) but can't accept this particular invite.
+    expect(tripsApi.join).not.toHaveBeenCalled();
     expect(
       screen.getByRole("link", { name: /Go to my trips/i }),
     ).toHaveAttribute("href", "/trips");
   });
 
-  it("does not POST when the route params are missing", async () => {
+  it("does not call the API when the route params are missing", async () => {
     routeParams = { tripId: null, code: null };
     render(<TripInviteJoinPage />);
 
     await screen.findByText(/Missing trip id or invite code/i);
-    expect(tripsApi.join).not.toHaveBeenCalled();
+    expect(tripsApi.getInvitePreview).not.toHaveBeenCalled();
   });
 
-  it("redirects to the trip detail under React StrictMode without sticking on the spinner (Bugbot #38db6ed2)", async () => {
-    // Regression for the high-severity Bugbot finding on PR #489: the
-    // earlier `joinedOnce` + `cancelled` pair deadlocked under
-    // StrictMode (which next.config.ts has on by default) — the
-    // second pass's early-exit left the first pass's resolved POST
-    // gated behind `cancelled = true`, so setState never fired and
-    // the page sat on the spinner forever. Wrapping the component in
-    // `<StrictMode>` here forces the dev double-invoke that the bug
-    // depended on, so a regression of the deadlock would time out the
-    // `waitFor` instead of redirecting.
-    vi.mocked(tripsApi.join).mockResolvedValue(joinedTripResponse());
+  it("waits for AuthSync to hydrate the bearer token before fetching the preview", async () => {
+    authState = { accessToken: null };
+    vi.mocked(tripsApi.getInvitePreview).mockResolvedValue(previewResponse());
+
+    const { rerender } = render(<TripInviteJoinPage />);
+    expect(screen.getByText(/Loading your invite/i)).toBeInTheDocument();
+    expect(tripsApi.getInvitePreview).not.toHaveBeenCalled();
+
+    authState = { accessToken: "token" };
+    rerender(<TripInviteJoinPage />);
+
+    await screen.findByText("Alps Loop");
+    expect(tripsApi.getInvitePreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches the preview once under React StrictMode", async () => {
+    vi.mocked(tripsApi.getInvitePreview).mockResolvedValue(previewResponse());
 
     render(
       <StrictMode>
@@ -136,42 +169,7 @@ describe("TripInviteJoinPage", () => {
       </StrictMode>,
     );
 
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/trips/trip-1");
-    });
-    // The dedupe ref must still gate StrictMode's double-invoke down
-    // to a single backend POST — two `member_joined` activity rows
-    // would litter the trip's collaboration timeline.
-    expect(tripsApi.join).toHaveBeenCalledTimes(1);
-  });
-
-  it("waits for AuthSync to hydrate the bearer token before posting (Codex #r3207058516)", async () => {
-    // Regression for the AuthSync race Codex flagged: on a hard
-    // navigation right after login/register the NextAuth session is
-    // mid-flight while the page already mounts. If the join effect
-    // fired now, `apiFetch` would read `accessToken === null`, send
-    // an unauthenticated POST, hit the global 401 handler, and
-    // `clearSession` — wiping the just-issued credentials. The
-    // `authReady` gate must hold the spinner until the token lands.
-    authState = { accessToken: null };
-    vi.mocked(tripsApi.join).mockResolvedValue(joinedTripResponse());
-
-    const { rerender } = render(<TripInviteJoinPage />);
-    // Spinner is up but no POST has gone out yet.
-    expect(screen.getByText(/Accepting your trip invite/i)).toBeInTheDocument();
-    expect(tripsApi.join).not.toHaveBeenCalled();
-
-    // AuthSync finishes — token lands in the store, page re-renders,
-    // effect picks the change up via its `authReady` dep and posts.
-    authState = { accessToken: "token" };
-    rerender(<TripInviteJoinPage />);
-
-    await waitFor(() => {
-      expect(tripsApi.join).toHaveBeenCalledWith("trip-1", "ABCDEFGH");
-    });
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/trips/trip-1");
-    });
-    expect(tripsApi.join).toHaveBeenCalledTimes(1);
+    await screen.findByText("Alps Loop");
+    expect(tripsApi.getInvitePreview).toHaveBeenCalledTimes(1);
   });
 });
