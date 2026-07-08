@@ -424,6 +424,36 @@ describe('PoiImportService', () => {
     expect(upsert).toHaveBeenCalled();
   });
 
+  it('uses the pre-import region size for the wipe guard (a full-replacement wrong extract is refused)', async () => {
+    // 60 existing rows + a wrong extract of 60 DIFFERENT in-bbox ids. The stale
+    // set is all 60 existing; the guard denominator must be the pre-import 60
+    // (not 120 after the upsert adds the new ones) so 60/60 > 50% fires — which
+    // requires the stale-load to run BEFORE the upsert.
+    const existingRows = Array.from({ length: 60 }, (_, i) => ({
+      id: `uuid-old-${i}`,
+      external_id: `node/old-${i}`,
+      import_region: 'CZ',
+    }));
+    loadInBbox(existingRows);
+    mockExtract(
+      ...Array.from({ length: 60 }, (_, i) =>
+        poi({ external_id: `node/new-${i}` }),
+      ),
+    );
+
+    const result = await service.importRegion(REGION);
+
+    // The stale-load (first tx query) must precede the upsert.
+    expect(txQuery.mock.invocationCallOrder[0]).toBeLessThan(
+      upsert.mock.invocationCallOrder[0] as number,
+    );
+    const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
+      ([sql]) => /UPDATE pois SET deactivated_at = NOW\(\)/.test(sql),
+    );
+    expect(tombstone).toBeUndefined();
+    expect(result.tombstoned).toBe(0);
+  });
+
   it('skips a region with no extract file yet (no parse, no write) for gradual provisioning', async () => {
     existsSyncMock.mockReturnValueOnce(false);
 

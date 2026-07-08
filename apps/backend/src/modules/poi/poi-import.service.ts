@@ -277,26 +277,20 @@ export class PoiImportService {
 
     await withPoiRepo(this.poiDataSource, async (repo) => {
       await repo.manager.transaction(async (tx) => {
-        // 1. Upsert (insert new + revive/refresh existing) in param-safe chunks.
-        for (const part of chunk(rows, UPSERT_CHUNK)) {
-          if (part.length) {
-            await tx.getRepository(Poi).upsert(part, {
-              conflictPaths: ['source', 'external_id'],
-            });
-          }
-        }
-
-        // 2. Stale-by-absence tombstoning. Load live OSM rows inside the bbox
-        // that either THIS region imported (`import_region`) OR are unclaimed
-        // (`import_region` null — legacy pre-#850 Overpass rows the migration
-        // couldn't attribute), then tombstone the ones the extract didn't carry.
-        // The region scope is load-bearing: the default bboxes overlap at
-        // borders, so a bbox-only load would let e.g. the SK job tombstone live
-        // Czech border POIs absent from SK's extract. A legacy (null) row is
-        // only THIS region's to tombstone when no OTHER configured region's bbox
-        // also contains it — otherwise it's an ambiguous border row, left for
-        // whichever region's extract actually claims it (present rows get an
-        // `import_region` via the upsert above; only closed legacy rows remain).
+        // 1. Load the region's live rows BEFORE upserting, so both the tombstone
+        // candidate set and the wipe-guard denominator reflect the PRE-import
+        // region — not inflated by the incoming rows the upsert is about to add
+        // (else a wrong extract of ~N fresh ids against N existing rows would
+        // double the denominator and slip the guard). Load rows THIS region
+        // imported (`import_region`) OR unclaimed (`import_region` null — legacy
+        // pre-#850 Overpass rows the migration couldn't attribute). The region
+        // scope is load-bearing: the default bboxes overlap at borders, so a
+        // bbox-only load would let e.g. the SK job tombstone live Czech border
+        // POIs absent from SK's extract. A legacy (null) row is only THIS
+        // region's to tombstone when no OTHER configured region's bbox contains
+        // it — otherwise it's an ambiguous border row, left for whichever
+        // region's extract actually claims it (present rows get an
+        // `import_region` via the upsert below; only closed legacy rows remain).
         const existing = await tx.query<
           {
             id: string;
@@ -339,11 +333,23 @@ export class PoiImportService {
 
         // Near-empty guard: a valid-but-incomplete extract with a few in-bbox
         // rows slips past the zero-rows check but would still tombstone most of
-        // the region — refuse to deactivate an implausible share in one run.
+        // the pre-import region — refuse to deactivate an implausible share in
+        // one run.
         const wouldWipeTooMuch =
           owned.length >= MIN_REGION_FOR_TOMBSTONE_GUARD &&
           tombstoneIds.length > owned.length * MAX_TOMBSTONE_FRACTION;
 
+        // 2. Upsert (insert new + revive/refresh existing) in param-safe chunks.
+        for (const part of chunk(rows, UPSERT_CHUNK)) {
+          if (part.length) {
+            await tx.getRepository(Poi).upsert(part, {
+              conflictPaths: ['source', 'external_id'],
+            });
+          }
+        }
+
+        // 3. Tombstone the stale set (pre-import rows absent from the extract,
+        // untouched by the upsert), unless it would wipe an implausible share.
         if (wouldWipeTooMuch) {
           this.logger.warn(
             `POI import (${region.code}): extract would tombstone ` +
