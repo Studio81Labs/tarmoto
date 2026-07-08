@@ -226,12 +226,21 @@ export function Tooltip({
   // that moves under the fixed-position bubble. `mounted` is a dependency
   // so a force-open (`open`) tooltip re-measures once the portalled bubble
   // exists — the first pass runs before mount, when `bubbleRef` is null.
+  // A ResizeObserver re-centres the bubble when its own content changes
+  // size while open (e.g. a label swapped for a longer error message),
+  // which the trigger-only scroll/resize listeners wouldn't catch.
   useLayoutEffect(() => {
     if (!visible || !mounted) return;
     measure();
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(measure)
+        : null;
+    if (observer && bubbleRef.current) observer.observe(bubbleRef.current);
     window.addEventListener("scroll", measure, true);
     window.addEventListener("resize", measure);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("scroll", measure, true);
       window.removeEventListener("resize", measure);
     };
@@ -279,7 +288,10 @@ export function Tooltip({
       aria-hidden={!visible}
       style={{ top: position?.top ?? 0, left: position?.left ?? 0 }}
       className={cn(
-        "pointer-events-none fixed z-[100] bg-ink text-cream font-sans",
+        // Sit above map/header chrome (map overlays top out at z-30) but
+        // below modal overlays (dialogs are z-40/z-50), so a tooltip left
+        // open by a focused trigger can't paint over a dialog it launched.
+        "pointer-events-none fixed z-[35] bg-ink text-cream font-sans",
         "shadow-[0_8px_24px_rgba(14,14,16,0.2)] transition-opacity duration-150",
         visible ? "opacity-100 delay-200" : "opacity-0",
         kindClass[kind],
