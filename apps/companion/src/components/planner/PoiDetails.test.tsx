@@ -25,7 +25,7 @@ describe("readPoiDetails", () => {
           addressStreet: "Main 1",
           addressCity: "Brno",
           phone: "+420 111",
-          website: "https://x.test",
+          website: "https://ulesa.example/",
           cuisine: "italian",
           brand: "Shell",
           // Unrelated keys the store never sets — must be ignored:
@@ -39,7 +39,7 @@ describe("readPoiDetails", () => {
       addressStreet: "Main 1",
       addressCity: "Brno",
       phone: "+420 111",
-      website: "https://x.test",
+      website: "https://ulesa.example/",
       cuisine: "italian",
       brand: "Shell",
     });
@@ -67,6 +67,24 @@ describe("readPoiDetails", () => {
 
   it("treats an absent meta bag as no details", () => {
     expect(hasPoiDetails(readPoiDetails(poi(undefined)))).toBe(false);
+  });
+
+  it("assumes https for a scheme-less website and keeps http(s) ones", () => {
+    expect(readPoiDetails(poi({ website: "www.cafe.example" })).website).toBe(
+      "https://www.cafe.example/",
+    );
+    expect(readPoiDetails(poi({ website: "http://x.example/a" })).website).toBe(
+      "http://x.example/a",
+    );
+  });
+
+  it("drops a website with a non-http scheme", () => {
+    expect(
+      readPoiDetails(poi({ website: "javascript:alert(1)" })).website,
+    ).toBeUndefined();
+    expect(
+      hasPoiDetails(readPoiDetails(poi({ website: "mailto:a@b.example" }))),
+    ).toBe(false);
   });
 });
 

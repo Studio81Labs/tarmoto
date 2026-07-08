@@ -39,6 +39,31 @@ function nonEmptyString(value: unknown): string | undefined {
 }
 
 /**
+ * OSM `website` tags are unnormalized — a bare host (`www.x.example`), a full
+ * `https://…`, or occasionally a non-web scheme. Return an absolute http(s)
+ * URL (assuming https for scheme-less values) or `undefined` for anything we
+ * can't safely turn into an href: a scheme-less value would otherwise resolve
+ * against the companion origin, and `javascript:` / `mailto:` etc. must never
+ * become a link target.
+ */
+function safeWebsiteUrl(raw: string): string | undefined {
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.href
+      : undefined;
+  } catch {
+    // No scheme — assume https and re-validate below.
+  }
+  try {
+    const parsed = new URL(`https://${raw}`);
+    return parsed.protocol === "https:" ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Pull the decision-support fields off a store-backed POI's `meta` bag with
  * type guards. Mock passes / twisties carry unrelated `meta` keys (twisty
  * score, elevation, pass status) — those don't match and are ignored, so the
@@ -46,13 +71,14 @@ function nonEmptyString(value: unknown): string | undefined {
  */
 export function readPoiDetails(poi: Poi): PoiDetailFields {
   const meta = poi.meta ?? {};
+  const website = nonEmptyString(meta.website);
   return {
     stars: typeof meta.stars === "number" ? meta.stars : undefined,
     openingHours: nonEmptyString(meta.openingHours),
     addressStreet: nonEmptyString(meta.addressStreet),
     addressCity: nonEmptyString(meta.addressCity),
     phone: nonEmptyString(meta.phone),
-    website: nonEmptyString(meta.website),
+    website: website ? safeWebsiteUrl(website) : undefined,
     cuisine: nonEmptyString(meta.cuisine),
     brand: nonEmptyString(meta.brand),
   };
