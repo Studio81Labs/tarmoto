@@ -151,7 +151,7 @@ Companion UI calls `trips` module → trip, days, and waypoints persist → `exp
 
 ## Scheduled jobs
 
-Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the connection, registers eight named queues, schedules recurring jobs as BullMQ repeatables on application bootstrap, and exposes operational counters at `GET /jobs/health`.
+Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the connection, registers seven named queues, schedules recurring jobs as BullMQ repeatables on application bootstrap, and exposes operational counters at `GET /jobs/health`.
 
 | Queue                       | Cadence                           | What it does                                                                                                                              |
 | --------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -162,7 +162,6 @@ Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the co
 | `account-deletion-finalize` | one-shot (per user)               | Stripe cancel + DB cascade + audit log + confirmation email for one user. Idempotent; the row's eligibility is rechecked under lock.      |
 | `data-export`               | one-shot (per request)            | Assembles the GDPR ZIP bundle. Replaced the prior `setImmediate`-based fire-and-forget; the controller enqueues and returns 202.          |
 | `funzone-recompute`         | weekly Mon `0 4 * * 1`            | Re-runs the `FunZoneClusteringService` DBSCAN pipeline. The CLI script (`pnpm cluster:fun-zones`) stays for ad-hoc runs.                  |
-| `push-notification`         | one-shot                          | Stub processor — no FCM/APNS provider wired yet. Callers can already enqueue; swapping in the provider is a one-file change.              |
 
 **Retry policy:** every job retries up to 5 attempts with exponential backoff (30 s → 60 s → 2 m → 4 m → 8 m). Idempotency keys (`jobId`) are set on every producer that has a natural dedup target (request id, user id, or `user_id + window`).
 
