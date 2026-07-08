@@ -120,12 +120,16 @@ export const DEFAULT_REGIONS: readonly PoiImportRegion[] = [
 ];
 
 /**
- * Resolve the active region list from `TARMOTO_POI_IMPORT_REGIONS` (a
- * comma-separated list of country codes). Unset / blank → the full default
- * list. An unknown code is a configuration error (throws) rather than a
- * silent drop — a typo would otherwise quietly skip a country's import.
+ * Resolve the active region list from a comma-separated list of country codes
+ * (`envName` names the source var, e.g. `TARMOTO_POI_IMPORT_REGIONS`). Unset /
+ * blank → the full default list. An unknown code is a configuration error
+ * (throws) rather than a silent drop — a typo would otherwise quietly skip a
+ * country's import.
  */
-function parseRegions(raw: string | undefined): PoiImportRegion[] {
+function parseRegions(
+  raw: string | undefined,
+  envName: string,
+): PoiImportRegion[] {
   if (!raw || raw.trim() === '') return [...DEFAULT_REGIONS];
   const byCode = new Map(DEFAULT_REGIONS.map((r) => [r.code, r]));
   const codes = raw
@@ -139,7 +143,7 @@ function parseRegions(raw: string | undefined): PoiImportRegion[] {
     const region = byCode.get(code);
     if (!region) {
       throw new Error(
-        `Invalid TARMOTO_POI_IMPORT_REGIONS: unknown region "${code}". ` +
+        `Invalid ${envName}: unknown region "${code}". ` +
           `Known regions: ${DEFAULT_REGIONS.map((r) => r.code).join(', ')}`,
       );
     }
@@ -151,14 +155,38 @@ function parseRegions(raw: string | undefined): PoiImportRegion[] {
   return selected;
 }
 
+function boolEnv(value: string | undefined): boolean {
+  return (value ?? 'false').trim().toLowerCase() === 'true';
+}
+
 export const poiImportConfig = registerAs('poiImport', (): PoiImportConfig => {
   const extractDir = process.env.TARMOTO_POI_IMPORT_DIR?.trim();
   return {
-    enabled:
-      (process.env.TARMOTO_POI_IMPORT_ENABLED ?? 'false')
-        .trim()
-        .toLowerCase() === 'true',
+    enabled: boolEnv(process.env.TARMOTO_POI_IMPORT_ENABLED),
     extractDir: extractDir ? extractDir : null,
-    regions: parseRegions(process.env.TARMOTO_POI_IMPORT_REGIONS),
+    regions: parseRegions(
+      process.env.TARMOTO_POI_IMPORT_REGIONS,
+      'TARMOTO_POI_IMPORT_REGIONS',
+    ),
+  };
+});
+
+/**
+ * Config for the Foursquare OS Places bulk import (#869) — the second bulk
+ * source alongside OSM, same shape + region model. The operator's offline
+ * DuckDB recipe writes per-region `<code>.fsq.jsonl` extracts into
+ * `TARMOTO_FSQ_IMPORT_DIR` (see the runbook). Enabled defaults to **false**;
+ * the coverage list defaults to the same {@link DEFAULT_REGIONS}, narrowed via
+ * `TARMOTO_FSQ_IMPORT_REGIONS` (CZ-first at launch).
+ */
+export const fsqImportConfig = registerAs('fsqImport', (): PoiImportConfig => {
+  const extractDir = process.env.TARMOTO_FSQ_IMPORT_DIR?.trim();
+  return {
+    enabled: boolEnv(process.env.TARMOTO_FSQ_IMPORT_ENABLED),
+    extractDir: extractDir ? extractDir : null,
+    regions: parseRegions(
+      process.env.TARMOTO_FSQ_IMPORT_REGIONS,
+      'TARMOTO_FSQ_IMPORT_REGIONS',
+    ),
   };
 });

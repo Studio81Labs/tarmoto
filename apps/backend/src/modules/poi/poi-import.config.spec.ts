@@ -1,4 +1,8 @@
-import { DEFAULT_REGIONS, poiImportConfig } from './poi-import.config.js';
+import {
+  DEFAULT_REGIONS,
+  fsqImportConfig,
+  poiImportConfig,
+} from './poi-import.config.js';
 
 describe('poiImportConfig', () => {
   const ENABLED = 'TARMOTO_POI_IMPORT_ENABLED';
@@ -66,5 +70,54 @@ describe('poiImportConfig', () => {
       expect(bbox.maxLng - bbox.minLng).toBeGreaterThan(0);
       expect(bbox.maxLat - bbox.minLat).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('fsqImportConfig', () => {
+  const ENABLED = 'TARMOTO_FSQ_IMPORT_ENABLED';
+  const DIR = 'TARMOTO_FSQ_IMPORT_DIR';
+  const REGIONS = 'TARMOTO_FSQ_IMPORT_REGIONS';
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of [ENABLED, DIR, REGIONS]) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of [ENABLED, DIR, REGIONS]) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  it('reads its own FSQ env vars (disabled by default, shared region model)', () => {
+    expect(fsqImportConfig().enabled).toBe(false);
+    expect(fsqImportConfig().extractDir).toBeNull();
+    process.env[ENABLED] = 'true';
+    process.env[DIR] = '/data/fsq-extracts';
+    process.env[REGIONS] = 'CZ';
+    const cfg = fsqImportConfig();
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.extractDir).toBe('/data/fsq-extracts');
+    expect(cfg.regions.map((r) => r.code)).toEqual(['CZ']);
+  });
+
+  it('is independent of the OSM import flag', () => {
+    process.env.TARMOTO_POI_IMPORT_ENABLED = 'true';
+    try {
+      expect(fsqImportConfig().enabled).toBe(false);
+    } finally {
+      delete process.env.TARMOTO_POI_IMPORT_ENABLED;
+    }
+  });
+
+  it('names the FSQ var when a region code is unknown', () => {
+    process.env[REGIONS] = 'CZ,ZZ';
+    expect(() => fsqImportConfig()).toThrow(
+      /Invalid TARMOTO_FSQ_IMPORT_REGIONS: unknown region "ZZ"/,
+    );
   });
 });
