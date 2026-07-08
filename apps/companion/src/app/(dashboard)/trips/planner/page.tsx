@@ -2277,7 +2277,11 @@ export default function TripPlannerPage() {
                 </button>
               );
               return canRenameTrip ? (
-                <Tooltip content={t("Rename trip")} placement="below">
+                <Tooltip
+                  content={t("Rename trip")}
+                  placement="below"
+                  className="min-w-0 max-w-full"
+                >
                   {renameButton}
                 </Tooltip>
               ) : (

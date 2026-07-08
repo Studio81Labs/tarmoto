@@ -34,20 +34,20 @@ import { cn } from "../utils/cn";
  * lower stacking context (or clips overflow) than an adjacent map or
  * canvas, which would otherwise paint over an in-flow tooltip. Escaping
  * to the body layer means the bubble is never covered or clipped by a
- * sibling regardless of the host page's z-index topology.
+ * sibling regardless of the host page's z-index topology. The bubble is
+ * clamped to the viewport so edge triggers (a leftmost back button, a
+ * rightmost destructive control) don't render their label off-screen;
+ * the tail tracks the trigger centre within the clamped bubble.
  */
 export type TooltipPlacement = "above" | "below" | "left" | "right";
 export type TooltipKind = "label" | "data" | "coach";
 
 // Gap between the trigger edge and the bubble, matching the 8 px tail.
 const GAP_PX = 8;
-
-const tailClass: Record<TooltipPlacement, string> = {
-  above: "bottom-[-4px] left-1/2 -translate-x-1/2",
-  below: "top-[-4px] left-1/2 -translate-x-1/2",
-  right: "left-[-4px] top-1/2 -translate-y-1/2",
-  left: "right-[-4px] top-1/2 -translate-y-1/2",
-};
+// Keep the bubble at least this far from the viewport edges when clamping.
+const VIEWPORT_MARGIN_PX = 8;
+// Half the 8 px tail — keeps the tail fully on the bubble face after clamp.
+const TAIL_INSET_PX = 8;
 
 const kindClass: Record<TooltipKind, string> = {
   label: "px-2.5 py-1.5 text-[12px] font-semibold rounded-md whitespace-nowrap",
@@ -56,50 +56,88 @@ const kindClass: Record<TooltipKind, string> = {
     "px-3.5 py-3 text-[12px] rounded-[10px] max-w-[280px] shadow-[0_24px_60px_rgba(14,14,16,0.4)]",
 };
 
-interface BubbleCoords {
+interface BubblePosition {
   top: number;
   left: number;
-  transform: string;
+  /** Inline style for the tail square (position + rotate). */
+  tail: CSSProperties;
 }
 
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
 /**
- * Fixed-position coordinates + centring transform for the bubble, from
- * the trigger's viewport rect. `getBoundingClientRect` is already
- * viewport-relative, so it maps straight onto `position: fixed`.
+ * Resolve the bubble's fixed-position top-left and the tail offset from
+ * the trigger rect and the (already-rendered) bubble size, clamping the
+ * bubble into the viewport. `getBoundingClientRect` is viewport-relative,
+ * so its values map straight onto `position: fixed`.
  */
-function bubbleCoords(
-  rect: DOMRect,
+function computePosition(
+  trigger: DOMRect,
+  bubbleWidth: number,
+  bubbleHeight: number,
   placement: TooltipPlacement,
-): BubbleCoords {
-  const centerX = rect.left + rect.width / 2;
-  const centerY = rect.top + rect.height / 2;
-  switch (placement) {
-    case "below":
-      return {
-        top: rect.bottom + GAP_PX,
-        left: centerX,
-        transform: "translate(-50%, 0)",
-      };
-    case "left":
-      return {
-        top: centerY,
-        left: rect.left - GAP_PX,
-        transform: "translate(-100%, -50%)",
-      };
-    case "right":
-      return {
-        top: centerY,
-        left: rect.right + GAP_PX,
-        transform: "translate(0, -50%)",
-      };
-    case "above":
-    default:
-      return {
-        top: rect.top - GAP_PX,
-        left: centerX,
-        transform: "translate(-50%, -100%)",
-      };
+  viewportWidth: number,
+  viewportHeight: number,
+): BubblePosition {
+  const centerX = trigger.left + trigger.width / 2;
+  const centerY = trigger.top + trigger.height / 2;
+
+  if (placement === "left" || placement === "right") {
+    const left =
+      placement === "right"
+        ? trigger.right + GAP_PX
+        : trigger.left - GAP_PX - bubbleWidth;
+    const top = clamp(
+      centerY - bubbleHeight / 2,
+      VIEWPORT_MARGIN_PX,
+      Math.max(
+        VIEWPORT_MARGIN_PX,
+        viewportHeight - bubbleHeight - VIEWPORT_MARGIN_PX,
+      ),
+    );
+    const tailTop = clamp(
+      centerY - top,
+      TAIL_INSET_PX,
+      Math.max(TAIL_INSET_PX, bubbleHeight - TAIL_INSET_PX),
+    );
+    return {
+      top,
+      left,
+      tail: {
+        top: tailTop,
+        [placement === "right" ? "left" : "right"]: -4,
+        transform: "translateY(-50%) rotate(45deg)",
+      },
+    };
   }
+
+  const top =
+    placement === "below"
+      ? trigger.bottom + GAP_PX
+      : trigger.top - GAP_PX - bubbleHeight;
+  const left = clamp(
+    centerX - bubbleWidth / 2,
+    VIEWPORT_MARGIN_PX,
+    Math.max(
+      VIEWPORT_MARGIN_PX,
+      viewportWidth - bubbleWidth - VIEWPORT_MARGIN_PX,
+    ),
+  );
+  const tailLeft = clamp(
+    centerX - left,
+    TAIL_INSET_PX,
+    Math.max(TAIL_INSET_PX, bubbleWidth - TAIL_INSET_PX),
+  );
+  return {
+    top,
+    left,
+    tail: {
+      left: tailLeft,
+      [placement === "below" ? "top" : "bottom"]: -4,
+      transform: "translateX(-50%) rotate(45deg)",
+    },
+  };
 }
 
 export interface TooltipProps {
@@ -153,7 +191,8 @@ export function Tooltip({
   const [focused, setFocused] = useState(false);
   const [mounted, setMounted] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
-  const [coords, setCoords] = useState<BubbleCoords | null>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
+  const [position, setPosition] = useState<BubblePosition | null>(null);
   // `open` is a *force-open* flag, never a force-close. When `open` is
   // truthy, the tooltip is visible regardless of hover/focus; when
   // `false` or `undefined`, hover/focus still drives visibility. This
@@ -166,9 +205,19 @@ export function Tooltip({
   useEffect(() => setMounted(true), []);
 
   const measure = useCallback(() => {
-    const el = triggerRef.current;
-    if (!el) return;
-    setCoords(bubbleCoords(el.getBoundingClientRect(), placement));
+    const triggerEl = triggerRef.current;
+    const bubbleEl = bubbleRef.current;
+    if (!triggerEl || !bubbleEl) return;
+    setPosition(
+      computePosition(
+        triggerEl.getBoundingClientRect(),
+        bubbleEl.offsetWidth,
+        bubbleEl.offsetHeight,
+        placement,
+        window.innerWidth,
+        window.innerHeight,
+      ),
+    );
   }, [placement]);
 
   // Pin the bubble to the trigger while it's visible. Measuring in a
@@ -220,18 +269,13 @@ export function Tooltip({
       })
     : children;
 
-  const bubbleStyle: CSSProperties = {
-    top: coords?.top ?? 0,
-    left: coords?.left ?? 0,
-    transform: coords?.transform,
-  };
-
   const bubble = (
     <span
+      ref={bubbleRef}
       id={id}
       role="tooltip"
       aria-hidden={!visible}
-      style={bubbleStyle}
+      style={{ top: position?.top ?? 0, left: position?.left ?? 0 }}
       className={cn(
         "pointer-events-none fixed z-[100] bg-ink text-cream font-sans",
         "shadow-[0_8px_24px_rgba(14,14,16,0.2)] transition-opacity duration-150",
@@ -242,7 +286,8 @@ export function Tooltip({
       {content}
       <span
         aria-hidden="true"
-        className={cn("absolute size-2 rotate-45 bg-ink", tailClass[placement])}
+        style={position?.tail}
+        className="absolute size-2 bg-ink"
       />
     </span>
   );
