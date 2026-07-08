@@ -209,12 +209,12 @@ export class RouteCollectionsController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Add a trip or ride to a collection (owner only). Duplicate adds return the existing row.',
+      'Add a ride to a collection (owner only). Duplicate adds return the existing row.',
   })
   @ApiResponse({ status: 201, type: RouteCollectionItemResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'trip_id and ride_id are mutually exclusive',
+    description: 'ride_id must be a valid UUID',
   })
   @ApiResponse({ status: 403, description: 'Not the owner' })
   @ApiResponse({ status: 404, description: 'Collection not found' })

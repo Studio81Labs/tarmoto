@@ -77,11 +77,8 @@ export const routeCollectionsApi = {
     openApiData<void>(
       api.DELETE("/api/v1/collections/{id}", { params: { path: { id } } }),
     ),
-  // The generated `AddRouteCollectionItemDto` marks `trip_id`/`ride_id` as
-  // `string | null`, but the backend `@IsUUID()` rejects a null value (400) —
-  // exactly one UUID string is expected. Keep the input non-nullable so callers
-  // can't type-check their way into a guaranteed 400.
-  addItem: (id: string, input: { trip_id?: string; ride_id?: string }) =>
+  // Collections hold rides only; `ride_id` is the sole (required) target.
+  addItem: (id: string, input: { ride_id: string }) =>
     openApiData<RouteCollectionItemResponse>(
       api.POST("/api/v1/collections/{id}/items", {
         params: { path: { id } },

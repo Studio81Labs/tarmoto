@@ -401,13 +401,12 @@ export class RouteCollectionsService {
    * deleted owner).
    *
    * Geometries are simplified server-side via `ST_Simplify` (~50 m
-   * tolerance) and pulled in two batched queries — one over `trip_days`
-   * for the trip items and one over `rides` for the ride items — so a
-   * 20+ item collection still resolves in a single round-trip per kind
-   * regardless of item count. Items whose underlying trip/ride was
-   * deleted (or whose geometry is missing) are returned with an empty
-   * `lines` array; the client renders them in position order without a
-   * track instead of dropping them silently.
+   * tolerance) and pulled in batched queries over `rides` so a 20+ item
+   * collection still resolves in a single round-trip regardless of item
+   * count. Items whose underlying ride was deleted (or whose geometry is
+   * missing) are returned with an empty `lines` array; the client renders
+   * them in position order without a track instead of dropping them
+   * silently.
    */
   async getPreviewBySlug(
     slug: string,
@@ -446,10 +445,10 @@ export class RouteCollectionsService {
   }
 
   /**
-   * Per-item simplified route geometry in canonical position order, batched
-   * into one query per kind. Items whose trip/ride was deleted or lacks
-   * geometry come back with an empty `lines` array. Shared by the public
-   * slug preview and the authed owner preview.
+   * Per-item simplified ride geometry in canonical position order, batched
+   * into one query. Items whose ride was deleted or lacks geometry come back
+   * with an empty `lines` array. Shared by the public slug preview and the
+   * authed owner preview.
    */
   private async buildItemPreviews(
     collectionId: string,
@@ -460,24 +459,9 @@ export class RouteCollectionsService {
       return { routes: [] };
     }
 
-    const tripIds = items
-      .map((i) => i.trip_id)
-      .filter((id): id is string => id != null);
-    const rideIds = items
-      .map((i) => i.ride_id)
-      .filter((id): id is string => id != null);
+    const rideIds = items.map((i) => i.ride_id);
 
-    type TripDayRow = { trip_id: string; geometry: string | null };
     type RideRow = { id: string; geometry: string | null };
-    // Numeric aggregates come back as strings over the pg wire protocol.
-    type TripMetaRow = {
-      id: string;
-      title: string | null;
-      num_days: number;
-      status: string;
-      distance_km: string | null;
-      quality_avg: string | null;
-    };
     type RideMetaRow = {
       id: string;
       name: string | null;
@@ -491,106 +475,41 @@ export class RouteCollectionsService {
       is_public: boolean;
     };
 
-    // Batch each kind into a single SQL round-trip. Ordering at this layer
-    // doesn't matter — the controller emits items in the collection's
-    // canonical position order; we just need a lookup keyed by trip/ride id.
-    // The `*MetaRows` queries mirror the trip-summary rollups (distance =
-    // SUM of day distances; quality = distance-weighted average, NULL-filtered)
-    // so a non-owner viewer can render the route rows without the viewer's own
-    // trip/ride cache.
+    // Batch the geometry and the summary rollup into two SQL round-trips.
+    // Ordering at this layer doesn't matter — the controller emits items in
+    // the collection's canonical position order; we just need a lookup keyed
+    // by ride id.
     //
-    // Every query is scoped to the collection owner. `route_collection_items`
-    // `trip_id` / `ride_id` are unconstrained UUIDs and `addItem` doesn't
-    // verify route accessibility, so a crafted/stale item could reference a
-    // route the owner can't see. Scope to what the owner is *allowed to see*,
-    // matching the picker (`TripsService.list` / `useUserTrips`):
-    //  - trips: a `trip_members` row for the owner — this covers both trips
-    //    they own AND collaborator trips they joined (the create flow inserts
-    //    the owner as a member), so legitimately-added collaborator trips keep
-    //    rendering instead of looking deleted.
-    //  - rides: `rides.user_id` — rides have no membership/sharing, so the
-    //    owner can only ever add their own.
-    // A route the owner can't access falls through to the empty-geometry /
-    // null-summary "missing item" shape.
-    const [tripRows, rideRows, tripMetaRows, rideMetaRows] = await Promise.all([
-      tripIds.length === 0
-        ? Promise.resolve<TripDayRow[]>([])
-        : this.dataSource.query<TripDayRow[]>(
-            `SELECT d.trip_id,
-                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, $1)) AS geometry
-             FROM trip_days d
-             WHERE d.trip_id = ANY($2::uuid[])
-               AND EXISTS (
-                 SELECT 1 FROM trip_members tm
-                 WHERE tm.trip_id = d.trip_id AND tm.user_id = $3
-               )
-               AND d.route_geom IS NOT NULL
-             ORDER BY d.trip_id, d.day_number`,
-            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds, ownerId],
-          ),
-      rideIds.length === 0
-        ? Promise.resolve<RideRow[]>([])
-        : this.dataSource.query<RideRow[]>(
-            `SELECT id,
-                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
-             FROM rides
-             WHERE id = ANY($2::uuid[])
-               AND user_id = $3
-               AND route_geom IS NOT NULL`,
-            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds, ownerId],
-          ),
-      tripIds.length === 0
-        ? Promise.resolve<TripMetaRow[]>([])
-        : this.dataSource.query<TripMetaRow[]>(
-            `SELECT t.id, t.title, t.num_days, t.status,
-                    SUM(d.distance_km) AS distance_km,
-                    CASE
-                      WHEN SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL) > 0
-                      THEN SUM(d.avg_quality * d.distance_km)
-                           / SUM(d.distance_km) FILTER (WHERE d.avg_quality IS NOT NULL)
-                      ELSE AVG(d.avg_quality)
-                    END AS quality_avg
-             FROM trips t
-             LEFT JOIN trip_days d ON d.trip_id = t.id
-             WHERE t.id = ANY($1::uuid[])
-               AND EXISTS (
-                 SELECT 1 FROM trip_members tm
-                 WHERE tm.trip_id = t.id AND tm.user_id = $2
-               )
-             GROUP BY t.id`,
-            [tripIds, ownerId],
-          ),
-      rideIds.length === 0
-        ? Promise.resolve<RideMetaRow[]>([])
-        : this.dataSource.query<RideMetaRow[]>(
-            `SELECT r.id, r.name, r.status, r.distance_km, r.avg_road_quality,
-                    COALESCE(sr.is_public, false) AS is_public
-             FROM rides r
-             LEFT JOIN shared_rides sr ON sr.ride_id = r.id
-             WHERE r.id = ANY($1::uuid[])
-               AND r.user_id = $2`,
-            [rideIds, ownerId],
-          ),
+    // Both queries are scoped to the collection owner. `route_collection_items`
+    // `ride_id` is an unconstrained UUID and `addItem` doesn't verify route
+    // accessibility, so a crafted/stale item could reference a ride the owner
+    // can't see. Scope to `rides.user_id` — rides have no membership/sharing,
+    // so the owner can only ever add their own. A ride the owner can't access
+    // falls through to the empty-geometry / null-summary "missing item" shape.
+    const [rideRows, rideMetaRows] = await Promise.all([
+      this.dataSource.query<RideRow[]>(
+        `SELECT id,
+                ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
+         FROM rides
+         WHERE id = ANY($2::uuid[])
+           AND user_id = $3
+           AND route_geom IS NOT NULL`,
+        [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds, ownerId],
+      ),
+      this.dataSource.query<RideMetaRow[]>(
+        `SELECT r.id, r.name, r.status, r.distance_km, r.avg_road_quality,
+                COALESCE(sr.is_public, false) AS is_public
+         FROM rides r
+         LEFT JOIN shared_rides sr ON sr.ride_id = r.id
+         WHERE r.id = ANY($1::uuid[])
+           AND r.user_id = $2`,
+        [rideIds, ownerId],
+      ),
     ]);
 
-    const tripMetaById = new Map<string, TripMetaRow>(
-      tripMetaRows.map((r) => [r.id, r]),
-    );
     const rideMetaById = new Map<string, RideMetaRow>(
       rideMetaRows.map((r) => [r.id, r]),
     );
-
-    const linesByTripId = new Map<string, number[][][]>();
-    for (const row of tripRows) {
-      const coords = parseLineStringCoords(row.geometry);
-      if (!coords) continue;
-      const existing = linesByTripId.get(row.trip_id);
-      if (existing) {
-        existing.push(coords);
-      } else {
-        linesByTripId.set(row.trip_id, [coords]);
-      }
-    }
 
     const linesByRideId = new Map<string, number[][][]>();
     for (const row of rideRows) {
@@ -604,53 +523,27 @@ export class RouteCollectionsService {
     // keeps a private profile. All collection rides belong to the collection
     // owner, so one lookup decides ride linkability for the whole collection.
     // (Soft-deleted owners can't reach here — getBySlug/getPreviewBySlug 404
-    // their collections first.) Trips are unaffected: the community trip read
-    // serves them regardless and masks a private owner.
-    const ownerIsPrivate =
-      rideIds.length > 0 &&
-      (await this.privacy.loadPrivateUserIds([ownerId])).has(ownerId);
+    // their collections first.)
+    const ownerIsPrivate = (
+      await this.privacy.loadPrivateUserIds([ownerId])
+    ).has(ownerId);
 
     const routes: RouteCollectionPreviewItemDto[] = items.map((item) => {
-      const isRide = item.ride_id != null;
-      const lines = isRide
-        ? (linesByRideId.get(item.ride_id!) ?? [])
-        : (linesByTripId.get(item.trip_id!) ?? []);
-      const tripMeta = isRide ? undefined : tripMetaById.get(item.trip_id!);
-      const rideMeta = isRide ? rideMetaById.get(item.ride_id!) : undefined;
+      const rideMeta = rideMetaById.get(item.ride_id);
       return {
         item_id: item.id,
         position: item.position,
-        kind: isRide ? 'ride' : 'trip',
-        // The id a NON-owner can actually open this route at — or `null` when
-        // they can't, so the client never links to a dead end:
-        //  - trip: linkable when the owner is a member (`tripMeta` present);
-        //    `/community/trips/:id` grants the same collection-scoped access.
-        //  - ride: linkable only when publicly shared AND the owner's profile
-        //    isn't private — `/community/rides/:id` 404s a non-owner otherwise.
-        // A missing/deleted route (no meta) is `null` → non-clickable.
-        target_id: isRide
-          ? rideMeta?.is_public && !ownerIsPrivate
-            ? item.ride_id
-            : null
-          : tripMeta
-            ? item.trip_id
-            : null,
-        lines,
-        title: rideMeta ? rideMeta.name : (tripMeta?.title ?? null),
-        // A ride is a single recorded day — `num_days` stays null so the
-        // client renders "1 day" without the server inventing a count.
-        num_days: tripMeta?.num_days ?? null,
-        distance_km: rideMeta
-          ? rideMeta.distance_km
-          : tripMeta?.distance_km != null
-            ? Number(tripMeta.distance_km)
-            : null,
-        status: rideMeta ? rideMeta.status : (tripMeta?.status ?? null),
-        quality_avg: rideMeta
-          ? rideMeta.avg_road_quality
-          : tripMeta?.quality_avg != null
-            ? Number(tripMeta.quality_avg)
-            : null,
+        // The id a NON-owner can actually open this ride at — or `null` when
+        // they can't, so the client never links to a dead end. Linkable only
+        // when publicly shared AND the owner's profile isn't private —
+        // `/community/rides/:id` 404s a non-owner otherwise. A missing/deleted
+        // ride (no meta) is `null` → non-clickable.
+        target_id: rideMeta?.is_public && !ownerIsPrivate ? item.ride_id : null,
+        lines: linesByRideId.get(item.ride_id) ?? [],
+        title: rideMeta?.name ?? null,
+        distance_km: rideMeta?.distance_km ?? null,
+        status: rideMeta?.status ?? null,
+        quality_avg: rideMeta?.avg_road_quality ?? null,
       };
     });
 
@@ -709,16 +602,6 @@ export class RouteCollectionsService {
     collectionId: string,
     dto: AddRouteCollectionItemDto,
   ): Promise<RouteCollectionItemResponseDto> {
-    const tripProvided = !!dto.trip_id;
-    const rideProvided = !!dto.ride_id;
-    if (tripProvided === rideProvided) {
-      // Both unset or both set — 400 instead of leaving the DB CHECK to fire,
-      // so the validation message is friendlier than a constraint violation.
-      throw new BadRequestException(
-        'Exactly one of `trip_id` or `ride_id` must be provided',
-      );
-    }
-
     return this.dataSource.transaction(async (manager) => {
       const collectionRepo = manager.getRepository(RouteCollection);
       const itemRepo = manager.getRepository(RouteCollectionItem);
@@ -744,13 +627,9 @@ export class RouteCollectionsService {
       // Treat a duplicate add as a no-op return of the existing row instead
       // of a 409 — the companion sometimes retries on flaky network and a
       // user-visible error here would be confusing.
-      const existing = tripProvided
-        ? await itemRepo.findOne({
-            where: { collection_id: collectionId, trip_id: dto.trip_id! },
-          })
-        : await itemRepo.findOne({
-            where: { collection_id: collectionId, ride_id: dto.ride_id! },
-          });
+      const existing = await itemRepo.findOne({
+        where: { collection_id: collectionId, ride_id: dto.ride_id },
+      });
       if (existing) {
         return this.toItemResponse(existing);
       }
@@ -767,8 +646,7 @@ export class RouteCollectionsService {
 
       const item = itemRepo.create({
         collection_id: collectionId,
-        trip_id: tripProvided ? dto.trip_id! : null,
-        ride_id: rideProvided ? dto.ride_id! : null,
+        ride_id: dto.ride_id,
         position: nextPosition,
       });
       const saved = await itemRepo.save(item);
@@ -1080,8 +958,7 @@ export class RouteCollectionsService {
   ): RouteCollectionItemResponseDto {
     return {
       id: item.id,
-      trip_id: item.trip_id ?? null,
-      ride_id: item.ride_id ?? null,
+      ride_id: item.ride_id,
       position: item.position,
       created_at: item.created_at.toISOString(),
     };

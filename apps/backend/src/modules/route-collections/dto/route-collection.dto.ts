@@ -7,7 +7,6 @@ import {
   IsUUID,
   MaxLength,
   MinLength,
-  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -79,43 +78,15 @@ export class UpdateRouteCollectionDto {
 }
 
 /**
- * Add a single trip- or ride-keyed item to a collection.
- *
- * Validation runs in three layers, each catching a different failure mode:
- *
- *  1. Field-level `@IsUUID` (gated by `@ValidateIf`) — catches a non-UUID
- *     value in either `trip_id` or `ride_id` at the ValidationPipe (400).
- *  2. `RouteCollectionsService.addItem` — catches the cross-field invariants
- *     class-validator can't express cleanly: empty body and both fields
- *     populated. Throws `BadRequestException` (also 400) with a clear
- *     message before touching the DB.
- *  3. `chk_route_collection_items_target` DB CHECK — final backstop so a
- *     hand-written INSERT can't drift the row state.
- *
- * (The cross-field check lives in the service, not the DTO, because
- * `@ValidateIf` short-circuits *all* property decorators when its predicate
- * returns false — including `@Validate(...)` — so the empty-body case is
- * unreachable from a field-level constraint without a structural workaround
- * that would be more confusing than the service check it would replace.)
+ * Add a single ride-keyed item to a collection. Collections hold rides only;
+ * trips are private/collaborator-only and are never surfaced here.
  */
 export class AddRouteCollectionItemDto {
   @ApiProperty({
-    required: false,
-    description: 'UUID of a planner trip. Mutually exclusive with `ride_id`.',
-    nullable: true,
+    description: 'UUID of the recorded ride to add.',
   })
-  @ValidateIf((o: AddRouteCollectionItemDto) => o.trip_id !== undefined)
   @IsUUID()
-  trip_id?: string;
-
-  @ApiProperty({
-    required: false,
-    description: 'UUID of a recorded ride. Mutually exclusive with `trip_id`.',
-    nullable: true,
-  })
-  @ValidateIf((o: AddRouteCollectionItemDto) => o.ride_id !== undefined)
-  @IsUUID()
-  ride_id?: string;
+  ride_id!: string;
 }
 
 /**
@@ -147,11 +118,8 @@ export class RouteCollectionItemResponseDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty({ nullable: true })
-  trip_id!: string | null;
-
-  @ApiProperty({ nullable: true })
-  ride_id!: string | null;
+  @ApiProperty()
+  ride_id!: string;
 
   @ApiProperty()
   position!: number;
@@ -270,17 +238,14 @@ export class RouteCollectionFollowResponseDto {
 }
 
 /**
- * Preview entry for one item in a shared collection. Each entry carries the
- * polylines that should render on the map for that item:
- *  - rides contribute one polyline (the recorded `route_geom`).
- *  - trips contribute one polyline per `trip_days.route_geom` (a multi-day
- *    plan can have non-contiguous days, so we keep them as separate
- *    polylines instead of concatenating into one).
+ * Preview entry for one ride in a shared collection. Each entry carries the
+ * polyline that should render on the map for that ride (the recorded
+ * `route_geom`, as a single-element array of polylines).
  *
- * Items whose underlying trip/ride has been deleted, or whose geometry is
- * missing, return an empty `lines` array — the client renders those items
- * without a map track but still preserves the position in the list. This is
- * the same "missing item" handling the dashboard detail page already uses.
+ * Items whose underlying ride has been deleted, or whose geometry is missing,
+ * return an empty `lines` array — the client renders those items without a map
+ * track but still preserves the position in the list. This is the same
+ * "missing item" handling the dashboard detail page already uses.
  *
  * Geometries are simplified server-side via `ST_Simplify` to keep the
  * payload bounded for ~20+ item collections (target tolerance ~0.0005°,
@@ -296,20 +261,14 @@ export class RouteCollectionPreviewItemDto {
   })
   position!: number;
 
-  @ApiProperty({ enum: ['trip', 'ride'] })
-  kind!: 'trip' | 'ride';
-
   @ApiProperty({
     nullable: true,
     description:
-      'UUID a NON-owner can open this route at — combined with `kind` the ' +
-      'client builds the detail link (`/community/trips/:id` or ' +
-      '`/community/rides/:id`). `null` when the route is not openable by a ' +
-      'non-owner, so the client must not link it: a missing/deleted trip or ' +
-      'ride, or a ride that is not publicly shared or whose owner keeps a ' +
-      'private profile (its detail page 404s a non-owner in either case). A ' +
-      'trip is openable whenever the collection owner can see it ' +
-      '(collection-scoped access).',
+      'UUID a NON-owner can open this ride at — the client builds the detail ' +
+      'link (`/community/rides/:id`). `null` when the ride is not openable by ' +
+      'a non-owner, so the client must not link it: a missing/deleted ride, ' +
+      'or a ride that is not publicly shared or whose owner keeps a private ' +
+      'profile (its detail page 404s a non-owner in either case).',
   })
   target_id!: string | null;
 
@@ -325,45 +284,36 @@ export class RouteCollectionPreviewItemDto {
       },
     },
     description:
-      'Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry.',
+      'Array of polylines for this ride. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying ride is missing or has no geometry.',
   })
   lines!: number[][][];
 
   // Per-item summary fields — let a non-owner (public shared page / member
-  // discover view) render the route rows without the viewer's own trip/ride
-  // cache. All `null` when the underlying trip/ride was deleted.
+  // discover view) render the route rows without the viewer's own ride cache.
+  // All `null` when the underlying ride was deleted.
 
   @ApiProperty({
     nullable: true,
-    description: 'Trip title or ride name. `null` for a deleted item.',
+    description: 'Ride name. `null` for a deleted item.',
   })
   title!: string | null;
 
   @ApiProperty({
     nullable: true,
-    description:
-      'Trip day count. `null` for rides (a ride is a single recorded day) and deleted items.',
-  })
-  num_days!: number | null;
-
-  @ApiProperty({
-    nullable: true,
-    description:
-      'Total distance in km. Trips: sum of the day distances. Rides: the recorded distance. `null` when unknown.',
+    description: 'Recorded distance in km. `null` when unknown.',
   })
   distance_km!: number | null;
 
   @ApiProperty({
     nullable: true,
-    description:
-      'Trip status (planned / completed / …) or ride status (completed / active). `null` for a deleted item.',
+    description: 'Ride status (completed / active). `null` for a deleted item.',
   })
   status!: string | null;
 
   @ApiProperty({
     nullable: true,
     description:
-      'Average road quality (0–5). Trips: distance-weighted across days. Rides: the recorded average. `null` when unknown.',
+      'Average road quality (0–5) — the recorded average. `null` when unknown.',
   })
   quality_avg!: number | null;
 }

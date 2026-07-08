@@ -150,10 +150,6 @@ export default function DiscoverCollectionPage() {
   const ownerName = detail!.owner_name || "";
   const author = ownerName || (detail!.viewer_is_owner ? t("You") : "");
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
-  const ridingDays = routes.reduce(
-    (sum, r) => sum + (r.num_days ?? (r.kind === "ride" ? 1 : 0)),
-    0,
-  );
 
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
@@ -232,7 +228,7 @@ export default function DiscoverCollectionPage() {
         </p>
       )}
 
-      <section className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3.5 sm:grid-cols-3">
         <MetricTile
           variant="ink"
           accentNumber
@@ -243,7 +239,6 @@ export default function DiscoverCollectionPage() {
           label={t("Total distance")}
           value={formatDistance(totalKm)}
         />
-        <MetricTile label={t("Riding days")} value={ridingDays} />
         <MetricTile label={t("Followers")} value={detail!.follower_count} />
       </section>
 
@@ -254,8 +249,7 @@ export default function DiscoverCollectionPage() {
         <Stamp>{t("Routes")}</Stamp>
         {routes.length > 0 && (
           <Mono className="text-[11px] text-fg-mute">
-            {Math.round(totalKm).toLocaleString()} {t("KM")} · {ridingDays}{" "}
-            {t("RIDING DAYS")}
+            {Math.round(totalKm).toLocaleString()} {t("KM")}
           </Mono>
         )}
       </div>
