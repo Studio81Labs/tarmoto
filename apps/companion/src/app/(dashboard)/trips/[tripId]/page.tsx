@@ -507,7 +507,8 @@ export default function TripDetailPage() {
             passesData={passesData}
             collaboratorCursors={collabSession.cursors}
             collaboratorProfiles={collabSession.members}
-            suggestions={collabSession.suggestions}
+            // Suggestions are text-only (collaborate modal); not fed to the map
+            // — they were only ever a dot auto-anchored to the start.
             searchAndPois
             // Emit the viewer's own cursor here too — without it, anyone on the
             // read-only preview was visible to no one (they rendered others'
