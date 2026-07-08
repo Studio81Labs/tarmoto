@@ -221,23 +221,31 @@ export function pointInPolygon(
 }
 
 /**
- * Nearest contact between a route polyline and a polygon (zone): the off-route
- * distance + its along-route km. A route vertex inside the polygon is on the
- * zone (0 km off) — the server's polygon `ST_DWithin` counts a fully-surrounded
- * route segment even when the boundary edges are km away. Otherwise the nearest
- * densified-boundary contact ({@link projectRingOntoRoute}). Null on a
- * degenerate route or empty ring.
+ * Contact between a route polyline and a polygon (zone): the off-route distance
+ * + the along-route km of the EARLIEST point at which the route meets the zone.
+ *
+ * - If the route starts inside the zone, it is on it from km 0 (no boundary is
+ *   crossed before the start), so the stop anchors at the route start. This also
+ *   covers a fully-surrounded route whose boundary edges are km away — the case
+ *   the server's polygon `ST_DWithin` still selects.
+ * - Otherwise the earliest contact is the first boundary crossing: an analytic
+ *   0 km contact at the true entry point, via {@link projectRingOntoRoute}
+ *   (which returns the earliest minimum-distance contact). We deliberately do
+ *   NOT anchor on the first *contained vertex* — the crossing happened earlier
+ *   on that segment, so a contained-vertex km sorts a large zone (or one under
+ *   sparse route geometry) several km late.
+ * - If the route never meets the zone, `projectRingOntoRoute` yields the nearest
+ *   boundary distance (the off-route case).
+ *
+ * Null on a degenerate route or empty ring.
  */
 export function nearestPolygonContact(
   ring: readonly LatLng[],
   route: readonly LatLng[],
 ): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
   if (route.length < 2 || ring.length === 0) return null;
-  const cumKm = cumulativeRouteKm(route);
-  for (let i = 0; i < route.length; i++) {
-    if (pointInPolygon(route[i]!, ring)) {
-      return { distanceFromRouteKm: 0, kmAlongRoute: Math.round(cumKm[i]!) };
-    }
+  if (pointInPolygon(route[0]!, ring)) {
+    return { distanceFromRouteKm: 0, kmAlongRoute: 0 };
   }
   return projectRingOntoRoute(ring, route);
 }

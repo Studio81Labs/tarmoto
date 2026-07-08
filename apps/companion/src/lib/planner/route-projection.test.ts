@@ -141,7 +141,27 @@ describe("nearestPolygonContact", () => {
     const p = nearestPolygonContact(box, route);
     expect(p).not.toBeNull();
     expect(p!.distanceFromRouteKm).toBe(0);
-    expect(p!.kmAlongRoute).toBe(0); // first contained vertex (the start)
+    expect(p!.kmAlongRoute).toBe(0); // starts inside → anchored at the route start
+  });
+
+  it("anchors at the entry crossing, not a late interior vertex", () => {
+    // Sparse geometry: the single leg enters the zone at ~km 36 (crossing the
+    // left edge at lng 18.5) but the next vertex — the first one *inside* — is
+    // at lng 18.9, ~km 66. The stop must sort at the entry, not ~30 km late.
+    const sparseRoute = [
+      { lat: 49.0, lng: 18.0 },
+      { lat: 49.0, lng: 18.9 },
+    ];
+    const bigZone = [
+      { lat: 48.9, lng: 18.5 },
+      { lat: 48.9, lng: 19.0 },
+      { lat: 49.1, lng: 19.0 },
+      { lat: 49.1, lng: 18.5 },
+    ];
+    const p = nearestPolygonContact(bigZone, sparseRoute);
+    expect(p!.distanceFromRouteKm).toBe(0);
+    expect(p!.kmAlongRoute).toBeGreaterThan(34);
+    expect(p!.kmAlongRoute).toBeLessThan(40); // ~36 (entry), not ~66 (vertex)
   });
 
   it("falls back to the boundary distance for a zone off the route", () => {
