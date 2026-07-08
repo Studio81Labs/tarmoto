@@ -101,7 +101,13 @@ import {
 } from "@/components/map/FunZoneLayer";
 import type { Trip, Waypoint } from "@/lib/types";
 import type { TripSuggestion } from "@/lib/api";
-import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
+import type {
+  CollaboratorCursor,
+  CollaboratorProfile,
+} from "@/hooks/useTripCollabSession";
+import { Marker } from "maplibre-gl";
+import { createRoot, type Root } from "react-dom/client";
+import { UserAvatar } from "@/components/UserAvatar";
 import { roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 export interface DayBreakMarker {
@@ -280,9 +286,6 @@ const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
 const CLOSURE_LINE_LAYER = "trip-planner-closure-lines";
 const CLOSURE_MARKER_LAYER = "trip-planner-closure-markers";
 const PASS_MARKER_LAYER = "trip-planner-pass-markers";
-const CURSOR_SOURCE = "trip-planner-collab-cursors";
-const CURSOR_LAYER = "trip-planner-collab-cursors";
-const CURSOR_LABEL_LAYER = "trip-planner-collab-cursor-labels";
 const SUGGESTION_SOURCE = "trip-planner-suggestions";
 const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
 const DAY_BREAK_SOURCE = "trip-planner-day-breaks";
@@ -333,6 +336,8 @@ interface TripPlannerMapProps {
   focusSelectedDay?: boolean;
   /** Live cursors from other collaborators keyed by user id. */
   collaboratorCursors?: Map<string, CollaboratorCursor>;
+  /** Roster keyed by user id — renders each cursor as that rider's avatar. */
+  collaboratorProfiles?: Map<string, CollaboratorProfile>;
   /**
    * Suggestions to render as markers on the map. Accepted + rejected
    * are filtered out at build time so only `status === 'open'` markers
@@ -397,6 +402,7 @@ export const TripPlannerMap = forwardRef<
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
+    collaboratorProfiles,
     suggestions,
     dayBreaks,
     onMoveDayBreak,
@@ -424,6 +430,7 @@ export const TripPlannerMap = forwardRef<
         selectedDayNumber={selectedDayNumber}
         focusSelectedDay={focusSelectedDay}
         collaboratorCursors={collaboratorCursors}
+        collaboratorProfiles={collaboratorProfiles}
         suggestions={suggestions}
         dayBreaks={dayBreaks}
         onMoveDayBreak={onMoveDayBreak}
@@ -479,6 +486,7 @@ const FetchedTripPlannerMap = forwardRef<
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
+    collaboratorProfiles?: Map<string, CollaboratorProfile> | undefined;
     suggestions?: TripSuggestion[] | undefined;
     dayBreaks?: DayBreakMarker[] | undefined;
     onMoveDayBreak?:
@@ -502,6 +510,7 @@ const FetchedTripPlannerMap = forwardRef<
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
+    collaboratorProfiles,
     suggestions,
     dayBreaks,
     onMoveDayBreak,
@@ -531,6 +540,7 @@ const FetchedTripPlannerMap = forwardRef<
       selectedDayNumber={selectedDayNumber}
       focusSelectedDay={focusSelectedDay}
       collaboratorCursors={collaboratorCursors}
+      collaboratorProfiles={collaboratorProfiles}
       suggestions={suggestions}
       dayBreaks={dayBreaks}
       onMoveDayBreak={onMoveDayBreak}
@@ -565,6 +575,7 @@ const TripPlannerMapContent = forwardRef<
     selectedDayNumber?: number | undefined;
     focusSelectedDay?: boolean | undefined;
     collaboratorCursors?: Map<string, CollaboratorCursor> | undefined;
+    collaboratorProfiles?: Map<string, CollaboratorProfile> | undefined;
     suggestions?: TripSuggestion[] | undefined;
     dayBreaks?: DayBreakMarker[] | undefined;
     onMoveDayBreak?:
@@ -590,6 +601,7 @@ const TripPlannerMapContent = forwardRef<
     selectedDayNumber,
     focusSelectedDay,
     collaboratorCursors,
+    collaboratorProfiles,
     suggestions,
     dayBreaks,
     onMoveDayBreak,
@@ -1002,10 +1014,6 @@ const TripPlannerMapContent = forwardRef<
     () => buildPlannerPassMarkerCollection(passes),
     [passes],
   );
-  const cursorCollection = useMemo(
-    () => buildCursorCollection(collaboratorCursors),
-    [collaboratorCursors],
-  );
   const suggestionCollection = useMemo(
     () => buildSuggestionCollection(suggestions),
     [suggestions],
@@ -1320,7 +1328,6 @@ const TripPlannerMapContent = forwardRef<
     syncGeoJsonSource(map, CLOSURE_LINE_SOURCE, closureLineCollection);
     syncGeoJsonSource(map, CLOSURE_MARKER_SOURCE, closureMarkerCollection);
     syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
-    syncGeoJsonSource(map, CURSOR_SOURCE, cursorCollection);
     syncGeoJsonSource(map, SUGGESTION_SOURCE, suggestionCollection);
     syncGeoJsonSource(map, DAY_BREAK_SOURCE, dayBreakCollection);
     syncGeoJsonSource(
@@ -1331,7 +1338,6 @@ const TripPlannerMapContent = forwardRef<
   }, [
     closureLineCollection,
     closureMarkerCollection,
-    cursorCollection,
     dayBreakCollection,
     passMarkerCollection,
     ready,
@@ -1340,6 +1346,65 @@ const TripPlannerMapContent = forwardRef<
     suggestionCollection,
     waypointCollection,
   ]);
+  // ── Collaborator cursor avatars (US-35) ──
+  // Rendered as HTML markers (not a GeoJSON layer) so each cursor shows the
+  // rider's avatar — photo or initials — via the shared `UserAvatar`. Markers
+  // are keyed by user id; one that drops out of `collaboratorCursors` (TTL
+  // sweep / disconnect) is removed.
+  const cursorMarkersRef = useRef<Map<string, { marker: Marker; root: Root }>>(
+    new Map(),
+  );
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    const markers = cursorMarkersRef.current;
+    const seen = new Set<string>();
+    for (const cursor of collaboratorCursors?.values() ?? []) {
+      seen.add(cursor.userId);
+      const profile = collaboratorProfiles?.get(cursor.userId);
+      const name = profile?.displayName ?? "Rider";
+      const avatarUrl = profile?.avatarUrl ?? null;
+      let entry = markers.get(cursor.userId);
+      if (!entry) {
+        const el = document.createElement("div");
+        // Non-interactive so a cursor avatar never intercepts map clicks/hover.
+        el.style.pointerEvents = "none";
+        const root = createRoot(el);
+        const marker = new Marker({ element: el })
+          .setLngLat([cursor.lng, cursor.lat])
+          .addTo(map);
+        entry = { marker, root };
+        markers.set(cursor.userId, entry);
+      } else {
+        entry.marker.setLngLat([cursor.lng, cursor.lat]);
+      }
+      entry.root.render(
+        <UserAvatar
+          name={name}
+          avatarUrl={avatarUrl}
+          size={30}
+          className="ring-2 ring-[#F5EFE6] shadow-[0_2px_6px_rgba(14,14,16,0.35)]"
+        />,
+      );
+    }
+    for (const [userId, entry] of markers) {
+      if (!seen.has(userId)) {
+        entry.root.unmount();
+        entry.marker.remove();
+        markers.delete(userId);
+      }
+    }
+  }, [collaboratorCursors, collaboratorProfiles, ready]);
+  useEffect(() => {
+    const markers = cursorMarkersRef.current;
+    return () => {
+      for (const entry of markers.values()) {
+        entry.root.unmount();
+        entry.marker.remove();
+      }
+      markers.clear();
+    };
+  }, []);
   // ── Day-break marker dragging (addendum §6) ──
   // A compact grab-drop gesture: mousedown on a break marker arms it,
   // the release location is handed to the page, which pins the break at
@@ -3370,79 +3435,9 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-  if (!map.getSource(CURSOR_SOURCE)) {
-    map.addSource(CURSOR_SOURCE, {
-      type: "geojson",
-      data: buildCursorCollection(undefined),
-    });
-  }
-  if (!map.getLayer(CURSOR_LAYER)) {
-    map.addLayer({
-      id: CURSOR_LAYER,
-      type: "circle",
-      source: CURSOR_SOURCE,
-      paint: {
-        "circle-radius": 6,
-        "circle-color": "#F472B6",
-        "circle-stroke-color": "#1E1B4B",
-        "circle-stroke-width": 2,
-      },
-    });
-  }
-  if (!map.getLayer(CURSOR_LABEL_LAYER)) {
-    map.addLayer({
-      id: CURSOR_LABEL_LAYER,
-      type: "symbol",
-      source: CURSOR_SOURCE,
-      layout: {
-        "text-field": ["get", "label"],
-        "text-offset": [0, 1.1],
-        "text-size": 10,
-        "text-anchor": "top",
-        // See WAYPOINT_LABEL: single hosted font avoids glyph 404 spam.
-        "text-font": ["Noto Sans Regular"],
-      },
-      paint: {
-        "text-color": "#F9A8D4",
-        "text-halo-color": "#020617",
-        "text-halo-width": 1,
-      },
-    });
-  }
-}
-function buildCursorCollection(
-  cursors: Map<string, CollaboratorCursor> | undefined,
-): GeoJSON.FeatureCollection<
-  GeoJSON.Point,
-  {
-    userId: string;
-    label: string;
-  }
-> {
-  const features: Array<
-    GeoJSON.Feature<
-      GeoJSON.Point,
-      {
-        userId: string;
-        label: string;
-      }
-    >
-  > = [];
-  if (cursors) {
-    for (const cursor of cursors.values()) {
-      features.push({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [cursor.lng, cursor.lat] },
-        properties: {
-          userId: cursor.userId,
-          // Abbreviate so the label is readable but unique enough to
-          // tell collaborators apart at a glance.
-          label: cursor.userId.slice(0, 6),
-        },
-      });
-    }
-  }
-  return { type: "FeatureCollection", features };
+  // Collaborator cursors are rendered as avatar HTML markers (not a GeoJSON
+  // layer) so each shows the rider's photo/initials — see the cursor-marker
+  // effect in the map content component.
 }
 function buildSuggestionCollection(
   suggestions: TripSuggestion[] | undefined,

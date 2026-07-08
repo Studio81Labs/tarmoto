@@ -2580,6 +2580,7 @@ export default function TripPlannerPage() {
               }
               onRemoveWaypoint={removeWaypointById}
               collaboratorCursors={collabSession.cursors}
+              collaboratorProfiles={collabSession.members}
               suggestions={collabSession.suggestions}
               dayBreaks={dayBreakMarkers}
               onMoveDayBreak={handleMoveDayBreak}
