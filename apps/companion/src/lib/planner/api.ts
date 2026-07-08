@@ -421,11 +421,14 @@ function projectPointStop(
 
 /**
  * Position a Fun Zone stop on the route. A zone is a polygon the backend
- * already selected by polygon proximity (ST_DWithin over the whole geometry),
- * so measure the contact against the polygon, not the centroid: a route vertex
- * inside the hull is on-route (0 km off), otherwise the nearest densified-edge
- * point (not a far corner vertex). The marker keeps the centroid; only the
- * distances use the geometry. No corridor re-filter — trust the server.
+ * selected by polygon proximity (ST_DWithin over the whole geometry), so both
+ * the off-route distance AND the stop's own lat/lng come from the on-route
+ * contact — NOT the centroid. The row can read "on-route" while the centroid
+ * sits far to one side; since the stop's coordinate is what drops a via
+ * waypoint and opens the popover (TripPlannerMap), anchoring on the route
+ * contact keeps that via on the rider's road instead of detouring to the
+ * polygon middle. The bbox/map layer still shows zones at their centroid. No
+ * corridor re-filter — trust the server's selection.
  */
 function funZoneStop(
   zone: FunZoneListItem,
@@ -433,8 +436,8 @@ function funZoneStop(
 ): RouteStop | null {
   const poi = funZoneToCategoryPoi(zone);
   if (!poi) return null;
-  const nearest = nearestPolygonContact(zone.boundary, route);
-  return nearest ? { ...poi, ...nearest } : null;
+  const contact = nearestPolygonContact(zone.boundary, route);
+  return contact ? { ...poi, ...contact } : null;
 }
 
 async function fetchNonStoreStops(

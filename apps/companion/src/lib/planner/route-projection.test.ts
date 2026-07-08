@@ -162,6 +162,8 @@ describe("nearestPolygonContact", () => {
     expect(p).not.toBeNull();
     expect(p!.distanceFromRouteKm).toBe(0);
     expect(p!.kmAlongRoute).toBe(0); // starts inside → anchored at the route start
+    expect(p!.lat).toBeCloseTo(49.0, 6); // the route start, not the centroid
+    expect(p!.lng).toBeCloseTo(18.0, 6);
   });
 
   it("anchors at the entry crossing, not a late interior vertex", () => {
@@ -182,6 +184,8 @@ describe("nearestPolygonContact", () => {
     expect(p!.distanceFromRouteKm).toBe(0);
     expect(p!.kmAlongRoute).toBeGreaterThan(34);
     expect(p!.kmAlongRoute).toBeLessThan(40); // ~36 (entry), not ~66 (vertex)
+    expect(p!.lat).toBeCloseTo(49.0, 6); // on the route, at the entry crossing…
+    expect(p!.lng).toBeCloseTo(18.5, 6); // …the zone's left edge (lng 18.5)
   });
 
   it("falls back to the boundary distance for a zone off the route", () => {

@@ -845,6 +845,39 @@ describe("plannerApi.getRouteStops non-store corridor (#865)", () => {
     expect(typeof stop?.kmAlongRoute).toBe("number");
   });
 
+  it("anchors a twisty stop at the on-route contact, not the centroid (#865)", async () => {
+    // The zone touches the route at (49.5, 18.3) but bulges north, so its
+    // centroid (~49.63, 18.33) sits ~11 km off the line. The stop's coords drop
+    // the via waypoint, so they must be the on-route contact — otherwise the
+    // rider is routed off their road even though the row reads on-route.
+    funZonesCorridorMock.mockResolvedValue([
+      {
+        id: "fz-off",
+        name: "North bulge",
+        composite_score: 80,
+        road_count: 4,
+        total_curve_km: 3,
+        avg_quality: 4,
+        best_season: "summer",
+        boundary: [
+          { lat: 49.5, lng: 18.3 },
+          { lat: 49.7, lng: 18.3 },
+          { lat: 49.7, lng: 18.4 },
+        ],
+      },
+    ]);
+
+    const stops = await createPlannerApi().getRouteStops(
+      routeLine,
+      ["twisty_highlight"],
+      10,
+    );
+    const stop = stops.find((s) => s.id === "fz-off");
+    expect(stop?.distanceFromRouteKm).toBe(0);
+    expect(stop?.lat).toBeCloseTo(49.5, 3); // the on-route contact…
+    expect(stop?.lng).toBeCloseTo(18.3, 3); // …not the centroid (~49.63, 18.33)
+  });
+
   it("drops a pass that projects beyond the corridor half-width", async () => {
     // ~55 km north of the route line's end → outside a 10 km corridor.
     passesCheckRouteMock.mockResolvedValue({

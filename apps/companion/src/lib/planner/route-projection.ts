@@ -157,30 +157,44 @@ function segmentToSegmentKm(
   };
 }
 
+/** A point on the route where it meets a zone: how far off, how far along, and
+ * the on-route lat/lng itself (so a fun-zone stop drops its via on the road, not
+ * at the polygon centroid). */
+export interface RouteContact {
+  distanceFromRouteKm: number;
+  kmAlongRoute: number;
+  lat: number;
+  lng: number;
+}
+
 /**
  * Project a polygon boundary ring onto the route and return the NEAREST
- * contact — the min off-route distance + its along-route km. Every closed
- * boundary edge is measured analytically against every route leg
- * ({@link segmentToSegmentKm}), so a route that crosses a boundary edge — even
- * a short one, or one crossed *between* the ring's own vertices — reads the
- * true ~0 km contact instead of the nearest sampled point. Returns null on a
- * degenerate route or empty ring.
+ * contact — the min off-route distance, its along-route km, and the on-route
+ * lat/lng at that contact. Every closed boundary edge is measured analytically
+ * against every route leg ({@link segmentToSegmentKm}), so a route that crosses
+ * a boundary edge — even a short one, or one crossed *between* the ring's own
+ * vertices — reads the true ~0 km contact instead of the nearest sampled point.
+ * Returns null on a degenerate route or empty ring.
  */
 export function projectRingOntoRoute(
   ring: readonly LatLng[],
   route: readonly LatLng[],
-): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
+): RouteContact | null {
   if (route.length < 2 || ring.length === 0) return null;
   const prefixKm = cumulativeRouteKm(route);
   const EPS_KM = 1e-9;
   let bestKm = Number.POSITIVE_INFINITY;
   let bestAlongKm = 0;
+  let bestLat = route[0]!.lat;
+  let bestLng = route[0]!.lng;
   for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1]!;
+    const b = route[i]!;
     const legKm = prefixKm[i]! - prefixKm[i - 1]!;
     for (let j = 0; j < ring.length; j++) {
       const { distanceKm, s } = segmentToSegmentKm(
-        route[i - 1]!,
-        route[i]!,
+        a,
+        b,
         ring[j]!,
         ring[(j + 1) % ring.length]!, // close the ring
       );
@@ -194,12 +208,16 @@ export function projectRingOntoRoute(
       ) {
         bestKm = distanceKm;
         bestAlongKm = alongKm;
+        bestLat = a.lat + s * (b.lat - a.lat); // the on-route contact point
+        bestLng = a.lng + s * (b.lng - a.lng);
       }
     }
   }
   return {
     distanceFromRouteKm: Math.round(bestKm * 10) / 10,
     kmAlongRoute: Math.round(bestAlongKm),
+    lat: bestLat,
+    lng: bestLng,
   };
 }
 
@@ -245,15 +263,22 @@ export function pointInPolygon(
  * - If the route never meets the zone, `projectRingOntoRoute` yields the nearest
  *   boundary distance (the off-route case).
  *
- * Null on a degenerate route or empty ring.
+ * The returned `lat`/`lng` is the on-route contact point (not the polygon
+ * centroid), so a stop placed here drops its via on the rider's road. Null on a
+ * degenerate route or empty ring.
  */
 export function nearestPolygonContact(
   ring: readonly LatLng[],
   route: readonly LatLng[],
-): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
+): RouteContact | null {
   if (route.length < 2 || ring.length === 0) return null;
   if (pointInPolygon(route[0]!, ring)) {
-    return { distanceFromRouteKm: 0, kmAlongRoute: 0 };
+    return {
+      distanceFromRouteKm: 0,
+      kmAlongRoute: 0,
+      lat: route[0]!.lat,
+      lng: route[0]!.lng,
+    };
   }
   return projectRingOntoRoute(ring, route);
 }
