@@ -10,7 +10,14 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Checkbox, NumberField, Select, Tooltip } from "@tarmoto/ui";
+import {
+  Button,
+  Checkbox,
+  NumberField,
+  Select,
+  Toggle,
+  Tooltip,
+} from "@tarmoto/ui";
 import {
   useTripStore,
   normalizeDayFinish,
@@ -42,6 +49,7 @@ import {
   Plus,
   Star,
   Pencil,
+  PanelLeft,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -55,6 +63,7 @@ import {
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
+import { DayByDayList } from "@/components/trips/DayByDayList";
 import {
   coordinateAtKm,
   kmAlongRouteAt,
@@ -62,6 +71,7 @@ import {
   splitIntoDays,
 } from "@/lib/planner/day-splitter";
 import { fetchOvernightTowns } from "@/lib/planner/api";
+import { aggregateInspectDay } from "@/lib/planner/inspect-day";
 import { plannerApi } from "@/lib/planner/api";
 import {
   buildPrefsSummary,
@@ -302,6 +312,9 @@ export default function TripPlannerPage() {
   // When true, the map renders only the selected day's route so the rider
   // can focus on a single leg without other days' colors cluttering the view.
   const [focusSelectedDay, setFocusSelectedDay] = useState(false);
+  // Rider can collapse the left day column to give the map more room; the
+  // "Show days" map toggle brings it back. Only meaningful once days exist.
+  const [showDaysColumn, setShowDaysColumn] = useState(true);
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -502,9 +515,100 @@ export default function TripPlannerPage() {
     if (selectedPlannerSegmentId) setPanelTab("INSPECT");
   }, [selectedPlannerSegmentId]);
   useEffect(() => {
-    // A re-split renumbers days — drop the day-scope selection.
+    // Start (and re-split) with no day selected so every tab — and the map —
+    // opens on the whole route; the rider explicitly picks a day to drill in.
+    // "Focus day" stays disabled (with a hint) until then, so it can't
+    // silently focus an unpicked day 1.
     setSelectedPlanIndex(null);
   }, [dayPlans]);
+  // An interactive split on a single, not-yet-materialized day: days = [whole
+  // route], dayPlans = the slices. Until `materializeSplit()` runs on save,
+  // `displayedTrip.days` still holds only the original whole-route day, so the
+  // per-day surfaces (cards, map focus, conditions/stops) can't read a real
+  // per-day TripDay — they fall back to the DayPlan (segmentIds/towns) instead.
+  const splitOnSingleDay =
+    (displayedTrip?.days.length ?? 0) === 1 && (dayPlans?.length ?? 0) > 1;
+  // Left day column reuses the preview's rich "Day-by-day" cards. The card
+  // count follows the split (`dayPlans`); each card's content comes from the
+  // index-aligned saved day (`displayedTrip.days[i]`, the rich TripDay) when
+  // it exists, otherwise a light projection of the DayPlan. During an
+  // unmaterialized split `days[0]` is still the whole route, so every card
+  // (including day 1) projects from its DayPlan instead of that shared day.
+  const dayCards = useMemo<TripDay[]>(() => {
+    if (!dayPlans) return [];
+    return dayPlans.map((plan, index) => {
+      const savedDay = splitOnSingleDay
+        ? undefined
+        : displayedTrip?.days[index];
+      if (savedDay) return savedDay;
+      return {
+        dayNumber: plan.dayNumber,
+        title:
+          plan.startTown && plan.endTown
+            ? `${plan.startTown} → ${plan.endTown}`
+            : undefined,
+        waypoints: [],
+        distanceKm: plan.distanceKm,
+        durationMinutes: plan.timeMin ?? 0,
+        elevationGain: 0,
+        avgQuality: plan.quality.score ?? 0,
+      };
+    });
+  }, [dayPlans, displayedTrip, splitOnSingleDay]);
+  // The day-view selection (card highlight + map day focus) is explicit and
+  // nullable: day 1 is preselected on load, and clicking the active day
+  // deselects it (all days shown again).
+  const selectedCardDayNumber =
+    selectedPlanIndex != null
+      ? (dayPlans?.[selectedPlanIndex]?.dayNumber ?? null)
+      : null;
+  const handleSelectDayCard = useCallback(
+    (dayNumber: number) => {
+      if (!dayPlans) return;
+      const planIndex = dayPlans.findIndex((p) => p.dayNumber === dayNumber);
+      if (planIndex < 0) return;
+      // Toggle — clicking the already-selected day deselects it, back to the
+      // whole-route view. Realign the store's placement/edit target to day 1
+      // so the map's context-menu endpoints (which fall back to day 1 when no
+      // day is selected) match where a newly placed waypoint actually lands.
+      if (selectedPlanIndex === planIndex) {
+        setSelectedPlanIndex(null);
+        setSelectedDay(0);
+        return;
+      }
+      setSelectedPlanIndex(planIndex);
+      setPanelTab("INSPECT");
+      // Loaded multi-day trips: the card also selects the real day (drives
+      // per-day live routing + preview).
+      if (activeTrip && planIndex < activeTrip.days.length) {
+        setSelectedDay(planIndex);
+      }
+    },
+    [dayPlans, activeTrip, setSelectedDay, selectedPlanIndex],
+  );
+  // ── Tab scoping: INSPECT / CONDITIONS / STOPS follow the day-view pick.
+  // No day selected → whole route; a day selected → that day only.
+  const daySelected = selectedCardDayNumber != null;
+  // The selected, materialized day's rich TripDay (null for the whole-route
+  // view or an unmaterialized split slice).
+  const selectedTripDay =
+    daySelected && !splitOnSingleDay && selectedPlanIndex != null
+      ? (displayedTrip?.days[selectedPlanIndex] ?? null)
+      : null;
+  // INSPECT input: the selected day's own route (materialized), the whole
+  // single route + a DayPlan scope (unmaterialized split), or the all-days
+  // aggregate (whole route). A loaded day's split DayPlan has empty segmentIds
+  // and would filter every segment out, so materialized days carry no plan.
+  const inspectDay = useMemo<TripDay | null>(() => {
+    const days = displayedTrip?.days ?? [];
+    if (!daySelected) return aggregateInspectDay(days);
+    if (splitOnSingleDay) return days[0] ?? null;
+    return selectedTripDay;
+  }, [displayedTrip, daySelected, splitOnSingleDay, selectedTripDay]);
+  const inspectPlan =
+    daySelected && splitOnSingleDay && selectedPlanIndex != null
+      ? (dayPlans?.[selectedPlanIndex] ?? null)
+      : null;
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
@@ -1120,6 +1224,28 @@ export default function TripPlannerPage() {
   );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
+  // CONDITIONS + STOPS scope to the selected materialized day. The map keeps
+  // its whole-route markers (closuresData/passesData above); the tab reads a
+  // day-scoped copy. React-query keys on the route content, so when nothing is
+  // selected the two calls share a cache entry — no extra request.
+  const conditionRoutes = useMemo(
+    () =>
+      selectedTripDay
+        ? closureRoutes.filter(
+            (route) => route.id === `day-${selectedTripDay.dayNumber}`,
+          )
+        : closureRoutes,
+    [selectedTripDay, closureRoutes],
+  );
+  const tabClosuresData = useClosures(travelMonth, conditionRoutes);
+  const tabPassesData = usePasses(travelMonth, conditionRoutes);
+  const stopsTrip = useMemo(
+    () =>
+      selectedTripDay && displayedTrip
+        ? { ...displayedTrip, days: [selectedTripDay] }
+        : displayedTrip,
+    [selectedTripDay, displayedTrip],
+  );
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
@@ -2402,6 +2528,31 @@ export default function TripPlannerPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Show / hide the left day column — only when there are days to
+              reveal. Filled when the column is open, outlined when hidden. */}
+          {daysVisible ? (
+            <>
+              <Tooltip
+                content={showDaysColumn ? t("Hide days") : t("Show days")}
+                placement="below"
+              >
+                <Button
+                  iconOnly
+                  variant={showDaysColumn ? "primary" : "secondary"}
+                  size="sm"
+                  aria-pressed={showDaysColumn}
+                  aria-label={showDaysColumn ? t("Hide days") : t("Show days")}
+                  onClick={() => setShowDaysColumn((v) => !v)}
+                >
+                  <PanelLeft size={15} />
+                </Button>
+              </Tooltip>
+              <span
+                aria-hidden="true"
+                className="h-[22px] w-px shrink-0 bg-line"
+              />
+            </>
+          ) : null}
           <Tooltip content={t("Undo")} placement="below">
             <Button
               iconOnly
@@ -2547,102 +2698,99 @@ export default function TripPlannerPage() {
 
       {/* Grid — the left day column exists ONLY after a split inside the
           multi-day opt-in (revision 2 §B); otherwise the map takes the
-          space. Right panel is always present. */}
+          space. Right panel is always present. When days exist the rider can
+          collapse the column via the "Show days" map toggle: the left track
+          animates 340px→0 and the map expands into the freed space. */}
       <div
-        className={`grid min-h-0 flex-1 ${
-          daysVisible ? "grid-cols-[340px_1fr_370px]" : "grid-cols-[1fr_370px]"
+        className={`grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out ${
+          daysVisible
+            ? showDaysColumn
+              ? "grid-cols-[370px_1fr_370px]"
+              : "grid-cols-[0px_1fr_370px]"
+            : "grid-cols-[1fr_370px]"
         }`}
       >
         {/* LEFT — itinerary surface: the split's day cards. Absent (not
             empty-state) before a split. */}
         {daysVisible && dayPlans ? (
-          <aside className="flex min-h-0 flex-col border-r border-line">
-            <div className="border-b border-line px-5 pb-3 pt-[18px]">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+          <aside
+            // Collapsed to a 0px track but kept mounted for the slide
+            // animation — `inert` pulls its controls out of the tab order and
+            // the a11y tree so keyboard users can't land on hidden buttons.
+            inert={!showDaysColumn}
+            aria-hidden={!showDaysColumn}
+            className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${
+              showDaysColumn ? "border-r border-line" : ""
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 pb-3 pt-[18px]">
+              <span className="whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
                 {t("Itinerary · {days} day{s}", {
                   days: dayPlans.length,
                   s: dayPlans.length === 1 ? "" : "s",
                 })}
               </span>
+              {/* Focus selected day — moved off the map (rider feedback):
+                  dims every non-selected day so the picked day reads clearly.
+                  Disabled (with a hint) when no day is selected — there's
+                  nothing to focus. */}
+              {(() => {
+                // Focus needs a materialized day's geometry. Disabled with no
+                // pick, and also while an unmaterialized split slice is picked
+                // (its per-day route only exists after saving the split).
+                const focusDisabled = selectedTripDay == null;
+                const focusHint = daySelected
+                  ? t("Save the split to focus this day")
+                  : t("Select a day to focus");
+                const control = (
+                  <label className="flex shrink-0 items-center gap-2">
+                    <span className="whitespace-nowrap text-[11px] font-semibold text-fg-dim">
+                      {t("Focus day")}
+                    </span>
+                    <Toggle
+                      checked={focusSelectedDay && !focusDisabled}
+                      onChange={setFocusSelectedDay}
+                      disabled={focusDisabled}
+                      ariaLabel={t("Focus selected day")}
+                    />
+                  </label>
+                );
+                return focusDisabled ? (
+                  <Tooltip content={focusHint} placement="below">
+                    {control}
+                  </Tooltip>
+                ) : (
+                  control
+                );
+              })()}
             </div>
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
-              <>
-                {splitStatus === "stale" &&
-                (displayedTrip?.days.length ?? 0) <= 1 ? (
-                  <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
-                    <span className="text-[11.5px] font-semibold text-ink">
-                      {t("Route changed ")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void handleSplit()}
-                      className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.4px] text-ink transition hover:brightness-95"
-                    >
-                      {t("RE-SPLIT")}
-                    </button>
-                  </div>
-                ) : null}
-                {dayPlans.map((plan, planIndex) => (
+              {splitStatus === "stale" &&
+              (displayedTrip?.days.length ?? 0) <= 1 ? (
+                <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
+                  <span className="text-[11.5px] font-semibold text-ink">
+                    {t("Route changed ")}
+                  </span>
                   <button
-                    key={plan.dayNumber}
                     type="button"
-                    aria-label={`Day ${plan.dayNumber}`}
-                    aria-pressed={selectedPlanIndex === planIndex}
-                    onClick={() => {
-                      setSelectedPlanIndex(planIndex);
-                      setPanelTab("INSPECT");
-                      // Loaded multi-day trips: the card also selects the
-                      // real day (drives per-day live routing + preview).
-                      if (activeTrip && planIndex < activeTrip.days.length) {
-                        setSelectedDay(planIndex);
-                      }
-                    }}
-                    className={`w-full rounded-[12px] border bg-cream p-3 text-left transition hover:border-line-strong ${
-                      selectedPlanIndex === planIndex
-                        ? "border-accent"
-                        : "border-line"
-                    } ${splitStatus === "stale" ? "opacity-45" : ""}`}
+                    onClick={() => void handleSplit()}
+                    className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.4px] text-ink transition hover:brightness-95"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
-                        {String(plan.dayNumber).padStart(2, "0")}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="truncate text-[13px] font-bold text-ink">
-                          {t("Day")} {plan.dayNumber}
-                        </div>
-                        <div className="truncate font-mono text-[10px] text-fg-mute">
-                          {plan.startTown.toUpperCase()} →{" "}
-                          {plan.endTown.toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-fg-dim">
-                      <span>{Math.round(plan.distanceKm)} KM</span>
-                      {plan.timeMin ? (
-                        <span>{formatDuration(plan.timeMin)}</span>
-                      ) : null}
-                      {plan.quality.score !== null ? (
-                        <span className="text-accent">
-                          {plan.quality.score.toFixed(1)} / 5
-                        </span>
-                      ) : null}
-                    </div>
-                    {plan.noTownNearby ? (
-                      <p className="mt-1.5 text-[10.5px] leading-snug text-fg-mute">
-                        {t(
-                          "No overnight town near this break — it lands at the raw distance. ",
-                        )}
-                      </p>
-                    ) : null}
-                    {plan.breakPinned ? (
-                      <p className="mt-1.5 font-mono text-[9.5px] tracking-[0.4px] text-fg-mute">
-                        {t("BREAK PINNED ")}
-                      </p>
-                    ) : null}
+                    {t("RE-SPLIT")}
                   </button>
-                ))}
-              </>
+                </div>
+              ) : null}
+              {/* Same rich "Day-by-day" cards as the read-only preview, wired
+                  to the planner's select/route behavior. Dimmed while a split
+                  is stale, matching the previous per-card treatment. */}
+              <div className={splitStatus === "stale" ? "opacity-45" : ""}>
+                <DayByDayList
+                  days={dayCards}
+                  selectedDayNumber={selectedCardDayNumber}
+                  onSelectDay={handleSelectDayCard}
+                  showHeading={false}
+                />
+              </div>
             </div>
           </aside>
         ) : null}
@@ -2665,8 +2813,10 @@ export default function TripPlannerPage() {
               onRerouteRequested={armFitAfterRoute}
               closuresData={closuresData}
               passesData={passesData}
-              selectedDayNumber={selectedDay?.dayNumber ?? 1}
-              focusSelectedDay={focusSelectedDay}
+              {...(selectedTripDay != null
+                ? { selectedDayNumber: selectedTripDay.dayNumber }
+                : {})}
+              focusSelectedDay={focusSelectedDay && selectedTripDay != null}
               onAddWaypoint={(location) =>
                 appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
               }
@@ -2686,32 +2836,6 @@ export default function TripPlannerPage() {
                 : {})}
               fitRouteToken={fitRouteToken}
             />
-            {/* Focus-day toggle — only meaningful when there are multiple
-                days to distinguish. Hidden on a single-day trip to keep
-                the map chrome minimal. */}
-            {activeTrip && activeTrip.days.length > 1 && (
-              <div className="absolute bottom-4 right-4 z-20">
-                <button
-                  type="button"
-                  aria-pressed={focusSelectedDay}
-                  aria-label={
-                    focusSelectedDay
-                      ? t("Show all days")
-                      : t("Focus selected day")
-                  }
-                  onClick={() => setFocusSelectedDay((v) => !v)}
-                  className={`flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition ${
-                    focusSelectedDay
-                      ? "border-ink bg-ink text-cream"
-                      : "border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink"
-                  }`}
-                >
-                  {focusSelectedDay
-                    ? t("Show all days")
-                    : t("Focus selected day")}
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Drop overlay */}
@@ -3309,13 +3433,9 @@ export default function TripPlannerPage() {
           }
           inspect={
             <InspectTab
-              day={displayedTrip?.days[selectedDayIndex] ?? null}
+              day={inspectDay}
               selectedSegmentId={selectedPlannerSegmentId}
-              plan={
-                selectedPlanIndex !== null
-                  ? (dayPlans?.[selectedPlanIndex] ?? null)
-                  : null
-              }
+              plan={inspectPlan}
               onClearPlan={() => setSelectedPlanIndex(null)}
               onInspectSegment={handleInspectSegment}
               onRerouteSegment={handleRerouteSegment}
@@ -3328,8 +3448,8 @@ export default function TripPlannerPage() {
                 <PassesPanel
                   month={travelMonth}
                   onMonthChange={setTravelMonth}
-                  routes={closureRoutes}
-                  data={passesData}
+                  routes={conditionRoutes}
+                  data={tabPassesData}
                   showRegionalList={false}
                   onFocusPass={(pass) =>
                     mapRef.current?.openConditionPopover({
@@ -3344,8 +3464,8 @@ export default function TripPlannerPage() {
                 <SectionStamp n="02">{t("Closures & roadworks ")}</SectionStamp>
                 <ClosuresPanel
                   month={travelMonth}
-                  routes={closureRoutes}
-                  data={closuresData}
+                  routes={conditionRoutes}
+                  data={tabClosuresData}
                   showRegionalList={false}
                   onFocusClosure={(closure) =>
                     mapRef.current?.openConditionPopover({
@@ -3360,7 +3480,7 @@ export default function TripPlannerPage() {
           }
           stops={
             <TripStopsPanel
-              trip={displayedTrip}
+              trip={stopsTrip}
               month={travelMonth}
               onFocusStop={(stop) => mapRef.current?.openPoiPopover(stop)}
             />

@@ -408,6 +408,83 @@ describe("findPlannerQualitySegment / plannerSegmentBounds", () => {
     ]);
   });
 
+  it("resolves a run id that spans a day boundary (whole-route inspect)", () => {
+    const seg = (
+      id: string,
+      dayNumber: number,
+      coords: [number, number][],
+    ): RouteSegment => ({
+      id,
+      geometry: { type: "LineString", coordinates: coords },
+      band: "rough",
+      surface: "gravel",
+      score: 2,
+      passes: 3,
+      lengthKm: 5,
+      dayNumber,
+    });
+    const crossDayTrip = trip({
+      num_days: 2,
+      days: [
+        {
+          dayNumber: 1,
+          title: "Day 1",
+          distanceKm: 5,
+          durationMinutes: 10,
+          elevationGain: 0,
+          avgQuality: 2,
+          waypoints: [],
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 0],
+              [1, 0],
+            ],
+          },
+          qualitySegments: [
+            seg("d1-s0", 1, [
+              [0, 0],
+              [1, 0],
+            ]),
+          ],
+        },
+        {
+          dayNumber: 2,
+          title: "Day 2",
+          distanceKm: 5,
+          durationMinutes: 10,
+          elevationGain: 0,
+          avgQuality: 2,
+          waypoints: [],
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [1, 0],
+              [2, 0],
+            ],
+          },
+          qualitySegments: [
+            seg("d2-s0", 2, [
+              [1, 0],
+              [2, 0],
+            ]),
+          ],
+        },
+      ],
+    });
+
+    // The whole-route inspect view coalesces both days into one run; the run id
+    // spans the boundary and must resolve against all days' segments, not fail.
+    const run = findPlannerQualitySegment(crossDayTrip, "run:d1-s0:d2-s0")!;
+    expect(run).not.toBeNull();
+    expect(run.lengthKm).toBe(10);
+    expect(run.geometry.coordinates).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+    ]);
+  });
+
   it("computes a bounding box that contains the segment", () => {
     const segment = findPlannerQualitySegment(
       trip(),
