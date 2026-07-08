@@ -124,6 +124,8 @@ The POI store starts empty; store read endpoints return an empty result (not an 
 
 Both paths read the per-region `.osm` files an operator prepares out-of-band; produce them first.
 
+A **second bulk source**, Foursquare OS Places (#869, `source='fsq'`), imports the same way from per-region `.fsq.jsonl` extracts — see [Producing per-country POI extracts (Foursquare OS Places)](#producing-per-country-poi-extracts-foursquare-os-places). It has its own env vars (`TARMOTO_FSQ_IMPORT_ENABLED/DIR/REGIONS`) and CLI (`pnpm fsq:import`), and coexists with OSM in `pois` via the `(source, external_id)` key. **Not prod-safe yet:** store reads filter by `kind`, not `source`, so an imported FSQ row is served immediately alongside OSM — importing to production before the cross-source dedup + Foursquare attribution land would show duplicate pins and miss required credit. Until then, only import FSQ on dev/staging.
+
 ### Producing per-country POI extracts
 
 The bulk POI import reads one `.osm` XML file per active region from `TARMOTO_POI_IMPORT_DIR`, named `<code>.osm` (lower-case ISO 3166-1 alpha-2, e.g. `cz.osm`). An operator prepares each file once per refresh from the country's Geofabrik download, mirroring the roads OSM importer's prep (`../../apps/backend/src/modules/roads/osm-import/README.md`). The importer reads `.osm` XML, not `.osm.pbf` directly — the maintained JS PBF parsers are stale; osmium decodes PBF far better.
@@ -162,3 +164,44 @@ osmium extract -b 12.09,48.55,18.86,51.06 cz-poi.osm.pbf \
 Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` bbox. Then enable the import on the worker process: `TARMOTO_POI_IMPORT_ENABLED=true`, point `TARMOTO_POI_IMPORT_DIR` at the folder of `.osm` files, and narrow coverage with `TARMOTO_POI_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17.
 
 **Validate volume + runtime before enabling all regions in production (#850 acceptance criterion).** Region-wide the filtered set is low millions of rows; `pois` is GiST-indexed on `geom` and GIN-indexed on `tags` (plus the `(source, external_id)` unique and `(address_country, kind)` browse index), so store reads stay bounded — but the import's fetch/upsert cost and the worker's memory/runtime scale with coverage. Bring regions online **incrementally**: validate per-country row counts and a full-run wall-clock on staging before flipping all 17 on in production at once.
+
+### Producing per-country POI extracts (Foursquare OS Places)
+
+The FSQ bulk import (#869) reads one **newline-delimited JSON** file per active region from `TARMOTO_FSQ_IMPORT_DIR`, named `<code>.fsq.jsonl` (lower-case ISO code, e.g. `cz.fsq.jsonl`). It's a second `source` (`'fsq'`) stored alongside OSM in `pois`; it uses [FSQ OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) — the free, Apache-2.0, monthly-refreshed open dataset — **not** the Places API (the API's ToS forbids bulk-storing its data; OS Places is built for it).
+
+OS Places ships as Parquet on S3 (100M+ rows). We keep the huge download + filter **offline** (like the osmium step above), so the backend only ever streams a small per-region extract and no FSQ credential reaches production. An operator runs a DuckDB recipe once per refresh:
+
+Per region:
+
+1. **Get a token.** Create a free [FSQ Places Portal](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) account and generate S3 credentials — they're **short-lived (~1 month)**, so regenerate each refresh (which lines up with the dataset's monthly cadence).
+2. **Filter with DuckDB** to the region's `DEFAULT_REGIONS` bbox + `date_closed IS NULL` + a coarse category prefilter, joining the FSQ category arrays to comma strings, and write NDJSON. The backend classifier (`fsq-poi-categories.ts`) does the precise category → `kind` mapping, so the SQL prefilter only needs to be a loose superset.
+3. **Place** the result in `TARMOTO_FSQ_IMPORT_DIR` as `<code>.fsq.jsonl`.
+
+**Worked example — Czech Republic (`CZ`):**
+
+```sql
+-- duckdb (INSTALL httpfs; LOAD httpfs;)
+SET s3_region='us-east-1';
+SET s3_access_key_id='…';       -- from the FSQ Places Portal (regenerate monthly)
+SET s3_secret_access_key='…';
+
+COPY (
+  SELECT
+    fsq_place_id, name, latitude, longitude,
+    array_to_string(fsq_category_ids, ',')    AS category_ids,
+    array_to_string(fsq_category_labels, ',') AS category_labels,
+    tel, website, address, locality, postcode, country
+  FROM read_parquet('s3://fsq-os-places-us-east-1/release/dt=<YYYY-MM-DD>/places/parquet/*.parquet')
+  WHERE date_closed IS NULL
+    -- CZ bbox from DEFAULT_REGIONS (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06)
+    AND longitude BETWEEN 12.09 AND 18.86
+    AND latitude  BETWEEN 48.55 AND 51.06
+    -- coarse category superset; the backend classifier is authoritative
+    AND len(list_filter(fsq_category_labels, x -> regexp_matches(lower(x),
+        'restaurant|caf|coffee|food|ice cream|gas|petrol|fuel|charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|apartment|camp|resort|cottage|chalet|cabin|caravan|breakfast'))) > 0
+) TO '<TARMOTO_FSQ_IMPORT_DIR>/cz.fsq.jsonl' (FORMAT json);
+```
+
+Then import — on demand `pnpm fsq:import` (all configured regions) or `node dist/scripts/import-pois.js fsq CZ` (one region); it bypasses the enabled gate like `poi:import`. For recurring runs set `TARMOTO_FSQ_IMPORT_ENABLED=true`, `TARMOTO_FSQ_IMPORT_DIR`, and (optionally) `TARMOTO_FSQ_IMPORT_REGIONS=CZ` on the worker process (unset imports all 17), alongside `TARMOTO_POI_DATABASE_*`. The extract dir and region list are independent of the OSM import's.
+
+> ⚠️ **Dev/staging only until FSQ is prod-safe.** As noted above, store reads don't filter by `source`, so imported FSQ rows go live immediately. Do not import FSQ to production until the cross-source OSM↔FSQ dedup and the Foursquare attribution ship (the "enable FSQ" follow-up on #869).
