@@ -7,8 +7,8 @@ import {
 
 describe('jobs.constants', () => {
   it('exposes every required queue name from issue #276 acceptance criteria', () => {
-    // The issue lists six queues by name; we add two more (push,
-    // account-deletion-finalize) that are necessary support queues.
+    // The issue lists six queues by name; we add one more
+    // (account-deletion-finalize) as a necessary support queue.
     // Drift here means a producer or processor will try to enqueue
     // into a queue that the rest of the system never registered.
     expect(ALL_QUEUE_NAMES).toEqual(
@@ -21,7 +21,6 @@ describe('jobs.constants', () => {
         'funzone-recompute',
       ]),
     );
-    expect(ALL_QUEUE_NAMES).toContain('push-notification');
     expect(ALL_QUEUE_NAMES).toContain('account-deletion-finalize');
   });
 
@@ -32,7 +31,8 @@ describe('jobs.constants', () => {
     // into a queue that the rest of the system never registered.
     // #743 added the NAP closure poll queue (13th); #745 the POI import (14th).
     // #781 added the OSM import queue (15th); #779 the quality conflation (16th).
-    expect(ALL_QUEUE_NAMES).toHaveLength(16);
+    // #867 removed the unused push-notification stub queue (back to 15).
+    expect(ALL_QUEUE_NAMES).toHaveLength(15);
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {

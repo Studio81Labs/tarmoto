@@ -63,8 +63,6 @@ export class QueueHealthService {
     private readonly accountDeletionFinalize: Queue,
     @InjectQueue(QUEUE_NAMES.FUNZONE_RECOMPUTE)
     private readonly funzoneRecompute: Queue,
-    @InjectQueue(QUEUE_NAMES.PUSH_NOTIFICATION)
-    private readonly pushNotification: Queue,
     @InjectQueue(QUEUE_NAMES.LOCATION_RETENTION_SWEEP)
     private readonly locationRetentionSweep: Queue,
     @InjectQueue(QUEUE_NAMES.WEATHER_ALERT_SWEEP)
@@ -92,7 +90,6 @@ export class QueueHealthService {
       [QUEUE_NAMES.ACCOUNT_DELETION_SWEEP]: this.accountDeletionSweep,
       [QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE]: this.accountDeletionFinalize,
       [QUEUE_NAMES.FUNZONE_RECOMPUTE]: this.funzoneRecompute,
-      [QUEUE_NAMES.PUSH_NOTIFICATION]: this.pushNotification,
       [QUEUE_NAMES.LOCATION_RETENTION_SWEEP]: this.locationRetentionSweep,
       [QUEUE_NAMES.WEATHER_ALERT_SWEEP]: this.weatherAlertSweep,
       [QUEUE_NAMES.MODEL_EVAL_RECONCILE]: this.modelEvalReconcile,
