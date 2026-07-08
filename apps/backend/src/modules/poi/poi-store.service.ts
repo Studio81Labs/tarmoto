@@ -2,8 +2,14 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, IsNull } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
+import type { AccommodationKind, PoiKind } from '@tarmoto/shared';
+import type {
+  AccommodationPoi,
+  PointOfInterest,
+} from './poi-provider.interface.js';
+import { extractPoiHint } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
-import { cumulativeLengthKm, projectOntoRoute } from './poi.service.js';
+import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
 import { withPoiRepo } from './poi-repo.js';
 import {
   DEFAULT_BUFFER_KM,
@@ -27,6 +33,21 @@ interface RoutePoint {
   lat: number;
   lng: number;
 }
+
+/**
+ * Per-kind cap for the store-first reads whose ranker is per-kind — the `nearby`
+ * POI radius (`rankPois`) and the `along-route` corridor (`rankAlongRoute`)
+ * (#849). Each kind is queried and bounded independently so a dense kind
+ * (restaurants) can't fill a global nearest-first limit and crowd sparser kinds
+ * (fuel, viewpoints) out — which `readStoreFirst` would then treat as
+ * authoritative, so Overpass wouldn't backfill the dropped fuel stops the
+ * fuel-range warning relies on. Comfortably above `PoiService`'s per-kind
+ * display caps so the post-fetch ranking still has the true closest rows to
+ * keep; total hydration stays bounded (this × the requested kinds). The
+ * accommodation radius ranks globally (closest-N, any kind) so it keeps a
+ * single global cap instead — with `min_stars` pushed into the query.
+ */
+const STORE_PER_KIND_LIMIT = 100;
 
 /**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
@@ -133,36 +154,7 @@ export class PoiStoreService {
       Math.max(0.5, bufferKm || DEFAULT_BUFFER_KM),
       MAX_BUFFER_KM,
     );
-    const bufferM = Math.round(buffer * 1000);
-
-    // Build the LineString via named params so user coordinates are never
-    // string-interpolated into SQL — same pattern as passes.checkRoute. Going
-    // through the query builder also hydrates `geom` back into a GeoJSON Point.
-    const params: Record<string, number> = { buffer: bufferM };
-    const pointsSql = route
-      .map((p, i) => {
-        params[`lng${i}`] = p.lng;
-        params[`lat${i}`] = p.lat;
-        return `ST_MakePoint(:lng${i}, :lat${i})`;
-      })
-      .join(',');
-
-    const rows = await withPoiRepo(this.poiDataSource, (repo) => {
-      const qb = repo.createQueryBuilder('poi').where(
-        `ST_DWithin(
-          poi.geom::geography,
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
-          :buffer
-        )`,
-        params,
-      );
-      // Exclude bulk-import tombstones (#850) from the corridor read too.
-      qb.andWhere('poi.deactivated_at IS NULL');
-      if (kinds && kinds.length > 0) {
-        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
-      }
-      return qb.getMany();
-    });
+    const rows = await this.queryCorridorEntities(route, buffer, kinds);
 
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer
@@ -196,6 +188,185 @@ export class PoiStoreService {
       })),
     };
   }
+
+  /**
+   * Stored POIs within `radiusKm` of a point, as the provider's raw
+   * {@link PointOfInterest} shape (#849) — the store-first source for the live
+   * `/poi/nearby`. Returns the raw hits (kind-filtered, tombstones excluded,
+   * nearest-first, capped) for `PoiService` to rank / cap / map exactly as it
+   * does Overpass results, so the store and live paths share one contract.
+   */
+  async findPointsOfInterestNear(
+    lat: number,
+    lng: number,
+    radiusKm: number,
+    kinds: PoiKind[],
+  ): Promise<PointOfInterest[]> {
+    // Bound per kind (rankPois caps per kind) so a dense kind can't crowd out
+    // sparser ones before ranking — see STORE_PER_KIND_LIMIT. Concurrent, so
+    // it's one round-trip of latency.
+    const perKind = await Promise.all(
+      kinds.map((kind) =>
+        this.queryRadiusEntities(
+          lat,
+          lng,
+          radiusKm,
+          [kind],
+          STORE_PER_KIND_LIMIT,
+        ),
+      ),
+    );
+    return perKind.flat().map(storedPoiToPointOfInterest);
+  }
+
+  /**
+   * Stored accommodations within `radiusKm` of a point, as the provider's raw
+   * {@link AccommodationPoi} shape (#849) — the store-first source for the live
+   * `/poi/accommodations`. Accommodations rank globally (closest-N, any kind),
+   * so a single nearest-first cap is correct; `minStars` is pushed into the
+   * query so an unrated cluster can't fill the cap and hide rated stays farther
+   * out. `PoiService.rank` still applies the same filter to the Overpass path.
+   */
+  async findAccommodationsNear(
+    lat: number,
+    lng: number,
+    radiusKm: number,
+    kinds: AccommodationKind[],
+    minStars?: number,
+  ): Promise<AccommodationPoi[]> {
+    const rows = await this.queryRadiusEntities(
+      lat,
+      lng,
+      radiusKm,
+      kinds,
+      MAX_LIMIT,
+      minStars,
+    );
+    return rows.map(storedPoiToAccommodationPoi);
+  }
+
+  /**
+   * Stored POIs within `bufferKm` of a route polyline, as raw
+   * {@link PointOfInterest}s (#849) — the store-first source for the live
+   * `/poi/along-route`. Returns the corridor hits unprojected; `PoiService`'s
+   * `rankAlongRoute` does the perpendicular projection + along/off-route
+   * distances (the same math the live path uses), so the corridor projection
+   * is preserved and store/live outputs match in shape.
+   */
+  async findPointsOfInterestInCorridor(
+    route: ReadonlyArray<RoutePoint>,
+    bufferKm: number,
+    kinds: PoiKind[],
+  ): Promise<PointOfInterest[]> {
+    if (route.length < 2) {
+      throw new BadRequestException('Route must have at least 2 points');
+    }
+    // Bound per kind, not globally — one closest-to-route query per kind — so a
+    // dense kind can't crowd sparser ones out before `rankAlongRoute`'s own
+    // per-kind cap (see STORE_PER_KIND_LIMIT). Runs the per-kind
+    // queries concurrently, so it's one round-trip of latency.
+    const perKind = await Promise.all(
+      kinds.map((kind) =>
+        this.queryCorridorEntities(
+          route,
+          bufferKm,
+          [kind],
+          STORE_PER_KIND_LIMIT,
+        ),
+      ),
+    );
+    return perKind.flat().map(storedPoiToPointOfInterest);
+  }
+
+  /**
+   * Rows whose point is within `radiusKm` of (lat,lng): kind-filtered, live
+   * (non-tombstoned), nearest-first, capped at `limit`, optionally star-filtered.
+   * Shared by the nearby-POI (per-kind cap) + accommodation (global cap +
+   * `minStars`) store reads. Uses a geography `ST_DWithin` (the passes-module
+   * pattern) so `radiusKm` is real metres-on-the-sphere, and caps + orders by
+   * distance so a dense-city radius can't load unbounded rows.
+   */
+  private async queryRadiusEntities(
+    lat: number,
+    lng: number,
+    radiusKm: number,
+    kinds: string[] | undefined,
+    limit: number,
+    minStars?: number,
+  ): Promise<Poi[]> {
+    const radiusM = Math.round(Math.max(0, radiusKm) * 1000);
+    // Bind lat/lng as named params (never string-interpolated) and reuse the
+    // point in the distance sort. Query-builder (not raw) hydrates `geom`.
+    const point = 'ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography';
+    const params = { lat, lng, radius: radiusM };
+    return withPoiRepo(this.poiDataSource, (repo) => {
+      const qb = repo
+        .createQueryBuilder('poi')
+        .where(`ST_DWithin(poi.geom::geography, ${point}, :radius)`, params)
+        .andWhere('poi.deactivated_at IS NULL');
+      if (kinds && kinds.length > 0) {
+        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      // Push `min_stars` into the query so an unrated cluster can't fill the cap
+      // and starve rated accommodations (NULL stars fail `>=`, matching
+      // `PoiService.rank`'s "no rating → drop when min_stars set").
+      if (minStars !== undefined) {
+        qb.andWhere('poi.stars >= :minStars', { minStars });
+      }
+      return qb
+        .orderBy(`ST_Distance(poi.geom::geography, ${point})`, 'ASC')
+        .limit(limit)
+        .getMany();
+    });
+  }
+
+  /**
+   * Rows within `bufferKm` of a route polyline: kind-filtered + live. Factored
+   * from {@link findAlongRoute} so the store-first corridor read and the
+   * `/poi/in-corridor` endpoint share one geography `ST_DWithin` query; the
+   * caller does any projection / sort. `bufferKm` is pre-clamped by the caller.
+   */
+  private async queryCorridorEntities(
+    route: ReadonlyArray<RoutePoint>,
+    bufferKm: number,
+    kinds: string[] | undefined,
+    limit?: number,
+  ): Promise<Poi[]> {
+    const bufferM = Math.round(bufferKm * 1000);
+    // Build the LineString via named params so user coordinates are never
+    // string-interpolated into SQL — same pattern as passes.checkRoute. Going
+    // through the query builder also hydrates `geom` back into a GeoJSON Point.
+    const params: Record<string, number> = { buffer: bufferM };
+    const pointsSql = route
+      .map((p, i) => {
+        params[`lng${i}`] = p.lng;
+        params[`lat${i}`] = p.lat;
+        return `ST_MakePoint(:lng${i}, :lat${i})`;
+      })
+      .join(',');
+    const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography`;
+    return withPoiRepo(this.poiDataSource, (repo) => {
+      const qb = repo
+        .createQueryBuilder('poi')
+        .where(`ST_DWithin(poi.geom::geography, ${line}, :buffer)`, params);
+      // Exclude bulk-import tombstones (#850) from the corridor read too.
+      qb.andWhere('poi.deactivated_at IS NULL');
+      if (kinds && kinds.length > 0) {
+        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+      }
+      // Bound the store-first `/poi/along-route` read (#849): unlike
+      // `findAlongRoute` (which projects every hit, then sorts by along-route +
+      // slices), that path discards most rows in `rankAlongRoute`, so cap at
+      // the DB — closest-to-route first — so a dense urban corridor can't
+      // hydrate thousands of rows. `findAlongRoute` passes no limit → unchanged.
+      if (limit !== undefined) {
+        qb.orderBy(`ST_Distance(poi.geom::geography, ${line})`, 'ASC').limit(
+          limit,
+        );
+      }
+      return qb.getMany();
+    });
+  }
 }
 
 interface ProjectedDistances {
@@ -209,10 +380,7 @@ interface ProjectedDistances {
  * import timestamp. Exported for unit tests.
  */
 export function toStoredPoiDto(poi: Poi): StoredPoiDto {
-  const [lng, lat] = poi.geom.coordinates;
-  if (lng === undefined || lat === undefined) {
-    throw new Error('stored POI geom is missing lng/lat');
-  }
+  const [lng, lat] = geomLngLat(poi);
   return {
     id: poi.id,
     source: poi.source,
@@ -234,5 +402,85 @@ export function toStoredPoiDto(poi: Poi): StoredPoiDto {
     osm_url: osmDetailUrl(poi.external_id),
     maps_url: googleMapsUrl(poi.name, lat, lng),
     last_imported_at: poi.last_imported_at.toISOString(),
+  };
+}
+
+/** Read the hydrated GeoJSON point's `[lng, lat]`, guarding a corrupt row. */
+function geomLngLat(poi: Poi): [number, number] {
+  const [lng, lat] = poi.geom.coordinates;
+  if (lng === undefined || lat === undefined) {
+    throw new Error('stored POI geom is missing lng/lat');
+  }
+  return [lng, lat];
+}
+
+/**
+ * Reproduce the live provider's `hint` for a stored POI. `cuisine` / `brand`
+ * are denormalized columns byte-identical to `extractPoiHint`'s cuisine + fuel
+ * branches (the import ran the same normalization), so read them directly; only
+ * a viewpoint's `description` / `view_type` hint lives solely in the raw `tags`
+ * bag, so derive that one via the shared `extractPoiHint`.
+ */
+function storedPoiHint(poi: Poi): string | null {
+  if (poi.kind === 'viewpoint') {
+    return extractPoiHint('viewpoint', poi.tags ?? {});
+  }
+  if (poi.kind === 'fuel_station') return poi.brand;
+  return poi.cuisine;
+}
+
+/**
+ * Map a stored `Poi` row to the provider's raw {@link PointOfInterest}, so a
+ * store-first read feeds `PoiService`'s rankers exactly like Overpass does.
+ * `kind` is cast to `PoiKind`: the caller only fetches rows whose `kind` is in
+ * the requested live-enum set, so the superset values never reach here.
+ * Exported for unit tests.
+ */
+export function storedPoiToPointOfInterest(poi: Poi): PointOfInterest {
+  const [lng, lat] = geomLngLat(poi);
+  return {
+    external_id: poi.external_id,
+    name: poi.name,
+    kind: poi.kind as PoiKind,
+    lat,
+    lng,
+    website: poi.website,
+    phone: poi.phone,
+    hint: storedPoiHint(poi),
+    opening_hours: poi.opening_hours,
+    address_street: poi.address_street,
+    address_city: poi.address_city,
+    address_postcode: poi.address_postcode,
+    address_country: poi.address_country,
+    cuisine: poi.cuisine,
+    brand: poi.brand,
+    tags: poi.tags,
+  };
+}
+
+/**
+ * Map a stored `Poi` row to the provider's raw {@link AccommodationPoi}. `kind`
+ * is cast to `AccommodationKind` for the same reason as above. Exported for
+ * unit tests.
+ */
+export function storedPoiToAccommodationPoi(poi: Poi): AccommodationPoi {
+  const [lng, lat] = geomLngLat(poi);
+  return {
+    external_id: poi.external_id,
+    name: poi.name,
+    kind: poi.kind as AccommodationKind,
+    lat,
+    lng,
+    website: poi.website,
+    phone: poi.phone,
+    stars: poi.stars,
+    opening_hours: poi.opening_hours,
+    address_street: poi.address_street,
+    address_city: poi.address_city,
+    address_postcode: poi.address_postcode,
+    address_country: poi.address_country,
+    cuisine: poi.cuisine,
+    brand: poi.brand,
+    tags: poi.tags,
   };
 }

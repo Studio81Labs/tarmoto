@@ -4,6 +4,7 @@ import { Poi } from './entities/poi.entity.js';
 import { AddPois1787000000000 } from './migrations-poi/1787000000000-AddPois.js';
 import { AddPoiDecisionSupportFields1793000000000 } from './migrations-poi/1793000000000-AddPoiDecisionSupportFields.js';
 import { AddPoiDeactivatedAt1798000000000 } from './migrations-poi/1798000000000-AddPoiDeactivatedAt.js';
+import { AddPoiGeographyIndex1799000000000 } from './migrations-poi/1799000000000-AddPoiGeographyIndex.js';
 
 // CLI DataSource for the separate POI database (ADR 0007). Used by
 // `pnpm db:migrate:poi`. Keep the migrations array in sync with
@@ -20,6 +21,12 @@ export const PoiDataSource = new DataSource({
     AddPois1787000000000,
     AddPoiDecisionSupportFields1793000000000,
     AddPoiDeactivatedAt1798000000000,
+    AddPoiGeographyIndex1799000000000,
   ],
+  // `AddPoiGeographyIndex` builds its index `CONCURRENTLY`, which can't run in a
+  // transaction; every POI migration is a single Postgres-atomic multi-statement
+  // query, so running migrations untransacted here loses nothing. Keep in sync
+  // with `poi-database.module.ts`.
+  migrationsTransactionMode: 'none',
   synchronize: false,
 });

@@ -7,6 +7,7 @@ import { poiDatabaseConfig } from '../../config/poi-database.config.js';
 import { AddPois1787000000000 } from '../../migrations-poi/1787000000000-AddPois.js';
 import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations-poi/1793000000000-AddPoiDecisionSupportFields.js';
 import { AddPoiDeactivatedAt1798000000000 } from '../../migrations-poi/1798000000000-AddPoiDeactivatedAt.js';
+import { AddPoiGeographyIndex1799000000000 } from '../../migrations-poi/1799000000000-AddPoiGeographyIndex.js';
 import { isPoiConnectionError } from './poi-repo.js';
 
 const logger = new Logger('PoiDatabase');
@@ -98,8 +99,14 @@ export function buildPoiTypeOrmOptions(
       AddPois1787000000000,
       AddPoiDecisionSupportFields1793000000000,
       AddPoiDeactivatedAt1798000000000,
+      AddPoiGeographyIndex1799000000000,
     ],
     migrationsRun: !isOpenApiExport,
+    // `AddPoiGeographyIndex` builds its GiST index `CONCURRENTLY` (so a
+    // large-table boot doesn't hold a write lock), which can't run inside a
+    // transaction. Every POI migration is a single Postgres-atomic
+    // multi-statement query, so dropping TypeORM's own wrapping loses nothing.
+    migrationsTransactionMode: 'none',
     synchronize: false,
     // We own retries in createPoiDataSource; don't let TypeORM's own
     // retry loop throw at boot.
