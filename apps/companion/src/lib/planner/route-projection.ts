@@ -88,45 +88,111 @@ export function projectOntoRoute(
   };
 }
 
+const clamp = (value: number, lo: number, hi: number): number =>
+  Math.max(lo, Math.min(hi, value));
+
+/**
+ * Shortest distance (km) between two segments on the local equirectangular
+ * plane, plus the fraction `s` (0..1) along the FIRST segment (the route leg
+ * `routeA`→`routeB`) at which that nearest approach falls. Clamped
+ * closest-point-between-segments (Ericson, Real-Time Collision Detection): two
+ * crossing segments resolve to distance 0 at the true intersection, with no
+ * sampling error, and a degenerate (point) segment collapses to point-to-
+ * segment. Reference latitude is the route leg's midpoint.
+ */
+function segmentToSegmentKm(
+  routeA: LatLng,
+  routeB: LatLng,
+  edgeA: LatLng,
+  edgeB: LatLng,
+): { distanceKm: number; s: number } {
+  const cosLat = Math.cos(((routeA.lat + routeB.lat) / 2) * DEG_TO_RAD);
+  const toXY = (p: LatLng) => ({
+    x: p.lng * DEG_TO_RAD * cosLat * EARTH_RADIUS_KM,
+    y: p.lat * DEG_TO_RAD * EARTH_RADIUS_KM,
+  });
+  const p1 = toXY(routeA);
+  const q1 = toXY(routeB);
+  const p2 = toXY(edgeA);
+  const q2 = toXY(edgeB);
+  const d1 = { x: q1.x - p1.x, y: q1.y - p1.y }; // route-leg direction
+  const d2 = { x: q2.x - p2.x, y: q2.y - p2.y }; // boundary-edge direction
+  const r = { x: p1.x - p2.x, y: p1.y - p2.y };
+  const a = d1.x * d1.x + d1.y * d1.y; // squared route-leg length
+  const e = d2.x * d2.x + d2.y * d2.y; // squared edge length
+  const f = d2.x * r.x + d2.y * r.y;
+  const EPS = 1e-12;
+  let s: number;
+  let t: number;
+  if (a <= EPS && e <= EPS) {
+    s = 0; // both degenerate
+    t = 0;
+  } else if (a <= EPS) {
+    s = 0; // route leg is a point
+    t = clamp(f / e, 0, 1);
+  } else {
+    const c = d1.x * r.x + d1.y * r.y;
+    if (e <= EPS) {
+      t = 0; // boundary edge is a point
+      s = clamp(-c / a, 0, 1);
+    } else {
+      const b = d1.x * d2.x + d1.y * d2.y;
+      const denom = a * e - b * b; // 0 => parallel
+      s = denom > EPS ? clamp((b * f - c * e) / denom, 0, 1) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) {
+        t = 0;
+        s = clamp(-c / a, 0, 1);
+      } else if (t > 1) {
+        t = 1;
+        s = clamp((b - c) / a, 0, 1);
+      }
+    }
+  }
+  const closest1 = { x: p1.x + s * d1.x, y: p1.y + s * d1.y }; // on the route leg
+  const closest2 = { x: p2.x + t * d2.x, y: p2.y + t * d2.y }; // on the edge
+  return {
+    distanceKm: Math.hypot(closest1.x - closest2.x, closest1.y - closest2.y),
+    s,
+  };
+}
+
 /**
  * Project a polygon boundary ring onto the route and return the NEAREST
- * contact — the min off-route distance + its along-route km. The ring is
- * densified to ~`stepKm` along each edge (and closed) before projecting, so a
- * route that runs alongside or through a long edge *between* the ring's own
- * vertices is measured at the real contact, not a far corner vertex. Returns
- * null on a degenerate route or empty ring.
+ * contact — the min off-route distance + its along-route km. Every closed
+ * boundary edge is measured analytically against every route leg
+ * ({@link segmentToSegmentKm}), so a route that crosses a boundary edge — even
+ * a short one, or one crossed *between* the ring's own vertices — reads the
+ * true ~0 km contact instead of the nearest sampled point. Returns null on a
+ * degenerate route or empty ring.
  */
 export function projectRingOntoRoute(
   ring: readonly LatLng[],
   route: readonly LatLng[],
-  stepKm = 1,
 ): { distanceFromRouteKm: number; kmAlongRoute: number } | null {
   if (route.length < 2 || ring.length === 0) return null;
-  let best: { distanceFromRouteKm: number; kmAlongRoute: number } | null = null;
-  const consider = (point: LatLng): void => {
-    const projected = projectOntoRoute(point, route);
-    if (
-      projected &&
-      (!best || projected.distanceFromRouteKm < best.distanceFromRouteKm)
-    ) {
-      best = projected;
-    }
-  };
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i]!;
-    const b = ring[(i + 1) % ring.length]!; // close the ring
-    consider(a);
-    // Interpolate along the edge so a contact point between vertices is caught.
-    const steps = Math.floor(segmentLengthKm(a, b) / stepKm);
-    for (let k = 1; k <= steps; k++) {
-      const t = k / (steps + 1);
-      consider({
-        lat: a.lat + t * (b.lat - a.lat),
-        lng: a.lng + t * (b.lng - a.lng),
-      });
+  const prefixKm = cumulativeRouteKm(route);
+  let bestKm = Number.POSITIVE_INFINITY;
+  let bestAlongKm = 0;
+  for (let i = 1; i < route.length; i++) {
+    const legKm = prefixKm[i]! - prefixKm[i - 1]!;
+    for (let j = 0; j < ring.length; j++) {
+      const { distanceKm, s } = segmentToSegmentKm(
+        route[i - 1]!,
+        route[i]!,
+        ring[j]!,
+        ring[(j + 1) % ring.length]!, // close the ring
+      );
+      if (distanceKm < bestKm) {
+        bestKm = distanceKm;
+        bestAlongKm = prefixKm[i - 1]! + s * legKm;
+      }
     }
   }
-  return best;
+  return {
+    distanceFromRouteKm: Math.round(bestKm * 10) / 10,
+    kmAlongRoute: Math.round(bestAlongKm),
+  };
 }
 
 /**

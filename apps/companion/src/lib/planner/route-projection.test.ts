@@ -51,7 +51,7 @@ describe("projectRingOntoRoute", () => {
   it("measures a polygon against its edges, not just corner vertices", () => {
     // A tall box straddling the route (lat 49.0): the route runs through the
     // left/right edges *between* the corners, which sit ~11 km away at
-    // lat 48.9 / 49.5. Edge (not vertex) projection must find the ~0 km contact.
+    // lat 48.9 / 49.5. Analytic edge projection finds the 0 km crossing.
     const box = [
       { lat: 48.9, lng: 18.1 },
       { lat: 48.9, lng: 18.4 },
@@ -60,8 +60,30 @@ describe("projectRingOntoRoute", () => {
     ];
     const p = projectRingOntoRoute(box, route);
     expect(p).not.toBeNull();
-    expect(p!.distanceFromRouteKm).toBeLessThan(1);
+    expect(p!.distanceFromRouteKm).toBe(0);
     expect(p!.kmAlongRoute).toBeGreaterThan(0);
+  });
+
+  it("reads 0 km when the route crosses a thin zone between its vertices", () => {
+    // A single 18.0→19.0 leg crosses a narrow sliver near lng 18.5; no route
+    // vertex lands inside it, and its edges are shorter than the old ~1 km
+    // sampling step. Sampling would miss the true crossing by up to ~stepKm/2;
+    // analytic segment/segment projection resolves it to exactly 0.
+    const longRoute = [
+      { lat: 49.0, lng: 18.0 },
+      { lat: 49.0, lng: 19.0 },
+    ];
+    const sliver = [
+      { lat: 48.98, lng: 18.49 },
+      { lat: 48.98, lng: 18.51 },
+      { lat: 49.02, lng: 18.51 },
+      { lat: 49.02, lng: 18.49 },
+    ];
+    const p = projectRingOntoRoute(sliver, longRoute);
+    expect(p!.distanceFromRouteKm).toBe(0);
+    // Crossing sits near lng 18.5 of a ~73 km leg → roughly halfway.
+    expect(p!.kmAlongRoute).toBeGreaterThan(30);
+    expect(p!.kmAlongRoute).toBeLessThan(40);
   });
 
   it("returns the perpendicular distance for a box entirely off the route", () => {
@@ -132,6 +154,25 @@ describe("nearestPolygonContact", () => {
     expect(
       nearestPolygonContact(box, route)!.distanceFromRouteKm,
     ).toBeGreaterThan(10);
+  });
+
+  it("treats a thin zone the route passes through as on-route", () => {
+    // The route crosses the sliver but neither endpoint is inside it, so the
+    // containment check alone would miss it — the boundary-crossing contact
+    // still reads 0 km off-route.
+    const longRoute = [
+      { lat: 49.0, lng: 18.0 },
+      { lat: 49.0, lng: 19.0 },
+    ];
+    const sliver = [
+      { lat: 48.98, lng: 18.49 },
+      { lat: 48.98, lng: 18.51 },
+      { lat: 49.02, lng: 18.51 },
+      { lat: 49.02, lng: 18.49 },
+    ];
+    expect(nearestPolygonContact(sliver, longRoute)!.distanceFromRouteKm).toBe(
+      0,
+    );
   });
 
   it("returns null on a degenerate route or empty ring", () => {
