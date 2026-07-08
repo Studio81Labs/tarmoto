@@ -2584,7 +2584,9 @@ describe("TripPlannerPage", () => {
 
     // No day concept anywhere in 'single' mode (revision 2 §A/§B/§C).
     expect(screen.queryByText(/No days yet/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Day 1")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Highlight day 1 on the map"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/\d+ days ·/)).not.toBeInTheDocument();
   });
 
@@ -2626,7 +2628,7 @@ describe("TripPlannerPage", () => {
     },
   ];
 
-  it("renders DayPlans in the day column once split", () => {
+  it("renders the shared day cards once split", () => {
     storeState.activeTrip = activeTrip;
     storeState.planningMode = "multiday";
     storeState.splitStatus = "split";
@@ -2634,12 +2636,17 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
-    expect(screen.getByLabelText("Day 2")).toBeInTheDocument();
-    expect(screen.getByText("START → BRNO")).toBeInTheDocument();
+    // One card per split day, using the same preview-style "Day-by-day" card.
     expect(
-      screen.getByText(/No overnight town near this break/),
+      screen.getByLabelText("Highlight day 1 on the map"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Highlight day 2 on the map"),
+    ).toBeInTheDocument();
+    // Day 1 is index-aligned with a saved rich day, so its overnight shows…
+    expect(screen.getByText(/Overnight/)).toBeInTheDocument();
+    // …day 2 has no saved day yet and falls back to the split's town label.
+    expect(screen.getByText(/Brno → Finish/)).toBeInTheDocument();
     expect(screen.queryByText(/Route changed/)).not.toBeInTheDocument();
     // Split button reads Re-split while split.
     expect(
@@ -2663,7 +2670,9 @@ describe("TripPlannerPage", () => {
       screen.getByRole("button", { name: "RE-SPLIT" }),
     ).toBeInTheDocument();
     // Days remain visible (dimmed) for orientation.
-    expect(screen.getByLabelText("Day 1")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Highlight day 1 on the map"),
+    ).toBeInTheDocument();
   });
 
   it("shows the day count in the header only after a split", () => {

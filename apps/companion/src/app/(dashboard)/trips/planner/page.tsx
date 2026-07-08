@@ -10,7 +10,14 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Checkbox, NumberField, Select, Tooltip } from "@tarmoto/ui";
+import {
+  Button,
+  Checkbox,
+  NumberField,
+  Select,
+  Toggle,
+  Tooltip,
+} from "@tarmoto/ui";
 import {
   useTripStore,
   normalizeDayFinish,
@@ -42,6 +49,7 @@ import {
   Plus,
   Star,
   Pencil,
+  PanelLeft,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -55,6 +63,7 @@ import {
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import type { TripPlannerMapHandle } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
+import { DayByDayList } from "@/components/trips/DayByDayList";
 import {
   coordinateAtKm,
   kmAlongRouteAt,
@@ -302,6 +311,9 @@ export default function TripPlannerPage() {
   // When true, the map renders only the selected day's route so the rider
   // can focus on a single leg without other days' colors cluttering the view.
   const [focusSelectedDay, setFocusSelectedDay] = useState(false);
+  // Rider can collapse the left day column to give the map more room; the
+  // "Show days" map toggle brings it back. Only meaningful once days exist.
+  const [showDaysColumn, setShowDaysColumn] = useState(true);
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -504,6 +516,49 @@ export default function TripPlannerPage() {
     // A re-split renumbers days — drop the day-scope selection.
     setSelectedPlanIndex(null);
   }, [dayPlans]);
+  // Left day column reuses the preview's rich "Day-by-day" cards. The card
+  // count follows the split (`dayPlans`); each card's content comes from the
+  // index-aligned saved day (`displayedTrip.days[i]`, the rich TripDay) when
+  // it exists, otherwise a light projection of the DayPlan for a not-yet-
+  // materialized split (which only carries distance/time/quality + towns).
+  const dayCards = useMemo<TripDay[]>(() => {
+    if (!dayPlans) return [];
+    return dayPlans.map((plan, index) => {
+      const savedDay = displayedTrip?.days[index];
+      if (savedDay) return savedDay;
+      return {
+        dayNumber: plan.dayNumber,
+        title:
+          plan.startTown && plan.endTown
+            ? `${plan.startTown} → ${plan.endTown}`
+            : undefined,
+        waypoints: [],
+        distanceKm: plan.distanceKm,
+        durationMinutes: plan.timeMin ?? 0,
+        elevationGain: 0,
+        avgQuality: plan.quality.score ?? 0,
+      };
+    });
+  }, [dayPlans, displayedTrip]);
+  const selectedCardDayNumber =
+    selectedPlanIndex != null
+      ? (dayPlans?.[selectedPlanIndex]?.dayNumber ?? null)
+      : null;
+  const handleSelectDayCard = useCallback(
+    (dayNumber: number) => {
+      if (!dayPlans) return;
+      const planIndex = dayPlans.findIndex((p) => p.dayNumber === dayNumber);
+      if (planIndex < 0) return;
+      setSelectedPlanIndex(planIndex);
+      setPanelTab("INSPECT");
+      // Loaded multi-day trips: the card also selects the real day (drives
+      // per-day live routing + preview).
+      if (activeTrip && planIndex < activeTrip.days.length) {
+        setSelectedDay(planIndex);
+      }
+    },
+    [dayPlans, activeTrip, setSelectedDay],
+  );
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
@@ -2473,102 +2528,73 @@ export default function TripPlannerPage() {
 
       {/* Grid — the left day column exists ONLY after a split inside the
           multi-day opt-in (revision 2 §B); otherwise the map takes the
-          space. Right panel is always present. */}
+          space. Right panel is always present. When days exist the rider can
+          collapse the column via the "Show days" map toggle: the left track
+          animates 340px→0 and the map expands into the freed space. */}
       <div
-        className={`grid min-h-0 flex-1 ${
-          daysVisible ? "grid-cols-[340px_1fr_370px]" : "grid-cols-[1fr_370px]"
+        className={`grid min-h-0 flex-1 transition-[grid-template-columns] duration-300 ease-out ${
+          daysVisible
+            ? showDaysColumn
+              ? "grid-cols-[340px_1fr_370px]"
+              : "grid-cols-[0px_1fr_370px]"
+            : "grid-cols-[1fr_370px]"
         }`}
       >
         {/* LEFT — itinerary surface: the split's day cards. Absent (not
             empty-state) before a split. */}
         {daysVisible && dayPlans ? (
-          <aside className="flex min-h-0 flex-col border-r border-line">
-            <div className="border-b border-line px-5 pb-3 pt-[18px]">
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+          <aside
+            className={`flex min-h-0 min-w-0 flex-col overflow-hidden ${
+              showDaysColumn ? "border-r border-line" : ""
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 pb-3 pt-[18px]">
+              <span className="whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
                 {t("Itinerary · {days} day{s}", {
                   days: dayPlans.length,
                   s: dayPlans.length === 1 ? "" : "s",
                 })}
               </span>
+              {/* Focus selected day — moved off the map (rider feedback):
+                  dims every non-selected day so the picked day reads clearly. */}
+              <label className="flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap text-[11px] font-semibold text-fg-dim">
+                  {t("Focus day")}
+                </span>
+                <Toggle
+                  checked={focusSelectedDay}
+                  onChange={setFocusSelectedDay}
+                  ariaLabel={t("Focus selected day")}
+                />
+              </label>
             </div>
             <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-5 pt-3">
-              <>
-                {splitStatus === "stale" &&
-                (displayedTrip?.days.length ?? 0) <= 1 ? (
-                  <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
-                    <span className="text-[11.5px] font-semibold text-ink">
-                      {t("Route changed ")}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void handleSplit()}
-                      className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.4px] text-ink transition hover:brightness-95"
-                    >
-                      {t("RE-SPLIT")}
-                    </button>
-                  </div>
-                ) : null}
-                {dayPlans.map((plan, planIndex) => (
+              {splitStatus === "stale" &&
+              (displayedTrip?.days.length ?? 0) <= 1 ? (
+                <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
+                  <span className="text-[11.5px] font-semibold text-ink">
+                    {t("Route changed ")}
+                  </span>
                   <button
-                    key={plan.dayNumber}
                     type="button"
-                    aria-label={`Day ${plan.dayNumber}`}
-                    aria-pressed={selectedPlanIndex === planIndex}
-                    onClick={() => {
-                      setSelectedPlanIndex(planIndex);
-                      setPanelTab("INSPECT");
-                      // Loaded multi-day trips: the card also selects the
-                      // real day (drives per-day live routing + preview).
-                      if (activeTrip && planIndex < activeTrip.days.length) {
-                        setSelectedDay(planIndex);
-                      }
-                    }}
-                    className={`w-full rounded-[12px] border bg-cream p-3 text-left transition hover:border-line-strong ${
-                      selectedPlanIndex === planIndex
-                        ? "border-accent"
-                        : "border-line"
-                    } ${splitStatus === "stale" ? "opacity-45" : ""}`}
+                    onClick={() => void handleSplit()}
+                    className="rounded-md bg-accent px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.4px] text-ink transition hover:brightness-95"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-paper font-mono text-[11px] font-bold text-ink">
-                        {String(plan.dayNumber).padStart(2, "0")}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="truncate text-[13px] font-bold text-ink">
-                          {t("Day")} {plan.dayNumber}
-                        </div>
-                        <div className="truncate font-mono text-[10px] text-fg-mute">
-                          {plan.startTown.toUpperCase()} →{" "}
-                          {plan.endTown.toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-fg-dim">
-                      <span>{Math.round(plan.distanceKm)} KM</span>
-                      {plan.timeMin ? (
-                        <span>{formatDuration(plan.timeMin)}</span>
-                      ) : null}
-                      {plan.quality.score !== null ? (
-                        <span className="text-accent">
-                          {plan.quality.score.toFixed(1)} / 5
-                        </span>
-                      ) : null}
-                    </div>
-                    {plan.noTownNearby ? (
-                      <p className="mt-1.5 text-[10.5px] leading-snug text-fg-mute">
-                        {t(
-                          "No overnight town near this break — it lands at the raw distance. ",
-                        )}
-                      </p>
-                    ) : null}
-                    {plan.breakPinned ? (
-                      <p className="mt-1.5 font-mono text-[9.5px] tracking-[0.4px] text-fg-mute">
-                        {t("BREAK PINNED ")}
-                      </p>
-                    ) : null}
+                    {t("RE-SPLIT")}
                   </button>
-                ))}
-              </>
+                </div>
+              ) : null}
+              {/* Same rich "Day-by-day" cards as the read-only preview, wired
+                  to the planner's select/route behavior. Dimmed while a split
+                  is stale, matching the previous per-card treatment. */}
+              <div className={splitStatus === "stale" ? "opacity-45" : ""}>
+                <DayByDayList
+                  days={dayCards}
+                  selectedDayNumber={selectedCardDayNumber}
+                  onSelectDay={handleSelectDayCard}
+                  showHeading={false}
+                />
+              </div>
             </div>
           </aside>
         ) : null}
@@ -2612,29 +2638,24 @@ export default function TripPlannerPage() {
                 : {})}
               fitRouteToken={fitRouteToken}
             />
-            {/* Focus-day toggle — only meaningful when there are multiple
-                days to distinguish. Hidden on a single-day trip to keep
-                the map chrome minimal. */}
-            {activeTrip && activeTrip.days.length > 1 && (
-              <div className="absolute bottom-4 right-4 z-20">
+            {/* Show / hide the left day column. Lives on the map so it's
+                reachable once the column is collapsed; only shown when there
+                are days to reveal. Matches the map's other toggle pills. */}
+            {daysVisible && (
+              <div className="absolute right-3 top-3 z-20">
                 <button
                   type="button"
-                  aria-pressed={focusSelectedDay}
-                  aria-label={
-                    focusSelectedDay
-                      ? t("Show all days")
-                      : t("Focus selected day")
-                  }
-                  onClick={() => setFocusSelectedDay((v) => !v)}
+                  aria-pressed={showDaysColumn}
+                  aria-label={showDaysColumn ? t("Hide days") : t("Show days")}
+                  onClick={() => setShowDaysColumn((v) => !v)}
                   className={`flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition ${
-                    focusSelectedDay
+                    showDaysColumn
                       ? "border-ink bg-ink text-cream"
                       : "border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink"
                   }`}
                 >
-                  {focusSelectedDay
-                    ? t("Show all days")
-                    : t("Focus selected day")}
+                  <PanelLeft size={14} />
+                  {t("Days")}
                 </button>
               </div>
             )}

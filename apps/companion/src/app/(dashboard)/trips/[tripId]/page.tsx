@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  BedDouble,
   Clock,
   Edit,
   Layers,
@@ -37,6 +36,11 @@ import { PassesPanel } from "@/components/PassesPanel";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportButton } from "@/components/TripExportButton";
+import {
+  DayByDayList,
+  TileStat,
+  qualityTierOf,
+} from "@/components/trips/DayByDayList";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import {
@@ -581,8 +585,8 @@ export default function TripDetailPage() {
                   qualityAvg={loaded.detail.quality_avg ?? null}
                 />
                 {trip.days.length > 1 && (
-                  <DaysList
-                    trip={trip}
+                  <DayByDayList
+                    days={trip.days}
                     selectedDayNumber={selectedDayNumber}
                     onSelectDay={handleSelectDay}
                   />
@@ -757,22 +761,6 @@ function TabButton({
   );
 }
 /** Clamp a fractional 0–5 quality score to the 1–5 tier QualityBars takes. */
-function qualityTierOf(score: number): 1 | 2 | 3 | 4 | 5 {
-  return Math.min(5, Math.max(1, Math.round(score))) as 1 | 2 | 3 | 4 | 5;
-}
-/**
- * "Start → Finish" from the day's endpoints; a saved title wins unless it
- * just repeats the "Day N" heading next to it (the planner's default).
- */
-function dayRouteLabel(
-  day: NonNullable<ReturnType<typeof tripFromDetail>>["days"][number],
-): string | null {
-  const title = day.title?.trim();
-  if (title && title.toLowerCase() !== `day ${day.dayNumber}`) return title;
-  const start = day.waypoints[0]?.name?.trim();
-  const end = day.waypoints[day.waypoints.length - 1]?.name?.trim();
-  return day.waypoints.length >= 2 && start && end ? `${start} → ${end}` : null;
-}
 function TripSummaryCard({
   trip,
   totalDistance,
@@ -830,137 +818,5 @@ function TripSummaryCard({
         </div>
       )}
     </section>
-  );
-}
-function DaysList({
-  trip,
-  selectedDayNumber,
-  onSelectDay,
-}: {
-  trip: NonNullable<ReturnType<typeof tripFromDetail>>;
-  selectedDayNumber: number | null;
-  onSelectDay: (dayNumber: number) => void;
-}) {
-  if (trip.days.length === 0) {
-    return (
-      <p className="rounded-lg border border-dashed border-line bg-cream/40 p-4 text-xs text-fg-dim">
-        {t(
-          "This trip has no days yet. Open it in the planner to generate the itinerary. ",
-        )}
-      </p>
-    );
-  }
-  return (
-    <section className="space-y-2">
-      <Stamp as="h2">{t("Day-by-day ")}</Stamp>
-      <ul className="space-y-3">
-        {trip.days.map((day) => {
-          const routeLabel = dayRouteLabel(day);
-          const selected = selectedDayNumber === day.dayNumber;
-          return (
-            <li key={day.dayNumber}>
-              <button
-                type="button"
-                aria-pressed={selected}
-                aria-label={t("Highlight day {day} on the map", {
-                  day: day.dayNumber,
-                })}
-                onClick={() => onSelectDay(day.dayNumber)}
-                className={`w-full cursor-pointer rounded-xl border bg-cream/60 p-4 text-left transition ${
-                  selected
-                    ? "border-accent"
-                    : "border-line hover:border-line-strong"
-                }`}
-              >
-                <div className="mb-3.5 flex items-center justify-between gap-2">
-                  <h3 className="flex min-w-0 items-baseline gap-2">
-                    <span className="shrink-0 text-[17px] font-extrabold leading-tight tracking-[-0.5px] text-ink">
-                      {t("Day ")}
-                      {day.dayNumber}
-                    </span>
-                    {routeLabel ? (
-                      <span className="truncate font-mono text-[11px] text-fg-mute">
-                        · {routeLabel}
-                      </span>
-                    ) : null}
-                  </h3>
-                  {day.avgQuality > 0 && (
-                    <QualityBars
-                      q={qualityTierOf(day.avgQuality)}
-                      size={4}
-                      className="shrink-0"
-                    />
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-2.5">
-                  <TileStat
-                    label="Distance"
-                    value={formatDistance(day.distanceKm)}
-                  />
-                  <TileStat
-                    label="Ride time"
-                    value={
-                      day.durationMinutes > 0
-                        ? formatDuration(day.durationMinutes)
-                        : "—"
-                    }
-                  />
-                  <TileStat
-                    label="Elevation"
-                    value={
-                      day.elevationGain > 0
-                        ? `${Math.round(day.elevationGain)} m`
-                        : "—"
-                    }
-                    accent
-                  />
-                </div>
-                <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-xs text-fg-dim">
-                  {day.overnightStop && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <BedDouble size={12} className="text-fg-mute" />
-                      {t("Overnight: ")}
-                      {day.overnightStop.name}
-                    </span>
-                  )}
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin size={12} className="text-fg-mute" />
-                    {t("{count} {waypointLabel}", {
-                      count: day.waypoints.length,
-                      waypointLabel:
-                        day.waypoints.length === 1 ? "waypoint" : "waypoints",
-                    })}
-                  </span>
-                </div>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-function TileStat({
-  label,
-  value,
-  accent = false,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className="rounded-[10px] border border-line bg-paper px-3 py-2.5">
-      <span className="block font-mono text-[8.5px] uppercase tracking-[0.5px] text-fg-mute">
-        {label}
-      </span>
-      <div
-        className={`mt-1 text-[15px] font-extrabold tracking-[-0.3px] tabular-nums ${
-          accent && value !== "—" ? "text-accent" : "text-ink"
-        }`}
-      >
-        {value}
-      </div>
-    </div>
   );
 }
