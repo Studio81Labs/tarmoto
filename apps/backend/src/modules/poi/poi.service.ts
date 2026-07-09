@@ -38,6 +38,7 @@ import {
 } from './dto/point-of-interest.dto.js';
 import { PoiStoreService } from './poi-store.service.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
+import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
 
 // `cumulativeLengthKm` / `projectOntoRoute` live in `poi-geo.ts` so the store
 // service can share them without a PoiService ↔ PoiStoreService import cycle.
@@ -405,8 +406,22 @@ export class PoiService {
       }
     }
 
+    // Cross-source de-dup AFTER the buffer filter (#869): among the
+    // within-buffer survivors, drop an FSQ copy that duplicates an OSM one (same
+    // kind, ~50 m, matching name), keeping OSM. Done here, not in the store
+    // read, so a straddling OSM copy that projected outside the buffer can't
+    // suppress the FSQ copy that projected inside. Source comes from the
+    // external id since `PointOfInterest` carries none. No-op until FSQ imports.
+    const survivors = dedupeAcrossSources([...deduped.values()], (entry) => ({
+      source: sourceOfExternalId(entry.poi.external_id),
+      kind: entry.poi.kind,
+      name: entry.poi.name,
+      lat: entry.poi.lat,
+      lng: entry.poi.lng,
+    }));
+
     const byKind = new Map<PoiKind, Annotated[]>();
-    for (const entry of deduped.values()) {
+    for (const entry of survivors) {
       const list = byKind.get(entry.poi.kind) ?? [];
       list.push(entry);
       byKind.set(entry.poi.kind, list);

@@ -33,6 +33,15 @@ export interface DedupPoi {
 }
 
 /**
+ * The source of a POI from its `<source>:<id>` external id (e.g. `osm:node:42`
+ * → `osm`, `fsq:abc` → `fsq`) — for de-dup keys where only the external id is at
+ * hand (the along-route ranker's `PointOfInterest` carries no `source` field).
+ */
+export function sourceOfExternalId(externalId: string): string {
+  return externalId.split(':')[0] ?? externalId;
+}
+
+/**
  * Lower-case, strip combining accents, drop punctuation, collapse spaces; null
  * if empty. Uses a Unicode letter/number class (`\p{L}\p{N}`), not `[a-z0-9]`,
  * so non-Latin names in the coverage regions (Greek `Ταβέρνα`, Cyrillic

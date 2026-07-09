@@ -941,6 +941,57 @@ describe('PoiService', () => {
       expect(result.pois[0].distance_from_route_km).toBeLessThan(0.1);
     });
 
+    it('keeps an FSQ stop straddling the buffer when its OSM twin projects just outside (#869)', async () => {
+      // The cross-source de-dupe must run AFTER the precise buffer filter, not
+      // before it. Two copies of one venue 48 m apart (well inside the ~50 m
+      // de-dupe radius) straddle a 2 km buffer on a horizontal route: the OSM
+      // copy projects 2.024 km off-route (OUTSIDE), the FSQ copy 1.976 km
+      // (INSIDE). De-duping first would keep OSM (preferred) and drop FSQ, then
+      // the buffer filter would drop the OSM row too — the stop vanishes. With
+      // de-dupe after projection, OSM is filtered out before it can suppress
+      // anything, so the FSQ copy survives. lat-only offsets keep the off-route
+      // distance a clean ~111.195 km/°, and both the projection and the de-dupe
+      // radius use the same haversine, so the two sides agree exactly.
+      const horizontalRoute = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 49.0, lng: 17.0 },
+      ];
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:diner',
+          name: 'Roadside Diner',
+          kind: 'restaurant',
+          lat: 49.0182022, // 2.024 km north of the route — just OUTSIDE 2 km
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'fsq:diner',
+          name: 'Roadside Diner',
+          kind: 'restaurant',
+          lat: 49.0177707, // 1.976 km north — just INSIDE 2 km, 48 m from OSM
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route: horizontalRoute,
+        buffer_km: 2,
+      });
+
+      // The FSQ copy survives; the OSM twin was outside the buffer. (The
+      // reported distance rounds to the tenth — 100 m — so it can't resolve the
+      // 48 m straddle; the surviving external_id is what proves de-dupe ran
+      // after the buffer filter.)
+      expect(result.pois.map((p) => p.external_id)).toEqual(['fsq:diner']);
+      expect(result.pois[0].distance_from_route_km).toBeLessThanOrEqual(2);
+    });
+
     it('keeps a nameless on-route fuel stop so the fuel-range warning can see it', async () => {
       // Unmanned / automated fuel stops on sparse routes often carry no
       // name, website, or phone — yet they are exactly what the fuel-range

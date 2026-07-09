@@ -192,15 +192,11 @@ export class PoiStoreService {
             )
           ).flat()
         : await this.queryCorridorEntities(route, buffer, kinds, MAX_LIMIT);
-    // Drop a cross-source duplicate before projecting, so a shared OSM+FSQ venue
-    // isn't projected + counted twice (a no-op until FSQ is imported).
-    const rows = dedupeAcrossSources(fetched, poiDedupKey);
-
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer
-    // (the geography corridor is slightly looser), sort start→end, cap.
+    // (the geography corridor is slightly looser).
     const cumKm = cumulativeLengthKm(route);
-    const annotated = rows
+    const withinBuffer = fetched
       .map((poi) => {
         const [lng, lat] = poi.geom.coordinates;
         if (lng === undefined || lat === undefined) return null;
@@ -209,7 +205,15 @@ export class PoiStoreService {
       .filter(
         (x): x is { poi: Poi; projected: ProjectedDistances } => x !== null,
       )
-      .filter((x) => x.projected.distance_from_route_km <= buffer)
+      .filter((x) => x.projected.distance_from_route_km <= buffer);
+    // De-dupe AFTER the precise buffer filter, not before: an OSM copy that
+    // projects just OUTSIDE the buffer must not suppress an FSQ copy of the same
+    // venue that projects inside, or the stop would vanish entirely. De-dupe the
+    // survivors (keeping OSM), then sort start→end and cap. No-op until FSQ is
+    // imported.
+    const annotated = dedupeAcrossSources(withinBuffer, (x) =>
+      poiDedupKey(x.poi),
+    )
       .sort(
         (a, b) =>
           a.projected.distance_along_route_km -
@@ -319,9 +323,10 @@ export class PoiStoreService {
         ),
       ),
     );
-    return dedupeAcrossSources(perKind.flat(), poiDedupKey).map(
-      storedPoiToPointOfInterest,
-    );
+    // Cross-source de-dup is deferred to `PoiService.rankAlongRoute` — it runs
+    // AFTER the precise per-route buffer filter, so an OSM copy that projects
+    // just outside the buffer can't suppress an FSQ copy that projects inside.
+    return perKind.flat().map(storedPoiToPointOfInterest);
   }
 
   /**
