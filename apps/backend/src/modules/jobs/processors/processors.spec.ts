@@ -202,6 +202,12 @@ describe('DigestWeeklyProcessor', () => {
     expect(sql).toMatch(/interval '7 days'/);
     expect(sql).toMatch(/window_start/);
     expect(sql).toMatch(/window_end/);
+    // The HOUR filter is a catch-up RANGE (BETWEEN $3 AND $4), not a single
+    // hour: BullMQ skips slots across a multi-hour outage, so one post-outage
+    // run must replay every rider whose local 08:00 fell in the gap. A
+    // regression back to a single-hour `= $3` match fails here.
+    expect(sql).toMatch(/BETWEEN \$3 AND \$4/);
+    expect(sql).not.toMatch(/HOUR FROM[\s\S]*?\)::int = \$3/);
   });
 
   it('anchors the dispatch to the scheduled slot in the jobId, not the processing clock', async () => {

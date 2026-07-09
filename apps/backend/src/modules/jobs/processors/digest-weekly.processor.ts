@@ -26,6 +26,20 @@ const DIGEST_LOCAL_HOUR = 8;
 const DIGEST_LOCAL_DOW = 0; // Sunday in IANA POSIX (0=Sun, 1=Mon, ...).
 
 /**
+ * Catch-up horizon (hours) for a backed-up dispatcher. BullMQ's JobScheduler
+ * produces the next hourly job only when the previous one starts, and computes
+ * that next slot from `max(prevSlot, now)` — so after a multi-hour outage it
+ * runs the single pending slot and then jumps to the next FUTURE slot, skipping
+ * the hours in between. Matching riders whose local time is in
+ * `[08:00, 08:00 + DIGEST_CATCHUP_HOURS)` lets the first post-outage run
+ * re-enqueue everyone whose local 08:00 fell in the gap. The window boundary
+ * stays pinned to 08:00, so the per-(user, week) jobId is identical and the
+ * overlap with on-time hourly runs dedups to a no-op. Bounds the replay so a
+ * long outage doesn't fan out stale digests — anything older is next week's.
+ */
+const DIGEST_CATCHUP_HOURS = 6;
+
+/**
  * Two-stage weekly digest pipeline.
  *
  *   `dispatch` (hourly): for each opted-in user whose timezone makes
@@ -84,11 +98,11 @@ export class DigestWeeklyProcessor extends WorkerHost {
   }
 
   private async dispatch(job: Job): Promise<DigestWeeklyDispatchResult> {
-    // Anchor everything (the DOW/HOUR filter, the window bounds, the
-    // idempotency key) to the SCHEDULED slot, not the processing-time clock —
-    // see `scheduledFireTime`. A retried or backlogged dispatch that lands after
-    // the rider's 08:00 hour would otherwise query `EXTRACT(HOUR) = 8` against
-    // e.g. 09:00, match nobody, and silently skip the whole week's digest.
+    // Anchor everything (the DOW/HOUR filter, the window bounds, the idempotency
+    // key) to the SCHEDULED slot, not the processing-time clock — see
+    // `scheduledFireTime`. A retried/backlogged dispatch otherwise builds the
+    // window from whenever the worker happened to run. (The catch-up range below
+    // then handles the slots BullMQ skips entirely across a longer outage.)
     const now = this.scheduledFireTime(job);
     // SQL handles the per-row timezone math because Postgres can do it
     // and pulling every user into Node to call `Intl.DateTimeFormat`
@@ -113,12 +127,19 @@ export class DigestWeeklyProcessor extends WorkerHost {
     // the weekly send.
     // The digest window is computed HERE, in each rider's resolved timezone, and
     // carried to compose — not re-derived there from a fixed 7×24h delta. The
-    // boundary is the local Sunday 08:00 (`date_trunc('hour', local now)`, since
-    // this query only fires in that hour); window_start subtracts `interval '7
-    // days'` in LOCAL time, so a DST transition shifts the absolute span to
-    // 167/169h instead of a flat 168h. Consecutive weeks therefore share the
-    // exact same boundary (this week's start = last week's end) with no
-    // spring-forward overlap or fall-back gap.
+    // boundary is the rider's local Sunday 08:00: `date_trunc('day', local_now)
+    // + <hour>`, which is exact because the WHERE only matches Sunday hours in
+    // the catch-up range (so "today's 08:00" is always the intended send). It
+    // stays pinned to 08:00 whichever catch-up hour matched, so the window (and
+    // the derived jobId) is identical on the on-time and caught-up runs.
+    // window_start subtracts `interval '7 days'` in LOCAL time, so a DST
+    // transition shifts the absolute span to 167/169h instead of a flat 168h and
+    // consecutive weeks share the exact same boundary (no spring-forward overlap
+    // or fall-back gap).
+    //
+    // The HOUR filter is a RANGE `[08:00, 08:00 + DIGEST_CATCHUP_HOURS)`, not a
+    // single hour, so one post-outage run catches every rider whose local 08:00
+    // was skipped (see DIGEST_CATCHUP_HOURS).
     const rows = await this.dataSource.query<
       {
         user_id: string;
@@ -146,21 +167,24 @@ export class DigestWeeklyProcessor extends WorkerHost {
         ) AS tz
       ) tz_resolution
       CROSS JOIN LATERAL (
-        SELECT date_trunc(
-          'hour', $1::timestamptz AT TIME ZONE tz_resolution.tz
-        ) AS local_send
+        SELECT $1::timestamptz AT TIME ZONE tz_resolution.tz AS local_now
+      ) ln
+      CROSS JOIN LATERAL (
+        SELECT date_trunc('day', ln.local_now)
+             + make_interval(hours => $3::int) AS local_send
       ) w
       WHERE u.deleted_at IS NULL
         AND u.email_verified_at IS NOT NULL
         AND COALESCE(np.email_digest, 'weekly') = 'weekly'
-        AND EXTRACT(
-          DOW FROM ($1::timestamptz AT TIME ZONE tz_resolution.tz)
-        )::int = $2
-        AND EXTRACT(
-          HOUR FROM ($1::timestamptz AT TIME ZONE tz_resolution.tz)
-        )::int = $3
+        AND EXTRACT(DOW FROM ln.local_now)::int = $2
+        AND EXTRACT(HOUR FROM ln.local_now)::int BETWEEN $3 AND $4
       `,
-      [now.toISOString(), DIGEST_LOCAL_DOW, DIGEST_LOCAL_HOUR],
+      [
+        now.toISOString(),
+        DIGEST_LOCAL_DOW,
+        DIGEST_LOCAL_HOUR,
+        DIGEST_LOCAL_HOUR + DIGEST_CATCHUP_HOURS - 1,
+      ],
     );
 
     const forLocalWindow = this.localWindowKey(now);
