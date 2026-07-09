@@ -72,6 +72,7 @@ export function MapToolbar({ onPlace }: MapToolbarProps) {
           onSelect={onPlace}
           clearOnSelect
           widenDropdown
+          clearable
         />
       </div>
       <div

@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, MapPin, Search } from "lucide-react";
+import { Loader2, MapPin, Search, X } from "lucide-react";
 import { plannerApi } from "@/lib/planner/api";
 import type { GeoResult } from "@/lib/planner/types";
 
@@ -30,6 +30,11 @@ interface GeocodeSearchFieldProps {
    * spill off-screen.
    */
   widenDropdown?: boolean;
+  /**
+   * Show a clear (×) button on the right while the field has text. Used by the
+   * map toolbar search so the rider can reset it without selecting the value.
+   */
+  clearable?: boolean;
 }
 
 const DEBOUNCE_MS = 200;
@@ -42,12 +47,14 @@ export function GeocodeSearchField({
   variant = "default",
   autoFocus = false,
   widenDropdown = false,
+  clearable = false,
 }: GeocodeSearchFieldProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -111,6 +118,7 @@ export function GeocodeSearchField({
           )
         ) : null}
         <input
+          ref={inputRef}
           type="text"
           value={query}
           aria-label={ariaLabel}
@@ -124,6 +132,22 @@ export function GeocodeSearchField({
               : "w-full min-w-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-fg-mute"
           }
         />
+        {clearable && query ? (
+          <button
+            type="button"
+            aria-label={t("Clear search ")}
+            onClick={() => {
+              setQuery("");
+              setResults([]);
+              setOpen(false);
+              setLoading(false);
+              inputRef.current?.focus();
+            }}
+            className="-mr-0.5 shrink-0 rounded p-0.5 text-fg-mute transition hover:text-ink"
+          >
+            <X size={13} />
+          </button>
+        ) : null}
       </div>
       {open ? (
         <ul
