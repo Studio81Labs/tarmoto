@@ -1,9 +1,16 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import type { DataSource } from 'typeorm';
-import { JobsProducer } from '../jobs.producer.js';
+import type { UnitSystem } from '@tarmoto/shared';
+import { getCompanionUrl } from '../../../common/companion-url.js';
+import { EmailService } from '../../email/email.service.js';
+import {
+  JobsProducer,
+  type DigestWeeklyComposeJobData,
+} from '../jobs.producer.js';
 import { JOB_NAMES, QUEUE_NAMES } from '../jobs.constants.js';
 
 export interface DigestWeeklyDispatchResult {
@@ -28,17 +35,17 @@ const DIGEST_LOCAL_DOW = 0; // Sunday in IANA POSIX (0=Sun, 1=Mon, ...).
  *      (UTC+13) and Pacific/Samoa (UTC-11) both get covered without
  *      special cases.
  *
- *   `compose` (per-user): renders and sends the digest email. Today
- *      this is a stub that logs only — US-63 lands the actual
- *      composer + template. The job exists so the wiring, retries,
- *      and idempotency are already in place when the template
- *      arrives.
+ *   `compose` (per-user): renders and sends the digest email (#866) —
+ *      a per-rider summary of the week's completed rides + exploration
+ *      progress. Re-checks eligibility (opt-in / verified / not deleted)
+ *      since dispatch → compose is async, and skips a rider with no
+ *      rides that week rather than sending an empty digest.
  *
  * The dispatcher reads `users.preferences.timezone` (string IANA tz
  * like "Europe/Bratislava"). Users without a timezone fall back to
- * UTC, which gives them a Sunday 08:00 UTC window. Real opt-out
- * handling comes with US-63's preferences UI; until then anyone
- * with `preferences.weekly_digest = true` opts in.
+ * UTC, which gives them a Sunday 08:00 UTC window. Opt-out is the
+ * permissive `preferences.weekly_digest` flag (default ON, explicit
+ * `false` opts out), checked at both dispatch and compose.
  */
 @Processor(QUEUE_NAMES.DIGEST_WEEKLY)
 export class DigestWeeklyProcessor extends WorkerHost {
@@ -48,6 +55,8 @@ export class DigestWeeklyProcessor extends WorkerHost {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly producer: JobsProducer,
+    private readonly config: ConfigService,
+    private readonly emailService: EmailService,
   ) {
     super();
   }
@@ -130,17 +139,144 @@ export class DigestWeeklyProcessor extends WorkerHost {
     return { users_enqueued: enqueued };
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- stub
   private async compose(job: Job): Promise<DigestWeeklyComposeResult> {
-    // Stub: real composer arrives in US-63 (the email digest issue).
-    // Until then the job stays wired so retries, idempotency, and the
-    // health endpoint surface real data instead of phantom queues.
-    // The signature must remain async because `WorkerHost.process`
-    // is typed as returning a Promise.
-    this.logger.log(
-      `[${job.id ?? 'no-id'}] weekly-digest compose stub — pending US-63 implementation`,
+    const { user_id } = job.data as DigestWeeklyComposeJobData;
+
+    // Re-check eligibility at compose time: dispatch → compose is async, so the
+    // opt-in / verified / deleted state may have changed since the dispatch
+    // gate. Same permissive opt-in as dispatch (default ON, explicit
+    // `weekly_digest=false` opts out) — this is where "unsubscribe respected".
+    const [user] = await this.dataSource.query<
+      {
+        email: string;
+        display_name: string;
+        preferences: Record<string, unknown> | null;
+      }[]
+    >(
+      `SELECT email, display_name, preferences
+       FROM users
+       WHERE id = $1
+         AND deleted_at IS NULL
+         AND email_verified_at IS NOT NULL
+         AND COALESCE((preferences->>'weekly_digest')::boolean, true) = true`,
+      [user_id],
     );
-    return { status: 'skipped', reason: 'pending US-63 composer' };
+    if (!user) {
+      return { status: 'skipped', reason: 'ineligible' };
+    }
+
+    // The digest covers the 7 days ending at dispatch — this compose job's
+    // creation time (`job.timestamp`), so it's deterministic regardless of when
+    // the worker picks it up.
+    const windowEnd = new Date(job.timestamp);
+    const windowStart = new Date(windowEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const summary = await this.gatherRideSummary(
+      user_id,
+      windowStart,
+      windowEnd,
+    );
+    if (summary.rideCount === 0) {
+      // No rides this week — don't pester inactive riders (product decision).
+      return { status: 'skipped', reason: 'no-activity' };
+    }
+
+    const exploration = await this.gatherExplorationProgress(user_id);
+    const units: UnitSystem =
+      user.preferences?.units === 'imperial' ? 'imperial' : 'metric';
+
+    await this.emailService.sendWeeklyDigest(user.email, {
+      displayName: user.display_name,
+      rideCount: summary.rideCount,
+      totalKm: summary.totalKm,
+      totalMinutes: summary.totalMinutes,
+      bestQuality: summary.bestQuality,
+      percentExplored: exploration.percentExplored,
+      riddenSegments: exploration.riddenSegments,
+      units,
+      exploreUrl: `${getCompanionUrl(this.config)}/explore`,
+    });
+
+    this.logger.log(
+      `[${job.id ?? 'no-id'}] weekly-digest sent to user ${user_id}`,
+    );
+    return { status: 'sent' };
+  }
+
+  /** Aggregate a rider's COMPLETED rides in `[start, end)`. */
+  private async gatherRideSummary(
+    userId: string,
+    start: Date,
+    end: Date,
+  ): Promise<{
+    rideCount: number;
+    totalKm: number;
+    totalMinutes: number;
+    bestQuality: number | null;
+  }> {
+    const [row] = await this.dataSource.query<
+      {
+        ride_count: string;
+        total_km: string | null;
+        total_minutes: string | null;
+        best_quality: string | null;
+      }[]
+    >(
+      `SELECT
+         COUNT(*)::text AS ride_count,
+         COALESCE(SUM(distance_km), 0) AS total_km,
+         COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0)
+           AS total_minutes,
+         MAX(avg_road_quality) AS best_quality
+       FROM rides
+       WHERE user_id = $1
+         AND status = 'completed'
+         AND started_at >= $2
+         AND started_at < $3`,
+      [userId, start.toISOString(), end.toISOString()],
+    );
+    return {
+      rideCount: parseInt(row?.ride_count ?? '0', 10),
+      totalKm: parseFloat(row?.total_km ?? '0'),
+      totalMinutes: parseFloat(row?.total_minutes ?? '0'),
+      bestQuality:
+        row?.best_quality != null ? parseFloat(row.best_quality) : null,
+    };
+  }
+
+  /**
+   * Lifetime exploration progress — distinct LIVE road segments ridden vs the
+   * active network. Mirrors `ExplorationService.getStats`'s numerator/denominator
+   * (both filter `deactivated_at IS NULL` so a tombstoned segment (#835) can't
+   * push the ratio past 100 %). Kept inline so this background job doesn't pull
+   * the exploration read-API module into its graph.
+   */
+  private async gatherExplorationProgress(
+    userId: string,
+  ): Promise<{ percentExplored: number; riddenSegments: number }> {
+    const [[riddenRow], [totalRow]] = await Promise.all([
+      this.dataSource.query<{ ridden: string }[]>(
+        `SELECT COUNT(DISTINCT rs.road_segment_id)::text AS ridden
+         FROM ride_segments rs
+         JOIN rides r ON r.id = rs.ride_id
+         JOIN road_segments seg ON seg.id = rs.road_segment_id
+         WHERE r.user_id = $1
+           AND r.status = 'completed'
+           AND seg.deactivated_at IS NULL`,
+        [userId],
+      ),
+      this.dataSource.query<{ total: string }[]>(
+        `SELECT COUNT(*)::text AS total
+         FROM road_segments
+         WHERE deactivated_at IS NULL`,
+      ),
+    ]);
+    const ridden = parseInt(riddenRow?.ridden ?? '0', 10);
+    const total = parseInt(totalRow?.total ?? '0', 10);
+    return {
+      riddenSegments: ridden,
+      percentExplored: total > 0 ? Math.round((ridden / total) * 100) : 0,
+    };
   }
 
   /**

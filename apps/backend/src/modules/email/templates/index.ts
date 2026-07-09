@@ -1,3 +1,4 @@
+import { formatDistance, type UnitSystem } from '@tarmoto/shared';
 import { escapeHtml, renderLayout, renderTextFooter } from './layout.js';
 
 /**
@@ -22,7 +23,8 @@ export type EmailTag =
   | 'data-export-ready'
   | 'account-deletion-scheduled'
   | 'account-deletion-completed'
-  | 'trip-invite';
+  | 'trip-invite'
+  | 'weekly-digest';
 
 export interface RenderedTemplate {
   subject: string;
@@ -353,6 +355,81 @@ If you don't have a Tarmoto account yet, you can create one with this email and 
   });
 
   return { subject, html, text, tag: 'trip-invite' };
+};
+
+/** "2h 15m" / "45m" from a raw minute count. */
+function formatDuration(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return h > 0 ? `${h}h ${rem}m` : `${rem}m`;
+}
+
+export interface WeeklyDigestContext extends BaseContext {
+  displayName: string;
+  /** Completed rides in the window (guaranteed > 0 — empty weeks aren't sent). */
+  rideCount: number;
+  totalKm: number;
+  totalMinutes: number;
+  /** Best avg road quality (0–5) across the window's rides, or null. */
+  bestQuality: number | null;
+  percentExplored: number;
+  riddenSegments: number;
+  units: UnitSystem;
+  exploreUrl: string;
+}
+
+export const weeklyDigestTemplate = (
+  ctx: WeeklyDigestContext,
+): RenderedTemplate => {
+  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const distance = formatDistance(ctx.totalKm, ctx.units);
+  const duration = formatDuration(ctx.totalMinutes);
+  const rideWord = ctx.rideCount === 1 ? 'ride' : 'rides';
+  const quality =
+    ctx.bestQuality != null ? `${ctx.bestQuality.toFixed(1)} / 5` : null;
+  const subject = `Your week on Tarmoto — ${ctx.rideCount} ${rideWord}, ${distance}`;
+
+  const text = `${greeting}
+
+Here's your week on the road:
+
+  • ${ctx.rideCount} ${rideWord}
+  • ${distance} ridden
+  • ${duration} in the saddle${quality ? `\n  • Best road quality: ${quality}` : ''}
+
+Exploration: you've now ridden ${ctx.riddenSegments} road sections — ${ctx.percentExplored}% of your area.
+
+Find your next road:
+${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+
+  const row = (label: string, value: string): string => `
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">${escapeHtml(label)}</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">${escapeHtml(value)}</td>
+      </tr>`;
+
+  const html = renderLayout({
+    preheader: `${ctx.rideCount} ${rideWord}, ${distance} this week on Tarmoto.`,
+    preferencesUrl: ctx.preferencesUrl,
+    marketingFooter: true,
+    bodyHtml: `
+      <p>${escapeHtml(greeting)}</p>
+      <p>Here's your week on the road.</p>
+      <table role="presentation" width="100%" style="margin:20px 0;border-collapse:collapse;">
+        ${row('Rides', String(ctx.rideCount))}
+        ${row('Distance', distance)}
+        ${row('Time in the saddle', duration)}
+        ${quality ? row('Best road quality', quality) : ''}
+      </table>
+      <p style="color:#cbd5e1;">You've now ridden <strong style="color:#f8fafc;">${ctx.riddenSegments}</strong> road sections — <strong style="color:#f8fafc;">${ctx.percentExplored}%</strong> of your area explored.</p>
+      <p style="margin:32px 0;">
+        <a href="${escapeHtml(ctx.exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Find your next road</a>
+      </p>
+    `,
+  });
+
+  return { subject, html, text, tag: 'weekly-digest' };
 };
 
 export interface AccountDeletionCompletedContext extends BaseContext {

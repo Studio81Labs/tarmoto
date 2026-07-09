@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken } from '@nestjs/typeorm';
+import { EmailService } from '../../email/email.service.js';
 import { HazardsCleanupProcessor } from './hazards-cleanup.processor.js';
 import { BadgesRecheckProcessor } from './badges-recheck.processor.js';
 import { DigestWeeklyProcessor } from './digest-weekly.processor.js';
@@ -122,6 +124,10 @@ describe('DigestWeeklyProcessor', () => {
         DigestWeeklyProcessor,
         { provide: getDataSourceToken(), useValue: dataSource },
         { provide: JobsProducer, useValue: producer },
+        // compose() deps — the dispatch tests below don't exercise them, but
+        // the processor's constructor requires them for DI to resolve.
+        { provide: ConfigService, useValue: { get: () => 'http://x' } },
+        { provide: EmailService, useValue: { sendWeeklyDigest: jest.fn() } },
       ],
     }).compile();
     processor = moduleRef.get(DigestWeeklyProcessor);
@@ -166,16 +172,7 @@ describe('DigestWeeklyProcessor', () => {
     );
   });
 
-  it('compose: stub returns "skipped" with a reason pointing at US-63 (real composer pending)', async () => {
-    const result = await processor.process(
-      fakeJob(JOB_NAMES.DIGEST_WEEKLY_COMPOSE, {
-        user_id: 'u1',
-        for_local_window: '2026-W18',
-      }) as never,
-    );
-    expect(result).toMatchObject({ status: 'skipped' });
-    expect((result as { reason: string }).reason).toMatch(/US-63/);
-  });
+  // `compose` is covered end-to-end in digest-weekly.processor.spec.ts (#866).
 });
 
 describe('DataExportQueueProcessor', () => {

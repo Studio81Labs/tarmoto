@@ -176,6 +176,21 @@ describe('EmailService', () => {
         },
         'trip-invite',
       ],
+      [
+        'sendWeeklyDigest',
+        {
+          displayName: 'Rider',
+          rideCount: 3,
+          totalKm: 128.4,
+          totalMinutes: 195,
+          bestQuality: 4.3,
+          percentExplored: 62,
+          riddenSegments: 540,
+          units: 'metric',
+          exploreUrl: 'https://app.tarmoto.app/explore',
+        },
+        'weekly-digest',
+      ],
     ])(
       '%s renders with the right tag and reaches the provider',
       async (method, ctx, expectedTag) => {
@@ -209,5 +224,41 @@ describe('EmailService', () => {
         expect(message.text).not.toContain('undefined');
       },
     );
+
+    it('digest respects the rider unit preference + shows an unsubscribe footer', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'r1', providerName: 'mock' });
+      const module = await Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: { name: 'mock', send } },
+          { provide: ConfigService, useValue: buildConfigService() },
+        ],
+      }).compile();
+
+      await module.get(EmailService).sendWeeklyDigest('rider@tarmoto.app', {
+        displayName: 'Rider',
+        rideCount: 3,
+        totalKm: 128.4,
+        totalMinutes: 195,
+        bestQuality: 4.3,
+        percentExplored: 62,
+        riddenSegments: 540,
+        units: 'imperial',
+        exploreUrl: 'https://app.tarmoto.app/explore',
+      });
+
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      expect(message.subject).toContain('3 rides');
+      // imperial → miles, never the raw km value.
+      expect(message.html).toContain('mi');
+      expect(message.html).not.toContain('128.4 km');
+      expect(message.html).toContain('62%');
+      // The digest (marketing) footer carries the unsubscribe link.
+      expect(message.html).toContain('Unsubscribe');
+    });
   });
 });
