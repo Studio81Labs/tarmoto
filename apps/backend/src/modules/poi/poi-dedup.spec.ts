@@ -166,6 +166,24 @@ describe('dedupeAcrossSources', () => {
     expect(dedupe(rows)).toEqual(['a', 'b', 'c']);
   });
 
+  it("gives a surviving OSM row its duplicate group's earliest position (#869)", () => {
+    // Nearest-first input: the FSQ copy is first, its preferred OSM twin last,
+    // with unrelated OSM rows in between. The OSM survivor must inherit the FSQ's
+    // earlier position (index 0), not keep its own (index 3) — otherwise a
+    // downstream slice/cap by this order could trim a venue whose FSQ copy sat
+    // inside the cap while the OSM twin sat just outside it.
+    const rows = [
+      row({ id: 'fsq', source: 'fsq', name: 'Koliba', lat: 50.08 }),
+      row({ id: 'x1', source: 'osm', name: 'Alpha', lat: 50.2, lng: 14.6 }),
+      row({ id: 'x2', source: 'osm', name: 'Beta', lat: 50.3, lng: 14.7 }),
+      // ~22 m from the FSQ copy, same kind + name → its preferred twin.
+      row({ id: 'osm', source: 'osm', name: 'Koliba', lat: 50.0802 }),
+    ];
+    // FSQ dropped; the OSM survivor sorts to the front (the group's index 0),
+    // ahead of the unrelated rows — not to its own trailing index.
+    expect(dedupe(rows)).toEqual(['osm', 'x1', 'x2']);
+  });
+
   it('never merges two same-source POIs near each other (single-source no-op)', () => {
     // Two legitimately-distinct OSM restaurants with the same name ~22 m apart
     // (a chain mapped twice, or genuinely separate) must BOTH survive — only a

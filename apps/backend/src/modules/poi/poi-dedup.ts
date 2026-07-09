@@ -82,11 +82,12 @@ function nameMatches(a: string | null, b: string | null): boolean {
 }
 
 /**
- * De-duplicate `rows` across sources, keeping the input order of survivors.
- * `key` projects a row to its `{source, kind, name, lat, lng}`. A row is dropped
- * only when an already-kept row from a STRICTLY preferred source of the SAME
- * kind sits within {@link DEDUP_RADIUS_KM} with a matching name — so same-source
- * neighbours are never merged and a single-source read is unchanged.
+ * De-duplicate `rows` across sources, ordering survivors by their duplicate
+ * group's EARLIEST input position. `key` projects a row to its
+ * `{source, kind, name, lat, lng}`. A row is dropped only when an already-kept
+ * row from a STRICTLY preferred source of the SAME kind sits within
+ * {@link DEDUP_RADIUS_KM} with a matching name — so same-source neighbours are
+ * never merged and a single-source read keeps its input order unchanged.
  */
 export function dedupeAcrossSources<T>(
   rows: readonly T[],
@@ -99,9 +100,15 @@ export function dedupeAcrossSources<T>(
     .sort(
       (a, b) => sourceRank(a.k.source) - sourceRank(b.k.source) || a.i - b.i,
     );
-  const kept: { row: T; i: number; k: DedupPoi }[] = [];
+  // `pos` tracks the EARLIEST input index of a survivor's duplicate group, not
+  // the kept row's own index. When a preferred row (OSM) absorbs an earlier
+  // lower-preference duplicate (an FSQ copy nearer the front of a nearest-first
+  // read), the survivor inherits that earlier position — otherwise a caller that
+  // over-fetches then `slice`s/caps by this order could trim away a venue whose
+  // FSQ copy sat inside the cap while the OSM twin sat just outside it.
+  const kept: { row: T; pos: number; k: DedupPoi }[] = [];
   for (const entry of ordered) {
-    const isDup = kept.some(
+    const twin = kept.find(
       (other) =>
         // Only a STRICTLY preferred (higher-rank) source de-dupes this row.
         // Two same-source POIs near each other — distinct venues, or the same
@@ -113,8 +120,15 @@ export function dedupeAcrossSources<T>(
           DEDUP_RADIUS_KM &&
         nameMatches(other.k.name, entry.k.name),
     );
-    if (!isDup) kept.push(entry);
+    if (twin) {
+      // Drop this duplicate, but let its preferred twin keep the earliest
+      // position the group reached in the input.
+      twin.pos = Math.min(twin.pos, entry.i);
+    } else {
+      kept.push({ row: entry.row, pos: entry.i, k: entry.k });
+    }
   }
-  // Restore input order so callers that don't re-sort are unaffected.
-  return kept.sort((a, b) => a.i - b.i).map((e) => e.row);
+  // Order survivors by their group's earliest position, so a caller that trims
+  // by nearest-first order keeps the closest member of each duplicate group.
+  return kept.sort((a, b) => a.pos - b.pos).map((e) => e.row);
 }
