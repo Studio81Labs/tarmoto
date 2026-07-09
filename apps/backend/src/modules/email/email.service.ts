@@ -241,6 +241,11 @@ export class EmailService {
       | { status: 'failed'; provider: string; error: string },
   ): Promise<void> {
     if (!this.emailLog) return;
+    // The account-deletion-completed receipt is sent AFTER `purgeUser` has
+    // already deleted this recipient's email_log rows (and the user row). Logging
+    // it would re-persist the just-deleted address with no user — and no future
+    // purge — able to remove it, so this one receipt is deliberately not logged.
+    if (template.tag === 'account-deletion-completed') return;
     try {
       await this.emailLog.insert({
         recipient: to.toLowerCase(),

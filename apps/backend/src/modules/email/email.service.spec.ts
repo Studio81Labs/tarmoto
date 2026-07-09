@@ -351,5 +351,23 @@ describe('EmailService', () => {
 
       expect(result?.providerMessageId).toBe('r');
     });
+
+    it('does not log the account-deletion-completed receipt (sent post-purge)', async () => {
+      // This receipt goes out AFTER purgeUser deleted the recipient's email_log
+      // rows, so logging it would re-persist the just-deleted address forever.
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'r', providerName: 'resend' });
+      const insert = jest.fn().mockResolvedValue({});
+      const service = await buildWithLog(send, insert);
+
+      await service.sendAccountDeletionCompleted('rider@tarmoto.app', {
+        displayName: 'Rider',
+        deletedAt: new Date('2026-07-05T08:00:00Z'),
+      });
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(insert).not.toHaveBeenCalled();
+    });
   });
 });
