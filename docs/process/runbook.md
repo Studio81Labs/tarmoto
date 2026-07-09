@@ -175,7 +175,7 @@ Per region:
 
 1. **Get a token.** Create a free [FSQ Places Portal](https://places.foursquare.com/) account and generate an access token — it's **short-lived (~1 month)**, so regenerate each refresh (which lines up with the dataset's monthly cadence).
 2. **Connect DuckDB to the Iceberg catalog** with the connection snippet the Portal generates for your token (it attaches the catalog exposing the `places` table; needs DuckDB's `iceberg` extension). Those details are token/catalog-specific — copy them from the Portal, don't hardcode them here.
-3. **Filter** to the region's `DEFAULT_REGIONS` bbox + `date_closed IS NULL` + a coarse category prefilter, joining the FSQ category arrays to comma strings, and write NDJSON. The backend classifier (`fsq-poi-categories.ts`) does the precise category → `kind` mapping, so the SQL prefilter only needs to be a loose superset.
+3. **Filter** to the region's **ISO-2 country** + its `DEFAULT_REGIONS` bbox + `date_closed IS NULL` + a coarse category prefilter, joining the FSQ category arrays to comma strings, and write NDJSON. The country predicate is essential — `places` is a global table, so bbox alone pulls in cross-border neighbours (the importer would then mis-own them). The backend classifier (`fsq-poi-categories.ts`) does the precise category → `kind` mapping, so the SQL category prefilter only needs to be a loose superset.
 4. **Place** the result in `TARMOTO_FSQ_IMPORT_DIR` as `<code>.fsq.jsonl`.
 
 **Worked example — Czech Republic (`CZ`)** — once the Portal's connect snippet (step 2) has attached the catalog, the filter/export is:
@@ -191,7 +191,13 @@ COPY (
     tel, website, address, locality, postcode, country
   FROM places
   WHERE date_closed IS NULL
-    -- CZ bbox from DEFAULT_REGIONS (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06)
+    -- `places` is GLOBAL (unlike a per-country Geofabrik file), and the CZ bbox
+    -- overlaps DE/PL/SK/AT at the borders. Scope by country too, or neighbours'
+    -- POIs get imported and stamped import_region='CZ' — wrong owner + tombstone
+    -- scope. Use each region's ISO-2 code (the same as its DEFAULT_REGIONS code).
+    AND country = 'CZ'
+    -- CZ bbox from DEFAULT_REGIONS (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06);
+    -- also the importer's tombstone bound, so keep it aligned.
     AND longitude BETWEEN 12.09 AND 18.86
     AND latitude  BETWEEN 48.55 AND 51.06
     -- Coarse category prefilter. It MUST stay a SUPERSET of the labels in
