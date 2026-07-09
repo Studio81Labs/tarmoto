@@ -191,7 +191,7 @@ export class DigestWeeklyProcessor extends WorkerHost {
     const units: UnitSystem =
       user.preferences?.units === 'imperial' ? 'imperial' : 'metric';
 
-    await this.emailService.sendWeeklyDigest(user.email, {
+    const sent = await this.emailService.sendWeeklyDigest(user.email, {
       displayName: user.display_name,
       rideCount: summary.rideCount,
       totalKm: summary.totalKm,
@@ -202,6 +202,13 @@ export class DigestWeeklyProcessor extends WorkerHost {
       units,
       exploreUrl: `${getCompanionUrl(this.config)}/explore`,
     });
+    if (!sent) {
+      // EmailService swallows provider errors and returns null. For a delivery
+      // job that IS a real failure — throw so BullMQ retries per the queue
+      // policy instead of recording a misleading 'sent' (the rider would
+      // otherwise silently miss the digest).
+      throw new Error(`weekly-digest send failed for user ${user_id}`);
+    }
 
     this.logger.log(
       `[${job.id ?? 'no-id'}] weekly-digest sent to user ${user_id}`,
@@ -228,15 +235,24 @@ export class DigestWeeklyProcessor extends WorkerHost {
         best_quality: string | null;
       }[]
     >(
+      // `ended_at IS NOT NULL` drops unfinished rides that were still saved as
+      // 'completed' (e.g. GPX imports). Duration caps the end at the window end
+      // and floors at 0, so a future / clock-skewed `ended_at` can't inflate or
+      // negate the total (mirrors the dashboard stats).
       `SELECT
          COUNT(*)::text AS ride_count,
          COALESCE(SUM(distance_km), 0) AS total_km,
-         COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0)
-           AS total_minutes,
+         COALESCE(SUM(
+           GREATEST(
+             0,
+             EXTRACT(EPOCH FROM (LEAST(ended_at, $3::timestamptz) - started_at))
+           ) / 60
+         ), 0) AS total_minutes,
          MAX(avg_road_quality) AS best_quality
        FROM rides
        WHERE user_id = $1
          AND status = 'completed'
+         AND ended_at IS NOT NULL
          AND started_at >= $2
          AND started_at < $3`,
       [userId, start.toISOString(), end.toISOString()],

@@ -7,7 +7,9 @@ import type { EmailService } from '../../email/email.service.js';
 import type { JobsProducer } from '../jobs.producer.js';
 
 function makeProcessor(query: jest.Mock) {
-  const sendWeeklyDigest = jest.fn().mockResolvedValue(null);
+  const sendWeeklyDigest = jest
+    .fn()
+    .mockResolvedValue({ providerMessageId: 'm1', providerName: 'mock' });
   const processor = new DigestWeeklyProcessor(
     { query } as unknown as DataSource,
     {} as unknown as JobsProducer,
@@ -119,12 +121,37 @@ describe('DigestWeeklyProcessor.compose (#866)', () => {
     await processor.process(composeJob());
 
     // 2nd call = the ride aggregate; args = [sql, [userId, windowStart, windowEnd]].
-    const rideCall = query.mock.calls[1] as [unknown, [string, string, string]];
-    const params = rideCall[1];
+    const rideCall = query.mock.calls[1] as [string, [string, string, string]];
+    const [rideSql, params] = rideCall;
     const end = new Date(params[2]).getTime();
     const start = new Date(params[1]).getTime();
     expect(end).toBe(Date.UTC(2026, 6, 5, 8)); // the job timestamp
     expect(end - start).toBe(7 * 24 * 60 * 60 * 1000); // exactly one week
+    // Unfinished rides (null ended_at) are excluded from the aggregate.
+    expect(rideSql).toContain('ended_at IS NOT NULL');
+  });
+
+  it('throws on a failed send so BullMQ retries instead of recording "sent"', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([ELIGIBLE_USER])
+      .mockResolvedValueOnce([
+        {
+          ride_count: '2',
+          total_km: '30',
+          total_minutes: '60',
+          best_quality: '4',
+        },
+      ])
+      .mockResolvedValueOnce([{ ridden: '10' }])
+      .mockResolvedValueOnce([{ total: '100' }]);
+    const { processor, sendWeeklyDigest } = makeProcessor(query);
+    // EmailService returns null when the provider throws (best-effort swallow).
+    sendWeeklyDigest.mockResolvedValueOnce(null);
+
+    await expect(processor.process(composeJob())).rejects.toThrow(
+      /send failed/,
+    );
   });
 
   it('gates opt-in on notification_preferences.email_digest, not the legacy flag', async () => {
