@@ -150,7 +150,7 @@ export class DigestWeeklyProcessor extends WorkerHost {
       `
       SELECT
         u.id::text AS user_id,
-        (w.local_send AT TIME ZONE tz_resolution.tz) AS window_end,
+        s.send_at AS window_end,
         ((w.local_send - interval '7 days') AT TIME ZONE tz_resolution.tz)
           AS window_start
       FROM users u
@@ -173,9 +173,22 @@ export class DigestWeeklyProcessor extends WorkerHost {
         SELECT date_trunc('day', ln.local_now)
              + make_interval(hours => $3::int) AS local_send
       ) w
+      CROSS JOIN LATERAL (
+        SELECT w.local_send AT TIME ZONE tz_resolution.tz AS send_at
+      ) s
       WHERE u.deleted_at IS NULL
-        AND u.email_verified_at IS NOT NULL
+        -- Eligibility is checked AS OF the pinned send time (s.send_at = the
+        -- rider's local 08:00), not "now". Otherwise the catch-up range would
+        -- sweep in a rider who became eligible AFTER 08:00 — verified their
+        -- email, or flipped email_digest to 'weekly' at 10:00 — and mail them a
+        -- window that already closed. A rider with no prefs row is
+        -- weekly-by-default (eligible since always); a row last touched after the
+        -- send may be a fresh opt-in, so it's excluded from catch-up. On a normal
+        -- (non-outage) week that rider already holds an 08:00 jobId, so this only
+        -- changes behaviour for a genuinely missed slot.
+        AND u.email_verified_at <= s.send_at
         AND COALESCE(np.email_digest, 'weekly') = 'weekly'
+        AND (np.user_id IS NULL OR np.updated_at <= s.send_at)
         AND EXTRACT(DOW FROM ln.local_now)::int = $2
         AND EXTRACT(HOUR FROM ln.local_now)::int BETWEEN $3 AND $4
       `,

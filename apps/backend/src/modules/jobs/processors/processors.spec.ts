@@ -208,6 +208,11 @@ describe('DigestWeeklyProcessor', () => {
     // regression back to a single-hour `= $3` match fails here.
     expect(sql).toMatch(/BETWEEN \$3 AND \$4/);
     expect(sql).not.toMatch(/HOUR FROM[\s\S]*?\)::int = \$3/);
+    // Catch-up eligibility is evaluated AS OF the pinned send time, so the
+    // widened hour range can't mail a rider who became eligible after 08:00
+    // (verified their email or flipped email_digest to 'weekly' mid-window).
+    expect(sql).toMatch(/email_verified_at <= s\.send_at/);
+    expect(sql).toMatch(/np\.updated_at <= s\.send_at/);
   });
 
   it('anchors the dispatch to the scheduled slot in the jobId, not the processing clock', async () => {
