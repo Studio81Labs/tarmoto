@@ -4,7 +4,15 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { useAuthStore } from "@/stores/auth";
-import { MapPin, Search, RotateCcw } from "lucide-react";
+import {
+  MapPin,
+  Search,
+  RotateCcw,
+  Route,
+  Bike,
+  SlidersHorizontal,
+  Map as MapIcon,
+} from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
   filtersEqual,
@@ -24,7 +32,7 @@ import { ApiError, api, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { currentUtcMonth } from "@/lib/passes-summary";
-import { Stamp } from "@tarmoto/ui";
+import { Button, Stamp } from "@tarmoto/ui";
 
 declare global {
   interface Window {
@@ -181,6 +189,11 @@ function ExplorerPageInner() {
       setFilterOpen(false);
     }
   }, []);
+  // Header overlays: draw the rider's own planned trips / finished rides on top
+  // of the quality map. Toggle state lives here; the map rendering is wired in
+  // a follow-up (the button shell + active state land first).
+  const [showMyTrips, setShowMyTrips] = useState(false);
+  const [showMyRides, setShowMyRides] = useState(false);
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
@@ -219,6 +232,10 @@ function ExplorerPageInner() {
     resetFilters,
   } = useMapStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // Public visitors get no in-page header — the layout's PublicExploreHeader
+  // already carries the brand + auth CTAs. Without our header there's no Filter
+  // toggle for them, so the filter column is always shown.
+  const filterVisible = isAuthenticated ? filterOpen : true;
   // Imperative handle to the MapLibre camera. `MapCanvas` reads
   // its initial center/zoom only at mount (to avoid yanking user
   // pans), so search-pick flows need this narrow opt-in channel
@@ -317,27 +334,80 @@ function ExplorerPageInner() {
     //
     // Responsive grid template via CSS variables so each side column
     // collapses to 0 when its content is hidden — handles the
-    // narrow-viewport case where the fixed 300 px + 320 px chrome
+    // narrow-viewport case where the fixed 300 px + 370 px chrome
     // would crowd out the map and leave the rider with no recovery
     // affordance (the floating "Filters" pill in the layer overlay
     // is the toggle, matching the spec's primary-accent pill).
-    <div
-      className="grid h-full min-h-0 grid-cols-[var(--explore-left)_1fr_var(--explore-right)] bg-cream text-ink"
-      style={
-        {
-          "--explore-left": filterOpen ? "300px" : "0px",
-          // Info panel only takes a real grid column on wide
-          // viewports. On narrow viewports it overlays the map
-          // (see the absolute-positioned aside below) so a phone
-          // doesn't lose its entire map area to a fixed rail.
-          "--explore-right":
-            isWideViewport && (showClosuresLayer || showPassesLayer)
-              ? "320px"
-              : "0px",
-        } as React.CSSProperties
-      }
-    >
-      {/* LEFT — Filters sidebar. Always present in the grid so the
+    <div className="flex h-full min-h-0 flex-col bg-cream text-ink">
+      {/* Page header — same chrome/height as the trip preview/edit bar:
+          heading on the left, action buttons on the right. "My trips" /
+          "My rides" overlay the rider's own routes on the map; "Filter"
+          toggles the left filter column. Shown only for signed-in riders —
+          public visitors get the layout's PublicExploreHeader instead. */}
+      {isAuthenticated && (
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
+          <div className="flex min-w-0 shrink-0 items-center gap-[9px]">
+            <MapIcon size={18} className="shrink-0 text-accent" aria-hidden />
+            <h1 className="truncate font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+              {t("Road Explorer")}
+            </h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Toggle buttons: outline (secondary) when off, neutral ink fill
+              (primary) when on — coral/accent stays reserved for CTAs. */}
+            <Button
+              variant={showMyTrips ? "primary" : "secondary"}
+              size="sm"
+              uppercase
+              leftIcon={<Route size={14} />}
+              aria-pressed={showMyTrips}
+              onClick={() => setShowMyTrips((value) => !value)}
+            >
+              {t("My trips")}
+            </Button>
+            <Button
+              variant={showMyRides ? "primary" : "secondary"}
+              size="sm"
+              uppercase
+              leftIcon={<Bike size={14} />}
+              aria-pressed={showMyRides}
+              onClick={() => setShowMyRides((value) => !value)}
+            >
+              {t("My rides")}
+            </Button>
+            <Button
+              variant={filterOpen ? "primary" : "secondary"}
+              size="sm"
+              uppercase
+              leftIcon={<SlidersHorizontal size={14} />}
+              aria-pressed={filterOpen}
+              onClick={() => setFilterOpen((value) => !value)}
+            >
+              {t("Filter")}
+            </Button>
+          </div>
+        </header>
+      )}
+      {/* Spec-aligned Route Explorer grid: Filters sidebar | map | info panel.
+          Each side column collapses to 0 via its CSS variable; the grid
+          animates the width change (mirrors the planner's day column). */}
+      <div
+        className="grid min-h-0 flex-1 grid-cols-[var(--explore-left)_1fr_var(--explore-right)] transition-[grid-template-columns] duration-300 ease-out"
+        style={
+          {
+            "--explore-left": filterVisible ? "300px" : "0px",
+            // Info panel only takes a real grid column on wide
+            // viewports. On narrow viewports it overlays the map
+            // (see the absolute-positioned aside below) so a phone
+            // doesn't lose its entire map area to a fixed rail.
+            "--explore-right":
+              isWideViewport && (showClosuresLayer || showPassesLayer)
+                ? "370px"
+                : "0px",
+          } as React.CSSProperties
+        }
+      >
+        {/* LEFT — Filters sidebar. Always present in the grid so the
           map column stays in the middle track — `display: none`
           would drop the aside from layout and the map would land
           in the 0-width first column instead. Closed state =
@@ -345,259 +415,271 @@ function ExplorerPageInner() {
           and `inert` + `aria-hidden` drop the (still-mounted)
           form controls out of focus order and the AT tree so
           keyboard users don't tab through invisible inputs. */}
-      <aside
-        className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-paper"
-        inert={!filterOpen}
-        aria-hidden={!filterOpen}
-      >
-        <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
-          <h2 className="font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-            {t("Filters")}
-          </h2>
-          <button
-            type="button"
-            onClick={resetFilters}
-            disabled={isDefault}
-            className="inline-flex items-center gap-1 font-mono text-[11px] font-bold uppercase tracking-[1px] text-fg-dim transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <RotateCcw size={12} />
-            {t("Reset")}
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="mb-[18px]">
-            <Stamp as="h3" className="mb-2.5 block">
-              {t("Road quality")}
-            </Stamp>
-            <div className="flex flex-col gap-2">
-              {QUALITY_OPTIONS.map((opt) => (
-                <FilterCheckbox
-                  key={opt.key}
-                  checked={filters.quality.has(opt.key)}
-                  onChange={() => toggleQualityTier(opt.key)}
-                  swatch={
-                    <span
-                      aria-hidden="true"
-                      className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
-                    />
-                  }
-                  label={opt.label}
-                />
-              ))}
-            </div>
+        <aside
+          className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-paper"
+          inert={!filterVisible}
+          aria-hidden={!filterVisible}
+        >
+          <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
+            <h2 className="whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
+              {t("Filters")}
+            </h2>
+            <button
+              type="button"
+              onClick={resetFilters}
+              disabled={isDefault}
+              className="inline-flex items-center gap-1 font-mono text-[11px] font-bold uppercase tracking-[1px] text-fg-dim transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <RotateCcw size={12} />
+              {t("Reset")}
+            </button>
           </div>
 
-          <div className="mb-[18px]">
-            <Stamp as="h3" className="mb-2.5 block">
-              {t("Surface type")}
-            </Stamp>
-            <div className="flex flex-col gap-2">
-              {SURFACE_OPTIONS.map((opt) => (
-                <FilterCheckbox
-                  key={opt.key}
-                  checked={filters.surface.has(opt.key)}
-                  onChange={() => toggleSurfaceType(opt.key)}
-                  swatch={
-                    <span
-                      aria-hidden="true"
-                      className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
-                    />
-                  }
-                  label={opt.label}
-                />
-              ))}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="mb-[18px]">
+              <Stamp as="h3" className="mb-2.5 block">
+                {t("Road quality")}
+              </Stamp>
+              <div className="flex flex-col gap-2">
+                {QUALITY_OPTIONS.map((opt) => (
+                  <FilterCheckbox
+                    key={opt.key}
+                    checked={filters.quality.has(opt.key)}
+                    onChange={() => toggleQualityTier(opt.key)}
+                    swatch={
+                      <span
+                        aria-hidden="true"
+                        className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
+                      />
+                    }
+                    label={opt.label}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-[18px]">
+              <Stamp as="h3" className="mb-2.5 block">
+                {t("Surface type")}
+              </Stamp>
+              <div className="flex flex-col gap-2">
+                {SURFACE_OPTIONS.map((opt) => (
+                  <FilterCheckbox
+                    key={opt.key}
+                    checked={filters.surface.has(opt.key)}
+                    onChange={() => toggleSurfaceType(opt.key)}
+                    swatch={
+                      <span
+                        aria-hidden="true"
+                        className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
+                      />
+                    }
+                    label={opt.label}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-[18px]">
+              <Stamp as="h3" className="mb-2.5 block">
+                {t("Hazard type")}
+              </Stamp>
+              <div className="flex flex-col gap-2">
+                {HAZARD_OPTIONS.map((opt) => (
+                  <FilterCheckbox
+                    key={opt.key}
+                    checked={filters.hazardTypes.has(opt.key)}
+                    onChange={() => toggleHazardType(opt.key)}
+                    swatch={
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: opt.hex }}
+                      />
+                    }
+                    label={opt.label}
+                  />
+                ))}
+              </div>
             </div>
           </div>
+        </aside>
 
-          <div className="mb-[18px]">
-            <Stamp as="h3" className="mb-2.5 block">
-              {t("Hazard type")}
-            </Stamp>
-            <div className="flex flex-col gap-2">
-              {HAZARD_OPTIONS.map((opt) => (
-                <FilterCheckbox
-                  key={opt.key}
-                  checked={filters.hazardTypes.has(opt.key)}
-                  onChange={() => toggleHazardType(opt.key)}
-                  swatch={
-                    <span
-                      aria-hidden="true"
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: opt.hex }}
-                    />
-                  }
-                  label={opt.label}
-                />
-              ))}
-            </div>
+        {/* CENTER — Map + floating overlays */}
+        <div className="relative min-h-0 min-w-0 bg-cream">
+          <div className="absolute inset-0">
+            <QualityMap
+              ref={mapRef}
+              center={center}
+              zoom={zoom}
+              filters={filters}
+              showQuality={showQualityOverlay}
+              showSurface={showSurfaceOverlay}
+              showHazards={showHazardOverlay}
+              onSegmentSelect={setSelectedSegmentId}
+              selectedSegmentId={selectedSegmentId}
+              onViewChange={(view) => {
+                setCenter({ lng: view.lng, lat: view.lat });
+                setZoom(view.zoom);
+                setConditionBbox(formatBbox(view.bbox));
+              }}
+            />
           </div>
-        </div>
-      </aside>
 
-      {/* CENTER — Map + floating overlays */}
-      <div className="relative min-h-0 min-w-0 bg-cream">
-        <div className="absolute inset-0">
-          <QualityMap
-            ref={mapRef}
-            center={center}
-            zoom={zoom}
-            filters={filters}
-            showQuality={showQualityOverlay}
-            showSurface={showSurfaceOverlay}
-            showHazards={showHazardOverlay}
-            onSegmentSelect={setSelectedSegmentId}
-            selectedSegmentId={selectedSegmentId}
-            onViewChange={(view) => {
-              setCenter({ lng: view.lng, lat: view.lat });
-              setZoom(view.zoom);
-              setConditionBbox(formatBbox(view.bbox));
-            }}
-          />
-        </div>
-
-        {/* Floating top overlay — search + layer toggle pills. Search
+          {/* Floating top overlay — search + layer toggle pills. Search
             renders only for signed-in riders (the underlying
             `/api/v1/geocode` endpoint sits behind AuthGuard), so a
             public visitor sees only the pills. The search container
             is a fixed 380 px (clamped to the viewport width) so
             toggling the Filters sidebar doesn't reflow the input or
             the pill row alongside it. */}
-        <div className="absolute left-4 right-4 top-4 z-10 flex flex-wrap items-center gap-2.5">
-          {isAuthenticated ? (
-            <div className="w-[380px] max-w-full">
-              <ExploreSearch
-                onPick={(place) => {
-                  // Fly the actual MapLibre camera. Updating the
-                  // store alone wouldn't move the visible map —
-                  // MapCanvas reads center/zoom only at init. We
-                  // still mirror the new position back into the
-                  // store so a subsequent remount lands in the same
-                  // place.
-                  mapRef.current?.flyTo({
-                    lng: place.lng,
-                    lat: place.lat,
-                    zoom: EXPLORE_SEARCH_RESULT_ZOOM,
-                  });
-                  setCenter({ lng: place.lng, lat: place.lat });
-                  setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
-                }}
-              />
-            </div>
-          ) : null}
+          <div className="absolute left-4 right-4 top-4 z-10 flex flex-wrap items-center gap-2.5">
+            {isAuthenticated ? (
+              <div className="w-[380px] max-w-full">
+                <ExploreSearch
+                  onPick={(place) => {
+                    // Fly the actual MapLibre camera. Updating the
+                    // store alone wouldn't move the visible map —
+                    // MapCanvas reads center/zoom only at init. We
+                    // still mirror the new position back into the
+                    // store so a subsequent remount lands in the same
+                    // place.
+                    mapRef.current?.flyTo({
+                      lng: place.lng,
+                      lat: place.lat,
+                      zoom: EXPLORE_SEARCH_RESULT_ZOOM,
+                    });
+                    setCenter({ lng: place.lng, lat: place.lat });
+                    setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
+                  }}
+                />
+              </div>
+            ) : null}
 
-          {/* Layer pills per spec: rounded-10, 12 700, soft shadow.
-              The leading "Filters" pill toggles the left sidebar.
-              All active states use the solid brand-accent fill so
-              the active pill stays legible over a busy map — the
-              spec's `accent/20` swatch reads as low-contrast
-              transparency once real map content sits underneath. */}
-          <button
-            type="button"
-            onClick={() => setFilterOpen((value) => !value)}
-            aria-pressed={filterOpen}
-            aria-label={t("Toggle filters")}
-            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-              filterOpen
-                ? "bg-accent text-ink"
-                : "bg-cream text-ink hover:bg-paper"
-            }`}
-          >
-            {t("Filters")}
-          </button>
-          <button
-            type="button"
-            onClick={toggleQuality}
-            aria-pressed={showQualityOverlay}
-            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-              showQualityOverlay
-                ? "bg-accent text-ink"
-                : "bg-cream text-ink hover:bg-paper"
-            }`}
-          >
-            {t("Quality")}
-          </button>
-          <button
-            type="button"
-            onClick={toggleHazards}
-            aria-pressed={showHazardOverlay}
-            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-              showHazardOverlay
-                ? "bg-accent text-ink"
-                : "bg-cream text-ink hover:bg-paper"
-            }`}
-          >
-            {t("Hazards")}
-          </button>
-          <button
-            type="button"
-            onClick={toggleSurface}
-            aria-pressed={showSurfaceOverlay}
-            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-              showSurfaceOverlay
-                ? "bg-accent text-ink"
-                : "bg-cream text-ink hover:bg-paper"
-            }`}
-          >
-            {t("Surface")}
-          </button>
-          <button
-            type="button"
-            onClick={toggleClosuresLayer}
-            aria-pressed={showClosuresLayer}
-            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-              showClosuresLayer
-                ? "bg-accent text-ink"
-                : "bg-cream text-ink hover:bg-paper"
-            }`}
-          >
-            {t("Closures")}
-          </button>
-          <button
-            type="button"
-            onClick={togglePassesLayer}
-            aria-pressed={showPassesLayer}
-            className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-              showPassesLayer
-                ? "bg-accent text-ink"
-                : "bg-cream text-ink hover:bg-paper"
-            }`}
-          >
-            {t("Passes")}
-          </button>
-        </div>
+            {/* Layer pills per spec: rounded-10, 12 700, soft shadow. All
+              active states use the solid brand-accent fill so the active pill
+              stays legible over a busy map. (The Filters toggle moved to the
+              page header.) */}
+            <button
+              type="button"
+              onClick={toggleQuality}
+              aria-pressed={showQualityOverlay}
+              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
+                showQualityOverlay
+                  ? "bg-accent text-ink"
+                  : "bg-cream text-ink hover:bg-paper"
+              }`}
+            >
+              {t("Quality")}
+            </button>
+            <button
+              type="button"
+              onClick={toggleHazards}
+              aria-pressed={showHazardOverlay}
+              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
+                showHazardOverlay
+                  ? "bg-accent text-ink"
+                  : "bg-cream text-ink hover:bg-paper"
+              }`}
+            >
+              {t("Hazards")}
+            </button>
+            <button
+              type="button"
+              onClick={toggleSurface}
+              aria-pressed={showSurfaceOverlay}
+              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
+                showSurfaceOverlay
+                  ? "bg-accent text-ink"
+                  : "bg-cream text-ink hover:bg-paper"
+              }`}
+            >
+              {t("Surface")}
+            </button>
+            <button
+              type="button"
+              onClick={toggleClosuresLayer}
+              aria-pressed={showClosuresLayer}
+              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
+                showClosuresLayer
+                  ? "bg-accent text-ink"
+                  : "bg-cream text-ink hover:bg-paper"
+              }`}
+            >
+              {t("Closures")}
+            </button>
+            <button
+              type="button"
+              onClick={togglePassesLayer}
+              aria-pressed={showPassesLayer}
+              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
+                showPassesLayer
+                  ? "bg-accent text-ink"
+                  : "bg-cream text-ink hover:bg-paper"
+              }`}
+            >
+              {t("Passes")}
+            </button>
+          </div>
 
-        <MapLegend
-          showQuality={showQualityOverlay}
-          showSurface={showSurfaceOverlay}
-          showHazards={showHazardOverlay}
-        />
-        <SegmentDetailSidebar
-          state={segmentDetailState}
-          onClose={() => setSelectedSegmentId(null)}
-        />
+          <MapLegend
+            showQuality={showQualityOverlay}
+            showSurface={showSurfaceOverlay}
+            showHazards={showHazardOverlay}
+          />
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedSegmentId(null)}
+            // Signed-in riders get the full-window drawer (their page header is
+            // the only chrome it covers, same as the trip views). Public
+            // visitors stay container-anchored so it never covers the
+            // PublicExploreHeader's sign-in / create-account CTAs.
+            anchor={isAuthenticated ? "viewport" : "container"}
+          />
 
-        {/* Narrow-viewport info panel — overlays the map instead of
+          {/* Narrow-viewport info panel — overlays the map instead of
             taking a grid column so a phone keeps useful map area
             underneath. Close button toggles off whichever info
             layer is active (mirrors how toggling the pill in the
             top overlay dismisses the panel). */}
-        {(showClosuresLayer || showPassesLayer) && !isWideViewport && (
-          <aside
-            className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
-            aria-label={t("Info layers")}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                if (showClosuresLayer) toggleClosuresLayer();
-                if (showPassesLayer) togglePassesLayer();
-              }}
-              className="absolute right-3 top-3 rounded-md border border-line-strong bg-cream px-2 py-1 text-[11px] font-bold uppercase tracking-[1px] text-ink transition hover:bg-paper-2"
-              aria-label={t("Close info panel")}
+          {(showClosuresLayer || showPassesLayer) && !isWideViewport && (
+            <aside
+              className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
+              aria-label={t("Info layers")}
             >
-              {t("Close")}
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (showClosuresLayer) toggleClosuresLayer();
+                  if (showPassesLayer) togglePassesLayer();
+                }}
+                className="absolute right-3 top-3 rounded-md border border-line-strong bg-cream px-2 py-1 text-[11px] font-bold uppercase tracking-[1px] text-ink transition hover:bg-paper-2"
+                aria-label={t("Close info panel")}
+              >
+                {t("Close")}
+              </button>
+              <InfoPanelContent
+                showClosures={showClosuresLayer}
+                showPasses={showPassesLayer}
+                conditionsMonth={conditionsMonth}
+                setConditionsMonth={setConditionsMonth}
+                conditionsDate={conditionsDate}
+                setConditionsDate={setConditionsDate}
+                conditionBbox={conditionBbox}
+              />
+            </aside>
+          )}
+        </div>
+
+        {/* RIGHT — Closures / Passes info panel. On wide viewports
+          docks in as a real third grid column (the `--explore-right`
+          CSS variable allocates 370 px, matching the planner/preview right
+          column); on narrow viewports the
+          grid column collapses to 0 and the same content renders
+          as a top-anchored overlay over the map (with a close
+          affordance) so a phone keeps a usable map underneath. */}
+        {(showClosuresLayer || showPassesLayer) && isWideViewport && (
+          <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4">
             <InfoPanelContent
               showClosures={showClosuresLayer}
               showPasses={showPassesLayer}
@@ -610,26 +692,6 @@ function ExplorerPageInner() {
           </aside>
         )}
       </div>
-
-      {/* RIGHT — Closures / Passes info panel. On wide viewports
-          docks in as a real third grid column (the `--explore-right`
-          CSS variable allocates 320 px); on narrow viewports the
-          grid column collapses to 0 and the same content renders
-          as a top-anchored overlay over the map (with a close
-          affordance) so a phone keeps a usable map underneath. */}
-      {(showClosuresLayer || showPassesLayer) && isWideViewport && (
-        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4">
-          <InfoPanelContent
-            showClosures={showClosuresLayer}
-            showPasses={showPassesLayer}
-            conditionsMonth={conditionsMonth}
-            setConditionsMonth={setConditionsMonth}
-            conditionsDate={conditionsDate}
-            setConditionsDate={setConditionsDate}
-            conditionBbox={conditionBbox}
-          />
-        </aside>
-      )}
     </div>
   );
 }
