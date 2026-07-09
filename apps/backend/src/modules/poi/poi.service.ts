@@ -147,6 +147,12 @@ export class PoiService {
     // covered side as complete and dropping the rest.
     if (stored !== null && coverageSamples) {
       if (await this.isCovered(coverageSamples)) return stored;
+      // KNOWN LIMITATION (#945): `fromProvider` queries the WHOLE area, and the
+      // provider caps its result before we de-dupe. At a dense covered-side
+      // frontier those capped live rows can all be store duplicates, so the merge
+      // adds nothing and the uncovered side stays empty. Not a regression — the
+      // pre-#925 path returned store-only here too — but the full fix is an
+      // uncovered-only query, tracked in #945.
       const live = await this.fromProviderSafe(fromProvider);
       return mergeByExternalId(stored, live);
     }
