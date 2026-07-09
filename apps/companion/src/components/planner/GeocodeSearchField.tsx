@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Search } from "lucide-react";
+import { Loader2, MapPin, Search } from "lucide-react";
 import { plannerApi } from "@/lib/planner/api";
 import type { GeoResult } from "@/lib/planner/types";
 
@@ -38,25 +38,35 @@ export function GeocodeSearchField({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (query.trim().length < 2) {
       setResults([]);
       setOpen(false);
+      setLoading(false);
       return;
     }
     const controller = new AbortController();
     const handle = window.setTimeout(() => {
+      // Open + show the "Searching…" state as soon as the request fires so the
+      // rider gets immediate feedback that something is happening.
+      setLoading(true);
+      setResults([]);
+      setOpen(true);
       plannerApi
         .geocode(query, { signal: controller.signal })
         .then((matches) => {
           if (controller.signal.aborted) return;
           setResults(matches);
+          setLoading(false);
           setOpen(matches.length > 0);
         })
         .catch(() => {
-          if (!controller.signal.aborted) setOpen(false);
+          if (controller.signal.aborted) return;
+          setLoading(false);
+          setOpen(false);
         });
     }, DEBOUNCE_MS);
     return () => {
@@ -81,7 +91,11 @@ export function GeocodeSearchField({
     <div ref={containerRef} className="relative min-w-0 flex-1">
       <div className="flex items-center gap-1.5">
         {variant === "default" ? (
-          <Search size={11} className="shrink-0 text-fg-mute" />
+          loading ? (
+            <Loader2 size={11} className="shrink-0 animate-spin text-accent" />
+          ) : (
+            <Search size={11} className="shrink-0 text-fg-mute" />
+          )
         ) : null}
         <input
           type="text"
@@ -102,8 +116,25 @@ export function GeocodeSearchField({
         <ul
           role="listbox"
           aria-label={`${ariaLabel} results`}
-          className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)]"
+          // Sits clearly below the field (mt-2 clears the field's padded box),
+          // and widens past a narrow field to fit long place names — as wide as
+          // its content, at least the field width, capped so it stays on-screen.
+          className="absolute left-0 top-full z-30 mt-2 w-max min-w-full max-w-[320px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)]"
         >
+          {loading ? (
+            <li
+              role="option"
+              aria-selected={false}
+              aria-disabled="true"
+              className="flex items-center gap-2 px-3 py-2 text-[12.5px] text-fg-dim"
+            >
+              <Loader2
+                size={12}
+                className="shrink-0 animate-spin text-accent"
+              />
+              <span>{t("Searching… ")}</span>
+            </li>
+          ) : null}
           {results.map((result) => (
             <li key={`${result.name}:${result.lat}`} role="none">
               <button
