@@ -257,8 +257,10 @@ describe('EmailService', () => {
       expect(message.html).toContain('mi');
       expect(message.html).not.toContain('128.4 km');
       expect(message.html).toContain('62%');
-      // The digest (marketing) footer carries the unsubscribe link.
+      // The digest (marketing) footer carries the unsubscribe link — in BOTH
+      // the HTML and the text/plain part (text-only clients never see the HTML).
       expect(message.html).toContain('Unsubscribe');
+      expect(message.text).toContain('Unsubscribe from marketing emails');
     });
   });
 });

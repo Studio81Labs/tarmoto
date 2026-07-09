@@ -401,7 +401,7 @@ Here's your week on the road:
 Exploration: you've now ridden ${ctx.riddenSegments} road sections — ${ctx.percentExplored}% of your area.
 
 Find your next road:
-${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
 
   const row = (label: string, value: string): string => `
       <tr>
