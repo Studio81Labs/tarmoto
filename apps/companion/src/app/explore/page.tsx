@@ -623,6 +623,7 @@ function ExplorerPageInner() {
           <SegmentDetailSidebar
             state={segmentDetailState}
             onClose={() => setSelectedSegmentId(null)}
+            anchor="viewport"
           />
 
           {/* Narrow-viewport info panel — overlays the map instead of
