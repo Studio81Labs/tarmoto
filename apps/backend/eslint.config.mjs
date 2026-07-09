@@ -12,6 +12,9 @@ export default tseslint.config(
       // generate-real-demo-rides.mjs) + its one-off generator script.
       'src/scripts/demo-seed/real-demo-rides.data.ts',
       'src/scripts/demo-seed/generate-real-demo-rides.mjs',
+      // One-off Natural Earth boundary generator (#944) — run once, output
+      // committed; see assets/README.md.
+      'src/scripts/derive-region-boundaries.mjs',
     ],
   },
   eslint.configs.recommended,
