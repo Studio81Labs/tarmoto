@@ -620,18 +620,25 @@ export default function TripPlannerPage() {
   >(null);
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
+  // INSPECT card → focus the segment on the map, opening its Road Preview
+  // popover (an on-route segment). The full history+reviews drawer is reached
+  // from that popover's "Full history & reviews" button, or by tapping an
+  // off-route mapped segment — never straight from here, so the two never
+  // stack on screen.
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
       mapRef.current?.flyToSegment(segmentId);
-      const segment = findPlannerQualitySegment(displayedTrip, segmentId);
-      setSelectedRoadSegmentId(segment?.roadSegmentId ?? null);
     },
-    [selectPlannerSegment, displayedTrip],
+    [selectPlannerSegment],
   );
   useEffect(() => {
     if (!selectedRoadSegmentId) {
-      setSegmentDetailState({ status: "idle" });
+      // Bail out without a new object when already idle, so the initial mount
+      // (segment unselected) doesn't force an extra render.
+      setSegmentDetailState((prev) =>
+        prev.status === "idle" ? prev : { status: "idle" },
+      );
       return;
     }
     let cancelled = false;
