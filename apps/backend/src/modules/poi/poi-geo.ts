@@ -140,6 +140,18 @@ export function padBbox(bbox: Bbox, km: number): Bbox {
  * the route/radius samplers space their probes at this stride so consecutive
  * probes overlap. Shared so the store's probe and the service's sampling agree.
  * See {@link PoiStoreService.hasImportedCoverage}.
+ *
+ * KNOWN LIMITATION — border halo (#944): this is point PROXIMITY, not region
+ * MEMBERSHIP, so it reports covered up to one buffer OUTSIDE the real import
+ * boundary. A request that margin into an un-imported neighbour, near an
+ * imported border, is wrongly judged covered and skips Overpass. This only
+ * bites during a PARTIAL rollout (some countries imported, neighbours not) and
+ * self-heals once neighbours import; at full-continent import there is no
+ * un-imported neighbour to leak into and proximity is exact. The value favours
+ * that steady state: 20 km keeps a genuinely-empty lookup in a SPARSE imported
+ * area authoritative (rural POIs can be 10-20 km apart) rather than trading
+ * that for a smaller transient halo. Exact partial-rollout coverage needs
+ * region-boundary geometry — tracked in #944.
  */
 export const COVERAGE_BUFFER_KM = 20;
 
