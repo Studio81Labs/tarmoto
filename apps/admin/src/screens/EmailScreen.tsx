@@ -10,7 +10,11 @@ import {
   Pill,
   Select,
 } from "@tarmoto/ui";
-import { useAdminEmailLog } from "../data/useAdminEmail.js";
+import {
+  useAdminEmailLog,
+  useSendTestDigest,
+  useResendDigest,
+} from "../data/useAdminEmail.js";
 
 type EmailRow = components["schemas"]["AdminEmailLogRowDto"];
 type StatusFilter = "" | "sent" | "failed";
@@ -33,13 +37,24 @@ export function EmailScreen() {
   const [recipient, setRecipient] = useState("");
   const [page, setPage] = useState(1);
 
-  const { data, isPending, error } = useAdminEmailLog({
+  const { data, isPending, error, refetch } = useAdminEmailLog({
     ...(status ? { status } : {}),
     ...(tag ? { tag } : {}),
     ...(recipient ? { recipient } : {}),
     page,
     pageSize: PAGE_SIZE,
   });
+
+  const testMutation = useSendTestDigest();
+  const resendMutation = useResendDigest();
+  const [actionMsg, setActionMsg] = useState<{
+    kind: "success" | "danger";
+    text: string;
+  } | null>(null);
+
+  function serverMessage(err: unknown, fallback: string): string {
+    return (err as { message?: string } | undefined)?.message ?? fallback;
+  }
 
   const rows: EmailRow[] = data?.rows ?? [];
   const total = data?.total ?? 0;
@@ -83,11 +98,87 @@ export function EmailScreen() {
       size: "180px",
       render: (row) => formatDateTime(row.created_at),
     },
+    {
+      key: "actions",
+      label: "",
+      size: "110px",
+      align: "right",
+      // Resend only makes sense for a FAILED digest — it re-triggers the typed
+      // email with fresh data (not a byte replay).
+      render: (row) =>
+        row.status === "failed" && row.tag === "weekly-digest" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={resendMutation.isPending}
+            onClick={() =>
+              resendMutation.mutate(
+                { body: { recipient: row.recipient } },
+                {
+                  onSuccess: () => {
+                    setActionMsg({
+                      kind: "success",
+                      text: `Resend queued for ${row.recipient}.`,
+                    });
+                    void refetch();
+                  },
+                  onError: (err: unknown) =>
+                    setActionMsg({
+                      kind: "danger",
+                      text: serverMessage(err, "Failed to queue the resend."),
+                    }),
+                },
+              )
+            }
+          >
+            Resend
+          </Button>
+        ) : null,
+    },
   ];
 
   return (
     <section>
-      <PageHeader title="Email Log" />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <PageHeader title="Email Log" />
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={testMutation.isPending}
+          onClick={() =>
+            testMutation.mutate(
+              {},
+              {
+                onSuccess: (res) => {
+                  setActionMsg({
+                    kind: res.status === "sent" ? "success" : "danger",
+                    text:
+                      res.status === "sent"
+                        ? "Test digest sent to your address."
+                        : "Test digest failed to send — check the provider.",
+                  });
+                  void refetch();
+                },
+                onError: (err: unknown) =>
+                  setActionMsg({
+                    kind: "danger",
+                    text: serverMessage(err, "Failed to send the test digest."),
+                  }),
+              },
+            )
+          }
+        >
+          Send test digest to me
+        </Button>
+      </div>
+      {actionMsg ? (
+        <Alert
+          intent={actionMsg.kind}
+          title={actionMsg.text}
+          className="mb-4"
+          compact
+        />
+      ) : null}
       {error ? (
         <Alert
           intent="danger"

@@ -23,6 +23,8 @@ import { EventsModule } from '../events/events.module.js';
 import { AppSettingsModule } from '../app-settings/app-settings.module.js';
 import { AdminAppSettingsController } from '../app-settings/admin-app-settings.controller.js';
 import { PushModule } from '../push/index.js';
+import { EmailModule } from '../email/index.js';
+import { JobsModule } from '../jobs/index.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -70,6 +72,10 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     // Exposes NotificationPreferencesService so admin-users can read/update a
     // user's notification preferences from the user-detail screen.
     PushModule,
+    // admin-email test-send reuses EmailService; the resend enqueues via
+    // JobsProducer (exported by JobsModule).
+    EmailModule,
+    JobsModule,
   ],
   controllers: [
     AdminMetricsController,

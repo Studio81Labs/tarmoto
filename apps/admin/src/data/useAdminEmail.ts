@@ -11,3 +11,11 @@ export function useAdminEmailLog(params: {
     params: { query: params },
   });
 }
+
+export function useSendTestDigest() {
+  return $api.useMutation("post", "/admin/email/digest-test");
+}
+
+export function useResendDigest() {
+  return $api.useMutation("post", "/admin/email/digest-resend");
+}

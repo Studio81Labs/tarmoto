@@ -227,4 +227,22 @@ export class JobsProducer {
       priority: DIGEST_COMPOSE_PRIORITY,
     });
   }
+
+  /**
+   * Enqueue an ADMIN-TRIGGERED digest resend for one user (support re-sending a
+   * failed digest). Runs the same compose processor — recomputing fresh ride /
+   * exploration data for the carried window, NOT replaying stored bytes — but
+   * under a distinct `digest-resend:` jobId so it never deduplicates against the
+   * failed weekly job (whose `digest-weekly:<user>:<week>` id may still sit in
+   * the failed set) and always re-runs. The caller passes a unique
+   * `for_local_window` token per click.
+   */
+  async enqueueDigestResend(data: DigestWeeklyComposeJobData): Promise<void> {
+    await this.digestWeekly.add(JOB_NAMES.DIGEST_WEEKLY_COMPOSE, data, {
+      ...DEFAULT_JOB_OPTIONS,
+      jobId: `digest-resend:${data.user_id}:${data.for_local_window}`,
+      removeOnComplete: { age: 8 * 24 * 60 * 60 },
+      priority: DIGEST_COMPOSE_PRIORITY,
+    });
+  }
 }

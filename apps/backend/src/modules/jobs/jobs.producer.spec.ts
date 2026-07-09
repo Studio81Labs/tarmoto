@@ -87,6 +87,23 @@ describe('JobsProducer', () => {
     );
   });
 
+  it('uses a distinct digest-resend jobId so a resend never dedups against the failed weekly job', async () => {
+    await producer.enqueueDigestResend({
+      user_id: 'u1',
+      for_local_window: 'resend-1751702400000',
+      window_start: '2026-06-28T08:00:00.000Z',
+      window_end: '2026-07-05T08:00:00.000Z',
+    });
+    expect(digestWeekly.add).toHaveBeenCalledWith(
+      JOB_NAMES.DIGEST_WEEKLY_COMPOSE,
+      expect.objectContaining({ user_id: 'u1' }),
+      expect.objectContaining({
+        jobId: 'digest-resend:u1:resend-1751702400000',
+        priority: DIGEST_COMPOSE_PRIORITY,
+      }),
+    );
+  });
+
   it('uses jobId user_id for badge recheck so duplicate dispatches collapse', async () => {
     await producer.enqueueBadgesRecheckUser({ user_id: 'u1' });
     expect(badgesRecheck.add).toHaveBeenCalledWith(
