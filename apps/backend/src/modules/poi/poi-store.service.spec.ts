@@ -231,6 +231,27 @@ describe('PoiStoreService', () => {
     expect(res[0]?.kind).toBe('viewpoint');
   });
 
+  it('orders exact stored-kind matches ahead of tag-only matches so the DB cap cannot starve them (#926)', async () => {
+    // The DB LIMIT runs before reclassification, so dual-tagged rows (which
+    // sort by their OWN stored kind, e.g. `restaurant` < `viewpoint`) must not
+    // fill the cap ahead of real `kind = viewpoint` rows. Exact stored-kind
+    // matches sort first (CASE → 0), tag-only matches after (CASE → 1).
+    await service.findInBbox(bbox, ['viewpoint'], 100);
+    expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toBe(
+      'CASE WHEN poi.kind IN (:...kinds) THEN 0 ELSE 1 END',
+    );
+    const addOrders = qb.addOrderBy.mock.calls.map((c) => (c as [string])[0]);
+    expect(addOrders).toEqual(['poi.kind', 'poi.name']);
+  });
+
+  it('orders an all-kinds bbox read by stored kind directly, without the priority CASE (#926)', async () => {
+    await service.findInBbox(bbox, undefined, 200);
+    expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toBe('poi.kind');
+    expect(qb.addOrderBy.mock.calls.map((c) => (c as [string])[0])).toEqual([
+      'poi.name',
+    ]);
+  });
+
   it('rejects an inverted bbox before touching the database', async () => {
     await expect(
       service.findInBbox(

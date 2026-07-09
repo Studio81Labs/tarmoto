@@ -134,9 +134,20 @@ export class PoiStoreService {
         // surfaces a dual-tagged element under a secondary-kind request too.
         const { sql, params: kindParams } = kindMatchClause(kinds, kinds);
         qb.andWhere(sql, kindParams);
+        // Order EXACT stored-kind matches ahead of tag-only (secondary) matches
+        // (#926 review): the DB `LIMIT` runs before reclassification, so in a
+        // dense bbox the dual-tagged rows (which sort by their own stored kind,
+        // e.g. `restaurant` < `viewpoint`) must not fill the cap and starve real
+        // `kind = viewpoint` rows. `:kinds` is already bound above — TypeORM
+        // substitutes params across the whole query, ORDER BY included.
+        qb.orderBy(
+          'CASE WHEN poi.kind IN (:...kinds) THEN 0 ELSE 1 END',
+          'ASC',
+        ).addOrderBy('poi.kind', 'ASC');
+      } else {
+        qb.orderBy('poi.kind', 'ASC');
       }
       return qb
-        .orderBy('poi.kind', 'ASC')
         .addOrderBy('poi.name', 'ASC')
         .limit(capped * DEDUP_OVERFETCH)
         .getMany();
