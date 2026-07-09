@@ -58,6 +58,24 @@ export const SURFACE_COLORS = {
   unknown: "#64748B",
 } as const;
 
+// Quality line-color: a step over quality_score into the QUALITY_CONFIG
+// palette. Shared by the quality overlay and the selected-segment highlight so
+// the highlight glows in the segment's OWN colour rather than a fixed accent —
+// the wider stroke + halo is what reads as "selected".
+const QUALITY_LINE_COLOR: ExpressionSpecification = [
+  "step",
+  ["coalesce", ["get", "quality_score"], 0],
+  QUALITY_CONFIG["very-poor"].hex,
+  1.5,
+  QUALITY_CONFIG.poor.hex,
+  2.5,
+  QUALITY_CONFIG.fair.hex,
+  3.5,
+  QUALITY_CONFIG.good.hex,
+  4.5,
+  QUALITY_CONFIG.excellent.hex,
+];
+
 export interface MapCanvasHandle {
   readonly map: MapLibreMap | null;
 }
@@ -237,19 +255,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           visibility: showQuality ? "visible" : "none",
         },
         paint: {
-          "line-color": [
-            "step",
-            ["coalesce", ["get", "quality_score"], 0],
-            QUALITY_CONFIG["very-poor"].hex,
-            1.5,
-            QUALITY_CONFIG.poor.hex,
-            2.5,
-            QUALITY_CONFIG.fair.hex,
-            3.5,
-            QUALITY_CONFIG.good.hex,
-            4.5,
-            QUALITY_CONFIG.excellent.hex,
-          ] as ExpressionSpecification,
+          "line-color": QUALITY_LINE_COLOR,
           "line-width": [
             "interpolate",
             ["linear"],
@@ -319,7 +325,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         filter: NO_SEGMENT_FILTER,
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "#FF6A1A",
+          "line-color": QUALITY_LINE_COLOR,
           "line-width": [
             "interpolate",
             ["linear"],
@@ -343,7 +349,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         filter: NO_SEGMENT_FILTER,
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "#FF6A1A",
+          "line-color": QUALITY_LINE_COLOR,
           "line-width": [
             "interpolate",
             ["linear"],
