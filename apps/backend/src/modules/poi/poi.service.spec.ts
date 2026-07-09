@@ -558,6 +558,36 @@ describe('PoiService', () => {
       expect(result[0].name).toBe('Hotel 0'); // closest
     });
 
+    it('cross-source de-dupes and ranks by the closest copy (#869)', () => {
+      // FSQ copy 0.14 km from the anchor, its preferred OSM twin 0.16 km, ~20 m
+      // apart (same kind + name). De-dup keeps the OSM row but must rank it at
+      // the FSQ copy's closer distance, so a farther OSM twin can't fall outside
+      // the display cap. The distances straddle a rounding boundary (0.14 → 0.1,
+      // 0.16 → 0.2), so the carried value is observable.
+      const result = service.rank(
+        [
+          buildPoi({
+            external_id: 'osm:hotel',
+            name: 'Grand',
+            kind: 'hotel',
+            lat: 49.1014389, // 0.16 km from the anchor → rounds to 0.2
+            lng: 16.75,
+          }),
+          buildPoi({
+            external_id: 'fsq:hotel',
+            name: 'Grand',
+            kind: 'hotel',
+            lat: 49.101259, // 0.14 km → rounds to 0.1, ~20 m from OSM
+            lng: 16.75,
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+      );
+      expect(result.map((r) => r.external_id)).toEqual(['osm:hotel']);
+      expect(result[0].distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
+    });
+
     it('rounds distance_km to one decimal place', () => {
       const result = service.rank(
         [
@@ -719,6 +749,37 @@ describe('PoiService', () => {
       );
 
       expect(result.map((r) => r.external_id)).toEqual(['osm:node:nameless']);
+    });
+
+    it('cross-source de-dupes and ranks by the closest copy (#869)', () => {
+      // FSQ copy 0.14 km from the anchor, its preferred OSM twin 0.16 km, ~20 m
+      // apart (same kind + name). De-dup keeps the OSM row but must rank it at
+      // the FSQ copy's closer distance, so a farther OSM twin can't sort past the
+      // per-kind cap and drop the venue. The distances straddle a rounding
+      // boundary (0.14 → 0.1, 0.16 → 0.2), so the carried value is observable.
+      const result = service.rankPois(
+        [
+          buildNearbyPoi({
+            external_id: 'osm:koliba',
+            name: 'Koliba',
+            kind: 'restaurant',
+            lat: 49.1014389, // 0.16 km from the anchor → rounds to 0.2
+            lng: 16.75,
+          }),
+          buildNearbyPoi({
+            external_id: 'fsq:koliba',
+            name: 'Koliba',
+            kind: 'restaurant',
+            lat: 49.101259, // 0.14 km → rounds to 0.1, ~20 m from OSM
+            lng: 16.75,
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+        allKinds,
+      );
+      expect(result.map((r) => r.external_id)).toEqual(['osm:koliba']);
+      expect(result[0].distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
     });
 
     it('caps results per-kind so one kind cannot squeeze out others', () => {
@@ -939,6 +1000,103 @@ describe('PoiService', () => {
 
       expect(result.pois).toHaveLength(1);
       expect(result.pois[0].distance_from_route_km).toBeLessThan(0.1);
+    });
+
+    it('keeps an FSQ stop straddling the buffer when its OSM twin projects just outside (#869)', async () => {
+      // The cross-source de-dupe must run AFTER the precise buffer filter, not
+      // before it. Two copies of one venue 48 m apart (well inside the ~50 m
+      // de-dupe radius) straddle a 2 km buffer on a horizontal route: the OSM
+      // copy projects 2.024 km off-route (OUTSIDE), the FSQ copy 1.976 km
+      // (INSIDE). De-duping first would keep OSM (preferred) and drop FSQ, then
+      // the buffer filter would drop the OSM row too — the stop vanishes. With
+      // de-dupe after projection, OSM is filtered out before it can suppress
+      // anything, so the FSQ copy survives. lat-only offsets keep the off-route
+      // distance a clean ~111.195 km/°, and both the projection and the de-dupe
+      // radius use the same haversine, so the two sides agree exactly.
+      const horizontalRoute = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 49.0, lng: 17.0 },
+      ];
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:diner',
+          name: 'Roadside Diner',
+          kind: 'restaurant',
+          lat: 49.0182022, // 2.024 km north of the route — just OUTSIDE 2 km
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'fsq:diner',
+          name: 'Roadside Diner',
+          kind: 'restaurant',
+          lat: 49.0177707, // 1.976 km north — just INSIDE 2 km, 48 m from OSM
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route: horizontalRoute,
+        buffer_km: 2,
+      });
+
+      // The FSQ copy survives; the OSM twin was outside the buffer. (The
+      // reported distance rounds to the tenth — 100 m — so it can't resolve the
+      // 48 m straddle; the surviving external_id is what proves de-dupe ran
+      // after the buffer filter.)
+      expect(result.pois.map((p) => p.external_id)).toEqual(['fsq:diner']);
+      expect(result.pois[0].distance_from_route_km).toBeLessThanOrEqual(2);
+    });
+
+    it('ranks a de-duped venue by its closest copy so the cap keeps it (#869)', async () => {
+      // Both copies are inside the buffer, but the FSQ copy projects CLOSER to
+      // the route than its preferred OSM twin (0.14 vs 0.16 km, ~20 m apart). The
+      // de-dupe keeps the OSM row (richer data); it must inherit the FSQ copy's
+      // closer route distance so the per-kind distance sort + cap rank the venue
+      // by its nearest member — otherwise the farther OSM distance could push it
+      // past the cap and the venue would vanish. The two distances straddle a
+      // rounding boundary (0.14 → 0.1, 0.16 → 0.2), so the carried distance is
+      // observable despite the tenth-km rounding.
+      const flatRoute = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 49.0, lng: 17.0 },
+      ];
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:koliba',
+          name: 'Koliba',
+          kind: 'restaurant',
+          lat: 49.0014389, // 0.16 km off-route → rounds to 0.2
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'fsq:koliba',
+          name: 'Koliba',
+          kind: 'restaurant',
+          lat: 49.0012591, // 0.14 km off-route → rounds to 0.1, ~20 m from OSM
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route: flatRoute,
+        buffer_km: 1,
+      });
+
+      // OSM row kept, but ranked/reported at the group's closest distance.
+      expect(result.pois.map((p) => p.external_id)).toEqual(['osm:koliba']);
+      expect(result.pois[0].distance_from_route_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
     });
 
     it('keeps a nameless on-route fuel stop so the fuel-range warning can see it', async () => {

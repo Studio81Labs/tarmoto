@@ -165,8 +165,35 @@ describe('PoiStoreService', () => {
     // No kinds → only the always-on tombstone filter (#850).
     expect(qb.andWhere).toHaveBeenCalledWith('poi.deactivated_at IS NULL');
     expect(qb.andWhere).toHaveBeenCalledTimes(1);
-    expect(qb.limit).toHaveBeenCalledWith(200);
+    expect(qb.limit).toHaveBeenCalledWith(400); // 200 default × DEDUP_OVERFETCH
     expect(res[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
+  });
+
+  it('de-dupes a cross-source pair (OSM wins) but keeps FSQ-only rows (#869)', async () => {
+    qb.getMany.mockResolvedValueOnce([
+      makePoi(), // OSM restaurant "Koliba" @ [18.4, 49.5]
+      makePoi({
+        id: 'fsq-dup',
+        source: 'fsq',
+        external_id: 'fsq:1',
+        // ~7 m away, same kind + name → duplicate of the OSM row.
+        geom: { type: 'Point', coordinates: [18.4001, 49.5] },
+      }),
+      makePoi({
+        id: 'fsq-only',
+        source: 'fsq',
+        external_id: 'fsq:2',
+        kind: 'cafe',
+        name: 'Costa',
+        geom: { type: 'Point', coordinates: [18.6, 49.6] },
+      }),
+    ]);
+    const ids = (await service.findInBbox(bbox, undefined, 200)).map(
+      (r) => r.external_id,
+    );
+    expect(ids).toContain('osm:node:42'); // OSM kept
+    expect(ids).not.toContain('fsq:1'); // FSQ duplicate dropped
+    expect(ids).toContain('fsq:2'); // FSQ-only kept (fills coverage)
   });
 
   it('adds a kind IN filter when kinds are supplied', async () => {
@@ -254,7 +281,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(200); // STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH
     });
 
     it('falls back to a single global cap for an all-kinds read (#919)', async () => {
@@ -262,7 +289,54 @@ describe('PoiStoreService', () => {
       // MAX_LIMIT, still bounded rather than an unbounded getMany().
       await service.findAlongRoute(route, undefined, 20);
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(1000); // MAX_LIMIT × DEDUP_OVERFETCH
+    });
+
+    it('trims the per-kind de-dup overfetch back to the cap on an OSM-only read (#869)', async () => {
+      // The DB overfetches STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH for de-dup
+      // headroom; with an OSM-only store (de-dup no-op) a single dense kind must
+      // still be capped at STORE_PER_KIND_LIMIT, not the doubled fetch. Every
+      // row sits on the first route vertex, so all are inside the buffer.
+      const dense = Array.from({ length: 150 }, (_, i) =>
+        makePoi({
+          external_id: `osm:node:${i}`,
+          geom: { type: 'Point', coordinates: [18.4 + i * 1e-5, 49.5] },
+        }),
+      );
+      qb.getMany.mockResolvedValueOnce(dense);
+      const { pois } = await service.findAlongRoute(route, ['restaurant'], 2);
+      expect(pois).toHaveLength(100); // STORE_PER_KIND_LIMIT, not 200
+    });
+
+    it('trims the all-kinds overfetch to the nearest-to-route MAX_LIMIT before the route sort (#869)', async () => {
+      // All-kinds → one global query fetching MAX_LIMIT × DEDUP_OVERFETCH rows,
+      // nearest-to-route first. The overfetch must be trimmed to the MAX_LIMIT
+      // NEAREST-to-route rows before the along-route sort — otherwise sorting all
+      // 1000 by route position and slicing 500 keeps the earliest-along-route,
+      // letting a far-off-route row displace a closer one. Flat route at lat 49.5
+      // so along-route ∝ lng and off-route ∝ |lat − 49.5|. Rows are supplied
+      // nearest-off-route first (the DB order); the nearest (i=0) is LATEST along
+      // the route and the farthest (i=500) is EARLIEST — so the two orderings
+      // disagree and the trim's effect is observable.
+      const flatRoute = [
+        { lat: 49.5, lng: 18.0 },
+        { lat: 49.5, lng: 19.0 },
+      ];
+      const byDistance = Array.from({ length: 501 }, (_, i) =>
+        makePoi({
+          external_id: `osm:node:${i}`,
+          geom: {
+            type: 'Point',
+            coordinates: [18.9 - i * 0.001, 49.5 + i * 1e-4],
+          },
+        }),
+      );
+      qb.getMany.mockResolvedValueOnce(byDistance);
+      const { pois } = await service.findAlongRoute(flatRoute, undefined, 20);
+      const ids = pois.map((p) => p.external_id);
+      expect(pois).toHaveLength(500); // MAX_LIMIT, not 1000
+      expect(ids).toContain('osm:node:0'); // nearest-to-route → kept
+      expect(ids).not.toContain('osm:node:500'); // farthest-to-route → trimmed
     });
 
     it('clamps the buffer to the max and adds a kind filter', async () => {
@@ -318,7 +392,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT (no overfetch — ranker de-dups)
       expect(pois[0]).toMatchObject({
         external_id: 'osm:node:42',
         kind: 'restaurant',
@@ -341,6 +415,25 @@ describe('PoiStoreService', () => {
       expect(kindFilters).toContainEqual(['restaurant']);
       expect(kindFilters).toContainEqual(['fuel_station']);
     });
+
+    it('does not cross-source de-dup here — that is deferred to rankPois (#869)', async () => {
+      // The ranker recomputes distance and caps, so de-duping by coordinate here
+      // could drop a closer FSQ copy for a farther OSM twin. The store returns
+      // both copies raw; PoiService.rankPois de-dups with the closest distance.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi(), // OSM "Koliba" @ [18.4, 49.5]
+        makePoi({
+          id: 'fsq-dup',
+          source: 'fsq',
+          external_id: 'fsq:1',
+          geom: { type: 'Point', coordinates: [18.4001, 49.5] }, // ~7 m, dup
+        }),
+      ]);
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+      ]);
+      expect(pois.map((p) => p.external_id)).toEqual(['osm:node:42', 'fsq:1']);
+    });
   });
 
   describe('findAccommodationsNear (store-first source)', () => {
@@ -354,7 +447,7 @@ describe('PoiStoreService', () => {
       // Accommodations rank globally (closest-N), so one query with the global
       // cap — no per-kind fan-out.
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT (no overfetch — ranker de-dups)
       const params = (
         qb.where.mock.calls[0] as [string, Record<string, number>]
       )[1];
@@ -373,6 +466,28 @@ describe('PoiStoreService', () => {
       ).find(([sql]) => sql.includes('poi.stars >='));
       expect(starFilter).toBeDefined();
       expect(starFilter?.[1]).toEqual({ minStars: 3 });
+    });
+
+    it('does not cross-source de-dup here — that is deferred to rank (#869)', async () => {
+      // The ranker recomputes distance and slices, so de-duping by coordinate
+      // here could drop a closer FSQ copy for a farther OSM twin. The store
+      // returns both copies raw; PoiService.rank de-dups with the closest one.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({ kind: 'hotel', stars: 4, cuisine: null }),
+        makePoi({
+          id: 'fsq-dup',
+          source: 'fsq',
+          external_id: 'fsq:1',
+          kind: 'hotel',
+          stars: 4,
+          cuisine: null,
+          geom: { type: 'Point', coordinates: [18.4001, 49.5] }, // ~7 m, dup
+        }),
+      ]);
+      const acc = await service.findAccommodationsNear(49.5, 18.4, 10, [
+        'hotel',
+      ]);
+      expect(acc.map((a) => a.external_id)).toEqual(['osm:node:42', 'fsq:1']);
     });
   });
 
@@ -407,7 +522,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(100); // CORRIDOR_STORE_PER_KIND_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(200); // CORRIDOR_STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH
       // Raw shape — the service's rankAlongRoute does the projection, so no
       // along/off-route distances are computed here.
       expect(pois[0]).toMatchObject({
@@ -424,7 +539,7 @@ describe('PoiStoreService', () => {
       ]);
       // One bounded, closest-to-route query per kind — not one global cap.
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
-      expect(qb.limit).toHaveBeenCalledWith(100);
+      expect(qb.limit).toHaveBeenCalledWith(200);
       const kindFilters = qb.andWhere.mock.calls
         .filter(([sql]) => String(sql).includes('poi.kind IN'))
         .map(([, params]) => (params as { kinds: string[] }).kinds);
