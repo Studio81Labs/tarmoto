@@ -130,7 +130,11 @@ describe('PoiStoreService', () => {
     limit: jest.Mock;
     getMany: jest.Mock;
   };
-  let repo: { createQueryBuilder: jest.Mock; findOne: jest.Mock };
+  let repo: {
+    createQueryBuilder: jest.Mock;
+    findOne: jest.Mock;
+    query: jest.Mock;
+  };
   let service: PoiStoreService;
 
   beforeEach(() => {
@@ -145,6 +149,7 @@ describe('PoiStoreService', () => {
     repo = {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
       findOne: jest.fn(),
+      query: jest.fn().mockResolvedValue([{ covered: null }]),
     };
     service = new PoiStoreService({
       isInitialized: true,
@@ -710,6 +715,119 @@ describe('PoiStoreService', () => {
         .map(([, params]) => (params as { kinds: string[] }).kinds);
       expect(kindFilters).toContainEqual(['restaurant']);
       expect(kindFilters).toContainEqual(['fuel_station']);
+    });
+  });
+
+  describe('hasImportedCoverage (#925)', () => {
+    const samples = [
+      { lat: 49.5, lng: 18.4 },
+      { lat: 49.6, lng: 18.5 },
+      { lat: 49.7, lng: 18.6 },
+    ];
+
+    it('runs ONE query that requires every sample to hold an imported OSM point within the TRUE distance', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      expect(await service.hasImportedCoverage(samples)).toBe(true);
+      // A single round-trip regardless of sample count (#925 P1 review) — no
+      // per-sample fan-out on the hot read path.
+      expect(repo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = repo.query.mock.calls[0] as [string, number[]];
+      // `bool_and(EXISTS(...))` → true only when EVERY sample is covered.
+      expect(sql).toContain('bool_and');
+      // Envelope is the GiST-index prefilter; ST_DWithin refines to the true
+      // circular buffer so an envelope-corner hit (~1.4× the buffer) can't count
+      // (#925 review).
+      expect(sql).toContain('ST_Intersects');
+      expect(sql).toContain('ST_MakeEnvelope');
+      expect(sql).toContain('ST_DWithin');
+      expect(sql).toContain('::geography');
+      // Scoped to active, region-imported OSM (the Overpass fallback is OSM).
+      expect(sql).toContain("p.source = 'osm'");
+      expect(sql).toContain('p.deactivated_at IS NULL');
+      expect(sql).toContain('p.import_region IS NOT NULL');
+      // 6 params per sample (centre lng/lat + envelope min/min/max/max) plus one
+      // trailing buffer-in-metres param.
+      expect(params).toHaveLength(samples.length * 6 + 1);
+      expect(params[params.length - 1]).toBe(20 * 1000); // COVERAGE_BUFFER_KM in m
+      // First sample (49.5, 18.4): centre, then envelope padded outward.
+      const [ctrLng, ctrLat, minLng, minLat, maxLng, maxLat] = params;
+      expect(ctrLng).toBe(18.4);
+      expect(ctrLat).toBe(49.5);
+      expect(minLng).toBeLessThan(18.4);
+      expect(maxLng).toBeGreaterThan(18.4);
+      expect(minLat).toBeLessThan(49.5);
+      expect(maxLat).toBeGreaterThan(49.5);
+    });
+
+    it('reports NOT covered when bool_and is false (a sample ran past the frontier)', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: false }]);
+      expect(await service.hasImportedCoverage(samples)).toBe(false);
+    });
+
+    it('treats a null aggregate (defensive) as not covered', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: null }]);
+      expect(await service.hasImportedCoverage(samples)).toBe(false);
+    });
+
+    it('reports NOT covered for no samples without touching the DB', async () => {
+      expect(await service.hasImportedCoverage([])).toBe(false);
+      expect(repo.query).not.toHaveBeenCalled();
+    });
+
+    it('chunks a large sample list into multiple statements — every sample probed, none thinned (#925 review)', async () => {
+      repo.query.mockResolvedValue([{ covered: true }]); // every chunk covered
+      const many = Array.from({ length: 5000 }, (_, i) => ({
+        lat: 49 + i * 1e-4,
+        lng: 18,
+      }));
+      expect(await service.hasImportedCoverage(many)).toBe(true);
+      // 5000 / 512 → 10 statements; all samples checked, not downsampled away.
+      expect(repo.query).toHaveBeenCalledTimes(Math.ceil(5000 / 512));
+      for (const call of repo.query.mock.calls) {
+        const [, params] = call as [string, number[]];
+        // Each statement stays under PG's 65535 bind-param ceiling.
+        expect(params.length).toBeLessThanOrEqual(512 * 6 + 1);
+      }
+    });
+
+    it('clamps an out-of-range (poleward/antimeridian) sample centre so the geography cast cannot 500 (#925 review)', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      // A near-pole request's north rim lands past 90°N; ST_MakePoint::geography
+      // would reject it and 500 the read.
+      await service.hasImportedCoverage([{ lat: 90.2, lng: 200 }]);
+      const [, params] = repo.query.mock.calls[0] as [string, number[]];
+      const [ctrLng, ctrLat] = params; // centre is cast to geography
+      expect(ctrLat).toBeLessThanOrEqual(90);
+      expect(ctrLat).toBeGreaterThanOrEqual(-90);
+      expect(ctrLng).toBeLessThanOrEqual(180);
+      expect(ctrLng).toBeGreaterThanOrEqual(-180);
+    });
+
+    it('short-circuits on the first uncovered chunk without running the rest', async () => {
+      repo.query
+        .mockResolvedValueOnce([{ covered: true }])
+        .mockResolvedValueOnce([{ covered: false }]);
+      const many = Array.from({ length: 5000 }, (_, i) => ({
+        lat: 49 + i * 1e-4,
+        lng: 18,
+      }));
+      expect(await service.hasImportedCoverage(many)).toBe(false);
+      // Stops at the 2nd chunk (uncovered) rather than running all 10.
+      expect(repo.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('pads longitude at the poleward edge so a high-latitude sample is not under-probed', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      await service.hasImportedCoverage([{ lat: 69, lng: 10 }]);
+      const [, params] = repo.query.mock.calls[0] as [string, number[]];
+      // [ctrLng, ctrLat, minLng, minLat, maxLng, maxLat, bufferMeters]
+      const [, , minLng, minLat, maxLng, maxLat] = params;
+      const dLat = maxLat - 69;
+      const dLng = maxLng - 10;
+      expect(minLng < 10 && minLat < 69).toBe(true);
+      // Longitude km/° shrinks toward the poles, so the degree pad on lng must be
+      // wider than the lat pad at 69°N.
+      expect(dLng).toBeGreaterThan(dLat);
     });
   });
 });
