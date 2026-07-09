@@ -11,6 +11,7 @@ import RootNavigator from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
+import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 
 // Suppress specific warnings in dev
@@ -39,6 +40,24 @@ export default function App() {
       startPrivacyRefreshMonitor({
         isAuthenticated: () => api.isAuthenticated(),
         refresh: () => api.refreshPrivacyPreferences(),
+      }),
+    [],
+  );
+
+  // #866 — persist the rider's device timezone so the weekly digest sends at
+  // their local Sunday 08:00 instead of the server UTC default. Mirrors the
+  // privacy monitor: cold start + foreground, auth-gated, best-effort. Without
+  // this a mobile-only rider stays at UTC until they open the companion.
+  useEffect(
+    () =>
+      startTimezoneSyncMonitor({
+        isAuthenticated: () => api.isAuthenticated(),
+        currentTimezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+        sync: async (timezone) => {
+          await api.updateNotificationPreferences({
+            quiet_hours_timezone: timezone,
+          });
+        },
       }),
     [],
   );
