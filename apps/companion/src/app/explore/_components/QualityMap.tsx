@@ -494,11 +494,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       const controller = new AbortController();
       const timer = window.setTimeout(() => {
         const b = map.getBounds();
+        // Clamp to the ranges `/poi/in-bbox` accepts — zoomed far out,
+        // getBounds() can exceed [-180,180]/[-90,90] and the request would 400.
+        const west = Math.max(-180, Math.min(180, b.getWest()));
+        const east = Math.max(-180, Math.min(180, b.getEast()));
+        const south = Math.max(-90, Math.min(90, b.getSouth()));
+        const north = Math.max(-90, Math.min(90, b.getNorth()));
+        // Degenerate/antimeridian-crossing viewport (west ≥ east): skip rather
+        // than send an inverted bbox.
+        if (west >= east || south >= north) return;
         const bbox: [number, number, number, number] = [
-          b.getWest(),
-          b.getSouth(),
-          b.getEast(),
-          b.getNorth(),
+          west,
+          south,
+          east,
+          north,
         ];
         plannerApi
           .getPoisByCategories(bbox, categories, poiMonth, {
@@ -508,6 +517,14 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             if (cancelled) return;
             poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
             setPoiSourceData(map, pois);
+            // Reconcile any open popover with the fresh list: refresh its POI
+            // object (e.g. new seasonal status), or close it if that POI is no
+            // longer in the active/visible set.
+            setPoiMenu((menu) => {
+              if (!menu) return menu;
+              const fresh = poisByIdRef.current.get(menu.poi.id);
+              return fresh ? { ...menu, poi: fresh } : null;
+            });
             // ODbL/attribution: the source declares OSM, but FSQ rows need the
             // Foursquare map credit too. Latch it on once seen (#869).
             if (
