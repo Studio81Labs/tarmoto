@@ -19,10 +19,8 @@ import type {
 import {
   Ban,
   Construction,
-  ExternalLink,
   Layers3,
   MountainSnow,
-  Plus,
   TriangleAlert,
 } from "lucide-react";
 import {
@@ -42,8 +40,11 @@ import {
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
-import { MapToolbar, poiCategoryMeta } from "@/components/planner/MapToolbar";
-import { PoiDetails } from "@/components/planner/PoiDetails";
+import { MapToolbar } from "@/components/planner/MapToolbar";
+import {
+  PoiPopover,
+  type PoiPopoverActions,
+} from "@/components/map/PoiPopover";
 import { FSQ_ATTRIBUTION, OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
@@ -2770,130 +2771,45 @@ const TripPlannerMapContent = forwardRef<
         : null}
       {poiMenu
         ? (() => {
-            const meta = poiCategoryMeta(poiMenu.poi.category);
-            const MetaIcon = meta.icon;
             const stopType = STOP_TYPE_BY_CATEGORY[poiMenu.poi.category];
             const showAddAsStop =
               stopType !== undefined && planningMode === "multiday";
+            const placedId = poiMenu.placedWaypointId;
+            // Placed POI → Remove; editable map → add/set actions; otherwise
+            // info-only (read-only preview). The shared popover renders the
+            // matching buttons, or none.
+            const actions: PoiPopoverActions | undefined = placedId
+              ? onRemoveWaypoint
+                ? {
+                    onRemove: () => {
+                      onRemoveWaypoint(placedId);
+                      closePoiMenu();
+                    },
+                  }
+                : undefined
+              : editable
+                ? {
+                    onAddVia: () => handleAddPoiWaypoint(poiMenu.poi, "via"),
+                    onSetStart: () =>
+                      handlePlacePoiEndpoint(poiMenu.poi, "start"),
+                    onSetFinish: () =>
+                      handlePlacePoiEndpoint(poiMenu.poi, "end"),
+                    ...(showAddAsStop && stopType
+                      ? {
+                          onAddStop: () =>
+                            handleAddPoiWaypoint(poiMenu.poi, stopType),
+                        }
+                      : {}),
+                  }
+                : undefined;
             return (
-              <div
-                role="dialog"
-                aria-label={t("POI details")}
-                className="fixed z-30 w-64 overflow-hidden rounded-xl border border-line bg-cream p-2 shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
-                style={{ left: poiMenu.x, top: poiMenu.y }}
-              >
-                <div className="flex items-center gap-2.5 px-1.5 pb-2 pt-1">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
-                    <MetaIcon size={16} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-bold text-ink">
-                      {poiMenu.poi.name}
-                    </p>
-                    <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-                      {`${meta.label} · ${poiMenu.poi.source}`}
-                    </p>
-                    {poiMenu.poi.source === "osm" ? (
-                      <a
-                        href="https://www.openstreetmap.org/copyright"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
-                      >
-                        © OpenStreetMap contributors
-                      </a>
-                    ) : poiMenu.poi.source === "fsq" ? (
-                      <a
-                        href="https://foursquare.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
-                      >
-                        © Foursquare
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-                <PoiDetails poi={poiMenu.poi} />
-                {poiMenu.placedWaypointId ? (
-                  onRemoveWaypoint ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onRemoveWaypoint(poiMenu.placedWaypointId!);
-                        closePoiMenu();
-                      }}
-                      className="w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
-                    >
-                      {t("Remove from route")}
-                    </button>
-                  ) : null
-                ) : !editable ? null : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleAddPoiWaypoint(poiMenu.poi, "via")}
-                      className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
-                    >
-                      <Plus size={14} strokeWidth={3} />
-                      {t("Add as via")}
-                    </button>
-                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handlePlacePoiEndpoint(poiMenu.poi, "start")
-                        }
-                        className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
-                      >
-                        {t("Set as start")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handlePlacePoiEndpoint(poiMenu.poi, "end")
-                        }
-                        className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
-                      >
-                        {t("Set as finish")}
-                      </button>
-                    </div>
-                    {showAddAsStop ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAddPoiWaypoint(poiMenu.poi, stopType)
-                        }
-                        className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
-                      >
-                        {t("Add as stop")}
-                      </button>
-                    ) : null}
-                  </>
-                )}
-                {(() => {
-                  // `maps_url` is a non-null Google Maps deep link on every
-                  // store-backed POI (mock passes / twisties don't set it).
-                  // Surfacing it here is the only way web riders can open the
-                  // Google photos / reviews page for contactless rows the
-                  // backend now keeps because maps_url makes them actionable.
-                  const mapsUrl =
-                    typeof poiMenu.poi.meta?.mapsUrl === "string"
-                      ? poiMenu.poi.meta.mapsUrl
-                      : null;
-                  return mapsUrl ? (
-                    <a
-                      href={mapsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
-                    >
-                      <ExternalLink size={13} strokeWidth={2.5} />
-                      {t("View on Google Maps")}
-                    </a>
-                  ) : null;
-                })()}
-              </div>
+              <PoiPopover
+                poi={poiMenu.poi}
+                x={poiMenu.x}
+                y={poiMenu.y}
+                onClose={closePoiMenu}
+                {...(actions ? { actions } : {})}
+              />
             );
           })()
         : null}
