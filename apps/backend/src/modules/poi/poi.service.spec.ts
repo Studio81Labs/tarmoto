@@ -558,6 +558,36 @@ describe('PoiService', () => {
       expect(result[0].name).toBe('Hotel 0'); // closest
     });
 
+    it('cross-source de-dupes and ranks by the closest copy (#869)', () => {
+      // FSQ copy 0.14 km from the anchor, its preferred OSM twin 0.16 km, ~20 m
+      // apart (same kind + name). De-dup keeps the OSM row but must rank it at
+      // the FSQ copy's closer distance, so a farther OSM twin can't fall outside
+      // the display cap. The distances straddle a rounding boundary (0.14 → 0.1,
+      // 0.16 → 0.2), so the carried value is observable.
+      const result = service.rank(
+        [
+          buildPoi({
+            external_id: 'osm:hotel',
+            name: 'Grand',
+            kind: 'hotel',
+            lat: 49.1014389, // 0.16 km from the anchor → rounds to 0.2
+            lng: 16.75,
+          }),
+          buildPoi({
+            external_id: 'fsq:hotel',
+            name: 'Grand',
+            kind: 'hotel',
+            lat: 49.101259, // 0.14 km → rounds to 0.1, ~20 m from OSM
+            lng: 16.75,
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+      );
+      expect(result.map((r) => r.external_id)).toEqual(['osm:hotel']);
+      expect(result[0].distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
+    });
+
     it('rounds distance_km to one decimal place', () => {
       const result = service.rank(
         [
@@ -719,6 +749,37 @@ describe('PoiService', () => {
       );
 
       expect(result.map((r) => r.external_id)).toEqual(['osm:node:nameless']);
+    });
+
+    it('cross-source de-dupes and ranks by the closest copy (#869)', () => {
+      // FSQ copy 0.14 km from the anchor, its preferred OSM twin 0.16 km, ~20 m
+      // apart (same kind + name). De-dup keeps the OSM row but must rank it at
+      // the FSQ copy's closer distance, so a farther OSM twin can't sort past the
+      // per-kind cap and drop the venue. The distances straddle a rounding
+      // boundary (0.14 → 0.1, 0.16 → 0.2), so the carried value is observable.
+      const result = service.rankPois(
+        [
+          buildNearbyPoi({
+            external_id: 'osm:koliba',
+            name: 'Koliba',
+            kind: 'restaurant',
+            lat: 49.1014389, // 0.16 km from the anchor → rounds to 0.2
+            lng: 16.75,
+          }),
+          buildNearbyPoi({
+            external_id: 'fsq:koliba',
+            name: 'Koliba',
+            kind: 'restaurant',
+            lat: 49.101259, // 0.14 km → rounds to 0.1, ~20 m from OSM
+            lng: 16.75,
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+        allKinds,
+      );
+      expect(result.map((r) => r.external_id)).toEqual(['osm:koliba']);
+      expect(result[0].distance_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
     });
 
     it('caps results per-kind so one kind cannot squeeze out others', () => {

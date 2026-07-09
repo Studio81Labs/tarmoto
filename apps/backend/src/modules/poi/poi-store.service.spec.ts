@@ -392,7 +392,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(200); // STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH
+      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT (no overfetch — ranker de-dups)
       expect(pois[0]).toMatchObject({
         external_id: 'osm:node:42',
         kind: 'restaurant',
@@ -408,7 +408,7 @@ describe('PoiStoreService', () => {
         'fuel_station',
       ]);
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
-      expect(qb.limit).toHaveBeenCalledWith(200);
+      expect(qb.limit).toHaveBeenCalledWith(100);
       const kindFilters = qb.andWhere.mock.calls
         .filter(([sql]) => String(sql).includes('poi.kind IN'))
         .map(([, params]) => (params as { kinds: string[] }).kinds);
@@ -416,22 +416,23 @@ describe('PoiStoreService', () => {
       expect(kindFilters).toContainEqual(['fuel_station']);
     });
 
-    it('trims the de-dup overfetch back to the per-kind cap on an OSM-only read (#869)', async () => {
-      // The DB overfetches STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH for de-dup
-      // headroom. With an OSM-only store (de-dup is a no-op) the result must
-      // still be capped at STORE_PER_KIND_LIMIT, not the doubled fetch — else
-      // rankPois would rank twice the intended candidates.
-      const dense = Array.from({ length: 150 }, (_, i) =>
+    it('does not cross-source de-dup here — that is deferred to rankPois (#869)', async () => {
+      // The ranker recomputes distance and caps, so de-duping by coordinate here
+      // could drop a closer FSQ copy for a farther OSM twin. The store returns
+      // both copies raw; PoiService.rankPois de-dups with the closest distance.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi(), // OSM "Koliba" @ [18.4, 49.5]
         makePoi({
-          external_id: `osm:node:${i}`,
-          geom: { type: 'Point', coordinates: [18.4 + i * 1e-5, 49.5] },
+          id: 'fsq-dup',
+          source: 'fsq',
+          external_id: 'fsq:1',
+          geom: { type: 'Point', coordinates: [18.4001, 49.5] }, // ~7 m, dup
         }),
-      );
-      qb.getMany.mockResolvedValueOnce(dense);
+      ]);
       const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
         'restaurant',
       ]);
-      expect(pois).toHaveLength(100); // STORE_PER_KIND_LIMIT, not 200
+      expect(pois.map((p) => p.external_id)).toEqual(['osm:node:42', 'fsq:1']);
     });
   });
 
@@ -446,7 +447,7 @@ describe('PoiStoreService', () => {
       // Accommodations rank globally (closest-N), so one query with the global
       // cap — no per-kind fan-out.
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(qb.limit).toHaveBeenCalledWith(1000); // MAX_LIMIT × DEDUP_OVERFETCH
+      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT (no overfetch — ranker de-dups)
       const params = (
         qb.where.mock.calls[0] as [string, Record<string, number>]
       )[1];
@@ -467,23 +468,26 @@ describe('PoiStoreService', () => {
       expect(starFilter?.[1]).toEqual({ minStars: 3 });
     });
 
-    it('trims the de-dup overfetch back to the global cap on an OSM-only read (#869)', async () => {
-      // Accommodations rank globally, so the OSM-only result (de-dup no-op) is
-      // capped at MAX_LIMIT — not the MAX_LIMIT × DEDUP_OVERFETCH fetch.
-      const dense = Array.from({ length: 600 }, (_, i) =>
+    it('does not cross-source de-dup here — that is deferred to rank (#869)', async () => {
+      // The ranker recomputes distance and slices, so de-duping by coordinate
+      // here could drop a closer FSQ copy for a farther OSM twin. The store
+      // returns both copies raw; PoiService.rank de-dups with the closest one.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({ kind: 'hotel', stars: 4, cuisine: null }),
         makePoi({
+          id: 'fsq-dup',
+          source: 'fsq',
+          external_id: 'fsq:1',
           kind: 'hotel',
-          stars: 3,
+          stars: 4,
           cuisine: null,
-          external_id: `osm:node:${i}`,
-          geom: { type: 'Point', coordinates: [18.4 + i * 1e-5, 49.5] },
+          geom: { type: 'Point', coordinates: [18.4001, 49.5] }, // ~7 m, dup
         }),
-      );
-      qb.getMany.mockResolvedValueOnce(dense);
+      ]);
       const acc = await service.findAccommodationsNear(49.5, 18.4, 10, [
         'hotel',
       ]);
-      expect(acc).toHaveLength(500); // MAX_LIMIT, not 1000
+      expect(acc.map((a) => a.external_id)).toEqual(['osm:node:42', 'fsq:1']);
     });
   });
 

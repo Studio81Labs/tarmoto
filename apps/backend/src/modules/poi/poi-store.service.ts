@@ -275,14 +275,12 @@ export class PoiStoreService {
         ),
       ),
     );
-    // Trim the DEDUP_OVERFETCH headroom back to the real per-kind cap: an
-    // OSM-only read (de-dup is a no-op) must still yield STORE_PER_KIND_LIMIT per
-    // kind, not the doubled fetch, or `rankPois` would rank twice the intended
-    // candidates and a farther named row could displace a closer nameless one.
-    const deduped = dedupeAcrossSources(perKind.flat(), poiDedupKey);
-    return capPerKind(deduped, STORE_PER_KIND_LIMIT, (poi) => poi.kind).map(
-      storedPoiToPointOfInterest,
-    );
+    // Cross-source de-dup is deferred to `PoiService.rankPois` — it recomputes
+    // distance from each row's coordinates and caps per kind, so de-duping here
+    // (by coordinate, before distances exist) could drop a closer FSQ copy for a
+    // farther OSM twin that then sorts past the cap. The per-kind query already
+    // bounds hydration at STORE_PER_KIND_LIMIT.
+    return perKind.flat().map(storedPoiToPointOfInterest);
   }
 
   /**
@@ -308,13 +306,11 @@ export class PoiStoreService {
       MAX_LIMIT,
       minStars,
     );
-    // Trim the DEDUP_OVERFETCH headroom back to the real cap. Accommodations
-    // rank globally (closest-N, any kind), so slice the nearest-first de-duped
-    // set back to MAX_LIMIT rather than per kind — an OSM-only read must return
-    // MAX_LIMIT, not the doubled fetch.
-    return dedupeAcrossSources(rows, poiDedupKey)
-      .slice(0, MAX_LIMIT)
-      .map(storedPoiToAccommodationPoi);
+    // Cross-source de-dup is deferred to `PoiService.rank` — it recomputes
+    // distance from each row's coordinates and slices globally, so de-duping here
+    // could drop a closer FSQ copy for a farther OSM twin that then falls outside
+    // the display cap. The query already bounds hydration at MAX_LIMIT.
+    return rows.map(storedPoiToAccommodationPoi);
   }
 
   /**
@@ -388,9 +384,12 @@ export class PoiStoreService {
       if (minStars !== undefined) {
         qb.andWhere('poi.stars >= :minStars', { minStars });
       }
+      // No DEDUP_OVERFETCH here: both radius callers now de-dup in the ranker
+      // (which recomputes distance), so the store just bounds hydration at the
+      // real cap — comfortably above the tiny display caps rankPois/rank apply.
       return qb
         .orderBy(`ST_Distance(poi.geom::geography, ${point})`, 'ASC')
-        .limit(limit * DEDUP_OVERFETCH)
+        .limit(limit)
         .getMany();
     });
   }
