@@ -14,7 +14,6 @@ import {
 } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Feature, FeatureCollection, Point } from "geojson";
 import {
   MapCanvas,
   TARMOTO_QUALITY_LAYER,
@@ -27,7 +26,6 @@ import {
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
 import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
-import { HAZARD_CONFIG, HAZARD_TYPES_UI, hazardFadeOpacity } from "@/lib/utils";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
 import { onHazardNew, subscribeHazards } from "@/lib/socket";
 import {
@@ -35,7 +33,7 @@ import {
   mergeHazardsWithInFlightWsArrivals,
 } from "@/lib/hazard-merge";
 import { useRealtimeStore } from "@/stores/realtime";
-import { haversineMeters, type HazardType } from "@tarmoto/shared";
+import { haversineMeters } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -54,14 +52,19 @@ import {
   MapPointPopover,
   type MapPoint,
 } from "@/components/map/MapPointPopover";
+import {
+  ensureHazardLayers,
+  expandHazardCluster,
+  selectHazards,
+  setHazardLayersVisible,
+  setHazardSourceData,
+  HAZARD_BG,
+  HAZARD_ICON,
+  HAZARD_CLUSTERS,
+  type HazardProps,
+} from "@/components/map/HazardPinLayer";
 import { plannerApi } from "@/lib/planner/api";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
-
-const HAZARDS_SOURCE = "hazards-src";
-const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
-const HAZARD_CLUSTER_COUNT = "tarmoto-hazard-cluster-count";
-const HAZARD_BG = "tarmoto-hazard-bg";
-const HAZARD_ICON = "tarmoto-hazard-icon";
 
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
@@ -72,32 +75,6 @@ const HAZARD_MIN_ZOOM = 9;
 const HAZARD_FETCH_DEBOUNCE_MS = 300;
 const HAZARD_MAX_RADIUS_M = 50_000;
 const HAZARD_MIN_RADIUS_M = 500;
-
-const EMPTY_COLLECTION: FeatureCollection<Point, HazardProps> = {
-  type: "FeatureCollection",
-  features: [],
-};
-
-// GeoJSON feature-properties bag for a hazard marker. The passthrough wire
-// fields are derived from the generated `HazardResponse` (a backend rename
-// breaks here at typecheck time); `hazard_type` is the normalised shared
-// enum, and `emoji` / `opacity` are computed client-side for the map paint.
-type HazardProps = Pick<
-  HazardResponse,
-  | "id"
-  | "note"
-  | "photo_url"
-  | "confirmations"
-  | "reporter"
-  | "road_name"
-  | "created_at"
-  | "expires_at"
-> & {
-  hazard_type: HazardType;
-  severity: string;
-  emoji: string;
-  opacity: number;
-};
 
 interface Props {
   center: { lng: number; lat: number };
@@ -235,119 +212,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     }, [showQuality, showSurface, onSegmentSelect]);
 
     const handleReady = (map: MapLibreMap) => {
-      map.addSource(HAZARDS_SOURCE, {
-        type: "geojson",
-        data: EMPTY_COLLECTION,
-        cluster: true,
-        clusterRadius: 50,
-        clusterMaxZoom: 13,
-      });
-
-      map.addLayer({
-        id: HAZARD_CLUSTERS,
-        type: "circle",
-        source: HAZARDS_SOURCE,
-        filter: ["has", "point_count"],
-        layout: { visibility: showHazards ? "visible" : "none" },
-        paint: {
-          "circle-color": "#0ED3CF",
-          "circle-opacity": 0.85,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-radius": [
-            "step",
-            ["get", "point_count"],
-            14,
-            10,
-            18,
-            25,
-            24,
-          ] as ExpressionSpecification,
-        },
-      });
-
-      map.addLayer({
-        id: HAZARD_CLUSTER_COUNT,
-        type: "symbol",
-        source: HAZARDS_SOURCE,
-        filter: ["has", "point_count"],
-        layout: {
-          visibility: showHazards ? "visible" : "none",
-          "text-field": ["get", "point_count_abbreviated"],
-          "text-size": 12,
-          "text-font": [
-            "Noto Sans Bold",
-            "Open Sans Bold",
-            "Arial Unicode MS Bold",
-          ],
-          "text-allow-overlap": true,
-        },
-        paint: { "text-color": "#0f172a" },
-      });
-
-      map.addLayer({
-        id: HAZARD_BG,
-        type: "circle",
-        source: HAZARDS_SOURCE,
-        filter: ["!", ["has", "point_count"]],
-        layout: { visibility: showHazards ? "visible" : "none" },
-        paint: {
-          "circle-color": buildHazardColorExpression(),
-          "circle-opacity": ["coalesce", ["get", "opacity"], 1],
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            9,
-            10,
-            14,
-            14,
-            18,
-            18,
-          ] as ExpressionSpecification,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
-        },
-      });
-
-      map.addLayer({
-        id: HAZARD_ICON,
-        type: "symbol",
-        source: HAZARDS_SOURCE,
-        filter: ["!", ["has", "point_count"]],
-        layout: {
-          visibility: showHazards ? "visible" : "none",
-          "text-field": ["get", "emoji"],
-          "text-size": 16,
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
-      });
+      ensureHazardLayers(map, { visible: showHazards });
 
       // Cluster click → expand.
-      map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
-        const clusterId = feature.properties?.cluster_id as number | undefined;
-        if (clusterId == null) return;
-        const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-        if (!src) return;
-        src
-          .getClusterExpansionZoom(clusterId)
-          .then((expZoom) => {
-            const geom = feature.geometry;
-            if (geom.type !== "Point") return;
-            map.easeTo({
-              center: geom.coordinates as [number, number],
-              zoom: expZoom,
-            });
-          })
-          .catch(() => {
-            // Cluster may have been superseded by a refetch; drop the zoom-in.
-          });
-      });
+      map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) =>
+        expandHazardCluster(map, e),
+      );
 
       const onHazardClick = (e: MapLayerMouseEvent) => {
         const feature = e.features?.[0];
@@ -625,13 +495,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     useEffect(() => {
       const map = handleRef.current?.map;
       if (!map || !ready) return;
-      const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-      if (!src) return;
-      src.setData(
-        toHazardFeatures(
-          selectHazards(rawHazardsRef.current, filters.hazardTypes),
-          hazardNow,
-        ),
+      setHazardSourceData(
+        map,
+        selectHazards(rawHazardsRef.current, filters.hazardTypes),
+        hazardNow,
       );
     }, [ready, filters.hazardTypes, hazardsRevision, hazardNow]);
 
@@ -647,14 +514,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     useEffect(() => {
       const map = handleRef.current?.map;
       if (!map || !ready) return;
-      for (const id of [
-        HAZARD_CLUSTERS,
-        HAZARD_CLUSTER_COUNT,
-        HAZARD_BG,
-        HAZARD_ICON,
-      ]) {
-        setVisibility(map, id, showHazards);
-      }
+      setHazardLayersVisible(map, showHazards);
     }, [ready, showHazards]);
 
     // ── fetch hazards when viewport settles ──
@@ -668,10 +528,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           wsHazardArrivalRef.current.clear();
           setHazardsRevision((r) => r + 1);
         } else {
-          const src = map.getSource(HAZARDS_SOURCE) as
-            | GeoJSONSource
-            | undefined;
-          src?.setData(EMPTY_COLLECTION);
+          setHazardSourceData(map, [], Date.now());
         }
         return;
       }
@@ -847,65 +704,6 @@ function buildSurfaceOpacityExpression(
     0.75,
     DIMMED_OPACITY,
   ] as ExpressionSpecification;
-}
-
-function buildHazardColorExpression(): ExpressionSpecification {
-  const pairs = HAZARD_TYPES_UI.flatMap((type) => [
-    type,
-    HAZARD_CONFIG[type].hex,
-  ]);
-  return [
-    "match",
-    ["get", "hazard_type"],
-    ...pairs,
-    HAZARD_CONFIG.other.hex,
-  ] as unknown as ExpressionSpecification;
-}
-
-function normalizeHazardType(raw: string): HazardType {
-  return HAZARD_CONFIG[raw as HazardType] ? (raw as HazardType) : "other";
-}
-
-function selectHazards(
-  raw: HazardResponse[],
-  types: Set<HazardType>,
-): HazardResponse[] {
-  if (types.size === HAZARD_TYPES_UI.length) return raw;
-  if (types.size === 0) return [];
-  return raw.filter((h) => types.has(normalizeHazardType(h.hazard_type)));
-}
-
-function setVisibility(map: MapLibreMap, layerId: string, visible: boolean) {
-  if (!map.getLayer(layerId)) return;
-  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
-}
-
-function toHazardFeatures(
-  hazards: HazardResponse[],
-  now: number = Date.now(),
-): FeatureCollection<Point, HazardProps> {
-  const features: Feature<Point, HazardProps>[] = hazards.map((h) => {
-    const type = normalizeHazardType(h.hazard_type);
-    return {
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [h.lng, h.lat] },
-      properties: {
-        id: h.id,
-        hazard_type: type,
-        severity: h.severity,
-        note: h.note,
-        photo_url: h.photo_url ?? null,
-        confirmations: h.confirmations,
-        reporter: h.reporter,
-        road_name: h.road_name,
-        created_at: h.created_at,
-        expires_at: h.expires_at,
-        emoji: HAZARD_CONFIG[type].emoji,
-        opacity: hazardFadeOpacity(h.created_at, h.expires_at, now),
-      },
-    };
-  });
-  return { type: "FeatureCollection", features };
 }
 
 function viewportRadiusMeters(map: MapLibreMap): number {
