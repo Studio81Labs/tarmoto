@@ -102,9 +102,27 @@ export class DigestWeeklyProcessor extends WorkerHost {
     // missing row COALESCEs to the entity default 'weekly' → opted in (matches
     // the AC's "roll out on first ship"); an explicit 'daily'/'never' suppresses
     // the weekly send.
-    const rows = await this.dataSource.query<{ user_id: string }[]>(
+    // The digest window is computed HERE, in each rider's resolved timezone, and
+    // carried to compose — not re-derived there from a fixed 7×24h delta. The
+    // boundary is the local Sunday 08:00 (`date_trunc('hour', local now)`, since
+    // this query only fires in that hour); window_start subtracts `interval '7
+    // days'` in LOCAL time, so a DST transition shifts the absolute span to
+    // 167/169h instead of a flat 168h. Consecutive weeks therefore share the
+    // exact same boundary (this week's start = last week's end) with no
+    // spring-forward overlap or fall-back gap.
+    const rows = await this.dataSource.query<
+      {
+        user_id: string;
+        window_start: string | Date;
+        window_end: string | Date;
+      }[]
+    >(
       `
-      SELECT u.id::text AS user_id
+      SELECT
+        u.id::text AS user_id,
+        (w.local_send AT TIME ZONE tz_resolution.tz) AS window_end,
+        ((w.local_send - interval '7 days') AT TIME ZONE tz_resolution.tz)
+          AS window_start
       FROM users u
       LEFT JOIN notification_preferences np ON np.user_id = u.id
       CROSS JOIN LATERAL (
@@ -118,6 +136,11 @@ export class DigestWeeklyProcessor extends WorkerHost {
           'UTC'
         ) AS tz
       ) tz_resolution
+      CROSS JOIN LATERAL (
+        SELECT date_trunc(
+          'hour', $1::timestamptz AT TIME ZONE tz_resolution.tz
+        ) AS local_send
+      ) w
       WHERE u.deleted_at IS NULL
         AND u.email_verified_at IS NOT NULL
         AND COALESCE(np.email_digest, 'weekly') = 'weekly'
@@ -133,10 +156,14 @@ export class DigestWeeklyProcessor extends WorkerHost {
 
     const forLocalWindow = this.localWindowKey(now);
     let enqueued = 0;
-    for (const { user_id } of rows) {
+    for (const row of rows) {
       await this.producer.enqueueDigestWeeklyCompose({
-        user_id,
+        user_id: row.user_id,
         for_local_window: forLocalWindow,
+        // pg returns timestamptz as a JS Date; the unit suite mocks ISO strings.
+        // `new Date()` normalises both to a canonical ISO instant for the payload.
+        window_start: new Date(row.window_start).toISOString(),
+        window_end: new Date(row.window_end).toISOString(),
       });
       enqueued += 1;
     }
@@ -149,7 +176,8 @@ export class DigestWeeklyProcessor extends WorkerHost {
   }
 
   private async compose(job: Job): Promise<DigestWeeklyComposeResult> {
-    const { user_id } = job.data as DigestWeeklyComposeJobData;
+    const { user_id, window_start, window_end } =
+      job.data as DigestWeeklyComposeJobData;
 
     // Re-check eligibility at compose time: dispatch → compose is async, so the
     // opt-in / verified / deleted state may have changed since the dispatch
@@ -176,11 +204,11 @@ export class DigestWeeklyProcessor extends WorkerHost {
       return { status: 'skipped', reason: 'ineligible' };
     }
 
-    // The digest covers the 7 days ending at dispatch — this compose job's
-    // creation time (`job.timestamp`), so it's deterministic regardless of when
-    // the worker picks it up.
-    const windowEnd = new Date(job.timestamp);
-    const windowStart = new Date(windowEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // Window bounds are carried from dispatch (computed in the rider's timezone,
+    // DST-correct — see `enqueueDigestWeeklyCompose` / the dispatch query), so
+    // compose is a pure consumer and doesn't re-derive them from a fixed delta.
+    const windowStart = new Date(window_start);
+    const windowEnd = new Date(window_end);
 
     const summary = await this.gatherRideSummary(
       user_id,

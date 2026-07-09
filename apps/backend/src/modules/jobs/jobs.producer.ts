@@ -34,8 +34,21 @@ export interface BadgesRecheckUserJobData {
 
 export interface DigestWeeklyComposeJobData {
   user_id: string;
-  /** ISO timestamp of the local Sunday 08:00 the digest is being sent for. */
+  /** UTC year-week bucket ('YYYY-Www') — the compose job's idempotency key. */
   for_local_window: string;
+  /**
+   * UTC instant of the window END: this run's local Sunday 08:00. Carried from
+   * dispatch (not re-derived in compose) so the window is computed once, in the
+   * rider's resolved timezone.
+   */
+  window_end: string;
+  /**
+   * UTC instant of the window START: the PREVIOUS local Sunday 08:00, computed
+   * as `window_end - interval '7 days'` in the rider's timezone. This is
+   * DST-correct — a fixed 7×24h delta over-/under-shoots by an hour on
+   * spring-forward / fall-back weeks, duplicating or dropping that hour's rides.
+   */
+  window_start: string;
 }
 
 /**
@@ -165,6 +178,17 @@ export class JobsProducer {
    * `user_id + for_local_window` so the hourly dispatcher can't
    * accidentally double-send if it runs twice for the same local
    * Sunday window.
+   *
+   * That dedup relies on BullMQ still holding the prior job under this id when a
+   * replay hits `add()`. The shared `removeOnComplete: { count: 1000 }` is
+   * count-only: a weekly burst with >1000 successful recipients would evict the
+   * oldest completed compose jobs *within the same window*, so a dispatcher
+   * retry / second-pod replay would no longer see those ids and would re-send a
+   * real digest email. Override with an AGE-based retention that outlives the
+   * weekly window (8 days) so every id survives until its window has closed,
+   * regardless of recipient volume. Steady-state this retains ≈one week of
+   * completed digest jobs, auto-cleaned by age; if the recipient base ever makes
+   * that Redis footprint a concern, move the dedup to a persistent sent-ledger.
    */
   async enqueueDigestWeeklyCompose(
     data: DigestWeeklyComposeJobData,
@@ -172,6 +196,7 @@ export class JobsProducer {
     await this.digestWeekly.add(JOB_NAMES.DIGEST_WEEKLY_COMPOSE, data, {
       ...DEFAULT_JOB_OPTIONS,
       jobId: `digest-weekly:${data.user_id}:${data.for_local_window}`,
+      removeOnComplete: { age: 8 * 24 * 60 * 60 },
     });
   }
 }

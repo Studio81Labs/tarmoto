@@ -134,15 +134,34 @@ describe('DigestWeeklyProcessor', () => {
   });
 
   it('dispatch: enqueues a compose job per user that the SQL filter returned', async () => {
-    dataSource.query.mockResolvedValue([{ user_id: 'u1' }, { user_id: 'u2' }]);
+    dataSource.query.mockResolvedValue([
+      {
+        user_id: 'u1',
+        window_start: '2026-06-28T08:00:00.000Z',
+        window_end: '2026-07-05T08:00:00.000Z',
+      },
+      {
+        user_id: 'u2',
+        window_start: '2026-06-28T07:00:00.000Z',
+        window_end: '2026-07-05T07:00:00.000Z',
+      },
+    ]);
     const result = await processor.process(
       fakeJob(JOB_NAMES.DIGEST_WEEKLY_DISPATCH, {}) as never,
     );
     expect(producer.enqueueDigestWeeklyCompose).toHaveBeenCalledTimes(2);
-    // Each enqueue includes a `for_local_window` key for idempotency.
-    expect(
-      producer.enqueueDigestWeeklyCompose.mock.calls[0][0].for_local_window,
-    ).toMatch(/^\d{4}-W\d{2}$/);
+    const firstPayload = producer.enqueueDigestWeeklyCompose.mock
+      .calls[0][0] as {
+      for_local_window: string;
+      window_start: string;
+      window_end: string;
+    };
+    // Each enqueue carries a `for_local_window` idempotency key...
+    expect(firstPayload.for_local_window).toMatch(/^\d{4}-W\d{2}$/);
+    // ...and the DST-correct window bounds resolved per rider at dispatch, so
+    // compose never re-derives them from a fixed 7×24h delta.
+    expect(firstPayload.window_start).toBe('2026-06-28T08:00:00.000Z');
+    expect(firstPayload.window_end).toBe('2026-07-05T08:00:00.000Z');
     expect(result).toEqual({ users_enqueued: 2 });
   });
 
@@ -176,6 +195,12 @@ describe('DigestWeeklyProcessor', () => {
     expect(sql).toMatch(/notification_preferences/);
     expect(sql).toMatch(/email_digest/);
     expect(sql).not.toMatch(/weekly_digest/);
+    // The digest window is derived in the rider's timezone at dispatch:
+    // window_start subtracts a LOCAL `interval '7 days'` (DST-correct) rather
+    // than a fixed millisecond delta, and both bounds ride along to compose.
+    expect(sql).toMatch(/interval '7 days'/);
+    expect(sql).toMatch(/window_start/);
+    expect(sql).toMatch(/window_end/);
   });
 
   // `compose` is covered end-to-end in digest-weekly.processor.spec.ts (#866).

@@ -19,12 +19,22 @@ function makeProcessor(query: jest.Mock) {
   return { processor, sendWeeklyDigest };
 }
 
+const WINDOW_END = Date.UTC(2026, 6, 5, 8);
+const WINDOW_START = WINDOW_END - 7 * 24 * 60 * 60 * 1000;
+
 function composeJob(user_id = 'u1'): Job {
   return {
     name: JOB_NAMES.DIGEST_WEEKLY_COMPOSE,
     id: 'j1',
-    timestamp: Date.UTC(2026, 6, 5, 8),
-    data: { user_id, for_local_window: '2026-W27' },
+    timestamp: WINDOW_END,
+    data: {
+      user_id,
+      for_local_window: '2026-W27',
+      // Window bounds are computed at dispatch (DST-correct) and carried here;
+      // compose reads them straight off the payload. A plain UTC week for tests.
+      window_start: new Date(WINDOW_START).toISOString(),
+      window_end: new Date(WINDOW_END).toISOString(),
+    },
   } as unknown as Job;
 }
 
