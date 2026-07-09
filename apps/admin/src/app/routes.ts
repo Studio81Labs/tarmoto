@@ -14,6 +14,7 @@ export const routes: AdminRoute[] = [
   { key: "administrators", label: "Administrators", minRole: "admin" },
   { key: "feature-flags", label: "Feature Flags", minRole: "admin" },
   { key: "content", label: "Content", minRole: "support" },
+  { key: "email", label: "Email Log", minRole: "support" },
 ];
 
 function currentKey(): string {

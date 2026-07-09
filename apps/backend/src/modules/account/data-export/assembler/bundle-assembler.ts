@@ -20,6 +20,7 @@ import type { PrivacyPreferencesRow } from '../../../../entities/privacy-prefere
 import type { RideTagEvent } from '../../../../entities/ride-tag-event.entity.js';
 import type { Bike } from '../../../../entities/bike.entity.js';
 import type { UserNotification } from '../../../../entities/user-notification.entity.js';
+import type { EmailLog } from '../../../../entities/email-log.entity.js';
 import { sanitizeUserForExport } from './sanitizers.js';
 import { rideToGpx, tripDayToGpx } from './gpx.js';
 
@@ -54,6 +55,10 @@ export interface BundleRepos {
   // In-app notifications are durable user-specific feed entries containing
   // titles, bodies, metadata, read state, and timestamps.
   userNotifications: Pick<Repository<UserNotification>, 'find'>;
+  // The email delivery log is keyed by recipient (no user FK); the rows
+  // addressed to the exporting rider are personal data (which mail they were
+  // sent, when, delivery status) the Article 15 bundle must include.
+  emailLog: Pick<Repository<EmailLog>, 'find'>;
 }
 
 export class BundleAssembler {
@@ -78,6 +83,7 @@ export class BundleAssembler {
       bikes,
       userNotifications,
       pendingTripInvites,
+      emailLog,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -107,6 +113,10 @@ export class BundleAssembler {
       this.repos.tripInvites.find({
         where: { email: user.email.toLowerCase() },
         order: { created_at: 'ASC' },
+      }),
+      this.repos.emailLog.find({
+        where: { recipient: user.email.toLowerCase() },
+        order: { created_at: 'DESC' },
       }),
     ]);
 
@@ -168,6 +178,7 @@ export class BundleAssembler {
     archive.append(json(userNotifications), {
       name: 'in_app_notifications.json',
     });
+    archive.append(json(emailLog), { name: 'email_log.json' });
 
     for (const r of rides) {
       const gpx = rideToGpx({
@@ -239,6 +250,7 @@ function buildReadme(generatedAt: string): string {
     '  commute_routes.json  - your saved commute routes',
     '  ride_tag_events.json - rider-asserted surface tags captured during rides',
     '  in_app_notifications.json - durable in-app notification feed entries',
+    '  email_log.json - emails we sent you (subject, status, timestamp; no message body)',
     '',
     'Anonymized road quality contributions are NOT included because they no',
     'longer reference your account after anonymization.',

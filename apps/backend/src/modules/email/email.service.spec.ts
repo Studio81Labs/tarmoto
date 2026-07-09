@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { EmailService } from './email.service.js';
 import { EMAIL_PROVIDER, type EmailProvider } from './email-provider.js';
+import { EmailLog } from '../../entities/email-log.entity.js';
 
 const buildConfigService = (): ConfigService =>
   ({
@@ -261,6 +263,93 @@ describe('EmailService', () => {
       // the HTML and the text/plain part (text-only clients never see the HTML).
       expect(message.html).toContain('Unsubscribe');
       expect(message.text).toContain('Unsubscribe from marketing emails');
+    });
+  });
+
+  describe('delivery log (email_log)', () => {
+    async function buildWithLog(
+      send: jest.Mock,
+      insert: jest.Mock,
+    ): Promise<EmailService> {
+      const module = await Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: { name: 'resend', send } },
+          { provide: ConfigService, useValue: buildConfigService() },
+          { provide: getRepositoryToken(EmailLog), useValue: { insert } },
+        ],
+      }).compile();
+      return module.get(EmailService);
+    }
+
+    const verifyCtx = {
+      displayName: 'Rider',
+      verifyUrl: 'https://app.tarmoto.app/verify-email?token=abc',
+      expiresInHours: 24,
+    };
+
+    it('records a sent email as metadata only — never the token-bearing body', async () => {
+      const send = jest.fn().mockResolvedValue({
+        providerMessageId: 'res_9',
+        providerName: 'resend',
+      });
+      const insert = jest.fn().mockResolvedValue({});
+      const service = await buildWithLog(send, insert);
+
+      // Mixed-case recipient to prove it's lowercased for purge/export matching.
+      await service.sendVerification('Rider@Tarmoto.app', verifyCtx);
+
+      expect(insert).toHaveBeenCalledTimes(1);
+      const [row] = insert.mock.calls[0] as [Record<string, unknown>];
+      expect(row).toMatchObject({
+        recipient: 'rider@tarmoto.app',
+        tag: 'verification',
+        status: 'sent',
+        provider: 'resend',
+        provider_message_id: 'res_9',
+        error_class: null,
+      });
+      // The body embeds a live one-time token — it must never reach the log.
+      expect(JSON.stringify(row)).not.toContain('token=abc');
+      expect(row).not.toHaveProperty('html');
+      expect(row).not.toHaveProperty('text');
+    });
+
+    it('records a failed send with the error and no provider message id', async () => {
+      const send = jest.fn().mockRejectedValue(new Error('upstream 503'));
+      const insert = jest.fn().mockResolvedValue({});
+      const service = await buildWithLog(send, insert);
+
+      const result = await service.sendVerification(
+        'rider@tarmoto.app',
+        verifyCtx,
+      );
+
+      expect(result).toBeNull();
+      const [row] = insert.mock.calls[0] as [Record<string, unknown>];
+      expect(row).toMatchObject({
+        tag: 'verification',
+        status: 'failed',
+        provider: 'resend',
+        provider_message_id: null,
+        error_class: 'upstream 503',
+      });
+      expect(JSON.stringify(row)).not.toContain('token=abc');
+    });
+
+    it('swallows a log-write failure so the send result is unaffected', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'r', providerName: 'resend' });
+      const insert = jest.fn().mockRejectedValue(new Error('db down'));
+      const service = await buildWithLog(send, insert);
+
+      const result = await service.sendVerification(
+        'rider@tarmoto.app',
+        verifyCtx,
+      );
+
+      expect(result?.providerMessageId).toBe('r');
     });
   });
 });
