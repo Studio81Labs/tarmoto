@@ -25,8 +25,8 @@ outright.
 
 - Boundary source: **Natural Earth 1:50m admin-0**, public domain, keyed by ISO
   3166-1 alpha-2 — the same codes `pois.import_region` / `DEFAULT_REGIONS.code`
-  use. Filtered to the 18 `DEFAULT_REGIONS` codes; committed as a GeoJSON asset
-  (~1–2 MB) directly in the repo.
+  use. Filtered to the 17 `DEFAULT_REGIONS` codes; committed as a GeoJSON asset
+  (~104 KB) directly in the repo.
 - Lives in the **POI DB** (the separate PostGIS datasource, `@InjectDataSource('poi')`),
   alongside `pois`. Schema via a `migrations-poi` migration (migrations here are
   schema-only; data loads via a script).
@@ -86,12 +86,12 @@ CREATE INDEX poi_import_regions_geom_gix ON poi_import_regions USING GIST (geom)
 ### 2. Boundary asset + loader
 
 - Asset: `apps/backend/src/assets/import-region-boundaries.geojson` — a
-  FeatureCollection of the 18 `DEFAULT_REGIONS` countries (ISO A2 → MultiPolygon),
+  FeatureCollection of the 17 `DEFAULT_REGIONS` countries (ISO A2 → MultiPolygon),
   derived from Natural Earth 1:50m admin-0. A short, documented derivation note
   records how it was filtered/simplified (reproducible, not a black box). The
   derivation maps each feature to its ISO alpha-2 via Natural Earth's `ISO_A2`
   field, falling back to `ISO_A2_EH` where `ISO_A2` is `-99` (Natural Earth marks
-  a few sovereignties that way) — the 18 targets are all clean ISO A2, and the
+  a few sovereignties that way) — the 17 targets are all clean ISO A2, and the
   loader asserts every `DEFAULT_REGIONS` code is present so a missing/misspelled
   code fails loudly at load time rather than silently never covering.
 - Loader: `apps/backend/src/scripts/load-region-boundaries.ts`, wired as

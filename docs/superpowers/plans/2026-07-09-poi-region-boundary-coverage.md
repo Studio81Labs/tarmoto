@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - POI DB is a **separate** PostGIS datasource, injected via `@InjectDataSource('poi')`; migrations live in `apps/backend/src/migrations-poi/` and are **schema-only** (data loads via scripts).
-- Boundary polygons keyed by **ISO 3166-1 alpha-2** — the same codes `pois.import_region` and `DEFAULT_REGIONS[].code` use (18 target countries).
+- Boundary polygons keyed by **ISO 3166-1 alpha-2** — the same codes `pois.import_region` and `DEFAULT_REGIONS[].code` use (17 target countries).
 - Geometries are **SRID 4326**; server stores/serves **metric** only.
 - **No new TypeORM entity** — coverage + loader use raw `dataSource.query(...)`.
 - Validate: `pnpm exec jest src/modules/poi` (poi unit suites), `pnpm exec eslint "src/**/*.ts"` (backend CI lints specs too), `pnpm exec nest build --config nest-cli.openapi.json` (strict noUncheckedIndexedAccess). All run from `apps/backend/`.
@@ -21,7 +21,7 @@
 ## File Structure
 
 - Create `apps/backend/src/migrations-poi/1800000000000-AddPoiImportRegions.ts` — table + GiST index.
-- Create `apps/backend/src/scripts/derive-region-boundaries.mjs` — one-off generator (fetch NE, filter to 18 codes, write asset).
+- Create `apps/backend/src/scripts/derive-region-boundaries.mjs` — one-off generator (fetch NE, filter to 17 codes, write asset).
 - Create `apps/backend/src/assets/import-region-boundaries.geojson` — committed FeatureCollection (generator output).
 - Create `apps/backend/src/assets/README.md` — derivation note.
 - Create `apps/backend/src/scripts/load-region-boundaries.ts` + `.spec.ts` — asset → DB loader + unit test.
@@ -110,13 +110,13 @@ git commit -m "feat(backend): add poi_import_regions table for geometry coverage
 
 **Interfaces:**
 
-- Produces: `import-region-boundaries.geojson` — a `FeatureCollection` where each feature has `properties.code` (ISO A2, one of the 18 `DEFAULT_REGIONS` codes) and a `MultiPolygon` geometry.
+- Produces: `import-region-boundaries.geojson` — a `FeatureCollection` where each feature has `properties.code` (ISO A2, one of the 17 `DEFAULT_REGIONS` codes) and a `MultiPolygon` geometry.
 
-- [ ] **Step 1: List the 18 target codes** from `apps/backend/src/modules/poi/poi-import.config.ts` (`DEFAULT_REGIONS[].code`) — the generator filters to exactly these.
+- [ ] **Step 1: List the 17 target codes** from `apps/backend/src/modules/poi/poi-import.config.ts` (`DEFAULT_REGIONS[].code`) — the generator filters to exactly these.
 
 - [ ] **Step 2: Write the generator** (`derive-region-boundaries.mjs`)
 
-Source: Natural Earth 1:50m admin-0 GeoJSON from the public mirror `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson`. Filter each feature to the target codes via `ISO_A2`, falling back to `ISO_A2_EH` when `ISO_A2 === '-99'`. Normalise every geometry to `MultiPolygon` (wrap a `Polygon` as a single-element `MultiPolygon`). Assert all 18 codes were found.
+Source: Natural Earth 1:50m admin-0 GeoJSON from the public mirror `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson`. Filter each feature to the target codes via `ISO_A2`, falling back to `ISO_A2_EH` when `ISO_A2 === '-99'`. Normalise every geometry to `MultiPolygon` (wrap a `Polygon` as a single-element `MultiPolygon`). Assert all 17 codes were found.
 
 ```javascript
 // Run once: node apps/backend/src/scripts/derive-region-boundaries.mjs
@@ -179,7 +179,7 @@ console.log(`Wrote ${features.length} region polygons to ${dest}`);
 - [ ] **Step 3: Run the generator + sanity-check the output**
 
 Run: `mkdir -p apps/backend/src/assets && node apps/backend/src/scripts/derive-region-boundaries.mjs`
-Expected: "Wrote 18 region polygons…". Then verify with `node -e "const g=require('./apps/backend/src/assets/import-region-boundaries.geojson'); console.log(g.features.length, g.features.every(f=>f.properties.code && f.geometry.type==='MultiPolygon'))"` → `18 true`. Confirm the file is `~1–2 MB` (`ls -lh`).
+Expected: "Wrote 17 region polygons…". Then verify with `node -e "const g=require('./apps/backend/src/assets/import-region-boundaries.geojson'); console.log(g.features.length, g.features.every(f=>f.properties.code && f.geometry.type==='MultiPolygon'))"` → `17 true`. Confirm the file is `~104 KB` (`ls -lh`).
 
 - [ ] **Step 4: Write the derivation note** (`assets/README.md`)
 
@@ -346,7 +346,7 @@ In `apps/backend/package.json` scripts add `"poi:load-boundaries": "node dist/sc
 - [ ] **Step 7: Smoke-test end-to-end** (needs `pnpm db:up` + migrated DB from Task 1)
 
 Run: `pnpm poi:load-boundaries` then in psql: `SELECT code, ST_GeometryType(geom), imported_at FROM poi_import_regions ORDER BY code;`
-Expected: 18 rows, `ST_MultiPolygon`, `imported_at` NULL. Re-run and confirm still 18 rows (idempotent).
+Expected: 17 rows, `ST_MultiPolygon`, `imported_at` NULL. Re-run and confirm still 17 rows (idempotent).
 
 - [ ] **Step 8: Commit**
 
@@ -694,5 +694,5 @@ git commit -m "test(backend): geometry-coverage halo regression against real Pos
 - [ ] `pnpm exec eslint "src/**/*.ts"` — 0 errors.
 - [ ] `pnpm exec nest build --config nest-cli.openapi.json` — strict build OK.
 - [ ] `grep -rn "hasImportedCoverage\|coverageSamples\|MAX_COVERAGE_SAMPLES" src` — no matches (fully removed).
-- [ ] Manual: `pnpm db:up && pnpm db:migrate && pnpm poi:load-boundaries` → 18 rows; run a real `poi:import CZ` → CZ `imported_at` stamped.
+- [ ] Manual: `pnpm db:up && pnpm db:migrate && pnpm poi:load-boundaries` → 17 rows; run a real `poi:import CZ` → CZ `imported_at` stamped.
 - [ ] PR against `main`, `Closes #944`, scope `backend`, with the DE-wedge regression as the headline evidence.
