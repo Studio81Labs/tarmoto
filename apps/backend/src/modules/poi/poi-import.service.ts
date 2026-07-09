@@ -400,6 +400,27 @@ export class PoiImportService {
           );
           tombstoned = tombstoneIds.length;
         }
+
+        // 4. Stamp the region as genuinely imported — the signal later
+        // geometry-membership coverage queries key off (`WHERE imported_at IS
+        // NOT NULL`, #944). Reaching here means this run was neither of the
+        // two skip paths above (no extract / zero in-bbox rows), so a real
+        // upsert just happened — including when the wipe guard withheld the
+        // tombstone step above, which is still a genuine import, not a skip.
+        // Same `tx` as the surrounding upsert/tombstone, so the stamp commits
+        // atomically with them.
+        //
+        // OSM-only: the coverage query this feeds gates the Overpass
+        // live-read fallback on `source = 'osm'` rows (`PoiStoreService`), so
+        // an FSQ-only region must never read as covered — stamping here on an
+        // FSQ run would wrongly suppress the OSM fallback for a region OSM
+        // has never actually imported.
+        if (this.importSource.source === 'osm') {
+          await tx.query(
+            `UPDATE "poi_import_regions" SET "imported_at" = now() WHERE "code" = $1`,
+            [region.code],
+          );
+        }
       });
     });
 

@@ -19,9 +19,11 @@ jest.mock('./poi-extract-source.js', () => ({
 
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
+import { Readable } from 'node:stream';
 import { PoiImportService } from './poi-import.service.js';
 import { parsePoiExtract } from './poi-extract-source.js';
+import { FsqPoiImportSource } from './poi-import-source.js';
 import type { PoiImportConfig, PoiImportRegion } from './poi-import.config.js';
 import type {
   AccommodationPoi,
@@ -30,6 +32,7 @@ import type {
 } from './poi-provider.interface.js';
 
 const existsSyncMock = jest.mocked(existsSync);
+const createReadStreamMock = jest.mocked(createReadStream);
 const parsePoiExtractMock = jest.mocked(parsePoiExtract);
 
 // --- fixtures --------------------------------------------------------------
@@ -92,6 +95,40 @@ async function* extractOf(
 /** Point the mocked parser at a fresh generator per call (generators are single-use). */
 function mockExtract(...items: ExtractItem[]): void {
   parsePoiExtractMock.mockImplementation(() => extractOf(...items));
+}
+
+/**
+ * One line of FSQ OS Places NDJSON (see `FsqPoiImportSource.parse`), inside
+ * `REGION`'s bbox (lng 18.4, lat 49.5) and classifying to `restaurant`.
+ * Unlike OSM, the FSQ strategy doesn't go through the mocked
+ * `parsePoiExtract` — it reads the stream `createReadStream` returns
+ * directly — so driving a real FSQ import needs an actual `Readable`.
+ */
+function fsqLine(over: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    fsq_place_id: 'a',
+    name: 'U Fleku FSQ',
+    latitude: 49.5,
+    longitude: 18.4,
+    category_ids: null,
+    category_labels: 'Restaurant',
+    tel: null,
+    website: null,
+    address: null,
+    locality: null,
+    postcode: null,
+    country: null,
+    ...over,
+  });
+}
+
+/** Point the next `createReadStream` call at a real NDJSON stream of the given lines. */
+function mockFsqExtract(...lines: string[]): void {
+  createReadStreamMock.mockReturnValueOnce(
+    Readable.from([lines.join('\n')]) as unknown as ReturnType<
+      typeof createReadStream
+    >,
+  );
 }
 
 describe('PoiImportService', () => {
@@ -203,6 +240,67 @@ describe('PoiImportService', () => {
       upserted: 2,
       tombstoned: 0,
     });
+  });
+
+  it('stamps poi_import_regions.imported_at on a successful OSM import', async () => {
+    mockExtract(poi({ external_id: 'node/1' }));
+
+    await service.importRegion(REGION);
+
+    expect(txQuery).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'UPDATE "poi_import_regions" SET "imported_at" = now()',
+      ),
+      ['CZ'],
+    );
+  });
+
+  it('does not stamp poi_import_regions.imported_at on a successful FSQ import (#944: coverage stays OSM-only)', async () => {
+    // An FSQ-only region must never read as "covered" — the coverage query
+    // this stamp feeds gates the OSM Overpass fallback on `source = 'osm'`
+    // rows, so stamping here would wrongly suppress that fallback for a
+    // region OSM has never actually imported.
+    mockFsqExtract(fsqLine());
+    const fsqService = new PoiImportService(
+      dataSource,
+      config,
+      new FsqPoiImportSource(),
+    );
+
+    const result = await fsqService.importRegion(REGION);
+
+    // Sanity: this is a genuine import (not a skip) — the FSQ row parsed,
+    // fell inside the bbox, and was upserted — so the absence of the stamp
+    // below is the source gate, not an incidental skip path.
+    expect(result.skipped).toBeUndefined();
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(txQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining('poi_import_regions'),
+      expect.anything(),
+    );
+  });
+
+  it('does not stamp imported_at when the region is skipped (no extract)', async () => {
+    existsSyncMock.mockReturnValueOnce(false);
+
+    await service.importRegion(REGION);
+
+    expect(txQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining('poi_import_regions'),
+      expect.anything(),
+    );
+  });
+
+  it('does not stamp imported_at when the extract yields zero in-bbox rows (empty-extract skip)', async () => {
+    mockExtract(); // empty — the other skip path (valid file, nothing usable)
+
+    const result = await service.importRegion(REGION);
+
+    expect(result.skipped).toBe(true);
+    expect(txQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining('poi_import_regions'),
+      expect.anything(),
+    );
   });
 
   it('imports accommodations alongside POIs in the same upsert', async () => {
