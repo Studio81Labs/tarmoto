@@ -22,6 +22,13 @@ export interface DataExportJobData {
 export interface PoiImportRegionJobData {
   /** Upper-case ISO 3166-1 alpha-2 code of the region to import. */
   code: string;
+  /**
+   * Bulk source to import this region from (`osm` / `fsq`, #869) — routes the
+   * job back to the matching importer. Optional on the wire so a region job
+   * enqueued before this field existed still runs (the worker defaults it to
+   * `osm`, the only source at the time).
+   */
+  source?: string;
 }
 
 export interface AccountDeletionFinalizeJobData {
@@ -78,30 +85,34 @@ export class JobsProducer {
    * continent-scale run spreads across hours rather than firing every country at
    * once.
    *
-   * The jobId `poi-region:<dispatchId>:<code>` is scoped to the dispatch
-   * OCCURRENCE (`dispatchId` = the weekly dispatcher job's id — stable across its
-   * retries, fresh each week). So a dispatch that retries after enqueuing some
-   * regions re-enqueues them idempotently (BullMQ ignores a duplicate jobId)
-   * instead of doubling the heavy imports, while next week's dispatch — a new
-   * occurrence — still enqueues a fresh run. `attempts: 3` (a heavy region import
-   * is retried a few times, then waits for next week).
+   * The jobId `import-region:<dispatchId>:<source>:<code>` is scoped to the
+   * dispatch OCCURRENCE (`dispatchId` = the weekly dispatcher job's id — stable
+   * across its retries, fresh each week) AND the source, so a dispatch that
+   * retries after enqueuing some regions re-enqueues them idempotently (BullMQ
+   * ignores a duplicate jobId) instead of doubling the heavy imports, while the
+   * same country from two sources (OSM + FSQ) stays two distinct jobs. Next
+   * week's dispatch — a new occurrence — still enqueues a fresh run.
+   * `attempts: 3` (a heavy region import is retried a few times, then waits for
+   * next week).
    */
   async enqueuePoiImportRegion(
+    source: string,
     code: string,
     staggerIndex: number,
     dispatchId: string,
   ): Promise<void> {
     await this.poiImport.add(
       JOB_NAMES.POI_IMPORT_REGION,
-      { code },
+      { source, code },
       {
         ...DEFAULT_JOB_OPTIONS,
         // BullMQ reserves `:` as its Redis-key delimiter and scheduler `job.id`s
         // contain colons (`repeat:<hash>:<ts>`), so strip them from the jobId.
-        jobId: `${JOB_NAMES.POI_IMPORT_REGION}:${dispatchId}:${code}`.replace(
-          /:/g,
-          '_',
-        ),
+        jobId:
+          `${JOB_NAMES.POI_IMPORT_REGION}:${dispatchId}:${source}:${code}`.replace(
+            /:/g,
+            '_',
+          ),
         attempts: 3,
         delay: staggerIndex * POI_IMPORT_STAGGER_MS,
       },

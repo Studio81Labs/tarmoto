@@ -29,6 +29,16 @@ import { withPoiRepo } from './poi-repo.js';
  */
 export const FSQ_POI_IMPORT = Symbol('FSQ_POI_IMPORT');
 
+/**
+ * DI token for the ordered registry of bulk import sources (#869) — every
+ * `PoiImportService` instance (OSM, FSQ, …) the weekly dispatcher fans out over.
+ * `PoiModule` binds it to `[PoiImportService (OSM), FSQ_POI_IMPORT (FSQ)]`;
+ * adding a third source later is one more entry here, with no processor change.
+ * Each instance self-identifies via `source` and gates on its own `enabled`, so
+ * the fan-out runs exactly the sources whose `TARMOTO_*_IMPORT_ENABLED` is set.
+ */
+export const POI_IMPORT_SOURCES = Symbol('POI_IMPORT_SOURCES');
+
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
 const UPSERT_CHUNK = 500;
 
@@ -128,6 +138,15 @@ export class PoiImportService {
 
   get enabled(): boolean {
     return this.config.enabled;
+  }
+
+  /**
+   * The source string this instance imports (`osm` / `fsq`) — from its strategy.
+   * The registry fan-out stamps it on each region job so the worker routes the
+   * job back to the right importer, and it scopes the job id + logs per source.
+   */
+  get source(): string {
+    return this.importSource.source;
   }
 
   /** The configured coverage list — the dispatcher fans out one job per entry. */
