@@ -536,6 +536,33 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       setAerialBasemapVisible(map, basemap === "aerial");
     }, [basemap, ready]);
 
+    // ── keep the POI popover locked to its pin while the map pans/zooms ──
+    // Re-project the POI's lng/lat to screen coords on every `move` (mirrors
+    // the planner), so the fixed-position card tracks its pin instead of
+    // hovering at stale coordinates.
+    const poiMenuOpen = poiMenu !== null;
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready || !poiMenuOpen) return;
+      const reposition = () => {
+        const rect = map.getCanvas()?.getBoundingClientRect?.();
+        if (!rect) return;
+        setPoiMenu((menu) => {
+          if (!menu) return menu;
+          const point = map.project([menu.poi.lng, menu.poi.lat]);
+          return {
+            ...menu,
+            x: rect.left + point.x + 10,
+            y: rect.top + point.y + 10,
+          };
+        });
+      };
+      map.on("move", reposition);
+      return () => {
+        map.off("move", reposition);
+      };
+    }, [ready, poiMenuOpen]);
+
     // ── project raw hazards → filtered GeoJSON source ──
     useEffect(() => {
       const map = handleRef.current?.map;
