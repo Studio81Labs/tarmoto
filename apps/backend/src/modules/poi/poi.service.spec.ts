@@ -992,6 +992,52 @@ describe('PoiService', () => {
       expect(result.pois[0].distance_from_route_km).toBeLessThanOrEqual(2);
     });
 
+    it('ranks a de-duped venue by its closest copy so the cap keeps it (#869)', async () => {
+      // Both copies are inside the buffer, but the FSQ copy projects CLOSER to
+      // the route than its preferred OSM twin (0.14 vs 0.16 km, ~20 m apart). The
+      // de-dupe keeps the OSM row (richer data); it must inherit the FSQ copy's
+      // closer route distance so the per-kind distance sort + cap rank the venue
+      // by its nearest member — otherwise the farther OSM distance could push it
+      // past the cap and the venue would vanish. The two distances straddle a
+      // rounding boundary (0.14 → 0.1, 0.16 → 0.2), so the carried distance is
+      // observable despite the tenth-km rounding.
+      const flatRoute = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 49.0, lng: 17.0 },
+      ];
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:koliba',
+          name: 'Koliba',
+          kind: 'restaurant',
+          lat: 49.0014389, // 0.16 km off-route → rounds to 0.2
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'fsq:koliba',
+          name: 'Koliba',
+          kind: 'restaurant',
+          lat: 49.0012591, // 0.14 km off-route → rounds to 0.1, ~20 m from OSM
+          lng: 16.5,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route: flatRoute,
+        buffer_km: 1,
+      });
+
+      // OSM row kept, but ranked/reported at the group's closest distance.
+      expect(result.pois.map((p) => p.external_id)).toEqual(['osm:koliba']);
+      expect(result.pois[0].distance_from_route_km).toBe(0.1); // FSQ's 0.14, not OSM's 0.16 → 0.2
+    });
+
     it('keeps a nameless on-route fuel stop so the fuel-range warning can see it', async () => {
       // Unmanned / automated fuel stops on sparse routes often carry no
       // name, website, or phone — yet they are exactly what the fuel-range

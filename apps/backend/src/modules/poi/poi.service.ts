@@ -412,13 +412,24 @@ export class PoiService {
     // read, so a straddling OSM copy that projected outside the buffer can't
     // suppress the FSQ copy that projected inside. Source comes from the
     // external id since `PointOfInterest` carries none. No-op until FSQ imports.
-    const survivors = dedupeAcrossSources([...deduped.values()], (entry) => ({
-      source: sourceOfExternalId(entry.poi.external_id),
-      kind: entry.poi.kind,
-      name: entry.poi.name,
-      lat: entry.poi.lat,
-      lng: entry.poi.lng,
-    }));
+    const survivors = dedupeAcrossSources(
+      [...deduped.values()],
+      (entry) => ({
+        source: sourceOfExternalId(entry.poi.external_id),
+        kind: entry.poi.kind,
+        name: entry.poi.name,
+        lat: entry.poi.lat,
+        lng: entry.poi.lng,
+      }),
+      // Carry the closest copy's route distance onto the kept OSM row, so the
+      // per-kind distance sort + cap below rank the venue by its nearest member.
+      // Without this a closer FSQ copy replaced by a farther OSM twin could fall
+      // outside the cap and vanish, even though the group was inside it.
+      (kept, dropped) =>
+        dropped.distance_from_route_km < kept.distance_from_route_km
+          ? { ...kept, distance_from_route_km: dropped.distance_from_route_km }
+          : kept,
+    );
 
     const byKind = new Map<PoiKind, Annotated[]>();
     for (const entry of survivors) {

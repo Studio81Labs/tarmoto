@@ -88,10 +88,17 @@ function nameMatches(a: string | null, b: string | null): boolean {
  * row from a STRICTLY preferred source of the SAME kind sits within
  * {@link DEDUP_RADIUS_KM} with a matching name — so same-source neighbours are
  * never merged and a single-source read keeps its input order unchanged.
+ *
+ * `mergeDuplicate`, when given, folds a dropped duplicate's data into the kept
+ * survivor (returning the updated survivor). Use it to carry a ranking
+ * attribute the dropped copy did BETTER on — e.g. a closer route distance — so a
+ * downstream sort/cap ranks the venue by its best group member, not by the
+ * replacement row's own (possibly worse) value.
  */
 export function dedupeAcrossSources<T>(
   rows: readonly T[],
   key: (row: T) => DedupPoi,
+  mergeDuplicate?: (kept: T, dropped: T) => T,
 ): T[] {
   // Visit higher-preference sources first (OSM before FSQ), stable within a rank
   // by original index, so an FSQ duplicate is dropped in favour of the OSM row.
@@ -122,8 +129,10 @@ export function dedupeAcrossSources<T>(
     );
     if (twin) {
       // Drop this duplicate, but let its preferred twin keep the earliest
-      // position the group reached in the input.
+      // position the group reached in the input, and fold in any ranking
+      // attribute the dropped copy did better on.
       twin.pos = Math.min(twin.pos, entry.i);
+      if (mergeDuplicate) twin.row = mergeDuplicate(twin.row, entry.row);
     } else {
       kept.push({ row: entry.row, pos: entry.i, k: entry.k });
     }
