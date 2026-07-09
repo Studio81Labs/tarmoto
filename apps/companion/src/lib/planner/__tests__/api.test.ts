@@ -1376,3 +1376,135 @@ describe("plannerApi.reverseGeocode (#864)", () => {
     );
   });
 });
+
+describe("plannerApi.getRoadPreview (#863)", () => {
+  beforeEach(() => {
+    apiGetMock.mockReset();
+  });
+
+  it("builds the quality card from the segment without fetching imagery", async () => {
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({
+        microStrip: [
+          { score: 4.1, lengthKm: 2 },
+          { score: 4.3, lengthKm: 1 },
+        ],
+      }),
+    );
+
+    // All from the real route-quality overlay already on the segment (#862).
+    expect(preview).toMatchObject({
+      hasData: true,
+      score: 4.2,
+      band: "good",
+      surface: "asphalt",
+      passes: 20,
+      microStrip: [
+        { score: 4.1, lengthKm: 2 },
+        { score: 4.3, lengthKm: 1 },
+      ],
+    });
+    // Quality never blocks on (or triggers) the imagery lookup.
+    expect(preview.imageUrl).toBeUndefined();
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the no-data state with the real OSM surface tag", async () => {
+    const preview = await createPlannerApi().getRoadPreview(
+      segment({ band: "no_data", score: null, surface: "gravel" }),
+    );
+
+    expect(preview.hasData).toBe(false);
+    expect(preview.osmSurfaceTag).toBe("gravel");
+    expect(preview.microStrip).toBeUndefined();
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("plannerApi.getSegmentImagery (#863)", () => {
+  beforeEach(() => {
+    apiGetMock.mockReset();
+  });
+
+  it("looks up imagery at the segment midpoint + heading and maps the fields", async () => {
+    apiGetMock.mockResolvedValue({
+      data: {
+        imageId: "mly-1",
+        capturedAt: "2024-09-15",
+        attribution: "© rider · Mapillary (CC BY-SA)",
+        link: "https://www.mapillary.com/app/?pKey=mly-1",
+      },
+      error: undefined,
+    } as never);
+
+    // Default segment spans [15,49]→[15,49.1] with only two vertices.
+    const imagery = await createPlannerApi().getSegmentImagery(segment({}));
+
+    // imageUrl points at the BACKEND thumb proxy — the browser never contacts
+    // Mapillary's CDN (ADR-0009).
+    expect(imagery?.imageUrl).toContain(
+      "/api/v1/roads/segment-imagery/thumb/mly-1",
+    );
+    expect(imagery?.imageCapturedAt).toBe("2024-09-15");
+    expect(imagery?.imageAttribution).toBe("© rider · Mapillary (CC BY-SA)");
+    expect(imagery?.imageLink).toBe(
+      "https://www.mapillary.com/app/?pKey=mly-1",
+    );
+    expect(apiGetMock).toHaveBeenCalledTimes(1);
+    expect(apiGetMock.mock.calls[0]![0]).toBe("/api/v1/roads/segment-imagery");
+    const query = (
+      apiGetMock.mock.calls[0]![1] as {
+        params: { query: { lat: number; lng: number; bearing?: number } };
+      }
+    ).params.query;
+    // Looked up at the DISTANCE midpoint (lat 49.05), not the end vertex (49.1),
+    // with the LOCAL heading there (due north → 0).
+    expect(query.lng).toBeCloseTo(15, 6);
+    expect(query.lat).toBeCloseTo(49.05, 6);
+    expect(query.bearing).toBe(0);
+  });
+
+  it("uses the LOCAL heading at the midpoint, not the end-to-end chord", async () => {
+    apiGetMock.mockResolvedValue({
+      data: {
+        imageId: "mly-2",
+        capturedAt: null,
+        attribution: null,
+        link: null,
+      },
+      error: undefined,
+    } as never);
+
+    // Right-angle run: a north leg then an east leg. The end-to-end chord
+    // points ~NE (≈45°), but the heading AT the midpoint (on the north leg)
+    // is due north (0°).
+    await createPlannerApi().getSegmentImagery(
+      segment({
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [0, 0],
+            [0, 1],
+            [1, 1],
+          ],
+        },
+      }),
+    );
+
+    const query = (
+      apiGetMock.mock.calls[0]![1] as {
+        params: { query: { bearing?: number } };
+      }
+    ).params.query;
+    expect(query.bearing).toBe(0); // local north, not the ~45° chord
+  });
+
+  it("resolves to null when there is no coverage", async () => {
+    apiGetMock.mockResolvedValue({
+      data: undefined,
+      error: { message: "no coverage" },
+    } as never);
+
+    expect(await createPlannerApi().getSegmentImagery(segment({}))).toBeNull();
+  });
+});
