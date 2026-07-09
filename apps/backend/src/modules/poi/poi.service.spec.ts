@@ -41,8 +41,10 @@ describe('PoiService', () => {
     importedRegionBboxes: jest.Mock;
   };
 
-  // A coverage box wide enough to contain every test anchor/route (#925), so
-  // the store short-circuits (no Overpass merge) unless a test narrows it.
+  // A coverage box wide enough to contain every test anchor/route (#925). A test
+  // that wants the store treated as authoritative (imported area) sets this; the
+  // default is EMPTY coverage (un-imported), so store-empty reads fall through to
+  // Overpass exactly as the pre-#925 store-first path did.
   const FULL_COVERAGE = [{ minLng: 0, minLat: 40, maxLng: 30, maxLat: 60 }];
 
   const anchor = { lat: 49.1, lng: 16.75 };
@@ -89,9 +91,10 @@ describe('PoiService', () => {
       findPointsOfInterestNear: jest.fn().mockResolvedValue([]),
       findAccommodationsNear: jest.fn().mockResolvedValue([]),
       findPointsOfInterestInCorridor: jest.fn().mockResolvedValue([]),
-      // Default: the request area is fully covered, so store rows are
-      // authoritative and no Overpass merge runs (#925).
-      importedRegionBboxes: jest.fn().mockResolvedValue(FULL_COVERAGE),
+      // Default: NOTHING imported (empty coverage). An empty store then merges
+      // with Overpass (= Overpass), matching the pre-#925 fallback; tests that
+      // want the store treated as authoritative override this with FULL_COVERAGE.
+      importedRegionBboxes: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -112,6 +115,7 @@ describe('PoiService', () => {
     ];
 
     it('serves nearby POIs from the store and never calls the provider when the store has rows', async () => {
+      store.importedRegionBboxes.mockResolvedValue(FULL_COVERAGE); // imported area
       store.findPointsOfInterestNear.mockResolvedValue([
         buildNearbyPoi({
           external_id: 'store:1',
@@ -191,6 +195,7 @@ describe('PoiService', () => {
     });
 
     it('serves accommodations from the store when present', async () => {
+      store.importedRegionBboxes.mockResolvedValue(FULL_COVERAGE); // imported area
       store.findAccommodationsNear.mockResolvedValue([
         buildPoi({ external_id: 'store:h1', stars: 4 }),
       ]);
@@ -206,6 +211,7 @@ describe('PoiService', () => {
     });
 
     it('serves along-route POIs from the store corridor without sampling Overpass anchors', async () => {
+      store.importedRegionBboxes.mockResolvedValue(FULL_COVERAGE); // imported area
       store.findPointsOfInterestInCorridor.mockResolvedValue([
         buildNearbyPoi({ external_id: 'store:r1', lat: 49.0, lng: 16.75 }),
       ]);
@@ -295,6 +301,22 @@ describe('PoiService', () => {
 
       expect(provider.findPointsOfInterest).toHaveBeenCalled();
       expect(res.pois.map((p) => p.external_id)).toEqual(['live:1']);
+    });
+
+    it('treats a covered but EMPTY store result as authoritative — no Overpass (#925 review)', async () => {
+      // A sparse or kind-/min_stars-filtered lookup inside imported coverage is
+      // genuinely empty, not un-imported, so it must not keep hitting Overpass.
+      store.importedRegionBboxes.mockResolvedValue(AROUND_ANCHOR);
+      store.findPointsOfInterestNear.mockResolvedValue([]);
+
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+
+      expect(provider.findPointsOfInterest).not.toHaveBeenCalled();
+      expect(res.pois).toEqual([]);
     });
   });
 

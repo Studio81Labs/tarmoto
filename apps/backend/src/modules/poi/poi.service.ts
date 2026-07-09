@@ -114,8 +114,10 @@ export class PoiService {
    * Coverage-aware (#925): when `requestArea` is given and isn't fully inside
    * imported coverage (a request straddling the import frontier), the store's
    * rows are merged with a live Overpass query rather than treated as complete —
-   * so the uncovered side isn't silently dropped. A fully-covered area keeps the
-   * store short-circuit (no Overpass call). Omit `requestArea` to skip the check.
+   * so the uncovered side isn't silently dropped. A fully-covered area is
+   * authoritative and short-circuits with NO Overpass call — even when the store
+   * result is empty (a sparse/filtered covered lookup is genuinely empty, not
+   * un-imported). Omit `requestArea` to keep the plain empty→Overpass fallback.
    *
    * A non-connection store error (a missed migration, a PostGIS/SQL bug) is a
    * real defect `withPoiRepo` deliberately rethrows — surface it (500) rather
@@ -136,21 +138,21 @@ export class PoiService {
         `POI store unavailable, falling back to provider: ${err.message}`,
       );
     }
-    // Coverage-aware fallback (#925): when the request area isn't fully inside
-    // imported coverage, the store can only answer for the covered side — so
-    // also query Overpass and MERGE (store rows win, richer decision-support),
-    // instead of treating a few covered-side rows as authoritative and silently
-    // dropping the uncovered side. A fully-covered request keeps the store
-    // short-circuit (no Overpass call); a fully-uncovered one merges an empty
-    // store with Overpass — i.e. Overpass, unchanged.
-    if (
-      stored !== null &&
-      requestArea &&
-      !(await this.isCovered(requestArea))
-    ) {
+    // Coverage-aware fallback (#925): a fully-covered area is authoritative —
+    // return the store result even when it's EMPTY, because a sparse or
+    // kind-/min_stars-filtered lookup inside imported coverage is genuinely
+    // empty, NOT un-imported, so it must not keep hitting Overpass. Only when the
+    // area isn't fully covered (a request straddling the import frontier) do we
+    // MERGE the store's covered-side rows with a live Overpass query for the
+    // uncovered side (store rows win, richer decision-support), instead of
+    // treating the covered side as complete and dropping the rest.
+    if (stored !== null && requestArea) {
+      if (await this.isCovered(requestArea)) return stored;
       const live = await this.fromProviderSafe(fromProvider);
       return mergeByExternalId(stored, live);
     }
+    // No `requestArea` (coverage unknown) or the store failed: the original
+    // store-first contract — store rows if any, else Overpass.
     if (stored !== null && stored.length > 0) return stored;
     return this.fromProviderSafe(fromProvider);
   }

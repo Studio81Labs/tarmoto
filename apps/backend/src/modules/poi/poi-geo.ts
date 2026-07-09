@@ -152,7 +152,13 @@ export function routeBufferBbox(
     maxLng = Math.max(maxLng, p.lng);
   }
   const dLat = bufferKm / LAT_KM_PER_DEGREE;
-  const dLng = bufferKm / lngKmPerDegree((minLat + maxLat) / 2);
+  // Longitude km/degree shrinks toward the poles, so pad using the route's
+  // poleward-MOST latitude (its widest longitude span for `bufferKm`). The
+  // midpoint would under-pad a long north/south route's high-latitude end, which
+  // could let `bboxContains` mark a corridor that actually leaves the imported
+  // region as covered and skip the Overpass merge (#925 review).
+  const worstLat = Math.abs(minLat) >= Math.abs(maxLat) ? minLat : maxLat;
+  const dLng = bufferKm / lngKmPerDegree(worstLat);
   return {
     minLng: minLng - dLng,
     minLat: minLat - dLat,
