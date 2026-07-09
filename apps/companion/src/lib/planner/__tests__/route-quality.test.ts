@@ -13,6 +13,7 @@ const ROUTE = [
 
 function span(over: Partial<RouteQualitySegment>): RouteQualitySegment {
   return {
+    segment_id: "seg-1",
     osm_way_id: "1",
     segment_index: 0,
     quality_score: 4.2,

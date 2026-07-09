@@ -1137,6 +1137,7 @@ describe('RoadsService', () => {
     it('maps rows to spans, coercing pg string numerics and keeping null quality', async () => {
       (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
         {
+          segment_id: 'seg-uuid-1',
           osm_way_id: '123',
           segment_index: 0,
           quality_score: '4.2',
@@ -1147,6 +1148,7 @@ describe('RoadsService', () => {
           end_fraction: '0.4',
         },
         {
+          segment_id: null,
           osm_way_id: null,
           segment_index: null,
           quality_score: null,
@@ -1162,6 +1164,7 @@ describe('RoadsService', () => {
 
       expect(result.segments).toEqual([
         {
+          segment_id: 'seg-uuid-1',
           osm_way_id: '123',
           segment_index: 0,
           quality_score: 4.2,
@@ -1172,6 +1175,7 @@ describe('RoadsService', () => {
           end_fraction: 0.4,
         },
         {
+          segment_id: null,
           osm_way_id: null,
           segment_index: null,
           quality_score: null,

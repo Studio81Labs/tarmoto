@@ -19,7 +19,7 @@ import { QualityMap, type QualityMapHandle } from "./_components/QualityMap";
 import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
-} from "./_components/SegmentDetailSidebar";
+} from "@/components/roads/SegmentDetailSidebar";
 import { ApiError, api, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -447,6 +447,7 @@ function ExplorerPageInner() {
             showSurface={showSurfaceOverlay}
             showHazards={showHazardOverlay}
             onSegmentSelect={setSelectedSegmentId}
+            selectedSegmentId={selectedSegmentId}
             onViewChange={(view) => {
               setCenter({ lng: view.lng, lat: view.lat });
               setZoom(view.zoom);
