@@ -1,12 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import type { UnitSystem } from '@tarmoto/shared';
 import { EmailLog } from '../../entities/email-log.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
-import { JobsProducer } from '../jobs/jobs.producer.js';
+import type { DigestWeeklyComposeJobData } from '../jobs/jobs.producer.js';
+import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
+import {
+  DEFAULT_JOB_OPTIONS,
+  DIGEST_COMPOSE_PRIORITY,
+} from '../jobs/jobs.config.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   AdminEmailLogListResponseDto,
@@ -24,7 +31,11 @@ export class AdminEmailService {
     @InjectRepository(User)
     private readonly users: Repository<User>,
     private readonly email: EmailService,
-    private readonly jobs: JobsProducer,
+    // The digest queue token — registered in AdminModule; the connection +
+    // workers come from JobsModule.forRoot(). (JobsProducer can't be injected
+    // here, see AdminModule.)
+    @InjectQueue(QUEUE_NAMES.DIGEST_WEEKLY)
+    private readonly digestQueue: Queue<DigestWeeklyComposeJobData>,
     private readonly config: ConfigService,
   ) {}
 
@@ -61,13 +72,24 @@ export class AdminEmailService {
 
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
-    await this.jobs.enqueueDigestResend({
-      user_id: user.id,
-      // Unique per click → the resend never dedups against the failed weekly job.
-      for_local_window: `resend-${windowEnd.getTime()}`,
-      window_start: windowStart.toISOString(),
-      window_end: windowEnd.toISOString(),
-    });
+    // Unique per click → the resend never dedups against the failed weekly job
+    // (whose `digest-weekly:<user>:<week>` id may still sit in the failed set).
+    const forLocalWindow = `resend-${windowEnd.getTime()}`;
+    await this.digestQueue.add(
+      JOB_NAMES.DIGEST_WEEKLY_COMPOSE,
+      {
+        user_id: user.id,
+        for_local_window: forLocalWindow,
+        window_start: windowStart.toISOString(),
+        window_end: windowEnd.toISOString(),
+      },
+      {
+        ...DEFAULT_JOB_OPTIONS,
+        jobId: `digest-resend:${user.id}:${forLocalWindow}`,
+        removeOnComplete: { age: 8 * 24 * 60 * 60 },
+        priority: DIGEST_COMPOSE_PRIORITY,
+      },
+    );
     return { status: 'queued', user_id: user.id };
   }
 

@@ -46,17 +46,17 @@ function make(result: [unknown[], number] = [[SAMPLE_ROW], 1]) {
       .fn()
       .mockResolvedValue({ providerMessageId: 'm', providerName: 'resend' }),
   };
-  const jobs = { enqueueDigestResend: jest.fn().mockResolvedValue(undefined) };
+  const digestQueue = { add: jest.fn().mockResolvedValue(undefined) };
   const config = { get: jest.fn().mockReturnValue('https://app.tarmoto.app') };
 
   const service = new AdminEmailService(
     emailLog as never,
     users as never,
     email as never,
-    jobs as never,
+    digestQueue as never,
     config as never,
   );
-  return { service, qb, usersQb, email, jobs };
+  return { service, qb, usersQb, email, digestQueue };
 }
 
 describe('AdminEmailService', () => {
@@ -134,24 +134,28 @@ describe('AdminEmailService', () => {
 
   describe('resendDigest', () => {
     it('resolves the recipient (case-insensitively) and queues a 7-day resend', async () => {
-      const { service, jobs, usersQb } = make();
+      const { service, digestQueue, usersQb } = make();
       const res = await service.resendDigest('Rider@X.io');
       expect(res).toEqual({ status: 'queued', user_id: 'u1' });
       // Case-insensitive, lowercased match.
       expect(usersQb.where).toHaveBeenCalledWith('LOWER(u.email) = :email', {
         email: 'rider@x.io',
       });
-      const [data] = jobs.enqueueDigestResend.mock.calls[0] as [
+      const [, data, opts] = digestQueue.add.mock.calls[0] as [
+        string,
         {
           user_id: string;
           for_local_window: string;
           window_start: string;
           window_end: string;
         },
+        { jobId: string; priority: number },
       ];
       expect(data.user_id).toBe('u1');
-      // Unique per-click token → never dedups against the failed weekly job.
+      // Unique per-click token + distinct jobId → never dedups against the
+      // failed weekly job.
       expect(data.for_local_window).toMatch(/^resend-\d+$/);
+      expect(opts.jobId).toMatch(/^digest-resend:u1:resend-\d+$/);
       const span =
         new Date(data.window_end).getTime() -
         new Date(data.window_start).getTime();
@@ -159,12 +163,12 @@ describe('AdminEmailService', () => {
     });
 
     it('404s and enqueues nothing when no user has that recipient', async () => {
-      const { service, usersQb, jobs } = make();
+      const { service, usersQb, digestQueue } = make();
       usersQb.getRawOne.mockResolvedValue(undefined);
       await expect(service.resendDigest('nobody@x.io')).rejects.toThrow(
         NotFoundException,
       );
-      expect(jobs.enqueueDigestResend).not.toHaveBeenCalled();
+      expect(digestQueue.add).not.toHaveBeenCalled();
     });
   });
 });
