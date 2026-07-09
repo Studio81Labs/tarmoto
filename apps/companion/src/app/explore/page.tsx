@@ -232,6 +232,10 @@ function ExplorerPageInner() {
     resetFilters,
   } = useMapStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // Public visitors get no in-page header — the layout's PublicExploreHeader
+  // already carries the brand + auth CTAs. Without our header there's no Filter
+  // toggle for them, so the filter column is always shown.
+  const filterVisible = isAuthenticated ? filterOpen : true;
   // Imperative handle to the MapLibre camera. `MapCanvas` reads
   // its initial center/zoom only at mount (to avoid yanking user
   // pans), so search-pick flows need this narrow opt-in channel
@@ -337,54 +341,53 @@ function ExplorerPageInner() {
     <div className="flex h-full min-h-0 flex-col bg-cream text-ink">
       {/* Page header — same chrome/height as the trip preview/edit bar:
           heading on the left, action buttons on the right. "My trips" /
-          "My rides" overlay the rider's own routes on the map (auth-only);
-          "Filter" toggles the left filter column. */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
-        <div className="flex min-w-0 shrink-0 items-center gap-[9px]">
-          <MapIcon size={18} className="shrink-0 text-accent" aria-hidden />
-          <h1 className="truncate font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-            {t("Road Explorer")}
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Toggle buttons: outline (secondary) when off, neutral ink fill
+          "My rides" overlay the rider's own routes on the map; "Filter"
+          toggles the left filter column. Shown only for signed-in riders —
+          public visitors get the layout's PublicExploreHeader instead. */}
+      {isAuthenticated && (
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
+          <div className="flex min-w-0 shrink-0 items-center gap-[9px]">
+            <MapIcon size={18} className="shrink-0 text-accent" aria-hidden />
+            <h1 className="truncate font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+              {t("Road Explorer")}
+            </h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Toggle buttons: outline (secondary) when off, neutral ink fill
               (primary) when on — coral/accent stays reserved for CTAs. */}
-          {isAuthenticated && (
-            <>
-              <Button
-                variant={showMyTrips ? "primary" : "secondary"}
-                size="sm"
-                uppercase
-                leftIcon={<Route size={14} />}
-                aria-pressed={showMyTrips}
-                onClick={() => setShowMyTrips((value) => !value)}
-              >
-                {t("My trips")}
-              </Button>
-              <Button
-                variant={showMyRides ? "primary" : "secondary"}
-                size="sm"
-                uppercase
-                leftIcon={<Bike size={14} />}
-                aria-pressed={showMyRides}
-                onClick={() => setShowMyRides((value) => !value)}
-              >
-                {t("My rides")}
-              </Button>
-            </>
-          )}
-          <Button
-            variant={filterOpen ? "primary" : "secondary"}
-            size="sm"
-            uppercase
-            leftIcon={<SlidersHorizontal size={14} />}
-            aria-pressed={filterOpen}
-            onClick={() => setFilterOpen((value) => !value)}
-          >
-            {t("Filter")}
-          </Button>
-        </div>
-      </header>
+            <Button
+              variant={showMyTrips ? "primary" : "secondary"}
+              size="sm"
+              uppercase
+              leftIcon={<Route size={14} />}
+              aria-pressed={showMyTrips}
+              onClick={() => setShowMyTrips((value) => !value)}
+            >
+              {t("My trips")}
+            </Button>
+            <Button
+              variant={showMyRides ? "primary" : "secondary"}
+              size="sm"
+              uppercase
+              leftIcon={<Bike size={14} />}
+              aria-pressed={showMyRides}
+              onClick={() => setShowMyRides((value) => !value)}
+            >
+              {t("My rides")}
+            </Button>
+            <Button
+              variant={filterOpen ? "primary" : "secondary"}
+              size="sm"
+              uppercase
+              leftIcon={<SlidersHorizontal size={14} />}
+              aria-pressed={filterOpen}
+              onClick={() => setFilterOpen((value) => !value)}
+            >
+              {t("Filter")}
+            </Button>
+          </div>
+        </header>
+      )}
       {/* Spec-aligned Route Explorer grid: Filters sidebar | map | info panel.
           Each side column collapses to 0 via its CSS variable; the grid
           animates the width change (mirrors the planner's day column). */}
@@ -392,7 +395,7 @@ function ExplorerPageInner() {
         className="grid min-h-0 flex-1 grid-cols-[var(--explore-left)_1fr_var(--explore-right)] transition-[grid-template-columns] duration-300 ease-out"
         style={
           {
-            "--explore-left": filterOpen ? "300px" : "0px",
+            "--explore-left": filterVisible ? "300px" : "0px",
             // Info panel only takes a real grid column on wide
             // viewports. On narrow viewports it overlays the map
             // (see the absolute-positioned aside below) so a phone
@@ -414,8 +417,8 @@ function ExplorerPageInner() {
           keyboard users don't tab through invisible inputs. */}
         <aside
           className="flex min-h-0 flex-col overflow-hidden border-r border-line bg-paper"
-          inert={!filterOpen}
-          aria-hidden={!filterOpen}
+          inert={!filterVisible}
+          aria-hidden={!filterVisible}
         >
           <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
             <h2 className="whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
@@ -627,7 +630,11 @@ function ExplorerPageInner() {
           <SegmentDetailSidebar
             state={segmentDetailState}
             onClose={() => setSelectedSegmentId(null)}
-            anchor="viewport"
+            // Signed-in riders get the full-window drawer (their page header is
+            // the only chrome it covers, same as the trip views). Public
+            // visitors stay container-anchored so it never covers the
+            // PublicExploreHeader's sign-in / create-account CTAs.
+            anchor={isAuthenticated ? "viewport" : "container"}
           />
 
           {/* Narrow-viewport info panel — overlays the map instead of
