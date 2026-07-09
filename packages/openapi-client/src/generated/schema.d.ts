@@ -3515,6 +3515,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/email/digest-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a sample weekly digest to your own address */
+        post: operations["AdminEmailController_sendTestDigest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/digest-resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-trigger a rider’s weekly digest by recipient */
+        post: operations["AdminEmailController_resendDigest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config/flags": {
         parameters: {
             query?: never;
@@ -6294,6 +6328,20 @@ export interface components {
             page: number;
             pageSize: number;
         };
+        TestDigestResponseDto: {
+            /** @enum {string} */
+            status: "sent" | "failed";
+        };
+        ResendDigestDto: {
+            /** @description Recipient address of the failed digest to resend. */
+            recipient: string;
+        };
+        ResendDigestResponseDto: {
+            /** @enum {string} */
+            status: "queued";
+            /** @description Resolved user id the resend was queued for. */
+            user_id: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -6573,6 +6621,9 @@ export type SchemaLaunchTierResponseDto = components['schemas']['LaunchTierRespo
 export type SchemaSetLaunchTierDto = components['schemas']['SetLaunchTierDto'];
 export type SchemaAdminEmailLogRowDto = components['schemas']['AdminEmailLogRowDto'];
 export type SchemaAdminEmailLogListResponseDto = components['schemas']['AdminEmailLogListResponseDto'];
+export type SchemaTestDigestResponseDto = components['schemas']['TestDigestResponseDto'];
+export type SchemaResendDigestDto = components['schemas']['ResendDigestDto'];
+export type SchemaResendDigestResponseDto = components['schemas']['ResendDigestResponseDto'];
 export type $defs = Record<string, never>;
 export interface operations {
     AppController_getHello: {
@@ -12733,6 +12784,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminEmailLogListResponseDto"];
+                };
+            };
+        };
+    };
+    AdminEmailController_sendTestDigest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestDigestResponseDto"];
+                };
+            };
+        };
+    };
+    AdminEmailController_resendDigest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResendDigestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResendDigestResponseDto"];
                 };
             };
         };
