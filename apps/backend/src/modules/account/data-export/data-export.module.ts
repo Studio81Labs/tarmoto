@@ -23,6 +23,7 @@ import { DataExportRequest } from '../../../entities/data-export-request.entity.
 import { RideTagEvent } from '../../../entities/ride-tag-event.entity.js';
 import { Bike } from '../../../entities/bike.entity.js';
 import { UserNotification } from '../../../entities/user-notification.entity.js';
+import { EmailLog } from '../../../entities/email-log.entity.js';
 import { AuthModule } from '../../auth/index.js';
 import { EmailModule } from '../../email/index.js';
 import { StorageModule } from '../../storage/index.js';
@@ -65,6 +66,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
       RideTagEvent,
       Bike,
       UserNotification,
+      EmailLog,
     ]),
   ],
   controllers: [DataExportController],
@@ -91,6 +93,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         getRepositoryToken(RideTagEvent),
         getRepositoryToken(Bike),
         getRepositoryToken(UserNotification),
+        getRepositoryToken(EmailLog),
       ],
       useFactory: (
         contacts: Repository<UserContact>,
@@ -110,6 +113,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         rideTagEvents: Repository<RideTagEvent>,
         bikes: Repository<Bike>,
         userNotifications: Repository<UserNotification>,
+        emailLog: Repository<EmailLog>,
       ) =>
         new BundleAssembler({
           contacts,
@@ -129,6 +133,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
           rideTagEvents,
           bikes,
           userNotifications,
+          emailLog,
         }),
     },
   ],

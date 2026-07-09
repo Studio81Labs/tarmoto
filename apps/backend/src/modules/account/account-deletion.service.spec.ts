@@ -14,6 +14,7 @@ import { EmailService } from '../email/email.service.js';
 import { User } from '../../entities/user.entity.js';
 import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
+import { EmailLog } from '../../entities/email-log.entity.js';
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
@@ -343,6 +344,11 @@ describe('AccountDeletionService', () => {
       // them, so the purge must delete them explicitly.
       expect(txManager.delete).toHaveBeenCalledWith(TripInvite, {
         email: 'rider@tarmoto.app',
+      });
+      // The email delivery log is likewise recipient-keyed, so the rider's
+      // address doesn't survive the purge.
+      expect(txManager.delete).toHaveBeenCalledWith(EmailLog, {
+        recipient: 'rider@tarmoto.app',
       });
       expect(txManager.save).toHaveBeenCalledWith(
         AccountDeletionLog,

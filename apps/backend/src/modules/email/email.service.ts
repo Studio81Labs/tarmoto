@@ -1,5 +1,8 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { EmailLog } from '../../entities/email-log.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   EMAIL_PROVIDER,
@@ -69,6 +72,11 @@ export class EmailService {
     @Optional()
     private readonly provider: EmailProvider | null,
     private readonly config: ConfigService,
+    // Optional so unit tests can construct the service without the DB layer.
+    // Bound in production via `EmailModule`'s `TypeOrmModule.forFeature`.
+    @Optional()
+    @InjectRepository(EmailLog)
+    private readonly emailLog: Repository<EmailLog> | null = null,
   ) {
     this.fallback = new LogEmailProvider();
   }
@@ -194,6 +202,11 @@ export class EmailService {
         `Sent ${template.tag} to ${to} via ${result.providerName}` +
           (result.providerMessageId ? ` (${result.providerMessageId})` : ''),
       );
+      await this.recordSend(to, template, {
+        status: 'sent',
+        provider: result.providerName,
+        providerMessageId: result.providerMessageId ?? null,
+      });
       return result;
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
@@ -205,8 +218,65 @@ export class EmailService {
       this.logger.warn(
         `Email NOT delivered: tag=${template.tag} to=${to} subject="${template.subject}" provider=${primary.name} error="${errMessage}". Body redacted from logs to avoid leaking one-time tokens; if the user expected this mail, ask them to retry the originating action.`,
       );
+      await this.recordSend(to, template, {
+        status: 'failed',
+        provider: primary.name,
+        error: errMessage,
+      });
       return null;
     }
+  }
+
+  /**
+   * Best-effort delivery-log write (metadata only — never the body, which can
+   * embed a one-time token). Failures here are swallowed with a warning: the
+   * send itself is best-effort, and a log outage must never change what the
+   * caller sees. No-ops when the repo isn't bound (unit tests).
+   */
+  private async recordSend(
+    to: string,
+    template: RenderedTemplate,
+    outcome:
+      | { status: 'sent'; provider: string; providerMessageId: string | null }
+      | { status: 'failed'; provider: string; error: string },
+  ): Promise<void> {
+    if (!this.emailLog) return;
+    // The account-deletion-completed receipt is sent AFTER `purgeUser` has
+    // already deleted this recipient's email_log rows (and the user row). Logging
+    // it would re-persist the just-deleted address with no user — and no future
+    // purge — able to remove it, so this one receipt is deliberately not logged.
+    if (template.tag === 'account-deletion-completed') return;
+    try {
+      await this.emailLog.insert({
+        recipient: to.toLowerCase(),
+        tag: template.tag,
+        subject: this.loggableSubject(template).slice(0, 255),
+        status: outcome.status,
+        provider: outcome.provider,
+        provider_message_id:
+          outcome.status === 'sent' ? outcome.providerMessageId : null,
+        error_class:
+          outcome.status === 'failed' ? outcome.error.slice(0, 255) : null,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `email_log write failed: tag=${template.tag} status=${outcome.status} error="${msg}"`,
+      );
+    }
+  }
+
+  /**
+   * The subject to persist in the recipient-keyed log. Most subjects are generic
+   * or about the recipient, so they're safe. The trip-invite subject embeds the
+   * INVITER's display name + trip title, though — third-party data relative to
+   * the (possibly external) recipient this row is keyed on, which the inviter's
+   * own account deletion could never purge. Store a generic subject for it so no
+   * third party's data lingers in the log.
+   */
+  private loggableSubject(template: RenderedTemplate): string {
+    if (template.tag === 'trip-invite') return 'Trip invitation';
+    return template.subject;
   }
 
   private withBase<T>(ctx: T): T & { preferencesUrl: string } {
