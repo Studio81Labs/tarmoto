@@ -51,6 +51,16 @@ interface RoutePoint {
 const STORE_PER_KIND_LIMIT = 100;
 
 /**
+ * Over-fetch factor for the DB caps so cross-source de-dup (#869) doesn't let
+ * duplicates consume the result budget: the `.limit()` runs before de-dup, so a
+ * dense OSM+FSQ bbox could otherwise return far fewer than the cap once
+ * duplicates are dropped. Fetch this multiple of the cap, then de-dup and trim
+ * to the real cap. 2× covers the worst case (every kept row has one duplicate);
+ * a no-op in effect when FSQ isn't imported.
+ */
+const DEDUP_OVERFETCH = 2;
+
+/**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
  * hits Overpass live per request — this serves the mirrored PostGIS rows the
  * weekly import (#848 / #850) populates, so a pannable POI map layer and the
@@ -121,10 +131,14 @@ export class PoiStoreService {
       return qb
         .orderBy('poi.kind', 'ASC')
         .addOrderBy('poi.name', 'ASC')
-        .limit(capped)
+        .limit(capped * DEDUP_OVERFETCH)
         .getMany();
     });
-    return dedupeAcrossSources(rows, poiDedupKey).map(toStoredPoiDto);
+    // Over-fetch then trim to `capped` AFTER de-dup, so duplicates don't shrink
+    // the result below the requested cap in a dense OSM+FSQ bbox.
+    return dedupeAcrossSources(rows, poiDedupKey)
+      .slice(0, capped)
+      .map(toStoredPoiDto);
   }
 
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
@@ -347,7 +361,7 @@ export class PoiStoreService {
       }
       return qb
         .orderBy(`ST_Distance(poi.geom::geography, ${point})`, 'ASC')
-        .limit(limit)
+        .limit(limit * DEDUP_OVERFETCH)
         .getMany();
     });
   }
@@ -393,7 +407,7 @@ export class PoiStoreService {
       // to partition and falls back to a single global MAX_LIMIT cap.
       if (limit !== undefined) {
         qb.orderBy(`ST_Distance(poi.geom::geography, ${line})`, 'ASC').limit(
-          limit,
+          limit * DEDUP_OVERFETCH,
         );
       }
       return qb.getMany();

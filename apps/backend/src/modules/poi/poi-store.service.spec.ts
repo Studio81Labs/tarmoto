@@ -165,7 +165,7 @@ describe('PoiStoreService', () => {
     // No kinds → only the always-on tombstone filter (#850).
     expect(qb.andWhere).toHaveBeenCalledWith('poi.deactivated_at IS NULL');
     expect(qb.andWhere).toHaveBeenCalledTimes(1);
-    expect(qb.limit).toHaveBeenCalledWith(200);
+    expect(qb.limit).toHaveBeenCalledWith(400); // 200 default × DEDUP_OVERFETCH
     expect(res[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
   });
 
@@ -281,7 +281,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(200); // STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH
     });
 
     it('falls back to a single global cap for an all-kinds read (#919)', async () => {
@@ -289,7 +289,7 @@ describe('PoiStoreService', () => {
       // MAX_LIMIT, still bounded rather than an unbounded getMany().
       await service.findAlongRoute(route, undefined, 20);
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(1000); // MAX_LIMIT × DEDUP_OVERFETCH
     });
 
     it('clamps the buffer to the max and adds a kind filter', async () => {
@@ -345,7 +345,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(100); // STORE_PER_KIND_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(200); // STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH
       expect(pois[0]).toMatchObject({
         external_id: 'osm:node:42',
         kind: 'restaurant',
@@ -361,7 +361,7 @@ describe('PoiStoreService', () => {
         'fuel_station',
       ]);
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
-      expect(qb.limit).toHaveBeenCalledWith(100);
+      expect(qb.limit).toHaveBeenCalledWith(200);
       const kindFilters = qb.andWhere.mock.calls
         .filter(([sql]) => String(sql).includes('poi.kind IN'))
         .map(([, params]) => (params as { kinds: string[] }).kinds);
@@ -381,7 +381,7 @@ describe('PoiStoreService', () => {
       // Accommodations rank globally (closest-N), so one query with the global
       // cap — no per-kind fan-out.
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(1);
-      expect(qb.limit).toHaveBeenCalledWith(500); // MAX_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(1000); // MAX_LIMIT × DEDUP_OVERFETCH
       const params = (
         qb.where.mock.calls[0] as [string, Record<string, number>]
       )[1];
@@ -434,7 +434,7 @@ describe('PoiStoreService', () => {
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
         'ST_Distance',
       );
-      expect(qb.limit).toHaveBeenCalledWith(100); // CORRIDOR_STORE_PER_KIND_LIMIT
+      expect(qb.limit).toHaveBeenCalledWith(200); // CORRIDOR_STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH
       // Raw shape — the service's rankAlongRoute does the projection, so no
       // along/off-route distances are computed here.
       expect(pois[0]).toMatchObject({
@@ -451,7 +451,7 @@ describe('PoiStoreService', () => {
       ]);
       // One bounded, closest-to-route query per kind — not one global cap.
       expect(repo.createQueryBuilder).toHaveBeenCalledTimes(2);
-      expect(qb.limit).toHaveBeenCalledWith(100);
+      expect(qb.limit).toHaveBeenCalledWith(200);
       const kindFilters = qb.andWhere.mock.calls
         .filter(([sql]) => String(sql).includes('poi.kind IN'))
         .map(([, params]) => (params as { kinds: string[] }).kinds);

@@ -32,14 +32,19 @@ export interface DedupPoi {
   lng: number;
 }
 
-/** Lower-case, strip diacritics + punctuation, collapse spaces; null if empty. */
+/**
+ * Lower-case, strip combining accents, drop punctuation, collapse spaces; null
+ * if empty. Uses a Unicode letter/number class (`\p{L}\p{N}`), not `[a-z0-9]`,
+ * so non-Latin names in the coverage regions (Greek `Ταβέρνα`, Cyrillic
+ * `Кафана`) survive normalisation and can still match across sources.
+ */
 function normalizeName(name: string | null): string | null {
   if (!name) return null;
   const normalized = name
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
   return normalized || null;
 }

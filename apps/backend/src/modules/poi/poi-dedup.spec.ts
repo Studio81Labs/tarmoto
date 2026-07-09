@@ -89,6 +89,22 @@ describe('dedupeAcrossSources', () => {
     ).toEqual(['fsq', 'osm']);
   });
 
+  it('matches non-Latin names across sources (Greek / Cyrillic coverage)', () => {
+    const near = { lat: 50.081, lng: 14.421 };
+    expect(
+      dedupe([
+        row({ id: 'osm', source: 'osm', name: 'Ταβέρνα', ...near }),
+        row({ id: 'fsq', source: 'fsq', name: 'Ταβέρνα', ...near }),
+      ]),
+    ).toEqual(['osm']); // Greek duplicate matched + dropped
+    expect(
+      dedupe([
+        row({ id: 'osm', source: 'osm', name: 'Кафана', ...near }),
+        row({ id: 'fsq', source: 'fsq', name: 'Кафана', ...near }),
+      ]),
+    ).toEqual(['osm']); // Cyrillic duplicate matched + dropped
+  });
+
   it('never de-dupes when a name is missing on either side', () => {
     const near = { lat: 50.081, lng: 14.421 };
     const rows = [
