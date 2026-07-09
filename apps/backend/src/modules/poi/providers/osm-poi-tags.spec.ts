@@ -88,6 +88,25 @@ describe('mapOsmElementToPoi', () => {
     expect(poi.tags).toMatchObject({ amenity: 'restaurant' });
   });
 
+  it('keeps the classifier tags (amenity/tourism) even when the tag bag is capped (#926)', () => {
+    // 65 filler keys sort between `amenity` and `tourism`, so the 60-key cap
+    // would truncate `tourism=viewpoint` — but the store read's secondary-kind
+    // match relies on it, so the classifier keys are prioritised past the cap.
+    const filler: Record<string, string> = {};
+    for (let i = 0; i < 65; i++) {
+      filler[`contact:${String(i).padStart(2, '0')}`] = 'x';
+    }
+    const poi = expectPoi(
+      mapOsmElementToPoi(
+        el({
+          tags: { amenity: 'restaurant', tourism: 'viewpoint', ...filler },
+        }),
+      ),
+    );
+    expect(poi.tags?.amenity).toBe('restaurant');
+    expect(poi.tags?.tourism).toBe('viewpoint');
+  });
+
   it('maps a fast_food node to the fast_food store kind (superset of the live enum)', () => {
     const poi = expectPoi(
       mapOsmElementToPoi(

@@ -174,6 +174,18 @@ const MAX_TAG_BAG_KEYS = 60;
 const MAX_TAG_VALUE_LEN = 512;
 
 /**
+ * The OSM tag keys the classifier keys off (`amenity` / `tourism`), derived from
+ * {@link IMPORT_POI_TAGS} so it stays in sync. These MUST survive the tag-bag
+ * cap: the store read's secondary-kind match (#926) tests `tags @> {key:value}`,
+ * and `tourism` in particular sorts late alphabetically, so on a heavily-tagged
+ * element (many `addr:*`/`contact:*`/`name:*` keys) it would otherwise be
+ * truncated — dropping a dual-tagged element from a secondary-kind request.
+ */
+const CLASSIFIER_TAG_KEYS: readonly string[] = Array.from(
+  new Set(IMPORT_POI_TAGS.map((t) => t.key)),
+);
+
+/**
  * Collapse `_`/`;` separators and runs of whitespace; null when empty.
  * Mirrors the `extractPoiHint` normalization so the stored `cuisine`/`brand`
  * columns match what the mobile card renders.
@@ -194,8 +206,14 @@ function boundedTagBag(
 ): Record<string, string> | null {
   const keys = Object.keys(tags).sort();
   if (keys.length === 0) return null;
+  // Put the classifier keys first so the cap can never drop them, then fill the
+  // remaining budget with the sorted rest (#926 review).
+  const ordered = [
+    ...CLASSIFIER_TAG_KEYS.filter((key) => Object.hasOwn(tags, key)),
+    ...keys.filter((key) => !CLASSIFIER_TAG_KEYS.includes(key)),
+  ];
   const out: Record<string, string> = {};
-  for (const key of keys.slice(0, MAX_TAG_BAG_KEYS)) {
+  for (const key of ordered.slice(0, MAX_TAG_BAG_KEYS)) {
     const value = tags[key];
     if (typeof value !== 'string') continue;
     out[key] =
