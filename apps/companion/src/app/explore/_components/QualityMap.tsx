@@ -500,9 +500,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         const east = Math.max(-180, Math.min(180, b.getEast()));
         const south = Math.max(-90, Math.min(90, b.getSouth()));
         const north = Math.max(-90, Math.min(90, b.getNorth()));
-        // Degenerate/antimeridian-crossing viewport (west ≥ east): skip rather
-        // than send an inverted bbox.
-        if (west >= east || south >= north) return;
+        // Degenerate/antimeridian-crossing viewport (west ≥ east): no valid
+        // request for this view, so clear rather than leave the previous
+        // viewport's pins visible/clickable.
+        if (west >= east || south >= north) {
+          poisByIdRef.current = new Map();
+          setPoiSourceData(map, []);
+          setPoiMenu(null);
+          return;
+        }
         const bbox: [number, number, number, number] = [
           west,
           south,
