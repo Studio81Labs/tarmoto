@@ -55,7 +55,7 @@ import {
   POI_CLUSTER_LAYER,
   POI_SOURCE,
 } from "@/components/map/PoiPinLayer";
-import { PoiInfoPopover } from "./PoiInfoPopover";
+import { PoiPopover } from "@/components/map/PoiPopover";
 import { plannerApi } from "@/lib/planner/api";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
 
@@ -690,7 +690,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         onViewChange={handleViewChange}
       >
         {poiMenu ? (
-          <PoiInfoPopover
+          <PoiPopover
             poi={poiMenu.poi}
             x={poiMenu.x}
             y={poiMenu.y}
