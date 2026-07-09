@@ -112,9 +112,10 @@ describe('PoiImportProcessor', () => {
     expect(result).toEqual({ regions_enqueued: 3 });
     expect(enqueuePoiImportRegion).toHaveBeenCalledTimes(3);
     // Only FSQ jobs — OSM is disabled, so its regions are never enqueued.
-    for (const call of enqueuePoiImportRegion.mock.calls) {
-      expect(call[0]).toBe('fsq');
-    }
+    const sources = (
+      enqueuePoiImportRegion.mock.calls as [string, ...unknown[]][]
+    ).map((call) => call[0]);
+    expect(sources).toEqual(['fsq', 'fsq', 'fsq']);
   });
 
   it('dispatch: tolerates the retired `run` job name as a dispatch alias', async () => {
