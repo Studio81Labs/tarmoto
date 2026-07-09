@@ -194,12 +194,17 @@ export function surfaceMixToPercents(
     total += metres;
   }
   if (total === 0) return [];
-  return [...metresBySurface.entries()]
-    .map(([surface, metres]) => ({
-      surface,
-      pct: Math.round((metres / total) * 100),
-    }))
-    .sort((a, b) => b.pct - a.pct);
+  return (
+    [...metresBySurface.entries()]
+      .map(([surface, metres]) => ({
+        surface,
+        pct: Math.round((metres / total) * 100),
+      }))
+      // Drop sub-1% surfaces: they round to 0, contribute a 0-width bar slice,
+      // and would otherwise show a misleading "0% asphalt" chip in the legend.
+      .filter((entry) => entry.pct > 0)
+      .sort((a, b) => b.pct - a.pct)
+  );
 }
 
 export function deriveFlaggedSections(
