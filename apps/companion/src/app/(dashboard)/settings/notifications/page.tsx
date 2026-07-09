@@ -104,6 +104,12 @@ export default function NotificationsPage() {
         email_digest: prefs.email_digest,
         marketing_emails: prefs.marketing_emails,
         categories: prefs.categories,
+        // Persist the rider's IANA timezone so timezone-aware delivery — the
+        // weekly digest's local Sunday-08:00 send + quiet hours — uses their
+        // actual zone instead of the server default (UTC). Without a written
+        // value the backend has no rider timezone to read. It validates this
+        // against pg_timezone_names and falls back to UTC for anything unknown.
+        quiet_hours_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       const merged = mergeWithDefaults(
         data as PartialNotificationPreferences | null,
