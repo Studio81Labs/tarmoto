@@ -359,13 +359,41 @@ describe('PoiStoreService', () => {
         unknown,
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
-      // #926: also match the venue tag so a dual-tagged element (stored under
-      // its amenity-first primary) isn't missed by a secondary-kind request.
-      expect(kindSql).toContain('poi.tags @> :ktag0::jsonb');
+      // #926: also match the venue tag — but only when the stored kind wasn't
+      // itself requested (NOT IN :allKinds), so it can't consume another kind's
+      // budget (#926 review).
+      expect(kindSql).toContain(
+        'poi.tags @> :ktag0::jsonb AND poi.kind NOT IN (:...allKinds)',
+      );
       expect(kindParams).toEqual({
         kinds: ['fuel_station'],
+        allKinds: ['fuel_station'],
         ktag0: '{"amenity":"fuel"}',
       });
+    });
+
+    it('preserves a requested stored non-venue kind (hotel), not reclassifying it (#926)', async () => {
+      // `/poi/in-corridor` accepts free-form stored kinds. A hotel carrying an
+      // amenity=restaurant tag, requested alongside restaurant, must stay a
+      // hotel — classifyPoiTags ignores `hotel`, so a naive reclassify would
+      // mislabel it; a requested stored kind is preserved instead.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({
+          external_id: 'osm:node:hotel',
+          kind: 'hotel',
+          name: 'Hotel Grill',
+          tags: { amenity: 'restaurant', tourism: 'hotel' },
+          geom: { type: 'Point', coordinates: [18.4, 49.5] }, // on the route
+        }),
+      ]);
+      const { pois } = await service.findAlongRoute(
+        route,
+        ['hotel', 'restaurant'],
+        2,
+      );
+      expect(pois.find((p) => p.external_id === 'osm:node:hotel')?.kind).toBe(
+        'hotel',
+      );
     });
   });
 
@@ -392,10 +420,13 @@ describe('PoiStoreService', () => {
         unknown,
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
-      // #926: also match the venue tag so a dual-tagged element isn't missed.
-      expect(kindSql).toContain('poi.tags @> :ktag0::jsonb');
+      // #926: also match the venue tag, gated on NOT IN :allKinds (#926 review).
+      expect(kindSql).toContain(
+        'poi.tags @> :ktag0::jsonb AND poi.kind NOT IN (:...allKinds)',
+      );
       expect(kindParams).toEqual({
         kinds: ['restaurant'],
+        allKinds: ['restaurant'],
         ktag0: '{"amenity":"restaurant"}',
       });
       // Nearest-first + bounded per kind so a dense radius can't load unbounded
@@ -489,6 +520,24 @@ describe('PoiStoreService', () => {
       const dualHits = pois.filter((p) => p.external_id === 'osm:node:dual');
       expect(dualHits).toHaveLength(1);
       expect(dualHits[0]?.kind).toBe('restaurant');
+    });
+
+    it('gates the secondary tag-match on the FULL requested set, so it cannot consume another kind budget (#926)', async () => {
+      await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+        'viewpoint',
+      ]);
+      // Each per-kind query's tag-match excludes NOT IN allKinds = the whole
+      // requested set — so a `restaurant`+`viewpoint` element (stored restaurant)
+      // is found only by its own restaurant query, never tag-surfaced into the
+      // viewpoint query's LIMIT budget.
+      const tagMatches = qb.andWhere.mock.calls
+        .filter(([sql]) => String(sql).includes('poi.tags @>'))
+        .map(([, params]) => params as { allKinds: string[] });
+      expect(tagMatches.length).toBeGreaterThan(0);
+      for (const params of tagMatches) {
+        expect(params.allKinds).toEqual(['restaurant', 'viewpoint']);
+      }
     });
   });
 
