@@ -59,6 +59,7 @@ function emptyRepos() {
     rideTagEvents: { find: jest.fn().mockResolvedValue([]) },
     bikes: { find: jest.fn().mockResolvedValue([]) },
     userNotifications: { find: jest.fn().mockResolvedValue([]) },
+    emailLog: { find: jest.fn().mockResolvedValue([]) },
   };
 }
 
@@ -228,6 +229,40 @@ describe('BundleAssembler', () => {
       role: 'editor',
     });
     expect(trips.pending_invites[0]).not.toHaveProperty('invite_code');
+  });
+
+  it('includes the rider-addressed email delivery log (metadata only)', async () => {
+    // email_log is keyed by recipient (no user FK), so the Article 15 bundle
+    // pulls it in by lowercased email — the metadata is the rider's data.
+    const user = makeUser();
+    const repos = emptyRepos();
+    repos.emailLog.find.mockResolvedValue([
+      {
+        id: 'log-1',
+        recipient: user.email.toLowerCase(),
+        tag: 'weekly-digest',
+        subject: 'Your week on Tarmoto',
+        status: 'sent',
+        provider: 'resend',
+        provider_message_id: 'res_1',
+        error_class: null,
+        created_at: new Date('2026-07-05T08:00:00Z'),
+      },
+    ]);
+
+    const assembler = new BundleAssembler(repos);
+    const buf = await streamToBuffer(await assembler.assemble(user));
+    const entries = await listEntries(buf);
+
+    expect(repos.emailLog.find).toHaveBeenCalledWith({
+      where: { recipient: user.email.toLowerCase() },
+      order: { created_at: 'DESC' },
+    });
+    const rows = JSON.parse(entries.get('email_log.json')!) as Array<
+      Record<string, unknown>
+    >;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ tag: 'weekly-digest', status: 'sent' });
   });
 
   it('writes bike rows (with rider-entered notes) to bikes.json — US-64', async () => {

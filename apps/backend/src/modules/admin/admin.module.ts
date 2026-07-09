@@ -15,6 +15,7 @@ import { TripMessage } from '../../entities/trip-message.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
 import { FeatureState } from '../../entities/feature-state.entity.js';
+import { EmailLog } from '../../entities/email-log.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
 import { ReviewsModule } from '../reviews/reviews.module.js';
 import { FeaturesModule } from '../features/features.module.js';
@@ -36,6 +37,8 @@ import { AdminFlagsController } from '../admin-flags/admin-flags.controller.js';
 import { AdminFlagsService } from '../admin-flags/admin-flags.service.js';
 import { AdminContentController } from '../admin-content/admin-content.controller.js';
 import { AdminContentService } from '../admin-content/admin-content.service.js';
+import { AdminEmailController } from '../admin-email/admin-email.controller.js';
+import { AdminEmailService } from '../admin-email/admin-email.service.js';
 
 @Module({
   imports: [
@@ -54,6 +57,7 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
       CommuteRoute,
       UserFeature,
       FeatureState,
+      EmailLog,
     ]),
     HazardsModule,
     ReviewsModule,
@@ -70,6 +74,7 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
     AdminFlagsController,
     AdminContentController,
     AdminAppSettingsController,
+    AdminEmailController,
   ],
   providers: [
     AdminAuditService,
@@ -78,6 +83,7 @@ import { AdminContentService } from '../admin-content/admin-content.service.js';
     AdminAdminsService,
     AdminFlagsService,
     AdminContentService,
+    AdminEmailService,
     InternalGuard,
     { provide: APP_GUARD, useClass: InternalGuard },
     { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },

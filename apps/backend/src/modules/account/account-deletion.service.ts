@@ -11,6 +11,7 @@ import { DataSource, IsNull, LessThanOrEqual, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../entities/user.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
+import { EmailLog } from '../../entities/email-log.entity.js';
 import {
   AccountDeletionLog,
   type AccountDeletionEvent,
@@ -43,7 +44,10 @@ const SWEEPER_BATCH_SIZE = 50;
  *   3. Deletes the `users` row. Cascades chain-clean every personal
  *      table (rides, hazards, reviews, follows, badges, contacts,
  *      trips, trip memberships, messages, etc.).
- *   4. Writes a `purged` row to `account_deletion_log`.
+ *   4. Explicitly deletes the email-keyed rows no FK cascade reaches —
+ *      pending `trip_invites` and the `email_log` — so the rider's
+ *      address doesn't outlive the account.
+ *   5. Writes a `purged` row to `account_deletion_log`.
  */
 @Injectable()
 export class AccountDeletionService {
@@ -370,6 +374,13 @@ export class AccountDeletionService {
       // `invited_by` ON DELETE SET NULL rule instead).
       await manager.delete(TripInvite, {
         email: user.email.toLowerCase(),
+      });
+
+      // The email delivery log is keyed by recipient (no user FK), so purge it
+      // explicitly too — otherwise every address this account was ever mailed at
+      // outlives the account.
+      await manager.delete(EmailLog, {
+        recipient: user.email.toLowerCase(),
       });
 
       const log = manager.create(AccountDeletionLog, {

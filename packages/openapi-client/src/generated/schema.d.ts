@@ -3480,6 +3480,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/email/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the outbound email delivery log (paginated, filterable) */
+        get: operations["AdminEmailController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config/flags": {
         parameters: {
             query?: never;
@@ -6242,6 +6259,23 @@ export interface components {
              */
             tier: "pro" | "premium" | null;
         };
+        AdminEmailLogRowDto: {
+            id: string;
+            recipient: string;
+            tag: string;
+            subject: string;
+            status: string;
+            provider: string | null;
+            provider_message_id: string | null;
+            error_class: string | null;
+            created_at: string;
+        };
+        AdminEmailLogListResponseDto: {
+            rows: components["schemas"]["AdminEmailLogRowDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -6519,6 +6553,8 @@ export type SchemaContentListResponseDto = components['schemas']['ContentListRes
 export type SchemaHideContentDto = components['schemas']['HideContentDto'];
 export type SchemaLaunchTierResponseDto = components['schemas']['LaunchTierResponseDto'];
 export type SchemaSetLaunchTierDto = components['schemas']['SetLaunchTierDto'];
+export type SchemaAdminEmailLogRowDto = components['schemas']['AdminEmailLogRowDto'];
+export type SchemaAdminEmailLogListResponseDto = components['schemas']['AdminEmailLogListResponseDto'];
 export type $defs = Record<string, never>;
 export interface operations {
     AppController_getHello: {
@@ -12605,6 +12641,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LaunchTierResponseDto"];
+                };
+            };
+        };
+    };
+    AdminEmailController_list: {
+        parameters: {
+            query?: {
+                /** @description Filter by delivery status. */
+                status?: "sent" | "failed";
+                /** @description Filter by template tag, e.g. "weekly-digest". */
+                tag?: string;
+                /** @description Exact recipient address (case-insensitive); indexed lookup. */
+                recipient?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminEmailLogListResponseDto"];
                 };
             };
         };

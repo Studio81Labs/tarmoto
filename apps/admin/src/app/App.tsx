@@ -10,6 +10,7 @@ import { UsersScreen } from "../screens/UsersScreen.js";
 import { AdministratorsScreen } from "../screens/AdministratorsScreen.js";
 import { FeatureFlagsScreen } from "../screens/FeatureFlagsScreen.js";
 import { ContentScreen } from "../screens/ContentScreen.js";
+import { EmailScreen } from "../screens/EmailScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 import { canAccess } from "../lib/roleRank.js";
 
@@ -95,6 +96,8 @@ export function App() {
             <FeatureFlagsScreen />
           ) : active === "content" ? (
             <ContentScreen currentRole={currentUser.role} />
+          ) : active === "email" ? (
+            <EmailScreen />
           ) : (
             <section>
               <Heading as="h2">
