@@ -95,6 +95,20 @@ export class TripSummaryDto {
       'geometry); `null` only when the trip has no trip-days at all.',
   })
   passes_count!: number | null;
+
+  @ApiProperty({
+    type: 'array',
+    nullable: true,
+    description:
+      'Per-day simplified route outline for the trips-list card thumbnail — ' +
+      'one polyline of `[lng, lat]` points per day, ordered by day. `null` ' +
+      'when the trip has no routed geometry yet (e.g. a draft).',
+    items: {
+      type: 'array',
+      items: { type: 'array', items: { type: 'number' } },
+    },
+  })
+  overview_geometry!: number[][][] | null;
 }
 
 export class TripMemberDto {

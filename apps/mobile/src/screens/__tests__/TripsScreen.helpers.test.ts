@@ -15,6 +15,7 @@ function trip(overrides: Partial<TripSummary> = {}): TripSummary {
     distance_km: overrides.distance_km ?? null,
     quality_avg: overrides.quality_avg ?? null,
     passes_count: overrides.passes_count ?? null,
+    overview_geometry: overrides.overview_geometry ?? null,
   };
 }
 

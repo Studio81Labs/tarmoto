@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "bfc870a7-2bb7-4165-bac9-c9d756b81501",
+    "_postman_id": "27c66c40-aa84-4ad0-ac48-7f2896748f7a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1143,6 +1143,32 @@
           }
         },
         {
+          "name": "Fun Zones within a corridor of a routed polyline (STOPS layer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/fun-zones/in-corridor",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "fun-zones", "in-corridor"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Get top-ranked road segments for a curated region",
           "request": {
             "method": "GET",
@@ -1202,6 +1228,73 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Street-level image near a coordinate (Road Preview)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/segment-imagery",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "segment-imagery"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "Latitude (WGS84).",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "Longitude (WGS84).",
+                  "disabled": false
+                },
+                {
+                  "key": "bearing",
+                  "value": "",
+                  "description": "Travel heading in degrees (0 = N) — prefers an image facing this way.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Proxy a street-level thumbnail (Road Preview)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/segment-imagery/thumb/:imageId",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "roads",
+                "segment-imagery",
+                "thumb",
+                ":imageId"
+              ],
+              "variable": [
+                {
+                  "key": "imageId",
+                  "value": ""
+                }
+              ]
             }
           }
         },
@@ -2286,6 +2379,38 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Rename waypoints without re-routing",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/waypoints",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "waypoints"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waypoints\": [\n    {\n      \"id\": \"\",\n      \"name\": \"\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5686,6 +5811,37 @@
                   "value": "",
                   "description": "Max number of matches to return.",
                   "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Name a coordinate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/geocode/reverse",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "geocode", "reverse"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "Latitude in decimal degrees, WGS84.",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "Longitude in decimal degrees, WGS84.",
+                  "disabled": false
                 }
               ]
             }

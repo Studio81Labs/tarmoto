@@ -49,6 +49,7 @@ import {
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
 import { Button, MiniRouteSvg, PageHeader } from "@tarmoto/ui";
+import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -957,7 +958,18 @@ function TripCard({
         className="block"
       >
         <div className="relative h-[140px] overflow-hidden rounded-t-[14px]">
-          <MiniRouteSvg q={quality} seed={seed} className="absolute inset-0" />
+          {trip.overviewGeometry && trip.overviewGeometry.length > 0 ? (
+            <RouteOutlineSvg
+              geometry={trip.overviewGeometry}
+              className="absolute inset-0 h-full w-full"
+            />
+          ) : (
+            <MiniRouteSvg
+              q={quality}
+              seed={seed}
+              className="absolute inset-0"
+            />
+          )}
           <div className="absolute left-[10px] top-[10px]" aria-hidden="true">
             <span
               className={`inline-flex items-center rounded-full px-[10px] py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] ${STATUS_PILL[trip.status]}`}
