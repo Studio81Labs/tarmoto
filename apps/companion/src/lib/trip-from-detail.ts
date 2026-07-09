@@ -143,6 +143,10 @@ export function tripFromDetail(detail: TripDetailResponse): Trip {
     distance_km: detail.distance_km ?? null,
     quality_avg: detail.quality_avg ?? null,
     passes_count: detail.passes_count ?? null,
+    // Carry the route outline too, so a detail-derived card (duplicate-trip
+    // flow) renders the real RouteOutlineSvg immediately instead of falling
+    // back to the abstract sketch until the list refetches.
+    overviewGeometry: detail.overview_geometry ?? null,
   };
 }
 

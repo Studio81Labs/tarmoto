@@ -137,6 +137,18 @@ describe("tripFromDetail", () => {
     expect(trip.passes_count).toBe(6);
   });
 
+  it("carries the route outline so a duplicated card shows the real shape", () => {
+    const outline = [
+      [
+        [14.4, 50.0],
+        [14.6, 50.2],
+      ],
+    ];
+    const trip = tripFromDetail(makeDetail({ overview_geometry: outline }));
+    expect(trip.overviewGeometry).toEqual(outline);
+    expect(tripFromDetail(makeDetail()).overviewGeometry).toBeNull();
+  });
+
   it("defaults the rollups to null when the detail omits them", () => {
     const trip = tripFromDetail(makeDetail());
     expect(trip.distance_km).toBeNull();
