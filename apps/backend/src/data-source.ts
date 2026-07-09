@@ -50,6 +50,7 @@ import { AdminAuditLog } from './entities/admin-audit-log.entity.js';
 import { UserFeature } from './entities/user-feature.entity.js';
 import { FeatureState } from './entities/feature-state.entity.js';
 import { AppSetting } from './entities/app-setting.entity.js';
+import { EmailLog } from './entities/email-log.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -123,6 +124,7 @@ import { AddTierFeatureEntitlements1795000000000 } from './migrations/1795000000
 import { SwapTierNamesAddLaunchMode1796000000000 } from './migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
 import { DropPois1797000000000 } from './migrations/1797000000000-DropPois.js';
 import { DropTripFromRouteCollections1798000000000 } from './migrations/1798000000000-DropTripFromRouteCollections.js';
+import { AddEmailLog1799000000000 } from './migrations/1799000000000-AddEmailLog.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -182,6 +184,7 @@ export const AppDataSource = new DataSource({
     UserFeature,
     FeatureState,
     AppSetting,
+    EmailLog,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -264,6 +267,7 @@ export const AppDataSource = new DataSource({
     SwapTierNamesAddLaunchMode1796000000000,
     DropPois1797000000000,
     DropTripFromRouteCollections1798000000000,
+    AddEmailLog1799000000000,
   ],
   synchronize: false,
 });

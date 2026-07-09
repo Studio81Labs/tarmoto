@@ -75,6 +75,7 @@ import { AddTierFeatureEntitlements1795000000000 } from '../../migrations/179500
 import { SwapTierNamesAddLaunchMode1796000000000 } from '../../migrations/1796000000000-SwapTierNamesAddLaunchMode.js';
 import { DropPois1797000000000 } from '../../migrations/1797000000000-DropPois.js';
 import { DropTripFromRouteCollections1798000000000 } from '../../migrations/1798000000000-DropTripFromRouteCollections.js';
+import { AddEmailLog1799000000000 } from '../../migrations/1799000000000-AddEmailLog.js';
 import {
   User,
   UserContact,
@@ -134,6 +135,7 @@ import {
   UserFeature,
   FeatureState,
   AppSetting,
+  EmailLog,
 } from '../../entities/index.js';
 
 const entities = [
@@ -195,6 +197,7 @@ const entities = [
   UserFeature,
   FeatureState,
   AppSetting,
+  EmailLog,
 ];
 
 @Module({
@@ -297,6 +300,7 @@ const entities = [
             SwapTierNamesAddLaunchMode1796000000000,
             DropPois1797000000000,
             DropTripFromRouteCollections1798000000000,
+            AddEmailLog1799000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
