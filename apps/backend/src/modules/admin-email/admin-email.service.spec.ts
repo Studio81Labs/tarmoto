@@ -57,12 +57,12 @@ describe('AdminEmailService', () => {
     expect(qb.take).toHaveBeenCalledWith(20);
   });
 
-  it('applies status, tag and recipient filters', async () => {
+  it('applies status, tag and an indexed exact (lowercased) recipient filter', async () => {
     const { service, qb } = make();
     await service.list({
       status: 'failed',
       tag: 'weekly-digest',
-      recipient: 'ride',
+      recipient: 'Rider@X.io',
     });
     expect(qb.andWhere).toHaveBeenCalledWith('e.status = :status', {
       status: 'failed',
@@ -70,8 +70,10 @@ describe('AdminEmailService', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('e.tag = :tag', {
       tag: 'weekly-digest',
     });
-    expect(qb.andWhere).toHaveBeenCalledWith('e.recipient ILIKE :recipient', {
-      recipient: '%ride%',
+    // Exact match (not a leading-wildcard ILIKE) so the recipient index is used;
+    // the term is lowercased to match how recipients are stored.
+    expect(qb.andWhere).toHaveBeenCalledWith('e.recipient = :recipient', {
+      recipient: 'rider@x.io',
     });
   });
 

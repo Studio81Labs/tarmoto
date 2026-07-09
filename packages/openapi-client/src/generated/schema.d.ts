@@ -12652,7 +12652,7 @@ export interface operations {
                 status?: "sent" | "failed";
                 /** @description Filter by template tag, e.g. "weekly-digest". */
                 tag?: string;
-                /** @description Substring match on recipient address. */
+                /** @description Exact recipient address (case-insensitive); indexed lookup. */
                 recipient?: string;
                 page?: number;
                 pageSize?: number;

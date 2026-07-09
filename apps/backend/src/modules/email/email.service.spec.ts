@@ -369,5 +369,32 @@ describe('EmailService', () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(insert).not.toHaveBeenCalled();
     });
+
+    it('redacts the trip-invite subject — the inviter is third-party data in a recipient-keyed row', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 't', providerName: 'resend' });
+      const insert = jest.fn().mockResolvedValue({});
+      const service = await buildWithLog(send, insert);
+
+      await service.sendTripInvite('invitee@external.com', {
+        inviterDisplayName: 'Adam',
+        tripTitle: 'Italian Loop',
+        joinUrl: 'https://app.tarmoto.app/trips/join?trip_id=t1&code=ABC',
+        inviteCode: 'ABCDEFGH',
+        message: 'Come ride!',
+      });
+
+      const [row] = insert.mock.calls[0] as [Record<string, unknown>];
+      expect(row).toMatchObject({
+        recipient: 'invitee@external.com',
+        tag: 'trip-invite',
+        subject: 'Trip invitation',
+      });
+      // The inviter's name + trip title must not persist in a row the inviter's
+      // own account deletion can't purge (it's keyed on the external recipient).
+      expect(JSON.stringify(row)).not.toContain('Adam');
+      expect(JSON.stringify(row)).not.toContain('Italian Loop');
+    });
   });
 });

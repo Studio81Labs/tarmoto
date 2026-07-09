@@ -250,7 +250,7 @@ export class EmailService {
       await this.emailLog.insert({
         recipient: to.toLowerCase(),
         tag: template.tag,
-        subject: template.subject.slice(0, 255),
+        subject: this.loggableSubject(template).slice(0, 255),
         status: outcome.status,
         provider: outcome.provider,
         provider_message_id:
@@ -264,6 +264,19 @@ export class EmailService {
         `email_log write failed: tag=${template.tag} status=${outcome.status} error="${msg}"`,
       );
     }
+  }
+
+  /**
+   * The subject to persist in the recipient-keyed log. Most subjects are generic
+   * or about the recipient, so they're safe. The trip-invite subject embeds the
+   * INVITER's display name + trip title, though — third-party data relative to
+   * the (possibly external) recipient this row is keyed on, which the inviter's
+   * own account deletion could never purge. Store a generic subject for it so no
+   * third party's data lingers in the log.
+   */
+  private loggableSubject(template: RenderedTemplate): string {
+    if (template.tag === 'trip-invite') return 'Trip invitation';
+    return template.subject;
   }
 
   private withBase<T>(ctx: T): T & { preferencesUrl: string } {

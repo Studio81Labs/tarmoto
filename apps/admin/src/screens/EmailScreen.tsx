@@ -129,8 +129,8 @@ export function EmailScreen() {
             setPage(1);
           }}
           type="search"
-          placeholder="Search recipient…"
-          ariaLabel="Search recipient"
+          placeholder="Recipient email (exact)…"
+          ariaLabel="Filter by recipient email"
           className="max-w-xs"
         />
       </div>

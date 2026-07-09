@@ -34,8 +34,11 @@ export class AdminEmailService {
       qb.andWhere('e.tag = :tag', { tag: query.tag });
     }
     if (query.recipient) {
-      qb.andWhere('e.recipient ILIKE :recipient', {
-        recipient: `%${query.recipient}%`,
+      // Exact match on the lowercased address (recipients are stored lowercased)
+      // so the (recipient, created_at) index is used. A leading-wildcard ILIKE
+      // would full-scan this append-only, ever-growing table on every lookup.
+      qb.andWhere('e.recipient = :recipient', {
+        recipient: query.recipient.toLowerCase(),
       });
     }
 

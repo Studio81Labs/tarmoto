@@ -21,7 +21,9 @@ export class ListAdminEmailLogQueryDto {
   @IsString()
   tag?: string;
 
-  @ApiPropertyOptional({ description: 'Substring match on recipient address.' })
+  @ApiPropertyOptional({
+    description: 'Exact recipient address (case-insensitive); indexed lookup.',
+  })
   @IsOptional()
   @IsString()
   recipient?: string;
