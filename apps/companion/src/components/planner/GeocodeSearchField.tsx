@@ -87,8 +87,22 @@ export function GeocodeSearchField({
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
+  // The "spine" field lives inside a bordered wrapper box: leave the inner
+  // container un-positioned so the dropdown anchors to that wrapper (which is
+  // `relative`) — matching its width and left edge rather than the narrower
+  // inner input. The toolbar "default" field is its own positioning context.
+  const dropdownClass =
+    variant === "spine"
+      ? "absolute left-0 right-0 top-full z-30 mt-[5px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)]"
+      : "absolute left-0 top-full z-30 mt-2 w-max min-w-full max-w-[320px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)]";
+
   return (
-    <div ref={containerRef} className="relative min-w-0 flex-1">
+    <div
+      ref={containerRef}
+      className={
+        variant === "spine" ? "min-w-0 flex-1" : "relative min-w-0 flex-1"
+      }
+    >
       <div className="flex items-center gap-1.5">
         {variant === "default" ? (
           loading ? (
@@ -116,10 +130,7 @@ export function GeocodeSearchField({
         <ul
           role="listbox"
           aria-label={`${ariaLabel} results`}
-          // Sits clearly below the field (mt-2 clears the field's padded box),
-          // and widens past a narrow field to fit long place names — as wide as
-          // its content, at least the field width, capped so it stays on-screen.
-          className="absolute left-0 top-full z-30 mt-2 w-max min-w-full max-w-[320px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)]"
+          className={dropdownClass}
         >
           {loading ? (
             <li

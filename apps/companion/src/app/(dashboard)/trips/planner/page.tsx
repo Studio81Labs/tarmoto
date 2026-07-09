@@ -4131,7 +4131,9 @@ function WaypointEditor({
                 setDragIndex(null);
               }}
               onDragEnd={() => setDragIndex(null)}
-              className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5"
+              // `relative` so the spine geocode dropdown anchors to this whole
+              // field wrapper (matching its width) rather than the inner input.
+              className="relative flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5"
             >
               <GripVertical
                 size={13}
