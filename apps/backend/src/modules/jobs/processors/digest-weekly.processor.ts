@@ -84,7 +84,12 @@ export class DigestWeeklyProcessor extends WorkerHost {
   }
 
   private async dispatch(job: Job): Promise<DigestWeeklyDispatchResult> {
-    const now = new Date();
+    // Anchor everything (the DOW/HOUR filter, the window bounds, the
+    // idempotency key) to the SCHEDULED slot, not the processing-time clock —
+    // see `scheduledFireTime`. A retried or backlogged dispatch that lands after
+    // the rider's 08:00 hour would otherwise query `EXTRACT(HOUR) = 8` against
+    // e.g. 09:00, match nobody, and silently skip the whole week's digest.
+    const now = this.scheduledFireTime(job);
     // SQL handles the per-row timezone math because Postgres can do it
     // and pulling every user into Node to call `Intl.DateTimeFormat`
     // would scale poorly.
@@ -370,6 +375,28 @@ export class DigestWeeklyProcessor extends WorkerHost {
       expiresAt: now + DigestWeeklyProcessor.ACTIVE_SEGMENT_TTL_MS,
     };
     return total;
+  }
+
+  /**
+   * The scheduled fire time of this repeatable dispatch — NOT the processing
+   * clock. BullMQ's JobScheduler stamps `job.timestamp` with the job's creation
+   * time (≈ one interval before the slot) and instead encodes the actual
+   * scheduled slot millis as the trailing segment of the jobId
+   * ("repeat:<schedulerKey>:<millis>"). Anchoring to that slot means a retried
+   * or backlogged dispatch (worker down across 08:00, resumes at 09:00+) still
+   * targets the hour it was meant to fire — otherwise `EXTRACT(HOUR) = 8`
+   * matches no one and that week's digest is silently skipped. Falls back to the
+   * wall clock for a job with no scheduler id (a manual trigger / unit test).
+   */
+  private scheduledFireTime(job: Job): Date {
+    const id = job.id ?? '';
+    if (id.startsWith('repeat:')) {
+      const slotMillis = Number(id.slice(id.lastIndexOf(':') + 1));
+      if (Number.isFinite(slotMillis) && slotMillis > 0) {
+        return new Date(slotMillis);
+      }
+    }
+    return new Date();
   }
 
   /**

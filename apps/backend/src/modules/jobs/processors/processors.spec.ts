@@ -204,6 +204,26 @@ describe('DigestWeeklyProcessor', () => {
     expect(sql).toMatch(/window_end/);
   });
 
+  it('anchors the dispatch to the scheduled slot in the jobId, not the processing clock', async () => {
+    // A retried/backlogged dispatch processed after the rider's 08:00 hour must
+    // still target the slot it was scheduled for; otherwise EXTRACT(HOUR)=8
+    // finds nobody and the week's digest is silently skipped. BullMQ encodes the
+    // slot millis as the trailing segment of the repeatable jobId.
+    const slot = Date.UTC(2026, 6, 5, 8); // Sun 2026-07-05 08:00 UTC
+    dataSource.query.mockResolvedValue([]);
+    await processor.process({
+      id: `repeat:digest-weekly.${JOB_NAMES.DIGEST_WEEKLY_DISPATCH}:${slot}`,
+      name: JOB_NAMES.DIGEST_WEEKLY_DISPATCH,
+      data: {},
+      // Creation time ≈ 1h before the slot (what job.timestamp holds) — must be
+      // ignored; the `new Date()` fallback (test's "now") would also differ.
+      timestamp: Date.UTC(2026, 6, 5, 7),
+    } as never);
+    const [, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
+    // $1 (drives the DOW/HOUR filter + window) is the scheduled slot, verbatim.
+    expect(params[0]).toBe(new Date(slot).toISOString());
+  });
+
   // `compose` is covered end-to-end in digest-weekly.processor.spec.ts (#866).
 });
 
