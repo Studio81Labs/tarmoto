@@ -114,63 +114,6 @@ function lngKmPerDegree(lat: number): number {
 }
 
 /**
- * The bounding box enclosing a `radiusKm` circle around a point (#925) — the
- * coverage probe approximates the circular request area by this box before
- * widening it to ask whether an imported point lies nearby.
- */
-export function pointRadiusBbox(
-  lat: number,
-  lng: number,
-  radiusKm: number,
-): Bbox {
-  const dLat = radiusKm / LAT_KM_PER_DEGREE;
-  // Pad longitude at the circle's poleward edge (`|lat| + dLat`), where km/°
-  // longitude is smallest — using the centre latitude under-pads that edge, so a
-  // thin slice of the radius would fall outside the box the coverage probe sees.
-  const dLng = radiusKm / lngKmPerDegree(Math.abs(lat) + dLat);
-  return {
-    minLng: lng - dLng,
-    minLat: lat - dLat,
-    maxLng: lng + dLng,
-    maxLat: lat + dLat,
-  };
-}
-
-/**
- * The bounding box enclosing a route polyline expanded by `bufferKm` (#925) —
- * the coverage probe approximates the buffered-corridor request area by this box
- * before widening it to ask whether an imported point lies nearby.
- */
-export function routeBufferBbox(
-  route: ReadonlyArray<{ lat: number; lng: number }>,
-  bufferKm: number,
-): Bbox {
-  let minLat = Infinity;
-  let minLng = Infinity;
-  let maxLat = -Infinity;
-  let maxLng = -Infinity;
-  for (const p of route) {
-    minLat = Math.min(minLat, p.lat);
-    maxLat = Math.max(maxLat, p.lat);
-    minLng = Math.min(minLng, p.lng);
-    maxLng = Math.max(maxLng, p.lng);
-  }
-  const dLat = bufferKm / LAT_KM_PER_DEGREE;
-  // Longitude km/degree shrinks toward the poles, so pad using the route's
-  // poleward-MOST latitude (its widest longitude span for `bufferKm`). The
-  // midpoint would under-pad a long north/south route's high-latitude end,
-  // shrinking the box the coverage probe widens and searches (#925 review).
-  const worstLat = Math.abs(minLat) >= Math.abs(maxLat) ? minLat : maxLat;
-  const dLng = bufferKm / lngKmPerDegree(worstLat);
-  return {
-    minLng: minLng - dLng,
-    minLat: minLat - dLat,
-    maxLng: maxLng + dLng,
-    maxLat: maxLat + dLat,
-  };
-}
-
-/**
  * Expand a bbox by `km` on every side, poleward-safe (#925): longitude is
  * padded using the box's poleward-MOST edge, where km/° longitude is smallest,
  * so the pad never falls short on the high-latitude side. Used by the coverage
@@ -189,4 +132,36 @@ export function padBbox(bbox: Bbox, km: number): Bbox {
     maxLng: bbox.maxLng + dLng,
     maxLat: bbox.maxLat + dLat,
   };
+}
+
+/**
+ * How near an imported OSM point must be for a location to count as inside
+ * imported territory (#925). The coverage probe checks a point ± this margin;
+ * the route/radius samplers space their probes at this stride so consecutive
+ * probes overlap. Shared so the store's probe and the service's sampling agree.
+ * See {@link PoiStoreService.hasImportedCoverage}.
+ */
+export const COVERAGE_BUFFER_KM = 20;
+
+/**
+ * Sample points that span a `radiusKm` disc for the coverage probe (#925) — its
+ * centre plus the four cardinal points on the rim. Coverage is proven across the
+ * disc (every sample near an import), NOT from one point anywhere inside it, so a
+ * large-radius request that spills past the import frontier has an uncovered rim
+ * sample and correctly falls through to an Overpass merge (#925 P1 review).
+ */
+export function radiusCoverageSamples(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+): { lat: number; lng: number }[] {
+  const dLat = radiusKm / LAT_KM_PER_DEGREE;
+  const dLng = radiusKm / lngKmPerDegree(lat);
+  return [
+    { lat, lng },
+    { lat: lat + dLat, lng },
+    { lat: lat - dLat, lng },
+    { lat, lng: lng + dLng },
+    { lat, lng: lng - dLng },
+  ];
 }

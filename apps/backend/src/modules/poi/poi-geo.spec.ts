@@ -1,56 +1,40 @@
-import { pointRadiusBbox, routeBufferBbox, padBbox } from './poi-geo.js';
+import {
+  COVERAGE_BUFFER_KM,
+  padBbox,
+  radiusCoverageSamples,
+} from './poi-geo.js';
 
 const LAT_KM_PER_DEGREE = 111.132;
 const lngDeg = (lat: number, km: number): number =>
   km / (LAT_KM_PER_DEGREE * Math.cos((lat * Math.PI) / 180));
 
-describe('pointRadiusBbox', () => {
-  it('encloses the radius circle, wider in longitude toward the equator', () => {
-    const bbox = pointRadiusBbox(0, 10, 11.1132);
-    expect(bbox.maxLat - 0).toBeCloseTo(0.1, 3); // ~1° lat ≈ 111 km
-    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(0.1, 11.1132), 4);
-    expect(bbox.minLng).toBeLessThan(10);
-    expect(bbox.minLat).toBeLessThan(0);
+describe('radiusCoverageSamples (#925)', () => {
+  it('returns the centre plus the four cardinal rim points of the disc', () => {
+    const samples = radiusCoverageSamples(49, 16, 25);
+    expect(samples).toHaveLength(5);
+    const dLat = 25 / LAT_KM_PER_DEGREE;
+    const dLng = lngDeg(49, 25);
+    expect(samples[0]).toEqual({ lat: 49, lng: 16 }); // centre
+    expect(samples[1]?.lat).toBeCloseTo(49 + dLat, 6); // N rim
+    expect(samples[2]?.lat).toBeCloseTo(49 - dLat, 6); // S rim
+    expect(samples[3]?.lng).toBeCloseTo(16 + dLng, 6); // E rim
+    expect(samples[4]?.lng).toBeCloseTo(16 - dLng, 6); // W rim
   });
 
-  it('pads longitude at the circle poleward edge, not the centre (#925 review)', () => {
-    // A 55.6 km radius at 60°N: the circle top (60° + 0.5°) has smaller km/°
-    // longitude than the centre, so the padding must use that edge or a thin
-    // slice near an E/W import boundary would be wrongly judged covered.
-    const bbox = pointRadiusBbox(60, 10, 55.566);
-    const dLat = 55.566 / LAT_KM_PER_DEGREE;
-    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(60 + dLat, 55.566), 4);
-    expect(bbox.maxLng - 10).toBeGreaterThan(lngDeg(60, 55.566)); // wider than centre
+  it('spans the disc so a large-radius request that clears the frontier has an off-coverage sample', () => {
+    // The rim points sit a full radius from the centre, so a request whose centre
+    // is covered but whose radius spills past the import edge exposes an uncovered
+    // rim sample — that is what forces the Overpass merge (#925 P1 review).
+    const samples = radiusCoverageSamples(0, 0, 111.132);
+    expect(samples[3]?.lng).toBeCloseTo(1, 3); // ~1° east at the equator
+    expect(samples[4]?.lng).toBeCloseTo(-1, 3);
   });
 });
 
-describe('routeBufferBbox (#925)', () => {
-  it('pads longitude at the route poleward-most latitude, not the midpoint', () => {
-    // A route from the equator to 60°N. km/° longitude is smaller at 60° than at
-    // the 30° midpoint, so the buffer needs MORE degrees there — padding must use
-    // the 60° end or a high-latitude corridor strip would be wrongly "covered".
-    const bbox = routeBufferBbox(
-      [
-        { lat: 0, lng: 10 },
-        { lat: 60, lng: 10 },
-      ],
-      10,
-    );
-    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(60, 10), 4); // worst-case latitude
-    expect(bbox.maxLng - 10).toBeGreaterThan(lngDeg(30, 10)); // wider than midpoint
-    // Latitude padding is symmetric ~ bufferKm / 111 km/°.
-    expect(bbox.maxLat - 60).toBeCloseTo(10 / LAT_KM_PER_DEGREE, 4);
-  });
-
-  it('uses the same worst-case latitude for a southern-hemisphere route', () => {
-    const bbox = routeBufferBbox(
-      [
-        { lat: 0, lng: 10 },
-        { lat: -55, lng: 10 },
-      ],
-      10,
-    );
-    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(-55, 10), 4);
+describe('COVERAGE_BUFFER_KM (#925)', () => {
+  it('is a sane single-value buffer', () => {
+    expect(COVERAGE_BUFFER_KM).toBeGreaterThan(0);
+    expect(COVERAGE_BUFFER_KM).toBeLessThan(100);
   });
 });
 

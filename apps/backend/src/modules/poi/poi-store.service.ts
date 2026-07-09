@@ -14,6 +14,7 @@ import {
 } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import {
+  COVERAGE_BUFFER_KM,
   cumulativeLengthKm,
   padBbox,
   projectOntoRoute,
@@ -81,20 +82,6 @@ export class PoiStoreService {
   ) {}
 
   /**
-   * How near an imported OSM point must be for a request area to count as
-   * "covered" (#925). The coverage probe widens the request box by this margin
-   * and asks whether any imported point falls inside — see
-   * {@link hasImportedPointNear}. It must exceed the typical gap between POIs in
-   * a genuinely-imported RURAL area (so a sparse-but-covered lookup stays
-   * authoritative instead of re-hitting Overpass), while staying small enough
-   * that a request deep in an un-imported neighbour (a border wedge inside an
-   * imported country's bounding rectangle) finds no point and correctly falls
-   * back. 20 km is a deliberate middle: the residual false-cover is only a thin
-   * strip within one buffer's width of the real import boundary.
-   */
-  private static readonly COVERAGE_BUFFER_KM = 20;
-
-  /**
    * Live readiness: `isInitialized` only records that TypeORM connected once (it
    * stays true after a runtime drop), so probe with a trivial query so
    * `/poi/health` reflects the store's ACTUAL current connectivity (ADR 0007).
@@ -110,43 +97,78 @@ export class PoiStoreService {
   }
 
   /**
-   * Whether the OSM bulk import has ACTUALLY populated the neighbourhood of a
-   * request area (#925) — the coverage signal for {@link PoiService.readStoreFirst}.
-   * True when at least one active, imported OSM point lies within
-   * {@link COVERAGE_BUFFER_KM} of `area` (the box padded by that margin, then a
-   * GiST-indexed `ST_Intersects` existence probe).
+   * Whether the OSM bulk import has ACTUALLY populated the neighbourhood of
+   * EVERY supplied sample point (#925) — the coverage signal for
+   * {@link PoiService.readStoreFirst}. True only when each sample has an active,
+   * imported OSM point within {@link COVERAGE_BUFFER_KM} (the point padded by
+   * that margin, then a GiST-indexed `ST_Intersects` existence probe).
    *
-   * This is occupancy, not a region rectangle (#925 review): coverage follows
-   * the real distribution of imported points, so it can't over-claim the way a
-   * configured country bbox does. A request deep in an un-imported neighbour —
-   * a border wedge that sits inside an imported country's bounding rectangle but
-   * was never populated — finds no nearby point and correctly falls back to
-   * Overpass, while a genuinely-empty lookup INSIDE imported territory (a
-   * kind-/min_stars-filtered miss with other imported POIs around it) stays
-   * authoritative. The residual false-cover is only a strip one buffer wide
-   * along the true import boundary.
+   * Coverage is proven ACROSS the request, not from one point anywhere in it
+   * (#925 P1 review): the caller passes samples spanning the request geometry
+   * (a radius disc's centre + rim, or points strided along a route), so a large
+   * radius or a long corridor that starts on the imported side but runs into an
+   * un-imported area has an uncovered sample and returns false — `readStoreFirst`
+   * then merges Overpass for the uncovered stretch instead of trusting the store
+   * because a single imported point happened to sit inside the bounding box.
+   * The probe short-circuits on the first uncovered sample, so an off-coverage
+   * request returns after one query.
+   *
+   * Occupancy, not a region rectangle: coverage follows the real distribution of
+   * imported points, so it can't over-claim a country's shape — a border wedge
+   * never populated by a neighbour's import has no nearby point and falls back,
+   * while a genuinely-empty lookup INSIDE imported territory (a kind-/min_stars-
+   * filtered miss with other imported POIs around it) stays authoritative.
    *
    * Scoped to `source = 'osm'`: the Overpass fallback this gates is OSM-backed,
    * so an FSQ-only area (imported before OSM populated it) must NOT count as
    * covered, or a covered-empty read would skip the OSM fallback that should run.
-   *
    * `import_region IS NOT NULL` excludes legacy/unclaimed rows so only rows a
-   * real regional import wrote can register coverage.
+   * real regional import wrote can register coverage. No samples → not covered.
    */
-  async hasImportedPointNear(area: Bbox): Promise<boolean> {
-    const probe = padBbox(area, PoiStoreService.COVERAGE_BUFFER_KM);
-    return withPoiRepo(this.poiDataSource, (repo) =>
-      repo
-        .createQueryBuilder('poi')
-        .where(
-          'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
-          probe,
-        )
-        .andWhere('poi.deactivated_at IS NULL')
-        .andWhere('poi.import_region IS NOT NULL')
-        .andWhere("poi.source = 'osm'")
-        .getExists(),
+  async hasImportedCoverage(
+    samples: readonly { lat: number; lng: number }[],
+  ): Promise<boolean> {
+    if (samples.length === 0) return false;
+    // One query, not one-per-sample: a nearby read passes 5 samples and a long
+    // route many more, so a per-sample loop would multiply DB round-trips on a
+    // hot path. Each sample becomes a ±COVERAGE_BUFFER_KM envelope in a VALUES
+    // list; `bool_and(EXISTS(...))` is true only when EVERY sample envelope holds
+    // an active, region-imported OSM point. Positional params ($1…$4n) keep the
+    // coordinates parameterised; the GiST index on `geom` serves each EXISTS.
+    const envelopes = samples.map((s) =>
+      padBbox(
+        { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
+        COVERAGE_BUFFER_KM,
+      ),
     );
+    const valuesSql = envelopes
+      .map((_, i) => {
+        const p = i * 4;
+        return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8)`;
+      })
+      .join(', ');
+    const params = envelopes.flatMap((e) => [
+      e.minLng,
+      e.minLat,
+      e.maxLng,
+      e.maxLat,
+    ]);
+    const sql = `
+      SELECT bool_and(EXISTS (
+        SELECT 1 FROM pois p
+        WHERE p.source = 'osm'
+          AND p.deactivated_at IS NULL
+          AND p.import_region IS NOT NULL
+          AND ST_Intersects(
+            p.geom,
+            ST_MakeEnvelope(s.min_lng, s.min_lat, s.max_lng, s.max_lat, 4326)
+          )
+      )) AS covered
+      FROM (VALUES ${valuesSql}) AS s(min_lng, min_lat, max_lng, max_lat)`;
+    return withPoiRepo(this.poiDataSource, async (repo) => {
+      const rows = await repo.query<{ covered: boolean | null }[]>(sql, params);
+      return rows[0]?.covered === true;
+    });
   }
 
   /**

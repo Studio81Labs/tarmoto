@@ -10,7 +10,6 @@ import {
   storedPoiToPointOfInterest,
   toStoredPoiDto,
 } from './poi-store.service.js';
-import type { Bbox } from './poi-geo.js';
 
 function makePoi(over: Partial<Poi> = {}): Poi {
   return {
@@ -130,9 +129,12 @@ describe('PoiStoreService', () => {
     addOrderBy: jest.Mock;
     limit: jest.Mock;
     getMany: jest.Mock;
-    getExists: jest.Mock;
   };
-  let repo: { createQueryBuilder: jest.Mock; findOne: jest.Mock };
+  let repo: {
+    createQueryBuilder: jest.Mock;
+    findOne: jest.Mock;
+    query: jest.Mock;
+  };
   let service: PoiStoreService;
 
   beforeEach(() => {
@@ -143,11 +145,11 @@ describe('PoiStoreService', () => {
       addOrderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
-      getExists: jest.fn().mockResolvedValue(false),
     };
     repo = {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
       findOne: jest.fn(),
+      query: jest.fn().mockResolvedValue([{ covered: null }]),
     };
     service = new PoiStoreService({
       isInitialized: true,
@@ -716,42 +718,61 @@ describe('PoiStoreService', () => {
     });
   });
 
-  describe('hasImportedPointNear (#925)', () => {
-    const area = { minLng: 18.4, minLat: 49.5, maxLng: 18.5, maxLat: 49.6 };
+  describe('hasImportedCoverage (#925)', () => {
+    const samples = [
+      { lat: 49.5, lng: 18.4 },
+      { lat: 49.6, lng: 18.5 },
+      { lat: 49.7, lng: 18.6 },
+    ];
 
-    it('reports covered when an active imported OSM point exists within the padded probe box', async () => {
-      qb.getExists.mockResolvedValueOnce(true);
-      expect(await service.hasImportedPointNear(area)).toBe(true);
-      // The probe is an existence check over the request box widened by the
-      // coverage buffer (poleward-safe), scoped to active, region-imported OSM.
-      const [whereSql, probe] = qb.where.mock.calls[0] as [string, Bbox];
-      expect(whereSql).toContain('ST_Intersects');
-      expect(whereSql).toContain('ST_MakeEnvelope');
-      // Padded outward on every side (≈20 km) vs. the raw request area.
-      expect(probe.minLng).toBeLessThan(area.minLng);
-      expect(probe.minLat).toBeLessThan(area.minLat);
-      expect(probe.maxLng).toBeGreaterThan(area.maxLng);
-      expect(probe.maxLat).toBeGreaterThan(area.maxLat);
-      const andWhereSql = qb.andWhere.mock.calls.map(([sql]) => String(sql));
-      expect(andWhereSql).toContain('poi.deactivated_at IS NULL');
-      expect(andWhereSql).toContain('poi.import_region IS NOT NULL');
-      // Scoped to OSM (#925 review): the suppressed Overpass fallback is
-      // OSM-backed, so an FSQ-only area must not count as covered.
-      expect(andWhereSql).toContain("poi.source = 'osm'");
-      expect(qb.getExists).toHaveBeenCalledTimes(1);
+    it('runs ONE query (not one-per-sample) that requires every sample envelope to hold an imported OSM point', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      expect(await service.hasImportedCoverage(samples)).toBe(true);
+      // A single round-trip regardless of sample count (#925 P1 review) — no
+      // per-sample fan-out on the hot read path.
+      expect(repo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = repo.query.mock.calls[0] as [string, number[]];
+      // `bool_and(EXISTS(...))` → true only when EVERY sample is covered.
+      expect(sql).toContain('bool_and');
+      expect(sql).toContain('ST_Intersects');
+      expect(sql).toContain('ST_MakeEnvelope');
+      // Scoped to active, region-imported OSM (the Overpass fallback is OSM).
+      expect(sql).toContain("p.source = 'osm'");
+      expect(sql).toContain('p.deactivated_at IS NULL');
+      expect(sql).toContain('p.import_region IS NOT NULL');
+      // 4 params per sample (min/min/max/max of its padded envelope).
+      expect(params).toHaveLength(samples.length * 4);
+      // First sample (49.5, 18.4) padded outward: minLng<lng<maxLng, minLat<lat<maxLat.
+      const [minLng, minLat, maxLng, maxLat] = params;
+      expect(minLng).toBeLessThan(18.4);
+      expect(maxLng).toBeGreaterThan(18.4);
+      expect(minLat).toBeLessThan(49.5);
+      expect(maxLat).toBeGreaterThan(49.5);
     });
 
-    it('reports NOT covered when no imported point is near (un-imported gap / border wedge)', async () => {
-      qb.getExists.mockResolvedValueOnce(false);
-      expect(await service.hasImportedPointNear(area)).toBe(false);
+    it('reports NOT covered when bool_and is false (a sample ran past the frontier)', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: false }]);
+      expect(await service.hasImportedCoverage(samples)).toBe(false);
     });
 
-    it('pads longitude at the poleward edge so a high-latitude box is not under-probed', async () => {
-      const north = { minLng: 10, minLat: 69, maxLng: 10.2, maxLat: 69.1 };
-      await service.hasImportedPointNear(north);
-      const [, probe] = qb.where.mock.calls[0] as [string, Bbox];
-      const dLat = probe.maxLat - north.maxLat;
-      const dLng = probe.maxLng - north.maxLng;
+    it('treats a null aggregate (defensive) as not covered', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: null }]);
+      expect(await service.hasImportedCoverage(samples)).toBe(false);
+    });
+
+    it('reports NOT covered for no samples without touching the DB', async () => {
+      expect(await service.hasImportedCoverage([])).toBe(false);
+      expect(repo.query).not.toHaveBeenCalled();
+    });
+
+    it('pads longitude at the poleward edge so a high-latitude sample is not under-probed', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      await service.hasImportedCoverage([{ lat: 69, lng: 10 }]);
+      const [, params] = repo.query.mock.calls[0] as [string, number[]];
+      const [minLng, minLat, maxLng, maxLat] = params;
+      const dLat = maxLat - 69;
+      const dLng = maxLng - 10;
+      expect(minLng < 10 && minLat < 69).toBe(true);
       // Longitude km/° shrinks toward the poles, so the degree pad on lng must be
       // wider than the lat pad at 69°N.
       expect(dLng).toBeGreaterThan(dLat);

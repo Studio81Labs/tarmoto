@@ -38,11 +38,10 @@ import {
 } from './dto/point-of-interest.dto.js';
 import { PoiStoreService } from './poi-store.service.js';
 import {
+  COVERAGE_BUFFER_KM,
   cumulativeLengthKm,
   projectOntoRoute,
-  pointRadiusBbox,
-  routeBufferBbox,
-  type Bbox,
+  radiusCoverageSamples,
 } from './poi-geo.js';
 import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
 
@@ -110,13 +109,14 @@ export class PoiService {
    * never 500 on an outage, and rider coordinates stay out of the logs (only the
    * error message is logged).
    *
-   * Coverage-aware (#925): when `requestArea` is given and isn't fully inside
-   * imported coverage (a request straddling the import frontier), the store's
-   * rows are merged with a live Overpass query rather than treated as complete —
-   * so the uncovered side isn't silently dropped. A fully-covered area is
-   * authoritative and short-circuits with NO Overpass call — even when the store
-   * result is empty (a sparse/filtered covered lookup is genuinely empty, not
-   * un-imported). Omit `requestArea` to keep the plain empty→Overpass fallback.
+   * Coverage-aware (#925): when `coverageSamples` are given and any one of them
+   * isn't within imported territory (a request straddling the import frontier),
+   * the store's rows are merged with a live Overpass query rather than treated as
+   * complete — so the uncovered side isn't silently dropped. A fully-covered
+   * request (every sample near an import) is authoritative and short-circuits
+   * with NO Overpass call — even when the store result is empty (a sparse/
+   * filtered covered lookup is genuinely empty, not un-imported). Omit
+   * `coverageSamples` to keep the plain empty→Overpass fallback.
    *
    * A non-connection store error (a missed migration, a PostGIS/SQL bug) is a
    * real defect `withPoiRepo` deliberately rethrows — surface it (500) rather
@@ -125,7 +125,7 @@ export class PoiService {
   private async readStoreFirst<T extends { external_id: string }>(
     fromStore: () => Promise<T[]>,
     fromProvider: () => Promise<T[]>,
-    requestArea?: Bbox,
+    coverageSamples?: readonly { lat: number; lng: number }[],
   ): Promise<T[]> {
     let stored: T[] | null = null;
     try {
@@ -137,32 +137,34 @@ export class PoiService {
         `POI store unavailable, falling back to provider: ${err.message}`,
       );
     }
-    // Coverage-aware fallback (#925): a fully-covered area is authoritative —
+    // Coverage-aware fallback (#925): a fully-covered request is authoritative —
     // return the store result even when it's EMPTY, because a sparse or
     // kind-/min_stars-filtered lookup inside imported coverage is genuinely
-    // empty, NOT un-imported, so it must not keep hitting Overpass. Only when the
-    // area isn't fully covered (a request straddling the import frontier) do we
-    // MERGE the store's covered-side rows with a live Overpass query for the
-    // uncovered side (store rows win, richer decision-support), instead of
-    // treating the covered side as complete and dropping the rest.
-    if (stored !== null && requestArea) {
-      if (await this.isCovered(requestArea)) return stored;
+    // empty, NOT un-imported, so it must not keep hitting Overpass. Only when a
+    // sample isn't covered (a request straddling the import frontier) do we MERGE
+    // the store's covered-side rows with a live Overpass query for the uncovered
+    // side (store rows win, richer decision-support), instead of treating the
+    // covered side as complete and dropping the rest.
+    if (stored !== null && coverageSamples) {
+      if (await this.isCovered(coverageSamples)) return stored;
       const live = await this.fromProviderSafe(fromProvider);
       return mergeByExternalId(stored, live);
     }
-    // No `requestArea` (coverage unknown) or the store failed: the original
+    // No `coverageSamples` (coverage unknown) or the store failed: the original
     // store-first contract — store rows if any, else Overpass.
     if (stored !== null && stored.length > 0) return stored;
     return this.fromProviderSafe(fromProvider);
   }
 
   /**
-   * Whether the request area sits within imported territory (#925) — an active
-   * OSM point exists within the store's coverage buffer of it (occupancy, not a
-   * region rectangle, so a border wedge inside a country's bounding box that was
-   * never populated reads as un-covered). A request straddling the outer edge of
-   * coverage has no nearby point on its far side, so it falls through to a
-   * (harmless) Overpass merge rather than treating the store as complete.
+   * Whether the request sits within imported territory (#925) — every sample
+   * point has an active OSM point within the store's coverage buffer (occupancy,
+   * not a region rectangle, so a border wedge inside a country's bounding box
+   * that was never populated reads as un-covered). Proving coverage across the
+   * samples (not from one point anywhere in the area) means a large radius or a
+   * long corridor running past the frontier has an uncovered sample and falls
+   * through to a (harmless) Overpass merge rather than treating the store as
+   * complete (#925 P1 review).
    *
    * A transient POI-store outage during the coverage lookup itself (the store
    * dropped between `fromStore()` and here) resolves to `false` = "not
@@ -170,9 +172,11 @@ export class PoiService {
    * 500ing an otherwise-answerable read. A real (non-connection) defect still
    * surfaces, same as the primary store read.
    */
-  private async isCovered(area: Bbox): Promise<boolean> {
+  private async isCovered(
+    samples: readonly { lat: number; lng: number }[],
+  ): Promise<boolean> {
     try {
-      return await this.store.hasImportedPointNear(area);
+      return await this.store.hasImportedCoverage(samples);
     } catch (err) {
       if (err instanceof ServiceUnavailableException) {
         this.logger.warn(
@@ -218,7 +222,7 @@ export class PoiService {
           minStars,
         ),
       () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
-      pointRadiusBbox(lat, lng, radius),
+      radiusCoverageSamples(lat, lng, radius),
     );
     return {
       accommodations: this.rank(raw, lat, lng, resolvedKinds, minStars),
@@ -319,7 +323,7 @@ export class PoiService {
       () =>
         this.store.findPointsOfInterestNear(lat, lng, radius, resolvedKinds),
       () => this.provider.findPointsOfInterest(lat, lng, radius, resolvedKinds),
-      pointRadiusBbox(lat, lng, radius),
+      radiusCoverageSamples(lat, lng, radius),
     );
     return {
       pois: this.rankPois(raw, lat, lng, resolvedKinds),
@@ -476,7 +480,10 @@ export class PoiService {
           bufferKm,
           resolvedKinds,
         ),
-      routeBufferBbox(dto.route, bufferKm),
+      // Coverage samples strided at the buffer distance along the route, so a
+      // corridor that runs out of imported territory has an uncovered sample
+      // and merges Overpass instead of trusting the store off one covered point.
+      sampleRouteAnchors(dto.route, cumKm, COVERAGE_BUFFER_KM),
     );
 
     return {
