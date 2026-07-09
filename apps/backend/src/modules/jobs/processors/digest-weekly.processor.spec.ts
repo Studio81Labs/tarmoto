@@ -129,6 +129,13 @@ describe('DigestWeeklyProcessor.compose (#866)', () => {
     expect(end - start).toBe(7 * 24 * 60 * 60 * 1000); // exactly one week
     // Unfinished rides (null ended_at) are excluded from the aggregate.
     expect(rideSql).toContain('ended_at IS NOT NULL');
+    // The window is keyed on ended_at (rides *completed* in the window), so
+    // count/distance/duration all cover the same set — no ride is summed whole
+    // for distance but truncated for time. The old LEAST(ended_at, $3) cap that
+    // produced that split is gone.
+    expect(rideSql).toContain('ended_at >= $2');
+    expect(rideSql).toContain('ended_at < $3');
+    expect(rideSql).not.toContain('LEAST(ended_at');
   });
 
   it('throws on a failed send so BullMQ retries instead of recording "sent"', async () => {
@@ -167,5 +174,44 @@ describe('DigestWeeklyProcessor.compose (#866)', () => {
     expect(sql).toContain('notification_preferences');
     expect(sql).toContain('email_digest');
     expect(sql).not.toContain('weekly_digest');
+  });
+
+  it('memoizes the active-network total across compose jobs (no per-rider rescan)', async () => {
+    // The "% explored" denominator (active road_segments) is identical for every
+    // rider in a weekly burst; recounting the continent-scale table per compose
+    // job is wasted DB work. A second compose on the same worker must reuse it.
+    const rideAgg = {
+      ride_count: '1',
+      total_km: '10',
+      total_minutes: '30',
+      best_quality: '4',
+    };
+    const query = jest
+      .fn()
+      // compose #1: eligibility, ride aggregate, exploration ridden, total.
+      .mockResolvedValueOnce([ELIGIBLE_USER])
+      .mockResolvedValueOnce([rideAgg])
+      .mockResolvedValueOnce([{ ridden: '5' }])
+      .mockResolvedValueOnce([{ total: '100' }])
+      // compose #2: eligibility, ride aggregate, ridden — NO total (cache hit).
+      .mockResolvedValueOnce([ELIGIBLE_USER])
+      .mockResolvedValueOnce([rideAgg])
+      .mockResolvedValueOnce([{ ridden: '9' }]);
+    const { processor } = makeProcessor(query);
+
+    expect(await processor.process(composeJob('u1'))).toEqual({
+      status: 'sent',
+    });
+    expect(await processor.process(composeJob('u2'))).toEqual({
+      status: 'sent',
+    });
+
+    // 4 queries for the first compose, only 3 for the second: the active-segment
+    // COUNT(*) is served from the in-process cache the second time.
+    expect(query).toHaveBeenCalledTimes(7);
+    const totalCounts = query.mock.calls.filter(([sql]) =>
+      /FROM road_segments\s+WHERE deactivated_at IS NULL/.test(sql as string),
+    );
+    expect(totalCounts).toHaveLength(1);
   });
 });

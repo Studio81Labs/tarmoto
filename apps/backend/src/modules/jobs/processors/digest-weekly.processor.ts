@@ -52,6 +52,11 @@ const DIGEST_LOCAL_DOW = 0; // Sunday in IANA POSIX (0=Sun, 1=Mon, ...).
 export class DigestWeeklyProcessor extends WorkerHost {
   private readonly logger = new Logger(DigestWeeklyProcessor.name);
 
+  /** Active-network total is shared by every rider in a run; cache it briefly. */
+  private static readonly ACTIVE_SEGMENT_TTL_MS = 10 * 60 * 1000;
+  private activeSegmentCache: { total: number; expiresAt: number } | null =
+    null;
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -235,26 +240,28 @@ export class DigestWeeklyProcessor extends WorkerHost {
         best_quality: string | null;
       }[]
     >(
-      // `ended_at IS NOT NULL` drops unfinished rides that were still saved as
-      // 'completed' (e.g. GPX imports). Duration caps the end at the window end
-      // and floors at 0, so a future / clock-skewed `ended_at` can't inflate or
-      // negate the total (mirrors the dashboard stats).
+      // Window keyed on `ended_at`: the digest counts rides that *completed*
+      // this week, so ride_count, distance, and duration all describe the same
+      // set — no ride is summed whole for distance but truncated for time (the
+      // inconsistency a `started_at` window + LEAST(ended_at, $3) cap produced).
+      // A boundary-spanning ride still running at the Sunday send has
+      // ended_at >= $3 and rolls into next week's digest rather than being
+      // split across two. `ended_at IS NOT NULL` drops rides saved 'completed'
+      // with no end (e.g. some GPX imports); GREATEST(..., 0) floors a corrupt
+      // ended_at < started_at at zero.
       `SELECT
          COUNT(*)::text AS ride_count,
          COALESCE(SUM(distance_km), 0) AS total_km,
          COALESCE(SUM(
-           GREATEST(
-             0,
-             EXTRACT(EPOCH FROM (LEAST(ended_at, $3::timestamptz) - started_at))
-           ) / 60
+           GREATEST(0, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)
          ), 0) AS total_minutes,
          MAX(avg_road_quality) AS best_quality
        FROM rides
        WHERE user_id = $1
          AND status = 'completed'
          AND ended_at IS NOT NULL
-         AND started_at >= $2
-         AND started_at < $3`,
+         AND ended_at >= $2
+         AND ended_at < $3`,
       [userId, start.toISOString(), end.toISOString()],
     );
     return {
@@ -276,7 +283,7 @@ export class DigestWeeklyProcessor extends WorkerHost {
   private async gatherExplorationProgress(
     userId: string,
   ): Promise<{ percentExplored: number; riddenSegments: number }> {
-    const [[riddenRow], [totalRow]] = await Promise.all([
+    const [[riddenRow], total] = await Promise.all([
       this.dataSource.query<{ ridden: string }[]>(
         `SELECT COUNT(DISTINCT rs.road_segment_id)::text AS ridden
          FROM ride_segments rs
@@ -287,18 +294,40 @@ export class DigestWeeklyProcessor extends WorkerHost {
            AND seg.deactivated_at IS NULL`,
         [userId],
       ),
-      this.dataSource.query<{ total: string }[]>(
-        `SELECT COUNT(*)::text AS total
-         FROM road_segments
-         WHERE deactivated_at IS NULL`,
-      ),
+      this.getActiveSegmentTotal(),
     ]);
     const ridden = parseInt(riddenRow?.ridden ?? '0', 10);
-    const total = parseInt(totalRow?.total ?? '0', 10);
     return {
       riddenSegments: ridden,
       percentExplored: total > 0 ? Math.round((ridden / total) * 100) : 0,
     };
+  }
+
+  /**
+   * The active-network size — denominator of "% explored" — is identical for
+   * every rider in a dispatch run and only moves when the OSM graph is
+   * re-imported. Counting it per compose job would rescan the whole
+   * continent-scale `road_segments` table N times per weekly burst, so memoize
+   * it with a short TTL: one count per worker per few minutes instead of one
+   * per rider. The denominator changes glacially and `%` is rounded to a whole
+   * number, so a few-minutes-stale total is imperceptible.
+   */
+  private async getActiveSegmentTotal(): Promise<number> {
+    const now = Date.now();
+    if (this.activeSegmentCache && this.activeSegmentCache.expiresAt > now) {
+      return this.activeSegmentCache.total;
+    }
+    const [row] = await this.dataSource.query<{ total: string }[]>(
+      `SELECT COUNT(*)::text AS total
+       FROM road_segments
+       WHERE deactivated_at IS NULL`,
+    );
+    const total = parseInt(row?.total ?? '0', 10);
+    this.activeSegmentCache = {
+      total,
+      expiresAt: now + DigestWeeklyProcessor.ACTIVE_SEGMENT_TTL_MS,
+    };
+    return total;
   }
 
   /**
