@@ -71,6 +71,7 @@ export function MapToolbar({ onPlace }: MapToolbarProps) {
           ariaLabel={t("Address search")}
           onSelect={onPlace}
           clearOnSelect
+          widenDropdown
         />
       </div>
       <div

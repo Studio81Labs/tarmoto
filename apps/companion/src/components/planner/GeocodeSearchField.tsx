@@ -23,6 +23,13 @@ interface GeocodeSearchFieldProps {
    */
   variant?: "default" | "spine";
   autoFocus?: boolean;
+  /**
+   * Extend the results dropdown ~100px past the field's right edge. Only for
+   * fields with room to the right (the map toolbar search over the wide map);
+   * fields inside the narrow BUILD panel keep the wrapper width so they don't
+   * spill off-screen.
+   */
+  widenDropdown?: boolean;
 }
 
 const DEBOUNCE_MS = 200;
@@ -34,6 +41,7 @@ export function GeocodeSearchField({
   clearOnSelect = false,
   variant = "default",
   autoFocus = false,
+  widenDropdown = false,
 }: GeocodeSearchFieldProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
@@ -121,7 +129,9 @@ export function GeocodeSearchField({
         <ul
           role="listbox"
           aria-label={`${ariaLabel} results`}
-          className="absolute left-0 right-0 top-full z-30 mt-[5px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)]"
+          className={`absolute left-0 top-full z-30 mt-[5px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)] ${
+            widenDropdown ? "w-[calc(100%+100px)] max-w-[92vw]" : "right-0"
+          }`}
         >
           {loading ? (
             <li
