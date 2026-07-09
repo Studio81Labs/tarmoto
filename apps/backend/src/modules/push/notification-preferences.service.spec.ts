@@ -9,12 +9,16 @@ const USER_ID = '11111111-1111-1111-1111-111111111111';
 describe('NotificationPreferencesService', () => {
   let service: NotificationPreferencesService;
   let repo: jest.Mocked<
-    Pick<Repository<NotificationPreferencesRow>, 'findOne' | 'create' | 'save'>
+    Pick<
+      Repository<NotificationPreferencesRow>,
+      'findOne' | 'create' | 'save' | 'query'
+    >
   >;
 
   beforeEach(async () => {
     repo = {
       findOne: jest.fn(),
+      query: jest.fn().mockResolvedValue([]),
       create: jest
         .fn()
         .mockImplementation((data: Partial<NotificationPreferencesRow>) => ({
@@ -97,6 +101,40 @@ describe('NotificationPreferencesService', () => {
       expect(result.categories.new_follower.push).toBe(false);
       expect(result.quiet_hours_start).toBe(22 * 60);
       expect(result.quiet_hours_end).toBe(6 * 60);
+    });
+
+    it('writes a timezone-only patch atomically, never a full read-modify-write', async () => {
+      // The mobile/companion background timezone sync sends only the timezone.
+      // If it took the read-modify-write path it could clobber a concurrent full
+      // save's email_digest/categories, so it must upsert just that column.
+      repo.findOne.mockResolvedValue({
+        user_id: USER_ID,
+        email_digest: 'never' as const,
+        marketing_emails: false,
+        quiet_hours_start: 0,
+        quiet_hours_end: 0,
+        quiet_hours_timezone: 'Europe/Prague',
+        categories: {},
+        created_at: new Date(),
+        updated_at: new Date(),
+      } as unknown as NotificationPreferencesRow);
+
+      const result = await service.update(USER_ID, {
+        quiet_hours_timezone: 'Europe/Prague',
+      });
+
+      // No full-row save — the atomic upsert path only.
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(repo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = repo.query.mock.calls[0] as [string, unknown[]];
+      expect(sql).toMatch(/ON CONFLICT \(user_id\) DO UPDATE/);
+      expect(sql).toMatch(
+        /quiet_hours_timezone = EXCLUDED\.quiet_hours_timezone/,
+      );
+      expect(params).toEqual([USER_ID, 'Europe/Prague']);
+      // A concurrent save's email_digest is untouched by the tz-only write.
+      expect(result.email_digest).toBe('never');
+      expect(result.quiet_hours_timezone).toBe('Europe/Prague');
     });
   });
 });
