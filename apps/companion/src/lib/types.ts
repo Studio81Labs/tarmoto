@@ -150,6 +150,11 @@ export interface TripSummary {
   quality_avg?: number | null;
   warnings_count?: number | undefined;
   updatedAt?: string | undefined;
+  /**
+   * Per-day simplified route outline ([lng, lat] polylines) for the trips-list
+   * card thumbnail. `null`/absent for trips with no routed geometry (drafts).
+   */
+  overviewGeometry?: number[][][] | null | undefined;
 }
 
 /** Hydrated detail — extends summary with day-level + planner data. */
