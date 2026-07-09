@@ -33,8 +33,9 @@ import {
   MAX_DRAFT_VIAS,
   type DraftZone,
 } from "./draft-vias";
+import { API_HOST } from "@/lib/config";
 import { nearestPolygonContact, projectOntoRoute } from "./route-projection";
-import { mockRoadPreview } from "./mocks";
+import { cumulativeKm, pointAtDistanceKm, type LngLat } from "./polyline";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
 import type {
   DraftOptions,
@@ -749,6 +750,90 @@ function coordinateLabel(lat: number, lng: number): string {
   return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
 }
 
+/** Bearing (deg, 0 = N) from `a` to `b`; undefined for a zero-length edge. */
+function bearingBetween(a: LngLat, b: LngLat): number | undefined {
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  if (
+    typeof lng1 !== "number" ||
+    typeof lat1 !== "number" ||
+    typeof lng2 !== "number" ||
+    typeof lat2 !== "number"
+  ) {
+    return undefined;
+  }
+  if (lng1 === lng2 && lat1 === lat2) return undefined;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lng2 - lng1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Local travel heading at `targetKm` along the line — the direction of the edge
+ * that spans that distance. Used at the imagery lookup point so a curved or
+ * U-shaped run gets the heading THERE, not the end-to-end chord (which could
+ * face the opposite way) (#863 review).
+ */
+function bearingAtDistanceKm(
+  coords: readonly LngLat[],
+  cum: readonly number[],
+  targetKm: number,
+): number | undefined {
+  for (let i = 1; i < cum.length; i += 1) {
+    if ((cum[i] ?? 0) >= targetKm) {
+      return bearingBetween(coords[i - 1]!, coords[i]!);
+    }
+  }
+  const last = coords.length - 1;
+  return last >= 1
+    ? bearingBetween(coords[last - 1]!, coords[last]!)
+    : undefined;
+}
+
+/**
+ * Street-level imagery near a segment's midpoint — Mapillary via the backend
+ * proxy (#863). Best-effort: resolves to null on any error / no coverage so the
+ * Road Preview renders without a thumbnail rather than failing.
+ */
+async function fetchSegmentImagery(segment: RouteSegment): Promise<{
+  imageUrl: string;
+  capturedAt: string | null;
+  attribution: string | null;
+  link: string | null;
+} | null> {
+  const coords = segment.geometry.coordinates as LngLat[];
+  if (coords.length === 0) return null;
+  // Interpolate the point at HALF the polyline distance — not the middle
+  // vertex. A long section can be just two vertices, where an index-based
+  // midpoint lands on the segment end and queries the next road (#863 review).
+  const cum = cumulativeKm(coords);
+  const halfKm = (cum[cum.length - 1] ?? 0) / 2;
+  const [lng, lat] = pointAtDistanceKm(coords, cum, halfKm);
+  // Heading at the SAME point we look up, not the end-to-end chord.
+  const bearing = bearingAtDistanceKm(coords, cum, halfKm);
+  const { data, error } = await api.GET("/api/v1/roads/segment-imagery", {
+    params: {
+      query: { lat, lng, ...(bearing !== undefined ? { bearing } : {}) },
+    },
+  });
+  if (error || !data?.imageId) return null;
+  return {
+    // Load the thumbnail through the backend proxy — the browser never contacts
+    // Mapillary's CDN, so the rider IP + viewed section stay private (ADR-0009).
+    imageUrl: `${API_HOST}/api/v1/roads/segment-imagery/thumb/${encodeURIComponent(
+      data.imageId,
+    )}`,
+    capturedAt: data.capturedAt,
+    attribution: data.attribution,
+    link: data.link,
+  };
+}
+
 export function createPlannerApi(): PlannerApi {
   return {
     generateRoute(
@@ -886,8 +971,49 @@ export function createPlannerApi(): PlannerApi {
       };
     },
 
+    // Road Preview card quality payload — built entirely from the real
+    // `/roads/route-quality` overlay already on the segment (#862), so it
+    // resolves immediately. Street-level imagery is a SEPARATE call
+    // (`getSegmentImagery`) so a slow Mapillary lookup never blocks the
+    // actionable quality/reroute card (#863).
     getRoadPreview(segment: RouteSegment): Promise<RoadPreview> {
-      return Promise.resolve(mockRoadPreview(segment));
+      const hasData = segment.band !== "no_data" && segment.score != null;
+      if (!hasData) {
+        return Promise.resolve({
+          segmentId: segment.id,
+          hasData: false,
+          surface: segment.surface,
+          passes: segment.passes,
+          // Real OSM surface tag (from the route-quality overlay), shown as the
+          // unverified fallback where there are no measured passes.
+          osmSurfaceTag: segment.surface,
+        });
+      }
+      return Promise.resolve({
+        segmentId: segment.id,
+        hasData: true,
+        ...(segment.score != null ? { score: segment.score } : {}),
+        band: segment.band,
+        surface: segment.surface,
+        passes: segment.passes,
+        ...(segment.microStrip ? { microStrip: segment.microStrip } : {}),
+      });
+    },
+
+    // Street-level imagery, fetched separately from the quality card so it can
+    // stream in without blocking it (#863). Best-effort → null on error / no
+    // coverage. Returns the RoadPreview image fields for a shallow merge.
+    async getSegmentImagery(segment: RouteSegment) {
+      const imagery = await fetchSegmentImagery(segment).catch(() => null);
+      if (!imagery) return null;
+      return {
+        imageUrl: imagery.imageUrl,
+        ...(imagery.capturedAt ? { imageCapturedAt: imagery.capturedAt } : {}),
+        ...(imagery.attribution
+          ? { imageAttribution: imagery.attribution }
+          : {}),
+        ...(imagery.link ? { imageLink: imagery.link } : {}),
+      };
     },
 
     getPois(

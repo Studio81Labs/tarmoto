@@ -3,19 +3,28 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
   ParseUUIDPipe,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { MapillaryService } from '../mapillary/index.js';
+import {
+  SegmentImageryDto,
+  SegmentImageryQueryDto,
+} from '../mapillary/dto/segment-imagery.dto.js';
 import { RoadsService } from './roads.service.js';
 import {
   RouteQualityRequestDto,
@@ -37,7 +46,10 @@ import { RoadTrendDto } from './dto/road-trend.dto.js';
 @ApiTags('roads')
 @Controller('roads')
 export class RoadsController {
-  constructor(private readonly roadsService: RoadsService) {}
+  constructor(
+    private readonly roadsService: RoadsService,
+    private readonly mapillaryService: MapillaryService,
+  ) {}
 
   @Get('nearby')
   @ApiOperation({ summary: 'Get road segments near a location' })
@@ -118,6 +130,58 @@ export class RoadsController {
     @Body() dto: RouteQualityRequestDto,
   ): Promise<RouteQualityResponseDto> {
     return this.roadsService.getRouteQuality(dto);
+  }
+
+  // Declared BEFORE `:segmentId` so the static path wins — otherwise
+  // `/roads/segment-imagery` would match `:segmentId` and 400 on the UUID pipe.
+  @Get('segment-imagery')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
+  @ApiOperation({
+    summary: 'Street-level image near a coordinate (Road Preview)',
+    description:
+      'Proxies Mapillary (ADR-0009) for the nearest street-level image to a ' +
+      'point, with its capture date + required CC-BY-SA attribution. Fields ' +
+      'are null when there is no coverage or no provider token is configured. ' +
+      'The token stays server-side.',
+  })
+  @ApiResponse({ status: 200, type: SegmentImageryDto })
+  async getSegmentImagery(
+    @Query() query: SegmentImageryQueryDto,
+  ): Promise<SegmentImageryDto> {
+    return this.mapillaryService.segmentImagery(
+      query.lat,
+      query.lng,
+      query.bearing,
+    );
+  }
+
+  // Streams a thumbnail by id so the rider's browser loads it from us, never
+  // Mapillary's CDN (ADR-0009). PUBLIC by necessity — an <img> can't send a
+  // bearer — but rate-limited + byte-cached, and it only proxies public
+  // Mapillary thumbnails (no rider data). Declared before `:segmentId`.
+  @Get('segment-imagery/thumb/:imageId')
+  @Throttle({ default: { ttl: 60_000, limit: 300 } })
+  @ApiOperation({ summary: 'Proxy a street-level thumbnail (Road Preview)' })
+  @ApiResponse({ status: 200, description: 'Image bytes' })
+  @ApiResponse({ status: 404, description: 'No thumbnail for this image' })
+  async getSegmentImageryThumb(
+    @Param('imageId') imageId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const thumb = await this.mapillaryService.thumbnail(imageId);
+    if (!thumb) {
+      res.status(HttpStatus.NOT_FOUND).end();
+      return;
+    }
+    res.set('Content-Type', thumb.contentType);
+    res.set('Cache-Control', 'public, max-age=86400, immutable');
+    // The companion runs on a separate origin, so this <img> is a cross-origin
+    // load. Override Helmet's global `Cross-Origin-Resource-Policy: same-origin`
+    // (main.ts) — otherwise the browser blocks the proxied thumbnail.
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.send(thumb.body);
   }
 
   @Get(':segmentId')
