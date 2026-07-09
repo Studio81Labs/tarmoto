@@ -11,6 +11,7 @@ import { extractPoiHint } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
 import { withPoiRepo } from './poi-repo.js';
+import { dedupeAcrossSources, type DedupPoi } from './poi-dedup.js';
 import {
   DEFAULT_BUFFER_KM,
   MAX_BUFFER_KM,
@@ -48,6 +49,16 @@ interface RoutePoint {
  * single global cap instead — with `min_stars` pushed into the query.
  */
 const STORE_PER_KIND_LIMIT = 100;
+
+/**
+ * Over-fetch factor for the DB caps so cross-source de-dup (#869) doesn't let
+ * duplicates consume the result budget: the `.limit()` runs before de-dup, so a
+ * dense OSM+FSQ bbox could otherwise return far fewer than the cap once
+ * duplicates are dropped. Fetch this multiple of the cap, then de-dup and trim
+ * to the real cap. 2× covers the worst case (every kept row has one duplicate);
+ * a no-op in effect when FSQ isn't imported.
+ */
+const DEDUP_OVERFETCH = 2;
 
 /**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
@@ -120,10 +131,14 @@ export class PoiStoreService {
       return qb
         .orderBy('poi.kind', 'ASC')
         .addOrderBy('poi.name', 'ASC')
-        .limit(capped)
+        .limit(capped * DEDUP_OVERFETCH)
         .getMany();
     });
-    return rows.map(toStoredPoiDto);
+    // Over-fetch then trim to `capped` AFTER de-dup, so duplicates don't shrink
+    // the result below the requested cap in a dense OSM+FSQ bbox.
+    return dedupeAcrossSources(rows, poiDedupKey)
+      .slice(0, capped)
+      .map(toStoredPoiDto);
   }
 
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
@@ -162,7 +177,7 @@ export class PoiStoreService {
     // uses. An all-kinds request has no list to partition, so it falls back to a
     // single global MAX_LIMIT read. The along-route sort + slice below then
     // order/trim whatever these return.
-    const rows =
+    const fetched =
       kinds && kinds.length > 0
         ? (
             await Promise.all(
@@ -177,12 +192,11 @@ export class PoiStoreService {
             )
           ).flat()
         : await this.queryCorridorEntities(route, buffer, kinds, MAX_LIMIT);
-
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer
-    // (the geography corridor is slightly looser), sort start→end, cap.
+    // (the geography corridor is slightly looser).
     const cumKm = cumulativeLengthKm(route);
-    const annotated = rows
+    const withinBuffer = fetched
       .map((poi) => {
         const [lng, lat] = poi.geom.coordinates;
         if (lng === undefined || lat === undefined) return null;
@@ -191,7 +205,30 @@ export class PoiStoreService {
       .filter(
         (x): x is { poi: Poi; projected: ProjectedDistances } => x !== null,
       )
-      .filter((x) => x.projected.distance_from_route_km <= buffer)
+      .filter((x) => x.projected.distance_from_route_km <= buffer);
+    // De-dupe AFTER the precise buffer filter, not before: an OSM copy that
+    // projects just OUTSIDE the buffer must not suppress an FSQ copy of the same
+    // venue that projects inside, or the stop would vanish entirely. De-dupe the
+    // survivors (keeping OSM), then sort start→end and cap. No-op until FSQ is
+    // imported.
+    const deduped = dedupeAcrossSources(withinBuffer, (x) =>
+      poiDedupKey(x.poi),
+    );
+    // Trim the DEDUP_OVERFETCH headroom back to the real cap BEFORE the
+    // route-order sort, so the doubled fetch can't change which rows show on an
+    // OSM-only read (de-dup no-op). Both branches carry the rows nearest-to-route
+    // first here (the per-kind and all-kinds queries both order by ST_Distance to
+    // the line), so trimming keeps the closest:
+    //  - per kind: STORE_PER_KIND_LIMIT each, so one dense kind can't crowd
+    //    sparser ones out of the along-route sort below;
+    //  - all kinds: the global MAX_LIMIT nearest-to-route — otherwise sorting all
+    //    MAX_LIMIT×2 by route position and slicing MAX_LIMIT would keep the
+    //    earliest-along-route, letting a far-off-route row displace a closer one.
+    const trimmed =
+      kinds && kinds.length > 0
+        ? capPerKind(deduped, STORE_PER_KIND_LIMIT, (x) => x.poi.kind)
+        : deduped.slice(0, MAX_LIMIT);
+    const annotated = trimmed
       .sort(
         (a, b) =>
           a.projected.distance_along_route_km -
@@ -238,6 +275,11 @@ export class PoiStoreService {
         ),
       ),
     );
+    // Cross-source de-dup is deferred to `PoiService.rankPois` — it recomputes
+    // distance from each row's coordinates and caps per kind, so de-duping here
+    // (by coordinate, before distances exist) could drop a closer FSQ copy for a
+    // farther OSM twin that then sorts past the cap. The per-kind query already
+    // bounds hydration at STORE_PER_KIND_LIMIT.
     return perKind.flat().map(storedPoiToPointOfInterest);
   }
 
@@ -264,6 +306,10 @@ export class PoiStoreService {
       MAX_LIMIT,
       minStars,
     );
+    // Cross-source de-dup is deferred to `PoiService.rank` — it recomputes
+    // distance from each row's coordinates and slices globally, so de-duping here
+    // could drop a closer FSQ copy for a farther OSM twin that then falls outside
+    // the display cap. The query already bounds hydration at MAX_LIMIT.
     return rows.map(storedPoiToAccommodationPoi);
   }
 
@@ -297,6 +343,9 @@ export class PoiStoreService {
         ),
       ),
     );
+    // Cross-source de-dup is deferred to `PoiService.rankAlongRoute` — it runs
+    // AFTER the precise per-route buffer filter, so an OSM copy that projects
+    // just outside the buffer can't suppress an FSQ copy that projects inside.
     return perKind.flat().map(storedPoiToPointOfInterest);
   }
 
@@ -335,6 +384,9 @@ export class PoiStoreService {
       if (minStars !== undefined) {
         qb.andWhere('poi.stars >= :minStars', { minStars });
       }
+      // No DEDUP_OVERFETCH here: both radius callers now de-dup in the ranker
+      // (which recomputes distance), so the store just bounds hydration at the
+      // real cap — comfortably above the tiny display caps rankPois/rank apply.
       return qb
         .orderBy(`ST_Distance(poi.geom::geography, ${point})`, 'ASC')
         .limit(limit)
@@ -383,7 +435,7 @@ export class PoiStoreService {
       // to partition and falls back to a single global MAX_LIMIT cap.
       if (limit !== undefined) {
         qb.orderBy(`ST_Distance(poi.geom::geography, ${line})`, 'ASC').limit(
-          limit,
+          limit * DEDUP_OVERFETCH,
         );
       }
       return qb.getMany();
@@ -434,6 +486,36 @@ function geomLngLat(poi: Poi): [number, number] {
     throw new Error('stored POI geom is missing lng/lat');
   }
   return [lng, lat];
+}
+
+/** Project a stored `Poi` to its cross-source de-dup key (#869). */
+function poiDedupKey(poi: Poi): DedupPoi {
+  const [lng, lat] = geomLngLat(poi);
+  return { source: poi.source, kind: poi.kind, name: poi.name, lat, lng };
+}
+
+/**
+ * Trim the {@link DEDUP_OVERFETCH} headroom back to the real per-kind cap after
+ * de-dup (#869). The DB fetched `cap × DEDUP_OVERFETCH` rows so cross-source
+ * de-dup couldn't shrink a dense OSM+FSQ kind below `cap`; when there are no
+ * duplicates (e.g. an OSM-only store) that headroom must NOT inflate the
+ * single-source result past `cap`, or the rankers would see twice the intended
+ * candidates. Rows arrive nearest-first within each kind, so keeping the first
+ * `cap` of each kind keeps the closest.
+ */
+function capPerKind<T>(
+  rows: T[],
+  cap: number,
+  kindOf: (row: T) => string,
+): T[] {
+  const counts = new Map<string, number>();
+  return rows.filter((row) => {
+    const kind = kindOf(row);
+    const n = counts.get(kind) ?? 0;
+    if (n >= cap) return false;
+    counts.set(kind, n + 1);
+    return true;
+  });
 }
 
 /**
