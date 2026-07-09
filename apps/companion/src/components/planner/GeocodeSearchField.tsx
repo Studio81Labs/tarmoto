@@ -119,7 +119,7 @@ export function GeocodeSearchField({
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-ink transition hover:bg-paper"
               >
                 <MapPin size={11} className="shrink-0 text-fg-mute" />
-                {result.name}
+                <span className="min-w-0 truncate">{result.name}</span>
               </button>
             </li>
           ))}
