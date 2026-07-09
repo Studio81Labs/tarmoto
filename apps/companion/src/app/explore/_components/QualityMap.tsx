@@ -535,8 +535,18 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
               handleRef.current?.setPoiAttribution([FSQ_ATTRIBUTION]);
             }
           })
-          .catch(() => {
-            // Aborted or failed — leave the existing pins in place.
+          .catch((err: unknown) => {
+            // A superseded viewport/category aborts the request — that's
+            // expected, so keep the current pins for the newer fetch.
+            if (cancelled || (err as { name?: string }).name === "AbortError") {
+              return;
+            }
+            // A real failure: clear rather than pass the previous viewport's
+            // pins off as the current result, and surface it.
+            console.error("Failed to load POIs for the viewport", err);
+            poisByIdRef.current = new Map();
+            setPoiSourceData(map, []);
+            setPoiMenu(null);
           });
       }, POI_FETCH_DEBOUNCE_MS);
       return () => {
