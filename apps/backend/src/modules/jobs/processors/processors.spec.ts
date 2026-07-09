@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getDataSourceToken } from '@nestjs/typeorm';
+import { EmailService } from '../../email/email.service.js';
 import { HazardsCleanupProcessor } from './hazards-cleanup.processor.js';
 import { BadgesRecheckProcessor } from './badges-recheck.processor.js';
 import { DigestWeeklyProcessor } from './digest-weekly.processor.js';
@@ -122,21 +124,48 @@ describe('DigestWeeklyProcessor', () => {
         DigestWeeklyProcessor,
         { provide: getDataSourceToken(), useValue: dataSource },
         { provide: JobsProducer, useValue: producer },
+        // compose() deps — the dispatch tests below don't exercise them, but
+        // the processor's constructor requires them for DI to resolve.
+        { provide: ConfigService, useValue: { get: () => 'http://x' } },
+        { provide: EmailService, useValue: { sendWeeklyDigest: jest.fn() } },
       ],
     }).compile();
     processor = moduleRef.get(DigestWeeklyProcessor);
   });
 
   it('dispatch: enqueues a compose job per user that the SQL filter returned', async () => {
-    dataSource.query.mockResolvedValue([{ user_id: 'u1' }, { user_id: 'u2' }]);
+    dataSource.query.mockResolvedValue([
+      {
+        user_id: 'u1',
+        window_start: '2026-06-28T08:00:00.000Z',
+        window_end: '2026-07-05T08:00:00.000Z',
+      },
+      {
+        user_id: 'u2',
+        window_start: '2026-06-28T07:00:00.000Z',
+        window_end: '2026-07-05T07:00:00.000Z',
+      },
+    ]);
     const result = await processor.process(
       fakeJob(JOB_NAMES.DIGEST_WEEKLY_DISPATCH, {}) as never,
     );
     expect(producer.enqueueDigestWeeklyCompose).toHaveBeenCalledTimes(2);
-    // Each enqueue includes a `for_local_window` key for idempotency.
-    expect(
-      producer.enqueueDigestWeeklyCompose.mock.calls[0][0].for_local_window,
-    ).toMatch(/^\d{4}-W\d{2}$/);
+    const firstPayload = producer.enqueueDigestWeeklyCompose.mock
+      .calls[0][0] as {
+      for_local_window: string;
+      window_start: string;
+      window_end: string;
+    };
+    // The idempotency key is the UTC week of the PINNED send boundary
+    // (window_end) — constant across catch-up runs, not the dispatcher slot's
+    // week (which would double-send when catch-up crosses a week boundary). The
+    // 'YYYY-Www' format matches the legacy key so old + new jobs dedupe on
+    // deploy. window_end 2026-07-05 → 2026-W27.
+    expect(firstPayload.for_local_window).toBe('2026-W27');
+    // ...and the DST-correct window bounds resolved per rider at dispatch, so
+    // compose never re-derives them from a fixed 7×24h delta.
+    expect(firstPayload.window_start).toBe('2026-06-28T08:00:00.000Z');
+    expect(firstPayload.window_end).toBe('2026-07-05T08:00:00.000Z');
     expect(result).toEqual({ users_enqueued: 2 });
   });
 
@@ -158,24 +187,62 @@ describe('DigestWeeklyProcessor', () => {
     // AT TIME ZONE. If anyone reverts to interpolating the raw value
     // again, this assertion fails.
     expect(sql).toMatch(/AT TIME ZONE tz_resolution\.tz/);
-    // Sanity: the query never passes the raw preferences->>'timezone'
-    // directly to AT TIME ZONE (the foot-gun the lateral subquery
-    // exists to remove).
-    expect(sql).not.toMatch(
-      /AT TIME ZONE\s+COALESCE\(NULLIF\(u\.preferences->>'timezone'/,
-    );
+    // The rider timezone is sourced from the persisted, user-writable
+    // `notification_preferences.quiet_hours_timezone` — NOT
+    // `users.preferences->>'timezone'`, which has no writer in any settings
+    // path (the profile DTO whitelist rejects the key) and would silently pin
+    // every rider to UTC. A regression back to that dead field fails here.
+    expect(sql).toMatch(/quiet_hours_timezone/);
+    expect(sql).not.toMatch(/preferences->>'timezone'/);
+    // Digest opt-in is the typed `notification_preferences.email_digest`, not
+    // the legacy `users.preferences` flag (#278) — a stale check would email
+    // every rider regardless of the 'daily'/'never' they picked.
+    expect(sql).toMatch(/notification_preferences/);
+    expect(sql).toMatch(/email_digest/);
+    expect(sql).not.toMatch(/weekly_digest/);
+    // The digest window is derived in the rider's timezone at dispatch:
+    // window_start subtracts a LOCAL `interval '7 days'` (DST-correct) rather
+    // than a fixed millisecond delta, and both bounds ride along to compose.
+    expect(sql).toMatch(/interval '7 days'/);
+    expect(sql).toMatch(/window_start/);
+    expect(sql).toMatch(/window_end/);
+    // The HOUR filter is a catch-up RANGE (BETWEEN $3 AND $4), not a single
+    // hour: BullMQ skips slots across a multi-hour outage, so one post-outage
+    // run must replay every rider whose local 08:00 fell in the gap. A
+    // regression back to a single-hour `= $3` match fails here.
+    expect(sql).toMatch(/BETWEEN \$3 AND \$4/);
+    expect(sql).not.toMatch(/HOUR FROM[\s\S]*?\)::int = \$3/);
+    // Verification is evaluated AS OF the pinned send time, so the widened hour
+    // range can't mail a rider who verified their email after 08:00.
+    expect(sql).toMatch(/email_verified_at <= s\.send_at/);
+    // The opt-in is NOT gated on notification_preferences.updated_at — that is
+    // not opt-in history and would drop default-weekly riders whose row was
+    // touched after the send (e.g. by the timezone sync). Assert the predicate
+    // itself is gone (the surrounding comment still mentions the column).
+    expect(sql).not.toMatch(/np\.updated_at <= s\.send_at/);
   });
 
-  it('compose: stub returns "skipped" with a reason pointing at US-63 (real composer pending)', async () => {
-    const result = await processor.process(
-      fakeJob(JOB_NAMES.DIGEST_WEEKLY_COMPOSE, {
-        user_id: 'u1',
-        for_local_window: '2026-W18',
-      }) as never,
-    );
-    expect(result).toMatchObject({ status: 'skipped' });
-    expect((result as { reason: string }).reason).toMatch(/US-63/);
+  it('anchors the dispatch to the scheduled slot in the jobId, not the processing clock', async () => {
+    // A retried/backlogged dispatch processed after the rider's 08:00 hour must
+    // still target the slot it was scheduled for; otherwise EXTRACT(HOUR)=8
+    // finds nobody and the week's digest is silently skipped. BullMQ encodes the
+    // slot millis as the trailing segment of the repeatable jobId.
+    const slot = Date.UTC(2026, 6, 5, 8); // Sun 2026-07-05 08:00 UTC
+    dataSource.query.mockResolvedValue([]);
+    await processor.process({
+      id: `repeat:digest-weekly.${JOB_NAMES.DIGEST_WEEKLY_DISPATCH}:${slot}`,
+      name: JOB_NAMES.DIGEST_WEEKLY_DISPATCH,
+      data: {},
+      // Creation time ≈ 1h before the slot (what job.timestamp holds) — must be
+      // ignored; the `new Date()` fallback (test's "now") would also differ.
+      timestamp: Date.UTC(2026, 6, 5, 7),
+    } as never);
+    const [, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
+    // $1 (drives the DOW/HOUR filter + window) is the scheduled slot, verbatim.
+    expect(params[0]).toBe(new Date(slot).toISOString());
   });
+
+  // `compose` is covered end-to-end in digest-weekly.processor.spec.ts (#866).
 });
 
 describe('DataExportQueueProcessor', () => {

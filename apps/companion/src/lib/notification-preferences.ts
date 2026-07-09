@@ -23,7 +23,7 @@ export const EMAIL_DIGEST_OPTIONS: {
   description: string;
 }[] = [
   { value: "daily", label: "Daily", description: "Every morning" },
-  { value: "weekly", label: "Weekly", description: "Every Monday" },
+  { value: "weekly", label: "Weekly", description: "Every Sunday" },
   { value: "never", label: "Never", description: "No digest emails" },
 ];
 

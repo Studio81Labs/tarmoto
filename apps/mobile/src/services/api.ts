@@ -172,6 +172,9 @@ class ApiService {
     // the first successful refresh, which is the same posture as
     // a brand-new install (see `privacyCache` doc).
     void this.refreshPrivacyPreferences().catch(() => undefined);
+    // Capture the device timezone up front so the very first weekly digest
+    // sends at the rider's local Sunday 08:00, not 08:00 UTC (#866).
+    void this.syncDeviceTimezone().catch(() => undefined);
     return data;
   }
 
@@ -186,6 +189,9 @@ class ApiService {
     // uploader's `road_data_contribution` gate has fresh data
     // before the rider starts a ride.
     void this.refreshPrivacyPreferences().catch(() => undefined);
+    // See `register` — capture the device timezone on sign-in so the digest
+    // sends at the rider's local Sunday 08:00, not 08:00 UTC (#866).
+    void this.syncDeviceTimezone().catch(() => undefined);
     return data;
   }
 
@@ -269,6 +275,24 @@ class ApiService {
 
   isAuthenticated(): boolean {
     return hasAccessToken();
+  }
+
+  /**
+   * Persist the device's IANA timezone to notification preferences so the
+   * weekly digest sends at the rider's local Sunday 08:00 instead of the backend
+   * UTC default (#866). Fire-and-forget from login / register (mirrors the
+   * privacy / push post-auth hooks) so a fresh sign-in with no cold-start or
+   * foreground transition still captures the timezone; also used by the
+   * foreground `timezoneSyncMonitor`. Best-effort — the backend falls back to
+   * UTC for an unknown/missing zone.
+   */
+  async syncDeviceTimezone(): Promise<void> {
+    if (!hasAccessToken()) return;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!timezone) return;
+    await this.updateNotificationPreferences({
+      quiet_hours_timezone: timezone,
+    });
   }
 
   /**

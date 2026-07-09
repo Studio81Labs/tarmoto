@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
 import { JobsProducer, POI_IMPORT_STAGGER_MS } from './jobs.producer.js';
 import { JOB_NAMES, QUEUE_NAMES } from './jobs.constants.js';
+import { DIGEST_COMPOSE_PRIORITY } from './jobs.config.js';
 
 interface QueueMock {
   add: jest.Mock;
@@ -79,6 +80,9 @@ describe('JobsProducer', () => {
       { user_id: 'u1', for_local_window: '2026-W18' },
       expect.objectContaining({
         jobId: 'digest-weekly:u1:2026-W18',
+        // Lower priority than the dispatch job on the shared queue so a large
+        // compose fan-out can't starve the hourly dispatcher.
+        priority: DIGEST_COMPOSE_PRIORITY,
       }),
     );
   });

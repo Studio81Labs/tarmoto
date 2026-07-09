@@ -1,6 +1,6 @@
 "use client";
 import { t } from "@/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, Check, Loader2, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -38,6 +38,9 @@ export default function NotificationsPage() {
     DEFAULT_NOTIFICATION_PREFERENCES,
   );
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+  // In-flight on-load timezone sync (see the load effect). save() awaits it so
+  // the two full-row writes to notification_preferences never overlap.
+  const tzSyncRef = useRef<Promise<void> | null>(null);
   // Wait for the auth store to carry a token before fetching — same
   // hard-navigation race fix as the privacy / subscription / trip detail
   // pages.
@@ -55,6 +58,41 @@ export default function NotificationsPage() {
         setServerPrefs(merged);
         setPrefs(merged);
         setLoading(false);
+        // Capture the rider's IANA timezone on first view. `save()` is gated on
+        // isDirty (the SaveBar disables when nothing else changed), so a default
+        // weekly rider who never toggles another preference would otherwise stay
+        // pinned to the backend's UTC default and get their digest sent/bucketed
+        // at 08:00 UTC instead of local time. Persist it in the background — only
+        // when it actually differs — so timezone-aware delivery works without a
+        // manual save.
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz && browserTz !== merged.quiet_hours_timezone) {
+          // Serialize this against the explicit save(): the backend update is a
+          // full-row read-modify-write, so a timezone-only request that lands
+          // AFTER the user's save would restore the stale email_digest/categories
+          // it read first. Storing the promise lets save() await it, so the two
+          // writes never overlap (and can't both race first-row creation). The
+          // trailing .catch keeps the awaited promise from ever rejecting.
+          tzSyncRef.current = accountApi
+            .updateNotificationPreferences({ quiet_hours_timezone: browserTz })
+            .then(() => {
+              if (cancelled) return;
+              // Sync the saved baseline + editable copy so this background write
+              // isn't seen as a spurious unsaved change (preferencesEqual
+              // compares quiet_hours_timezone); any in-flight user edits to other
+              // fields are preserved.
+              setServerPrefs((sp) => ({
+                ...sp,
+                quiet_hours_timezone: browserTz,
+              }));
+              setPrefs((p) => ({ ...p, quiet_hours_timezone: browserTz }));
+            })
+            .catch((err: Error) => {
+              // Best-effort background sync — surface in the console, never
+              // disrupt the settings page or block the rider.
+              console.warn("Timezone sync failed:", err.message);
+            });
+        }
       })
       .catch((err: Error) => {
         if (cancelled) return;
@@ -100,10 +138,21 @@ export default function NotificationsPage() {
     if (saveState.kind === "saving") return;
     setSaveState({ kind: "saving" });
     try {
+      // Let any in-flight on-load timezone sync land first — both are full-row
+      // writes on the same row, and a tz request completing after this save would
+      // restore the pre-save email_digest/categories. (The ref promise never
+      // rejects, so this await is safe even if the sync failed.)
+      if (tzSyncRef.current) await tzSyncRef.current;
       const { data } = await accountApi.updateNotificationPreferences({
         email_digest: prefs.email_digest,
         marketing_emails: prefs.marketing_emails,
         categories: prefs.categories,
+        // Persist the rider's IANA timezone so timezone-aware delivery — the
+        // weekly digest's local Sunday-08:00 send + quiet hours — uses their
+        // actual zone instead of the server default (UTC). Without a written
+        // value the backend has no rider timezone to read. It validates this
+        // against pg_timezone_names and falls back to UTC for anything unknown.
+        quiet_hours_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       const merged = mergeWithDefaults(
         data as PartialNotificationPreferences | null,
