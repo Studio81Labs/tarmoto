@@ -2644,7 +2644,7 @@ export default function TripPlannerPage() {
           {/* Save route — live routing path (Task 11). Enabled when the
               active draft has a routed geometry. */}
           <Button
-            variant="primary"
+            variant="accent"
             size="sm"
             uppercase
             loading={savingRoute}
