@@ -292,6 +292,22 @@ describe('PoiStoreService', () => {
       expect(qb.limit).toHaveBeenCalledWith(1000); // MAX_LIMIT × DEDUP_OVERFETCH
     });
 
+    it('trims the per-kind de-dup overfetch back to the cap on an OSM-only read (#869)', async () => {
+      // The DB overfetches STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH for de-dup
+      // headroom; with an OSM-only store (de-dup no-op) a single dense kind must
+      // still be capped at STORE_PER_KIND_LIMIT, not the doubled fetch. Every
+      // row sits on the first route vertex, so all are inside the buffer.
+      const dense = Array.from({ length: 150 }, (_, i) =>
+        makePoi({
+          external_id: `osm:node:${i}`,
+          geom: { type: 'Point', coordinates: [18.4 + i * 1e-5, 49.5] },
+        }),
+      );
+      qb.getMany.mockResolvedValueOnce(dense);
+      const { pois } = await service.findAlongRoute(route, ['restaurant'], 2);
+      expect(pois).toHaveLength(100); // STORE_PER_KIND_LIMIT, not 200
+    });
+
     it('clamps the buffer to the max and adds a kind filter', async () => {
       const { buffer_km } = await service.findAlongRoute(
         route,
@@ -368,6 +384,24 @@ describe('PoiStoreService', () => {
       expect(kindFilters).toContainEqual(['restaurant']);
       expect(kindFilters).toContainEqual(['fuel_station']);
     });
+
+    it('trims the de-dup overfetch back to the per-kind cap on an OSM-only read (#869)', async () => {
+      // The DB overfetches STORE_PER_KIND_LIMIT × DEDUP_OVERFETCH for de-dup
+      // headroom. With an OSM-only store (de-dup is a no-op) the result must
+      // still be capped at STORE_PER_KIND_LIMIT, not the doubled fetch — else
+      // rankPois would rank twice the intended candidates.
+      const dense = Array.from({ length: 150 }, (_, i) =>
+        makePoi({
+          external_id: `osm:node:${i}`,
+          geom: { type: 'Point', coordinates: [18.4 + i * 1e-5, 49.5] },
+        }),
+      );
+      qb.getMany.mockResolvedValueOnce(dense);
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+      ]);
+      expect(pois).toHaveLength(100); // STORE_PER_KIND_LIMIT, not 200
+    });
   });
 
   describe('findAccommodationsNear (store-first source)', () => {
@@ -400,6 +434,25 @@ describe('PoiStoreService', () => {
       ).find(([sql]) => sql.includes('poi.stars >='));
       expect(starFilter).toBeDefined();
       expect(starFilter?.[1]).toEqual({ minStars: 3 });
+    });
+
+    it('trims the de-dup overfetch back to the global cap on an OSM-only read (#869)', async () => {
+      // Accommodations rank globally, so the OSM-only result (de-dup no-op) is
+      // capped at MAX_LIMIT — not the MAX_LIMIT × DEDUP_OVERFETCH fetch.
+      const dense = Array.from({ length: 600 }, (_, i) =>
+        makePoi({
+          kind: 'hotel',
+          stars: 3,
+          cuisine: null,
+          external_id: `osm:node:${i}`,
+          geom: { type: 'Point', coordinates: [18.4 + i * 1e-5, 49.5] },
+        }),
+      );
+      qb.getMany.mockResolvedValueOnce(dense);
+      const acc = await service.findAccommodationsNear(49.5, 18.4, 10, [
+        'hotel',
+      ]);
+      expect(acc).toHaveLength(500); // MAX_LIMIT, not 1000
     });
   });
 

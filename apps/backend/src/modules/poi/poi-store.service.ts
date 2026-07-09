@@ -211,9 +211,19 @@ export class PoiStoreService {
     // venue that projects inside, or the stop would vanish entirely. De-dupe the
     // survivors (keeping OSM), then sort start→end and cap. No-op until FSQ is
     // imported.
-    const annotated = dedupeAcrossSources(withinBuffer, (x) =>
+    const deduped = dedupeAcrossSources(withinBuffer, (x) =>
       poiDedupKey(x.poi),
-    )
+    );
+    // Trim the per-kind DEDUP_OVERFETCH headroom back to STORE_PER_KIND_LIMIT so
+    // one dense kind can't surface the doubled fetch on an OSM-only read (see
+    // capPerKind). Rows are still nearest-to-route within each kind here, so this
+    // keeps the closest. An all-kinds read used one global MAX_LIMIT query with
+    // no per-kind partition, so the final global slice below is its only cap.
+    const trimmed =
+      kinds && kinds.length > 0
+        ? capPerKind(deduped, STORE_PER_KIND_LIMIT, (x) => x.poi.kind)
+        : deduped;
+    const annotated = trimmed
       .sort(
         (a, b) =>
           a.projected.distance_along_route_km -
@@ -260,7 +270,12 @@ export class PoiStoreService {
         ),
       ),
     );
-    return dedupeAcrossSources(perKind.flat(), poiDedupKey).map(
+    // Trim the DEDUP_OVERFETCH headroom back to the real per-kind cap: an
+    // OSM-only read (de-dup is a no-op) must still yield STORE_PER_KIND_LIMIT per
+    // kind, not the doubled fetch, or `rankPois` would rank twice the intended
+    // candidates and a farther named row could displace a closer nameless one.
+    const deduped = dedupeAcrossSources(perKind.flat(), poiDedupKey);
+    return capPerKind(deduped, STORE_PER_KIND_LIMIT, (poi) => poi.kind).map(
       storedPoiToPointOfInterest,
     );
   }
@@ -288,9 +303,13 @@ export class PoiStoreService {
       MAX_LIMIT,
       minStars,
     );
-    return dedupeAcrossSources(rows, poiDedupKey).map(
-      storedPoiToAccommodationPoi,
-    );
+    // Trim the DEDUP_OVERFETCH headroom back to the real cap. Accommodations
+    // rank globally (closest-N, any kind), so slice the nearest-first de-duped
+    // set back to MAX_LIMIT rather than per kind — an OSM-only read must return
+    // MAX_LIMIT, not the doubled fetch.
+    return dedupeAcrossSources(rows, poiDedupKey)
+      .slice(0, MAX_LIMIT)
+      .map(storedPoiToAccommodationPoi);
   }
 
   /**
@@ -469,6 +488,30 @@ function geomLngLat(poi: Poi): [number, number] {
 function poiDedupKey(poi: Poi): DedupPoi {
   const [lng, lat] = geomLngLat(poi);
   return { source: poi.source, kind: poi.kind, name: poi.name, lat, lng };
+}
+
+/**
+ * Trim the {@link DEDUP_OVERFETCH} headroom back to the real per-kind cap after
+ * de-dup (#869). The DB fetched `cap × DEDUP_OVERFETCH` rows so cross-source
+ * de-dup couldn't shrink a dense OSM+FSQ kind below `cap`; when there are no
+ * duplicates (e.g. an OSM-only store) that headroom must NOT inflate the
+ * single-source result past `cap`, or the rankers would see twice the intended
+ * candidates. Rows arrive nearest-first within each kind, so keeping the first
+ * `cap` of each kind keeps the closest.
+ */
+function capPerKind<T>(
+  rows: T[],
+  cap: number,
+  kindOf: (row: T) => string,
+): T[] {
+  const counts = new Map<string, number>();
+  return rows.filter((row) => {
+    const kind = kindOf(row);
+    const n = counts.get(kind) ?? 0;
+    if (n >= cap) return false;
+    counts.set(kind, n + 1);
+    return true;
+  });
 }
 
 /**
