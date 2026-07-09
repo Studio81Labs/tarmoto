@@ -177,6 +177,10 @@ export class RoadsController {
     }
     res.set('Content-Type', thumb.contentType);
     res.set('Cache-Control', 'public, max-age=86400, immutable');
+    // The companion runs on a separate origin, so this <img> is a cross-origin
+    // load. Override Helmet's global `Cross-Origin-Resource-Policy: same-origin`
+    // (main.ts) — otherwise the browser blocks the proxied thumbnail.
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     res.send(thumb.body);
   }
 

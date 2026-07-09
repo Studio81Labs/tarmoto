@@ -222,6 +222,12 @@ describe('RoadsController', () => {
 
       expect(mapillary.thumbnail).toHaveBeenCalledWith('mly-1');
       expect(res.set).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
+      // Cross-origin (companion origin ≠ API origin) — must override Helmet's
+      // same-origin CORP or the browser blocks the <img>.
+      expect(res.set).toHaveBeenCalledWith(
+        'Cross-Origin-Resource-Policy',
+        'cross-origin',
+      );
       expect(res.send).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
     });
 
