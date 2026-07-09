@@ -162,10 +162,26 @@ export class PoiService {
    * Conservative: a request straddling two imported regions isn't "contained" in
    * either, so it falls through to a (harmless) Overpass merge — but one
    * straddling the OUTER edge of coverage never treats the store as complete.
+   *
+   * A transient POI-store outage during the coverage lookup itself (the store
+   * dropped between `fromStore()` and here) resolves to `false` = "not
+   * covered" (#925 review), so `readStoreFirst` merges with Overpass rather than
+   * 500ing an otherwise-answerable read. A real (non-connection) defect still
+   * surfaces, same as the primary store read.
    */
   private async isCovered(area: Bbox): Promise<boolean> {
-    const covered = await this.store.importedRegionBboxes();
-    return covered.some((region) => bboxContains(region, area));
+    try {
+      const covered = await this.store.importedRegionBboxes();
+      return covered.some((region) => bboxContains(region, area));
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        this.logger.warn(
+          `POI coverage lookup unavailable, treating as un-covered: ${err.message}`,
+        );
+        return false;
+      }
+      throw err;
+    }
   }
 
   /** Overpass call that degrades to `[]` on failure (an offline provider never

@@ -318,6 +318,32 @@ describe('PoiService', () => {
       expect(provider.findPointsOfInterest).not.toHaveBeenCalled();
       expect(res.pois).toEqual([]);
     });
+
+    it('degrades to an Overpass merge (no 500) when the coverage lookup itself has an outage (#925 review)', async () => {
+      store.findPointsOfInterestNear.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'store:1', kind: 'cafe' }),
+      ]);
+      // The store drops between fromStore() and the coverage query.
+      store.importedRegionBboxes.mockRejectedValue(
+        new ServiceUnavailableException('POI store is temporarily unavailable'),
+      );
+      provider.findPointsOfInterest.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'live:1', kind: 'cafe' }),
+      ]);
+
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+
+      // Coverage unknown → treated as un-covered → store rows merged with
+      // Overpass rather than a 500.
+      expect(res.pois.map((p) => p.external_id).sort()).toEqual([
+        'live:1',
+        'store:1',
+      ]);
+    });
   });
 
   describe('decision-support field mapping (#849)', () => {
