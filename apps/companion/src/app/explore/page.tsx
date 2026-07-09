@@ -418,7 +418,7 @@ function ExplorerPageInner() {
           aria-hidden={!filterOpen}
         >
           <div className="flex items-center justify-between border-b border-line px-5 pb-3 pt-[18px]">
-            <h2 className="font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            <h2 className="whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
               {t("Filters")}
             </h2>
             <button
