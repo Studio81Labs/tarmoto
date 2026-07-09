@@ -725,7 +725,7 @@ describe('PoiStoreService', () => {
       { lat: 49.7, lng: 18.6 },
     ];
 
-    it('runs ONE query (not one-per-sample) that requires every sample envelope to hold an imported OSM point', async () => {
+    it('runs ONE query that requires every sample to hold an imported OSM point within the TRUE distance', async () => {
       repo.query.mockResolvedValueOnce([{ covered: true }]);
       expect(await service.hasImportedCoverage(samples)).toBe(true);
       // A single round-trip regardless of sample count (#925 P1 review) — no
@@ -734,16 +734,25 @@ describe('PoiStoreService', () => {
       const [sql, params] = repo.query.mock.calls[0] as [string, number[]];
       // `bool_and(EXISTS(...))` → true only when EVERY sample is covered.
       expect(sql).toContain('bool_and');
+      // Envelope is the GiST-index prefilter; ST_DWithin refines to the true
+      // circular buffer so an envelope-corner hit (~1.4× the buffer) can't count
+      // (#925 review).
       expect(sql).toContain('ST_Intersects');
       expect(sql).toContain('ST_MakeEnvelope');
+      expect(sql).toContain('ST_DWithin');
+      expect(sql).toContain('::geography');
       // Scoped to active, region-imported OSM (the Overpass fallback is OSM).
       expect(sql).toContain("p.source = 'osm'");
       expect(sql).toContain('p.deactivated_at IS NULL');
       expect(sql).toContain('p.import_region IS NOT NULL');
-      // 4 params per sample (min/min/max/max of its padded envelope).
-      expect(params).toHaveLength(samples.length * 4);
-      // First sample (49.5, 18.4) padded outward: minLng<lng<maxLng, minLat<lat<maxLat.
-      const [minLng, minLat, maxLng, maxLat] = params;
+      // 6 params per sample (centre lng/lat + envelope min/min/max/max) plus one
+      // trailing buffer-in-metres param.
+      expect(params).toHaveLength(samples.length * 6 + 1);
+      expect(params[params.length - 1]).toBe(20 * 1000); // COVERAGE_BUFFER_KM in m
+      // First sample (49.5, 18.4): centre, then envelope padded outward.
+      const [ctrLng, ctrLat, minLng, minLat, maxLng, maxLat] = params;
+      expect(ctrLng).toBe(18.4);
+      expect(ctrLat).toBe(49.5);
       expect(minLng).toBeLessThan(18.4);
       expect(maxLng).toBeGreaterThan(18.4);
       expect(minLat).toBeLessThan(49.5);
@@ -769,7 +778,8 @@ describe('PoiStoreService', () => {
       repo.query.mockResolvedValueOnce([{ covered: true }]);
       await service.hasImportedCoverage([{ lat: 69, lng: 10 }]);
       const [, params] = repo.query.mock.calls[0] as [string, number[]];
-      const [minLng, minLat, maxLng, maxLat] = params;
+      // [ctrLng, ctrLat, minLng, minLat, maxLng, maxLat, bufferMeters]
+      const [, , minLng, minLat, maxLng, maxLat] = params;
       const dLat = maxLat - 69;
       const dLng = maxLng - 10;
       expect(minLng < 10 && minLat < 69).toBe(true);

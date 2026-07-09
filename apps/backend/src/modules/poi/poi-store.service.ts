@@ -100,8 +100,10 @@ export class PoiStoreService {
    * Whether the OSM bulk import has ACTUALLY populated the neighbourhood of
    * EVERY supplied sample point (#925) — the coverage signal for
    * {@link PoiService.readStoreFirst}. True only when each sample has an active,
-   * imported OSM point within {@link COVERAGE_BUFFER_KM} (the point padded by
-   * that margin, then a GiST-indexed `ST_Intersects` existence probe).
+   * imported OSM point within {@link COVERAGE_BUFFER_KM} — a GiST-indexed
+   * `ST_Intersects` envelope prefilter refined by a geography `ST_DWithin` to the
+   * true circular distance (the envelope alone is a square and would count a
+   * ~1.4× corner hit).
    *
    * Coverage is proven ACROSS the request, not from one point anywhere in it
    * (#925 P1 review): the caller passes samples spanning the request geometry
@@ -131,28 +133,30 @@ export class PoiStoreService {
     if (samples.length === 0) return false;
     // One query, not one-per-sample: a nearby read passes 5 samples and a long
     // route many more, so a per-sample loop would multiply DB round-trips on a
-    // hot path. Each sample becomes a ±COVERAGE_BUFFER_KM envelope in a VALUES
-    // list; `bool_and(EXISTS(...))` is true only when EVERY sample envelope holds
-    // an active, region-imported OSM point. Positional params ($1…$4n) keep the
-    // coordinates parameterised; the GiST index on `geom` serves each EXISTS.
-    const envelopes = samples.map((s) =>
-      padBbox(
-        { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
-        COVERAGE_BUFFER_KM,
-      ),
-    );
-    const valuesSql = envelopes
+    // hot path. Each sample becomes a VALUES row of (centre, ±COVERAGE_BUFFER_KM
+    // envelope); `bool_and(EXISTS(...))` is true only when EVERY sample has an
+    // active, region-imported OSM point nearby. Two-step per EXISTS: the envelope
+    // `ST_Intersects` is the GiST-index prefilter, then `ST_DWithin` on geography
+    // refines to the TRUE circular buffer — the envelope is a square, so a POI at
+    // its corner is ~1.4× the buffer away and must not count (#925 review). The
+    // geography cast only touches the few index-prefiltered candidates, not the
+    // whole table. Positional params ($1…$6n) keep coordinates parameterised.
+    const bufferMeters = COVERAGE_BUFFER_KM * 1000;
+    const valuesSql = samples
       .map((_, i) => {
-        const p = i * 4;
-        return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8)`;
+        const p = i * 6;
+        return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8, $${p + 5}::float8, $${p + 6}::float8)`;
       })
       .join(', ');
-    const params = envelopes.flatMap((e) => [
-      e.minLng,
-      e.minLat,
-      e.maxLng,
-      e.maxLat,
-    ]);
+    const params: number[] = samples.flatMap((s) => {
+      const env = padBbox(
+        { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
+        COVERAGE_BUFFER_KM,
+      );
+      return [s.lng, s.lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
+    });
+    const bufferParam = `$${samples.length * 6 + 1}`;
+    params.push(bufferMeters);
     const sql = `
       SELECT bool_and(EXISTS (
         SELECT 1 FROM pois p
@@ -163,8 +167,14 @@ export class PoiStoreService {
             p.geom,
             ST_MakeEnvelope(s.min_lng, s.min_lat, s.max_lng, s.max_lat, 4326)
           )
+          AND ST_DWithin(
+            p.geom::geography,
+            ST_SetSRID(ST_MakePoint(s.ctr_lng, s.ctr_lat), 4326)::geography,
+            ${bufferParam}
+          )
       )) AS covered
-      FROM (VALUES ${valuesSql}) AS s(min_lng, min_lat, max_lng, max_lat)`;
+      FROM (VALUES ${valuesSql})
+        AS s(ctr_lng, ctr_lat, min_lng, min_lat, max_lng, max_lat)`;
     return withPoiRepo(this.poiDataSource, async (repo) => {
       const rows = await repo.query<{ covered: boolean | null }[]>(sql, params);
       return rows[0]?.covered === true;
