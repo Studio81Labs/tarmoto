@@ -213,4 +213,32 @@ Then import with the **manual CLI** — `pnpm fsq:import` (all configured region
 
 **Weekly FSQ cron.** The weekly BullMQ dispatch (§ above) now fans out over every enabled source, so setting `TARMOTO_FSQ_IMPORT_ENABLED=true` (plus `TARMOTO_FSQ_IMPORT_DIR`) on the worker process refreshes FSQ from the same Sunday tick as OSM — each source gated independently by its own `*_IMPORT_ENABLED`. The manual `fsq:import` CLI stays available for one-off runs.
 
-> ⚠️ **Dev/staging only until FSQ attribution ships.** Store reads don't filter by `source`, so imported FSQ rows go live immediately. Cross-source OSM↔FSQ dedup has landed (#932); the remaining gate is visible Foursquare attribution in the companion (Apache-2.0). Do not import FSQ to production until that ships (the "enable FSQ" follow-up on #869).
+**Prod-safe as of the attribution work (#869).** Both prior gates are met: cross-source OSM↔FSQ dedup landed (#932), and the companion now credits Foursquare **data-driven** — the map info bar (latched on once FSQ POIs appear), the stops-tab legend (a blue Foursquare dot while FSQ stops are present), and each FSQ POI's popover (`© Foursquare`). The Apache-2.0 / NOTICE.txt attribution is preserved below. FSQ stays **disabled by default** (`TARMOTO_FSQ_IMPORT_ENABLED` unset); enable it per environment when its extracts are provisioned.
+
+#### Foursquare OS Places NOTICE
+
+Apache-2.0 requires preserving Foursquare's attribution; because we distribute the Data via our API, the [NOTICE.txt](https://opensource.foursquare.com/places-notice-txt/) content is reproduced here (kept verbatim — update only to note our own modifications):
+
+```
+Foursquare OS Places Notice
+
+© 2026 Foursquare Labs, Inc. All rights reserved.
+
+The Foursquare OS Places dataset (the "Data") is licensed under the Apache
+License, Version 2.0 (the "License"). You may not use, modify, or distribute the
+Data except in compliance with the License.
+
+As set forth more fully in the License, if you use, modify, or distribute the
+Data, you must:
+– provide recipients with a copy of the License.
+– if applicable, include prominent notices to the extent you've changed the Data.
+– preserve attribution to Foursquare, including preserving the full content of
+  this NOTICE.txt file.
+
+You may obtain a copy of the License at: http://www.apache.org/licenses/LICENSE-2.0.
+Unless required by applicable law or agreed to in writing, the Data distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.
+```
+
+Tarmoto serves the Data unmodified aside from filtering to our coverage regions + POI categories and mapping FSQ categories to our store `kind` vocabulary.

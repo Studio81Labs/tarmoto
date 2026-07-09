@@ -8,6 +8,7 @@ import {
   poiCategoryMeta,
 } from "@/components/planner/MapToolbar";
 import { readPoiDetails } from "@/components/planner/PoiDetails";
+import { FSQ_BRAND_COLOR } from "@/components/map/attribution";
 import { haversineKm } from "@tarmoto/shared";
 import { plannerApi } from "@/lib/planner/api";
 import type { RouteStop } from "@/lib/planner/types";
@@ -95,6 +96,19 @@ export function TripStopsPanel({
     [activePoiCategories],
   );
 
+  // Which bulk venue sources are present in the loaded stops (#869) — drives the
+  // legend's Foursquare credit + the two-tone category dots. `passes`/`tarmoto`
+  // categories are shown separately as Tarmoto-derived, so only osm/fsq here.
+  const stopSources = useMemo(() => {
+    let osm = false;
+    let fsq = false;
+    for (const stop of stops) {
+      if (stop.source === "osm") osm = true;
+      else if (stop.source === "fsq") fsq = true;
+    }
+    return { osm, fsq };
+  }, [stops]);
+
   useEffect(() => {
     if (routeLines.length === 0 || categories.length === 0) {
       setStops([]);
@@ -179,6 +193,9 @@ export function TripStopsPanel({
             const active = activePoiCategories.has(category);
             const tarmotoDerived =
               category === "mountain_pass" || category === "twisty_highlight";
+            // A venue category can come from both OSM and FSQ — split its dot
+            // when Foursquare stops are present (#869).
+            const twoTone = !tarmotoDerived && stopSources.fsq;
             return (
               <button
                 key={category}
@@ -195,12 +212,27 @@ export function TripStopsPanel({
                 {t(label)}
                 <span
                   aria-hidden="true"
-                  title={tarmotoDerived ? "Tarmoto data" : "OpenStreetMap"}
+                  title={
+                    tarmotoDerived
+                      ? "Tarmoto data"
+                      : twoTone
+                        ? "OpenStreetMap + Foursquare"
+                        : "OpenStreetMap"
+                  }
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                     tarmotoDerived
                       ? "bg-accent"
                       : "border border-line-strong bg-transparent"
                   }`}
+                  style={
+                    twoTone
+                      ? {
+                          // Left half outlined (OSM), right half Foursquare blue
+                          // — the category is served from both sources.
+                          background: `linear-gradient(90deg, transparent 0 50%, ${FSQ_BRAND_COLOR} 50% 100%)`,
+                        }
+                      : undefined
+                  }
                 />
               </button>
             );
@@ -219,6 +251,23 @@ export function TripStopsPanel({
             <span className="h-1.5 w-1.5 rounded-full border border-line-strong" />
             {t("OSM")}
           </a>
+          {/* Foursquare credit (#869) — shown only while FSQ stops are present;
+              the dot doubles as the required Apache-2.0 / NOTICE.txt credit. */}
+          {stopSources.fsq ? (
+            <a
+              href="https://foursquare.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="© Foursquare"
+              className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute transition hover:text-ink"
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: FSQ_BRAND_COLOR }}
+              />
+              {t("FSQ")}
+            </a>
+          ) : null}
           <span className="flex items-center gap-1.5 font-mono text-[9px] text-fg-mute">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             {t("TARMOTO-DERIVED")}

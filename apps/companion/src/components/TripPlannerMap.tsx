@@ -44,7 +44,7 @@ import {
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
 import { MapToolbar, poiCategoryMeta } from "@/components/planner/MapToolbar";
 import { PoiDetails } from "@/components/planner/PoiDetails";
-import { OSM_ATTRIBUTION } from "@/components/map/attribution";
+import { FSQ_ATTRIBUTION, OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
@@ -642,6 +642,10 @@ const TripPlannerMapContent = forwardRef<
   const poiBrowsing = editable || searchAndPois === true;
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
+  // One-way latch: once a Foursquare POI has appeared, keep the map-bar
+  // Foursquare credit on for the session (#869) — the attribution control
+  // shouldn't flicker off as the rider pans to an OSM-only area.
+  const sawFsqRef = useRef(false);
   // Tracks the trip whose bounds we've already auto-fit. Keyed on
   // `trip.id` (not `tripBoundsKey`) so adding/moving/removing
   // waypoints — which all change the geometry but keep the trip id
@@ -1710,6 +1714,13 @@ const TripPlannerMapContent = forwardRef<
           },
         })),
       });
+      // Latch the Foursquare map-bar credit on the first time FSQ POIs appear
+      // (#869) — checked against the full fetched set, not the placement-
+      // filtered `pois`, so a placed-away FSQ pin still counts.
+      if (!sawFsqRef.current && fetched.some((poi) => poi.source === "fsq")) {
+        sawFsqRef.current = true;
+        handleRef.current?.setPoiAttribution([FSQ_ATTRIBUTION]);
+      }
     };
     if (categories.length === 0) {
       applyPois([]);
@@ -2790,6 +2801,15 @@ const TripPlannerMapContent = forwardRef<
                         className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
                       >
                         © OpenStreetMap contributors
+                      </a>
+                    ) : poiMenu.poi.source === "fsq" ? (
+                      <a
+                        href="https://foursquare.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
+                      >
+                        © Foursquare
                       </a>
                     ) : null}
                   </div>

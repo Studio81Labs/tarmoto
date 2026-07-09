@@ -20,6 +20,19 @@ import type { StyleSpecification } from "maplibre-gl";
 export const OSM_ATTRIBUTION =
   '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>';
 
+/**
+ * Foursquare OS Places credit (#869) — the second bulk POI source. Apache-2.0 +
+ * the dataset's NOTICE.txt require preserving attribution to Foursquare; this is
+ * the linked short form (the full NOTICE lives in the runbook). Shown only when
+ * FSQ POIs are actually present (data-driven), so it never credits a source that
+ * isn't contributing while FSQ stays disabled by default.
+ */
+export const FSQ_ATTRIBUTION =
+  '<a href="https://foursquare.com" target="_blank" rel="noopener noreferrer">© Foursquare</a>';
+
+/** Foursquare brand blue (PMS 307) — the FSQ legend dot / provenance marker. */
+export const FSQ_BRAND_COLOR = "#0072b1";
+
 const OPENMAPTILES_ATTRIBUTION =
   '<a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a>';
 
