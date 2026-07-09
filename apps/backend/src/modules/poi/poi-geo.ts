@@ -123,7 +123,11 @@ export function pointRadiusBbox(
   radiusKm: number,
 ): Bbox {
   const dLat = radiusKm / LAT_KM_PER_DEGREE;
-  const dLng = radiusKm / lngKmPerDegree(lat);
+  // Pad longitude at the circle's poleward edge (`|lat| + dLat`), where km/°
+  // longitude is smallest — using the centre latitude under-pads that edge, so a
+  // request near an import bbox's E/W boundary could look fully covered while a
+  // thin slice of its radius crosses outside and the merge is skipped (#925 rev).
+  const dLng = radiusKm / lngKmPerDegree(Math.abs(lat) + dLat);
   return {
     minLng: lng - dLng,
     minLat: lat - dLat,

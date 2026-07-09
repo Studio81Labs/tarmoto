@@ -129,6 +129,8 @@ describe('PoiStoreService', () => {
     orderBy: jest.Mock;
     addOrderBy: jest.Mock;
     select: jest.Mock;
+    groupBy: jest.Mock;
+    having: jest.Mock;
     limit: jest.Mock;
     getMany: jest.Mock;
     getRawMany: jest.Mock;
@@ -143,6 +145,8 @@ describe('PoiStoreService', () => {
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      having: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
       getRawMany: jest.fn().mockResolvedValue([]),
@@ -570,6 +574,14 @@ describe('PoiStoreService', () => {
       // Scoped to OSM (#925 review): the suppressed Overpass fallback is
       // OSM-backed, so an FSQ-only region must not count as covered.
       expect(andWhereSql).toContain("poi.source = 'osm'");
+      // A region counts as covered only past a row-count threshold (#925 review),
+      // so a partial first import can't flip a whole bbox to authoritative.
+      const [havingSql, havingParams] = qb.having.mock.calls[0] as [
+        string,
+        { minRows: number },
+      ];
+      expect(havingSql).toContain('COUNT(*) >= :minRows');
+      expect(havingParams.minRows).toBe(100);
     });
 
     it('caches the coverage set so repeated reads run one DISTINCT query', async () => {

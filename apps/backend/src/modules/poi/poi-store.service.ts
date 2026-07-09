@@ -80,6 +80,10 @@ export class PoiStoreService {
    */
   private coverageCache: { at: number; bboxes: Bbox[] } | null = null;
   private static readonly COVERAGE_TTL_MS = 60_000;
+  /** Min OSM rows before a region counts as imported/covered (#925 review) —
+   * guards against a partial first import flipping a whole bbox to authoritative
+   * off a few stray rows. Well below any real country's venue count. */
+  private static readonly COVERAGE_MIN_ROWS = 100;
 
   /**
    * Live readiness: `isInitialized` only records that TypeORM connected once (it
@@ -109,6 +113,14 @@ export class PoiStoreService {
    * suppresses is OSM-backed, so an FSQ-only region (manual/scheduled FSQ import
    * before OSM has populated it) must NOT mark the bbox as covered — otherwise a
    * covered-empty read would skip the OSM Overpass fallback that should still run.
+   *
+   * Requires at least {@link COVERAGE_MIN_ROWS} OSM rows before a region counts
+   * as covered (#925 review): a partial/incomplete first import can leave a
+   * handful of rows past the importer's near-empty guard, and one row must not
+   * flip a whole country's bbox to authoritative and suppress Overpass across the
+   * unpopulated slices. Every real DEFAULT_REGIONS country carries far more than
+   * this once genuinely imported, so it cleanly separates a real import from a
+   * stray partial one.
    */
   async importedRegionBboxes(): Promise<Bbox[]> {
     const now = Date.now();
@@ -119,10 +131,14 @@ export class PoiStoreService {
     const codes = await withPoiRepo(this.poiDataSource, (repo) =>
       repo
         .createQueryBuilder('poi')
-        .select('DISTINCT poi.import_region', 'code')
+        .select('poi.import_region', 'code')
         .where('poi.import_region IS NOT NULL')
         .andWhere('poi.deactivated_at IS NULL')
         .andWhere("poi.source = 'osm'")
+        .groupBy('poi.import_region')
+        .having('COUNT(*) >= :minRows', {
+          minRows: PoiStoreService.COVERAGE_MIN_ROWS,
+        })
         .getRawMany<{ code: string }>(),
     );
     const bboxByCode = new Map(DEFAULT_REGIONS.map((r) => [r.code, r.bbox]));

@@ -8,9 +8,19 @@ describe('pointRadiusBbox', () => {
   it('encloses the radius circle, wider in longitude toward the equator', () => {
     const bbox = pointRadiusBbox(0, 10, 11.1132);
     expect(bbox.maxLat - 0).toBeCloseTo(0.1, 3); // ~1° lat ≈ 111 km
-    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(0, 11.1132), 4);
+    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(0.1, 11.1132), 4);
     expect(bbox.minLng).toBeLessThan(10);
     expect(bbox.minLat).toBeLessThan(0);
+  });
+
+  it('pads longitude at the circle poleward edge, not the centre (#925 review)', () => {
+    // A 55.6 km radius at 60°N: the circle top (60° + 0.5°) has smaller km/°
+    // longitude than the centre, so the padding must use that edge or a thin
+    // slice near an E/W import boundary would be wrongly judged covered.
+    const bbox = pointRadiusBbox(60, 10, 55.566);
+    const dLat = 55.566 / LAT_KM_PER_DEGREE;
+    expect(bbox.maxLng - 10).toBeCloseTo(lngDeg(60 + dLat, 55.566), 4);
+    expect(bbox.maxLng - 10).toBeGreaterThan(lngDeg(60, 55.566)); // wider than centre
   });
 });
 
