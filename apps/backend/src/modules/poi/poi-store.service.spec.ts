@@ -169,6 +169,33 @@ describe('PoiStoreService', () => {
     expect(res[0]?.osm_url).toBe('https://www.openstreetmap.org/node/42');
   });
 
+  it('de-dupes a cross-source pair (OSM wins) but keeps FSQ-only rows (#869)', async () => {
+    qb.getMany.mockResolvedValueOnce([
+      makePoi(), // OSM restaurant "Koliba" @ [18.4, 49.5]
+      makePoi({
+        id: 'fsq-dup',
+        source: 'fsq',
+        external_id: 'fsq:1',
+        // ~7 m away, same kind + name → duplicate of the OSM row.
+        geom: { type: 'Point', coordinates: [18.4001, 49.5] },
+      }),
+      makePoi({
+        id: 'fsq-only',
+        source: 'fsq',
+        external_id: 'fsq:2',
+        kind: 'cafe',
+        name: 'Costa',
+        geom: { type: 'Point', coordinates: [18.6, 49.6] },
+      }),
+    ]);
+    const ids = (await service.findInBbox(bbox, undefined, 200)).map(
+      (r) => r.external_id,
+    );
+    expect(ids).toContain('osm:node:42'); // OSM kept
+    expect(ids).not.toContain('fsq:1'); // FSQ duplicate dropped
+    expect(ids).toContain('fsq:2'); // FSQ-only kept (fills coverage)
+  });
+
   it('adds a kind IN filter when kinds are supplied', async () => {
     await service.findInBbox(bbox, ['fuel_station', 'restaurant'], 100);
     // Tombstone filter is always applied first; the kind filter follows.

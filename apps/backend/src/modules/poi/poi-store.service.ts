@@ -11,6 +11,7 @@ import { extractPoiHint } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
 import { withPoiRepo } from './poi-repo.js';
+import { dedupeAcrossSources, type DedupPoi } from './poi-dedup.js';
 import {
   DEFAULT_BUFFER_KM,
   MAX_BUFFER_KM,
@@ -123,7 +124,7 @@ export class PoiStoreService {
         .limit(capped)
         .getMany();
     });
-    return rows.map(toStoredPoiDto);
+    return dedupeAcrossSources(rows, poiDedupKey).map(toStoredPoiDto);
   }
 
   /** Fetch a single stored POI by its uuid, or null when it doesn't exist. */
@@ -162,7 +163,7 @@ export class PoiStoreService {
     // uses. An all-kinds request has no list to partition, so it falls back to a
     // single global MAX_LIMIT read. The along-route sort + slice below then
     // order/trim whatever these return.
-    const rows =
+    const fetched =
       kinds && kinds.length > 0
         ? (
             await Promise.all(
@@ -177,6 +178,9 @@ export class PoiStoreService {
             )
           ).flat()
         : await this.queryCorridorEntities(route, buffer, kinds, MAX_LIMIT);
+    // Drop a cross-source duplicate before projecting, so a shared OSM+FSQ venue
+    // isn't projected + counted twice (a no-op until FSQ is imported).
+    const rows = dedupeAcrossSources(fetched, poiDedupKey);
 
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer
@@ -238,7 +242,9 @@ export class PoiStoreService {
         ),
       ),
     );
-    return perKind.flat().map(storedPoiToPointOfInterest);
+    return dedupeAcrossSources(perKind.flat(), poiDedupKey).map(
+      storedPoiToPointOfInterest,
+    );
   }
 
   /**
@@ -264,7 +270,9 @@ export class PoiStoreService {
       MAX_LIMIT,
       minStars,
     );
-    return rows.map(storedPoiToAccommodationPoi);
+    return dedupeAcrossSources(rows, poiDedupKey).map(
+      storedPoiToAccommodationPoi,
+    );
   }
 
   /**
@@ -297,7 +305,9 @@ export class PoiStoreService {
         ),
       ),
     );
-    return perKind.flat().map(storedPoiToPointOfInterest);
+    return dedupeAcrossSources(perKind.flat(), poiDedupKey).map(
+      storedPoiToPointOfInterest,
+    );
   }
 
   /**
@@ -434,6 +444,12 @@ function geomLngLat(poi: Poi): [number, number] {
     throw new Error('stored POI geom is missing lng/lat');
   }
   return [lng, lat];
+}
+
+/** Project a stored `Poi` to its cross-source de-dup key (#869). */
+function poiDedupKey(poi: Poi): DedupPoi {
+  const [lng, lat] = geomLngLat(poi);
+  return { source: poi.source, kind: poi.kind, name: poi.name, lat, lng };
 }
 
 /**
