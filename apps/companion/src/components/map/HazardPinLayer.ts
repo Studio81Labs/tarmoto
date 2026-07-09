@@ -15,7 +15,30 @@ import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import type { Feature, FeatureCollection, Point } from "geojson";
 import { HAZARD_CONFIG, HAZARD_TYPES_UI, hazardFadeOpacity } from "@/lib/utils";
 import type { HazardResponse } from "@/lib/api";
-import type { HazardType } from "@tarmoto/shared";
+import { haversineMeters, type HazardType } from "@tarmoto/shared";
+
+/** Below this zoom hazards are hidden — the viewport radius is too coarse. */
+export const HAZARD_MIN_ZOOM = 9;
+/** Debounce for the viewport hazard fetch. */
+export const HAZARD_FETCH_DEBOUNCE_MS = 300;
+const HAZARD_MAX_RADIUS_M = 50_000;
+const HAZARD_MIN_RADIUS_M = 500;
+
+/** Radius (m) covering the current viewport for `hazardsApi.findNearby`. */
+export function viewportRadiusMeters(map: MapLibreMap): number {
+  const bounds = map.getBounds();
+  const center = map.getCenter();
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  const diagonal = Math.max(
+    haversineMeters(center.lat, center.lng, ne.lat, ne.lng),
+    haversineMeters(center.lat, center.lng, sw.lat, sw.lng),
+  );
+  return Math.max(
+    HAZARD_MIN_RADIUS_M,
+    Math.min(HAZARD_MAX_RADIUS_M, Math.round(diagonal)),
+  );
+}
 
 export const HAZARDS_SOURCE = "hazards-src";
 export const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
@@ -110,11 +133,16 @@ export function hazardsToFeatureCollection(
   return { type: "FeatureCollection", features };
 }
 
-/** Register the clustered hazard source + cluster/marker layers (once). */
+/**
+ * Register the clustered hazard source + cluster/marker layers (once).
+ * `beforeId` slots them under a given layer (e.g. route pins on the planner);
+ * omit it on maps with no higher-priority markers so hazards sit on top.
+ */
 export function ensureHazardLayers(
   map: MapLibreMap,
-  { visible }: { visible: boolean },
+  { visible, beforeId }: { visible: boolean; beforeId?: string },
 ): void {
+  const before = beforeId && map.getLayer(beforeId) ? beforeId : undefined;
   if (!map.getSource(HAZARDS_SOURCE)) {
     map.addSource(HAZARDS_SOURCE, {
       type: "geojson",
@@ -126,91 +154,103 @@ export function ensureHazardLayers(
   }
   const visibility = visible ? "visible" : "none";
   if (!map.getLayer(HAZARD_CLUSTERS)) {
-    map.addLayer({
-      id: HAZARD_CLUSTERS,
-      type: "circle",
-      source: HAZARDS_SOURCE,
-      filter: ["has", "point_count"],
-      layout: { visibility },
-      paint: {
-        "circle-color": "#0ED3CF",
-        "circle-opacity": 0.85,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 1.5,
-        "circle-radius": [
-          "step",
-          ["get", "point_count"],
-          14,
-          10,
-          18,
-          25,
-          24,
-        ] as ExpressionSpecification,
+    map.addLayer(
+      {
+        id: HAZARD_CLUSTERS,
+        type: "circle",
+        source: HAZARDS_SOURCE,
+        filter: ["has", "point_count"],
+        layout: { visibility },
+        paint: {
+          "circle-color": "#0ED3CF",
+          "circle-opacity": 0.85,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            14,
+            10,
+            18,
+            25,
+            24,
+          ] as ExpressionSpecification,
+        },
       },
-    });
+      before,
+    );
   }
   if (!map.getLayer(HAZARD_CLUSTER_COUNT)) {
-    map.addLayer({
-      id: HAZARD_CLUSTER_COUNT,
-      type: "symbol",
-      source: HAZARDS_SOURCE,
-      filter: ["has", "point_count"],
-      layout: {
-        visibility,
-        "text-field": ["get", "point_count_abbreviated"],
-        "text-size": 12,
-        "text-font": [
-          "Noto Sans Bold",
-          "Open Sans Bold",
-          "Arial Unicode MS Bold",
-        ],
-        "text-allow-overlap": true,
+    map.addLayer(
+      {
+        id: HAZARD_CLUSTER_COUNT,
+        type: "symbol",
+        source: HAZARDS_SOURCE,
+        filter: ["has", "point_count"],
+        layout: {
+          visibility,
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-size": 12,
+          "text-font": [
+            "Noto Sans Bold",
+            "Open Sans Bold",
+            "Arial Unicode MS Bold",
+          ],
+          "text-allow-overlap": true,
+        },
+        paint: { "text-color": "#0f172a" },
       },
-      paint: { "text-color": "#0f172a" },
-    });
+      before,
+    );
   }
   if (!map.getLayer(HAZARD_BG)) {
-    map.addLayer({
-      id: HAZARD_BG,
-      type: "circle",
-      source: HAZARDS_SOURCE,
-      filter: ["!", ["has", "point_count"]],
-      layout: { visibility },
-      paint: {
-        "circle-color": buildHazardColorExpression(),
-        "circle-opacity": ["coalesce", ["get", "opacity"], 1],
-        "circle-radius": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          9,
-          10,
-          14,
-          14,
-          18,
-          18,
-        ] as ExpressionSpecification,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 1.5,
-        "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
+    map.addLayer(
+      {
+        id: HAZARD_BG,
+        type: "circle",
+        source: HAZARDS_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        layout: { visibility },
+        paint: {
+          "circle-color": buildHazardColorExpression(),
+          "circle-opacity": ["coalesce", ["get", "opacity"], 1],
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            9,
+            10,
+            14,
+            14,
+            18,
+            18,
+          ] as ExpressionSpecification,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+          "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
+        },
       },
-    });
+      before,
+    );
   }
   if (!map.getLayer(HAZARD_ICON)) {
-    map.addLayer({
-      id: HAZARD_ICON,
-      type: "symbol",
-      source: HAZARDS_SOURCE,
-      filter: ["!", ["has", "point_count"]],
-      layout: {
-        visibility,
-        "text-field": ["get", "emoji"],
-        "text-size": 16,
-        "text-allow-overlap": true,
-        "text-ignore-placement": true,
+    map.addLayer(
+      {
+        id: HAZARD_ICON,
+        type: "symbol",
+        source: HAZARDS_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          visibility,
+          "text-field": ["get", "emoji"],
+          "text-size": 16,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
       },
-      paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
-    });
+      before,
+    );
   }
 }
 

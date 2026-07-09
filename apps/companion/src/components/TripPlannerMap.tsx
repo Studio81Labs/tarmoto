@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, TriangleAlert } from "lucide-react";
+import { Layers3, Siren, TriangleAlert } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -49,6 +49,16 @@ import {
   CLOSURE_MARKER_LAYER,
   PASS_MARKER_LAYER,
 } from "@/components/map/ConditionMarkerLayer";
+import {
+  ensureHazardLayers,
+  expandHazardCluster,
+  setHazardLayersVisible,
+  HAZARD_BG,
+  HAZARD_ICON,
+  HAZARD_CLUSTERS,
+  type HazardProps,
+} from "@/components/map/HazardPinLayer";
+import { useViewportHazards } from "@/hooks/useViewportHazards";
 import { FSQ_ATTRIBUTION, OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
@@ -615,6 +625,17 @@ const TripPlannerMapContent = forwardRef<
   const swallowNextClickRef = useRef(false);
   // ── Ambient conditions layer (revision 7): toggle + marker popover ──
   const [conditionsVisible, setConditionsVisible] = useState(true);
+  // Ambient hazards (opt-in on the trip maps — off by default so route
+  // planning isn't crowded). `hazardMenu` opens the shared point popover.
+  const [hazardsVisible, setHazardsVisible] = useState(false);
+  const [hazardMenu, setHazardMenu] = useState<{
+    hazard: HazardProps;
+    lng: number;
+    lat: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const closeHazardMenu = useCallback(() => setHazardMenu(null), []);
   const [conditionMenu, setConditionMenu] = useState<
     | {
         kind: "closure";
@@ -964,6 +985,17 @@ const TripPlannerMapContent = forwardRef<
     if (!conditionsVisible) setConditionMenu(null);
   }, [conditionsVisible, ready]);
   useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    setHazardLayersVisible(map, hazardsVisible);
+    if (!hazardsVisible) setHazardMenu(null);
+  }, [hazardsVisible, ready]);
+  // REST-only viewport hazard feed (no websocket — ambient awareness only).
+  useViewportHazards(handleRef, {
+    enabled: hazardsVisible && ready,
+    viewportToken: poiViewportToken,
+  });
+  useEffect(() => {
     conditionsRef.current = {
       closures,
       passes,
@@ -1049,7 +1081,14 @@ const TripPlannerMapContent = forwardRef<
     closeWaypointMenu();
     closePoiMenu();
     closeConditionMenu();
-  }, [closeContextMenu, closeWaypointMenu, closePoiMenu, closeConditionMenu]);
+    closeHazardMenu();
+  }, [
+    closeContextMenu,
+    closeWaypointMenu,
+    closePoiMenu,
+    closeConditionMenu,
+    closeHazardMenu,
+  ]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -1274,6 +1313,48 @@ const TripPlannerMapContent = forwardRef<
       });
     });
     for (const layer of [CLOSURE_MARKER_LAYER, PASS_MARKER_LAYER]) {
+      map.on("mouseenter", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "";
+      });
+    }
+    // ── Ambient hazard pins (opt-in) → shared point popover ──
+    ensureHazardLayers(map, { visible: false, beforeId: WAYPOINT_PIN });
+    const onHazardClick = (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const feature = event.features?.[0];
+      const props = feature?.properties as HazardProps | null;
+      if (
+        !feature ||
+        !props?.hazard_type ||
+        feature.geometry.type !== "Point"
+      ) {
+        return;
+      }
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      setConditionMenu(null);
+      setHazardMenu({
+        hazard: props,
+        lng,
+        lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    };
+    map.on("click", HAZARD_BG, onHazardClick);
+    map.on("click", HAZARD_ICON, onHazardClick);
+    map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) =>
+      expandHazardCluster(map, event),
+    );
+    for (const layer of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
       map.on("mouseenter", layer, () => {
         if (drawRef.current?.getMode() !== "idle") return;
         map.getCanvas().style.cursor = "pointer";
@@ -1828,7 +1909,7 @@ const TripPlannerMapContent = forwardRef<
   // every open menu is anchored to a geo coordinate and reprojected on
   // each map move instead of staying frozen at the click position. ──
   const anyMapMenuOpen = Boolean(
-    poiMenu || waypointMenu || contextMenu || conditionMenu,
+    poiMenu || waypointMenu || contextMenu || conditionMenu || hazardMenu,
   );
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -1854,6 +1935,9 @@ const TripPlannerMapContent = forwardRef<
           : menu,
       );
       setConditionMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
+      );
+      setHazardMenu((menu) =>
         menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
       );
     };
@@ -2512,6 +2596,16 @@ const TripPlannerMapContent = forwardRef<
             <TriangleAlert size={14} />
             {t("Conditions ")}
           </button>
+          <button
+            type="button"
+            aria-pressed={hazardsVisible}
+            aria-label={t("Toggle the hazards overlay")}
+            onClick={() => setHazardsVisible((visible) => !visible)}
+            className={toggleClassName(hazardsVisible)}
+          >
+            <Siren size={14} />
+            {t("Hazards ")}
+          </button>
         </div>
 
         {drawMode === "drawing" && !outlineStarted ? (
@@ -2630,6 +2724,14 @@ const TripPlannerMapContent = forwardRef<
                 },
               }
             : {})}
+        />
+      ) : null}
+      {hazardMenu ? (
+        <MapPointPopover
+          point={{ kind: "hazard", hazard: hazardMenu.hazard }}
+          x={hazardMenu.x}
+          y={hazardMenu.y}
+          onClose={closeHazardMenu}
         />
       ) : null}
       {poiMenu
