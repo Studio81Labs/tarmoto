@@ -42,10 +42,12 @@ export interface BadgesRecheckUserJobData {
 export interface DigestWeeklyComposeJobData {
   user_id: string;
   /**
-   * Compose-job idempotency key: the pinned send boundary (the rider's local
-   * Sunday 08:00) as epoch millis. Constant across every catch-up run for a
-   * given weekly digest — keying on the dispatcher slot would double-send when
-   * catch-up hours cross a UTC week boundary.
+   * Compose-job idempotency key: the UTC year-week ('YYYY-Www') of the pinned
+   * send boundary (the rider's local Sunday 08:00). Constant across every
+   * catch-up run for a given weekly digest — keying on the dispatcher slot would
+   * double-send when catch-up hours cross a UTC week boundary. The 'YYYY-Www'
+   * format matches the previous producer's key so old + new jobs dedupe across a
+   * rolling deploy.
    */
   for_local_window: string;
   /**

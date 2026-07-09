@@ -225,13 +225,15 @@ export class DigestWeeklyProcessor extends WorkerHost {
       const windowEnd = new Date(row.window_end);
       await this.producer.enqueueDigestWeeklyCompose({
         user_id: row.user_id,
-        // Idempotency key = the PINNED send boundary (the rider's local Sunday
-        // 08:00) as epoch millis. It is constant for a rider's weekly digest
-        // across every catch-up run — those runs sit at different UTC slots and
-        // can even straddle a UTC week boundary (a UTC-12 rider's local 08:00 vs
-        // 12:00 fall in different `localWindowKey` weeks), so deriving the key
-        // from the dispatcher slot would mint a second key and send twice.
-        for_local_window: String(windowEnd.getTime()),
+        // Idempotency key = the UTC week of the PINNED send boundary (window_end
+        // = the rider's local Sunday 08:00). Deriving it from window_end (not the
+        // dispatcher slot) keeps it constant across every catch-up run, so the
+        // replays collapse onto one compose job (a UTC-12 rider's local 08:00 vs
+        // 12:00 sit in different slot-weeks, which is why the slot can't key it).
+        // Keeping the 'YYYY-Www' format — rather than a raw epoch — means a job
+        // enqueued by the PREVIOUS producer during a rolling deploy shares the
+        // key in the common case, so old + new jobs still dedupe.
+        for_local_window: this.localWindowKey(windowEnd),
         window_start: new Date(row.window_start).toISOString(),
         window_end: windowEnd.toISOString(),
       });
@@ -458,5 +460,22 @@ export class DigestWeeklyProcessor extends WorkerHost {
       }
     }
     return new Date();
+  }
+
+  /**
+   * Idempotency bucket for the compose jobId: the UTC year-week of the PINNED
+   * send boundary (`windowEnd` = the rider's local Sunday 08:00). Keyed off
+   * window_end, not the dispatcher slot, so it's constant across every catch-up
+   * run for a rider's weekly digest — replays dedupe onto one job. The
+   * 'YYYY-Www' format is deliberate: it matches the key the previous producer
+   * used, so old + new jobs still collapse during a rolling deploy.
+   */
+  private localWindowKey(windowEnd: Date): string {
+    const yyyy = windowEnd.getUTCFullYear();
+    const startOfYear = Date.UTC(yyyy, 0, 1);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const dayOfYear = Math.floor((windowEnd.getTime() - startOfYear) / dayMs);
+    const week = Math.ceil((dayOfYear + 1) / 7);
+    return `${yyyy}-W${week.toString().padStart(2, '0')}`;
   }
 }

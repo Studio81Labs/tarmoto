@@ -156,12 +156,12 @@ describe('DigestWeeklyProcessor', () => {
       window_start: string;
       window_end: string;
     };
-    // The idempotency key is the PINNED send boundary (window_end) as epoch
-    // millis — constant across catch-up runs, not the dispatcher slot's UTC week
-    // (which would double-send when catch-up crosses a week boundary).
-    expect(firstPayload.for_local_window).toBe(
-      String(new Date('2026-07-05T08:00:00.000Z').getTime()),
-    );
+    // The idempotency key is the UTC week of the PINNED send boundary
+    // (window_end) — constant across catch-up runs, not the dispatcher slot's
+    // week (which would double-send when catch-up crosses a week boundary). The
+    // 'YYYY-Www' format matches the legacy key so old + new jobs dedupe on
+    // deploy. window_end 2026-07-05 → 2026-W27.
+    expect(firstPayload.for_local_window).toBe('2026-W27');
     // ...and the DST-correct window bounds resolved per rider at dispatch, so
     // compose never re-derives them from a fixed 7×24h delta.
     expect(firstPayload.window_start).toBe('2026-06-28T08:00:00.000Z');
