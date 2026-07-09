@@ -43,9 +43,10 @@ const DIGEST_LOCAL_DOW = 0; // Sunday in IANA POSIX (0=Sun, 1=Mon, ...).
  *
  * The dispatcher reads `users.preferences.timezone` (string IANA tz
  * like "Europe/Bratislava"). Users without a timezone fall back to
- * UTC, which gives them a Sunday 08:00 UTC window. Opt-out is the
- * permissive `preferences.weekly_digest` flag (default ON, explicit
- * `false` opts out), checked at both dispatch and compose.
+ * UTC, which gives them a Sunday 08:00 UTC window. Digest opt-in is
+ * `notification_preferences.email_digest = 'weekly'` (a lazily-created
+ * row → default 'weekly' when absent; 'daily'/'never' opts out),
+ * checked at both dispatch and compose.
  */
 @Processor(QUEUE_NAMES.DIGEST_WEEKLY)
 export class DigestWeeklyProcessor extends WorkerHost {
@@ -90,14 +91,17 @@ export class DigestWeeklyProcessor extends WorkerHost {
     // in-memory catalog, so the cost is negligible compared to the
     // outer scan.
     //
-    // The opt-in predicate is intentionally permissive (default ON when
-    // missing) to match the AC, which expects the digest to roll out
-    // on first ship; explicit opt-out via `weekly_digest=false`
-    // suppresses the send.
+    // Digest opt-in lives in the typed `notification_preferences.email_digest`
+    // ('weekly'|'daily'|'never'), NOT `users.preferences` — #278 moved it out.
+    // The row is created lazily (most riders never touch settings), so a
+    // missing row COALESCEs to the entity default 'weekly' → opted in (matches
+    // the AC's "roll out on first ship"); an explicit 'daily'/'never' suppresses
+    // the weekly send.
     const rows = await this.dataSource.query<{ user_id: string }[]>(
       `
       SELECT u.id::text AS user_id
       FROM users u
+      LEFT JOIN notification_preferences np ON np.user_id = u.id
       CROSS JOIN LATERAL (
         SELECT COALESCE(
           (
@@ -111,7 +115,7 @@ export class DigestWeeklyProcessor extends WorkerHost {
       ) tz_resolution
       WHERE u.deleted_at IS NULL
         AND u.email_verified_at IS NOT NULL
-        AND COALESCE((u.preferences->>'weekly_digest')::boolean, true) = true
+        AND COALESCE(np.email_digest, 'weekly') = 'weekly'
         AND EXTRACT(
           DOW FROM ($1::timestamptz AT TIME ZONE tz_resolution.tz)
         )::int = $2
@@ -144,8 +148,9 @@ export class DigestWeeklyProcessor extends WorkerHost {
 
     // Re-check eligibility at compose time: dispatch → compose is async, so the
     // opt-in / verified / deleted state may have changed since the dispatch
-    // gate. Same permissive opt-in as dispatch (default ON, explicit
-    // `weekly_digest=false` opts out) — this is where "unsubscribe respected".
+    // gate. Digest opt-in is `notification_preferences.email_digest = 'weekly'`
+    // (missing row → default 'weekly'), the same gate as dispatch — this is
+    // where "unsubscribe respected".
     const [user] = await this.dataSource.query<
       {
         email: string;
@@ -153,12 +158,13 @@ export class DigestWeeklyProcessor extends WorkerHost {
         preferences: Record<string, unknown> | null;
       }[]
     >(
-      `SELECT email, display_name, preferences
-       FROM users
-       WHERE id = $1
-         AND deleted_at IS NULL
-         AND email_verified_at IS NOT NULL
-         AND COALESCE((preferences->>'weekly_digest')::boolean, true) = true`,
+      `SELECT u.email, u.display_name, u.preferences
+       FROM users u
+       LEFT JOIN notification_preferences np ON np.user_id = u.id
+       WHERE u.id = $1
+         AND u.deleted_at IS NULL
+         AND u.email_verified_at IS NOT NULL
+         AND COALESCE(np.email_digest, 'weekly') = 'weekly'`,
       [user_id],
     );
     if (!user) {

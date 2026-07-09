@@ -170,6 +170,12 @@ describe('DigestWeeklyProcessor', () => {
     expect(sql).not.toMatch(
       /AT TIME ZONE\s+COALESCE\(NULLIF\(u\.preferences->>'timezone'/,
     );
+    // Digest opt-in is the typed `notification_preferences.email_digest`, not
+    // the legacy `users.preferences` flag (#278) — a stale check would email
+    // every rider regardless of the 'daily'/'never' they picked.
+    expect(sql).toMatch(/notification_preferences/);
+    expect(sql).toMatch(/email_digest/);
+    expect(sql).not.toMatch(/weekly_digest/);
   });
 
   // `compose` is covered end-to-end in digest-weekly.processor.spec.ts (#866).

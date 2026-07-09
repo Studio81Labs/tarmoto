@@ -126,4 +126,19 @@ describe('DigestWeeklyProcessor.compose (#866)', () => {
     expect(end).toBe(Date.UTC(2026, 6, 5, 8)); // the job timestamp
     expect(end - start).toBe(7 * 24 * 60 * 60 * 1000); // exactly one week
   });
+
+  it('gates opt-in on notification_preferences.email_digest, not the legacy flag', async () => {
+    // #278 moved the digest setting out of users.preferences into the typed
+    // notification_preferences table — a stale `weekly_digest` check would
+    // default to true and email everyone regardless of their choice.
+    const query = jest.fn().mockResolvedValueOnce([]);
+    const { processor } = makeProcessor(query);
+
+    await processor.process(composeJob());
+
+    const [sql] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('notification_preferences');
+    expect(sql).toContain('email_digest');
+    expect(sql).not.toContain('weekly_digest');
+  });
 });
