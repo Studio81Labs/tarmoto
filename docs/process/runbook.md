@@ -202,6 +202,8 @@ COPY (
 ) TO '<TARMOTO_FSQ_IMPORT_DIR>/cz.fsq.jsonl' (FORMAT json);
 ```
 
-Then import — on demand `pnpm fsq:import` (all configured regions) or `node dist/scripts/import-pois.js fsq CZ` (one region); it bypasses the enabled gate like `poi:import`. For recurring runs set `TARMOTO_FSQ_IMPORT_ENABLED=true`, `TARMOTO_FSQ_IMPORT_DIR`, and (optionally) `TARMOTO_FSQ_IMPORT_REGIONS=CZ` on the worker process (unset imports all 17), alongside `TARMOTO_POI_DATABASE_*`. The extract dir and region list are independent of the OSM import's.
+Then import with the **manual CLI** — `pnpm fsq:import` (all configured regions from `TARMOTO_FSQ_IMPORT_DIR`, narrowed by `TARMOTO_FSQ_IMPORT_REGIONS`, default all 17) or `node dist/scripts/import-pois.js fsq CZ` (one region). It bypasses the enabled gate like `poi:import`, and needs `TARMOTO_POI_DATABASE_*` where you run it. FSQ's extract dir + region list are independent of OSM's.
+
+**No weekly FSQ cron yet.** Unlike OSM, no scheduled worker consumes `TARMOTO_FSQ_IMPORT_ENABLED` — the recurring BullMQ dispatch for the FSQ source is a follow-up (the config flag is reserved for it). Until then, refreshing FSQ data is a manual `fsq:import` run.
 
 > ⚠️ **Dev/staging only until FSQ is prod-safe.** As noted above, store reads don't filter by `source`, so imported FSQ rows go live immediately. Do not import FSQ to production until the cross-source OSM↔FSQ dedup and the Foursquare attribution ship (the "enable FSQ" follow-up on #869).
