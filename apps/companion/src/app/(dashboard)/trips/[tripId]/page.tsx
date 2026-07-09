@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { ApiError, tripsApi } from "@/lib/api";
+import { ApiError, roadsApi, tripsApi } from "@/lib/api";
 import { tripCollabApi } from "@/lib/api/trip-collab";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAuthStore } from "@/stores/auth";
@@ -30,6 +30,10 @@ import {
   TripPlannerMap,
   type TripPlannerMapHandle,
 } from "@/components/TripPlannerMap";
+import {
+  SegmentDetailSidebar,
+  type SegmentDetailPanelState,
+} from "@/components/roads/SegmentDetailSidebar";
 import { InspectTab } from "@/components/planner/InspectTab";
 import { SectionStamp } from "@/components/planner/PlannerPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -93,7 +97,9 @@ export default function TripDetailPage() {
   const selectPlannerSegment = useTripStore((s) => s.selectPlannerSegment);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const applyRouteQuality = useTripStore((s) => s.applyRouteQuality);
-  // INSPECT card → map: same select + fly interaction as the planner.
+  // INSPECT card → map: same select + fly interaction as the planner. Opens
+  // the on-route Road Preview popover; the full history+reviews drawer is
+  // reached from that popover or by tapping an off-route mapped segment.
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
@@ -101,6 +107,59 @@ export default function TripDetailPage() {
     },
     [selectPlannerSegment],
   );
+  // Road-segment detail drawer (quality history + reviews), shared with the
+  // road explorer and the planner. Opens for an off-route mapped segment tap,
+  // or the Road Preview popover's "Full history & reviews" action.
+  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+    string | null
+  >(null);
+  const [segmentDetailState, setSegmentDetailState] =
+    useState<SegmentDetailPanelState>({ status: "idle" });
+  useEffect(() => {
+    if (!selectedRoadSegmentId) {
+      // Bail out without a new object when already idle, so the initial mount
+      // (segment unselected) doesn't force an extra render.
+      setSegmentDetailState((prev) =>
+        prev.status === "idle" ? prev : { status: "idle" },
+      );
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setSegmentDetailState({
+      status: "loading",
+      segmentId: selectedRoadSegmentId,
+    });
+    roadsApi
+      .getSegmentDetail(selectedRoadSegmentId, { signal: controller.signal })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setSegmentDetailState({ status: "ready", segment: data });
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled || (err as { name?: string }).name === "AbortError") {
+          return;
+        }
+        if (err instanceof ApiError && err.status === 404) {
+          setSegmentDetailState({
+            status: "not-found",
+            segmentId: selectedRoadSegmentId,
+          });
+          return;
+        }
+        setSegmentDetailState({
+          status: "error",
+          segmentId: selectedRoadSegmentId,
+          message:
+            err instanceof Error ? err.message : "Failed to load segment",
+        });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedRoadSegmentId]);
   // Day-by-day card → map: selecting a day dims the other days' lines
   // (`selectedDayNumber`) and fits its bounds; reselecting clears back
   // to the whole route.
@@ -530,6 +589,13 @@ export default function TripDetailPage() {
             // one-directional between the preview and the planner.
             onCursorMove={collabSession.emitCursor}
             {...(selectedDayNumber != null ? { selectedDayNumber } : {})}
+            selectedRoadSegmentId={selectedRoadSegmentId}
+            onOpenSegmentDetail={setSelectedRoadSegmentId}
+          />
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedRoadSegmentId(null)}
+            anchor="viewport"
           />
         </div>
 

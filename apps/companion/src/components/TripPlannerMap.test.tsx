@@ -76,6 +76,7 @@ let lastDrawOptions: {
 
 vi.mock("@/components/map/MapCanvas", () => ({
   TARMOTO_QUALITY_LAYER: "tarmoto-quality",
+  TARMOTO_SURFACE_LAYER: "tarmoto-surface",
   SURFACE_COLORS: {
     asphalt: "#3B82F6",
     concrete: "#6B7280",

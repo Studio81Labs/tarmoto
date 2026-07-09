@@ -155,6 +155,7 @@ export function mapRouteQualitySpans(
       passes: range.quality?.reading_count ?? 0,
       lengthKm: (range.end - range.start) * totalKm,
       dayNumber,
+      roadSegmentId: range.quality?.segment_id ?? null,
     });
   });
   return out;

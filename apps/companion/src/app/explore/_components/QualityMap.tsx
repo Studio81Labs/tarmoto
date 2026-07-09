@@ -38,6 +38,11 @@ import { useRealtimeStore } from "@/stores/realtime";
 import { haversineMeters, type HazardType } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
+import {
+  pickNearestLineFeature,
+  readSegmentId,
+  SEGMENT_HIT_PADDING_PX,
+} from "@/lib/map-segment-hit";
 
 const HAZARDS_SOURCE = "hazards-src";
 const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
@@ -87,6 +92,8 @@ interface Props {
   showSurface: boolean;
   showHazards: boolean;
   onSegmentSelect?: (segmentId: string) => void;
+  /** Segment whose detail drawer is open — painted with the highlight overlay. */
+  selectedSegmentId?: string | null;
   onViewChange?: (view: MapCanvasViewChange) => void;
 }
 
@@ -127,6 +134,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showSurface,
       showHazards,
       onSegmentSelect,
+      selectedSegmentId,
       onViewChange,
     },
     ref,
@@ -323,7 +331,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
         ].filter((id) => map.getLayer(id));
         if (layers.length === 0) return;
-        const feature = map.queryRenderedFeatures(e.point, { layers })[0];
+        // Hit-test a small box around the tap, not the exact pixel, so the thin
+        // quality/surface lines are comfortable to click; the closest feature
+        // to the tap wins so a near-miss doesn't grab a parallel road.
+        const feature = pickNearestLineFeature(
+          map,
+          e.point,
+          layers,
+          SEGMENT_HIT_PADDING_PX,
+        );
         const segmentId = readSegmentId(feature);
         if (segmentId) selectSegment(segmentId);
       });
@@ -498,6 +514,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         zoom={zoom}
         showQuality={showQuality}
         showSurface={showSurface}
+        selectedSegmentId={selectedSegmentId ?? null}
         qualityOpacityExpression={qualityOpacity}
         surfaceOpacityExpression={surfaceOpacity}
         onReady={handleReady}
@@ -506,23 +523,6 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     );
   },
 );
-
-function readSegmentId(
-  feature: maplibregl.MapGeoJSONFeature | undefined,
-): string | null {
-  if (!feature) return null;
-  const propertyId = feature.properties?.id;
-  if (typeof propertyId === "string" && propertyId.length > 0) {
-    return propertyId;
-  }
-  if (typeof feature.id === "string" && feature.id.length > 0) {
-    return feature.id;
-  }
-  if (typeof feature.id === "number") {
-    return String(feature.id);
-  }
-  return null;
-}
 
 // ── expression helpers ──
 

@@ -12,6 +12,7 @@ const mapStub = {
   getLayer: vi.fn(() => ({ id: "mock-layer" })),
   setLayoutProperty: vi.fn(),
   setPaintProperty: vi.fn(),
+  setFilter: vi.fn(),
   getCenter: vi.fn(() => ({ lng: 14.5, lat: 50.1 })),
   getBounds: vi.fn(() => ({
     getWest: () => 14.1,
