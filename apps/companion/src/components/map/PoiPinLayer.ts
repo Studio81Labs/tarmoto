@@ -7,11 +7,8 @@
  * browse POIs by viewport without the route/waypoint coupling.
  */
 
-import type {
-  GeoJSONSource,
-  Map as MapLibreMap,
-  ExpressionSpecification,
-} from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import type { FeatureCollection, Point } from "geojson";
 import { OSM_ATTRIBUTION } from "@/components/map/attribution";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
