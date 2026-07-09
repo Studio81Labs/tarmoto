@@ -19,7 +19,7 @@ import { QualityMap, type QualityMapHandle } from "./_components/QualityMap";
 import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
-} from "./_components/SegmentDetailSidebar";
+} from "@/components/roads/SegmentDetailSidebar";
 import { ApiError, api, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";

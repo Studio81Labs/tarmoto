@@ -317,6 +317,7 @@ describe("plannerApi.getRouteQuality (#862)", () => {
       data: {
         segments: [
           {
+            segment_id: "seg-1",
             osm_way_id: "1",
             segment_index: 0,
             quality_score: 4.2,
@@ -382,6 +383,7 @@ describe("plannerApi.getRouteQuality (#862)", () => {
       data: {
         segments: [
           {
+            segment_id: "seg-1",
             osm_way_id: "1",
             segment_index: 0,
             quality_score: 4,
@@ -420,6 +422,7 @@ describe("plannerApi.getRouteQuality (#862)", () => {
       data: {
         segments: [
           {
+            segment_id: "seg-1",
             osm_way_id: "1",
             segment_index: 0,
             quality_score: 4,
@@ -462,6 +465,7 @@ describe("plannerApi.getRouteQuality (#862)", () => {
       data: {
         segments: [
           {
+            segment_id: "seg-1",
             osm_way_id: "1",
             segment_index: 0,
             quality_score: 4,

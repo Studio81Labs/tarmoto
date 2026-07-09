@@ -233,6 +233,9 @@ export class RoadsService {
         FROM snapped
       )
       SELECT
+        -- The road_segment UUID (group key) so the planner can open the same
+        -- /roads/{id} detail drawer as the road explorer for a clicked span.
+        seg_id::text          AS segment_id,
         MIN(osm_way_id)::text AS osm_way_id,
         MIN(segment_index)    AS segment_index,
         MIN(quality_score)    AS quality_score,
@@ -256,6 +259,7 @@ export class RoadsService {
       return {
         segments: (
           rows as Array<{
+            segment_id: string | null;
             osm_way_id: string | null;
             segment_index: number | null;
             quality_score: string | number | null;
@@ -266,6 +270,7 @@ export class RoadsService {
             end_fraction: string | number;
           }>
         ).map((r) => ({
+          segment_id: r.segment_id ?? null,
           osm_way_id: r.osm_way_id ?? null,
           segment_index: r.segment_index ?? null,
           quality_score:

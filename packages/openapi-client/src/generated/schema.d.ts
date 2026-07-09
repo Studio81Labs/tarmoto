@@ -4071,6 +4071,8 @@ export interface components {
             buffer_m?: number;
         };
         RouteQualitySegmentDto: {
+            /** @description road_segments UUID of the matched span, so a client can open the same `/roads/{segmentId}` detail (reviews + history) the road explorer uses. Null only for a not-yet-matched/legacy span. */
+            segment_id: string | null;
             /** @description OSM way id of the matched segment (segment identity from #751). Null for segments imported before OSM identity was captured. */
             osm_way_id: string | null;
             segment_index: number | null;

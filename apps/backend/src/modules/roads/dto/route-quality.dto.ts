@@ -99,6 +99,15 @@ export class RouteQualitySegmentDto {
   @ApiProperty({
     nullable: true,
     description:
+      'road_segments UUID of the matched span, so a client can open the same ' +
+      '`/roads/{segmentId}` detail (reviews + history) the road explorer uses. ' +
+      'Null only for a not-yet-matched/legacy span.',
+  })
+  segment_id!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
       'OSM way id of the matched segment (segment identity from #751). Null ' +
       'for segments imported before OSM identity was captured.',
   })

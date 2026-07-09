@@ -121,7 +121,11 @@ import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useAuthStore } from "@/stores/auth";
-import { tripsApi } from "@/lib/api";
+import { ApiError, roadsApi, tripsApi } from "@/lib/api";
+import {
+  SegmentDetailSidebar,
+  type SegmentDetailPanelState,
+} from "@/components/roads/SegmentDetailSidebar";
 import { toast } from "@/lib/toast";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -609,13 +613,62 @@ export default function TripPlannerPage() {
     daySelected && splitOnSingleDay && selectedPlanIndex != null
       ? (dayPlans?.[selectedPlanIndex] ?? null)
       : null;
+  // Road-segment detail drawer (reviews + history), shared with the road
+  // explorer. Opens when an inspected span resolves to a real road_segment id.
+  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+    string | null
+  >(null);
+  const [segmentDetailState, setSegmentDetailState] =
+    useState<SegmentDetailPanelState>({ status: "idle" });
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
       mapRef.current?.flyToSegment(segmentId);
+      const segment = findPlannerQualitySegment(displayedTrip, segmentId);
+      setSelectedRoadSegmentId(segment?.roadSegmentId ?? null);
     },
-    [selectPlannerSegment],
+    [selectPlannerSegment, displayedTrip],
   );
+  useEffect(() => {
+    if (!selectedRoadSegmentId) {
+      setSegmentDetailState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setSegmentDetailState({
+      status: "loading",
+      segmentId: selectedRoadSegmentId,
+    });
+    roadsApi
+      .getSegmentDetail(selectedRoadSegmentId, { signal: controller.signal })
+      .then(({ data }) => {
+        if (!cancelled)
+          setSegmentDetailState({ status: "ready", segment: data });
+      })
+      .catch((err: unknown) => {
+        if (cancelled || (err as { name?: string }).name === "AbortError") {
+          return;
+        }
+        if (err instanceof ApiError && err.status === 404) {
+          setSegmentDetailState({
+            status: "not-found",
+            segmentId: selectedRoadSegmentId,
+          });
+          return;
+        }
+        setSegmentDetailState({
+          status: "error",
+          segmentId: selectedRoadSegmentId,
+          message:
+            err instanceof Error ? err.message : "Failed to load segment",
+        });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedRoadSegmentId]);
   // Shared with the map's Road Preview reroute: arm a one-shot animated
   // fit for whenever the rerouted line lands.
   const armFitAfterRoute = useCallback(() => {
@@ -2862,6 +2915,14 @@ export default function TripPlannerPage() {
               </div>
             </div>
           )}
+
+          {/* Road-segment detail drawer (quality history + reviews), the same
+              component the road explorer uses. Slides in over the map when an
+              inspected span resolves to a real road_segment id. */}
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedRoadSegmentId(null)}
+          />
         </div>
 
         {/* RIGHT — Plan & inspect panel: BUILD / INSPECT / CONDITIONS /

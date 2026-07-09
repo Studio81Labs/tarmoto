@@ -43,13 +43,30 @@ export function SegmentDetailSidebar({
   state,
   onClose,
 }: SegmentDetailSidebarProps) {
+  const open = state.status !== "idle";
+  // Slide in on open (up from the bottom on mobile, in from the right on
+  // desktop). rAF so the off-screen transform paints before the transition.
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setEntered(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(id);
+  }, [open]);
+
   if (state.status === "idle") return null;
 
   return (
     <aside
       role="dialog"
       aria-label={t("Road segment details")}
-      className="absolute inset-x-0 bottom-0 z-20 flex max-h-[78%] flex-col border-t border-line bg-cream shadow-2xl md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0"
+      className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[78%] flex-col border-t border-line bg-cream shadow-2xl transition-transform duration-200 ease-out md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0 ${
+        entered
+          ? "translate-y-0 md:translate-x-0"
+          : "translate-y-full md:translate-y-0 md:translate-x-full"
+      }`}
     >
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 pb-3.5 pt-[18px]">
         <Stamp>{t("Road segment")}</Stamp>
