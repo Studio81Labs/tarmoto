@@ -103,7 +103,7 @@ DO UPDATE SET geom = EXCLUDED.geom` — leaves `imported_at` untouched on update
 
 ### 3. Importer `imported_at` stamp
 
-`PoiImportService.importRegion`, on a successful (non-skipped) import, runs
+`PoiImportService.importRegion`, on a successful (non-skipped) **OSM** import (`importSource.source === 'osm'`), runs
 `UPDATE poi_import_regions SET imported_at = now() WHERE code = $1`. This is the
 "region is imported" signal — a region's polygon only counts once its country has
 actually been imported, so an un-imported neighbour whose polygon is loaded never
@@ -140,8 +140,8 @@ used elsewhere (checked during implementation; else removed).
 
 1. Deploy: migration creates the table; `pnpm poi:load-boundaries` loads the 18
    polygons (`imported_at` NULL).
-2. Import: `poi:import` writes `pois` rows for a region AND stamps its
-   `imported_at`.
+2. Import: an OSM `poi:import` writes `pois` rows for a region AND stamps its
+   `imported_at` (FSQ imports do NOT stamp — coverage suppresses the OSM fallback).
 3. Read: `readStoreFirst` builds a descriptor → `isRequestCovered` → `ST_Covers`
    against imported-region polygons → covered (store authoritative) or not
    (Overpass merge).

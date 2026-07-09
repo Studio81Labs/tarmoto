@@ -397,7 +397,7 @@ it("does not stamp imported_at when the region is skipped (no extract)", async (
 
 - [ ] **Step 3: Run it — expect failure.** Run: `pnpm exec jest src/modules/poi/poi-import.service.spec.ts` → FAIL.
 
-- [ ] **Step 4: Implement the stamp** — on the success path of `importRegion`, after the writes, issue:
+- [ ] **Step 4: Implement the stamp** — on the success path of `importRegion`, after the writes, and ONLY when `this.importSource.source === 'osm'` (an FSQ-only region must not count as covered — coverage suppresses the OSM fallback), issue:
 
 ```typescript
 await manager.query(
