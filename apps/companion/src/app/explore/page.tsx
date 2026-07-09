@@ -34,6 +34,8 @@ import { ApiError, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
+import { POI_CATEGORY_META } from "@/components/planner/MapToolbar";
+import type { PoiCategory } from "@/lib/planner/types";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import { Button, Stamp } from "@tarmoto/ui";
 
@@ -210,6 +212,18 @@ function ExplorerPageInner() {
   // Basemap under the overlays — the branded map or aerial imagery (matches the
   // planner/preview map/aerial toggle).
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
+  // Active POI browse categories (public `/poi/in-bbox`, so available to
+  // everyone). A local Set — not the trip store — keeps /explore independent.
+  const [activePoiCategories, setActivePoiCategories] = useState<
+    ReadonlySet<PoiCategory>
+  >(() => new Set());
+  const togglePoiCategory = (category: PoiCategory) =>
+    setActivePoiCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
@@ -541,6 +555,8 @@ function ExplorerPageInner() {
               zoom={zoom}
               filters={filters}
               basemap={basemap}
+              poiCategories={activePoiCategories}
+              poiMonth={conditionsMonth}
               showQuality={showQualityOverlay}
               showSurface={showSurfaceOverlay}
               showHazards={showHazardOverlay}
@@ -554,11 +570,12 @@ function ExplorerPageInner() {
             />
           </div>
 
-          {/* Row 1 — address search. Signed-in only: the `/api/v1/geocode`
-              endpoint sits behind AuthGuard. POI category chips join this row
-              in a follow-up. Mirrors the planner/preview MapToolbar search. */}
-          {isAuthenticated ? (
-            <div className="absolute left-3 right-14 top-3 z-30 flex items-center gap-2">
+          {/* Row 1 — address search + POI category chips. The search is
+              signed-in only (the `/api/v1/geocode` endpoint sits behind
+              AuthGuard); the chips browse the public `/poi/in-bbox` store so
+              they show for everyone. Mirrors the planner/preview MapToolbar. */}
+          <div className="absolute left-3 right-14 top-3 z-30 flex items-center gap-2">
+            {isAuthenticated ? (
               <div className="relative w-[240px] shrink-0 rounded-[10px] border border-line-strong bg-cream/95 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.10)]">
                 <GeocodeSearchField
                   placeholder={t("Address search ")}
@@ -580,17 +597,38 @@ function ExplorerPageInner() {
                   clearable
                 />
               </div>
+            ) : null}
+            <div
+              role="group"
+              aria-label={t("POI categories")}
+              className="scrollbar-none flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5"
+            >
+              {POI_CATEGORY_META.map(({ category, label, icon: Icon }) => {
+                const active = activePoiCategories.has(category);
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => togglePoiCategory(category)}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-bold transition ${
+                      active
+                        ? "border-accent bg-accent text-cream"
+                        : "border-line-strong bg-cream/90 text-ink hover:border-ink"
+                    }`}
+                  >
+                    <Icon size={13} />
+                    {t(label)}
+                  </button>
+                );
+              })}
             </div>
-          ) : null}
+          </div>
 
           {/* Rows 2 & 3 — basemap toggle + layer pills, styled like the
-              planner's map controls. Pushed below the search row when it's
-              present (signed-in). */}
-          <div
-            className={`absolute left-3 z-20 flex flex-col gap-2 ${
-              isAuthenticated ? "top-[60px]" : "top-3"
-            }`}
-          >
+              planner's map controls. Sits below row 1 (search + POI chips),
+              which always renders. */}
+          <div className="absolute left-3 top-[60px] z-20 flex flex-col gap-2">
             {/* Row 2 — Map / Aerial basemap (swaps what's under the overlays). */}
             <div
               role="group"
