@@ -206,15 +206,6 @@ function offsetKm(
   };
 }
 
-/**
- * Max centreline strides {@link routeCoverageSamples} emits on a long route
- * before it widens the stride (#925 review). With both rails that is ~3× this
- * many samples (~486) — comfortably under the store's `MAX_COVERAGE_SAMPLES`
- * downsample cap (512), so a route's sample list never reaches that cap and its
- * `[centre, +rail, -rail]` triplets survive intact. Keep this × 3 < that cap.
- */
-const MAX_ROUTE_COVERAGE_STRIDES = 160;
-
 /** Unit perpendicular (east/north km space) and length (km) of segment a→b. */
 function segGeom(
   a: { lat: number; lng: number },
@@ -242,15 +233,15 @@ function segGeom(
  *
  * Walked by CUMULATIVE distance, not per segment (#925 review): a detailed
  * polyline can have thousands of sub-stride segments, and emitting one sample
- * per segment would blow the sample count (and downstream SQL bind-param limit).
- * The stride walk bounds the count to route-length / stride regardless of vertex
- * density.
+ * per segment would blow the sample count. The stride walk bounds the count to
+ * route-length / stride regardless of vertex density.
  *
- * On a very long route the stride is WIDENED so the centreline count stays under
- * {@link MAX_ROUTE_COVERAGE_STRIDES} (#925 review): this bounds the output well
- * below the store's downsample cap, so `hasImportedCoverage` never has to
- * lane-blindly thin the flat sample list and accidentally drop every rail —
- * which would silently regress the corridor-width check on the longest routes.
+ * The stride is fixed at {@link COVERAGE_BUFFER_KM} — NOT widened for long routes
+ * (#925 review): the probe checks within one buffer of each sample, so a stride
+ * above the buffer would leave unprobed gaps where a narrow un-imported frontier
+ * could hide. A long route therefore emits proportionally many samples;
+ * `hasImportedCoverage` CHUNKS them across queries rather than thinning them, so
+ * the SQL bind-param ceiling is respected without opening coverage gaps.
  */
 export function routeCoverageSamples(
   route: ReadonlyArray<{ lat: number; lng: number }>,
@@ -260,18 +251,7 @@ export function routeCoverageSamples(
   if (first === undefined) return [];
   if (route.length === 1) return [{ lat: first.lat, lng: first.lng }];
 
-  // Total corridor length (same equirectangular metric the walk below uses),
-  // to widen the stride on a very long route so the sample count stays bounded.
-  let totalKm = 0;
-  for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1];
-    const b = route[i];
-    if (a !== undefined && b !== undefined) totalKm += segGeom(a, b).lenKm;
-  }
-  const stride = Math.max(
-    COVERAGE_BUFFER_KM,
-    totalKm / MAX_ROUTE_COVERAGE_STRIDES,
-  );
+  const stride = COVERAGE_BUFFER_KM;
   const out: { lat: number; lng: number }[] = [];
   const emit = (
     lat: number,

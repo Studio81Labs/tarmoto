@@ -64,16 +64,65 @@ const STORE_PER_KIND_LIMIT = 100;
 const DEDUP_OVERFETCH = 2;
 
 /**
- * Last-resort cap on coverage-probe samples per
- * {@link PoiStoreService.hasImportedCoverage} call (#925 review), so no caller can
- * build a VALUES list past PostgreSQL's 65 535 bind-param limit (6 params/sample)
- * and turn the lookup into a hard SQL error instead of a graceful fallback. 512
- * samples = 3 073 params. The real callers stay well under it by construction —
- * `radiusCoverageSamples` is 9, and `routeCoverageSamples` widens its stride to
- * bound itself to ~486 — so this only fires for an unforeseen caller and its
- * even (lane-blind) downsample never has to thin a route's rail triplets.
+ * Max coverage-probe samples per SQL statement in
+ * {@link PoiStoreService.hasImportedCoverage} (#925 review). A sample binds 6
+ * params, so this keeps each VALUES list well under PostgreSQL's 65 535 param
+ * ceiling (512 → 3 073). A request with more samples than this (a long route at
+ * the fixed 20 km stride) is split into several statements and AND-ed, so the
+ * limit is respected by CHUNKING — never by thinning the samples, which would
+ * open coverage gaps between the surviving probes.
  */
 const MAX_COVERAGE_SAMPLES = 512;
+
+/**
+ * Build the `bool_and(EXISTS(...))` coverage query for one chunk of samples: true
+ * only when EVERY sample has an active, region-imported OSM point nearby. Two
+ * steps per EXISTS — the envelope `ST_Intersects` is the GiST-index prefilter,
+ * then `ST_DWithin` on geography refines to the TRUE circular buffer (the
+ * envelope is a square, so a POI at its corner is ~1.4× the buffer away and must
+ * not count). The geography cast only touches the few index-prefiltered
+ * candidates. Positional params ($1…$6n, then the buffer in metres) keep every
+ * coordinate parameterised.
+ */
+function coverageChunkQuery(chunk: readonly { lat: number; lng: number }[]): {
+  sql: string;
+  params: number[];
+} {
+  const valuesSql = chunk
+    .map((_, i) => {
+      const p = i * 6;
+      return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8, $${p + 5}::float8, $${p + 6}::float8)`;
+    })
+    .join(', ');
+  const params: number[] = chunk.flatMap((s) => {
+    const env = padBbox(
+      { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
+      COVERAGE_BUFFER_KM,
+    );
+    return [s.lng, s.lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
+  });
+  const bufferParam = `$${chunk.length * 6 + 1}`;
+  params.push(COVERAGE_BUFFER_KM * 1000);
+  const sql = `
+    SELECT bool_and(EXISTS (
+      SELECT 1 FROM pois p
+      WHERE p.source = 'osm'
+        AND p.deactivated_at IS NULL
+        AND p.import_region IS NOT NULL
+        AND ST_Intersects(
+          p.geom,
+          ST_MakeEnvelope(s.min_lng, s.min_lat, s.max_lng, s.max_lat, 4326)
+        )
+        AND ST_DWithin(
+          p.geom::geography,
+          ST_SetSRID(ST_MakePoint(s.ctr_lng, s.ctr_lat), 4326)::geography,
+          ${bufferParam}
+        )
+    )) AS covered
+    FROM (VALUES ${valuesSql})
+      AS s(ctr_lng, ctr_lat, min_lng, min_lat, max_lng, max_lat)`;
+  return { sql, params };
+}
 
 /**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
@@ -124,8 +173,9 @@ export class PoiStoreService {
    * un-imported area has an uncovered sample and returns false — `readStoreFirst`
    * then merges Overpass for the uncovered stretch instead of trusting the store
    * because a single imported point happened to sit inside the bounding box.
-   * The probe short-circuits on the first uncovered sample, so an off-coverage
-   * request returns after one query.
+   * Samples are checked in chunks (one SQL statement each, bounded by
+   * {@link MAX_COVERAGE_SAMPLES}); the first chunk with an uncovered sample
+   * short-circuits, so an off-coverage request returns without running the rest.
    *
    * Occupancy, not a region rectangle: coverage follows the real distribution of
    * imported points, so it can't over-claim a country's shape — a border wedge
@@ -143,65 +193,27 @@ export class PoiStoreService {
     samples: readonly { lat: number; lng: number }[],
   ): Promise<boolean> {
     if (samples.length === 0) return false;
-    // Bound the VALUES list so a pathologically long route can't exceed PG's
-    // bind-param limit and turn the lookup into a hard SQL error (#925 review).
-    // Evenly downsampling (keep every k-th, starting at the first) just coarsens
-    // the probe rather than breaking it — and only ever triggers well past any
-    // realistic route length.
-    const probed =
-      samples.length <= MAX_COVERAGE_SAMPLES
-        ? samples
-        : samples.filter(
-            (_, i) =>
-              i % Math.ceil(samples.length / MAX_COVERAGE_SAMPLES) === 0,
-          );
-    // One query, not one-per-sample: a nearby read passes 5 samples and a long
-    // route many more, so a per-sample loop would multiply DB round-trips on a
-    // hot path. Each sample becomes a VALUES row of (centre, ±COVERAGE_BUFFER_KM
-    // envelope); `bool_and(EXISTS(...))` is true only when EVERY sample has an
-    // active, region-imported OSM point nearby. Two-step per EXISTS: the envelope
-    // `ST_Intersects` is the GiST-index prefilter, then `ST_DWithin` on geography
-    // refines to the TRUE circular buffer — the envelope is a square, so a POI at
-    // its corner is ~1.4× the buffer away and must not count (#925 review). The
-    // geography cast only touches the few index-prefiltered candidates, not the
-    // whole table. Positional params ($1…$6n) keep coordinates parameterised.
-    const bufferMeters = COVERAGE_BUFFER_KM * 1000;
-    const valuesSql = probed
-      .map((_, i) => {
-        const p = i * 6;
-        return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8, $${p + 5}::float8, $${p + 6}::float8)`;
-      })
-      .join(', ');
-    const params: number[] = probed.flatMap((s) => {
-      const env = padBbox(
-        { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
-        COVERAGE_BUFFER_KM,
-      );
-      return [s.lng, s.lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
-    });
-    const bufferParam = `$${probed.length * 6 + 1}`;
-    params.push(bufferMeters);
-    const sql = `
-      SELECT bool_and(EXISTS (
-        SELECT 1 FROM pois p
-        WHERE p.source = 'osm'
-          AND p.deactivated_at IS NULL
-          AND p.import_region IS NOT NULL
-          AND ST_Intersects(
-            p.geom,
-            ST_MakeEnvelope(s.min_lng, s.min_lat, s.max_lng, s.max_lat, 4326)
-          )
-          AND ST_DWithin(
-            p.geom::geography,
-            ST_SetSRID(ST_MakePoint(s.ctr_lng, s.ctr_lat), 4326)::geography,
-            ${bufferParam}
-          )
-      )) AS covered
-      FROM (VALUES ${valuesSql})
-        AS s(ctr_lng, ctr_lat, min_lng, min_lat, max_lng, max_lat)`;
     return withPoiRepo(this.poiDataSource, async (repo) => {
-      const rows = await repo.query<{ covered: boolean | null }[]>(sql, params);
-      return rows[0]?.covered === true;
+      // Chunk so no single VALUES list exceeds PG's bind-param ceiling, while the
+      // fixed 20 km stride keeps consecutive probes overlapping (≤ the probe
+      // radius, so no gaps): a long route is SPLIT across statements, not thinned.
+      // EVERY chunk must be covered; the first uncovered chunk short-circuits and
+      // an off-coverage request returns without running the rest.
+      for (
+        let start = 0;
+        start < samples.length;
+        start += MAX_COVERAGE_SAMPLES
+      ) {
+        const { sql, params } = coverageChunkQuery(
+          samples.slice(start, start + MAX_COVERAGE_SAMPLES),
+        );
+        const rows = await repo.query<{ covered: boolean | null }[]>(
+          sql,
+          params,
+        );
+        if (rows[0]?.covered !== true) return false;
+      }
+      return true;
     });
   }
 

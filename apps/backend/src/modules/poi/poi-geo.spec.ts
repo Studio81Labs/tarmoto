@@ -97,20 +97,31 @@ describe('routeCoverageSamples (#925 P2)', () => {
     expect(Math.max(...lngs)).toBeCloseTo(16.5, 1);
   });
 
-  it('widens the stride on a very long route so the list stays bounded WITH rails intact (#925 review)', () => {
-    // ~6,700 km equatorial route. At a fixed 20 km stride this would emit >1,000
-    // samples, forcing the store's lane-blind downsample to keep only every 3rd —
-    // i.e. drop every rail. The adaptive stride keeps it bounded while preserving
-    // the centre/+rail/-rail triplets.
+  it('keeps the stride at the probe radius on a long route (no widening → no coverage gaps) (#925 review)', () => {
+    // ~6,700 km equatorial route. The stride stays at COVERAGE_BUFFER_KM (never
+    // widened), so consecutive probe circles overlap and a narrow un-imported
+    // frontier can't hide in a gap. The sample list grows WITH length —
+    // hasImportedCoverage chunks it across statements rather than thinning it.
     const longRoute = [
       { lat: 0, lng: 0 },
       { lat: 0, lng: 60 },
     ];
     const samples = routeCoverageSamples(longRoute, 2);
-    expect(samples.length).toBeLessThan(512);
-    expect(samples.length % 3).toBe(0); // whole triplets, no truncation
-    // Rails survived: samples exist off the 0° centreline.
-    expect(samples.some((s) => Math.abs(s.lat) > 1e-3)).toBe(true);
+    // Centreline points are the head of each [centre,+rail,-rail] triplet.
+    const centre = samples.filter((_, i) => i % 3 === 0);
+    // ~6,668 km / 20 km ≈ 334 strides — proportional to length, NOT capped.
+    expect(centre.length).toBeGreaterThan(300);
+    // Consecutive centreline samples are ≤ one buffer apart, so probes overlap.
+    for (let i = 1; i < centre.length; i++) {
+      const a = centre[i - 1];
+      const b = centre[i];
+      if (a === undefined || b === undefined) continue;
+      const gapKm = Math.hypot(
+        (b.lng - a.lng) * LAT_KM_PER_DEGREE,
+        (b.lat - a.lat) * LAT_KM_PER_DEGREE,
+      );
+      expect(gapKm).toBeLessThanOrEqual(COVERAGE_BUFFER_KM + 0.5);
+    }
   });
 });
 

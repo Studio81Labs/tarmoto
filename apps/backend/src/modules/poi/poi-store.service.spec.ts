@@ -774,18 +774,33 @@ describe('PoiStoreService', () => {
       expect(repo.query).not.toHaveBeenCalled();
     });
 
-    it('caps and evenly downsamples a huge sample list so the bind-param count stays under PG limits (#925)', async () => {
-      repo.query.mockResolvedValueOnce([{ covered: true }]);
+    it('chunks a large sample list into multiple statements — every sample probed, none thinned (#925 review)', async () => {
+      repo.query.mockResolvedValue([{ covered: true }]); // every chunk covered
       const many = Array.from({ length: 5000 }, (_, i) => ({
         lat: 49 + i * 1e-4,
         lng: 18,
       }));
-      await service.hasImportedCoverage(many);
-      const [, params] = repo.query.mock.calls[0] as [string, number[]];
-      // 6 params/sample + 1 buffer param, capped at 512 samples → ≤ 3073, well
-      // under PostgreSQL's 65535 bind-parameter ceiling.
-      expect(params.length).toBeLessThanOrEqual(512 * 6 + 1);
-      expect(params.length).toBeLessThan(65535);
+      expect(await service.hasImportedCoverage(many)).toBe(true);
+      // 5000 / 512 → 10 statements; all samples checked, not downsampled away.
+      expect(repo.query).toHaveBeenCalledTimes(Math.ceil(5000 / 512));
+      for (const call of repo.query.mock.calls) {
+        const [, params] = call as [string, number[]];
+        // Each statement stays under PG's 65535 bind-param ceiling.
+        expect(params.length).toBeLessThanOrEqual(512 * 6 + 1);
+      }
+    });
+
+    it('short-circuits on the first uncovered chunk without running the rest', async () => {
+      repo.query
+        .mockResolvedValueOnce([{ covered: true }])
+        .mockResolvedValueOnce([{ covered: false }]);
+      const many = Array.from({ length: 5000 }, (_, i) => ({
+        lat: 49 + i * 1e-4,
+        lng: 18,
+      }));
+      expect(await service.hasImportedCoverage(many)).toBe(false);
+      // Stops at the 2nd chunk (uncovered) rather than running all 10.
+      expect(repo.query).toHaveBeenCalledTimes(2);
     });
 
     it('pads longitude at the poleward edge so a high-latitude sample is not under-probed', async () => {
