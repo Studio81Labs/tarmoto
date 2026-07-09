@@ -41,7 +41,12 @@ export interface BadgesRecheckUserJobData {
 
 export interface DigestWeeklyComposeJobData {
   user_id: string;
-  /** UTC year-week bucket ('YYYY-Www') — the compose job's idempotency key. */
+  /**
+   * Compose-job idempotency key: the pinned send boundary (the rider's local
+   * Sunday 08:00) as epoch millis. Constant across every catch-up run for a
+   * given weekly digest — keying on the dispatcher slot would double-send when
+   * catch-up hours cross a UTC week boundary.
+   */
   for_local_window: string;
   /**
    * UTC instant of the window END: this run's local Sunday 08:00. Carried from

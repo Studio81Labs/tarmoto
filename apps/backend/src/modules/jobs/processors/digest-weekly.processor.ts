@@ -214,16 +214,22 @@ export class DigestWeeklyProcessor extends WorkerHost {
       ],
     );
 
-    const forLocalWindow = this.localWindowKey(now);
     let enqueued = 0;
     for (const row of rows) {
+      // pg returns timestamptz as a JS Date; the unit suite mocks ISO strings.
+      // `new Date()` normalises both to a canonical instant.
+      const windowEnd = new Date(row.window_end);
       await this.producer.enqueueDigestWeeklyCompose({
         user_id: row.user_id,
-        for_local_window: forLocalWindow,
-        // pg returns timestamptz as a JS Date; the unit suite mocks ISO strings.
-        // `new Date()` normalises both to a canonical ISO instant for the payload.
+        // Idempotency key = the PINNED send boundary (the rider's local Sunday
+        // 08:00) as epoch millis. It is constant for a rider's weekly digest
+        // across every catch-up run — those runs sit at different UTC slots and
+        // can even straddle a UTC week boundary (a UTC-12 rider's local 08:00 vs
+        // 12:00 fall in different `localWindowKey` weeks), so deriving the key
+        // from the dispatcher slot would mint a second key and send twice.
+        for_local_window: String(windowEnd.getTime()),
         window_start: new Date(row.window_start).toISOString(),
-        window_end: new Date(row.window_end).toISOString(),
+        window_end: windowEnd.toISOString(),
       });
       enqueued += 1;
     }
@@ -448,19 +454,5 @@ export class DigestWeeklyProcessor extends WorkerHost {
       }
     }
     return new Date();
-  }
-
-  /**
-   * Bucket key used for the compose job's idempotency: the year-week
-   * of the dispatch, in UTC, so two dispatches in the same hour of
-   * the same Sunday collapse into one job.
-   */
-  private localWindowKey(now: Date): string {
-    const yyyy = now.getUTCFullYear();
-    const startOfYear = Date.UTC(yyyy, 0, 1);
-    const dayMs = 24 * 60 * 60 * 1000;
-    const dayOfYear = Math.floor((now.getTime() - startOfYear) / dayMs);
-    const week = Math.ceil((dayOfYear + 1) / 7);
-    return `${yyyy}-W${week.toString().padStart(2, '0')}`;
   }
 }
