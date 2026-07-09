@@ -169,29 +169,27 @@ Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` 
 
 The FSQ bulk import (#869) reads one **newline-delimited JSON** file per active region from `TARMOTO_FSQ_IMPORT_DIR`, named `<code>.fsq.jsonl` (lower-case ISO code, e.g. `cz.fsq.jsonl`). It's a second `source` (`'fsq'`) stored alongside OSM in `pois`; it uses [FSQ OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) — the free, Apache-2.0, monthly-refreshed open dataset — **not** the Places API (the API's ToS forbids bulk-storing its data; OS Places is built for it).
 
-OS Places ships as Parquet on S3 (100M+ rows). We keep the huge download + filter **offline** (like the osmium step above), so the backend only ever streams a small per-region extract and no FSQ credential reaches production. An operator runs a DuckDB recipe once per refresh:
+OS Places is delivered through the **Foursquare Places Portal** as a token-gated **Iceberg catalog** (the legacy public S3 Parquet bucket is deprecated). We keep the query + filter **offline** (like the osmium step above), so the backend only ever streams a small per-region extract and no FSQ credential reaches production. An operator runs a DuckDB recipe once per refresh:
 
 Per region:
 
-1. **Get a token.** Create a free [FSQ Places Portal](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) account and generate S3 credentials — they're **short-lived (~1 month)**, so regenerate each refresh (which lines up with the dataset's monthly cadence).
-2. **Filter with DuckDB** to the region's `DEFAULT_REGIONS` bbox + `date_closed IS NULL` + a coarse category prefilter, joining the FSQ category arrays to comma strings, and write NDJSON. The backend classifier (`fsq-poi-categories.ts`) does the precise category → `kind` mapping, so the SQL prefilter only needs to be a loose superset.
-3. **Place** the result in `TARMOTO_FSQ_IMPORT_DIR` as `<code>.fsq.jsonl`.
+1. **Get a token.** Create a free [FSQ Places Portal](https://places.foursquare.com/) account and generate an access token — it's **short-lived (~1 month)**, so regenerate each refresh (which lines up with the dataset's monthly cadence).
+2. **Connect DuckDB to the Iceberg catalog** with the connection snippet the Portal generates for your token (it attaches the catalog exposing the `places` table; needs DuckDB's `iceberg` extension). Those details are token/catalog-specific — copy them from the Portal, don't hardcode them here.
+3. **Filter** to the region's `DEFAULT_REGIONS` bbox + `date_closed IS NULL` + a coarse category prefilter, joining the FSQ category arrays to comma strings, and write NDJSON. The backend classifier (`fsq-poi-categories.ts`) does the precise category → `kind` mapping, so the SQL prefilter only needs to be a loose superset.
+4. **Place** the result in `TARMOTO_FSQ_IMPORT_DIR` as `<code>.fsq.jsonl`.
 
-**Worked example — Czech Republic (`CZ`):**
+**Worked example — Czech Republic (`CZ`)** — once the Portal's connect snippet (step 2) has attached the catalog, the filter/export is:
 
 ```sql
--- duckdb (INSTALL httpfs; LOAD httpfs;)
-SET s3_region='us-east-1';
-SET s3_access_key_id='…';       -- from the FSQ Places Portal (regenerate monthly)
-SET s3_secret_access_key='…';
-
+-- After the Portal's DuckDB connect snippet attaches the `places` table
+-- (INSTALL iceberg; LOAD iceberg; + the Portal's ATTACH, per your token).
 COPY (
   SELECT
     fsq_place_id, name, latitude, longitude,
     array_to_string(fsq_category_ids, ',')    AS category_ids,
     array_to_string(fsq_category_labels, ',') AS category_labels,
     tel, website, address, locality, postcode, country
-  FROM read_parquet('s3://fsq-os-places-us-east-1/release/dt=<YYYY-MM-DD>/places/parquet/*.parquet')
+  FROM places
   WHERE date_closed IS NULL
     -- CZ bbox from DEFAULT_REGIONS (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06)
     AND longitude BETWEEN 12.09 AND 18.86
