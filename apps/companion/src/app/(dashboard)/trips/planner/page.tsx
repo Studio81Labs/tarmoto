@@ -121,7 +121,11 @@ import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { useAuthStore } from "@/stores/auth";
-import { tripsApi } from "@/lib/api";
+import { ApiError, roadsApi, tripsApi } from "@/lib/api";
+import {
+  SegmentDetailSidebar,
+  type SegmentDetailPanelState,
+} from "@/components/roads/SegmentDetailSidebar";
 import { toast } from "@/lib/toast";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -609,6 +613,18 @@ export default function TripPlannerPage() {
     daySelected && splitOnSingleDay && selectedPlanIndex != null
       ? (dayPlans?.[selectedPlanIndex] ?? null)
       : null;
+  // Road-segment detail drawer (reviews + history), shared with the road
+  // explorer. Opens when an inspected span resolves to a real road_segment id.
+  const [selectedRoadSegmentId, setSelectedRoadSegmentId] = useState<
+    string | null
+  >(null);
+  const [segmentDetailState, setSegmentDetailState] =
+    useState<SegmentDetailPanelState>({ status: "idle" });
+  // INSPECT card → focus the segment on the map, opening its Road Preview
+  // popover (an on-route segment). The full history+reviews drawer is reached
+  // from that popover's "Full history & reviews" button, or by tapping an
+  // off-route mapped segment — never straight from here, so the two never
+  // stack on screen.
   const handleInspectSegment = useCallback(
     (segmentId: string) => {
       selectPlannerSegment(segmentId);
@@ -616,6 +632,50 @@ export default function TripPlannerPage() {
     },
     [selectPlannerSegment],
   );
+  useEffect(() => {
+    if (!selectedRoadSegmentId) {
+      // Bail out without a new object when already idle, so the initial mount
+      // (segment unselected) doesn't force an extra render.
+      setSegmentDetailState((prev) =>
+        prev.status === "idle" ? prev : { status: "idle" },
+      );
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setSegmentDetailState({
+      status: "loading",
+      segmentId: selectedRoadSegmentId,
+    });
+    roadsApi
+      .getSegmentDetail(selectedRoadSegmentId, { signal: controller.signal })
+      .then(({ data }) => {
+        if (!cancelled)
+          setSegmentDetailState({ status: "ready", segment: data });
+      })
+      .catch((err: unknown) => {
+        if (cancelled || (err as { name?: string }).name === "AbortError") {
+          return;
+        }
+        if (err instanceof ApiError && err.status === 404) {
+          setSegmentDetailState({
+            status: "not-found",
+            segmentId: selectedRoadSegmentId,
+          });
+          return;
+        }
+        setSegmentDetailState({
+          status: "error",
+          segmentId: selectedRoadSegmentId,
+          message:
+            err instanceof Error ? err.message : "Failed to load segment",
+        });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedRoadSegmentId]);
   // Shared with the map's Road Preview reroute: arm a one-shot animated
   // fit for whenever the rerouted line lands.
   const armFitAfterRoute = useCallback(() => {
@@ -2835,6 +2895,8 @@ export default function TripPlannerPage() {
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
               fitRouteToken={fitRouteToken}
+              selectedRoadSegmentId={selectedRoadSegmentId}
+              onOpenSegmentDetail={setSelectedRoadSegmentId}
             />
           </div>
 
@@ -2862,6 +2924,15 @@ export default function TripPlannerPage() {
               </div>
             </div>
           )}
+
+          {/* Road-segment detail drawer (quality history + reviews), the same
+              component the road explorer uses. Slides in over the map when an
+              inspected span resolves to a real road_segment id. */}
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedRoadSegmentId(null)}
+            anchor="viewport"
+          />
         </div>
 
         {/* RIGHT — Plan & inspect panel: BUILD / INSPECT / CONDITIONS /

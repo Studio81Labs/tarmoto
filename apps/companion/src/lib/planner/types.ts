@@ -33,6 +33,13 @@ export interface RouteSegment {
   passes: number;
   lengthKm: number;
   /**
+   * road_segments UUID of the matched span, when this is a real routed-quality
+   * segment. Lets a click open the same `/roads/{id}` detail drawer (reviews +
+   * history) as the road explorer. Absent for geometry-only fallback segments
+   * and coalesced runs (which span multiple road segments).
+   */
+  roadSegmentId?: string | null;
+  /**
    * Per-constituent quality spans (score + length) when this is a coalesced run
    * (set by `findRunSegment`) — feeds the Road Preview "quality across section"
    * strip. Absent for a single fine segment (nothing to vary).
