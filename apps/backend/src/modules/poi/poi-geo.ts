@@ -165,3 +165,92 @@ export function radiusCoverageSamples(
     { lat, lng: lng - dLng },
   ];
 }
+
+/** Shift a point by a local east/north offset in km (equirectangular approx). */
+function offsetKm(
+  lat: number,
+  lng: number,
+  eastKm: number,
+  northKm: number,
+): { lat: number; lng: number } {
+  return {
+    lat: lat + northKm / LAT_KM_PER_DEGREE,
+    lng: lng + eastKm / lngKmPerDegree(lat),
+  };
+}
+
+/**
+ * Coverage samples spanning a route's buffered corridor (#925 P1/P2): the
+ * centreline sampled at {@link COVERAGE_BUFFER_KM} strides PLUS, when `bufferKm`
+ * > 0, both rails offset `bufferKm` perpendicular to each segment. Sampling only
+ * the centreline misses a corridor that runs parallel to an import boundary with
+ * its line inside imported territory but its far rail in an un-imported
+ * neighbour — every centreline sample is covered yet the corridor is not. The
+ * rails put a sample on each edge, so that far rail is an uncovered sample and
+ * `readStoreFirst` merges Overpass. Consecutive centreline strides are one buffer
+ * apart so their probe circles overlap along the line; the rails extend that
+ * across the corridor width.
+ */
+export function routeCoverageSamples(
+  route: ReadonlyArray<{ lat: number; lng: number }>,
+  bufferKm: number,
+): { lat: number; lng: number }[] {
+  const first = route[0];
+  if (first === undefined) return [];
+  if (route.length === 1) return [{ lat: first.lat, lng: first.lng }];
+
+  const stride = Math.max(COVERAGE_BUFFER_KM, 0.5);
+  const out: { lat: number; lng: number }[] = [];
+  const emit = (
+    lat: number,
+    lng: number,
+    perpE: number,
+    perpN: number,
+  ): void => {
+    out.push({ lat, lng });
+    if (bufferKm > 0) {
+      out.push(offsetKm(lat, lng, bufferKm * perpE, bufferKm * perpN));
+      out.push(offsetKm(lat, lng, -bufferKm * perpE, -bufferKm * perpN));
+    }
+  };
+  // Unit perpendicular of segment a→b in local east/north km space.
+  const perpOf = (
+    a: { lat: number; lng: number },
+    b: { lat: number; lng: number },
+  ): [number, number] => {
+    const midLat = (a.lat + b.lat) / 2;
+    const east = (b.lng - a.lng) * lngKmPerDegree(midLat);
+    const north = (b.lat - a.lat) * LAT_KM_PER_DEGREE;
+    const len = Math.hypot(east, north);
+    return len < 1e-9 ? [0, 0] : [-north / len, east / len];
+  };
+
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    if (a === undefined || b === undefined) continue;
+    const [perpE, perpN] = perpOf(a, b);
+    const east = (b.lng - a.lng) * lngKmPerDegree((a.lat + b.lat) / 2);
+    const north = (b.lat - a.lat) * LAT_KM_PER_DEGREE;
+    const len = Math.hypot(east, north);
+    // Sample from the segment start up to (not including) its end; the next
+    // segment's start — or the final-vertex emit below — covers the join.
+    for (let d = 0; d < len; d += stride) {
+      const t = len < 1e-9 ? 0 : d / len;
+      emit(
+        a.lat + (b.lat - a.lat) * t,
+        a.lng + (b.lng - a.lng) * t,
+        perpE,
+        perpN,
+      );
+    }
+  }
+  // Always include the final vertex, railed off the last segment's perpendicular.
+  const last = route[route.length - 1];
+  const prev = route[route.length - 2];
+  if (last !== undefined && prev !== undefined) {
+    const [perpE, perpN] = perpOf(prev, last);
+    emit(last.lat, last.lng, perpE, perpN);
+  }
+  return out;
+}

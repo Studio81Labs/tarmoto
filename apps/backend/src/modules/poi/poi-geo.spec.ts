@@ -2,6 +2,7 @@ import {
   COVERAGE_BUFFER_KM,
   padBbox,
   radiusCoverageSamples,
+  routeCoverageSamples,
 } from './poi-geo.js';
 
 const LAT_KM_PER_DEGREE = 111.132;
@@ -28,6 +29,45 @@ describe('radiusCoverageSamples (#925)', () => {
     const samples = radiusCoverageSamples(0, 0, 111.132);
     expect(samples[3]?.lng).toBeCloseTo(1, 3); // ~1° east at the equator
     expect(samples[4]?.lng).toBeCloseTo(-1, 3);
+  });
+});
+
+describe('routeCoverageSamples (#925 P2)', () => {
+  // An east–west route at 49°N: each segment's perpendicular is due north/south,
+  // so the corridor rails offset the centreline in latitude.
+  const route = [
+    { lat: 49, lng: 16 },
+    { lat: 49, lng: 17 },
+  ];
+
+  it('emits the centreline plus both perpendicular rails per sample', () => {
+    const samples = routeCoverageSamples(route, 20);
+    expect(samples.length % 3).toBe(0); // centre + 2 rails each
+    const lats = samples.map((s) => s.lat);
+    // Rails sit ~20 km north and south of the 49° line.
+    expect(Math.max(...lats)).toBeGreaterThan(49.1);
+    expect(Math.min(...lats)).toBeLessThan(48.9);
+    expect(lats).toContain(49); // centreline samples
+  });
+
+  it('offsets each rail by ~bufferKm perpendicular to the segment', () => {
+    const samples = routeCoverageSamples(route, 20);
+    const north = Math.max(...samples.map((s) => s.lat));
+    expect(north - 49).toBeCloseTo(20 / LAT_KM_PER_DEGREE, 3); // 20 km north
+  });
+
+  it('samples only the centreline when bufferKm is 0 (a degenerate corridor)', () => {
+    const samples = routeCoverageSamples(route, 0);
+    expect(samples.every((s) => s.lat === 49)).toBe(true);
+    expect(samples).toContainEqual({ lat: 49, lng: 16 }); // start
+    expect(samples).toContainEqual({ lat: 49, lng: 17 }); // final vertex
+  });
+
+  it('returns the single point for a one-point route and [] for an empty one', () => {
+    expect(routeCoverageSamples([{ lat: 49, lng: 16 }], 20)).toEqual([
+      { lat: 49, lng: 16 },
+    ]);
+    expect(routeCoverageSamples([], 20)).toEqual([]);
   });
 });
 

@@ -38,10 +38,10 @@ import {
 } from './dto/point-of-interest.dto.js';
 import { PoiStoreService } from './poi-store.service.js';
 import {
-  COVERAGE_BUFFER_KM,
   cumulativeLengthKm,
   projectOntoRoute,
   radiusCoverageSamples,
+  routeCoverageSamples,
 } from './poi-geo.js';
 import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
 
@@ -480,10 +480,11 @@ export class PoiService {
           bufferKm,
           resolvedKinds,
         ),
-      // Coverage samples strided at the buffer distance along the route, so a
-      // corridor that runs out of imported territory has an uncovered sample
-      // and merges Overpass instead of trusting the store off one covered point.
-      sampleRouteAnchors(dto.route, cumKm, COVERAGE_BUFFER_KM),
+      // Coverage samples spanning the buffered corridor — centreline strides
+      // plus both rails — so a corridor that leaves imported territory, even
+      // only on its far rail, has an uncovered sample and merges Overpass
+      // instead of trusting the store off the covered centreline (#925 P2).
+      routeCoverageSamples(dto.route, bufferKm),
     );
 
     return {
