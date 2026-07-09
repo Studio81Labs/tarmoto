@@ -7,7 +7,11 @@ import { OverpassPoiProvider } from './providers/overpass.provider.js';
 import { PoiController } from './poi.controller.js';
 import { PoiService } from './poi.service.js';
 import { PoiStoreService } from './poi-store.service.js';
-import { FSQ_POI_IMPORT, PoiImportService } from './poi-import.service.js';
+import {
+  FSQ_POI_IMPORT,
+  POI_IMPORT_SOURCES,
+  PoiImportService,
+} from './poi-import.service.js';
 import { FsqPoiImportSource } from './poi-import-source.js';
 import { fsqImportConfig, poiImportConfig } from './poi-import.config.js';
 import { PoiDatabaseModule } from './poi-database.module.js';
@@ -21,7 +25,8 @@ import { PoiDatabaseModule } from './poi-database.module.js';
  * default provider is OSM (`poiImportConfig` + the strategy's OSM default), and
  * `FSQ_POI_IMPORT` is a second instance bound to `fsqImportConfig` +
  * `FsqPoiImportSource`. Both are exported so the CLI + jobs processor can drive
- * each source.
+ * each source, and `POI_IMPORT_SOURCES` bundles them (in order) as the registry
+ * the weekly dispatcher fans out over.
  */
 @Module({
   imports: [
@@ -43,7 +48,14 @@ import { PoiDatabaseModule } from './poi-database.module.js';
       ) => new PoiImportService(dataSource, config, new FsqPoiImportSource()),
       inject: [getDataSourceToken('poi'), fsqImportConfig.KEY],
     },
+    {
+      // The ordered import-source registry the weekly dispatcher iterates. OSM
+      // first (the primary source), then FSQ; append future sources here.
+      provide: POI_IMPORT_SOURCES,
+      useFactory: (osm: PoiImportService, fsq: PoiImportService) => [osm, fsq],
+      inject: [PoiImportService, FSQ_POI_IMPORT],
+    },
   ],
-  exports: [PoiService, PoiImportService, FSQ_POI_IMPORT],
+  exports: [PoiService, PoiImportService, FSQ_POI_IMPORT, POI_IMPORT_SOURCES],
 })
 export class PoiModule {}
