@@ -55,8 +55,16 @@ export function GeocodeSearchField({
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Set when `onSelect` writes the picked name back into the input
+  // (`clearOnSelect={false}`): that query change must NOT re-open the dropdown
+  // and fire a fresh search for the place the rider already chose.
+  const skipSearchRef = useRef(false);
 
   useEffect(() => {
+    if (skipSearchRef.current) {
+      skipSearchRef.current = false;
+      return;
+    }
     if (query.trim().length < 2) {
       setResults([]);
       setOpen(false);
@@ -124,7 +132,12 @@ export function GeocodeSearchField({
           aria-label={ariaLabel}
           placeholder={placeholder}
           autoFocus={autoFocus}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            // Real typing always re-enables searching (guards the edge where a
+            // pick set the query to a value equal to what was already there).
+            skipSearchRef.current = false;
+            setQuery(event.target.value);
+          }}
           onFocus={() => setOpen(results.length > 0)}
           className={
             variant === "spine"
@@ -178,9 +191,13 @@ export function GeocodeSearchField({
                 role="option"
                 aria-selected={false}
                 onClick={() => {
+                  // Writing the name back below would otherwise re-trigger the
+                  // search effect and re-open the dropdown ~200ms later.
+                  if (!clearOnSelect) skipSearchRef.current = true;
                   onSelect(result);
                   setOpen(false);
                   setResults([]);
+                  setLoading(false);
                   setQuery(clearOnSelect ? "" : result.name);
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] text-ink transition hover:bg-paper"
