@@ -26,6 +26,7 @@ import {
   ensureAerialBasemap,
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
+import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
 import {
   HAZARD_CONFIG,
   HAZARD_TYPES_UI,
@@ -111,6 +112,11 @@ interface Props {
    * clears the POI layer.
    */
   poiCategories?: ReadonlySet<PoiCategory>;
+  /**
+   * Month (1–12) used for seasonal POI status (mountain-pass open/closed), so
+   * the pass popover matches the Conditions panel's selected month.
+   */
+  poiMonth?: number;
   showQuality: boolean;
   showSurface: boolean;
   showHazards: boolean;
@@ -155,6 +161,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       filters,
       basemap = "map",
       poiCategories,
+      poiMonth,
       showQuality,
       showSurface,
       showHazards,
@@ -192,6 +199,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     } | null>(null);
     const [poiViewportToken, setPoiViewportToken] = useState(0);
     const poisByIdRef = useRef(new Map<string, Poi>());
+    // One-way latch: once the viewport has yielded any Foursquare-sourced POI,
+    // add the required map-level FSQ credit and keep it (mirrors the planner).
+    const sawFsqRef = useRef(false);
     const segmentSelectionRef = useRef({
       showQuality,
       showSurface,
@@ -491,13 +501,22 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           b.getNorth(),
         ];
         plannerApi
-          .getPoisByCategories(bbox, categories, undefined, {
+          .getPoisByCategories(bbox, categories, poiMonth, {
             signal: controller.signal,
           })
           .then((pois) => {
             if (cancelled) return;
             poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
             setPoiSourceData(map, pois);
+            // ODbL/attribution: the source declares OSM, but FSQ rows need the
+            // Foursquare map credit too. Latch it on once seen (#869).
+            if (
+              !sawFsqRef.current &&
+              pois.some((poi) => poi.source === "fsq")
+            ) {
+              sawFsqRef.current = true;
+              handleRef.current?.setPoiAttribution([FSQ_ATTRIBUTION]);
+            }
           })
           .catch(() => {
             // Aborted or failed — leave the existing pins in place.
@@ -508,7 +527,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         controller.abort();
         window.clearTimeout(timer);
       };
-    }, [ready, poiCategoriesKey, poiViewportToken]);
+    }, [ready, poiCategoriesKey, poiMonth, poiViewportToken]);
 
     // ── aerial basemap visibility ──
     useEffect(() => {

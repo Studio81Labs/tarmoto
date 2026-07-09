@@ -556,6 +556,7 @@ function ExplorerPageInner() {
               filters={filters}
               basemap={basemap}
               poiCategories={activePoiCategories}
+              poiMonth={conditionsMonth}
               showQuality={showQualityOverlay}
               showSurface={showSurfaceOverlay}
               showHazards={showHazardOverlay}
