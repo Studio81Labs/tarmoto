@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { JOB_NAMES, QUEUE_NAMES } from './jobs.constants.js';
-import { DEFAULT_JOB_OPTIONS } from './jobs.config.js';
+import { DEFAULT_JOB_OPTIONS, DIGEST_COMPOSE_PRIORITY } from './jobs.config.js';
 
 /**
  * Delay between consecutive per-region POI import jobs (#850). A continent-scale
@@ -222,6 +222,9 @@ export class JobsProducer {
       ...DEFAULT_JOB_OPTIONS,
       jobId: `digest-weekly:${data.user_id}:${data.for_local_window}`,
       removeOnComplete: { age: 8 * 24 * 60 * 60 },
+      // Lower priority than the dispatch job it shares the queue with, so a big
+      // weekly fan-out of these sends can't starve the hourly dispatcher.
+      priority: DIGEST_COMPOSE_PRIORITY,
     });
   }
 }
