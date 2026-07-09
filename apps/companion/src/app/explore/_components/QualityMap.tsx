@@ -47,6 +47,16 @@ import {
   readSegmentId,
   SEGMENT_HIT_PADDING_PX,
 } from "@/lib/map-segment-hit";
+import {
+  ensurePoiLayers,
+  setPoiSourceData,
+  POI_PIN_LAYER,
+  POI_CLUSTER_LAYER,
+  POI_SOURCE,
+} from "@/components/map/PoiPinLayer";
+import { PoiInfoPopover } from "./PoiInfoPopover";
+import { plannerApi } from "@/lib/planner/api";
+import type { Poi, PoiCategory } from "@/lib/planner/types";
 
 const HAZARDS_SOURCE = "hazards-src";
 const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
@@ -56,6 +66,8 @@ const HAZARD_ICON = "tarmoto-hazard-icon";
 
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
+
+const POI_FETCH_DEBOUNCE_MS = 300;
 
 const HAZARD_MIN_ZOOM = 9;
 const HAZARD_FETCH_DEBOUNCE_MS = 300;
@@ -94,6 +106,11 @@ interface Props {
   filters: MapFilters;
   /** Basemap under the overlays: the branded map, or aerial imagery. */
   basemap?: "map" | "aerial";
+  /**
+   * Active POI categories to browse in the current viewport. Empty/undefined
+   * clears the POI layer.
+   */
+  poiCategories?: ReadonlySet<PoiCategory>;
   showQuality: boolean;
   showSurface: boolean;
   showHazards: boolean;
@@ -137,6 +154,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       zoom,
       filters,
       basemap = "map",
+      poiCategories,
       showQuality,
       showSurface,
       showHazards,
@@ -164,6 +182,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       [],
     );
     const [ready, setReady] = useState(false);
+    // POI browse layer: the open info popover, a viewport token bumped on
+    // `moveend` to refetch, and an id→Poi lookup so a pin click resolves back
+    // to the fetched object (features carry only id/category/name/source).
+    const [poiMenu, setPoiMenu] = useState<{
+      poi: Poi;
+      x: number;
+      y: number;
+    } | null>(null);
+    const [poiViewportToken, setPoiViewportToken] = useState(0);
+    const poisByIdRef = useRef(new Map<string, Poi>());
     const segmentSelectionRef = useRef({
       showQuality,
       showSurface,
@@ -326,7 +354,54 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       map.on("click", HAZARD_BG, onHazardClick);
       map.on("click", HAZARD_ICON, onHazardClick);
 
+      // ── Category-POI browse layer ──
+      ensurePoiLayers(map);
+      map.on("click", POI_PIN_LAYER, (e: MapLayerMouseEvent) => {
+        const props = e.features?.[0]?.properties as
+          | { poiId?: string }
+          | undefined;
+        const poi = props?.poiId
+          ? poisByIdRef.current.get(props.poiId)
+          : undefined;
+        if (!poi) return;
+        setPoiMenu({
+          poi,
+          x: e.originalEvent.clientX,
+          y: e.originalEvent.clientY,
+        });
+      });
+      map.on("click", POI_CLUSTER_LAYER, (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        const clusterId = feature?.properties?.cluster_id as number | undefined;
+        const src = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
+        if (clusterId == null || !src || !feature) return;
+        src
+          .getClusterExpansionZoom(clusterId)
+          .then((expZoom) => {
+            if (feature.geometry.type !== "Point") return;
+            map.easeTo({
+              center: feature.geometry.coordinates as [number, number],
+              zoom: expZoom,
+            });
+          })
+          .catch(() => {
+            // Cluster may have been superseded by a refetch; drop the zoom-in.
+          });
+      });
+
       map.on("click", (e: MapLayerMouseEvent) => {
+        // POI pins/clusters own their click (handled above).
+        const poiLayers = [POI_PIN_LAYER, POI_CLUSTER_LAYER].filter((id) =>
+          map.getLayer(id),
+        );
+        if (
+          poiLayers.length > 0 &&
+          map.queryRenderedFeatures(e.point, { layers: poiLayers }).length > 0
+        ) {
+          return;
+        }
+        // Any other click (road or empty map) dismisses an open POI popover.
+        setPoiMenu(null);
         const {
           showQuality: canSelectQuality,
           showSurface: canSelectSurface,
@@ -357,7 +432,13 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       const unsetPointer = () => {
         map.getCanvas().style.cursor = "";
       };
-      for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+      for (const id of [
+        HAZARD_BG,
+        HAZARD_ICON,
+        HAZARD_CLUSTERS,
+        POI_PIN_LAYER,
+        POI_CLUSTER_LAYER,
+      ]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
@@ -377,7 +458,57 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
 
     const handleViewChange = (view: MapCanvasViewChange) => {
       onViewChange?.(view);
+      // Refetch POIs for the new viewport (debounced in the effect below).
+      setPoiViewportToken((token) => token + 1);
     };
+
+    // ── category-POI viewport fetch ──
+    // Sorted, stable key so toggling categories (a new Set each time) drives
+    // the effect without an unstable array dep.
+    const poiCategoriesKey = poiCategories
+      ? [...poiCategories].sort().join(",")
+      : "";
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      const categories = (
+        poiCategoriesKey ? poiCategoriesKey.split(",") : []
+      ) as PoiCategory[];
+      if (categories.length === 0) {
+        poisByIdRef.current = new Map();
+        setPoiSourceData(map, []);
+        setPoiMenu(null);
+        return;
+      }
+      let cancelled = false;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => {
+        const b = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          b.getWest(),
+          b.getSouth(),
+          b.getEast(),
+          b.getNorth(),
+        ];
+        plannerApi
+          .getPoisByCategories(bbox, categories, undefined, {
+            signal: controller.signal,
+          })
+          .then((pois) => {
+            if (cancelled) return;
+            poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
+            setPoiSourceData(map, pois);
+          })
+          .catch(() => {
+            // Aborted or failed — leave the existing pins in place.
+          });
+      }, POI_FETCH_DEBOUNCE_MS);
+      return () => {
+        cancelled = true;
+        controller.abort();
+        window.clearTimeout(timer);
+      };
+    }, [ready, poiCategoriesKey, poiViewportToken]);
 
     // ── aerial basemap visibility ──
     useEffect(() => {
@@ -538,7 +669,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         surfaceOpacityExpression={surfaceOpacity}
         onReady={handleReady}
         onViewChange={handleViewChange}
-      />
+      >
+        {poiMenu ? (
+          <PoiInfoPopover
+            poi={poiMenu.poi}
+            x={poiMenu.x}
+            y={poiMenu.y}
+            onClose={() => setPoiMenu(null)}
+          />
+        ) : null}
+      </MapCanvas>
     );
   },
 );
