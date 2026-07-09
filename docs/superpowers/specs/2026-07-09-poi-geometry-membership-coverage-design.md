@@ -138,7 +138,7 @@ used elsewhere (checked during implementation; else removed).
 
 ## Data flow
 
-1. Deploy: migration creates the table; `pnpm poi:load-boundaries` loads the 18
+1. Deploy: migration creates the table; `pnpm poi:load-boundaries` loads the 17
    polygons (`imported_at` NULL).
 2. Import: an OSM `poi:import` writes `pois` rows for a region AND stamps its
    `imported_at` (FSQ imports do NOT stamp — coverage suppresses the OSM fallback).
