@@ -3,12 +3,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { RoadsController } from './roads.controller.js';
 import { RoadsService } from './roads.service.js';
+import { MapillaryService } from '../mapillary/index.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 
 describe('RoadsController', () => {
   let controller: RoadsController;
   let service: jest.Mocked<RoadsService>;
+  let mapillary: jest.Mocked<MapillaryService>;
 
   const mockSegment = {
     id: 'seg-1',
@@ -67,6 +69,18 @@ describe('RoadsController', () => {
       controllers: [RoadsController],
       providers: [
         { provide: RoadsService, useValue: mockService },
+        {
+          provide: MapillaryService,
+          useValue: {
+            segmentImagery: jest.fn().mockResolvedValue({
+              imageId: null,
+              capturedAt: null,
+              attribution: null,
+              link: null,
+            }),
+            thumbnail: jest.fn().mockResolvedValue(null),
+          },
+        },
         // `route-quality` is behind AuthGuard; provide its deps so the module
         // compiles (the unit tests call methods directly, past the guard).
         ...authGuardTestProviders,
@@ -75,6 +89,7 @@ describe('RoadsController', () => {
 
     controller = module.get<RoadsController>(RoadsController);
     service = module.get(RoadsService);
+    mapillary = module.get(MapillaryService);
   });
 
   describe('POST /roads/route-quality', () => {
@@ -158,6 +173,78 @@ describe('RoadsController', () => {
       await expect(controller.findZoneById('missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('GET /roads/segment-imagery', () => {
+    it('delegates lat/lng/bearing to the Mapillary service', async () => {
+      const result = await controller.getSegmentImagery({
+        lat: 46.5,
+        lng: 10.4,
+        bearing: 90,
+      });
+
+      expect(mapillary.segmentImagery).toHaveBeenCalledWith(46.5, 10.4, 90);
+      expect(result).toEqual({
+        imageId: null,
+        capturedAt: null,
+        attribution: null,
+        link: null,
+      });
+    });
+  });
+
+  describe('GET /roads/segment-imagery/thumb/:imageId', () => {
+    function mockRes() {
+      const res = {
+        set: jest.fn(),
+        send: jest.fn(),
+        status: jest.fn(),
+        end: jest.fn(),
+      };
+      res.status.mockReturnValue(res);
+      return res;
+    }
+
+    it('streams the proxied bytes with content-type + cache headers', async () => {
+      mapillary.thumbnail.mockResolvedValueOnce({
+        contentType: 'image/jpeg',
+        body: Buffer.from([1, 2, 3]),
+      });
+      const res = mockRes();
+
+      await controller.getSegmentImageryThumb(
+        'mly-1',
+        res as unknown as Parameters<
+          typeof controller.getSegmentImageryThumb
+        >[1],
+      );
+
+      expect(mapillary.thumbnail).toHaveBeenCalledWith('mly-1');
+      expect(res.set).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
+      // Cross-origin (companion origin ≠ API origin) — must override Helmet's
+      // same-origin CORP or the browser blocks the <img>.
+      expect(res.set).toHaveBeenCalledWith(
+        'Cross-Origin-Resource-Policy',
+        'cross-origin',
+      );
+      expect(res.send).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+    });
+
+    it('404s when the image has no thumbnail', async () => {
+      mapillary.thumbnail.mockResolvedValueOnce(null);
+      const res = mockRes();
+
+      await controller.getSegmentImageryThumb(
+        'missing',
+        res as unknown as Parameters<
+          typeof controller.getSegmentImageryThumb
+        >[1],
+      );
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.end).toHaveBeenCalled();
+      expect(res.send).not.toHaveBeenCalled();
     });
   });
 });
