@@ -1,10 +1,12 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -13,6 +15,10 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AdminRoles } from '../admin-auth/admin-role.decorator.js';
 import type { AdminRequest } from '../admin/internal.guard.js';
 import { setAdminAuditTarget } from '../admin/admin-audit-context.js';
+import {
+  NotificationPreferencesResponseDto,
+  UpdateNotificationPreferencesDto,
+} from '../push/dto/notification-preferences.dto.js';
 import { AdminUsersService } from './admin-users.service.js';
 import {
   AdminUserDetailDto,
@@ -65,5 +71,28 @@ export class AdminUsersController {
   ): Promise<void> {
     setAdminAuditTarget(req, { target_type: 'user', target_id: id });
     return this.service.restore(id);
+  }
+
+  @Get('users/:id/notification-preferences')
+  @AdminRoles('support')
+  @ApiOperation({ summary: "An app user's notification preferences" })
+  @ApiResponse({ status: 200, type: NotificationPreferencesResponseDto })
+  getNotificationPreferences(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<NotificationPreferencesResponseDto> {
+    return this.service.getNotificationPreferences(id);
+  }
+
+  @Patch('users/:id/notification-preferences')
+  @AdminRoles('support')
+  @ApiOperation({ summary: "Update an app user's notification preferences" })
+  @ApiResponse({ status: 200, type: NotificationPreferencesResponseDto })
+  updateNotificationPreferences(
+    @Req() req: AdminRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ): Promise<NotificationPreferencesResponseDto> {
+    setAdminAuditTarget(req, { target_type: 'user', target_id: id });
+    return this.service.updateNotificationPreferences(id, dto);
   }
 }

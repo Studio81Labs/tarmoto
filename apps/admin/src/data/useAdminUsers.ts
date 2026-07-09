@@ -21,6 +21,22 @@ export function useAdminUserDetail(id: string | null) {
   );
 }
 
+export function useAdminUserNotificationPrefs(id: string | null) {
+  return $api.useQuery(
+    "get",
+    "/admin/users/{id}/notification-preferences",
+    { params: { path: { id: id ?? "" } } },
+    { enabled: !!id },
+  );
+}
+
+export function useUpdateUserNotificationPrefs() {
+  return $api.useMutation(
+    "patch",
+    "/admin/users/{id}/notification-preferences",
+  );
+}
+
 export function useSoftDeleteUser() {
   return $api.useMutation("delete", "/admin/users/{id}");
 }

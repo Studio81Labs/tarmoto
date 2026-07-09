@@ -3272,6 +3272,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{id}/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An app user's notification preferences */
+        get: operations["AdminUsersController_getNotificationPreferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update an app user's notification preferences */
+        patch: operations["AdminUsersController_updateNotificationPreferences"];
+        trace?: never;
+    };
     "/admin/admins": {
         parameters: {
             query?: never;
@@ -12279,6 +12297,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    AdminUsersController_getNotificationPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferencesResponseDto"];
+                };
+            };
+        };
+    };
+    AdminUsersController_updateNotificationPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateNotificationPreferencesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferencesResponseDto"];
+                };
             };
         };
     };
