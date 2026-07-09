@@ -3,12 +3,15 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
   ParseUUIDPipe,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -152,6 +155,29 @@ export class RoadsController {
       query.lng,
       query.bearing,
     );
+  }
+
+  // Streams a thumbnail by id so the rider's browser loads it from us, never
+  // Mapillary's CDN (ADR-0009). PUBLIC by necessity — an <img> can't send a
+  // bearer — but rate-limited + byte-cached, and it only proxies public
+  // Mapillary thumbnails (no rider data). Declared before `:segmentId`.
+  @Get('segment-imagery/thumb/:imageId')
+  @Throttle({ default: { ttl: 60_000, limit: 300 } })
+  @ApiOperation({ summary: 'Proxy a street-level thumbnail (Road Preview)' })
+  @ApiResponse({ status: 200, description: 'Image bytes' })
+  @ApiResponse({ status: 404, description: 'No thumbnail for this image' })
+  async getSegmentImageryThumb(
+    @Param('imageId') imageId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const thumb = await this.mapillaryService.thumbnail(imageId);
+    if (!thumb) {
+      res.status(HttpStatus.NOT_FOUND).end();
+      return;
+    }
+    res.set('Content-Type', thumb.contentType);
+    res.set('Cache-Control', 'public, max-age=86400, immutable');
+    res.send(thumb.body);
   }
 
   @Get(':segmentId')

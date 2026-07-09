@@ -6,6 +6,7 @@ import {
   GOOD_BAND_MIN_SCORE,
   isLowConfidence,
   LOW_CONFIDENCE_MAX_PASSES,
+  resampleQualitySpans,
   scoreToBand,
 } from "../quality-bands";
 import type { QualityBand, RouteSegment } from "../types";
@@ -119,6 +120,46 @@ describe("coalesceQualityRuns", () => {
 
   it("returns nothing for an empty input", () => {
     expect(coalesceQualityRuns([])).toEqual([]);
+  });
+});
+
+describe("resampleQualitySpans", () => {
+  it("returns the spans unchanged when within the cap", () => {
+    const spans = [
+      { score: 2, lengthKm: 1 },
+      { score: 4, lengthKm: 1 },
+    ];
+    expect(resampleQualitySpans(spans, 48)).toBe(spans);
+  });
+
+  it("downsamples a long run to the cap, preserving total length", () => {
+    // 200 constituents → far past the cap; must not render 200 bars.
+    const spans = Array.from({ length: 200 }, () => ({
+      score: 3,
+      lengthKm: 0.5,
+    }));
+    const out = resampleQualitySpans(spans, 48);
+
+    expect(out.length).toBeLessThanOrEqual(48);
+    const total = out.reduce((sum, s) => sum + s.lengthKm, 0);
+    expect(total).toBeCloseTo(100, 5); // 200 × 0.5 km preserved
+    // Length-weighted score of a uniform run stays the same.
+    expect(out.every((s) => Math.abs(s.score - 3) < 1e-9)).toBe(true);
+  });
+
+  it("length-weights the score within each resampled bucket", () => {
+    // Two constituents, very different lengths → one bucket dominated by the
+    // long one.
+    const out = resampleQualitySpans(
+      [
+        { score: 1, lengthKm: 0.1 },
+        { score: 5, lengthKm: 9.9 },
+      ],
+      1,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]!.lengthKm).toBeCloseTo(10, 5);
+    expect(out[0]!.score).toBeCloseTo((1 * 0.1 + 5 * 9.9) / 10, 5);
   });
 });
 

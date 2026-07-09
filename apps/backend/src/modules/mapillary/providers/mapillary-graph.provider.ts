@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   StreetImage,
+  StreetImageBytes,
   StreetImageryProvider,
 } from '../mapillary-provider.interface.js';
 
@@ -15,7 +16,8 @@ interface MapillaryImageRow {
   creator?: { username?: string };
 }
 
-const MAPILLARY_IMAGES_ENDPOINT = 'https://graph.mapillary.com/images';
+const MAPILLARY_GRAPH_BASE = 'https://graph.mapillary.com';
+const MAPILLARY_IMAGES_ENDPOINT = `${MAPILLARY_GRAPH_BASE}/images`;
 const MAPILLARY_FETCH_TIMEOUT_MS = 6_000;
 // Mapillary's radius search caps `radius` at 50 m and returns up to `limit`
 // images near the point. Pull a handful so we can prefer a forward-facing,
@@ -25,13 +27,20 @@ const SEARCH_LIMIT = 10;
 const IMAGE_FIELDS =
   'id,captured_at,thumb_1024_url,compass_angle,is_pano,creator';
 
+/** Public Mapillary viewer page for an image — the attribution credit link. */
+function mapillaryImageLink(imageId: string): string {
+  return `https://www.mapillary.com/app/?pKey=${encodeURIComponent(imageId)}&focus=photo`;
+}
+
 /**
  * Mapillary Graph API v4 street-level imagery provider (ADR-0009).
  *
  * Requires a client access token (`TARMOTO_MAPILLARY_TOKEN`). Without it the
- * provider is inert (returns null), so the Road Preview simply shows no
- * imagery instead of erroring. Mapillary imagery is CC-BY-SA — the caller MUST
- * surface the `attribution` this returns.
+ * provider is inert (returns null), so the Road Preview simply shows no imagery
+ * instead of erroring. Mapillary imagery is CC-BY-SA — the caller MUST surface
+ * the `attribution` + `link` this returns. Thumbnails are streamed through our
+ * own proxy (see {@link thumbnail}) so the rider's browser never contacts
+ * Mapillary's CDN.
  */
 @Injectable()
 export class MapillaryGraphProvider implements StreetImageryProvider {
@@ -62,7 +71,7 @@ export class MapillaryGraphProvider implements StreetImageryProvider {
     url.searchParams.set('radius', String(SEARCH_RADIUS_M));
     url.searchParams.set('limit', String(SEARCH_LIMIT));
 
-    const response = await this.fetchWithTimeout(url.toString());
+    const response = await this.fetchWithTimeout(url.toString(), true);
     if (!response.ok) {
       throw new Error(
         `Mapillary API error: ${response.status} ${response.statusText}`,
@@ -72,18 +81,49 @@ export class MapillaryGraphProvider implements StreetImageryProvider {
     return this.pickBest(body.data ?? [], bearing);
   }
 
-  private fetchWithTimeout(url: string): Promise<Response> {
+  async thumbnail(imageId: string): Promise<StreetImageBytes | null> {
+    if (!this.token) return null;
+
+    // Resolve the current thumbnail URL for this id (Mapillary CDN URLs are
+    // signed + expiring, so we never persist them — re-resolve on demand).
+    const metaUrl = new URL(`${MAPILLARY_GRAPH_BASE}/${imageId}`);
+    metaUrl.searchParams.set('fields', 'thumb_1024_url');
+    const metaResponse = await this.fetchWithTimeout(metaUrl.toString(), true);
+    if (!metaResponse.ok) {
+      throw new Error(
+        `Mapillary API error: ${metaResponse.status} ${metaResponse.statusText}`,
+      );
+    }
+    const meta = (await metaResponse.json()) as { thumb_1024_url?: string };
+    if (!meta.thumb_1024_url) return null;
+
+    // Fetch the bytes from the CDN (no auth header — it's a signed URL).
+    const imageResponse = await this.fetchWithTimeout(
+      meta.thumb_1024_url,
+      false,
+    );
+    if (!imageResponse.ok) {
+      throw new Error(
+        `Mapillary thumbnail error: ${imageResponse.status} ${imageResponse.statusText}`,
+      );
+    }
+    const contentType =
+      imageResponse.headers.get('content-type') ?? 'image/jpeg';
+    const body = Buffer.from(await imageResponse.arrayBuffer());
+    return { contentType, body };
+  }
+
+  private fetchWithTimeout(url: string, withAuth: boolean): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(),
       MAPILLARY_FETCH_TIMEOUT_MS,
     );
+    const headers: Record<string, string> = {};
+    if (withAuth) headers.Authorization = `OAuth ${this.token}`;
     return fetch(url, {
       method: 'GET',
-      headers: {
-        Authorization: `OAuth ${this.token}`,
-        Accept: 'application/json',
-      },
+      headers,
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
   }
@@ -92,10 +132,11 @@ export class MapillaryGraphProvider implements StreetImageryProvider {
     rows: MapillaryImageRow[],
     bearing: number | undefined,
   ): StreetImage | null {
-    // Prefer flat (non-pano) frames with a thumbnail — a 360° pano reads poorly
-    // as a small confirmation thumb. Fall back to any thumbnailed frame.
-    const flat = rows.filter((r) => r.thumb_1024_url && !r.is_pano);
-    const pool = flat.length > 0 ? flat : rows.filter((r) => r.thumb_1024_url);
+    // Prefer flat (non-pano) frames with an id + thumbnail — a 360° pano reads
+    // poorly as a small confirmation thumb. Fall back to any usable frame.
+    const usable = rows.filter((r) => r.id && r.thumb_1024_url);
+    const flat = usable.filter((r) => !r.is_pano);
+    const pool = flat.length > 0 ? flat : usable;
     if (pool.length === 0) return null;
 
     let best = pool[0]!;
@@ -114,8 +155,7 @@ export class MapillaryGraphProvider implements StreetImageryProvider {
   }
 
   private normalize(row: MapillaryImageRow): StreetImage | null {
-    const imageUrl = row.thumb_1024_url;
-    if (!imageUrl) return null;
+    if (!row.id) return null;
     const capturedAt =
       typeof row.captured_at === 'number' && Number.isFinite(row.captured_at)
         ? new Date(row.captured_at).toISOString().slice(0, 10)
@@ -124,7 +164,12 @@ export class MapillaryGraphProvider implements StreetImageryProvider {
     const attribution = creator
       ? `© ${creator} · Mapillary (CC BY-SA)`
       : 'Mapillary (CC BY-SA)';
-    return { imageUrl, capturedAt, attribution };
+    return {
+      imageId: row.id,
+      capturedAt,
+      attribution,
+      link: mapillaryImageLink(row.id),
+    };
   }
 }
 

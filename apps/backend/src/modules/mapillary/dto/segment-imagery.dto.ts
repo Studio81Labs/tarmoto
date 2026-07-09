@@ -41,9 +41,12 @@ export class SegmentImageryQueryDto {
 export class SegmentImageryDto {
   @ApiProperty({
     nullable: true,
-    description: 'Street-level image URL, or null when there is no coverage.',
+    description:
+      'Provider image id, or null when there is no coverage. The client loads ' +
+      'the thumbnail through GET /roads/segment-imagery/thumb/{imageId} — the ' +
+      "rider's browser never contacts the imagery provider directly.",
   })
-  imageUrl!: string | null;
+  imageId!: string | null;
 
   @ApiProperty({
     nullable: true,
@@ -56,4 +59,10 @@ export class SegmentImageryDto {
     description: 'Required credit line — Mapillary imagery is CC-BY-SA.',
   })
   attribution!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Public image page the credit must link back to.',
+  })
+  link!: string | null;
 }

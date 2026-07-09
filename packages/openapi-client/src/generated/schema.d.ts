@@ -750,6 +750,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roads/segment-imagery/thumb/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proxy a street-level thumbnail (Road Preview) */
+        get: operations["RoadsController_getSegmentImageryThumb"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roads/{segmentId}": {
         parameters: {
             query?: never;
@@ -4074,12 +4091,14 @@ export interface components {
             segments: components["schemas"]["RouteQualitySegmentDto"][];
         };
         SegmentImageryDto: {
-            /** @description Street-level image URL, or null when there is no coverage. */
-            imageUrl: string | null;
+            /** @description Provider image id, or null when there is no coverage. The client loads the thumbnail through GET /roads/segment-imagery/thumb/{imageId} — the rider's browser never contacts the imagery provider directly. */
+            imageId: string | null;
             /** @description ISO date the image was captured (e.g. "2024-09-15"). */
             capturedAt: string | null;
             /** @description Required credit line — Mapillary imagery is CC-BY-SA. */
             attribution: string | null;
+            /** @description Public image page the credit must link back to. */
+            link: string | null;
         };
         QualityBreakdownDto: {
             excellent: number;
@@ -7688,6 +7707,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SegmentImageryDto"];
                 };
+            };
+        };
+    };
+    RoadsController_getSegmentImageryThumb: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                imageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Image bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No thumbnail for this image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

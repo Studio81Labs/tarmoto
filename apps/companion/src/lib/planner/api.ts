@@ -33,6 +33,7 @@ import {
   MAX_DRAFT_VIAS,
   type DraftZone,
 } from "./draft-vias";
+import { API_HOST } from "@/lib/config";
 import { nearestPolygonContact, projectOntoRoute } from "./route-projection";
 import { cumulativeKm, pointAtDistanceKm, type LngLat } from "./polyline";
 import { SURFACE_VALUES, type UserRoutePrefs } from "./prefs";
@@ -749,16 +750,8 @@ function coordinateLabel(lat: number, lng: number): string {
   return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
 }
 
-/**
- * Local heading (deg, 0 = N) from a segment's endpoints, so the imagery lookup
- * can prefer a frame facing the travel direction. Undefined for a degenerate
- * (single-point / zero-length) span.
- */
-function segmentBearing(segment: RouteSegment): number | undefined {
-  const coords = segment.geometry.coordinates;
-  const a = coords[0];
-  const b = coords[coords.length - 1];
-  if (!a || !b) return undefined;
+/** Bearing (deg, 0 = N) from `a` to `b`; undefined for a zero-length edge. */
+function bearingBetween(a: LngLat, b: LngLat): number | undefined {
   const [lng1, lat1] = a;
   const [lng2, lat2] = b;
   if (
@@ -781,6 +774,28 @@ function segmentBearing(segment: RouteSegment): number | undefined {
 }
 
 /**
+ * Local travel heading at `targetKm` along the line — the direction of the edge
+ * that spans that distance. Used at the imagery lookup point so a curved or
+ * U-shaped run gets the heading THERE, not the end-to-end chord (which could
+ * face the opposite way) (#863 review).
+ */
+function bearingAtDistanceKm(
+  coords: readonly LngLat[],
+  cum: readonly number[],
+  targetKm: number,
+): number | undefined {
+  for (let i = 1; i < cum.length; i += 1) {
+    if ((cum[i] ?? 0) >= targetKm) {
+      return bearingBetween(coords[i - 1]!, coords[i]!);
+    }
+  }
+  const last = coords.length - 1;
+  return last >= 1
+    ? bearingBetween(coords[last - 1]!, coords[last]!)
+    : undefined;
+}
+
+/**
  * Street-level imagery near a segment's midpoint — Mapillary via the backend
  * proxy (#863). Best-effort: resolves to null on any error / no coverage so the
  * Road Preview renders without a thumbnail rather than failing.
@@ -789,6 +804,7 @@ async function fetchSegmentImagery(segment: RouteSegment): Promise<{
   imageUrl: string;
   capturedAt: string | null;
   attribution: string | null;
+  link: string | null;
 } | null> {
   const coords = segment.geometry.coordinates as LngLat[];
   if (coords.length === 0) return null;
@@ -796,22 +812,25 @@ async function fetchSegmentImagery(segment: RouteSegment): Promise<{
   // vertex. A long section can be just two vertices, where an index-based
   // midpoint lands on the segment end and queries the next road (#863 review).
   const cum = cumulativeKm(coords);
-  const [lng, lat] = pointAtDistanceKm(
-    coords,
-    cum,
-    (cum[cum.length - 1] ?? 0) / 2,
-  );
-  const bearing = segmentBearing(segment);
+  const halfKm = (cum[cum.length - 1] ?? 0) / 2;
+  const [lng, lat] = pointAtDistanceKm(coords, cum, halfKm);
+  // Heading at the SAME point we look up, not the end-to-end chord.
+  const bearing = bearingAtDistanceKm(coords, cum, halfKm);
   const { data, error } = await api.GET("/api/v1/roads/segment-imagery", {
     params: {
       query: { lat, lng, ...(bearing !== undefined ? { bearing } : {}) },
     },
   });
-  if (error || !data?.imageUrl) return null;
+  if (error || !data?.imageId) return null;
   return {
-    imageUrl: data.imageUrl,
+    // Load the thumbnail through the backend proxy — the browser never contacts
+    // Mapillary's CDN, so the rider IP + viewed section stay private (ADR-0009).
+    imageUrl: `${API_HOST}/api/v1/roads/segment-imagery/thumb/${encodeURIComponent(
+      data.imageId,
+    )}`,
     capturedAt: data.capturedAt,
     attribution: data.attribution,
+    link: data.link,
   };
 }
 
@@ -993,6 +1012,7 @@ export function createPlannerApi(): PlannerApi {
         ...(imagery.attribution
           ? { imageAttribution: imagery.attribution }
           : {}),
+        ...(imagery.link ? { imageLink: imagery.link } : {}),
       };
     },
 

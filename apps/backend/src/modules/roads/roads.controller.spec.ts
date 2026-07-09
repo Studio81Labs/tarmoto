@@ -73,10 +73,12 @@ describe('RoadsController', () => {
           provide: MapillaryService,
           useValue: {
             segmentImagery: jest.fn().mockResolvedValue({
-              imageUrl: null,
+              imageId: null,
               capturedAt: null,
               attribution: null,
+              link: null,
             }),
+            thumbnail: jest.fn().mockResolvedValue(null),
           },
         },
         // `route-quality` is behind AuthGuard; provide its deps so the module
@@ -184,10 +186,59 @@ describe('RoadsController', () => {
 
       expect(mapillary.segmentImagery).toHaveBeenCalledWith(46.5, 10.4, 90);
       expect(result).toEqual({
-        imageUrl: null,
+        imageId: null,
         capturedAt: null,
         attribution: null,
+        link: null,
       });
+    });
+  });
+
+  describe('GET /roads/segment-imagery/thumb/:imageId', () => {
+    function mockRes() {
+      const res = {
+        set: jest.fn(),
+        send: jest.fn(),
+        status: jest.fn(),
+        end: jest.fn(),
+      };
+      res.status.mockReturnValue(res);
+      return res;
+    }
+
+    it('streams the proxied bytes with content-type + cache headers', async () => {
+      mapillary.thumbnail.mockResolvedValueOnce({
+        contentType: 'image/jpeg',
+        body: Buffer.from([1, 2, 3]),
+      });
+      const res = mockRes();
+
+      await controller.getSegmentImageryThumb(
+        'mly-1',
+        res as unknown as Parameters<
+          typeof controller.getSegmentImageryThumb
+        >[1],
+      );
+
+      expect(mapillary.thumbnail).toHaveBeenCalledWith('mly-1');
+      expect(res.set).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
+      expect(res.send).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+    });
+
+    it('404s when the image has no thumbnail', async () => {
+      mapillary.thumbnail.mockResolvedValueOnce(null);
+      const res = mockRes();
+
+      await controller.getSegmentImageryThumb(
+        'missing',
+        res as unknown as Parameters<
+          typeof controller.getSegmentImageryThumb
+        >[1],
+      );
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.end).toHaveBeenCalled();
+      expect(res.send).not.toHaveBeenCalled();
     });
   });
 });

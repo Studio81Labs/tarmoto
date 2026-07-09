@@ -114,6 +114,51 @@ export function coalesceQualityRuns(
   }));
 }
 
+// Cap the preview "quality across section" strip so a long run (which can hold
+// one span per matched road-quality segment — hundreds on a long route) doesn't
+// render thousands of DOM bars or overflow the ~380px popover.
+const MAX_STRIP_SPANS = 48;
+
+/**
+ * Downsample quality spans into at most `maxSpans` equal-distance buckets
+ * (length-weighted score) so the strip stays bounded while still mapping the
+ * 0→run-length axis. Returned unchanged when already within the cap (#863).
+ */
+export function resampleQualitySpans(
+  spans: QualitySpan[],
+  maxSpans: number,
+): QualitySpan[] {
+  if (spans.length <= maxSpans) return spans;
+  const total = spans.reduce((sum, s) => sum + s.lengthKm, 0);
+  if (total <= 0) return spans.slice(0, maxSpans);
+  const bucketKm = total / maxSpans;
+  const out: QualitySpan[] = [];
+  let idx = 0;
+  let remaining = spans[0]!.lengthKm;
+  let score = spans[0]!.score;
+  for (let bucket = 0; bucket < maxSpans && idx < spans.length; bucket += 1) {
+    let need = bucketKm;
+    let scoreLen = 0;
+    let len = 0;
+    while (need > 1e-9 && idx < spans.length) {
+      const take = Math.min(need, remaining);
+      scoreLen += score * take;
+      len += take;
+      remaining -= take;
+      need -= take;
+      if (remaining <= 1e-9) {
+        idx += 1;
+        if (idx < spans.length) {
+          remaining = spans[idx]!.lengthKm;
+          score = spans[idx]!.score;
+        }
+      }
+    }
+    if (len > 0) out.push({ score: scoreLen / len, lengthKm: len });
+  }
+  return out;
+}
+
 /**
  * Reconstruct a coalesced run's {@link RouteSegment} (combined geometry, summed
  * length) from `segments` given its `run:<first>:<last>` id. Slices exactly the
@@ -188,6 +233,9 @@ export function findRunSegment(
     lengthKm: totalLength,
     // Sub-band variation for the preview strip — only meaningful with ≥2
     // measured constituents; a single one carries no "across section" story.
-    ...(subScores.length >= 2 ? { microStrip: subScores } : {}),
+    // Downsampled so a long run can't render thousands of bars.
+    ...(subScores.length >= 2
+      ? { microStrip: resampleQualitySpans(subScores, MAX_STRIP_SPANS) }
+      : {}),
   };
 }

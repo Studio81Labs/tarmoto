@@ -57,9 +57,10 @@ describe('MapillaryGraphProvider', () => {
     const image = await provider.nearestImage(46.5, 10.4);
 
     expect(image).toEqual({
-      imageUrl: 'https://img/1',
+      imageId: '1',
       capturedAt: '2024-09-15',
       attribution: '© rider · Mapillary (CC BY-SA)',
+      link: 'https://www.mapillary.com/app/?pKey=1&focus=photo',
     });
     expect(capturedUrl).toContain('graph.mapillary.com/images');
     expect(capturedUrl).toContain('radius=50');
@@ -80,7 +81,7 @@ describe('MapillaryGraphProvider', () => {
     const provider = new MapillaryGraphProvider(makeConfig('MLY|tok'));
     // Bearing 180 → 'b' (175, delta 5) beats 'a' (10, delta 170).
     const image = await provider.nearestImage(46.5, 10.4, 180);
-    expect(image?.imageUrl).toBe('https://img/b');
+    expect(image?.imageId).toBe('b');
   });
 
   it('skips 360° panoramas in favour of a flat frame', async () => {
@@ -92,7 +93,7 @@ describe('MapillaryGraphProvider', () => {
     };
     const provider = new MapillaryGraphProvider(makeConfig('MLY|tok'));
     const image = await provider.nearestImage(46.5, 10.4);
-    expect(image?.imageUrl).toBe('https://img/flat');
+    expect(image?.imageId).toBe('flat');
   });
 
   it('returns null when there is no coverage', async () => {
@@ -116,5 +117,43 @@ describe('MapillaryGraphProvider', () => {
     await expect(provider.nearestImage(46.5, 10.4)).rejects.toThrow(
       /Mapillary API error/,
     );
+  });
+
+  it('proxies a thumbnail: resolves the id, then streams the CDN bytes', async () => {
+    let call = 0;
+    globalThis.fetch = ((url: string) => {
+      call += 1;
+      if (call === 1) {
+        // Resolve the current thumb URL for the id (auth header, Graph API).
+        expect(url).toContain('graph.mapillary.com/abc123');
+        expect(url).toContain('fields=thumb_1024_url');
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: () =>
+            Promise.resolve({ thumb_1024_url: 'https://cdn/thumb.jpg' }),
+        } as unknown as Response);
+      }
+      // Fetch the bytes from the CDN (no auth header).
+      expect(url).toBe('https://cdn/thumb.jpg');
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: () => 'image/jpeg' },
+        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
+      } as unknown as Response);
+    }) as typeof fetch;
+
+    const provider = new MapillaryGraphProvider(makeConfig('MLY|tok'));
+    const thumb = await provider.thumbnail('abc123');
+    expect(thumb?.contentType).toBe('image/jpeg');
+    expect(thumb?.body).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('thumbnail is inert without a token', async () => {
+    const provider = new MapillaryGraphProvider(makeConfig(undefined));
+    await expect(provider.thumbnail('abc123')).resolves.toBeNull();
   });
 });

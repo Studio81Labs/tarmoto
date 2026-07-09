@@ -12,10 +12,12 @@ const getRoadPreviewMock = vi.mocked(plannerApi.getRoadPreview);
 const getSegmentImageryMock = vi.mocked(plannerApi.getSegmentImagery);
 
 // Imagery now streams in via a separate call, merged onto the quality card.
+// imageUrl is the backend thumb proxy (the browser never hits Mapillary).
 const IMAGE = {
-  imageUrl: "https://images.mapillary.example/thumb.jpg",
+  imageUrl: "http://localhost:3000/api/v1/roads/segment-imagery/thumb/mly-1",
   imageCapturedAt: "2024-09-15",
   imageAttribution: "© rider · Mapillary (CC BY-SA)",
+  imageLink: "https://www.mapillary.com/app/?pKey=mly-1",
 };
 
 function segment(overrides?: Partial<RouteSegment>): RouteSegment {
@@ -75,11 +77,15 @@ describe("RoadPreviewPopover", () => {
     expect(screen.getByText("QUALITY ACROSS SECTION")).toBeInTheDocument();
     expect(screen.getByText(/captured/i)).toBeInTheDocument();
     expect(screen.getByText("Sep 2024", { exact: false })).toBeInTheDocument();
-    // Real Mapillary image + its required CC-BY-SA attribution.
+    // Real image loaded through the backend proxy (not Mapillary's CDN).
     expect(
       screen.getByRole("img", { name: /street-level preview/i }),
-    ).toHaveAttribute("src", "https://images.mapillary.example/thumb.jpg");
-    expect(screen.getByText(/Mapillary \(CC BY-SA\)/)).toBeInTheDocument();
+    ).toHaveAttribute("src", IMAGE.imageUrl);
+    // The CC-BY-SA credit is a LINK back to the Mapillary image page.
+    const credit = screen.getByRole("link", {
+      name: /Mapillary \(CC BY-SA\)/,
+    });
+    expect(credit).toHaveAttribute("href", IMAGE.imageLink);
     expect(
       screen.getByRole("link", { name: /Google Street View/ }),
     ).toBeInTheDocument();

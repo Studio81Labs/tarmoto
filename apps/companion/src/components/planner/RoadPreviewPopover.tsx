@@ -136,13 +136,19 @@ function StreetLevelThumb({
           {preview.imageUrl ? t("MAPILLARY ") : t("NO STREET IMAGERY ")}
         </Mono>
       </div>
-      {/* CC-BY-SA credit, required for Mapillary imagery (ADR-0009). */}
+      {/* CC-BY-SA credit — Mapillary requires a visible credit LINKING back to
+          the image page (ADR-0009). */}
       {preview.imageUrl && preview.imageAttribution ? (
-        <div className="absolute bottom-1.5 right-2 rounded-[4px] bg-ink/60 px-1.5 py-0.5">
-          <Mono className="text-[7.5px] tracking-[0.3px] text-cream/90">
+        <a
+          href={preview.imageLink}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="absolute bottom-1.5 right-2 rounded-[4px] bg-ink/60 px-1.5 py-0.5 transition-colors hover:bg-ink/80"
+        >
+          <Mono className="text-[7.5px] tracking-[0.3px] text-cream/90 underline decoration-cream/40">
             {preview.imageAttribution}
           </Mono>
-        </div>
+        </a>
       ) : null}
     </div>
   );

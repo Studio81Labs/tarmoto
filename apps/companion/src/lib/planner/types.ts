@@ -84,6 +84,8 @@ export interface RoadPreview {
   imageCapturedAt?: string;
   /** Required credit line for the imagery (Mapillary is CC-BY-SA). */
   imageAttribution?: string;
+  /** Public image page the credit links back to (attribution requirement). */
+  imageLink?: string;
   /** Raw OSM surface tag shown as unverified fallback, e.g. "asphalt". */
   osmSurfaceTag?: string;
 }
@@ -250,7 +252,7 @@ export interface PlannerApi {
     segment: RouteSegment,
   ): Promise<Pick<
     RoadPreview,
-    "imageUrl" | "imageCapturedAt" | "imageAttribution"
+    "imageUrl" | "imageCapturedAt" | "imageAttribution" | "imageLink"
   > | null>;
 
   /**

@@ -25,7 +25,8 @@ The backend proxies street-level imagery through **Mapillary** via a new `GET /a
 
 - `MapillaryGraphProvider` calls Graph API v4 `graph.mapillary.com/images` (radius search, capped at 50 m) with a client access token from **`TARMOTO_MAPILLARY_TOKEN`**, preferring a flat (non-pano) frame whose compass angle best matches the travel `bearing`.
 - `MapillaryService` caches results (12 h TTL, bounded LRU) — including "no coverage" — so repeated hovers don't re-query. Only thrown errors stay uncached.
-- The endpoint returns a normalized `{ imageUrl, capturedAt, attribution }` (all nullable), **not** the raw Mapillary payload, so swapping providers later is a one-module change. `attribution` carries the required CC-BY-SA credit line, which the companion renders over the image.
+- The endpoint returns a normalized `{ imageId, capturedAt, attribution, link }` (all nullable), **not** the raw Mapillary payload, so swapping providers later is a one-module change. `attribution` + `link` carry the required CC-BY-SA credit, which the companion renders as a link back to the image page.
+- The **thumbnail itself is proxied**: the client loads it from `GET /roads/segment-imagery/thumb/{imageId}`, which streams the bytes server-side (byte-cached). So the rider's browser never contacts Mapillary's CDN — no IP or viewed-section leak. That endpoint is necessarily public (an `<img>` can't send a bearer) but rate-limited, and only proxies public Mapillary thumbnails (no rider data).
 
 Proxying (rather than the companion calling Mapillary directly) is deliberate: it keeps the token **server-side**, lets us cache/rate-limit centrally, and avoids leaking rider IPs + hover coordinates to a third party.
 
