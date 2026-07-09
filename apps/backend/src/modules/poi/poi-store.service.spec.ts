@@ -395,6 +395,22 @@ describe('PoiStoreService', () => {
         'hotel',
       );
     });
+
+    it('ignores a free-form kind that is an inherited Object property (e.g. toString) (#926)', async () => {
+      // A bogus kind matching an Object.prototype member must not read the
+      // inherited value and build a `tags @> \'{}\'` clause (which would match
+      // essentially every POI). Own-property lookups only.
+      await service.findAlongRoute(route, ['toString', 'restaurant'], 2);
+      const tagPatterns = qb.andWhere.mock.calls
+        .flatMap(([, params]) =>
+          params ? Object.entries(params as Record<string, unknown>) : [],
+        )
+        .filter(([key]) => key.startsWith('ktag'))
+        .map(([, value]) => value);
+      // `toString` yields no tag-match; only the real `restaurant` pattern.
+      expect(tagPatterns).not.toContain('{}');
+      expect(tagPatterns).toContain('{"amenity":"restaurant"}');
+    });
   });
 
   describe('findPointsOfInterestNear (store-first source)', () => {

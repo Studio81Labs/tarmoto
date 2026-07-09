@@ -567,9 +567,13 @@ function kindMatchClause(
   };
   const clauses = ['poi.kind IN (:...kinds)'];
   queryKinds.forEach((kind, i) => {
-    const tag = POI_KIND_TAGS[kind as PoiKind] as
-      | { key: string; value: string }
-      | undefined;
+    // OWN properties only (#926 review): `/poi/in-corridor` takes free-form
+    // stored kinds, so a value like `toString` or `constructor` would otherwise
+    // read an inherited `Object.prototype` member — a truthy non-tag that builds
+    // a `tags @> '{}'` clause matching essentially every POI.
+    const tag = Object.hasOwn(POI_KIND_TAGS, kind)
+      ? (POI_KIND_TAGS[kind as PoiKind] as { key: string; value: string })
+      : undefined;
     if (!tag) return;
     params[`ktag${i}`] = JSON.stringify({ [tag.key]: tag.value });
     clauses.push(
