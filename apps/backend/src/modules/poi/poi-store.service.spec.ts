@@ -308,6 +308,37 @@ describe('PoiStoreService', () => {
       expect(pois).toHaveLength(100); // STORE_PER_KIND_LIMIT, not 200
     });
 
+    it('trims the all-kinds overfetch to the nearest-to-route MAX_LIMIT before the route sort (#869)', async () => {
+      // All-kinds → one global query fetching MAX_LIMIT × DEDUP_OVERFETCH rows,
+      // nearest-to-route first. The overfetch must be trimmed to the MAX_LIMIT
+      // NEAREST-to-route rows before the along-route sort — otherwise sorting all
+      // 1000 by route position and slicing 500 keeps the earliest-along-route,
+      // letting a far-off-route row displace a closer one. Flat route at lat 49.5
+      // so along-route ∝ lng and off-route ∝ |lat − 49.5|. Rows are supplied
+      // nearest-off-route first (the DB order); the nearest (i=0) is LATEST along
+      // the route and the farthest (i=500) is EARLIEST — so the two orderings
+      // disagree and the trim's effect is observable.
+      const flatRoute = [
+        { lat: 49.5, lng: 18.0 },
+        { lat: 49.5, lng: 19.0 },
+      ];
+      const byDistance = Array.from({ length: 501 }, (_, i) =>
+        makePoi({
+          external_id: `osm:node:${i}`,
+          geom: {
+            type: 'Point',
+            coordinates: [18.9 - i * 0.001, 49.5 + i * 1e-4],
+          },
+        }),
+      );
+      qb.getMany.mockResolvedValueOnce(byDistance);
+      const { pois } = await service.findAlongRoute(flatRoute, undefined, 20);
+      const ids = pois.map((p) => p.external_id);
+      expect(pois).toHaveLength(500); // MAX_LIMIT, not 1000
+      expect(ids).toContain('osm:node:0'); // nearest-to-route → kept
+      expect(ids).not.toContain('osm:node:500'); // farthest-to-route → trimmed
+    });
+
     it('clamps the buffer to the max and adds a kind filter', async () => {
       const { buffer_km } = await service.findAlongRoute(
         route,

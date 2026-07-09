@@ -214,15 +214,20 @@ export class PoiStoreService {
     const deduped = dedupeAcrossSources(withinBuffer, (x) =>
       poiDedupKey(x.poi),
     );
-    // Trim the per-kind DEDUP_OVERFETCH headroom back to STORE_PER_KIND_LIMIT so
-    // one dense kind can't surface the doubled fetch on an OSM-only read (see
-    // capPerKind). Rows are still nearest-to-route within each kind here, so this
-    // keeps the closest. An all-kinds read used one global MAX_LIMIT query with
-    // no per-kind partition, so the final global slice below is its only cap.
+    // Trim the DEDUP_OVERFETCH headroom back to the real cap BEFORE the
+    // route-order sort, so the doubled fetch can't change which rows show on an
+    // OSM-only read (de-dup no-op). Both branches carry the rows nearest-to-route
+    // first here (the per-kind and all-kinds queries both order by ST_Distance to
+    // the line), so trimming keeps the closest:
+    //  - per kind: STORE_PER_KIND_LIMIT each, so one dense kind can't crowd
+    //    sparser ones out of the along-route sort below;
+    //  - all kinds: the global MAX_LIMIT nearest-to-route — otherwise sorting all
+    //    MAX_LIMIT×2 by route position and slicing MAX_LIMIT would keep the
+    //    earliest-along-route, letting a far-off-route row displace a closer one.
     const trimmed =
       kinds && kinds.length > 0
         ? capPerKind(deduped, STORE_PER_KIND_LIMIT, (x) => x.poi.kind)
-        : deduped;
+        : deduped.slice(0, MAX_LIMIT);
     const annotated = trimmed
       .sort(
         (a, b) =>
