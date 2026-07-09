@@ -10,9 +10,9 @@ const lngDeg = (lat: number, km: number): number =>
   km / (LAT_KM_PER_DEGREE * Math.cos((lat * Math.PI) / 180));
 
 describe('radiusCoverageSamples (#925)', () => {
-  it('returns the centre plus the four cardinal rim points of the disc', () => {
+  it('returns the centre plus four cardinal AND four diagonal rim points', () => {
     const samples = radiusCoverageSamples(49, 16, 25);
-    expect(samples).toHaveLength(5);
+    expect(samples).toHaveLength(9);
     const dLat = 25 / LAT_KM_PER_DEGREE;
     const dLng = lngDeg(49, 25);
     expect(samples[0]).toEqual({ lat: 49, lng: 16 }); // centre
@@ -20,15 +20,26 @@ describe('radiusCoverageSamples (#925)', () => {
     expect(samples[2]?.lat).toBeCloseTo(49 - dLat, 6); // S rim
     expect(samples[3]?.lng).toBeCloseTo(16 + dLng, 6); // E rim
     expect(samples[4]?.lng).toBeCloseTo(16 - dLng, 6); // W rim
+    // Diagonals sit a full radius out (offset radius/√2 per axis).
+    expect(samples[5]?.lat).toBeCloseTo(49 + dLat / Math.SQRT2, 6); // NE
+    expect(samples[5]?.lng).toBeCloseTo(16 + dLng / Math.SQRT2, 6);
+    expect(samples[8]?.lat).toBeCloseTo(49 - dLat / Math.SQRT2, 6); // SW
+    expect(samples[8]?.lng).toBeCloseTo(16 - dLng / Math.SQRT2, 6);
   });
 
-  it('spans the disc so a large-radius request that clears the frontier has an off-coverage sample', () => {
-    // The rim points sit a full radius from the centre, so a request whose centre
-    // is covered but whose radius spills past the import edge exposes an uncovered
-    // rim sample — that is what forces the Overpass merge (#925 P1 review).
+  it('caps the angular rim gap so a ~45° import edge cannot slip a wedge past coverage (#925 review)', () => {
+    // Every rim point (incl. diagonals) is a full radius from the centre, and the
+    // 45° spacing keeps adjacent-rim chords under the coverage buffer — so a
+    // request whose centre is covered but whose disc clears the import edge
+    // exposes an uncovered rim sample and forces the Overpass merge.
     const samples = radiusCoverageSamples(0, 0, 111.132);
-    expect(samples[3]?.lng).toBeCloseTo(1, 3); // ~1° east at the equator
-    expect(samples[4]?.lng).toBeCloseTo(-1, 3);
+    // At the equator km/° longitude equals km/° latitude, so a plain scale works.
+    const distKm = (s: { lat: number; lng: number }): number =>
+      Math.hypot(s.lat * LAT_KM_PER_DEGREE, s.lng * LAT_KM_PER_DEGREE);
+    // All eight rim points are ~one radius (111 km) from the centre.
+    for (const rim of samples.slice(1)) {
+      expect(distKm(rim)).toBeCloseTo(111.132, 0);
+    }
   });
 });
 
@@ -84,6 +95,22 @@ describe('routeCoverageSamples (#925 P2)', () => {
     const lngs = samples.map((s) => s.lng);
     expect(Math.min(...lngs)).toBeCloseTo(16, 1);
     expect(Math.max(...lngs)).toBeCloseTo(16.5, 1);
+  });
+
+  it('widens the stride on a very long route so the list stays bounded WITH rails intact (#925 review)', () => {
+    // ~6,700 km equatorial route. At a fixed 20 km stride this would emit >1,000
+    // samples, forcing the store's lane-blind downsample to keep only every 3rd —
+    // i.e. drop every rail. The adaptive stride keeps it bounded while preserving
+    // the centre/+rail/-rail triplets.
+    const longRoute = [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 60 },
+    ];
+    const samples = routeCoverageSamples(longRoute, 2);
+    expect(samples.length).toBeLessThan(512);
+    expect(samples.length % 3).toBe(0); // whole triplets, no truncation
+    // Rails survived: samples exist off the 0° centreline.
+    expect(samples.some((s) => Math.abs(s.lat) > 1e-3)).toBe(true);
   });
 });
 

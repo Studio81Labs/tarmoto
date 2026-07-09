@@ -64,13 +64,14 @@ const STORE_PER_KIND_LIMIT = 100;
 const DEDUP_OVERFETCH = 2;
 
 /**
- * Hard cap on coverage-probe samples per {@link PoiStoreService.hasImportedCoverage}
- * call (#925 review). The route sampler already bounds itself by
- * route-length / stride, but a pathologically long route (or any future caller)
- * must not build a VALUES list that exceeds PostgreSQL's 65 535 bind-param limit
- * (6 params/sample) and turn the coverage lookup into a hard SQL error instead of
- * a graceful fallback. 512 samples = 3 073 params — ample headroom; beyond it the
- * samples are evenly downsampled, coarsening (never breaking) the probe.
+ * Last-resort cap on coverage-probe samples per
+ * {@link PoiStoreService.hasImportedCoverage} call (#925 review), so no caller can
+ * build a VALUES list past PostgreSQL's 65 535 bind-param limit (6 params/sample)
+ * and turn the lookup into a hard SQL error instead of a graceful fallback. 512
+ * samples = 3 073 params. The real callers stay well under it by construction —
+ * `radiusCoverageSamples` is 9, and `routeCoverageSamples` widens its stride to
+ * bound itself to ~486 — so this only fires for an unforeseen caller and its
+ * even (lane-blind) downsample never has to thin a route's rail triplets.
  */
 const MAX_COVERAGE_SAMPLES = 512;
 

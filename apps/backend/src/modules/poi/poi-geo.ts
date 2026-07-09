@@ -157,10 +157,18 @@ export const COVERAGE_BUFFER_KM = 20;
 
 /**
  * Sample points that span a `radiusKm` disc for the coverage probe (#925) — its
- * centre plus the four cardinal points on the rim. Coverage is proven across the
- * disc (every sample near an import), NOT from one point anywhere inside it, so a
- * large-radius request that spills past the import frontier has an uncovered rim
- * sample and correctly falls through to an Overpass merge (#925 P1 review).
+ * centre plus EIGHT rim points (four cardinal + four diagonal). Coverage is
+ * proven across the disc (every sample near an import), NOT from one point
+ * anywhere inside it, so a large-radius request that spills past the import
+ * frontier has an uncovered rim sample and correctly falls through to an Overpass
+ * merge (#925 P1 review).
+ *
+ * The diagonals are required (#925 review): cardinal-only rim points leave a
+ * ~45° gap, so an import edge cutting the disc diagonally could keep the N/E
+ * samples inside the 20 km buffer while the NE rim (a full radius out) sits in
+ * un-imported territory. Eight rim points cap the angular gap at 45°, whose
+ * chord for a 25 km radius is ~19 km — under the coverage buffer, so adjacent
+ * rim probes overlap and no wedge escapes.
  */
 export function radiusCoverageSamples(
   lat: number,
@@ -169,12 +177,19 @@ export function radiusCoverageSamples(
 ): { lat: number; lng: number }[] {
   const dLat = radiusKm / LAT_KM_PER_DEGREE;
   const dLng = radiusKm / lngKmPerDegree(lat);
+  // Diagonal offset: radius / √2 per axis lands the point a full radius out.
+  const dLatDiag = dLat / Math.SQRT2;
+  const dLngDiag = dLng / Math.SQRT2;
   return [
     { lat, lng },
     { lat: lat + dLat, lng },
     { lat: lat - dLat, lng },
     { lat, lng: lng + dLng },
     { lat, lng: lng - dLng },
+    { lat: lat + dLatDiag, lng: lng + dLngDiag },
+    { lat: lat + dLatDiag, lng: lng - dLngDiag },
+    { lat: lat - dLatDiag, lng: lng + dLngDiag },
+    { lat: lat - dLatDiag, lng: lng - dLngDiag },
   ];
 }
 
@@ -190,6 +205,15 @@ function offsetKm(
     lng: lng + eastKm / lngKmPerDegree(lat),
   };
 }
+
+/**
+ * Max centreline strides {@link routeCoverageSamples} emits on a long route
+ * before it widens the stride (#925 review). With both rails that is ~3× this
+ * many samples (~486) — comfortably under the store's `MAX_COVERAGE_SAMPLES`
+ * downsample cap (512), so a route's sample list never reaches that cap and its
+ * `[centre, +rail, -rail]` triplets survive intact. Keep this × 3 < that cap.
+ */
+const MAX_ROUTE_COVERAGE_STRIDES = 160;
 
 /** Unit perpendicular (east/north km space) and length (km) of segment a→b. */
 function segGeom(
@@ -220,7 +244,13 @@ function segGeom(
  * polyline can have thousands of sub-stride segments, and emitting one sample
  * per segment would blow the sample count (and downstream SQL bind-param limit).
  * The stride walk bounds the count to route-length / stride regardless of vertex
- * density; {@link PoiStoreService.hasImportedCoverage} caps it further.
+ * density.
+ *
+ * On a very long route the stride is WIDENED so the centreline count stays under
+ * {@link MAX_ROUTE_COVERAGE_STRIDES} (#925 review): this bounds the output well
+ * below the store's downsample cap, so `hasImportedCoverage` never has to
+ * lane-blindly thin the flat sample list and accidentally drop every rail —
+ * which would silently regress the corridor-width check on the longest routes.
  */
 export function routeCoverageSamples(
   route: ReadonlyArray<{ lat: number; lng: number }>,
@@ -230,7 +260,18 @@ export function routeCoverageSamples(
   if (first === undefined) return [];
   if (route.length === 1) return [{ lat: first.lat, lng: first.lng }];
 
-  const stride = Math.max(COVERAGE_BUFFER_KM, 0.5);
+  // Total corridor length (same equirectangular metric the walk below uses),
+  // to widen the stride on a very long route so the sample count stays bounded.
+  let totalKm = 0;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    if (a !== undefined && b !== undefined) totalKm += segGeom(a, b).lenKm;
+  }
+  const stride = Math.max(
+    COVERAGE_BUFFER_KM,
+    totalKm / MAX_ROUTE_COVERAGE_STRIDES,
+  );
   const out: { lat: number; lng: number }[] = [];
   const emit = (
     lat: number,
