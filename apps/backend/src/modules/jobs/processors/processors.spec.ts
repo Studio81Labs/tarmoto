@@ -183,12 +183,13 @@ describe('DigestWeeklyProcessor', () => {
     // AT TIME ZONE. If anyone reverts to interpolating the raw value
     // again, this assertion fails.
     expect(sql).toMatch(/AT TIME ZONE tz_resolution\.tz/);
-    // Sanity: the query never passes the raw preferences->>'timezone'
-    // directly to AT TIME ZONE (the foot-gun the lateral subquery
-    // exists to remove).
-    expect(sql).not.toMatch(
-      /AT TIME ZONE\s+COALESCE\(NULLIF\(u\.preferences->>'timezone'/,
-    );
+    // The rider timezone is sourced from the persisted, user-writable
+    // `notification_preferences.quiet_hours_timezone` — NOT
+    // `users.preferences->>'timezone'`, which has no writer in any settings
+    // path (the profile DTO whitelist rejects the key) and would silently pin
+    // every rider to UTC. A regression back to that dead field fails here.
+    expect(sql).toMatch(/quiet_hours_timezone/);
+    expect(sql).not.toMatch(/preferences->>'timezone'/);
     // Digest opt-in is the typed `notification_preferences.email_digest`, not
     // the legacy `users.preferences` flag (#278) — a stale check would email
     // every rider regardless of the 'daily'/'never' they picked.

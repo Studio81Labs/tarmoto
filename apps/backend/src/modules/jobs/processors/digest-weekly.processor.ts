@@ -41,9 +41,13 @@ const DIGEST_LOCAL_DOW = 0; // Sunday in IANA POSIX (0=Sun, 1=Mon, ...).
  *      since dispatch → compose is async, and skips a rider with no
  *      rides that week rather than sending an empty digest.
  *
- * The dispatcher reads `users.preferences.timezone` (string IANA tz
- * like "Europe/Bratislava"). Users without a timezone fall back to
- * UTC, which gives them a Sunday 08:00 UTC window. Digest opt-in is
+ * The dispatcher reads each rider's timezone from
+ * `notification_preferences.quiet_hours_timezone` (string IANA tz like
+ * "Europe/Bratislava"). That is the only persisted, user-writable timezone —
+ * `users.preferences` has no timezone key and the profile DTO's whitelist
+ * (`forbidNonWhitelisted`) would reject one, so reading it there pins every
+ * rider to UTC. Riders with no notification-prefs row (lazily created) or an
+ * empty value fall back to UTC → a Sunday 08:00 UTC window. Digest opt-in is
  * `notification_preferences.email_digest = 'weekly'` (a lazily-created
  * row → default 'weekly' when absent; 'daily'/'never' opts out),
  * checked at both dispatch and compose.
@@ -86,15 +90,15 @@ export class DigestWeeklyProcessor extends WorkerHost {
     // would scale poorly.
     //
     // CRITICAL: `AT TIME ZONE '<bad-zone>'` raises a Postgres error that
-    // aborts the WHOLE query. A single user with `preferences.timezone =
+    // aborts the WHOLE query. A single user with `quiet_hours_timezone =
     // "Foo/Bar"` would prevent the digest from going out for *anyone*.
-    // Resolve each user's tz through a LATERAL join against
-    // `pg_timezone_names` (Postgres's authoritative IANA table). An
-    // unknown name returns no row → COALESCE picks 'UTC' → AT TIME ZONE
-    // sees only known-valid input. The lateral subquery is evaluated
-    // once per row but `pg_timezone_names` is a small (~600 entry)
-    // in-memory catalog, so the cost is negligible compared to the
-    // outer scan.
+    // Resolve each user's tz (from the LEFT-JOINed notification_preferences)
+    // through a LATERAL join against `pg_timezone_names` (Postgres's
+    // authoritative IANA table). An unknown/absent name returns no row →
+    // COALESCE picks 'UTC' → AT TIME ZONE sees only known-valid input. The
+    // lateral subquery is evaluated once per row but `pg_timezone_names` is a
+    // small (~600 entry) in-memory catalog, so the cost is negligible compared
+    // to the outer scan.
     //
     // Digest opt-in lives in the typed `notification_preferences.email_digest`
     // ('weekly'|'daily'|'never'), NOT `users.preferences` — #278 moved it out.
@@ -130,7 +134,7 @@ export class DigestWeeklyProcessor extends WorkerHost {
           (
             SELECT ptn.name
             FROM pg_timezone_names ptn
-            WHERE ptn.name = NULLIF(u.preferences->>'timezone', '')
+            WHERE ptn.name = NULLIF(np.quiet_hours_timezone, '')
             LIMIT 1
           ),
           'UTC'
