@@ -494,16 +494,24 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       const controller = new AbortController();
       const timer = window.setTimeout(() => {
         const b = map.getBounds();
-        // Clamp to the ranges `/poi/in-bbox` accepts — zoomed far out,
-        // getBounds() can exceed [-180,180]/[-90,90] and the request would 400.
-        const west = Math.max(-180, Math.min(180, b.getWest()));
-        const east = Math.max(-180, Math.min(180, b.getEast()));
-        const south = Math.max(-90, Math.min(90, b.getSouth()));
-        const north = Math.max(-90, Math.min(90, b.getNorth()));
-        // Degenerate/antimeridian-crossing viewport (west ≥ east): no valid
-        // request for this view, so clear rather than leave the previous
-        // viewport's pins visible/clickable.
-        if (west >= east || south >= north) {
+        const west = b.getWest();
+        const east = b.getEast();
+        const south = b.getSouth();
+        const north = b.getNorth();
+        // `/poi/in-bbox` needs a single in-range, non-inverted box. A viewport
+        // zoomed far out (bounds past ±180/±90) or wrapped across the
+        // antimeridian (e.g. west=170/east=190, or west ≥ east) would otherwise
+        // 400 or fetch only a partial slice — clear and skip rather than
+        // present partial/stale results. (Clamping wouldn't help: 170..190
+        // clamps to 170..180 and silently drops the -180..-170 half.)
+        if (
+          west < -180 ||
+          east > 180 ||
+          south < -90 ||
+          north > 90 ||
+          west >= east ||
+          south >= north
+        ) {
           poisByIdRef.current = new Map();
           setPoiSourceData(map, []);
           setPoiMenu(null);
