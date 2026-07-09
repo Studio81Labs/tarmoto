@@ -1137,6 +1137,11 @@ const TripPlannerMapContent = forwardRef<
         ROUTE_HIT_LINE,
         WAYPOINT_PIN,
         POI_PIN_LAYER,
+        // Hazard pins/clusters sit over the road layers and own their own
+        // click — don't also open the segment drawer underneath.
+        HAZARD_BG,
+        HAZARD_ICON,
+        HAZARD_CLUSTERS,
       ].filter((id) => map.getLayer(id));
       if (
         blockingLayers.length > 0 &&
