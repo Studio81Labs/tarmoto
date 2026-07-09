@@ -8,6 +8,7 @@ import { BadgesModule } from '../badges/index.js';
 import { AccountModule } from '../account/index.js';
 import { DataExportModule } from '../account/data-export/data-export.module.js';
 import { RoadsModule } from '../roads/index.js';
+import { EmailModule } from '../email/index.js';
 import { PushModule } from '../push/push.module.js';
 import { WeatherModule } from '../weather/weather.module.js';
 import { ALL_QUEUE_NAMES } from './jobs.constants.js';
@@ -108,6 +109,7 @@ export class JobsModule {
         AccountModule,
         DataExportModule,
         RoadsModule,
+        EmailModule,
         PushModule,
         WeatherModule,
         ModelEvalModule,

@@ -40,6 +40,18 @@ export class NotificationPreferencesService {
     userId: string,
     dto: UpdateNotificationPreferencesDto,
   ): Promise<NotificationPreferencesResponseDto> {
+    // A timezone-only patch — the mobile / companion background timezone sync —
+    // is written atomically (upsert of just that column) so it can't clobber a
+    // concurrent full save. The read-modify-write path below overwrites EVERY
+    // column, so if a tz-only request read the row before another client's
+    // settings save but committed after it, it would restore the pre-save
+    // email_digest / categories while the UI reported success. A user-facing
+    // save always carries other fields, so it takes the full path.
+    if (isTimezoneOnlyPatch(dto)) {
+      await this.setTimezone(userId, dto.quiet_hours_timezone || 'UTC');
+      return this.get(userId);
+    }
+
     const existing = await this.repo.findOne({ where: { user_id: userId } });
 
     // Merge against current persisted state (or defaults) so the
@@ -64,6 +76,40 @@ export class NotificationPreferencesService {
     const saved = await this.repo.save(row);
     return mergeWithDefaults(saved);
   }
+
+  /**
+   * Atomic upsert of only `quiet_hours_timezone`. ON CONFLICT touches that one
+   * column (and updated_at), leaving email_digest / categories / quiet-hours
+   * windows intact — so a background timezone sync from one client can't undo a
+   * concurrent preferences save from another. Omitted columns take their table
+   * defaults on insert (all NOT NULL DEFAULT ...).
+   */
+  private async setTimezone(userId: string, timezone: string): Promise<void> {
+    await this.repo.query(
+      `INSERT INTO notification_preferences (user_id, quiet_hours_timezone)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE
+         SET quiet_hours_timezone = EXCLUDED.quiet_hours_timezone,
+             updated_at = now()`,
+      [userId, timezone],
+    );
+  }
+}
+
+/**
+ * True when the patch sets only `quiet_hours_timezone` — the background sync
+ * shape — so `update` can route it to the atomic single-column write instead of
+ * a full read-modify-write.
+ */
+function isTimezoneOnlyPatch(dto: UpdateNotificationPreferencesDto): boolean {
+  return (
+    dto.quiet_hours_timezone !== undefined &&
+    dto.email_digest === undefined &&
+    dto.marketing_emails === undefined &&
+    dto.quiet_hours_start === undefined &&
+    dto.quiet_hours_end === undefined &&
+    dto.categories === undefined
+  );
 }
 
 function applyPatch(
