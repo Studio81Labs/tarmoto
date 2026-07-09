@@ -30,12 +30,26 @@ const DIGEST_LOCAL_DOW = 0; // Sunday in IANA POSIX (0=Sun, 1=Mon, ...).
  * produces the next hourly job only when the previous one starts, and computes
  * that next slot from `max(prevSlot, now)` — so after a multi-hour outage it
  * runs the single pending slot and then jumps to the next FUTURE slot, skipping
- * the hours in between. Matching riders whose local time is in
- * `[08:00, 08:00 + DIGEST_CATCHUP_HOURS)` lets the first post-outage run
- * re-enqueue everyone whose local 08:00 fell in the gap. The window boundary
- * stays pinned to 08:00, so the per-(user, week) jobId is identical and the
- * overlap with on-time hourly runs dedups to a no-op. Bounds the replay so a
- * long outage doesn't fan out stale digests — anything older is next week's.
+ * the UTC hours between.
+ *
+ * Coverage comes from EVERY run, not just the pending one: a run at slot T
+ * matches riders whose LOCAL time is in `[08:00, 08:00 + DIGEST_CATCHUP_HOURS)`
+ * and pins the window to their local 08:00 — i.e. it replays every zone whose
+ * local 08:00 fell in `[T - (DIGEST_CATCHUP_HOURS - 1)h, T]`. That is the same
+ * set iterating those skipped UTC slots at T would produce, in one query. So
+ * after a 07:00–10:00 UTC outage the pending 07:00 run covers the zones east of
+ * it, and the next scheduled run (~11:00, created when the pending job starts,
+ * so ≤1h later) covers UTC / UTC-1 / UTC-2 at local 11:00 / 10:00 / 09:00 —
+ * together they replay the whole gap, up to DIGEST_CATCHUP_HOURS. A longer
+ * outage lets the earliest zones roll to next week: bounded on purpose so a
+ * backlog never fans out stale digests. The pinned 08:00 boundary keeps the
+ * per-(user, week) jobId identical, so overlap with on-time runs dedups to a
+ * no-op.
+ *
+ * Residual: if the worker recovers, runs the pending slot, then dies again
+ * before the next scheduled slot, the still-west zones wait for the following
+ * run. Acceptable for a weekly mail; forward slot-iteration would close it at
+ * the cost of a wall-clock bound + one query per caught-up hour.
  */
 const DIGEST_CATCHUP_HOURS = 6;
 
