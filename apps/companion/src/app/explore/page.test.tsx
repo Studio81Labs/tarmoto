@@ -111,6 +111,34 @@ vi.mock("@/components/PassesPanel", () => ({
   ),
 }));
 
+// The shared address-search field (tested on its own in the planner suite) is
+// stubbed to a button that fires `onSelect` with a fixed place, so this suite
+// asserts only the /explore integration: picking flies the map + mirrors the
+// store.
+vi.mock("@/components/planner/GeocodeSearchField", () => ({
+  GeocodeSearchField: ({
+    ariaLabel,
+    onSelect,
+  }: {
+    ariaLabel: string;
+    onSelect: (r: { name: string; lat: number; lng: number }) => void;
+  }) => (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={() =>
+        onSelect({
+          name: "Tatra Mountains, Slovakia",
+          lat: 49.165,
+          lng: 19.973,
+        })
+      }
+    >
+      {ariaLabel}
+    </button>
+  ),
+}));
+
 const apiGetMock = vi.fn();
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -225,36 +253,11 @@ describe("ExplorerPage", () => {
     });
   });
 
-  it("T29: typing in the search input geocodes and flies the map to the picked place (#573)", async () => {
-    apiGetMock.mockResolvedValueOnce({
-      data: {
-        results: [
-          { label: "Tatra Mountains, Slovakia", lat: 49.165, lng: 19.973 },
-        ],
-      },
-      error: undefined,
-    });
-
+  it("T29: picking an address-search result flies the map to the place (#573)", () => {
     render(<ExplorerPage />);
 
-    const input = screen.getByRole("textbox", {
-      name: /search for a place/i,
-    });
-    fireEvent.focus(input);
-    fireEvent.change(input, { target: { value: "Tatra" } });
-
-    // The geocode is debounced ~350ms; wait for the API call.
-    await waitFor(() => {
-      expect(apiGetMock).toHaveBeenCalledWith(
-        "/api/v1/geocode",
-        expect.objectContaining({ params: { query: { q: "Tatra" } } }),
-      );
-    });
-
-    const result = await screen.findByRole("button", {
-      name: /tatra mountains/i,
-    });
-    fireEvent.click(result);
+    // Pick a place from the (stubbed) address search field.
+    fireEvent.click(screen.getByRole("button", { name: /address search/i }));
 
     // Camera fly: MapCanvas reads center/zoom only at init, so
     // a store-only update wouldn't move the visible map. Assert
@@ -282,7 +285,7 @@ describe("ExplorerPage", () => {
     render(<ExplorerPage />);
 
     expect(
-      screen.queryByRole("textbox", { name: /search for a place/i }),
+      screen.queryByRole("button", { name: /address search/i }),
     ).toBeNull();
   });
 

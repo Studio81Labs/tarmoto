@@ -23,6 +23,10 @@ import {
   type MapCanvasViewChange,
 } from "@/components/map/MapCanvas";
 import {
+  ensureAerialBasemap,
+  setAerialBasemapVisible,
+} from "@/components/map/AerialBasemap";
+import {
   HAZARD_CONFIG,
   HAZARD_TYPES_UI,
   formatRelativeTime,
@@ -88,6 +92,8 @@ interface Props {
   center: { lng: number; lat: number };
   zoom: number;
   filters: MapFilters;
+  /** Basemap under the overlays: the branded map, or aerial imagery. */
+  basemap?: "map" | "aerial";
   showQuality: boolean;
   showSurface: boolean;
   showHazards: boolean;
@@ -130,6 +136,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       center,
       zoom,
       filters,
+      basemap = "map",
       showQuality,
       showSurface,
       showHazards,
@@ -359,6 +366,11 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         map.on("mouseleave", id, unsetPointer);
       }
 
+      // Aerial imagery basemap, inserted below the quality overlay so the
+      // road-quality lines still read on top of it. Hidden until toggled.
+      ensureAerialBasemap(map, TARMOTO_QUALITY_LAYER);
+      setAerialBasemapVisible(map, basemap === "aerial");
+
       setReady(true);
       onViewChange?.(readMapView(map));
     };
@@ -366,6 +378,13 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     const handleViewChange = (view: MapCanvasViewChange) => {
       onViewChange?.(view);
     };
+
+    // ── aerial basemap visibility ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setAerialBasemapVisible(map, basemap === "aerial");
+    }, [basemap, ready]);
 
     // ── project raw hazards → filtered GeoJSON source ──
     useEffect(() => {

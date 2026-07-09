@@ -5,13 +5,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { useAuthStore } from "@/stores/auth";
 import {
-  MapPin,
-  Search,
   RotateCcw,
   Route,
   Bike,
   SlidersHorizontal,
   Map as MapIcon,
+  Layers3,
+  TriangleAlert,
+  Construction,
+  MountainSnow,
 } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -28,9 +30,10 @@ import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
 } from "@/components/roads/SegmentDetailSidebar";
-import { ApiError, api, roadsApi } from "@/lib/api";
+import { ApiError, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
+import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import { Button, Stamp } from "@tarmoto/ui";
 
@@ -82,6 +85,16 @@ const HAZARD_OPTIONS: {
 
 function formatBbox(bbox: readonly [number, number, number, number]): string {
   return bbox.join(",");
+}
+
+// Map-overlay toggle pill, styled like the planner's map controls: accent
+// outline + text when active, muted cream otherwise.
+const OVERLAY_PILL_BASE =
+  "flex items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[12.5px] font-bold shadow-[0_4px_12px_rgba(14,14,16,0.1)] backdrop-blur-[6px] transition";
+function overlayPillClass(active: boolean): string {
+  return active
+    ? `${OVERLAY_PILL_BASE} border-accent bg-cream text-accent`
+    : `${OVERLAY_PILL_BASE} border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink`;
 }
 
 // `<input type="date">` round-trip helpers. The element wants
@@ -194,6 +207,9 @@ function ExplorerPageInner() {
   // a follow-up (the button shell + active state land first).
   const [showMyTrips, setShowMyTrips] = useState(false);
   const [showMyRides, setShowMyRides] = useState(false);
+  // Basemap under the overlays — the branded map or aerial imagery (matches the
+  // planner/preview map/aerial toggle).
+  const [basemap, setBasemap] = useState<"map" | "aerial">("map");
   const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
@@ -325,6 +341,17 @@ function ExplorerPageInner() {
     };
   }, [selectedSegmentId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
+  // Road quality and surface are mutually exclusive overlays (one line-coloring
+  // vocabulary at a time, like the planner): activating one clears the other;
+  // clicking the active one turns it off.
+  const selectQualityOverlay = () => {
+    if (showSurfaceOverlay) toggleSurface();
+    toggleQuality();
+  };
+  const selectSurfaceOverlay = () => {
+    if (showQualityOverlay) toggleQuality();
+    toggleSurface();
+  };
   return (
     // Spec-aligned Route Explorer (v2-pages.jsx RoadExplorerView): a
     // 300|1fr grid with the Filters sidebar on the left, full-bleed
@@ -513,6 +540,7 @@ function ExplorerPageInner() {
               center={center}
               zoom={zoom}
               filters={filters}
+              basemap={basemap}
               showQuality={showQualityOverlay}
               showSurface={showSurfaceOverlay}
               showHazards={showHazardOverlay}
@@ -526,24 +554,19 @@ function ExplorerPageInner() {
             />
           </div>
 
-          {/* Floating top overlay — search + layer toggle pills. Search
-            renders only for signed-in riders (the underlying
-            `/api/v1/geocode` endpoint sits behind AuthGuard), so a
-            public visitor sees only the pills. The search container
-            is a fixed 380 px (clamped to the viewport width) so
-            toggling the Filters sidebar doesn't reflow the input or
-            the pill row alongside it. */}
-          <div className="absolute left-4 right-4 top-4 z-10 flex flex-wrap items-center gap-2.5">
-            {isAuthenticated ? (
-              <div className="w-[380px] max-w-full">
-                <ExploreSearch
-                  onPick={(place) => {
-                    // Fly the actual MapLibre camera. Updating the
-                    // store alone wouldn't move the visible map —
-                    // MapCanvas reads center/zoom only at init. We
-                    // still mirror the new position back into the
-                    // store so a subsequent remount lands in the same
-                    // place.
+          {/* Row 1 — address search. Signed-in only: the `/api/v1/geocode`
+              endpoint sits behind AuthGuard. POI category chips join this row
+              in a follow-up. Mirrors the planner/preview MapToolbar search. */}
+          {isAuthenticated ? (
+            <div className="absolute left-3 right-14 top-3 z-30 flex items-center gap-2">
+              <div className="relative w-[240px] shrink-0 rounded-[10px] border border-line-strong bg-cream/95 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.10)]">
+                <GeocodeSearchField
+                  placeholder={t("Address search ")}
+                  ariaLabel={t("Address search")}
+                  onSelect={(place) => {
+                    // Fly the actual MapLibre camera; MapCanvas reads
+                    // center/zoom only at init, so mirror it into the store
+                    // too for a later remount.
                     mapRef.current?.flyTo({
                       lng: place.lng,
                       lat: place.lat,
@@ -552,74 +575,99 @@ function ExplorerPageInner() {
                     setCenter({ lng: place.lng, lat: place.lat });
                     setZoom(EXPLORE_SEARCH_RESULT_ZOOM);
                   }}
+                  clearOnSelect
+                  widenDropdown
+                  clearable
                 />
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {/* Layer pills per spec: rounded-10, 12 700, soft shadow. All
-              active states use the solid brand-accent fill so the active pill
-              stays legible over a busy map. (The Filters toggle moved to the
-              page header.) */}
-            <button
-              type="button"
-              onClick={toggleQuality}
-              aria-pressed={showQualityOverlay}
-              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-                showQualityOverlay
-                  ? "bg-accent text-ink"
-                  : "bg-cream text-ink hover:bg-paper"
-              }`}
+          {/* Rows 2 & 3 — basemap toggle + layer pills, styled like the
+              planner's map controls. Pushed below the search row when it's
+              present (signed-in). */}
+          <div
+            className={`absolute left-3 z-20 flex flex-col gap-2 ${
+              isAuthenticated ? "top-[60px]" : "top-3"
+            }`}
+          >
+            {/* Row 2 — Map / Aerial basemap (swaps what's under the overlays). */}
+            <div
+              role="group"
+              aria-label={t("Basemap")}
+              className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
             >
-              {t("Quality")}
-            </button>
-            <button
-              type="button"
-              onClick={toggleHazards}
-              aria-pressed={showHazardOverlay}
-              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-                showHazardOverlay
-                  ? "bg-accent text-ink"
-                  : "bg-cream text-ink hover:bg-paper"
-              }`}
-            >
-              {t("Hazards")}
-            </button>
-            <button
-              type="button"
-              onClick={toggleSurface}
-              aria-pressed={showSurfaceOverlay}
-              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-                showSurfaceOverlay
-                  ? "bg-accent text-ink"
-                  : "bg-cream text-ink hover:bg-paper"
-              }`}
-            >
-              {t("Surface")}
-            </button>
-            <button
-              type="button"
-              onClick={toggleClosuresLayer}
-              aria-pressed={showClosuresLayer}
-              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-                showClosuresLayer
-                  ? "bg-accent text-ink"
-                  : "bg-cream text-ink hover:bg-paper"
-              }`}
-            >
-              {t("Closures")}
-            </button>
-            <button
-              type="button"
-              onClick={togglePassesLayer}
-              aria-pressed={showPassesLayer}
-              className={`inline-flex items-center gap-1.5 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12px] font-bold shadow-[0_6px_16px_rgba(14,14,16,0.08)] transition ${
-                showPassesLayer
-                  ? "bg-accent text-ink"
-                  : "bg-cream text-ink hover:bg-paper"
-              }`}
-            >
-              {t("Passes")}
-            </button>
+              {(
+                [
+                  ["map", "Map"],
+                  ["aerial", "Aerial"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={basemap === id}
+                  onClick={() => setBasemap(id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    basemap === id
+                      ? "bg-ink text-cream"
+                      : "text-fg-dim hover:text-ink"
+                  }`}
+                >
+                  {t(label === "Map" ? "Map " : "Aerial ")}
+                </button>
+              ))}
+            </div>
+
+            {/* Row 3 — layer pills. Road quality | Surface are mutually
+                exclusive; Hazards / Closures / Passes are independent. */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={selectQualityOverlay}
+                aria-pressed={showQualityOverlay}
+                className={overlayPillClass(showQualityOverlay)}
+              >
+                <Layers3 size={14} />
+                {t("Road quality ")}
+              </button>
+              <button
+                type="button"
+                onClick={selectSurfaceOverlay}
+                aria-pressed={showSurfaceOverlay}
+                className={overlayPillClass(showSurfaceOverlay)}
+              >
+                <Layers3 size={14} />
+                {t("Surface ")}
+              </button>
+              <button
+                type="button"
+                onClick={toggleHazards}
+                aria-pressed={showHazardOverlay}
+                className={overlayPillClass(showHazardOverlay)}
+              >
+                <TriangleAlert size={14} />
+                {t("Hazards ")}
+              </button>
+              <button
+                type="button"
+                onClick={toggleClosuresLayer}
+                aria-pressed={showClosuresLayer}
+                className={overlayPillClass(showClosuresLayer)}
+              >
+                <Construction size={14} />
+                {t("Closures ")}
+              </button>
+              <button
+                type="button"
+                onClick={togglePassesLayer}
+                aria-pressed={showPassesLayer}
+                className={overlayPillClass(showPassesLayer)}
+              >
+                <MountainSnow size={14} />
+                {t("Passes ")}
+              </button>
+            </div>
           </div>
 
           <MapLegend
@@ -695,16 +743,7 @@ function ExplorerPageInner() {
     </div>
   );
 }
-// Geocode search for the /explore header. Reuses the same
-// `/api/v1/geocode` endpoint the rides + community PlaceSearch
-// drives — the planner's existing provider, so we don't introduce
-// another geocoder dependency. UX is intentionally narrower than
-// PlaceSearch (no radius picker, no persistent selection state):
-// type → see matches → click → fly the map there. Documented as
-// the answer to the issue's first AC ("Behavior decided +
-// documented…").
-const EXPLORE_SEARCH_DEBOUNCE_MS = 350;
-const EXPLORE_SEARCH_MIN_CHARS = 2;
+// Zoom the map flies to when a rider picks an address-search result.
 const EXPLORE_SEARCH_RESULT_ZOOM = 12;
 
 // Closures + Passes info-panel content. Shared between the wide-
@@ -833,154 +872,6 @@ function FilterCheckbox({
       {swatch}
       <span>{label}</span>
     </label>
-  );
-}
-
-interface GeocodeMatch {
-  label: string;
-  lat: number;
-  lng: number;
-}
-
-function ExploreSearch({ onPick }: { onPick: (place: GeocodeMatch) => void }) {
-  const [draft, setDraft] = useState("");
-  const [matches, setMatches] = useState<GeocodeMatch[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  // Outside-click closes the dropdown.
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
-
-  // Debounced geocode fetch — mirrors the PlaceSearch pattern so
-  // a rider typing across keystrokes doesn't fan out one request
-  // per character.
-  useEffect(() => {
-    const q = draft.trim();
-    if (q.length < EXPLORE_SEARCH_MIN_CHARS) {
-      setMatches([]);
-      setLoading(false);
-      setError(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
-      setLoading(true);
-      setError(false);
-      api
-        .GET("/api/v1/geocode", {
-          params: { query: { q } as never },
-          signal: ctrl.signal,
-        })
-        .then(({ data, error: apiError }) => {
-          if (ctrl.signal.aborted) return;
-          setLoading(false);
-          if (apiError) {
-            setMatches([]);
-            setError(true);
-            return;
-          }
-          const body = data as unknown as { results: GeocodeMatch[] };
-          setMatches(body.results ?? []);
-        })
-        .catch((err: Error) => {
-          if (ctrl.signal.aborted) return;
-          setLoading(false);
-          if (err.name !== "AbortError") {
-            setMatches([]);
-            setError(true);
-          }
-        });
-    }, EXPLORE_SEARCH_DEBOUNCE_MS);
-    return () => {
-      // Cancel both the pending debounce AND any request that
-      // already left — without the abort, a late response from
-      // a stale query could repopulate `matches` for the wrong
-      // input after the rider has already typed something else
-      // (or cleared the field).
-      clearTimeout(timer);
-      abortRef.current?.abort();
-    };
-  }, [draft]);
-
-  const handlePick = (place: GeocodeMatch) => {
-    setDraft(place.label);
-    setOpen(false);
-    setMatches([]);
-    onPick(place);
-  };
-
-  const showResults =
-    open &&
-    (loading ||
-      error ||
-      matches.length > 0 ||
-      draft.trim().length >= EXPLORE_SEARCH_MIN_CHARS);
-
-  return (
-    <div ref={containerRef} className="relative flex-1 max-w-md">
-      <Search
-        size={16}
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-dim"
-      />
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        placeholder={t("Search for a place…")}
-        aria-label={t("Search for a place")}
-        autoComplete="off"
-        className="w-full pl-9 pr-4 py-2 rounded-lg bg-paper border border-line-strong text-ink text-sm placeholder:text-fg-dim focus:outline-none focus:border-accent transition"
-      />
-      {showResults && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg border border-line-strong bg-cream py-1 shadow-xl">
-          {loading && matches.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-fg-dim">
-              {t("Searching…")}
-            </div>
-          ) : error ? (
-            <div className="px-3 py-2 text-xs text-red-300">
-              {t("Couldn't search right now. Try again.")}
-            </div>
-          ) : matches.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-fg-dim">
-              {t("No places found.")}
-            </div>
-          ) : (
-            matches.map((m, i) => (
-              <button
-                key={`${m.lat},${m.lng},${i}`}
-                type="button"
-                onClick={() => handlePick(m)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-paper"
-              >
-                <MapPin
-                  size={12}
-                  className="shrink-0 text-fg-dim"
-                  aria-hidden="true"
-                />
-                <span className="truncate">{m.label}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
