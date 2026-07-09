@@ -1176,6 +1176,20 @@ const TripPlannerMapContent = forwardRef<
       const segmentId = readSegmentId(feature);
       if (segmentId) openDrawer(segmentId);
     });
+    // Pointer cursor over the ambient mapped segments (like /explore), so the
+    // off-route tap-for-detail affordance is discoverable. Only meaningful when
+    // the drawer opener is wired.
+    for (const overlay of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
+      map.on("mouseenter", overlay, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        if (!onOpenSegmentDetailRef.current) return;
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", overlay, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "";
+      });
+    }
     ensurePoiLayers(map);
     map.on("mouseenter", POI_PIN_LAYER, () => {
       if (drawRef.current?.getMode() !== "idle") return;

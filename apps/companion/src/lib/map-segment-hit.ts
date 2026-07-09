@@ -14,9 +14,10 @@ import type {
 /**
  * Screen-space padding (px) added around a tap when hit-testing the thin
  * quality/surface road lines, so a rider doesn't have to land exactly on the
- * stroke.
+ * stroke. Generous on purpose (touch targets); the nearest-line tie-break keeps
+ * a wide box from grabbing the wrong parallel road.
  */
-export const SEGMENT_HIT_PADDING_PX = 8;
+export const SEGMENT_HIT_PADDING_PX = 16;
 
 /**
  * The promoted `road_segments` UUID for a vector-tile road feature, or null.

@@ -2924,6 +2924,7 @@ export default function TripPlannerPage() {
           <SegmentDetailSidebar
             state={segmentDetailState}
             onClose={() => setSelectedRoadSegmentId(null)}
+            anchor="viewport"
           />
         </div>
 

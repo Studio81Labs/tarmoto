@@ -33,13 +33,15 @@ export const TARMOTO_ROADS_SOURCE = "tarmoto-roads";
 export const TARMOTO_QUALITY_LAYER = "tarmoto-quality";
 export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
 // Accent glow + line painted over the selected road segment (the one whose
-// detail drawer is open), filtered to its promoted feature id. Lives here so
-// every MapCanvas surface — /explore and the trip planner — highlights the
-// same way.
+// detail drawer is open), filtered on the segment's `id` property. Lives here
+// so every MapCanvas surface — /explore and the trip planner — highlights the
+// same way. Match the `id` *property* (via `get`), not the promoted feature
+// id (`["id"]`), which doesn't resolve reliably inside a filter expression.
 const SEGMENT_SELECTED_GLOW_LAYER = "tarmoto-segment-selected-glow";
 const SEGMENT_SELECTED_LINE_LAYER = "tarmoto-segment-selected-line";
-// A feature id that never matches: hides the highlight when nothing's selected.
-const NO_SEGMENT_FILTER: FilterSpecification = ["==", ["id"], " "];
+// A value that never matches a real UUID: hides the highlight when nothing's
+// selected.
+const NO_SEGMENT_FILTER: FilterSpecification = ["==", ["get", "id"], ""];
 const ACTIVE_OPACITY = 0.9;
 
 // Surface palette — must stay in sync with --color-surface-* in globals.css
@@ -407,7 +409,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     const map = mapRef.current;
     if (!map || !ready) return;
     const filter: FilterSpecification = selectedSegmentId
-      ? ["==", ["id"], selectedSegmentId]
+      ? ["==", ["get", "id"], selectedSegmentId]
       : NO_SEGMENT_FILTER;
     for (const layer of [
       SEGMENT_SELECTED_GLOW_LAYER,

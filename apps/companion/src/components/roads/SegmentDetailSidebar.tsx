@@ -37,11 +37,21 @@ export type SegmentDetailPanelState =
 interface SegmentDetailSidebarProps {
   state: SegmentDetailPanelState;
   onClose: () => void;
+  /**
+   * Where the panel anchors:
+   *  - "container" (default): `absolute`, filling the nearest positioned
+   *    ancestor — right for /explore, whose map is the full-bleed container.
+   *  - "viewport": `fixed` to the browser's right edge at full window height —
+   *    for the planner, whose map is only the centre column, so an absolute
+   *    panel would stop at the side panel instead of the window edge.
+   */
+  anchor?: "container" | "viewport";
 }
 
 export function SegmentDetailSidebar({
   state,
   onClose,
+  anchor = "container",
 }: SegmentDetailSidebarProps) {
   const open = state.status !== "idle";
   // Slide in on open and back out on close (up/down from the bottom on mobile,
@@ -85,7 +95,9 @@ export function SegmentDetailSidebar({
           setMounted(false);
         }
       }}
-      className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[78%] flex-col border-t border-line bg-cream shadow-2xl transition-transform duration-200 ease-out md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0 ${
+      className={`${
+        anchor === "viewport" ? "fixed z-50" : "absolute z-20"
+      } inset-x-0 bottom-0 flex max-h-[85%] flex-col border-t border-line bg-cream shadow-2xl transition-transform duration-200 ease-out md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0 ${
         entered
           ? "translate-y-0 md:translate-x-0"
           : "translate-y-full md:translate-y-0 md:translate-x-full"
