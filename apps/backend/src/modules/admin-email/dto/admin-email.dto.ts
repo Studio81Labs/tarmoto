@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export const EMAIL_LOG_STATUS_FILTERS = ['sent', 'failed'] as const;
@@ -61,4 +69,22 @@ export class AdminEmailLogListResponseDto {
   @ApiProperty() total!: number;
   @ApiProperty() page!: number;
   @ApiProperty() pageSize!: number;
+}
+
+export class ResendDigestDto {
+  @ApiProperty({
+    description: 'Recipient address of the failed digest to resend.',
+  })
+  @IsEmail()
+  recipient!: string;
+}
+
+export class TestDigestResponseDto {
+  @ApiProperty({ enum: ['sent', 'failed'] }) status!: string;
+}
+
+export class ResendDigestResponseDto {
+  @ApiProperty({ enum: ['queued'] }) status!: string;
+  @ApiProperty({ description: 'Resolved user id the resend was queued for.' })
+  user_id!: string;
 }

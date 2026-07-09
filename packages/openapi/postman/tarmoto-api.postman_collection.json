@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "b465c5c1-790f-4ffc-b7f8-280299f0b08f",
+    "_postman_id": "391f029e-b39e-4c7e-9fc4-1f0b1abcd404",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -6711,6 +6711,49 @@
                   "disabled": true
                 }
               ]
+            }
+          }
+        },
+        {
+          "name": "Send a sample weekly digest to your own address",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/digest-test",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "email", "digest-test"]
+            }
+          }
+        },
+        {
+          "name": "Re-trigger a rider’s weekly digest by recipient",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/digest-resend",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "email", "digest-resend"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }

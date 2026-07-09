@@ -1,11 +1,26 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
+import type { UnitSystem } from '@tarmoto/shared';
 import { EmailLog } from '../../entities/email-log.entity.js';
+import { User } from '../../entities/user.entity.js';
+import { EmailService } from '../email/email.service.js';
+import type { DigestWeeklyComposeJobData } from '../jobs/jobs.producer.js';
+import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
+import {
+  DEFAULT_JOB_OPTIONS,
+  DIGEST_COMPOSE_PRIORITY,
+} from '../jobs/jobs.config.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   AdminEmailLogListResponseDto,
   AdminEmailLogRowDto,
   ListAdminEmailLogQueryDto,
+  ResendDigestResponseDto,
+  TestDigestResponseDto,
 } from './dto/admin-email.dto.js';
 
 @Injectable()
@@ -13,7 +28,70 @@ export class AdminEmailService {
   constructor(
     @InjectRepository(EmailLog)
     private readonly emailLog: Repository<EmailLog>,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
+    private readonly email: EmailService,
+    // The digest queue token — registered in AdminModule; the connection +
+    // workers come from JobsModule.forRoot(). (JobsProducer can't be injected
+    // here, see AdminModule.)
+    @InjectQueue(QUEUE_NAMES.DIGEST_WEEKLY)
+    private readonly digestQueue: Queue<DigestWeeklyComposeJobData>,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Send a representative weekly digest to `toEmail` (the admin's own address)
+   * so support can preview rendering / verify delivery without waiting for the
+   * Sunday cron. Uses fixed sample data — it's a preview, not a real week.
+   */
+  async sendTestDigest(toEmail: string): Promise<TestDigestResponseDto> {
+    const result = await this.email.sendWeeklyDigest(
+      toEmail,
+      sampleDigestContext(`${getCompanionUrl(this.config)}/explore`),
+    );
+    return { status: result ? 'sent' : 'failed' };
+  }
+
+  /**
+   * Re-trigger a rider's weekly digest (support re-sending a failed one). Queues
+   * a compose job that recomputes fresh ride/exploration data for the last 7
+   * days and re-runs the same opt-in / no-activity gates — it is NOT a byte
+   * replay (the log stores no body). Resolves the recipient address to a user;
+   * 404s if none. Async: the actual send lands as a new email_log row.
+   */
+  async resendDigest(recipient: string): Promise<ResendDigestResponseDto> {
+    const email = recipient.toLowerCase();
+    const user = await this.users
+      .createQueryBuilder('u')
+      .select('u.id', 'id')
+      .where('LOWER(u.email) = :email', { email })
+      .getRawOne<{ id: string }>();
+    if (!user) {
+      throw new NotFoundException('No user found for that recipient address');
+    }
+
+    const windowEnd = new Date();
+    const windowStart = new Date(windowEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // Unique per click → the resend never dedups against the failed weekly job
+    // (whose `digest-weekly:<user>:<week>` id may still sit in the failed set).
+    const forLocalWindow = `resend-${windowEnd.getTime()}`;
+    await this.digestQueue.add(
+      JOB_NAMES.DIGEST_WEEKLY_COMPOSE,
+      {
+        user_id: user.id,
+        for_local_window: forLocalWindow,
+        window_start: windowStart.toISOString(),
+        window_end: windowEnd.toISOString(),
+      },
+      {
+        ...DEFAULT_JOB_OPTIONS,
+        jobId: `digest-resend:${user.id}:${forLocalWindow}`,
+        removeOnComplete: { age: 8 * 24 * 60 * 60 },
+        priority: DIGEST_COMPOSE_PRIORITY,
+      },
+    );
+    return { status: 'queued', user_id: user.id };
+  }
 
   async list(
     query: ListAdminEmailLogQueryDto,
@@ -60,4 +138,31 @@ export class AdminEmailService {
       created_at: e.created_at.toISOString(),
     };
   }
+}
+
+interface SampleDigestContext {
+  displayName: string;
+  rideCount: number;
+  totalKm: number;
+  totalMinutes: number;
+  bestQuality: number;
+  percentExplored: number;
+  riddenSegments: number;
+  units: UnitSystem;
+  exploreUrl: string;
+}
+
+/** Fixed, representative content for a test digest preview. */
+function sampleDigestContext(exploreUrl: string): SampleDigestContext {
+  return {
+    displayName: 'Rider',
+    rideCount: 4,
+    totalKm: 213.7,
+    totalMinutes: 372,
+    bestQuality: 4.2,
+    percentExplored: 38,
+    riddenSegments: 512,
+    units: 'metric',
+    exploreUrl,
+  };
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AdminUser } from '../../entities/admin-user.entity.js';
 import { AdminSession } from '../../entities/admin-session.entity.js';
@@ -23,6 +24,8 @@ import { EventsModule } from '../events/events.module.js';
 import { AppSettingsModule } from '../app-settings/app-settings.module.js';
 import { AdminAppSettingsController } from '../app-settings/admin-app-settings.controller.js';
 import { PushModule } from '../push/index.js';
+import { EmailModule } from '../email/index.js';
+import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -70,6 +73,14 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     // Exposes NotificationPreferencesService so admin-users can read/update a
     // user's notification preferences from the user-detail screen.
     PushModule,
+    // admin-email test-send reuses EmailService.
+    EmailModule,
+    // Register the digest queue TOKEN so admin-email can enqueue a resend. The
+    // connection + workers come from JobsModule.forRoot() (imported once in
+    // AppModule); importing JobsModule here can't provide JobsProducer because
+    // that lives on the forRoot() dynamic module, and re-importing forRoot would
+    // double-register every queue/processor. This mirrors data-export.module.
+    BullModule.registerQueue({ name: QUEUE_NAMES.DIGEST_WEEKLY }),
   ],
   controllers: [
     AdminMetricsController,
