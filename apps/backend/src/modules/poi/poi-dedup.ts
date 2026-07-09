@@ -46,12 +46,20 @@ export function sourceOfExternalId(externalId: string): string {
  * if empty. Uses a Unicode letter/number class (`\p{L}\p{N}`), not `[a-z0-9]`,
  * so non-Latin names in the coverage regions (Greek `Ταβέρνα`, Cyrillic
  * `Кафана`) survive normalisation and can still match across sources.
+ *
+ * Apostrophes (straight, typographic, or modifier-letter) are *removed*, not
+ * turned into a space, so a source that keeps the possessive punctuation and
+ * one that drops it still match: `McDonald's` ≡ `McDonalds`, `L'Osteria` ≡
+ * `LOsteria`. Hyphens stay separators (→ space) so `Coca-Cola` ≡ `Coca Cola`.
  */
 function normalizeName(name: string | null): string | null {
   if (!name) return null;
   const normalized = name
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
+    // Drop intra-word apostrophes before spacing other punctuation, so the
+    // apostrophe doesn't split one token into two.
+    .replace(/['’ʼ]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();

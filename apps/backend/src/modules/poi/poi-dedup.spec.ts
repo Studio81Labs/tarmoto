@@ -89,6 +89,49 @@ describe('dedupeAcrossSources', () => {
     ).toEqual(['fsq', 'osm']);
   });
 
+  it('matches names differing only by an apostrophe (possessive brands)', () => {
+    const near = { lat: 50.081, lng: 14.421 };
+    // OSM keeps the possessive apostrophe, FSQ drops it — the same venue.
+    expect(
+      dedupe([
+        row({ id: 'osm', source: 'osm', name: "McDonald's", ...near }),
+        row({ id: 'fsq', source: 'fsq', name: 'McDonalds', ...near }),
+      ]),
+    ).toEqual(['osm']); // apostrophe removed on both → mcdonalds ≡ mcdonalds
+    // Typographic apostrophe + leading-apostrophe brand.
+    expect(
+      dedupe([
+        row({ id: 'osm', source: 'osm', name: 'L’Osteria', ...near }),
+        row({ id: 'fsq', source: 'fsq', name: 'LOsteria', ...near }),
+      ]),
+    ).toEqual(['osm']); // losteria ≡ losteria
+  });
+
+  it('keeps hyphen and space as equivalent separators (Coca-Cola ≡ Coca Cola)', () => {
+    const near = { lat: 50.081, lng: 14.421 };
+    // A hyphen stays a separator (→ space), so the spaced and hyphenated
+    // spellings of one brand still match — unlike the apostrophe, which is
+    // removed. Guards against a fix that squeezes all punctuation away.
+    expect(
+      dedupe([
+        row({
+          id: 'osm',
+          source: 'osm',
+          kind: 'cafe',
+          name: 'Coca-Cola',
+          ...near,
+        }),
+        row({
+          id: 'fsq',
+          source: 'fsq',
+          kind: 'cafe',
+          name: 'Coca Cola',
+          ...near,
+        }),
+      ]),
+    ).toEqual(['osm']);
+  });
+
   it('matches non-Latin names across sources (Greek / Cyrillic coverage)', () => {
     const near = { lat: 50.081, lng: 14.421 };
     expect(
