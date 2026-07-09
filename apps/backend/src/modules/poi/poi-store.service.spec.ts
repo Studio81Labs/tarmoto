@@ -567,6 +567,9 @@ describe('PoiStoreService', () => {
       expect(whereSql).toContain('import_region IS NOT NULL');
       const andWhereSql = qb.andWhere.mock.calls.map(([sql]) => String(sql));
       expect(andWhereSql).toContain('poi.deactivated_at IS NULL');
+      // Scoped to OSM (#925 review): the suppressed Overpass fallback is
+      // OSM-backed, so an FSQ-only region must not count as covered.
+      expect(andWhereSql).toContain("poi.source = 'osm'");
     });
 
     it('caches the coverage set so repeated reads run one DISTINCT query', async () => {

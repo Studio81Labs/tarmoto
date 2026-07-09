@@ -97,13 +97,18 @@ export class PoiStoreService {
   }
 
   /**
-   * Bounding boxes of the regions ACTUALLY imported into the store (#925): the
-   * `DISTINCT import_region` values (non-legacy, non-tombstoned) mapped to their
-   * {@link DEFAULT_REGIONS} bbox. Drives the coverage-aware read — a request that
-   * isn't fully inside one of these also queries Overpass, so live coverage
-   * doesn't regress at import frontiers. Cached (see {@link coverageCache}); a
-   * legacy (`import_region IS NULL`) or unknown-code row contributes no bbox, so
-   * an area only counts as covered once a bulk import claims it.
+   * Bounding boxes of the regions the OSM bulk import has ACTUALLY populated
+   * (#925): the `DISTINCT import_region` values (non-legacy, non-tombstoned)
+   * mapped to their {@link DEFAULT_REGIONS} bbox. Drives the coverage-aware read
+   * — a request that isn't fully inside one of these also queries Overpass, so
+   * live coverage doesn't regress at import frontiers. Cached (see
+   * {@link coverageCache}); a legacy (`import_region IS NULL`) or unknown-code
+   * row contributes no bbox, so an area only counts as covered once imported.
+   *
+   * Scoped to `source = 'osm'` (#925 review): the Overpass fallback this
+   * suppresses is OSM-backed, so an FSQ-only region (manual/scheduled FSQ import
+   * before OSM has populated it) must NOT mark the bbox as covered — otherwise a
+   * covered-empty read would skip the OSM Overpass fallback that should still run.
    */
   async importedRegionBboxes(): Promise<Bbox[]> {
     const now = Date.now();
@@ -117,6 +122,7 @@ export class PoiStoreService {
         .select('DISTINCT poi.import_region', 'code')
         .where('poi.import_region IS NOT NULL')
         .andWhere('poi.deactivated_at IS NULL')
+        .andWhere("poi.source = 'osm'")
         .getRawMany<{ code: string }>(),
     );
     const bboxByCode = new Map(DEFAULT_REGIONS.map((r) => [r.code, r.bbox]));
