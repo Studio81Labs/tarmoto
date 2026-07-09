@@ -54,6 +54,10 @@ function make(over: { users?: object } = {}) {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     });
   const activity = () => repo({ count: jest.fn().mockResolvedValue(3) });
+  const notificationPrefs = {
+    get: jest.fn().mockResolvedValue({ email_digest: 'weekly' }),
+    update: jest.fn().mockResolvedValue({ email_digest: 'never' }),
+  };
   const service = new AdminUsersService(
     users as never,
     activity() as never, // rides
@@ -61,8 +65,9 @@ function make(over: { users?: object } = {}) {
     activity() as never, // reviews
     activity() as never, // trips
     activity() as never, // commutes
+    notificationPrefs as never,
   );
-  return { service, users, qb };
+  return { service, users, qb, notificationPrefs };
 }
 
 describe('AdminUsersService', () => {
@@ -157,6 +162,7 @@ describe('AdminUsersService', () => {
       activity() as never,
       activity() as never,
       activity() as never,
+      { get: jest.fn(), update: jest.fn() } as never,
     );
 
     await service.list({ q: 'foo', deleted: 'active', page: 1, pageSize: 25 });
@@ -185,6 +191,7 @@ describe('AdminUsersService', () => {
       activity() as never,
       activity() as never,
       activity() as never,
+      { get: jest.fn(), update: jest.fn() } as never,
     );
 
     await service.list({ subscription: 'past_due' });
@@ -193,5 +200,47 @@ describe('AdminUsersService', () => {
       '(u.subscription_tier = :sub OR u.subscription_status = :sub)',
       { sub: 'past_due' },
     );
+  });
+
+  describe('notification preferences', () => {
+    it('returns a user notification prefs after confirming the user exists', async () => {
+      const { service, notificationPrefs } = make();
+      const res = await service.getNotificationPreferences('u1');
+      expect(res).toMatchObject({ email_digest: 'weekly' });
+      expect(notificationPrefs.get).toHaveBeenCalledWith('u1');
+    });
+
+    it('throws NotFound (and never reads prefs) for an unknown user', async () => {
+      const { service, notificationPrefs } = make({
+        users: repo({ findOne: jest.fn().mockResolvedValue(null) }),
+      });
+      await expect(service.getNotificationPreferences('nope')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(notificationPrefs.get).not.toHaveBeenCalled();
+    });
+
+    it('delegates the update to NotificationPreferencesService', async () => {
+      const { service, notificationPrefs } = make();
+      const res = await service.updateNotificationPreferences('u1', {
+        email_digest: 'never',
+      });
+      expect(res).toMatchObject({ email_digest: 'never' });
+      expect(notificationPrefs.update).toHaveBeenCalledWith('u1', {
+        email_digest: 'never',
+      });
+    });
+
+    it('throws NotFound (and never writes) for an unknown user', async () => {
+      const { service, notificationPrefs } = make({
+        users: repo({ findOne: jest.fn().mockResolvedValue(null) }),
+      });
+      await expect(
+        service.updateNotificationPreferences('nope', {
+          email_digest: 'never',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(notificationPrefs.update).not.toHaveBeenCalled();
+    });
   });
 });

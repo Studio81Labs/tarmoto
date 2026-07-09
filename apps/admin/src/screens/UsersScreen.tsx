@@ -9,10 +9,13 @@ import {
   PageHeader,
   Pill,
   Select,
+  Toggle,
 } from "@tarmoto/ui";
 import {
   useAdminUsersList,
   useAdminUserDetail,
+  useAdminUserNotificationPrefs,
+  useUpdateUserNotificationPrefs,
   useSoftDeleteUser,
   useRestoreUser,
 } from "../data/useAdminUsers.js";
@@ -269,10 +272,117 @@ export function UsersScreen() {
               <UserDetailPanel detail={detail} />
             ) : null}
           </div>
+          <NotificationPreferencesCard userId={selectedUserId} />
           <UserFeatureFlagsCard userId={selectedUserId} />
         </>
       ) : null}
     </section>
+  );
+}
+
+function NotificationPreferencesCard({ userId }: { userId: string }) {
+  const { data, isPending, error, refetch } =
+    useAdminUserNotificationPrefs(userId);
+  const updateMutation = useUpdateUserNotificationPrefs();
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  function patch(body: Record<string, unknown>) {
+    updateMutation.mutate(
+      { params: { path: { id: userId } }, body },
+      {
+        onSuccess: () => {
+          setSaveError(null);
+          void refetch();
+        },
+        onError: (err: unknown) => {
+          const msg = (err as { message?: string } | undefined)?.message;
+          setSaveError(msg ?? "Failed to update notification preferences.");
+        },
+      },
+    );
+  }
+
+  const saving = updateMutation.isPending;
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-paper p-5">
+      <h3 className="mb-4 text-sm font-semibold text-ink">
+        Notification preferences
+      </h3>
+      {error ? (
+        <Alert
+          intent="danger"
+          title="Failed to load notification preferences."
+          className="mb-4"
+          compact
+        />
+      ) : null}
+      {saveError ? (
+        <Alert intent="danger" title={saveError} className="mb-4" compact />
+      ) : null}
+      {isPending || !data ? (
+        <p className="text-sm text-fg-dim">Loading…</p>
+      ) : (
+        <dl className="flex flex-col gap-4 text-sm">
+          <div className="flex items-center gap-3">
+            <dt className="min-w-40 text-fg-dim">Email digest</dt>
+            <dd>
+              <Select
+                value={data.email_digest}
+                onChange={(v) => {
+                  if (v === "weekly" || v === "daily" || v === "never") {
+                    patch({ email_digest: v });
+                  }
+                }}
+                ariaLabel="Email digest cadence"
+                className="w-40"
+                disabled={saving}
+              >
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+                <option value="never">Never</option>
+              </Select>
+            </dd>
+          </div>
+          <div className="flex items-center gap-3">
+            <dt className="min-w-40 text-fg-dim">Marketing emails</dt>
+            <dd>
+              <Toggle
+                checked={data.marketing_emails}
+                onChange={(next) => patch({ marketing_emails: next })}
+                disabled={saving}
+                ariaLabel="Marketing emails"
+              />
+            </dd>
+          </div>
+          <div className="flex items-center gap-3">
+            <dt className="min-w-40 text-fg-dim">Timezone</dt>
+            <dd className="text-ink">{data.quiet_hours_timezone}</dd>
+          </div>
+          <div>
+            <dt className="mb-1 text-fg-dim">Categories (read-only)</dt>
+            <dd>
+              <div className="flex flex-col gap-1">
+                {Object.entries(data.categories).map(([cat, ch]) => (
+                  <div key={cat} className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-44 text-ink">{cat}</span>
+                    <span className="text-fg-dim">
+                      {[
+                        ch?.email ? "email" : null,
+                        ch?.push ? "push" : null,
+                        ch?.in_app ? "in-app" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "off"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </dd>
+          </div>
+        </dl>
+      )}
+    </div>
   );
 }
 
