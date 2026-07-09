@@ -62,8 +62,9 @@ function nameMatches(a: string | null, b: string | null): boolean {
 /**
  * De-duplicate `rows` across sources, keeping the input order of survivors.
  * `key` projects a row to its `{source, kind, name, lat, lng}`. A row is dropped
- * when an already-kept, higher-or-equal-preference row of the SAME kind sits
- * within {@link DEDUP_RADIUS_KM} with a matching name.
+ * only when an already-kept row from a STRICTLY preferred source of the SAME
+ * kind sits within {@link DEDUP_RADIUS_KM} with a matching name — so same-source
+ * neighbours are never merged and a single-source read is unchanged.
  */
 export function dedupeAcrossSources<T>(
   rows: readonly T[],
@@ -80,6 +81,11 @@ export function dedupeAcrossSources<T>(
   for (const entry of ordered) {
     const isDup = kept.some(
       (other) =>
+        // Only a STRICTLY preferred (higher-rank) source de-dupes this row.
+        // Two same-source POIs near each other — distinct venues, or the same
+        // OSM chain mapped twice — are both kept, so a single-source read is
+        // untouched and "keep every OSM row" holds.
+        sourceRank(other.k.source) < sourceRank(entry.k.source) &&
         other.k.kind === entry.k.kind &&
         haversineKm(other.k.lat, other.k.lng, entry.k.lat, entry.k.lng) <=
           DEDUP_RADIUS_KM &&

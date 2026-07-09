@@ -107,11 +107,20 @@ describe('dedupeAcrossSources', () => {
     expect(dedupe(rows)).toEqual(['a', 'b', 'c']);
   });
 
-  it('is a no-op for a single-source result (FSQ not imported)', () => {
+  it('never merges two same-source POIs near each other (single-source no-op)', () => {
+    // Two legitimately-distinct OSM restaurants with the same name ~22 m apart
+    // (a chain mapped twice, or genuinely separate) must BOTH survive — only a
+    // strictly-preferred source de-dupes, so an OSM-only read is untouched.
     const rows = [
-      row({ id: 'a', source: 'osm', name: 'A' }),
-      row({ id: 'b', source: 'osm', name: 'B', lat: 50.09 }),
+      row({ id: 'a', source: 'osm', kind: 'restaurant', name: 'Pizza Nuova' }),
+      row({
+        id: 'b',
+        source: 'osm',
+        kind: 'restaurant',
+        name: 'Pizza Nuova',
+        lat: 50.0802,
+      }),
     ];
-    expect(dedupe(rows)).toEqual(['a', 'b']);
+    expect(dedupe(rows).sort()).toEqual(['a', 'b']);
   });
 });
