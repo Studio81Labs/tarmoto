@@ -35,6 +35,7 @@ function makeTrip(over: Partial<Trip> = {}): Trip {
     distance_km: null,
     quality_avg: null,
     passes_count: null,
+    overview_geometry: null,
     daily_km_min: 100,
     daily_km_max: 300,
     min_quality: 3,

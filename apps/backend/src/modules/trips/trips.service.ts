@@ -776,7 +776,10 @@ export class TripsService {
     const trips = await qb.getMany();
     if (trips.length === 0) return [];
 
-    const aggById = await this.computeTripAggregates(trips.map((t) => t.id));
+    const aggById = await this.computeTripAggregates(
+      trips.map((t) => t.id),
+      { withOverview: true },
+    );
     return trips.map((t) => this.toSummary(t, aggById.get(t.id)));
   }
 
@@ -790,7 +793,14 @@ export class TripsService {
    * absent and the callers fall back to nulls. An empty `ids` short-circuits
    * without touching the DB.
    */
-  private async computeTripAggregates(ids: string[]): Promise<
+  private async computeTripAggregates(
+    ids: string[],
+    // Building the per-day simplified overview is PostGIS work + payload only
+    // the trips-list card and the duplicate flow's detail actually render, so
+    // it's opt-in: callers that read only the rollups (e.g. the invite
+    // preview) skip it via a cheap `NULL::json` select.
+    opts?: { withOverview?: boolean },
+  ): Promise<
     Map<
       string,
       {
@@ -842,13 +852,15 @@ export class TripsService {
       // A per-day simplified overview polyline for the trips-list card
       // thumbnail — one LineString per day, ordered, degenerate/null-geom days
       // filtered out. `::json` so json_agg embeds each geometry as an object,
-      // not a re-encoded string.
-      // Tolerance inlined (a compile-time numeric constant, no injection risk)
-      // rather than a bound param so this stays a plain addSelect chain.
+      // not a re-encoded string. Skipped (cheap `NULL::json`) unless the caller
+      // opts in, so rollup-only callers don't pay the simplify/serialize cost.
+      // Tolerance inlined (a compile-time numeric constant, no injection risk).
       .addSelect(
-        'json_agg(ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, ' +
-          `${LIST_OVERVIEW_SIMPLIFY_TOLERANCE_DEG}))::json ` +
-          'ORDER BY d.day_number) FILTER (WHERE d.route_geom IS NOT NULL)',
+        opts?.withOverview
+          ? 'json_agg(ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, ' +
+              `${LIST_OVERVIEW_SIMPLIFY_TOLERANCE_DEG}))::json ` +
+              'ORDER BY d.day_number) FILTER (WHERE d.route_geom IS NOT NULL)'
+          : 'NULL::json',
         'overview',
       )
       .where('d.trip_id IN (:...ids)', { ids })
@@ -1250,7 +1262,11 @@ export class TripsService {
     // fields (distance_km / quality_avg / passes_count) aren't null on
     // detail — a detail-derived summary row (optimistic duplicate insert)
     // would otherwise show blank card metadata until a list refetch.
-    const aggById = await this.computeTripAggregates([trip.id]);
+    // withOverview so the duplicate flow's detail-derived card carries the real
+    // route outline immediately (the frontend adapter reads it).
+    const aggById = await this.computeTripAggregates([trip.id], {
+      withOverview: true,
+    });
     return this.toDetail(trip, aggById.get(trip.id));
   }
 
