@@ -55,6 +55,35 @@ export default function NotificationsPage() {
         setServerPrefs(merged);
         setPrefs(merged);
         setLoading(false);
+        // Capture the rider's IANA timezone on first view. `save()` is gated on
+        // isDirty (the SaveBar disables when nothing else changed), so a default
+        // weekly rider who never toggles another preference would otherwise stay
+        // pinned to the backend's UTC default and get their digest sent/bucketed
+        // at 08:00 UTC instead of local time. Persist it in the background — only
+        // when it actually differs — so timezone-aware delivery works without a
+        // manual save.
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz && browserTz !== merged.quiet_hours_timezone) {
+          accountApi
+            .updateNotificationPreferences({ quiet_hours_timezone: browserTz })
+            .then(() => {
+              if (cancelled) return;
+              // Sync the saved baseline + editable copy so this background write
+              // isn't seen as a spurious unsaved change (preferencesEqual
+              // compares quiet_hours_timezone); any in-flight user edits to other
+              // fields are preserved.
+              setServerPrefs((sp) => ({
+                ...sp,
+                quiet_hours_timezone: browserTz,
+              }));
+              setPrefs((p) => ({ ...p, quiet_hours_timezone: browserTz }));
+            })
+            .catch((err: Error) => {
+              // Best-effort background sync — surface in the console, never
+              // disrupt the settings page or block the rider.
+              console.warn("Timezone sync failed:", err.message);
+            });
+        }
       })
       .catch((err: Error) => {
         if (cancelled) return;
