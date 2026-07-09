@@ -53,11 +53,7 @@ export default function App() {
       startTimezoneSyncMonitor({
         isAuthenticated: () => api.isAuthenticated(),
         currentTimezone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-        sync: async (timezone) => {
-          await api.updateNotificationPreferences({
-            quiet_hours_timezone: timezone,
-          });
-        },
+        sync: () => api.syncDeviceTimezone(),
       }),
     [],
   );
