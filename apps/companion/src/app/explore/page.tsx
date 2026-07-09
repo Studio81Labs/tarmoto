@@ -11,6 +11,7 @@ import {
   Route,
   Bike,
   SlidersHorizontal,
+  Map as MapIcon,
 } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -329,7 +330,7 @@ function ExplorerPageInner() {
     //
     // Responsive grid template via CSS variables so each side column
     // collapses to 0 when its content is hidden — handles the
-    // narrow-viewport case where the fixed 300 px + 320 px chrome
+    // narrow-viewport case where the fixed 300 px + 370 px chrome
     // would crowd out the map and leave the rider with no recovery
     // affordance (the floating "Filters" pill in the layer overlay
     // is the toggle, matching the spec's primary-accent pill).
@@ -339,9 +340,12 @@ function ExplorerPageInner() {
           "My rides" overlay the rider's own routes on the map (auth-only);
           "Filter" toggles the left filter column. */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-sm">
-        <h1 className="min-w-0 truncate text-[15px] font-extrabold leading-tight tracking-[-0.3px] text-ink">
-          {t("Road explorer")}
-        </h1>
+        <div className="flex min-w-0 shrink-0 items-center gap-[9px]">
+          <MapIcon size={18} className="shrink-0 text-accent" aria-hidden />
+          <h1 className="truncate font-sans text-[18px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
+            {t("Road Explorer")}
+          </h1>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Toggle buttons: outline (secondary) when off, neutral ink fill
               (primary) when on — coral/accent stays reserved for CTAs. */}
@@ -395,7 +399,7 @@ function ExplorerPageInner() {
             // doesn't lose its entire map area to a fixed rail.
             "--explore-right":
               isWideViewport && (showClosuresLayer || showPassesLayer)
-                ? "320px"
+                ? "370px"
                 : "0px",
           } as React.CSSProperties
         }
@@ -662,7 +666,8 @@ function ExplorerPageInner() {
 
         {/* RIGHT — Closures / Passes info panel. On wide viewports
           docks in as a real third grid column (the `--explore-right`
-          CSS variable allocates 320 px); on narrow viewports the
+          CSS variable allocates 370 px, matching the planner/preview right
+          column); on narrow viewports the
           grid column collapses to 0 and the same content renders
           as a top-anchored overlay over the map (with a close
           affordance) so a phone keeps a usable map underneath. */}
