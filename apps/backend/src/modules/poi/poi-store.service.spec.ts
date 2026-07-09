@@ -774,6 +774,20 @@ describe('PoiStoreService', () => {
       expect(repo.query).not.toHaveBeenCalled();
     });
 
+    it('caps and evenly downsamples a huge sample list so the bind-param count stays under PG limits (#925)', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      const many = Array.from({ length: 5000 }, (_, i) => ({
+        lat: 49 + i * 1e-4,
+        lng: 18,
+      }));
+      await service.hasImportedCoverage(many);
+      const [, params] = repo.query.mock.calls[0] as [string, number[]];
+      // 6 params/sample + 1 buffer param, capped at 512 samples → ≤ 3073, well
+      // under PostgreSQL's 65535 bind-parameter ceiling.
+      expect(params.length).toBeLessThanOrEqual(512 * 6 + 1);
+      expect(params.length).toBeLessThan(65535);
+    });
+
     it('pads longitude at the poleward edge so a high-latitude sample is not under-probed', async () => {
       repo.query.mockResolvedValueOnce([{ covered: true }]);
       await service.hasImportedCoverage([{ lat: 69, lng: 10 }]);

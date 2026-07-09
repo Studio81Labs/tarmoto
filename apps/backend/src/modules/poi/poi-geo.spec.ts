@@ -69,6 +69,22 @@ describe('routeCoverageSamples (#925 P2)', () => {
     ]);
     expect(routeCoverageSamples([], 20)).toEqual([]);
   });
+
+  it('bounds the sample count by route length, not vertex count (no per-segment blowup #925)', () => {
+    // ~36 km route as 400 densely-spaced vertices. The old per-segment sampler
+    // emitted one point PER segment (~400×3), overflowing the downstream SQL
+    // bind-param limit; the cumulative-distance walk emits only ~length/stride.
+    const dense = Array.from({ length: 400 }, (_, i) => ({
+      lat: 49,
+      lng: 16 + (i * 0.5) / 399,
+    }));
+    const samples = routeCoverageSamples(dense, 2);
+    expect(samples.length).toBeLessThan(30);
+    // Still spans the whole route (start ~16, final vertex ~16.5).
+    const lngs = samples.map((s) => s.lng);
+    expect(Math.min(...lngs)).toBeCloseTo(16, 1);
+    expect(Math.max(...lngs)).toBeCloseTo(16.5, 1);
+  });
 });
 
 describe('COVERAGE_BUFFER_KM (#925)', () => {

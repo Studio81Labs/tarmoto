@@ -191,6 +191,19 @@ function offsetKm(
   };
 }
 
+/** Unit perpendicular (east/north km space) and length (km) of segment a→b. */
+function segGeom(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): { perpE: number; perpN: number; lenKm: number } {
+  const midLat = (a.lat + b.lat) / 2;
+  const east = (b.lng - a.lng) * lngKmPerDegree(midLat);
+  const north = (b.lat - a.lat) * LAT_KM_PER_DEGREE;
+  const lenKm = Math.hypot(east, north);
+  if (lenKm < 1e-9) return { perpE: 0, perpN: 0, lenKm: 0 };
+  return { perpE: -north / lenKm, perpN: east / lenKm, lenKm };
+}
+
 /**
  * Coverage samples spanning a route's buffered corridor (#925 P1/P2): the
  * centreline sampled at {@link COVERAGE_BUFFER_KM} strides PLUS, when `bufferKm`
@@ -202,6 +215,12 @@ function offsetKm(
  * `readStoreFirst` merges Overpass. Consecutive centreline strides are one buffer
  * apart so their probe circles overlap along the line; the rails extend that
  * across the corridor width.
+ *
+ * Walked by CUMULATIVE distance, not per segment (#925 review): a detailed
+ * polyline can have thousands of sub-stride segments, and emitting one sample
+ * per segment would blow the sample count (and downstream SQL bind-param limit).
+ * The stride walk bounds the count to route-length / stride regardless of vertex
+ * density; {@link PoiStoreService.hasImportedCoverage} caps it further.
  */
 export function routeCoverageSamples(
   route: ReadonlyArray<{ lat: number; lng: number }>,
@@ -225,43 +244,38 @@ export function routeCoverageSamples(
       out.push(offsetKm(lat, lng, -bufferKm * perpE, -bufferKm * perpN));
     }
   };
-  // Unit perpendicular of segment a→b in local east/north km space.
-  const perpOf = (
-    a: { lat: number; lng: number },
-    b: { lat: number; lng: number },
-  ): [number, number] => {
-    const midLat = (a.lat + b.lat) / 2;
-    const east = (b.lng - a.lng) * lngKmPerDegree(midLat);
-    const north = (b.lat - a.lat) * LAT_KM_PER_DEGREE;
-    const len = Math.hypot(east, north);
-    return len < 1e-9 ? [0, 0] : [-north / len, east / len];
-  };
 
+  // Always the start (railed off the first segment).
+  const firstGeom = segGeom(first, route[1] ?? first);
+  emit(first.lat, first.lng, firstGeom.perpE, firstGeom.perpN);
+
+  // Advance the cumulative-distance cursor and emit a sample each time it crosses
+  // a `stride` boundary, interpolated within whichever segment holds it.
+  let distSoFar = 0;
+  let nextBoundary = stride;
   for (let i = 1; i < route.length; i++) {
     const a = route[i - 1];
     const b = route[i];
     if (a === undefined || b === undefined) continue;
-    const [perpE, perpN] = perpOf(a, b);
-    const east = (b.lng - a.lng) * lngKmPerDegree((a.lat + b.lat) / 2);
-    const north = (b.lat - a.lat) * LAT_KM_PER_DEGREE;
-    const len = Math.hypot(east, north);
-    // Sample from the segment start up to (not including) its end; the next
-    // segment's start — or the final-vertex emit below — covers the join.
-    for (let d = 0; d < len; d += stride) {
-      const t = len < 1e-9 ? 0 : d / len;
+    const { perpE, perpN, lenKm } = segGeom(a, b);
+    while (nextBoundary <= distSoFar + lenKm) {
+      const t = lenKm < 1e-9 ? 0 : (nextBoundary - distSoFar) / lenKm;
       emit(
         a.lat + (b.lat - a.lat) * t,
         a.lng + (b.lng - a.lng) * t,
         perpE,
         perpN,
       );
+      nextBoundary += stride;
     }
+    distSoFar += lenKm;
   }
-  // Always include the final vertex, railed off the last segment's perpendicular.
+
+  // Always the final vertex (railed off the last segment).
   const last = route[route.length - 1];
   const prev = route[route.length - 2];
   if (last !== undefined && prev !== undefined) {
-    const [perpE, perpN] = perpOf(prev, last);
+    const { perpE, perpN } = segGeom(prev, last);
     emit(last.lat, last.lng, perpE, perpN);
   }
   return out;

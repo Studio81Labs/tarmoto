@@ -64,6 +64,17 @@ const STORE_PER_KIND_LIMIT = 100;
 const DEDUP_OVERFETCH = 2;
 
 /**
+ * Hard cap on coverage-probe samples per {@link PoiStoreService.hasImportedCoverage}
+ * call (#925 review). The route sampler already bounds itself by
+ * route-length / stride, but a pathologically long route (or any future caller)
+ * must not build a VALUES list that exceeds PostgreSQL's 65 535 bind-param limit
+ * (6 params/sample) and turn the coverage lookup into a hard SQL error instead of
+ * a graceful fallback. 512 samples = 3 073 params — ample headroom; beyond it the
+ * samples are evenly downsampled, coarsening (never breaking) the probe.
+ */
+const MAX_COVERAGE_SAMPLES = 512;
+
+/**
  * Read path over the offline `pois` store (#849). Unlike `PoiService` — which
  * hits Overpass live per request — this serves the mirrored PostGIS rows the
  * weekly import (#848 / #850) populates, so a pannable POI map layer and the
@@ -131,6 +142,18 @@ export class PoiStoreService {
     samples: readonly { lat: number; lng: number }[],
   ): Promise<boolean> {
     if (samples.length === 0) return false;
+    // Bound the VALUES list so a pathologically long route can't exceed PG's
+    // bind-param limit and turn the lookup into a hard SQL error (#925 review).
+    // Evenly downsampling (keep every k-th, starting at the first) just coarsens
+    // the probe rather than breaking it — and only ever triggers well past any
+    // realistic route length.
+    const probed =
+      samples.length <= MAX_COVERAGE_SAMPLES
+        ? samples
+        : samples.filter(
+            (_, i) =>
+              i % Math.ceil(samples.length / MAX_COVERAGE_SAMPLES) === 0,
+          );
     // One query, not one-per-sample: a nearby read passes 5 samples and a long
     // route many more, so a per-sample loop would multiply DB round-trips on a
     // hot path. Each sample becomes a VALUES row of (centre, ±COVERAGE_BUFFER_KM
@@ -142,20 +165,20 @@ export class PoiStoreService {
     // geography cast only touches the few index-prefiltered candidates, not the
     // whole table. Positional params ($1…$6n) keep coordinates parameterised.
     const bufferMeters = COVERAGE_BUFFER_KM * 1000;
-    const valuesSql = samples
+    const valuesSql = probed
       .map((_, i) => {
         const p = i * 6;
         return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8, $${p + 5}::float8, $${p + 6}::float8)`;
       })
       .join(', ');
-    const params: number[] = samples.flatMap((s) => {
+    const params: number[] = probed.flatMap((s) => {
       const env = padBbox(
         { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
         COVERAGE_BUFFER_KM,
       );
       return [s.lng, s.lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
     });
-    const bufferParam = `$${samples.length * 6 + 1}`;
+    const bufferParam = `$${probed.length * 6 + 1}`;
     params.push(bufferMeters);
     const sql = `
       SELECT bool_and(EXISTS (
