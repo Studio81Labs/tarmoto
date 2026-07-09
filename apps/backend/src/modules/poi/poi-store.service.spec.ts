@@ -790,6 +790,19 @@ describe('PoiStoreService', () => {
       }
     });
 
+    it('clamps an out-of-range (poleward/antimeridian) sample centre so the geography cast cannot 500 (#925 review)', async () => {
+      repo.query.mockResolvedValueOnce([{ covered: true }]);
+      // A near-pole request's north rim lands past 90°N; ST_MakePoint::geography
+      // would reject it and 500 the read.
+      await service.hasImportedCoverage([{ lat: 90.2, lng: 200 }]);
+      const [, params] = repo.query.mock.calls[0] as [string, number[]];
+      const [ctrLng, ctrLat] = params; // centre is cast to geography
+      expect(ctrLat).toBeLessThanOrEqual(90);
+      expect(ctrLat).toBeGreaterThanOrEqual(-90);
+      expect(ctrLng).toBeLessThanOrEqual(180);
+      expect(ctrLng).toBeGreaterThanOrEqual(-180);
+    });
+
     it('short-circuits on the first uncovered chunk without running the rest', async () => {
       repo.query
         .mockResolvedValueOnce([{ covered: true }])

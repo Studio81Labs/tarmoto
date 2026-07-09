@@ -251,6 +251,24 @@ export function routeCoverageSamples(
   if (first === undefined) return [];
   if (route.length === 1) return [{ lat: first.lat, lng: first.lng }];
 
+  // A zero-length route (all coordinates identical — the DTO only checks
+  // length >= 2) is really a point, and its buffered corridor is a disc. Segment
+  // perpendiculars are undefined there, so the rails would collapse onto the
+  // centre and leave the buffer unprobed — sample it like a radius instead so the
+  // disc is spanned (#925 review). The store's ST_DWithin corridor treats a
+  // zero-length line as the same disc, so coverage matches the actual query.
+  let totalKm = 0;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    if (a !== undefined && b !== undefined) totalKm += segGeom(a, b).lenKm;
+  }
+  if (totalKm < 1e-6) {
+    return bufferKm > 0
+      ? radiusCoverageSamples(first.lat, first.lng, bufferKm)
+      : [{ lat: first.lat, lng: first.lng }];
+  }
+
   const stride = COVERAGE_BUFFER_KM;
   const out: { lat: number; lng: number }[] = [];
   const emit = (

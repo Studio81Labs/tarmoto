@@ -95,11 +95,20 @@ function coverageChunkQuery(chunk: readonly { lat: number; lng: number }[]): {
     })
     .join(', ');
   const params: number[] = chunk.flatMap((s) => {
+    // Clamp the CENTRE to valid WGS84 before it is cast to `geography`: a rim/rail
+    // sample of a near-polar or near-antimeridian request can land past ±90° /
+    // ±180°, and `ST_MakePoint(...)::geography` raises a (non-connection) SQL
+    // error for out-of-range coords, which would 500 the read instead of
+    // degrading to Overpass (#925 review). The envelope stays in geometry space
+    // (`ST_MakeEnvelope` / `ST_Intersects`), which tolerates the overflow, so only
+    // the geography centre needs clamping.
+    const lat = Math.max(-90, Math.min(90, s.lat));
+    const lng = Math.max(-180, Math.min(180, s.lng));
     const env = padBbox(
-      { minLng: s.lng, minLat: s.lat, maxLng: s.lng, maxLat: s.lat },
+      { minLng: lng, minLat: lat, maxLng: lng, maxLat: lat },
       COVERAGE_BUFFER_KM,
     );
-    return [s.lng, s.lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
+    return [lng, lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
   });
   const bufferParam = `$${chunk.length * 6 + 1}`;
   params.push(COVERAGE_BUFFER_KM * 1000);

@@ -123,6 +123,36 @@ describe('routeCoverageSamples (#925 P2)', () => {
       expect(gapKm).toBeLessThanOrEqual(COVERAGE_BUFFER_KM + 0.5);
     }
   });
+
+  it('samples a zero-length route (identical points) as a radius disc, not collapsed rails (#925 review)', () => {
+    // The DTO only checks length >= 2, so identical points slip through. Segment
+    // perpendiculars are undefined, so the rails would collapse onto the centre
+    // and leave the buffer unprobed — fall back to the 9-point disc instead.
+    const degenerate = [
+      { lat: 49, lng: 16 },
+      { lat: 49, lng: 16 },
+    ];
+    const samples = routeCoverageSamples(degenerate, 20);
+    expect(samples).toHaveLength(9); // the radius-disc sample set
+    // The buffer is actually probed: rim points are offset from the centre.
+    expect(
+      samples.some(
+        (s) => Math.abs(s.lat - 49) > 0.01 || Math.abs(s.lng - 16) > 0.01,
+      ),
+    ).toBe(true);
+  });
+
+  it('samples a zero-length route with no buffer as a single point', () => {
+    expect(
+      routeCoverageSamples(
+        [
+          { lat: 49, lng: 16 },
+          { lat: 49, lng: 16 },
+        ],
+        0,
+      ),
+    ).toEqual([{ lat: 49, lng: 16 }]);
+  });
 });
 
 describe('COVERAGE_BUFFER_KM (#925)', () => {
