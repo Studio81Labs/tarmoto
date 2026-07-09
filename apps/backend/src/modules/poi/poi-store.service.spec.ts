@@ -10,7 +10,6 @@ import {
   storedPoiToPointOfInterest,
   toStoredPoiDto,
 } from './poi-store.service.js';
-import { DEFAULT_REGIONS } from './poi-import.config.js';
 
 function makePoi(over: Partial<Poi> = {}): Poi {
   return {
@@ -129,6 +128,7 @@ describe('PoiStoreService', () => {
     orderBy: jest.Mock;
     addOrderBy: jest.Mock;
     select: jest.Mock;
+    addSelect: jest.Mock;
     groupBy: jest.Mock;
     having: jest.Mock;
     limit: jest.Mock;
@@ -145,6 +145,7 @@ describe('PoiStoreService', () => {
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
       having: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -558,13 +559,29 @@ describe('PoiStoreService', () => {
   });
 
   describe('importedRegionBboxes (#925)', () => {
-    const CZ_BBOX = DEFAULT_REGIONS.find((r) => r.code === 'CZ')?.bbox;
-
-    it('maps DISTINCT import_region codes to their region bboxes, dropping legacy + unknown codes', async () => {
-      qb.getRawMany.mockResolvedValueOnce([{ code: 'CZ' }, { code: 'ZZ' }]);
+    it('derives each covered region box from the ACTUAL ST_Extent of its OSM points, not the configured country bbox (#925 review)', async () => {
+      // A truncated/city-only import lands inside the configured CZ bbox but its
+      // real extent is just the city — coverage must be that extent, so reads
+      // elsewhere in CZ still fall back to Overpass.
+      qb.getRawMany.mockResolvedValueOnce([
+        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
+      ]);
       const bboxes = await service.importedRegionBboxes();
-      // CZ maps to its configured bbox; ZZ (not a DEFAULT_REGIONS code) drops.
-      expect(bboxes).toEqual([CZ_BBOX]);
+      expect(bboxes).toEqual([
+        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
+      ]);
+      // The extent is aggregated per region from the stored geometry.
+      const selectExpr = (qb.select.mock.calls[0] as [string])[0];
+      expect(selectExpr).toContain('ST_XMin(ST_Extent(poi.geom))');
+      const addSelects = qb.addSelect.mock.calls.map(([sql]) => String(sql));
+      expect(addSelects).toEqual([
+        'ST_YMin(ST_Extent(poi.geom))',
+        'ST_XMax(ST_Extent(poi.geom))',
+        'ST_YMax(ST_Extent(poi.geom))',
+      ]);
+      expect((qb.groupBy.mock.calls[0] as [string])[0]).toBe(
+        'poi.import_region',
+      );
       // Only actually-imported extents count: legacy (null) + tombstoned rows
       // are excluded by the query.
       const whereSql = (qb.where.mock.calls[0] as [string])[0];
@@ -584,8 +601,21 @@ describe('PoiStoreService', () => {
       expect(havingParams.minRows).toBe(100);
     });
 
-    it('caches the coverage set so repeated reads run one DISTINCT query', async () => {
-      qb.getRawMany.mockResolvedValue([{ code: 'CZ' }]);
+    it('drops a region whose ST_Extent came back null/NaN rather than emitting a 0,0 box', async () => {
+      qb.getRawMany.mockResolvedValueOnce([
+        { minLng: null, minLat: null, maxLng: null, maxLat: null },
+        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
+      ]);
+      const bboxes = await service.importedRegionBboxes();
+      expect(bboxes).toEqual([
+        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
+      ]);
+    });
+
+    it('caches the coverage set so repeated reads run one extent query', async () => {
+      qb.getRawMany.mockResolvedValue([
+        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
+      ]);
       await service.importedRegionBboxes();
       await service.importedRegionBboxes();
       expect(qb.getRawMany).toHaveBeenCalledTimes(1);
