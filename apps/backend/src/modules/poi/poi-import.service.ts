@@ -21,6 +21,14 @@ import {
 } from './poi-import-source.js';
 import { withPoiRepo } from './poi-repo.js';
 
+/**
+ * DI token for the Foursquare `PoiImportService` instance (#869) — a second
+ * instance of this service bound to the FSQ source + `fsqImportConfig`, wired
+ * via a factory in `PoiModule`. The default class provider stays OSM, so
+ * `app.get(PoiImportService)` / the OSM cron are unchanged.
+ */
+export const FSQ_POI_IMPORT = Symbol('FSQ_POI_IMPORT');
+
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
 const UPSERT_CHUNK = 500;
 
