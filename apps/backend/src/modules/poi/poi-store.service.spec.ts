@@ -359,7 +359,13 @@ describe('PoiStoreService', () => {
         unknown,
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
-      expect(kindParams).toEqual({ kinds: ['fuel_station'] });
+      // #926: also match the venue tag so a dual-tagged element (stored under
+      // its amenity-first primary) isn't missed by a secondary-kind request.
+      expect(kindSql).toContain('poi.tags @> :ktag0::jsonb');
+      expect(kindParams).toEqual({
+        kinds: ['fuel_station'],
+        ktag0: '{"amenity":"fuel"}',
+      });
     });
   });
 
@@ -386,7 +392,12 @@ describe('PoiStoreService', () => {
         unknown,
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
-      expect(kindParams).toEqual({ kinds: ['restaurant'] });
+      // #926: also match the venue tag so a dual-tagged element isn't missed.
+      expect(kindSql).toContain('poi.tags @> :ktag0::jsonb');
+      expect(kindParams).toEqual({
+        kinds: ['restaurant'],
+        ktag0: '{"amenity":"restaurant"}',
+      });
       // Nearest-first + bounded per kind so a dense radius can't load unbounded
       // rows or let one kind crowd out sparser ones before rankPois.
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
@@ -433,6 +444,51 @@ describe('PoiStoreService', () => {
         'restaurant',
       ]);
       expect(pois.map((p) => p.external_id)).toEqual(['osm:node:42', 'fsq:1']);
+    });
+
+    it('reclassifies a dual-tagged element to the requested kind (#926)', async () => {
+      // Stored under its amenity-first primary (restaurant) but also tagged
+      // tourism=viewpoint. A viewpoint request must serve it AS a viewpoint,
+      // matching the live Overpass path — the tag-match surfaces it and the
+      // reclassify re-labels it.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({
+          external_id: 'osm:node:dual',
+          kind: 'restaurant',
+          name: 'Panorama Grill',
+          tags: { amenity: 'restaurant', tourism: 'viewpoint' },
+        }),
+      ]);
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'viewpoint',
+      ]);
+      expect(pois).toHaveLength(1);
+      expect(pois[0]).toMatchObject({
+        external_id: 'osm:node:dual',
+        kind: 'viewpoint',
+      });
+    });
+
+    it('serves a dual-tagged element once, under its amenity-first kind, when both kinds are requested (#926)', async () => {
+      // restaurant + viewpoint both requested → two per-kind queries fetch the
+      // same element (kind match + tag match). It must appear once, as
+      // restaurant (amenity-first), exactly as classifyPoiTags would pick.
+      const dual = makePoi({
+        external_id: 'osm:node:dual',
+        kind: 'restaurant',
+        name: 'Panorama Grill',
+        tags: { amenity: 'restaurant', tourism: 'viewpoint' },
+      });
+      qb.getMany
+        .mockResolvedValueOnce([dual]) // restaurant per-kind query
+        .mockResolvedValueOnce([dual]); // viewpoint per-kind query (tag match)
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+        'viewpoint',
+      ]);
+      const dualHits = pois.filter((p) => p.external_id === 'osm:node:dual');
+      expect(dualHits).toHaveLength(1);
+      expect(dualHits[0]?.kind).toBe('restaurant');
     });
   });
 
