@@ -4083,7 +4083,7 @@ function WaypointEditor({
           the rider can fill them by typing a place here OR by clicking
           the map — whichever comes first. */}
       {!hasStart && onCreateEndpoint ? (
-        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
+        <div className="relative flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
           <span
             aria-hidden="true"
             className="h-[9px] w-[9px] shrink-0 rounded-full"
@@ -4131,7 +4131,9 @@ function WaypointEditor({
                 setDragIndex(null);
               }}
               onDragEnd={() => setDragIndex(null)}
-              className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5"
+              // `relative` so the spine geocode dropdown anchors to this whole
+              // field wrapper (matching its width) rather than the inner input.
+              className="relative flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5"
             >
               <GripVertical
                 size={13}
@@ -4262,7 +4264,7 @@ function WaypointEditor({
         );
       })}
       {!hasFinish && onCreateEndpoint ? (
-        <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
+        <div className="relative flex items-center gap-2.5 rounded-[10px] border border-line bg-cream px-3 py-2.5">
           <span
             aria-hidden="true"
             className="h-[9px] w-[9px] shrink-0 rounded-full"
@@ -4283,7 +4285,7 @@ function WaypointEditor({
       ) : null}
       {onAddVia && waypoints.length >= 2 ? (
         addingVia ? (
-          <div className="flex items-center gap-2.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5">
+          <div className="relative flex items-center gap-2.5 rounded-[10px] border border-dashed border-line-strong bg-transparent px-3 py-2.5">
             <span
               aria-hidden="true"
               className="h-[9px] w-[9px] shrink-0 rounded-full"
