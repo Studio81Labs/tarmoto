@@ -94,6 +94,7 @@ export function tripSummaryFromWire(
     quality_avg: wire.quality_avg ?? null,
     passes_count: wire.passes_count ?? null,
     warnings_count: wire.warnings_count,
+    overviewGeometry: wire.overview_geometry ?? null,
   };
 }
 

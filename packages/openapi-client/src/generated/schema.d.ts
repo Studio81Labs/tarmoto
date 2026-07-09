@@ -4760,6 +4760,8 @@ export interface components {
             quality_avg: number | null;
             /** @description Count of mountain passes within 2 km of any of the trip’s day geometries. `0` when the trip has days but no nearby passes (or no day geometry); `null` only when the trip has no trip-days at all. */
             passes_count: number | null;
+            /** @description Per-day simplified route outline for the trips-list card thumbnail — one polyline of `[lng, lat]` points per day, ordered by day. `null` when the trip has no routed geometry yet (e.g. a draft). */
+            overview_geometry: number[][][] | null;
         };
         CreateTripDto: {
             title: string;
@@ -4831,6 +4833,8 @@ export interface components {
             quality_avg: number | null;
             /** @description Count of mountain passes within 2 km of any of the trip’s day geometries. `0` when the trip has days but no nearby passes (or no day geometry); `null` only when the trip has no trip-days at all. */
             passes_count: number | null;
+            /** @description Per-day simplified route outline for the trips-list card thumbnail — one polyline of `[lng, lat]` points per day, ordered by day. `null` when the trip has no routed geometry yet (e.g. a draft). */
+            overview_geometry: number[][][] | null;
             daily_km_min: number;
             daily_km_max: number;
             min_quality: number;

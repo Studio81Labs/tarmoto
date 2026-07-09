@@ -61,6 +61,11 @@ const DEFAULT_ROAD_PREFERENCE = 'curvy';
 // keeping the overview polyline recognisable at typical zoom.
 const INVITE_PREVIEW_SIMPLIFY_TOLERANCE_DEG = 0.0005;
 
+// ~200 m — coarser than the invite preview because the trips-list card renders
+// the outline at thumbnail size, so a handful of points per day is plenty and
+// keeps the list payload small across many trips.
+const LIST_OVERVIEW_SIMPLIFY_TOLERANCE_DEG = 0.002;
+
 // Roles allowed to mutate trip-wide metadata. Keeping this in one place
 // so role checks stay consistent if we ever grow the role vocabulary.
 // `editor` replaced the old `admin`/`member` pair (migration 1793):
@@ -792,6 +797,7 @@ export class TripsService {
         distance_km: number | null;
         quality_avg: number | null;
         passes_count: number | null;
+        overview_geometry: number[][][] | null;
       }
     >
   > {
@@ -833,6 +839,18 @@ export class TripsService {
           'AND ST_DWithin(mp.location::geography, td.route_geom::geography, 2000)))',
         'passes_count',
       )
+      // A per-day simplified overview polyline for the trips-list card
+      // thumbnail — one LineString per day, ordered, degenerate/null-geom days
+      // filtered out. `::json` so json_agg embeds each geometry as an object,
+      // not a re-encoded string.
+      // Tolerance inlined (a compile-time numeric constant, no injection risk)
+      // rather than a bound param so this stays a plain addSelect chain.
+      .addSelect(
+        'json_agg(ST_AsGeoJSON(ST_SimplifyPreserveTopology(d.route_geom, ' +
+          `${LIST_OVERVIEW_SIMPLIFY_TOLERANCE_DEG}))::json ` +
+          'ORDER BY d.day_number) FILTER (WHERE d.route_geom IS NOT NULL)',
+        'overview',
+      )
       .where('d.trip_id IN (:...ids)', { ids })
       .groupBy('d.trip_id')
       .getRawMany<{
@@ -840,6 +858,7 @@ export class TripsService {
         distance_km: string | null;
         quality_avg: string | null;
         passes_count: string | null;
+        overview: unknown;
       }>();
 
     return new Map(
@@ -850,6 +869,7 @@ export class TripsService {
           quality_avg: r.quality_avg != null ? parseFloat(r.quality_avg) : null,
           passes_count:
             r.passes_count != null ? parseInt(r.passes_count, 10) : null,
+          overview_geometry: parseOverviewGeometry(r.overview),
         },
       ]),
     );
@@ -1599,6 +1619,7 @@ export class TripsService {
       distance_km: number | null;
       quality_avg: number | null;
       passes_count: number | null;
+      overview_geometry: number[][][] | null;
     },
   ): TripSummaryDto {
     return {
@@ -1622,6 +1643,9 @@ export class TripsService {
       distance_km: agg?.distance_km ?? null,
       quality_avg: agg?.quality_avg ?? null,
       passes_count: agg?.passes_count ?? null,
+      // Per-day simplified outline for the card thumbnail; null when the trip
+      // has no routed geometry yet (e.g. a draft).
+      overview_geometry: agg?.overview_geometry ?? null,
     };
   }
 
@@ -1631,6 +1655,7 @@ export class TripsService {
       distance_km: number | null;
       quality_avg: number | null;
       passes_count: number | null;
+      overview_geometry: number[][][] | null;
     },
   ): TripDetailDto {
     const members: TripMemberDto[] = (trip.members ?? []).map((m) => ({
@@ -1695,6 +1720,41 @@ export class TripsService {
  * two valid points) so a single-point simplify result doesn't render as a
  * malformed polyline.
  */
+/**
+ * Parse the trips-list overview aggregate — a JSON array of per-day simplified
+ * LineString geometries (from `json_agg(ST_AsGeoJSON(...)::json)`) — into an
+ * array of `[lng, lat]` polylines for the card thumbnail. Drops degenerate
+ * lines (< 2 points); returns null when no day has usable geometry.
+ */
+function parseOverviewGeometry(raw: unknown): number[][][] | null {
+  let value = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(value)) return null;
+  const lines: number[][][] = [];
+  for (const entry of value) {
+    const coords = (entry as { coordinates?: unknown } | null)?.coordinates;
+    if (!Array.isArray(coords)) continue;
+    const line: number[][] = [];
+    for (const c of coords) {
+      if (
+        Array.isArray(c) &&
+        typeof c[0] === 'number' &&
+        typeof c[1] === 'number'
+      ) {
+        line.push([c[0], c[1]]);
+      }
+    }
+    if (line.length >= 2) lines.push(line);
+  }
+  return lines.length > 0 ? lines : null;
+}
+
 function parsePreviewLine(geometry: string | null): number[][] | null {
   if (!geometry) return null;
   let parsed: unknown;
