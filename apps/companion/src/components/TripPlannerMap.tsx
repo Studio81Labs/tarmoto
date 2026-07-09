@@ -29,8 +29,14 @@ import {
   MapCanvas,
   SURFACE_COLORS,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_SURFACE_LAYER,
   type MapCanvasHandle,
 } from "@/components/map/MapCanvas";
+import {
+  pickNearestLineFeature,
+  readSegmentId,
+  SEGMENT_HIT_PADDING_PX,
+} from "@/lib/map-segment-hit";
 import {
   ensureAerialBasemap,
   setAerialBasemapVisible,
@@ -377,6 +383,18 @@ interface TripPlannerMapProps {
    * the toolbar regardless of this flag.
    */
   searchAndPois?: boolean;
+  /**
+   * Road segment whose detail drawer is open, so the shared map canvas can
+   * paint it with the selected-segment highlight (parity with /explore).
+   */
+  selectedRoadSegmentId?: string | null;
+  /**
+   * Open the shared road-segment detail drawer (quality history + reviews)
+   * for a `road_segments` UUID. Fired when a rider taps an off-route mapped
+   * segment on the tile overlay, or the Road Preview popover's "Full segment
+   * info" action. Undefined leaves those affordances inert.
+   */
+  onOpenSegmentDetail?: (roadSegmentId: string) => void;
 }
 export const TripPlannerMap = forwardRef<
   TripPlannerMapHandle,
@@ -403,6 +421,8 @@ export const TripPlannerMap = forwardRef<
     onCursorMove,
     fitRouteToken,
     searchAndPois,
+    selectedRoadSegmentId,
+    onOpenSegmentDetail,
   },
   ref,
 ) {
@@ -430,6 +450,8 @@ export const TripPlannerMap = forwardRef<
         onCursorMove={onCursorMove}
         fitRouteToken={fitRouteToken}
         searchAndPois={searchAndPois}
+        selectedRoadSegmentId={selectedRoadSegmentId}
+        onOpenSegmentDetail={onOpenSegmentDetail}
       />
     );
   }
@@ -486,6 +508,8 @@ const FetchedTripPlannerMap = forwardRef<
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
     searchAndPois?: boolean | undefined;
+    selectedRoadSegmentId?: string | null | undefined;
+    onOpenSegmentDetail?: ((roadSegmentId: string) => void) | undefined;
   }
 >(function FetchedTripPlannerMap(
   {
@@ -507,6 +531,8 @@ const FetchedTripPlannerMap = forwardRef<
     onCursorMove,
     fitRouteToken,
     searchAndPois,
+    selectedRoadSegmentId,
+    onOpenSegmentDetail,
   },
   ref,
 ) {
@@ -536,6 +562,8 @@ const FetchedTripPlannerMap = forwardRef<
       onCursorMove={onCursorMove}
       fitRouteToken={fitRouteToken}
       searchAndPois={searchAndPois}
+      selectedRoadSegmentId={selectedRoadSegmentId}
+      onOpenSegmentDetail={onOpenSegmentDetail}
     />
   );
 });
@@ -572,6 +600,8 @@ const TripPlannerMapContent = forwardRef<
     onCursorMove?: ((lat: number, lng: number) => void) | undefined;
     fitRouteToken?: number | undefined;
     searchAndPois?: boolean | undefined;
+    selectedRoadSegmentId?: string | null | undefined;
+    onOpenSegmentDetail?: ((roadSegmentId: string) => void) | undefined;
   }
 >(function TripPlannerMapContent(
   {
@@ -595,6 +625,8 @@ const TripPlannerMapContent = forwardRef<
     onCursorMove,
     fitRouteToken,
     searchAndPois,
+    selectedRoadSegmentId,
+    onOpenSegmentDetail,
   },
   ref,
 ) {
@@ -704,6 +736,12 @@ const TripPlannerMapContent = forwardRef<
   useEffect(() => {
     onMoveWaypointRef.current = onMoveWaypoint;
   }, [onMoveWaypoint]);
+  // handleReady closes over props once, so route the drawer-opener through a
+  // ref the ambient tile-overlay click reads live.
+  const onOpenSegmentDetailRef = useRef(onOpenSegmentDetail);
+  useEffect(() => {
+    onOpenSegmentDetailRef.current = onOpenSegmentDetail;
+  }, [onOpenSegmentDetail]);
   const dragEnabled = onMoveWaypoint != null;
   const [ready, setReady] = useState(false);
   // Two INDEPENDENT map toggles (design): how the route line is colored,
@@ -1102,6 +1140,41 @@ const TripPlannerMapContent = forwardRef<
         | undefined;
       if (!segmentId) return;
       useTripStore.getState().selectPlannerSegment(segmentId);
+    });
+    // ── Off-route mapped-segment click → shared detail drawer. The route line,
+    // waypoints, and POI pins own their own clicks (checked first), so this
+    // only fires on the ambient quality/surface tile overlay away from the
+    // route. Placement is right-click / long-press, so a plain left-click here
+    // never competes with adding a waypoint.
+    map.on("click", (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      const openDrawer = onOpenSegmentDetailRef.current;
+      if (!openDrawer) return;
+      const blockingLayers = [
+        ROUTE_HIT_LINE,
+        WAYPOINT_PIN,
+        POI_PIN_LAYER,
+      ].filter((id) => map.getLayer(id));
+      if (
+        blockingLayers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers: blockingLayers })
+          .length > 0
+      ) {
+        return;
+      }
+      const overlayLayers = [
+        TARMOTO_QUALITY_LAYER,
+        TARMOTO_SURFACE_LAYER,
+      ].filter((id) => map.getLayer(id));
+      if (overlayLayers.length === 0) return;
+      const feature = pickNearestLineFeature(
+        map,
+        event.point,
+        overlayLayers,
+        SEGMENT_HIT_PADDING_PX,
+      );
+      const segmentId = readSegmentId(feature);
+      if (segmentId) openDrawer(segmentId);
     });
     ensurePoiLayers(map);
     map.on("mouseenter", POI_PIN_LAYER, () => {
@@ -2390,6 +2463,7 @@ const TripPlannerMapContent = forwardRef<
       // hidden entirely over aerial imagery.
       showQuality={basemap === "map" && lineColorMode === "quality"}
       showSurface={basemap === "map" && lineColorMode === "surface"}
+      selectedSegmentId={selectedRoadSegmentId ?? null}
       onReady={handleReady}
       // v2 planner renders on a cream basemap (grey roads) regardless of the
       // viewer's scheme, matching the design.
@@ -2554,6 +2628,15 @@ const TripPlannerMapContent = forwardRef<
           segment={previewSegment}
           onClose={() => selectPlannerSegment(null)}
           {...(editable ? { onReroute: handleReroute } : {})}
+          {...(onOpenSegmentDetail
+            ? {
+                onOpenFullDetail: (roadSegmentId: string) => {
+                  // Close the preview card, then hand off to the shared drawer.
+                  selectPlannerSegment(null);
+                  onOpenSegmentDetail(roadSegmentId);
+                },
+              }
+            : {})}
         />
       ) : null}
       {/* ── Context menu overlay (Task 10) ── */}

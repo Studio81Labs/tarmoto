@@ -447,6 +447,7 @@ function ExplorerPageInner() {
             showSurface={showSurfaceOverlay}
             showHazards={showHazardOverlay}
             onSegmentSelect={setSelectedSegmentId}
+            selectedSegmentId={selectedSegmentId}
             onViewChange={(view) => {
               setCenter({ lng: view.lng, lat: view.lat });
               setZoom(view.zoom);

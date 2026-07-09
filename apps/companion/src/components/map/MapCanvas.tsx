@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import maplibregl, {
+  type FilterSpecification,
   type Map as MapLibreMap,
   type StyleSpecification,
 } from "maplibre-gl";
@@ -31,6 +32,14 @@ const CURATE_ATTRIBUTION = isCuratableBaseMap(MAP_STYLE_URL);
 export const TARMOTO_ROADS_SOURCE = "tarmoto-roads";
 export const TARMOTO_QUALITY_LAYER = "tarmoto-quality";
 export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
+// Accent glow + line painted over the selected road segment (the one whose
+// detail drawer is open), filtered to its promoted feature id. Lives here so
+// every MapCanvas surface — /explore and the trip planner — highlights the
+// same way.
+const SEGMENT_SELECTED_GLOW_LAYER = "tarmoto-segment-selected-glow";
+const SEGMENT_SELECTED_LINE_LAYER = "tarmoto-segment-selected-line";
+// A feature id that never matches: hides the highlight when nothing's selected.
+const NO_SEGMENT_FILTER: FilterSpecification = ["==", ["id"], " "];
 const ACTIVE_OPACITY = 0.9;
 
 // Surface palette — must stay in sync with --color-surface-* in globals.css
@@ -63,6 +72,11 @@ interface Props {
   zoom: number;
   showQuality: boolean;
   showSurface: boolean;
+  /**
+   * Road segment whose detail drawer is open — painted with the accent
+   * highlight overlay. Null/undefined hides it.
+   */
+  selectedSegmentId?: string | null;
   /** Expression to set on the quality line layer's `line-opacity` paint prop. */
   qualityOpacityExpression?: ExpressionSpecification | number;
   /** Expression to set on the surface line layer's `line-opacity` paint prop. */
@@ -94,6 +108,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     zoom,
     showQuality,
     showSurface,
+    selectedSegmentId,
     qualityOpacityExpression = ACTIVE_OPACITY,
     surfaceOpacityExpression = 0.75,
     onViewChange,
@@ -289,6 +304,59 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         },
       });
 
+      // Selected-segment highlight, painted from the `quality` source-layer
+      // (which stays loaded even in surface-only mode). Filtered to nothing
+      // until a segment is selected. Added last so it sits above the coloured
+      // overlays; consumers add their own markers/route in `onReady`, i.e. on
+      // top of this.
+      map.addLayer({
+        id: SEGMENT_SELECTED_GLOW_LAYER,
+        type: "line",
+        source: TARMOTO_ROADS_SOURCE,
+        "source-layer": "quality",
+        filter: NO_SEGMENT_FILTER,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#FF6A1A",
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            8,
+            12,
+            12,
+            16,
+            20,
+          ] as ExpressionSpecification,
+          "line-opacity": 0.35,
+          "line-blur": 3,
+        },
+      });
+      map.addLayer({
+        id: SEGMENT_SELECTED_LINE_LAYER,
+        type: "line",
+        source: TARMOTO_ROADS_SOURCE,
+        "source-layer": "quality",
+        filter: NO_SEGMENT_FILTER,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#FF6A1A",
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            2.5,
+            12,
+            4,
+            16,
+            7,
+          ] as ExpressionSpecification,
+          "line-opacity": 1,
+        },
+      });
+
       map.on("moveend", () => {
         const c = map.getCenter();
         const b = map.getBounds();
@@ -333,6 +401,21 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     setVisibility(map, TARMOTO_QUALITY_LAYER, showQuality);
     setVisibility(map, TARMOTO_SURFACE_LAYER, showSurface);
   }, [ready, showQuality, showSurface]);
+
+  // ── selected-segment highlight filter ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const filter: FilterSpecification = selectedSegmentId
+      ? ["==", ["id"], selectedSegmentId]
+      : NO_SEGMENT_FILTER;
+    for (const layer of [
+      SEGMENT_SELECTED_GLOW_LAYER,
+      SEGMENT_SELECTED_LINE_LAYER,
+    ]) {
+      if (map.getLayer(layer)) map.setFilter(layer, filter);
+    }
+  }, [ready, selectedSegmentId]);
 
   // ── paint updates for opacity expressions ──
   useEffect(() => {

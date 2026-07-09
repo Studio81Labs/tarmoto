@@ -2888,6 +2888,8 @@ export default function TripPlannerPage() {
                 ? { onCursorMove: collabSession.emitCursor }
                 : {})}
               fitRouteToken={fitRouteToken}
+              selectedRoadSegmentId={selectedRoadSegmentId}
+              onOpenSegmentDetail={setSelectedRoadSegmentId}
             />
           </div>
 

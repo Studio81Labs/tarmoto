@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
-import { Camera, ExternalLink, Loader2, X } from "lucide-react";
+import { Camera, ExternalLink, History, Loader2, X } from "lucide-react";
 import { Button, Heading, Mono, Pill } from "@tarmoto/ui";
 import { plannerApi } from "@/lib/planner/api";
 import {
@@ -27,6 +27,13 @@ interface RoadPreviewPopoverProps {
   onClose: () => void;
   /** Insert an avoidance via near this segment and re-route. */
   onReroute?: (segment: RouteSegment) => void;
+  /**
+   * Open the full road-segment drawer (quality history + reviews) for this
+   * segment's `road_segments` UUID. Shown only when the segment is backed by
+   * a real mapped segment (`roadSegmentId` set) — no-data spans have nothing
+   * to show there.
+   */
+  onOpenFullDetail?: (roadSegmentId: string) => void;
 }
 
 /** Bar height for one road-segment's score (1–5 → 32%–100%, kept visible). */
@@ -158,8 +165,21 @@ export function RoadPreviewPopover({
   segment,
   onClose,
   onReroute,
+  onOpenFullDetail,
 }: RoadPreviewPopoverProps) {
   const [preview, setPreview] = useState<RoadPreview | null>(null);
+  const roadSegmentId = segment.roadSegmentId;
+  const fullDetailButton =
+    roadSegmentId && onOpenFullDetail ? (
+      <button
+        type="button"
+        onClick={() => onOpenFullDetail(roadSegmentId)}
+        className="mt-3.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line-strong bg-paper px-3 py-2 text-[12.5px] font-bold text-ink transition hover:border-ink"
+      >
+        <History size={13} />
+        {t("Full history & reviews ")}
+      </button>
+    ) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -358,6 +378,7 @@ export function RoadPreviewPopover({
                   </Button>
                 </div>
               ) : null}
+              {fullDetailButton}
             </>
           ) : preview ? (
             <>
@@ -406,6 +427,7 @@ export function RoadPreviewPopover({
                   </Button>
                 </div>
               ) : null}
+              {fullDetailButton}
             </>
           ) : (
             <p className="mt-3 flex items-center gap-2 text-[12.5px] text-fg-dim">

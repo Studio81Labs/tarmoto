@@ -44,9 +44,21 @@ export function SegmentDetailSidebar({
   onClose,
 }: SegmentDetailSidebarProps) {
   const open = state.status !== "idle";
-  // Slide in on open (up from the bottom on mobile, in from the right on
-  // desktop). rAF so the off-screen transform paints before the transition.
+  // Slide in on open and back out on close (up/down from the bottom on mobile,
+  // in/out from the right on desktop). `entered` drives the transform; rAF so
+  // the off-screen transform paints before the transition starts. `snapshot`
+  // freezes the last non-idle state so the drawer keeps rendering its content
+  // while it animates out, after `state` has already returned to idle; it stays
+  // mounted until the slide-out transition ends.
   const [entered, setEntered] = useState(false);
+  const [mounted, setMounted] = useState(open);
+  const [snapshot, setSnapshot] = useState<SegmentDetailPanelState>(state);
+  useEffect(() => {
+    if (open) {
+      setSnapshot(state);
+      setMounted(true);
+    }
+  }, [state, open]);
   useEffect(() => {
     if (!open) {
       setEntered(false);
@@ -56,12 +68,23 @@ export function SegmentDetailSidebar({
     return () => cancelAnimationFrame(id);
   }, [open]);
 
-  if (state.status === "idle") return null;
+  if (!mounted || snapshot.status === "idle") return null;
 
   return (
     <aside
       role="dialog"
       aria-label={t("Road segment details")}
+      onTransitionEnd={(e) => {
+        // Unmount only once the slide-out (the transform) has finished, and
+        // ignore transitions bubbling up from children (e.g. hover states).
+        if (
+          !open &&
+          e.target === e.currentTarget &&
+          e.propertyName === "transform"
+        ) {
+          setMounted(false);
+        }
+      }}
       className={`absolute inset-x-0 bottom-0 z-20 flex max-h-[78%] flex-col border-t border-line bg-cream shadow-2xl transition-transform duration-200 ease-out md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[430px] md:border-l md:border-t-0 ${
         entered
           ? "translate-y-0 md:translate-x-0"
@@ -80,7 +103,7 @@ export function SegmentDetailSidebar({
         </button>
       </div>
 
-      {state.status === "loading" && (
+      {snapshot.status === "loading" && (
         <StatusBlock
           icon={<Loader2 size={18} className="animate-spin" />}
           title={t("Loading road details")}
@@ -88,7 +111,7 @@ export function SegmentDetailSidebar({
         />
       )}
 
-      {state.status === "not-found" && (
+      {snapshot.status === "not-found" && (
         <StatusBlock
           icon={<AlertTriangle size={18} />}
           title={t("Road segment not found")}
@@ -98,18 +121,21 @@ export function SegmentDetailSidebar({
         />
       )}
 
-      {state.status === "error" && (
+      {snapshot.status === "error" && (
         <StatusBlock
           icon={<AlertTriangle size={18} />}
           title={t("Could not load road details")}
-          body={state.message}
+          body={snapshot.message}
         />
       )}
 
-      {state.status === "ready" && (
+      {snapshot.status === "ready" && (
         // Key by id so the per-segment local state (e.g. the live review count)
         // re-initialises when the viewer switches to a different segment.
-        <SegmentDetailContent key={state.segment.id} segment={state.segment} />
+        <SegmentDetailContent
+          key={snapshot.segment.id}
+          segment={snapshot.segment}
+        />
       )}
     </aside>
   );
