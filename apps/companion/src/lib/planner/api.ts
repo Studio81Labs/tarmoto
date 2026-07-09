@@ -327,7 +327,10 @@ function storedPoiToCategoryPoi(poi: StoredPoiSuggestion): Poi | null {
   return {
     id: poi.id,
     category,
-    source: "osm",
+    // The store carries the venue's bulk source (#869); pass it through so the
+    // map/legend/popover can credit OSM vs Foursquare. Anything unexpected falls
+    // back to `osm` (the only pre-FSQ source).
+    source: poi.source === "fsq" ? "fsq" : "osm",
     name: poi.name ?? "Unnamed",
     lat: poi.lat,
     lng: poi.lng,
