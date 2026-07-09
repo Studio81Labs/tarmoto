@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import maplibregl, {
+import {
   type GeoJSONSource,
   type Map as MapLibreMap,
   type MapLayerMouseEvent,
@@ -27,12 +27,7 @@ import {
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
 import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
-import {
-  HAZARD_CONFIG,
-  HAZARD_TYPES_UI,
-  formatRelativeTime,
-  hazardFadeOpacity,
-} from "@/lib/utils";
+import { HAZARD_CONFIG, HAZARD_TYPES_UI, hazardFadeOpacity } from "@/lib/utils";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
 import { onHazardNew, subscribeHazards } from "@/lib/socket";
 import {
@@ -55,7 +50,10 @@ import {
   POI_CLUSTER_LAYER,
   POI_SOURCE,
 } from "@/components/map/PoiPinLayer";
-import { PoiPopover } from "@/components/map/PoiPopover";
+import {
+  MapPointPopover,
+  type MapPoint,
+} from "@/components/map/MapPointPopover";
 import { plannerApi } from "@/lib/planner/api";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
 
@@ -192,8 +190,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // POI browse layer: the open info popover, a viewport token bumped on
     // `moveend` to refetch, and an id→Poi lookup so a pin click resolves back
     // to the fetched object (features carry only id/category/name/source).
-    const [poiMenu, setPoiMenu] = useState<{
-      poi: Poi;
+    // The open map-point popover (POI or hazard). `lng`/`lat` drive the
+    // re-projection that keeps the card pinned while the map pans.
+    const [pointMenu, setPointMenu] = useState<{
+      point: MapPoint;
+      lng: number;
+      lat: number;
       x: number;
       y: number;
     } | null>(null);
@@ -349,17 +351,21 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
 
       const onHazardClick = (e: MapLayerMouseEvent) => {
         const feature = e.features?.[0];
-        if (!feature) return;
-        const props = feature.properties as HazardProps | null;
-        if (!props?.hazard_type) return;
-        new maplibregl.Popup({
-          closeButton: true,
-          offset: 12,
-          maxWidth: "280px",
-        })
-          .setLngLat(e.lngLat)
-          .setHTML(renderHazardPopup(props))
-          .addTo(map);
+        const props = feature?.properties as HazardProps | null;
+        if (
+          !feature ||
+          !props?.hazard_type ||
+          feature.geometry.type !== "Point"
+        )
+          return;
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        setPointMenu({
+          point: { kind: "hazard", hazard: props },
+          lng,
+          lat,
+          x: e.originalEvent.clientX,
+          y: e.originalEvent.clientY,
+        });
       };
       map.on("click", HAZARD_BG, onHazardClick);
       map.on("click", HAZARD_ICON, onHazardClick);
@@ -374,8 +380,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           ? poisByIdRef.current.get(props.poiId)
           : undefined;
         if (!poi) return;
-        setPoiMenu({
-          poi,
+        setPointMenu({
+          point: { kind: "poi", poi },
+          lng: poi.lng,
+          lat: poi.lat,
           x: e.originalEvent.clientX,
           y: e.originalEvent.clientY,
         });
@@ -400,18 +408,22 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       });
 
       map.on("click", (e: MapLayerMouseEvent) => {
-        // POI pins/clusters own their click (handled above).
-        const poiLayers = [POI_PIN_LAYER, POI_CLUSTER_LAYER].filter((id) =>
-          map.getLayer(id),
-        );
+        // POI pins/clusters and hazard markers own their click (handled above).
+        const pointLayers = [
+          POI_PIN_LAYER,
+          POI_CLUSTER_LAYER,
+          HAZARD_BG,
+          HAZARD_ICON,
+          HAZARD_CLUSTERS,
+        ].filter((id) => map.getLayer(id));
         if (
-          poiLayers.length > 0 &&
-          map.queryRenderedFeatures(e.point, { layers: poiLayers }).length > 0
+          pointLayers.length > 0 &&
+          map.queryRenderedFeatures(e.point, { layers: pointLayers }).length > 0
         ) {
           return;
         }
-        // Any other click (road or empty map) dismisses an open POI popover.
-        setPoiMenu(null);
+        // Any other click (road or empty map) dismisses an open popover.
+        setPointMenu(null);
         const {
           showQuality: canSelectQuality,
           showSurface: canSelectSurface,
@@ -487,7 +499,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       if (categories.length === 0) {
         poisByIdRef.current = new Map();
         setPoiSourceData(map, []);
-        setPoiMenu(null);
+        // Only dismiss a POI popover; a hazard popover is independent of POI data.
+        setPointMenu((menu) => (menu?.point.kind === "poi" ? null : menu));
         return;
       }
       let cancelled = false;
@@ -514,7 +527,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         ) {
           poisByIdRef.current = new Map();
           setPoiSourceData(map, []);
-          setPoiMenu(null);
+          // Only dismiss a POI popover; a hazard popover is independent of POI data.
+          setPointMenu((menu) => (menu?.point.kind === "poi" ? null : menu));
           return;
         }
         const bbox: [number, number, number, number] = [
@@ -531,13 +545,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             if (cancelled) return;
             poisByIdRef.current = new Map(pois.map((poi) => [poi.id, poi]));
             setPoiSourceData(map, pois);
-            // Reconcile any open popover with the fresh list: refresh its POI
-            // object (e.g. new seasonal status), or close it if that POI is no
-            // longer in the active/visible set.
-            setPoiMenu((menu) => {
-              if (!menu) return menu;
-              const fresh = poisByIdRef.current.get(menu.poi.id);
-              return fresh ? { ...menu, poi: fresh } : null;
+            // Reconcile an open POI popover with the fresh list: refresh its
+            // POI object (e.g. new seasonal status), or close it if that POI is
+            // no longer in the active/visible set. Hazard popovers are left be.
+            setPointMenu((menu) => {
+              if (!menu || menu.point.kind !== "poi") return menu;
+              const fresh = poisByIdRef.current.get(menu.point.poi.id);
+              return fresh
+                ? { ...menu, point: { kind: "poi", poi: fresh } }
+                : null;
             });
             // ODbL/attribution: the source declares OSM, but FSQ rows need the
             // Foursquare map credit too. Latch it on once seen (#869).
@@ -560,7 +576,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             console.error("Failed to load POIs for the viewport", err);
             poisByIdRef.current = new Map();
             setPoiSourceData(map, []);
-            setPoiMenu(null);
+            // Only dismiss a POI popover; a hazard popover is independent of POI data.
+            setPointMenu((menu) => (menu?.point.kind === "poi" ? null : menu));
           });
       }, POI_FETCH_DEBOUNCE_MS);
       return () => {
@@ -577,24 +594,24 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       setAerialBasemapVisible(map, basemap === "aerial");
     }, [basemap, ready]);
 
-    // ── keep the POI popover locked to its pin while the map pans/zooms ──
-    // Re-project the POI's lng/lat to screen coords on every `move` (mirrors
+    // ── keep the point popover locked to its pin while the map pans/zooms ──
+    // Re-project the point's lng/lat to screen coords on every `move` (mirrors
     // the planner), so the fixed-position card tracks its pin instead of
     // hovering at stale coordinates.
-    const poiMenuOpen = poiMenu !== null;
+    const pointMenuOpen = pointMenu !== null;
     useEffect(() => {
       const map = handleRef.current?.map;
-      if (!map || !ready || !poiMenuOpen) return;
+      if (!map || !ready || !pointMenuOpen) return;
       const reposition = () => {
         const rect = map.getCanvas()?.getBoundingClientRect?.();
         if (!rect) return;
-        setPoiMenu((menu) => {
+        setPointMenu((menu) => {
           if (!menu) return menu;
-          const point = map.project([menu.poi.lng, menu.poi.lat]);
+          const projected = map.project([menu.lng, menu.lat]);
           return {
             ...menu,
-            x: rect.left + point.x + 10,
-            y: rect.top + point.y + 10,
+            x: rect.left + projected.x + 10,
+            y: rect.top + projected.y + 10,
           };
         });
       };
@@ -602,7 +619,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       return () => {
         map.off("move", reposition);
       };
-    }, [ready, poiMenuOpen]);
+    }, [ready, pointMenuOpen]);
 
     // ── project raw hazards → filtered GeoJSON source ──
     useEffect(() => {
@@ -757,12 +774,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         onReady={handleReady}
         onViewChange={handleViewChange}
       >
-        {poiMenu ? (
-          <PoiPopover
-            poi={poiMenu.poi}
-            x={poiMenu.x}
-            y={poiMenu.y}
-            onClose={() => setPoiMenu(null)}
+        {pointMenu ? (
+          <MapPointPopover
+            point={pointMenu.point}
+            x={pointMenu.x}
+            y={pointMenu.y}
+            onClose={() => setPointMenu(null)}
           />
         ) : null}
       </MapCanvas>
@@ -904,63 +921,4 @@ function viewportRadiusMeters(map: MapLibreMap): number {
     HAZARD_MIN_RADIUS_M,
     Math.min(HAZARD_MAX_RADIUS_M, Math.round(diagonal)),
   );
-}
-
-function renderHazardPopup(props: HazardProps): string {
-  const cfg = HAZARD_CONFIG[props.hazard_type] ?? HAZARD_CONFIG.other;
-  const severity = props.severity || "—";
-  const reporter = props.reporter ?? "Unknown rider";
-  const when = formatRelativeTime(props.created_at);
-  const road = props.road_name
-    ? `<div style="font-size:11px;color:#64748b;margin-top:2px;">${escapeHtml(props.road_name)}</div>`
-    : "";
-  const note = props.note
-    ? `<div style="font-size:12px;color:#334155;margin-top:8px;padding:6px 8px;background:#f1f5f9;border-radius:6px;">${escapeHtml(props.note)}</div>`
-    : "";
-  // Inline `<img>` keeps the popup self-contained — the URL is
-  // already validated as https / loopback on the backend response
-  // path (`sanitizeHazardPhotoUrl`). Server-trusted means we don't
-  // need an extra render-time check here, just escape the attribute.
-  const photo = props.photo_url
-    ? `<img src="${escapeHtml(props.photo_url)}" alt="Hazard photo" style="display:block;width:100%;max-width:280px;height:auto;margin-top:8px;border-radius:6px;background:#e2e8f0;" />`
-    : "";
-  return `
-    <div style="font-family:system-ui,sans-serif;color:#0f172a;min-width:200px;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:20px;line-height:1;">${cfg.emoji}</span>
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:14px;">${escapeHtml(cfg.label)}</div>
-          ${road}
-        </div>
-        <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;padding:2px 6px;border-radius:999px;background:${severityBg(severity)};color:${severityFg(severity)};">${escapeHtml(severity)}</span>
-      </div>
-      ${photo}
-      ${note}
-      <div style="font-size:12px;color:#475569;margin-top:8px;display:flex;justify-content:space-between;gap:8px;">
-        <span>${escapeHtml(reporter)} · ${escapeHtml(when)}</span>
-        <span>✓ ${props.confirmations}</span>
-      </div>
-    </div>
-  `;
-}
-
-function severityBg(severity: string): string {
-  if (severity === "high") return "#fee2e2";
-  if (severity === "low") return "#dcfce7";
-  return "#fef3c7";
-}
-
-function severityFg(severity: string): string {
-  if (severity === "high") return "#991b1b";
-  if (severity === "low") return "#166534";
-  return "#92400e";
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }

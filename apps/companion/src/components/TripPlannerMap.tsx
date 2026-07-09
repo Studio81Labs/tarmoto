@@ -16,13 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import {
-  Ban,
-  Construction,
-  Layers3,
-  MountainSnow,
-  TriangleAlert,
-} from "lucide-react";
+import { Layers3, TriangleAlert } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -42,9 +36,10 @@ import {
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
 import { MapToolbar } from "@/components/planner/MapToolbar";
 import {
-  PoiPopover,
+  MapPointPopover,
   type PoiPopoverActions,
-} from "@/components/map/PoiPopover";
+} from "@/components/map/MapPointPopover";
+import { CONDITION_COLORS, type ConditionKind } from "@/lib/conditions-visual";
 import { FSQ_ATTRIBUTION, OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
@@ -65,10 +60,8 @@ import {
 } from "@/components/map/RegionDrawControl";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
-import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import {
-  detourLengthKm,
-  formatClosureWindow,
+  buildTripClosureRoutes,
   type PlannerClosure,
 } from "@/lib/closures-summary";
 import type { MountainPass as MountainPassSummary } from "@/lib/passes-summary";
@@ -194,13 +187,6 @@ const CONDITION_IMAGE_PREFIX = "tarmoto-condition-";
  * closed road never reads as a "red quality" line: crimson closures,
  * construction amber roadworks, slate/crimson mountain passes.
  */
-type ConditionKind = "closure-full" | "closure-partial" | "roadworks" | "pass";
-const CONDITION_COLORS: Record<ConditionKind, string> = {
-  "closure-full": "#C23B22",
-  "closure-partial": "#D19A2E",
-  roadworks: "#C77D2E",
-  pass: "#3F6DB0",
-};
 const CONDITION_BADGES: Record<
   ConditionKind,
   { color: string; glyph: string }
@@ -223,18 +209,6 @@ const CONDITION_BADGES: Record<
     glyph: '<path d="m3 20 6-10 4 5 3-4 5 9z"/>',
   },
 };
-/**
- * Marker kind for a closure: full closures lead, roadworks get their own
- * badge, and any other partial/advisory reason reads as a partial closure.
- */
-function closureConditionKind(closure: {
-  severity: string;
-  reason: string;
-}): ConditionKind {
-  if (closure.severity === "full") return "closure-full";
-  if (closure.reason === "roadworks") return "roadworks";
-  return "closure-partial";
-}
 const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
 
 /**
@@ -2666,109 +2640,33 @@ const TripPlannerMapContent = forwardRef<
         />
       ) : null}
       {/* ── Context menu overlay (Task 10) ── */}
-      {conditionMenu
-        ? (() => {
-            const isClosure = conditionMenu.kind === "closure";
-            const title = isClosure
-              ? conditionMenu.closure.title
-              : conditionMenu.pass.name;
-            // Pass markers share one badge (design), so the popover must
-            // carry the closed-vs-unknown distinction the marker no longer
-            // draws — mirror the closure `reason · severity` pattern.
-            const typeLabel = isClosure
-              ? `${conditionMenu.closure.reason} · ${conditionMenu.closure.severity}`
-              : `${t("Seasonal pass")} · ${conditionMenu.pass.status}`;
-            const detourKm =
-              isClosure && conditionMenu.closure.reason === "roadworks"
-                ? detourLengthKm(conditionMenu.closure)
-                : null;
-            const conditionKind: ConditionKind = isClosure
-              ? closureConditionKind(conditionMenu.closure)
-              : "pass";
-            const badgeColor = CONDITION_COLORS[conditionKind];
-            const BadgeIcon =
-              conditionKind === "closure-full"
-                ? Ban
-                : conditionKind === "roadworks"
-                  ? Construction
-                  : conditionKind === "pass"
-                    ? MountainSnow
-                    : TriangleAlert;
-            return (
-              <div
-                role="dialog"
-                aria-label={t("Condition details")}
-                className="fixed z-30 w-72 overflow-hidden rounded-xl border border-line bg-cream p-2 shadow-[0_6px_20px_rgba(14,14,16,0.16)]"
-                style={{ left: conditionMenu.x, top: conditionMenu.y }}
-              >
-                <div className="flex items-center gap-2.5 px-1.5 pb-2 pt-1">
-                  <span
-                    className="flex h-9 w-9 shrink-0 rotate-45 items-center justify-center rounded-[10px] border-2 bg-paper"
-                    style={{ borderColor: badgeColor }}
-                  >
-                    <BadgeIcon
-                      size={15}
-                      className="-rotate-45"
-                      style={{ color: badgeColor }}
-                    />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-bold text-ink">
-                      {title}
-                    </p>
-                    <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-                      {typeLabel}
-                    </p>
-                  </div>
-                </div>
-                {conditionMenu.affectsRoute ? (
-                  <p className="mx-1.5 mb-2 inline-flex items-center gap-1.5 rounded-[8px] border border-accent bg-accent/10 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-[1.2px] text-accent">
-                    <TriangleAlert size={11} />
-                    {t("Affects your route")}
-                  </p>
-                ) : null}
-                <div className="px-1.5 pb-2 text-[11.5px] leading-snug text-fg-dim">
-                  {isClosure ? (
-                    <>
-                      <p className="font-mono text-[10px] uppercase tracking-[0.4px] text-fg-mute">
-                        {formatClosureWindow(conditionMenu.closure)}
-                      </p>
-                      {conditionMenu.closure.notes ? (
-                        <p className="mt-1">{conditionMenu.closure.notes}</p>
-                      ) : null}
-                      {detourKm != null ? (
-                        <p className="mt-1.5 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
-                          {t("Detour ~{km} km", {
-                            km: Math.round(detourKm * 10) / 10,
-                          })}
-                        </p>
-                      ) : null}
-                    </>
-                  ) : (
-                    <p>
-                      {`${conditionMenu.pass.elevation_m.toLocaleString()} m`}
-                      {conditionMenu.pass.region
-                        ? ` · ${conditionMenu.pass.region}`
-                        : ""}
-                    </p>
-                  )}
-                </div>
-                {conditionMenu.affectsRoute && editable ? (
-                  // Editable maps only: on a read-only detail map the
-                  // store mutation would never reach the immutable trip
-                  // prop — a silent no-op with a desynced store.
-                  <button
-                    type="button"
-                    onClick={() => handleConditionReroute(conditionMenu)}
-                    className="w-full rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
-                  >
-                    {t("Reroute around it")}
-                  </button>
-                ) : null}
-              </div>
-            );
-          })()
-        : null}
+      {conditionMenu ? (
+        <MapPointPopover
+          point={
+            conditionMenu.kind === "closure"
+              ? {
+                  kind: "closure",
+                  closure: conditionMenu.closure,
+                  affectsRoute: conditionMenu.affectsRoute,
+                }
+              : {
+                  kind: "pass",
+                  pass: conditionMenu.pass,
+                  affectsRoute: conditionMenu.affectsRoute,
+                }
+          }
+          x={conditionMenu.x}
+          y={conditionMenu.y}
+          onClose={closeConditionMenu}
+          {...(conditionMenu.affectsRoute && editable
+            ? {
+                actions: {
+                  onReroute: () => handleConditionReroute(conditionMenu),
+                },
+              }
+            : {})}
+        />
+      ) : null}
       {poiMenu
         ? (() => {
             const stopType = STOP_TYPE_BY_CATEGORY[poiMenu.poi.category];
@@ -2803,12 +2701,12 @@ const TripPlannerMapContent = forwardRef<
                   }
                 : undefined;
             return (
-              <PoiPopover
-                poi={poiMenu.poi}
+              <MapPointPopover
+                point={{ kind: "poi", poi: poiMenu.poi }}
                 x={poiMenu.x}
                 y={poiMenu.y}
                 onClose={closePoiMenu}
-                {...(actions ? { actions } : {})}
+                {...(actions ? { actions: { poi: actions } } : {})}
               />
             );
           })()
