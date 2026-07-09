@@ -22,6 +22,7 @@ import { FeaturesModule } from '../features/features.module.js';
 import { EventsModule } from '../events/events.module.js';
 import { AppSettingsModule } from '../app-settings/app-settings.module.js';
 import { AdminAppSettingsController } from '../app-settings/admin-app-settings.controller.js';
+import { PushModule } from '../push/index.js';
 import { InternalGuard } from './internal.guard.js';
 import {
   AdminAuditInterceptor,
@@ -66,6 +67,9 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     // socket rooms via the gateway.
     EventsModule,
     AppSettingsModule,
+    // Exposes NotificationPreferencesService so admin-users can read/update a
+    // user's notification preferences from the user-detail screen.
+    PushModule,
   ],
   controllers: [
     AdminMetricsController,

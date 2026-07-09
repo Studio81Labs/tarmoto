@@ -7,6 +7,11 @@ import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
+import { NotificationPreferencesService } from '../push/notification-preferences.service.js';
+import type {
+  NotificationPreferencesResponseDto,
+  UpdateNotificationPreferencesDto,
+} from '../push/dto/notification-preferences.dto.js';
 import {
   AdminUserDetailDto,
   AdminUserListResponseDto,
@@ -26,6 +31,7 @@ export class AdminUsersService {
     @InjectRepository(Trip) private readonly trips: Repository<Trip>,
     @InjectRepository(CommuteRoute)
     private readonly commutes: Repository<CommuteRoute>,
+    private readonly notificationPrefs: NotificationPreferencesService,
   ) {}
 
   async list(query: ListAdminUsersQueryDto): Promise<AdminUserListResponseDto> {
@@ -109,6 +115,32 @@ export class AdminUsersService {
       { id },
       { deleted_at: null, deletion_scheduled_at: null, deletion_reason: null },
     );
+  }
+
+  /**
+   * A user's notification preferences (defaults merged in when no row exists),
+   * for support to inspect/adjust from the admin user detail. Reuses the same
+   * service the user-facing settings endpoint uses, so the read shape and the
+   * lazy-row semantics stay identical.
+   */
+  async getNotificationPreferences(
+    id: string,
+  ): Promise<NotificationPreferencesResponseDto> {
+    await this.assertUserExists(id);
+    return this.notificationPrefs.get(id);
+  }
+
+  async updateNotificationPreferences(
+    id: string,
+    dto: UpdateNotificationPreferencesDto,
+  ): Promise<NotificationPreferencesResponseDto> {
+    await this.assertUserExists(id);
+    return this.notificationPrefs.update(id, dto);
+  }
+
+  private async assertUserExists(id: string): Promise<void> {
+    const u = await this.users.findOne({ where: { id } });
+    if (!u) throw new NotFoundException('User not found');
   }
 
   private toRow(u: User): AdminUserRowDto {

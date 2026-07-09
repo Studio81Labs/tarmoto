@@ -8,12 +8,20 @@ const mockRestoreMutate = vi.fn();
 const mockRefetch = vi.fn();
 const mockUseAdminUsersList = vi.fn();
 const mockUseAdminUserDetail = vi.fn();
+const mockUseAdminUserNotificationPrefs = vi.fn();
+const mockUpdatePrefsMutate = vi.fn();
 
 vi.mock("../data/useAdminUsers.js", () => ({
   useAdminUsersList: (params: unknown) => mockUseAdminUsersList(params),
   useAdminUserDetail: (id: unknown) => mockUseAdminUserDetail(id),
   useSoftDeleteUser: () => ({ mutate: mockDeleteMutate, isPending: false }),
   useRestoreUser: () => ({ mutate: mockRestoreMutate, isPending: false }),
+  useAdminUserNotificationPrefs: (id: unknown) =>
+    mockUseAdminUserNotificationPrefs(id),
+  useUpdateUserNotificationPrefs: () => ({
+    mutate: mockUpdatePrefsMutate,
+    isPending: false,
+  }),
 }));
 
 const mockSetOverrideMutate = vi.fn();
@@ -79,6 +87,8 @@ describe("UsersScreen", () => {
     mockSetOverrideMutate.mockClear();
     mockRemoveOverrideMutate.mockClear();
     mockUseAdminUserFeatureFlags.mockClear();
+    mockUseAdminUserNotificationPrefs.mockClear();
+    mockUpdatePrefsMutate.mockClear();
 
     mockUseAdminUsersList.mockReturnValue(defaultListReturn());
     mockUseAdminUserDetail.mockReturnValue({
@@ -88,6 +98,19 @@ describe("UsersScreen", () => {
     });
     mockUseAdminUserFeatureFlags.mockReturnValue({
       data: null,
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseAdminUserNotificationPrefs.mockReturnValue({
+      data: {
+        email_digest: "weekly",
+        marketing_emails: false,
+        quiet_hours_start: 0,
+        quiet_hours_end: 0,
+        quiet_hours_timezone: "UTC",
+        categories: {},
+      },
       isPending: false,
       error: null,
       refetch: vi.fn(),
@@ -444,5 +467,31 @@ describe("UsersScreen", () => {
       | Record<string, unknown>
       | undefined;
     expect(lastCall).toMatchObject({ page: 1, subscription: "pro" });
+  });
+
+  it("edits a user's notification preferences from the detail card", async () => {
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    expect(screen.getByText("Notification preferences")).toBeInTheDocument();
+
+    // Changing the digest cadence PATCHes just that field for the selected user.
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /email digest cadence/i }),
+      "never",
+    );
+    expect(mockUpdatePrefsMutate).toHaveBeenCalledWith(
+      { params: { path: { id: "u1" } }, body: { email_digest: "never" } },
+      expect.anything(),
+    );
+
+    // Toggling marketing (default off) PATCHes marketing_emails: true.
+    mockUpdatePrefsMutate.mockClear();
+    await user.click(screen.getByRole("switch", { name: "Marketing emails" }));
+    expect(mockUpdatePrefsMutate).toHaveBeenCalledWith(
+      { params: { path: { id: "u1" } }, body: { marketing_emails: true } },
+      expect.anything(),
+    );
   });
 });

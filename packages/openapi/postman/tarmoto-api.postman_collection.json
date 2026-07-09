@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "27c66c40-aa84-4ad0-ac48-7f2896748f7a",
+    "_postman_id": "b465c5c1-790f-4ffc-b7f8-280299f0b08f",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -6135,6 +6135,61 @@
           }
         },
         {
+          "name": "An app user's notification preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:id/notification-preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", ":id", "notification-preferences"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update an app user's notification preferences",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:id/notification-preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", ":id", "notification-preferences"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_digest\": \"daily\",\n  \"marketing_emails\": false,\n  \"quiet_hours_start\": 0,\n  \"quiet_hours_end\": 0,\n  \"quiet_hours_timezone\": \"\",\n  \"categories\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "List admin (staff) accounts",
           "request": {
             "method": "GET",
@@ -6607,6 +6662,55 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "List the outbound email delivery log (paginated, filterable)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/log",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "email", "log"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by delivery status.",
+                  "disabled": true
+                },
+                {
+                  "key": "tag",
+                  "value": "",
+                  "description": "Filter by template tag, e.g. \"weekly-digest\".",
+                  "disabled": true
+                },
+                {
+                  "key": "recipient",
+                  "value": "",
+                  "description": "Exact recipient address (case-insensitive); indexed lookup.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "pageSize",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
             }
           }
         }
