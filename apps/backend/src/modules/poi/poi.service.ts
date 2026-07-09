@@ -38,6 +38,7 @@ import {
 } from './dto/point-of-interest.dto.js';
 import { PoiStoreService } from './poi-store.service.js';
 import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
+import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
 
 // `cumulativeLengthKm` / `projectOntoRoute` live in `poi-geo.ts` so the store
 // service can share them without a PoiService ↔ PoiStoreService import cycle.
@@ -176,14 +177,34 @@ export class PoiService {
         distance_km: haversineKm(lat, lng, poi.lat, poi.lng),
       }));
 
-    withDistance.sort((a, b) => {
+    // Cross-source de-dup HERE, not in the store read (#869): `rank` recomputes
+    // distance from the kept row's coordinates and slices globally, so de-duping
+    // by coordinate upstream could drop a closer FSQ copy in favour of a farther
+    // OSM twin that then falls outside MAX_RESULTS. Carry the group's minimum
+    // anchor distance onto the kept OSM row. No-op for single-source reads.
+    const deduped = dedupeAcrossSources(
+      withDistance,
+      (entry) => ({
+        source: sourceOfExternalId(entry.poi.external_id),
+        kind: entry.poi.kind,
+        name: entry.poi.name,
+        lat: entry.poi.lat,
+        lng: entry.poi.lng,
+      }),
+      (kept, dropped) =>
+        dropped.distance_km < kept.distance_km
+          ? { ...kept, distance_km: dropped.distance_km }
+          : kept,
+    );
+
+    deduped.sort((a, b) => {
       const aHasName = !!a.poi.name?.trim();
       const bHasName = !!b.poi.name?.trim();
       if (aHasName !== bHasName) return aHasName ? -1 : 1;
       return a.distance_km - b.distance_km;
     });
 
-    return withDistance.slice(0, MAX_RESULTS).map(({ poi, distance_km }) => ({
+    return deduped.slice(0, MAX_RESULTS).map(({ poi, distance_km }) => ({
       external_id: poi.external_id,
       name: poi.name,
       kind: poi.kind,
@@ -246,12 +267,34 @@ export class PoiService {
         distance_km: haversineKm(lat, lng, poi.lat, poi.lng),
       }));
 
+    // Cross-source de-dup HERE, not in the store read (#869): the ranker
+    // recomputes distance from each kept row's coordinates and caps per kind, so
+    // de-duping earlier (by coordinate, before distances exist) would let a
+    // closer FSQ copy be replaced by a farther OSM twin that then sorts past the
+    // cap — the venue would vanish though its group was inside it. Carry the
+    // group's minimum anchor distance onto the kept OSM row so the sort + cap
+    // rank the venue by its nearest member. No-op for single-source reads.
+    const deduped = dedupeAcrossSources(
+      withDistance,
+      (entry) => ({
+        source: sourceOfExternalId(entry.poi.external_id),
+        kind: entry.poi.kind,
+        name: entry.poi.name,
+        lat: entry.poi.lat,
+        lng: entry.poi.lng,
+      }),
+      (kept, dropped) =>
+        dropped.distance_km < kept.distance_km
+          ? { ...kept, distance_km: dropped.distance_km }
+          : kept,
+    );
+
     // Keep nameless / contactless rows: every POI now carries a `maps_url`
     // (a Google Maps deep link from its coordinates), so it's navigable even
     // without a name — the per-kind named-first sort below just ranks them
     // after named ones. Dropping them hid usable stops (e.g. unmanned fuel).
     const byKind = new Map<PoiKind, typeof withDistance>();
-    for (const entry of withDistance) {
+    for (const entry of deduped) {
       const list = byKind.get(entry.poi.kind) ?? [];
       list.push(entry);
       byKind.set(entry.poi.kind, list);
@@ -405,8 +448,33 @@ export class PoiService {
       }
     }
 
+    // Cross-source de-dup AFTER the buffer filter (#869): among the
+    // within-buffer survivors, drop an FSQ copy that duplicates an OSM one (same
+    // kind, ~50 m, matching name), keeping OSM. Done here, not in the store
+    // read, so a straddling OSM copy that projected outside the buffer can't
+    // suppress the FSQ copy that projected inside. Source comes from the
+    // external id since `PointOfInterest` carries none. No-op until FSQ imports.
+    const survivors = dedupeAcrossSources(
+      [...deduped.values()],
+      (entry) => ({
+        source: sourceOfExternalId(entry.poi.external_id),
+        kind: entry.poi.kind,
+        name: entry.poi.name,
+        lat: entry.poi.lat,
+        lng: entry.poi.lng,
+      }),
+      // Carry the closest copy's route distance onto the kept OSM row, so the
+      // per-kind distance sort + cap below rank the venue by its nearest member.
+      // Without this a closer FSQ copy replaced by a farther OSM twin could fall
+      // outside the cap and vanish, even though the group was inside it.
+      (kept, dropped) =>
+        dropped.distance_from_route_km < kept.distance_from_route_km
+          ? { ...kept, distance_from_route_km: dropped.distance_from_route_km }
+          : kept,
+    );
+
     const byKind = new Map<PoiKind, Annotated[]>();
-    for (const entry of deduped.values()) {
+    for (const entry of survivors) {
       const list = byKind.get(entry.poi.kind) ?? [];
       list.push(entry);
       byKind.set(entry.poi.kind, list);
