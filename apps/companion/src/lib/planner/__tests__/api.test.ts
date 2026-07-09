@@ -98,6 +98,13 @@ describe("surfaceMixToPercents", () => {
     expect(surfaceMixToPercents({})).toEqual([]);
     expect(surfaceMixToPercents({ asphalt: 0, gravel: -5 })).toEqual([]);
   });
+
+  it("drops sub-1% surfaces that would round to 0%", () => {
+    // 99.7% gravel + 0.3% asphalt must not surface a misleading "0% asphalt".
+    expect(surfaceMixToPercents({ gravel: 99_700, asphalt: 300 })).toEqual([
+      { surface: "gravel", pct: 100 },
+    ]);
+  });
 });
 
 describe("deriveFlaggedSections", () => {
