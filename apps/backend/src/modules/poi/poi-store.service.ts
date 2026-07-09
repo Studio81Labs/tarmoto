@@ -155,9 +155,10 @@ export class PoiStoreService {
    * Region MEMBERSHIP, not point PROXIMITY (#944): this replaces the #925
    * sample-probe (`bool_and(EXISTS(...))` over rim/rail points near imported
    * `pois` rows), whose point-radius shape reported a border wedge just outside
-   * the real import boundary as covered (the "border halo" documented on
-   * {@link COVERAGE_BUFFER_KM}). Testing the buffered request against the
-   * region's actual boundary polygon is exact regardless of rollout state.
+   * the real import boundary as covered (the "border halo" documented on the
+   * old `COVERAGE_BUFFER_KM` constant, now removed). Testing the buffered
+   * request against the region's actual boundary polygon is exact regardless
+   * of rollout state.
    *
    * `buildCoverageRequest` returns null for a degenerate/non-finite descriptor
    * (NaN coordinates, an empty route) — that short-circuits to `false` (not
