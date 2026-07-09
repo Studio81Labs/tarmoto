@@ -39,7 +39,16 @@ import {
   MapPointPopover,
   type PoiPopoverActions,
 } from "@/components/map/MapPointPopover";
-import { CONDITION_COLORS, type ConditionKind } from "@/lib/conditions-visual";
+import { CONDITION_COLORS } from "@/lib/conditions-visual";
+import {
+  ensureConditionLayers,
+  setConditionLayersVisible,
+  CLOSURE_LINE_SOURCE,
+  CLOSURE_MARKER_SOURCE,
+  PASS_MARKER_SOURCE,
+  CLOSURE_MARKER_LAYER,
+  PASS_MARKER_LAYER,
+} from "@/components/map/ConditionMarkerLayer";
 import { FSQ_ATTRIBUTION, OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
@@ -175,40 +184,11 @@ const POI_FETCH_DEBOUNCE_MS = 400;
  * Ambient condition markers reveal at planning zoom (revision 7) — at
  * country zoom they'd be noise; the closure lines still hint presence.
  */
-const CONDITION_MARKER_MINZOOM = 7;
 /**
  * Route line colour when no data layer is active (quality/surface toggled
  * off): plain ink so the route reads as geometry, not as a measurement.
  */
 const NEUTRAL_ROUTE_LINE_COLOR = "#0E0E10";
-const CONDITION_IMAGE_PREFIX = "tarmoto-condition-";
-/**
- * Diamond icon badges, deliberately OFF the road-quality palette so a
- * closed road never reads as a "red quality" line: crimson closures,
- * construction amber roadworks, slate/crimson mountain passes.
- */
-const CONDITION_BADGES: Record<
-  ConditionKind,
-  { color: string; glyph: string }
-> = {
-  "closure-full": {
-    color: CONDITION_COLORS["closure-full"],
-    glyph: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
-  },
-  "closure-partial": {
-    color: CONDITION_COLORS["closure-partial"],
-    glyph: '<path d="M12 2 2 20h20z"/><path d="M12 9v5M12 17h.01"/>',
-  },
-  roadworks: {
-    color: CONDITION_COLORS.roadworks,
-    glyph:
-      '<path d="M10 2v2M14 2v2M3 22l4-11h10l4 11M8.5 11l-2 11M15.5 11l2 11M6 16h12"/>',
-  },
-  pass: {
-    color: CONDITION_COLORS.pass,
-    glyph: '<path d="m3 20 6-10 4 5 3-4 5 9z"/>',
-  },
-};
 const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
 
 /**
@@ -259,12 +239,6 @@ function queryWaypointPinsAt(
     { layers: [WAYPOINT_PIN] },
   );
 }
-const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
-const CLOSURE_MARKER_SOURCE = "trip-planner-closure-markers";
-const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
-const CLOSURE_LINE_LAYER = "trip-planner-closure-lines";
-const CLOSURE_MARKER_LAYER = "trip-planner-closure-markers";
-const PASS_MARKER_LAYER = "trip-planner-pass-markers";
 const DAY_BREAK_SOURCE = "trip-planner-day-breaks";
 const DAY_BREAK_CIRCLE_LAYER = "trip-planner-day-break-circle";
 const DAY_BREAK_LABEL_LAYER = "trip-planner-day-break-label";
@@ -986,16 +960,7 @@ const TripPlannerMapContent = forwardRef<
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready) return;
-    const visibility = conditionsVisible ? "visible" : "none";
-    for (const layer of [
-      CLOSURE_LINE_LAYER,
-      CLOSURE_MARKER_LAYER,
-      PASS_MARKER_LAYER,
-    ]) {
-      if (map.getLayer(layer)) {
-        map.setLayoutProperty(layer, "visibility", visibility);
-      }
-    }
+    setConditionLayersVisible(map, conditionsVisible);
     if (!conditionsVisible) setConditionMenu(null);
   }, [conditionsVisible, ready]);
   useEffect(() => {
@@ -2854,31 +2819,6 @@ function installWaypointPinImages(map: MapLibreMap): void {
 }
 
 /**
- * Rotated-square (diamond) badges for the ambient conditions layer —
- * cream fill, colored ring + glyph, visually distinct from both the
- * quality line palette and the circular POI/waypoint pins.
- */
-function installConditionImages(map: MapLibreMap): void {
-  for (const [key, badge] of Object.entries(CONDITION_BADGES)) {
-    const imageId = `${CONDITION_IMAGE_PREFIX}${key}`;
-    if (map.hasImage?.(imageId)) continue;
-    const svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">' +
-      `<rect x="12" y="12" width="36" height="36" rx="9" transform="rotate(45 30 30)" fill="#F5EFE6" stroke="${badge.color}" stroke-width="4"/>` +
-      `<g transform="translate(21,21) scale(0.75)" fill="none" stroke="${badge.color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">` +
-      badge.glyph +
-      "</g></svg>";
-    const image = new Image(60, 60);
-    image.onload = () => {
-      if (!map.hasImage?.(imageId)) {
-        map.addImage(imageId, image, { pixelRatio: 2 });
-      }
-    };
-    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  }
-}
-
-/**
  * Rasterize the category glyphs into accent-circle pin images (2x for
  * crisp rendering). SVG -> Image is async; MapLibre repaints the symbol
  * layer as each image lands. jsdom never fires Image onload — tests
@@ -3238,84 +3178,7 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-  if (!map.getSource(CLOSURE_LINE_SOURCE)) {
-    map.addSource(CLOSURE_LINE_SOURCE, {
-      type: "geojson",
-      data: buildPlannerClosureLineCollection([]),
-    });
-  }
-  if (!map.getLayer(CLOSURE_LINE_LAYER)) {
-    map.addLayer({
-      id: CLOSURE_LINE_LAYER,
-      type: "line",
-      source: CLOSURE_LINE_SOURCE,
-      paint: {
-        "line-color": [
-          "match",
-          ["get", "severity"],
-          "full",
-          "#FB7185",
-          "partial",
-          "#FBBF24",
-          "#38BDF8",
-        ],
-        "line-width": ["interpolate", ["linear"], ["zoom"], 7, 2, 11, 4, 14, 6],
-        "line-opacity": 0.85,
-      },
-    });
-  }
-  installConditionImages(map);
-  if (!map.getSource(CLOSURE_MARKER_SOURCE)) {
-    map.addSource(CLOSURE_MARKER_SOURCE, {
-      type: "geojson",
-      data: buildPlannerClosureMarkerCollection([]),
-    });
-  }
-  if (!map.getLayer(CLOSURE_MARKER_LAYER)) {
-    map.addLayer({
-      id: CLOSURE_MARKER_LAYER,
-      type: "symbol",
-      source: CLOSURE_MARKER_SOURCE,
-      // Zoom-gated (revision 7): country zoom hides individual markers.
-      minzoom: CONDITION_MARKER_MINZOOM,
-      layout: {
-        "icon-image": [
-          "case",
-          ["==", ["get", "severity"], "full"],
-          `${CONDITION_IMAGE_PREFIX}closure-full`,
-          ["==", ["get", "reason"], "roadworks"],
-          `${CONDITION_IMAGE_PREFIX}roadworks`,
-          `${CONDITION_IMAGE_PREFIX}closure-partial`,
-        ],
-        "icon-size": 1,
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-      },
-    });
-  }
-  if (!map.getSource(PASS_MARKER_SOURCE)) {
-    map.addSource(PASS_MARKER_SOURCE, {
-      type: "geojson",
-      data: buildPlannerPassMarkerCollection([]),
-    });
-  }
-  if (!map.getLayer(PASS_MARKER_LAYER)) {
-    map.addLayer({
-      id: PASS_MARKER_LAYER,
-      type: "symbol",
-      source: PASS_MARKER_SOURCE,
-      minzoom: CONDITION_MARKER_MINZOOM,
-      // Ambient awareness cares about passes you might NOT clear —
-      // open passes stay off the map (revision 7).
-      filter: ["!=", ["get", "status"], "open"],
-      layout: {
-        "icon-image": `${CONDITION_IMAGE_PREFIX}pass`,
-        "icon-size": 1,
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-      },
-    });
-  }
+  ensureConditionLayers(map);
   // ── Collaboration overlays (US-35) ──
   // Collaborator cursors are rendered as avatar HTML markers (not a GeoJSON
   // layer) so each shows the rider's photo/initials — see the cursor-marker
