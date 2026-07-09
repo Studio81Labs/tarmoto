@@ -133,8 +133,9 @@ export type PoiCategory =
   | "mountain_pass"
   | "twisty_highlight";
 
-/** Provenance of a category POI — kept for the later real wiring. */
-export type PoiSource = "osm" | "passes" | "tarmoto";
+/** Provenance of a category POI. `osm` + `fsq` are the two bulk venue sources
+ * (#869); `passes`/`tarmoto` are Tarmoto-derived categories. */
+export type PoiSource = "osm" | "fsq" | "passes" | "tarmoto";
 
 /**
  * Mixed-source POI behind the single `getPoisByCategories` resolver

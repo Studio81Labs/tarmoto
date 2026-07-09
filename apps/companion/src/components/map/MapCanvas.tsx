@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -49,6 +50,13 @@ export const SURFACE_COLORS = {
 
 export interface MapCanvasHandle {
   readonly map: MapLibreMap | null;
+  /**
+   * Set the extra POI-data credits appended to the attribution control beyond
+   * the base-map ones (#869) — e.g. `[FSQ_ATTRIBUTION]` once Foursquare POIs
+   * appear. Pass `[]` to clear. Rebuilds the control, so call it only when the
+   * set actually changes (the caller latches it), not on every data refresh.
+   */
+  setPoiAttribution(entries: readonly string[]): void;
 }
 
 export interface MapCanvasViewChange {
@@ -123,10 +131,45 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     colorSchemeRef.current = colorScheme;
   }, [colorScheme]);
 
+  // Attribution control we own (rather than the Map's default) so we can rebuild
+  // it when the POI-data credits change — MapLibre binds a source's `attribution`
+  // statically and offers no live setter, and the control has no update method.
+  const attributionControlRef = useRef<maplibregl.AttributionControl | null>(
+    null,
+  );
+  const poiAttributionRef = useRef<string[]>([]);
+
+  const applyAttribution = useCallback((map: MapLibreMap) => {
+    if (attributionControlRef.current) {
+      map.removeControl(attributionControlRef.current);
+    }
+    // Base-map credits (only for a curatable base — a commercial style keeps its
+    // own) plus the POI-data credits the parent latches on. OSM is already in
+    // BASE_MAP_ATTRIBUTION, so the POI credits carry only the extra source(s).
+    const credits = [
+      ...(CURATE_ATTRIBUTION ? BASE_MAP_ATTRIBUTION : []),
+      ...poiAttributionRef.current,
+    ];
+    const control = new maplibregl.AttributionControl({
+      compact: true,
+      // One joined string, not the array: the control length-sorts multiple
+      // entries but never reorders within one, so this preserves provenance
+      // order (see attribution.ts).
+      ...(credits.length > 0 ? { customAttribution: credits.join(" | ") } : {}),
+    });
+    map.addControl(control);
+    attributionControlRef.current = control;
+  }, []);
+
   // Expose the raw map handle to parents so they can add custom sources/layers.
   useImperativeHandle(ref, () => ({
     get map() {
       return mapRef.current;
+    },
+    setPoiAttribution(entries: readonly string[]) {
+      poiAttributionRef.current = [...entries];
+      const map = mapRef.current;
+      if (map) applyAttribution(map);
     },
   }));
 
@@ -168,16 +211,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       style: curatedStyle,
       center: [center.lng, center.lat],
       zoom,
-      attributionControl: CURATE_ATTRIBUTION
-        ? {
-            compact: true,
-            // One joined string, not the array: the control length-sorts
-            // multiple entries but never reorders within one, so this preserves
-            // our provenance order (see attribution.ts).
-            customAttribution: BASE_MAP_ATTRIBUTION.join(" | "),
-          }
-        : { compact: true },
+      // We manage our own AttributionControl (applyAttribution) so it can be
+      // rebuilt when the POI-data credits change (#869); disable the default.
+      attributionControl: false,
     });
+    applyAttribution(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
     map.addControl(
       new maplibregl.GeolocateControl({
@@ -318,6 +356,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       ro.disconnect();
       map.remove();
       mapRef.current = null;
+      // map.remove() disposes its controls; drop our ref so a remount rebuilds.
+      attributionControlRef.current = null;
       appliedColorSchemeRef.current = null;
       setReady(false);
     };

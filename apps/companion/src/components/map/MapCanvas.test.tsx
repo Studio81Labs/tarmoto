@@ -5,6 +5,7 @@ import { applyTarmotoMapTheme } from "@/lib/map-style";
 
 const mapStub = {
   addControl: vi.fn(),
+  removeControl: vi.fn(),
   on: vi.fn(),
   addSource: vi.fn(),
   addLayer: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("maplibre-gl", () => {
   class NavigationControl {}
   class GeolocateControl {}
   class ScaleControl {}
+  class AttributionControl {}
   const Map = vi.fn(function MockMap() {
     return mapStub;
   });
@@ -49,10 +51,12 @@ vi.mock("maplibre-gl", () => {
       NavigationControl,
       GeolocateControl,
       ScaleControl,
+      AttributionControl,
     },
     NavigationControl,
     GeolocateControl,
     ScaleControl,
+    AttributionControl,
   };
 });
 

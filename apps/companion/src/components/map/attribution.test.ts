@@ -1,6 +1,8 @@
 import type { StyleSpecification } from "maplibre-gl";
 import {
   BASE_MAP_ATTRIBUTION,
+  FSQ_ATTRIBUTION,
+  FSQ_BRAND_COLOR,
   isCuratableBaseMap,
   OSM_ATTRIBUTION,
   loadCuratedMapStyle,
@@ -141,6 +143,24 @@ describe("base map attribution", () => {
     // The POI GeoJSON source reuses OSM_ATTRIBUTION verbatim, so it must live
     // inside the joined base-map string for that dedupe to collapse the two.
     expect(BASE_MAP_ATTRIBUTION.join(" | ")).toContain(OSM_ATTRIBUTION);
+  });
+});
+
+describe("Foursquare attribution (#869)", () => {
+  it("is a linked Foursquare credit", () => {
+    expect(FSQ_ATTRIBUTION).toContain("foursquare.com");
+    expect(FSQ_ATTRIBUTION).toContain("© Foursquare");
+    expect(FSQ_ATTRIBUTION).toContain('rel="noopener noreferrer"');
+  });
+
+  it("is NOT a base-map credit — it's added data-driven only when FSQ POIs load", () => {
+    // Unlike OSM (always credited by the base map), Foursquare is credited only
+    // when FSQ data is present, so it must not be baked into the base-map row.
+    expect(BASE_MAP_ATTRIBUTION).not.toContain(FSQ_ATTRIBUTION);
+  });
+
+  it("exposes the Foursquare brand blue for the legend dot", () => {
+    expect(FSQ_BRAND_COLOR).toBe("#0072b1");
   });
 });
 
