@@ -10,6 +10,7 @@ import {
   storedPoiToPointOfInterest,
   toStoredPoiDto,
 } from './poi-store.service.js';
+import type { Bbox } from './poi-geo.js';
 
 function makePoi(over: Partial<Poi> = {}): Poi {
   return {
@@ -127,13 +128,9 @@ describe('PoiStoreService', () => {
     andWhere: jest.Mock;
     orderBy: jest.Mock;
     addOrderBy: jest.Mock;
-    select: jest.Mock;
-    addSelect: jest.Mock;
-    groupBy: jest.Mock;
-    having: jest.Mock;
     limit: jest.Mock;
     getMany: jest.Mock;
-    getRawMany: jest.Mock;
+    getExists: jest.Mock;
   };
   let repo: { createQueryBuilder: jest.Mock; findOne: jest.Mock };
   let service: PoiStoreService;
@@ -144,13 +141,9 @@ describe('PoiStoreService', () => {
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      groupBy: jest.fn().mockReturnThis(),
-      having: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
-      getRawMany: jest.fn().mockResolvedValue([]),
+      getExists: jest.fn().mockResolvedValue(false),
     };
     repo = {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
@@ -723,67 +716,45 @@ describe('PoiStoreService', () => {
     });
   });
 
-  describe('importedRegionBboxes (#925)', () => {
-    it('derives each covered region box from the ACTUAL ST_Extent of its OSM points, not the configured country bbox (#925 review)', async () => {
-      // A truncated/city-only import lands inside the configured CZ bbox but its
-      // real extent is just the city — coverage must be that extent, so reads
-      // elsewhere in CZ still fall back to Overpass.
-      qb.getRawMany.mockResolvedValueOnce([
-        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
-      ]);
-      const bboxes = await service.importedRegionBboxes();
-      expect(bboxes).toEqual([
-        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
-      ]);
-      // The extent is aggregated per region from the stored geometry.
-      const selectExpr = (qb.select.mock.calls[0] as [string])[0];
-      expect(selectExpr).toContain('ST_XMin(ST_Extent(poi.geom))');
-      const addSelects = qb.addSelect.mock.calls.map(([sql]) => String(sql));
-      expect(addSelects).toEqual([
-        'ST_YMin(ST_Extent(poi.geom))',
-        'ST_XMax(ST_Extent(poi.geom))',
-        'ST_YMax(ST_Extent(poi.geom))',
-      ]);
-      expect((qb.groupBy.mock.calls[0] as [string])[0]).toBe(
-        'poi.import_region',
-      );
-      // Only actually-imported extents count: legacy (null) + tombstoned rows
-      // are excluded by the query.
-      const whereSql = (qb.where.mock.calls[0] as [string])[0];
-      expect(whereSql).toContain('import_region IS NOT NULL');
+  describe('hasImportedPointNear (#925)', () => {
+    const area = { minLng: 18.4, minLat: 49.5, maxLng: 18.5, maxLat: 49.6 };
+
+    it('reports covered when an active imported OSM point exists within the padded probe box', async () => {
+      qb.getExists.mockResolvedValueOnce(true);
+      expect(await service.hasImportedPointNear(area)).toBe(true);
+      // The probe is an existence check over the request box widened by the
+      // coverage buffer (poleward-safe), scoped to active, region-imported OSM.
+      const [whereSql, probe] = qb.where.mock.calls[0] as [string, Bbox];
+      expect(whereSql).toContain('ST_Intersects');
+      expect(whereSql).toContain('ST_MakeEnvelope');
+      // Padded outward on every side (≈20 km) vs. the raw request area.
+      expect(probe.minLng).toBeLessThan(area.minLng);
+      expect(probe.minLat).toBeLessThan(area.minLat);
+      expect(probe.maxLng).toBeGreaterThan(area.maxLng);
+      expect(probe.maxLat).toBeGreaterThan(area.maxLat);
       const andWhereSql = qb.andWhere.mock.calls.map(([sql]) => String(sql));
       expect(andWhereSql).toContain('poi.deactivated_at IS NULL');
+      expect(andWhereSql).toContain('poi.import_region IS NOT NULL');
       // Scoped to OSM (#925 review): the suppressed Overpass fallback is
-      // OSM-backed, so an FSQ-only region must not count as covered.
+      // OSM-backed, so an FSQ-only area must not count as covered.
       expect(andWhereSql).toContain("poi.source = 'osm'");
-      // A region counts as covered only past a row-count threshold (#925 review),
-      // so a partial first import can't flip a whole bbox to authoritative.
-      const [havingSql, havingParams] = qb.having.mock.calls[0] as [
-        string,
-        { minRows: number },
-      ];
-      expect(havingSql).toContain('COUNT(*) >= :minRows');
-      expect(havingParams.minRows).toBe(100);
+      expect(qb.getExists).toHaveBeenCalledTimes(1);
     });
 
-    it('drops a region whose ST_Extent came back null/NaN rather than emitting a 0,0 box', async () => {
-      qb.getRawMany.mockResolvedValueOnce([
-        { minLng: null, minLat: null, maxLng: null, maxLat: null },
-        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
-      ]);
-      const bboxes = await service.importedRegionBboxes();
-      expect(bboxes).toEqual([
-        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
-      ]);
+    it('reports NOT covered when no imported point is near (un-imported gap / border wedge)', async () => {
+      qb.getExists.mockResolvedValueOnce(false);
+      expect(await service.hasImportedPointNear(area)).toBe(false);
     });
 
-    it('caches the coverage set so repeated reads run one extent query', async () => {
-      qb.getRawMany.mockResolvedValue([
-        { minLng: 16.5, minLat: 49.1, maxLng: 16.7, maxLat: 49.3 },
-      ]);
-      await service.importedRegionBboxes();
-      await service.importedRegionBboxes();
-      expect(qb.getRawMany).toHaveBeenCalledTimes(1);
+    it('pads longitude at the poleward edge so a high-latitude box is not under-probed', async () => {
+      const north = { minLng: 10, minLat: 69, maxLng: 10.2, maxLat: 69.1 };
+      await service.hasImportedPointNear(north);
+      const [, probe] = qb.where.mock.calls[0] as [string, Bbox];
+      const dLat = probe.maxLat - north.maxLat;
+      const dLng = probe.maxLng - north.maxLng;
+      // Longitude km/° shrinks toward the poles, so the degree pad on lng must be
+      // wider than the lat pad at 69°N.
+      expect(dLng).toBeGreaterThan(dLat);
     });
   });
 });

@@ -115,7 +115,8 @@ function lngKmPerDegree(lat: number): number {
 
 /**
  * The bounding box enclosing a `radiusKm` circle around a point (#925) — the
- * coverage check approximates the circular request area by this box.
+ * coverage probe approximates the circular request area by this box before
+ * widening it to ask whether an imported point lies nearby.
  */
 export function pointRadiusBbox(
   lat: number,
@@ -125,8 +126,7 @@ export function pointRadiusBbox(
   const dLat = radiusKm / LAT_KM_PER_DEGREE;
   // Pad longitude at the circle's poleward edge (`|lat| + dLat`), where km/°
   // longitude is smallest — using the centre latitude under-pads that edge, so a
-  // request near an import bbox's E/W boundary could look fully covered while a
-  // thin slice of its radius crosses outside and the merge is skipped (#925 rev).
+  // thin slice of the radius would fall outside the box the coverage probe sees.
   const dLng = radiusKm / lngKmPerDegree(Math.abs(lat) + dLat);
   return {
     minLng: lng - dLng,
@@ -138,8 +138,8 @@ export function pointRadiusBbox(
 
 /**
  * The bounding box enclosing a route polyline expanded by `bufferKm` (#925) —
- * the coverage check approximates the buffered-corridor request area by this
- * box. The longitude padding uses the route's mid-latitude.
+ * the coverage probe approximates the buffered-corridor request area by this box
+ * before widening it to ask whether an imported point lies nearby.
  */
 export function routeBufferBbox(
   route: ReadonlyArray<{ lat: number; lng: number }>,
@@ -158,9 +158,8 @@ export function routeBufferBbox(
   const dLat = bufferKm / LAT_KM_PER_DEGREE;
   // Longitude km/degree shrinks toward the poles, so pad using the route's
   // poleward-MOST latitude (its widest longitude span for `bufferKm`). The
-  // midpoint would under-pad a long north/south route's high-latitude end, which
-  // could let `bboxContains` mark a corridor that actually leaves the imported
-  // region as covered and skip the Overpass merge (#925 review).
+  // midpoint would under-pad a long north/south route's high-latitude end,
+  // shrinking the box the coverage probe widens and searches (#925 review).
   const worstLat = Math.abs(minLat) >= Math.abs(maxLat) ? minLat : maxLat;
   const dLng = bufferKm / lngKmPerDegree(worstLat);
   return {
@@ -171,12 +170,23 @@ export function routeBufferBbox(
   };
 }
 
-/** True when `outer` fully encloses `inner`. */
-export function bboxContains(outer: Bbox, inner: Bbox): boolean {
-  return (
-    outer.minLng <= inner.minLng &&
-    outer.maxLng >= inner.maxLng &&
-    outer.minLat <= inner.minLat &&
-    outer.maxLat >= inner.maxLat
-  );
+/**
+ * Expand a bbox by `km` on every side, poleward-safe (#925): longitude is
+ * padded using the box's poleward-MOST edge, where km/° longitude is smallest,
+ * so the pad never falls short on the high-latitude side. Used by the coverage
+ * probe to widen the request area into "is there an imported point within `km`
+ * of it?" — under-padding would shrink that ring and wrongly report an
+ * un-imported gap as covered.
+ */
+export function padBbox(bbox: Bbox, km: number): Bbox {
+  const dLat = km / LAT_KM_PER_DEGREE;
+  const worstLat =
+    Math.abs(bbox.minLat) >= Math.abs(bbox.maxLat) ? bbox.minLat : bbox.maxLat;
+  const dLng = km / lngKmPerDegree(worstLat);
+  return {
+    minLng: bbox.minLng - dLng,
+    minLat: bbox.minLat - dLat,
+    maxLng: bbox.maxLng + dLng,
+    maxLat: bbox.maxLat + dLat,
+  };
 }

@@ -13,7 +13,12 @@ import {
   POI_KIND_TAGS,
 } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
-import { cumulativeLengthKm, projectOntoRoute, type Bbox } from './poi-geo.js';
+import {
+  cumulativeLengthKm,
+  padBbox,
+  projectOntoRoute,
+  type Bbox,
+} from './poi-geo.js';
 import { withPoiRepo } from './poi-repo.js';
 import { dedupeAcrossSources, type DedupPoi } from './poi-dedup.js';
 import {
@@ -76,17 +81,18 @@ export class PoiStoreService {
   ) {}
 
   /**
-   * Cache of the imported-region bboxes (#925). Imports run weekly, so a short
-   * TTL keeps the coverage-aware read (`PoiService.readStoreFirst`) from running
-   * a `DISTINCT import_region` scan on every request while still picking a
-   * newly-imported region up within the window.
+   * How near an imported OSM point must be for a request area to count as
+   * "covered" (#925). The coverage probe widens the request box by this margin
+   * and asks whether any imported point falls inside — see
+   * {@link hasImportedPointNear}. It must exceed the typical gap between POIs in
+   * a genuinely-imported RURAL area (so a sparse-but-covered lookup stays
+   * authoritative instead of re-hitting Overpass), while staying small enough
+   * that a request deep in an un-imported neighbour (a border wedge inside an
+   * imported country's bounding rectangle) finds no point and correctly falls
+   * back. 20 km is a deliberate middle: the residual false-cover is only a thin
+   * strip within one buffer's width of the real import boundary.
    */
-  private coverageCache: { at: number; bboxes: Bbox[] } | null = null;
-  private static readonly COVERAGE_TTL_MS = 60_000;
-  /** Min OSM rows before a region counts as imported/covered (#925 review) —
-   * guards against a partial first import flipping a whole bbox to authoritative
-   * off a few stray rows. Well below any real country's venue count. */
-  private static readonly COVERAGE_MIN_ROWS = 100;
+  private static readonly COVERAGE_BUFFER_KM = 20;
 
   /**
    * Live readiness: `isInitialized` only records that TypeORM connected once (it
@@ -104,83 +110,43 @@ export class PoiStoreService {
   }
 
   /**
-   * Bounding boxes of the regions the OSM bulk import has ACTUALLY populated
-   * (#925): one row per `import_region` (non-legacy, non-tombstoned), each box
-   * being the `ST_Extent` of that region's stored OSM points. Drives the
-   * coverage-aware read — a request that isn't fully inside one of these also
-   * queries Overpass, so live coverage doesn't regress at import frontiers.
-   * Cached (see {@link coverageCache}); a legacy (`import_region IS NULL`) row
-   * contributes no box, so an area only counts as covered once imported.
+   * Whether the OSM bulk import has ACTUALLY populated the neighbourhood of a
+   * request area (#925) — the coverage signal for {@link PoiService.readStoreFirst}.
+   * True when at least one active, imported OSM point lies within
+   * {@link COVERAGE_BUFFER_KM} of `area` (the box padded by that margin, then a
+   * GiST-indexed `ST_Intersects` existence probe).
    *
-   * The box is the ACTUAL data extent, NOT the configured region bbox (#925
-   * review): a truncated or city-only extract that still writes >
-   * {@link COVERAGE_MIN_ROWS} rows must not flip the whole *configured* country
-   * bbox to authoritative and suppress Overpass across the slices it never
-   * imported. `ST_Extent` errs on the safe side — it can only be smaller than
-   * the configured bbox (a sparse edge falls just outside → an extra, harmless
-   * Overpass merge), never larger, so it can't wrongly suppress the fallback.
-   * It costs no extra scan: the `COUNT(*)` gate already groups every active OSM
-   * row, and `ST_Extent` aggregates over that same scan.
+   * This is occupancy, not a region rectangle (#925 review): coverage follows
+   * the real distribution of imported points, so it can't over-claim the way a
+   * configured country bbox does. A request deep in an un-imported neighbour —
+   * a border wedge that sits inside an imported country's bounding rectangle but
+   * was never populated — finds no nearby point and correctly falls back to
+   * Overpass, while a genuinely-empty lookup INSIDE imported territory (a
+   * kind-/min_stars-filtered miss with other imported POIs around it) stays
+   * authoritative. The residual false-cover is only a strip one buffer wide
+   * along the true import boundary.
    *
-   * Scoped to `source = 'osm'` (#925 review): the Overpass fallback this
-   * suppresses is OSM-backed, so an FSQ-only region (manual/scheduled FSQ import
-   * before OSM has populated it) must NOT mark the bbox as covered — otherwise a
-   * covered-empty read would skip the OSM Overpass fallback that should still run.
+   * Scoped to `source = 'osm'`: the Overpass fallback this gates is OSM-backed,
+   * so an FSQ-only area (imported before OSM populated it) must NOT count as
+   * covered, or a covered-empty read would skip the OSM fallback that should run.
    *
-   * Requires at least {@link COVERAGE_MIN_ROWS} OSM rows before a region counts
-   * as covered (#925 review): a handful of stray rows past the importer's
-   * near-empty guard must not register a region as covered at all. Every real
-   * country carries far more than this once genuinely imported.
+   * `import_region IS NOT NULL` excludes legacy/unclaimed rows so only rows a
+   * real regional import wrote can register coverage.
    */
-  async importedRegionBboxes(): Promise<Bbox[]> {
-    const now = Date.now();
-    const cached = this.coverageCache;
-    if (cached && now - cached.at < PoiStoreService.COVERAGE_TTL_MS) {
-      return cached.bboxes;
-    }
-    const extents = await withPoiRepo(this.poiDataSource, (repo) =>
+  async hasImportedPointNear(area: Bbox): Promise<boolean> {
+    const probe = padBbox(area, PoiStoreService.COVERAGE_BUFFER_KM);
+    return withPoiRepo(this.poiDataSource, (repo) =>
       repo
         .createQueryBuilder('poi')
-        .select('ST_XMin(ST_Extent(poi.geom))', 'minLng')
-        .addSelect('ST_YMin(ST_Extent(poi.geom))', 'minLat')
-        .addSelect('ST_XMax(ST_Extent(poi.geom))', 'maxLng')
-        .addSelect('ST_YMax(ST_Extent(poi.geom))', 'maxLat')
-        .where('poi.import_region IS NOT NULL')
+        .where(
+          'ST_Intersects(poi.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
+          probe,
+        )
         .andWhere('poi.deactivated_at IS NULL')
+        .andWhere('poi.import_region IS NOT NULL')
         .andWhere("poi.source = 'osm'")
-        .groupBy('poi.import_region')
-        .having('COUNT(*) >= :minRows', {
-          minRows: PoiStoreService.COVERAGE_MIN_ROWS,
-        })
-        .getRawMany<{
-          minLng: number | null;
-          minLat: number | null;
-          maxLng: number | null;
-          maxLat: number | null;
-        }>(),
+        .getExists(),
     );
-    const bboxes = extents
-      // `?? NaN` (not bare `Number`) because `Number(null)` is 0 — a null
-      // extent would otherwise coerce to a real 0,0 box; NaN fails the finite
-      // filter below and is dropped.
-      .map((r) => ({
-        minLng: Number(r.minLng ?? NaN),
-        minLat: Number(r.minLat ?? NaN),
-        maxLng: Number(r.maxLng ?? NaN),
-        maxLat: Number(r.maxLat ?? NaN),
-      }))
-      // A degenerate group with a null extent (should never happen — geom is
-      // NOT NULL and the group has rows) yields NaN; drop it rather than emit a
-      // 0,0 box that would falsely "cover" the Gulf of Guinea.
-      .filter(
-        (b): b is Bbox =>
-          Number.isFinite(b.minLng) &&
-          Number.isFinite(b.minLat) &&
-          Number.isFinite(b.maxLng) &&
-          Number.isFinite(b.maxLat),
-      );
-    this.coverageCache = { at: now, bboxes };
-    return bboxes;
   }
 
   /**

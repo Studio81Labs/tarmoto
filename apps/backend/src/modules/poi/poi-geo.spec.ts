@@ -1,4 +1,4 @@
-import { pointRadiusBbox, routeBufferBbox, bboxContains } from './poi-geo.js';
+import { pointRadiusBbox, routeBufferBbox, padBbox } from './poi-geo.js';
 
 const LAT_KM_PER_DEGREE = 111.132;
 const lngDeg = (lat: number, km: number): number =>
@@ -54,20 +54,33 @@ describe('routeBufferBbox (#925)', () => {
   });
 });
 
-describe('bboxContains', () => {
-  const outer = { minLng: 0, minLat: 0, maxLng: 10, maxLat: 10 };
+describe('padBbox (#925)', () => {
+  it('expands every side; ~1° lat pad for 111.132 km, wider lng pad at the equator', () => {
+    const padded = padBbox(
+      { minLng: 10, minLat: 0, maxLng: 11, maxLat: 0.5 },
+      111.132,
+    );
+    // 111.132 km ≈ 1° latitude.
+    expect(padded.minLat).toBeCloseTo(-1, 5);
+    expect(padded.maxLat).toBeCloseTo(1.5, 5);
+    // At the equator km/° longitude ≈ km/° latitude, so ~1° lng pad too.
+    expect(padded.minLng).toBeCloseTo(9, 2);
+    expect(padded.maxLng).toBeCloseTo(12, 2);
+  });
 
-  it('is true only when inner sits fully inside outer', () => {
-    expect(
-      bboxContains(outer, { minLng: 1, minLat: 1, maxLng: 9, maxLat: 9 }),
-    ).toBe(true);
-    // Pokes over the east edge.
-    expect(
-      bboxContains(outer, { minLng: 1, minLat: 1, maxLng: 11, maxLat: 9 }),
-    ).toBe(false);
-    // Pokes under the south edge.
-    expect(
-      bboxContains(outer, { minLng: 1, minLat: -1, maxLng: 9, maxLat: 9 }),
-    ).toBe(false);
+  it('pads longitude at the poleward-most edge so a high-latitude box is not under-padded', () => {
+    // Box spanning 60–61°N: the lng pad must use 61°N (km/° smallest), so the
+    // degree pad is wider than the equatorial case above for the same km.
+    const km = 55.566; // ≈ 0.5° latitude
+    const padded = padBbox(
+      { minLng: 10, minLat: 60, maxLng: 11, maxLat: 61 },
+      km,
+    );
+    const dLat = padded.maxLat - 61;
+    const dLng = padded.maxLng - 11;
+    expect(dLat).toBeCloseTo(0.5, 5);
+    // cos(61°) ≈ 0.485, so the lng pad is ≈ 0.5 / 0.485 ≈ 1.03°.
+    expect(dLng).toBeGreaterThan(dLat);
+    expect(dLng).toBeCloseTo(0.5 / Math.cos((61 * Math.PI) / 180), 2);
   });
 });

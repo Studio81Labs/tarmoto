@@ -42,7 +42,6 @@ import {
   projectOntoRoute,
   pointRadiusBbox,
   routeBufferBbox,
-  bboxContains,
   type Bbox,
 } from './poi-geo.js';
 import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
@@ -158,10 +157,12 @@ export class PoiService {
   }
 
   /**
-   * Whether the request area is fully within a single imported region (#925).
-   * Conservative: a request straddling two imported regions isn't "contained" in
-   * either, so it falls through to a (harmless) Overpass merge — but one
-   * straddling the OUTER edge of coverage never treats the store as complete.
+   * Whether the request area sits within imported territory (#925) — an active
+   * OSM point exists within the store's coverage buffer of it (occupancy, not a
+   * region rectangle, so a border wedge inside a country's bounding box that was
+   * never populated reads as un-covered). A request straddling the outer edge of
+   * coverage has no nearby point on its far side, so it falls through to a
+   * (harmless) Overpass merge rather than treating the store as complete.
    *
    * A transient POI-store outage during the coverage lookup itself (the store
    * dropped between `fromStore()` and here) resolves to `false` = "not
@@ -171,8 +172,7 @@ export class PoiService {
    */
   private async isCovered(area: Bbox): Promise<boolean> {
     try {
-      const covered = await this.store.importedRegionBboxes();
-      return covered.some((region) => bboxContains(region, area));
+      return await this.store.hasImportedPointNear(area);
     } catch (err) {
       if (err instanceof ServiceUnavailableException) {
         this.logger.warn(
