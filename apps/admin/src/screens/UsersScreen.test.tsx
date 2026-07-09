@@ -472,7 +472,7 @@ describe("UsersScreen", () => {
   it("edits a user's notification preferences from the detail card", async () => {
     const user = userEvent.setup();
     render(<UsersScreen />);
-    await user.click(screen.getAllByRole("button", { name: "View" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
 
     expect(screen.getByText("Notification preferences")).toBeInTheDocument();
 
