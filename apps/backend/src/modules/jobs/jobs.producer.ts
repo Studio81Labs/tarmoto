@@ -40,15 +40,22 @@ export interface DigestWeeklyComposeJobData {
    * UTC instant of the window END: this run's local Sunday 08:00. Carried from
    * dispatch (not re-derived in compose) so the window is computed once, in the
    * rider's resolved timezone.
+   *
+   * Optional ONLY to tolerate a legacy payload during a rolling deploy / Redis
+   * replay: a compose job enqueued by the pre-window producer carries just
+   * `user_id` + `for_local_window`, and compose falls back to a job-timestamp
+   * week for it. Every current enqueue sets this; the optionality (and the
+   * compose fallback) can be dropped once no pre-window jobs remain in Redis.
    */
-  window_end: string;
+  window_end?: string;
   /**
    * UTC instant of the window START: the PREVIOUS local Sunday 08:00, computed
    * as `window_end - interval '7 days'` in the rider's timezone. This is
    * DST-correct — a fixed 7×24h delta over-/under-shoots by an hour on
    * spring-forward / fall-back weeks, duplicating or dropping that hour's rides.
+   * Optional for legacy-payload tolerance — see `window_end`.
    */
-  window_start: string;
+  window_start?: string;
 }
 
 /**

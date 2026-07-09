@@ -210,9 +210,19 @@ export class DigestWeeklyProcessor extends WorkerHost {
 
     // Window bounds are carried from dispatch (computed in the rider's timezone,
     // DST-correct — see `enqueueDigestWeeklyCompose` / the dispatch query), so
-    // compose is a pure consumer and doesn't re-derive them from a fixed delta.
-    const windowStart = new Date(window_start);
-    const windowEnd = new Date(window_end);
+    // compose is normally a pure consumer. Fall back to the old fixed-week
+    // derivation from the job timestamp for a LEGACY payload — a compose job
+    // enqueued by the pre-window producer, still in Redis across a rolling
+    // deploy / replay. Without this, `new Date(undefined)` → Invalid Date and
+    // the ride query's `toISOString()` throws, failing the job; and because the
+    // jobId is stable per (user, week), that failed legacy job would block the
+    // fresh real-email job for the same window until Redis evicts it.
+    const windowEnd = window_end
+      ? new Date(window_end)
+      : new Date(job.timestamp);
+    const windowStart = window_start
+      ? new Date(window_start)
+      : new Date(windowEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const summary = await this.gatherRideSummary(
       user_id,

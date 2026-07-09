@@ -186,6 +186,49 @@ describe('DigestWeeklyProcessor.compose (#866)', () => {
     expect(sql).not.toContain('weekly_digest');
   });
 
+  it('tolerates a legacy compose payload (no window bounds) by deriving the week from the job timestamp', async () => {
+    // A compose job enqueued by the pre-window producer (rolling deploy / Redis
+    // replay) carries only user_id + for_local_window. Compose must fall back to
+    // the job-timestamp week instead of crashing on new Date(undefined): a crash
+    // fails the job, and the stable jobId would then block the fresh real-email
+    // job for the same window until Redis evicts the failure.
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([ELIGIBLE_USER]) // eligibility
+      .mockResolvedValueOnce([
+        {
+          ride_count: '2',
+          total_km: '40',
+          total_minutes: '75',
+          best_quality: '4',
+        },
+      ]) // ride aggregate
+      .mockResolvedValueOnce([{ ridden: '10' }]) // exploration ridden
+      .mockResolvedValueOnce([{ total: '100' }]); // exploration total
+    const { processor, sendWeeklyDigest } = makeProcessor(query);
+
+    const legacyJob = {
+      name: JOB_NAMES.DIGEST_WEEKLY_COMPOSE,
+      id: 'legacy1',
+      timestamp: WINDOW_END,
+      data: { user_id: 'u1', for_local_window: '2026-W27' }, // no window_* keys
+    } as unknown as Job;
+
+    const result = await processor.process(legacyJob);
+
+    expect(result).toEqual({ status: 'sent' });
+    expect(sendWeeklyDigest).toHaveBeenCalledTimes(1);
+    // Ride window derived from the job timestamp: [timestamp - 7d, timestamp).
+    const [, params] = query.mock.calls[1] as [
+      string,
+      [string, string, string],
+    ];
+    expect(new Date(params[2]).getTime()).toBe(WINDOW_END);
+    expect(new Date(params[2]).getTime() - new Date(params[1]).getTime()).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+  });
+
   it('memoizes the active-network total across compose jobs (no per-rider rescan)', async () => {
     // The "% explored" denominator (active road_segments) is identical for every
     // rider in a weekly burst; recounting the continent-scale table per compose
