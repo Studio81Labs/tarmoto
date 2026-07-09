@@ -82,6 +82,28 @@ describe("pickNearestLineFeature", () => {
     );
   });
 
+  it("ranks by distance to the edge, not just vertices", () => {
+    // A long horizontal segment passes 5px under the tap, but both its
+    // endpoints are ~100px away. A cross-street has a vertex only 10px away.
+    // Vertex-only ranking would wrongly pick the cross-street.
+    const underTap = feature({
+      coords: [
+        [0, 100],
+        [200, 100],
+      ],
+    });
+    const crossStreet = feature({
+      coords: [
+        [100, 115],
+        [110, 130],
+      ],
+    });
+    const map = mapStub([crossStreet, underTap]);
+    expect(pickNearestLineFeature(map, point(100, 105), ["quality"], 8)).toBe(
+      underTap,
+    );
+  });
+
   it("handles MultiLineString geometry", () => {
     const multi = {
       type: "Feature",

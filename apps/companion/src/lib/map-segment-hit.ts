@@ -72,7 +72,13 @@ export function pickNearestLineFeature(
   return best;
 }
 
-/** Smallest screen-space distance (px) from `point` to a line feature's vertices. */
+/**
+ * Smallest screen-space distance (px) from `point` to a line feature — measured
+ * to each edge (segment), not just the vertices. A long straight vector-tile
+ * segment can pass directly under the tap while both of its endpoints sit far
+ * outside the hit box; ranking by vertices alone would then lose it to a nearby
+ * cross-street that merely has a closer vertex.
+ */
 function screenDistanceToLineFeature(
   map: MapLibreMap,
   point: Point,
@@ -87,11 +93,31 @@ function screenDistanceToLineFeature(
         : [];
   let min = Infinity;
   for (const line of lines) {
+    let prev: { x: number; y: number } | null = null;
     for (const coord of line) {
-      const p = map.project([coord[0]!, coord[1]!]);
-      const d = Math.hypot(p.x - point.x, p.y - point.y);
+      const curr = map.project([coord[0]!, coord[1]!]);
+      const d = prev
+        ? pointToSegmentDistance(point, prev, curr)
+        : Math.hypot(curr.x - point.x, curr.y - point.y);
       if (d < min) min = d;
+      prev = curr;
     }
   }
   return min;
+}
+
+/** Distance from point `p` to the line segment `a`–`b`, all in screen px. */
+function pointToSegmentDistance(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  // Project p onto the segment, clamped to [0,1] so it stays on the edge.
+  const tRaw = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  const t = Math.max(0, Math.min(1, tRaw));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }

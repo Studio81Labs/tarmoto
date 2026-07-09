@@ -168,7 +168,12 @@ export function RoadPreviewPopover({
   onOpenFullDetail,
 }: RoadPreviewPopoverProps) {
   const [preview, setPreview] = useState<RoadPreview | null>(null);
-  const roadSegmentId = segment.roadSegmentId;
+  // A coalesced run (`run:<first>:<last>`) carries only its FIRST child's
+  // roadSegmentId, so opening the drawer from it would show one sub-segment
+  // mislabelled as the whole run. Offer the drawer only for a single segment.
+  const roadSegmentId = segment.id.startsWith("run:")
+    ? null
+    : segment.roadSegmentId;
   const fullDetailButton =
     roadSegmentId && onOpenFullDetail ? (
       <button

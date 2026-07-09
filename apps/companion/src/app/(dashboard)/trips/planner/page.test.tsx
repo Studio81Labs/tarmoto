@@ -72,19 +72,26 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
-vi.mock("@/lib/api", () => ({
-  tripsApi: {
-    get: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    importRoute: vi.fn(),
-    replaceImportedRoute: vi.fn(),
-    generate: vi.fn(),
-    saveRoute: vi.fn(),
-    updateWaypointNames: vi.fn(),
-  },
-}));
+vi.mock("@/lib/api", async () => {
+  // Spread the real module so ApiError, roadsApi, and any other exports the
+  // page imports resolve (the segment-detail drawer uses roadsApi + ApiError);
+  // only tripsApi is stubbed for the trip CRUD the tests drive.
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    tripsApi: {
+      get: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      importRoute: vi.fn(),
+      replaceImportedRoute: vi.fn(),
+      generate: vi.fn(),
+      saveRoute: vi.fn(),
+      updateWaypointNames: vi.fn(),
+    },
+  };
+});
 
 // Prevent the live-routing hook from firing real API calls in unit tests.
 vi.mock("@/hooks/usePlannerRouting", () => ({
