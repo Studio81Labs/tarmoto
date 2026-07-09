@@ -97,3 +97,76 @@ export function projectOntoRoute(
     distance_along_route_km: bestAlongKm,
   };
 }
+
+/** A lng/lat bounding box (WGS84). */
+export interface Bbox {
+  minLng: number;
+  minLat: number;
+  maxLng: number;
+  maxLat: number;
+}
+
+/** Degrees of longitude per km at `lat` — km/deg shrinks by `cos(lat)`. Clamped
+ * so a near-polar latitude can't blow the value up (irrelevant for our coverage
+ * regions, but keeps the helper total). */
+function lngKmPerDegree(lat: number): number {
+  return Math.max(LAT_KM_PER_DEGREE * Math.cos((lat * Math.PI) / 180), 1e-6);
+}
+
+/**
+ * The bounding box enclosing a `radiusKm` circle around a point (#925) — the
+ * coverage check approximates the circular request area by this box.
+ */
+export function pointRadiusBbox(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+): Bbox {
+  const dLat = radiusKm / LAT_KM_PER_DEGREE;
+  const dLng = radiusKm / lngKmPerDegree(lat);
+  return {
+    minLng: lng - dLng,
+    minLat: lat - dLat,
+    maxLng: lng + dLng,
+    maxLat: lat + dLat,
+  };
+}
+
+/**
+ * The bounding box enclosing a route polyline expanded by `bufferKm` (#925) —
+ * the coverage check approximates the buffered-corridor request area by this
+ * box. The longitude padding uses the route's mid-latitude.
+ */
+export function routeBufferBbox(
+  route: ReadonlyArray<{ lat: number; lng: number }>,
+  bufferKm: number,
+): Bbox {
+  let minLat = Infinity;
+  let minLng = Infinity;
+  let maxLat = -Infinity;
+  let maxLng = -Infinity;
+  for (const p of route) {
+    minLat = Math.min(minLat, p.lat);
+    maxLat = Math.max(maxLat, p.lat);
+    minLng = Math.min(minLng, p.lng);
+    maxLng = Math.max(maxLng, p.lng);
+  }
+  const dLat = bufferKm / LAT_KM_PER_DEGREE;
+  const dLng = bufferKm / lngKmPerDegree((minLat + maxLat) / 2);
+  return {
+    minLng: minLng - dLng,
+    minLat: minLat - dLat,
+    maxLng: maxLng + dLng,
+    maxLat: maxLat + dLat,
+  };
+}
+
+/** True when `outer` fully encloses `inner`. */
+export function bboxContains(outer: Bbox, inner: Bbox): boolean {
+  return (
+    outer.minLng <= inner.minLng &&
+    outer.maxLng >= inner.maxLng &&
+    outer.minLat <= inner.minLat &&
+    outer.maxLat >= inner.maxLat
+  );
+}

@@ -37,7 +37,14 @@ import {
   MAX_RADIUS_KM as POI_MAX_RADIUS_KM,
 } from './dto/point-of-interest.dto.js';
 import { PoiStoreService } from './poi-store.service.js';
-import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
+import {
+  cumulativeLengthKm,
+  projectOntoRoute,
+  pointRadiusBbox,
+  routeBufferBbox,
+  bboxContains,
+  type Bbox,
+} from './poi-geo.js';
 import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
 
 // `cumulativeLengthKm` / `projectOntoRoute` live in `poi-geo.ts` so the store
@@ -70,6 +77,21 @@ const MAX_POI_RESULTS_PER_KIND = 6;
  */
 const MAX_ALONG_ROUTE_RESULTS_PER_KIND = 25;
 
+/**
+ * Merge store + Overpass POIs at a coverage frontier (#925), keeping every store
+ * row and adding only the Overpass rows the store didn't already have (same
+ * `external_id` = same OSM element; both paths build `osm:<type>:<id>`). Store
+ * rows win so the richer imported decision-support fields survive; the ranker
+ * downstream re-sorts and caps the union.
+ */
+function mergeByExternalId<T extends { external_id: string }>(
+  store: T[],
+  live: T[],
+): T[] {
+  const seen = new Set(store.map((poi) => poi.external_id));
+  return [...store, ...live.filter((poi) => !seen.has(poi.external_id))];
+}
+
 @Injectable()
 export class PoiService {
   private readonly logger = new Logger(PoiService.name);
@@ -89,17 +111,24 @@ export class PoiService {
    * never 500 on an outage, and rider coordinates stay out of the logs (only the
    * error message is logged).
    *
+   * Coverage-aware (#925): when `requestArea` is given and isn't fully inside
+   * imported coverage (a request straddling the import frontier), the store's
+   * rows are merged with a live Overpass query rather than treated as complete —
+   * so the uncovered side isn't silently dropped. A fully-covered area keeps the
+   * store short-circuit (no Overpass call). Omit `requestArea` to skip the check.
+   *
    * A non-connection store error (a missed migration, a PostGIS/SQL bug) is a
    * real defect `withPoiRepo` deliberately rethrows — surface it (500) rather
    * than mask it behind Overpass while `/poi/health`'s `SELECT 1` stays green.
    */
-  private async readStoreFirst<T>(
+  private async readStoreFirst<T extends { external_id: string }>(
     fromStore: () => Promise<T[]>,
     fromProvider: () => Promise<T[]>,
+    requestArea?: Bbox,
   ): Promise<T[]> {
+    let stored: T[] | null = null;
     try {
-      const stored = await fromStore();
-      if (stored.length > 0) return stored;
+      stored = await fromStore();
     } catch (err) {
       // Only a store outage falls back; a real bug surfaces.
       if (!(err instanceof ServiceUnavailableException)) throw err;
@@ -107,6 +136,41 @@ export class PoiService {
         `POI store unavailable, falling back to provider: ${err.message}`,
       );
     }
+    // Coverage-aware fallback (#925): when the request area isn't fully inside
+    // imported coverage, the store can only answer for the covered side — so
+    // also query Overpass and MERGE (store rows win, richer decision-support),
+    // instead of treating a few covered-side rows as authoritative and silently
+    // dropping the uncovered side. A fully-covered request keeps the store
+    // short-circuit (no Overpass call); a fully-uncovered one merges an empty
+    // store with Overpass — i.e. Overpass, unchanged.
+    if (
+      stored !== null &&
+      requestArea &&
+      !(await this.isCovered(requestArea))
+    ) {
+      const live = await this.fromProviderSafe(fromProvider);
+      return mergeByExternalId(stored, live);
+    }
+    if (stored !== null && stored.length > 0) return stored;
+    return this.fromProviderSafe(fromProvider);
+  }
+
+  /**
+   * Whether the request area is fully within a single imported region (#925).
+   * Conservative: a request straddling two imported regions isn't "contained" in
+   * either, so it falls through to a (harmless) Overpass merge — but one
+   * straddling the OUTER edge of coverage never treats the store as complete.
+   */
+  private async isCovered(area: Bbox): Promise<boolean> {
+    const covered = await this.store.importedRegionBboxes();
+    return covered.some((region) => bboxContains(region, area));
+  }
+
+  /** Overpass call that degrades to `[]` on failure (an offline provider never
+   * fails a store-backed read). */
+  private async fromProviderSafe<T>(
+    fromProvider: () => Promise<T[]>,
+  ): Promise<T[]> {
     try {
       return await fromProvider();
     } catch (err) {
@@ -136,6 +200,7 @@ export class PoiService {
           minStars,
         ),
       () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
+      pointRadiusBbox(lat, lng, radius),
     );
     return {
       accommodations: this.rank(raw, lat, lng, resolvedKinds, minStars),
@@ -236,6 +301,7 @@ export class PoiService {
       () =>
         this.store.findPointsOfInterestNear(lat, lng, radius, resolvedKinds),
       () => this.provider.findPointsOfInterest(lat, lng, radius, resolvedKinds),
+      pointRadiusBbox(lat, lng, radius),
     );
     return {
       pois: this.rankPois(raw, lat, lng, resolvedKinds),
@@ -392,6 +458,7 @@ export class PoiService {
           bufferKm,
           resolvedKinds,
         ),
+      routeBufferBbox(dto.route, bufferKm),
     );
 
     return {

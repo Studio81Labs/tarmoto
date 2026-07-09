@@ -38,7 +38,12 @@ describe('PoiService', () => {
     findPointsOfInterestNear: jest.Mock;
     findAccommodationsNear: jest.Mock;
     findPointsOfInterestInCorridor: jest.Mock;
+    importedRegionBboxes: jest.Mock;
   };
+
+  // A coverage box wide enough to contain every test anchor/route (#925), so
+  // the store short-circuits (no Overpass merge) unless a test narrows it.
+  const FULL_COVERAGE = [{ minLng: 0, minLat: 40, maxLng: 30, maxLat: 60 }];
 
   const anchor = { lat: 49.1, lng: 16.75 };
 
@@ -84,6 +89,9 @@ describe('PoiService', () => {
       findPointsOfInterestNear: jest.fn().mockResolvedValue([]),
       findAccommodationsNear: jest.fn().mockResolvedValue([]),
       findPointsOfInterestInCorridor: jest.fn().mockResolvedValue([]),
+      // Default: the request area is fully covered, so store rows are
+      // authoritative and no Overpass merge runs (#925).
+      importedRegionBboxes: jest.fn().mockResolvedValue(FULL_COVERAGE),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -221,6 +229,72 @@ describe('PoiService', () => {
       });
       expect(provider.findPointsOfInterestAroundPoints).toHaveBeenCalled();
       expect(res.pois.map((p) => p.external_id)).toContain('live:r1');
+    });
+  });
+
+  describe('coverage-aware fallback at the import frontier (#925)', () => {
+    // A region covering only [0,0]-[1,1] — far from the `anchor` (49.1, 16.75),
+    // so a request there is NOT inside imported coverage.
+    const AWAY = [{ minLng: 0, minLat: 0, maxLng: 1, maxLat: 1 }];
+    // A region that DOES contain the anchor.
+    const AROUND_ANCHOR = [{ minLng: 12, minLat: 48, maxLng: 19, maxLat: 51 }];
+
+    it('trusts the store (no Overpass) when the request is fully inside imported coverage', async () => {
+      store.importedRegionBboxes.mockResolvedValue(AROUND_ANCHOR);
+      store.findPointsOfInterestNear.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'store:1', kind: 'cafe' }),
+      ]);
+
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+
+      expect(provider.findPointsOfInterest).not.toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id)).toEqual(['store:1']);
+    });
+
+    it('merges Overpass at a frontier: store (covered side) + Overpass (uncovered side)', async () => {
+      store.importedRegionBboxes.mockResolvedValue(AWAY); // request not covered
+      store.findPointsOfInterestNear.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
+      ]);
+      provider.findPointsOfInterest.mockResolvedValue([
+        // Overpass covers the whole area, so it re-returns the covered POI (must
+        // de-dup, store wins) plus the uncovered-side one.
+        buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:uncovered', kind: 'cafe' }),
+      ]);
+
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+
+      expect(provider.findPointsOfInterest).toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id).sort()).toEqual([
+        'osm:node:covered',
+        'osm:node:uncovered',
+      ]);
+    });
+
+    it('falls back entirely to Overpass when the request is outside all imported coverage', async () => {
+      store.importedRegionBboxes.mockResolvedValue(AWAY);
+      store.findPointsOfInterestNear.mockResolvedValue([]); // nothing imported here
+      provider.findPointsOfInterest.mockResolvedValue([
+        buildNearbyPoi({ external_id: 'live:1', kind: 'cafe' }),
+      ]);
+
+      const res = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+      );
+
+      expect(provider.findPointsOfInterest).toHaveBeenCalled();
+      expect(res.pois.map((p) => p.external_id)).toEqual(['live:1']);
     });
   });
 

@@ -9,7 +9,8 @@ import type {
 } from './poi-provider.interface.js';
 import { extractPoiHint } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
-import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
+import { cumulativeLengthKm, projectOntoRoute, type Bbox } from './poi-geo.js';
+import { DEFAULT_REGIONS } from './poi-import.config.js';
 import { withPoiRepo } from './poi-repo.js';
 import { dedupeAcrossSources, type DedupPoi } from './poi-dedup.js';
 import {
@@ -22,13 +23,6 @@ import {
   StoredCorridorPoiDto,
   StoredPoiDto,
 } from './dto/stored-poi.dto.js';
-
-interface Bbox {
-  minLng: number;
-  minLat: number;
-  maxLng: number;
-  maxLat: number;
-}
 
 interface RoutePoint {
   lat: number;
@@ -79,6 +73,15 @@ export class PoiStoreService {
   ) {}
 
   /**
+   * Cache of the imported-region bboxes (#925). Imports run weekly, so a short
+   * TTL keeps the coverage-aware read (`PoiService.readStoreFirst`) from running
+   * a `DISTINCT import_region` scan on every request while still picking a
+   * newly-imported region up within the window.
+   */
+  private coverageCache: { at: number; bboxes: Bbox[] } | null = null;
+  private static readonly COVERAGE_TTL_MS = 60_000;
+
+  /**
    * Live readiness: `isInitialized` only records that TypeORM connected once (it
    * stays true after a runtime drop), so probe with a trivial query so
    * `/poi/health` reflects the store's ACTUAL current connectivity (ADR 0007).
@@ -91,6 +94,37 @@ export class PoiStoreService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Bounding boxes of the regions ACTUALLY imported into the store (#925): the
+   * `DISTINCT import_region` values (non-legacy, non-tombstoned) mapped to their
+   * {@link DEFAULT_REGIONS} bbox. Drives the coverage-aware read — a request that
+   * isn't fully inside one of these also queries Overpass, so live coverage
+   * doesn't regress at import frontiers. Cached (see {@link coverageCache}); a
+   * legacy (`import_region IS NULL`) or unknown-code row contributes no bbox, so
+   * an area only counts as covered once a bulk import claims it.
+   */
+  async importedRegionBboxes(): Promise<Bbox[]> {
+    const now = Date.now();
+    const cached = this.coverageCache;
+    if (cached && now - cached.at < PoiStoreService.COVERAGE_TTL_MS) {
+      return cached.bboxes;
+    }
+    const codes = await withPoiRepo(this.poiDataSource, (repo) =>
+      repo
+        .createQueryBuilder('poi')
+        .select('DISTINCT poi.import_region', 'code')
+        .where('poi.import_region IS NOT NULL')
+        .andWhere('poi.deactivated_at IS NULL')
+        .getRawMany<{ code: string }>(),
+    );
+    const bboxByCode = new Map(DEFAULT_REGIONS.map((r) => [r.code, r.bbox]));
+    const bboxes = codes
+      .map((row) => bboxByCode.get(row.code))
+      .filter((bbox): bbox is Bbox => bbox !== undefined);
+    this.coverageCache = { at: now, bboxes };
+    return bboxes;
   }
 
   /**

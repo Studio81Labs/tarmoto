@@ -10,6 +10,7 @@ import {
   storedPoiToPointOfInterest,
   toStoredPoiDto,
 } from './poi-store.service.js';
+import { DEFAULT_REGIONS } from './poi-import.config.js';
 
 function makePoi(over: Partial<Poi> = {}): Poi {
   return {
@@ -127,8 +128,10 @@ describe('PoiStoreService', () => {
     andWhere: jest.Mock;
     orderBy: jest.Mock;
     addOrderBy: jest.Mock;
+    select: jest.Mock;
     limit: jest.Mock;
     getMany: jest.Mock;
+    getRawMany: jest.Mock;
   };
   let repo: { createQueryBuilder: jest.Mock; findOne: jest.Mock };
   let service: PoiStoreService;
@@ -139,8 +142,10 @@ describe('PoiStoreService', () => {
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       addOrderBy: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue([]),
+      getRawMany: jest.fn().mockResolvedValue([]),
     };
     repo = {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
@@ -545,6 +550,30 @@ describe('PoiStoreService', () => {
         .map(([, params]) => (params as { kinds: string[] }).kinds);
       expect(kindFilters).toContainEqual(['restaurant']);
       expect(kindFilters).toContainEqual(['fuel_station']);
+    });
+  });
+
+  describe('importedRegionBboxes (#925)', () => {
+    const CZ_BBOX = DEFAULT_REGIONS.find((r) => r.code === 'CZ')?.bbox;
+
+    it('maps DISTINCT import_region codes to their region bboxes, dropping legacy + unknown codes', async () => {
+      qb.getRawMany.mockResolvedValueOnce([{ code: 'CZ' }, { code: 'ZZ' }]);
+      const bboxes = await service.importedRegionBboxes();
+      // CZ maps to its configured bbox; ZZ (not a DEFAULT_REGIONS code) drops.
+      expect(bboxes).toEqual([CZ_BBOX]);
+      // Only actually-imported extents count: legacy (null) + tombstoned rows
+      // are excluded by the query.
+      const whereSql = (qb.where.mock.calls[0] as [string])[0];
+      expect(whereSql).toContain('import_region IS NOT NULL');
+      const andWhereSql = qb.andWhere.mock.calls.map(([sql]) => String(sql));
+      expect(andWhereSql).toContain('poi.deactivated_at IS NULL');
+    });
+
+    it('caches the coverage set so repeated reads run one DISTINCT query', async () => {
+      qb.getRawMany.mockResolvedValue([{ code: 'CZ' }]);
+      await service.importedRegionBboxes();
+      await service.importedRegionBboxes();
+      expect(qb.getRawMany).toHaveBeenCalledTimes(1);
     });
   });
 });
