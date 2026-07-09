@@ -205,7 +205,30 @@ describe('PoiStoreService', () => {
     );
     const [sql, params] = qb.andWhere.mock.calls[1] as [string, unknown];
     expect(sql).toContain('poi.kind IN (:...kinds)');
-    expect(params).toEqual({ kinds: ['fuel_station', 'restaurant'] });
+    // #926: the map layer also gets the venue tag-match (gated on NOT IN).
+    expect(sql).toContain('poi.tags @> :ktag0::jsonb AND poi.kind NOT IN');
+    expect(params).toEqual({
+      kinds: ['fuel_station', 'restaurant'],
+      allKinds: ['fuel_station', 'restaurant'],
+      ktag0: '{"amenity":"fuel"}',
+      ktag1: '{"amenity":"restaurant"}',
+    });
+  });
+
+  it('reclassifies a dual-tagged element for a secondary-kind bbox request (#926)', async () => {
+    // The pannable map layer must surface a dual-tagged element under the
+    // requested category too, served as that kind — matching the live path.
+    qb.getMany.mockResolvedValueOnce([
+      makePoi({
+        external_id: 'osm:node:dual',
+        kind: 'restaurant',
+        name: 'Panorama Grill',
+        tags: { amenity: 'restaurant', tourism: 'viewpoint' },
+      }),
+    ]);
+    const res = await service.findInBbox(bbox, ['viewpoint'], 100);
+    expect(res.map((r) => r.external_id)).toEqual(['osm:node:dual']);
+    expect(res[0]?.kind).toBe('viewpoint');
   });
 
   it('rejects an inverted bbox before touching the database', async () => {

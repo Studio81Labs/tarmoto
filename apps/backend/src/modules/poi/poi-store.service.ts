@@ -130,7 +130,10 @@ export class PoiStoreService {
         // out of the store reads, not just carry a `deactivated_at` stamp.
         .andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
-        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+        // Match the stored kind OR the venue tag (#926) so the pannable map layer
+        // surfaces a dual-tagged element under a secondary-kind request too.
+        const { sql, params: kindParams } = kindMatchClause(kinds, kinds);
+        qb.andWhere(sql, kindParams);
       }
       return qb
         .orderBy('poi.kind', 'ASC')
@@ -138,9 +141,15 @@ export class PoiStoreService {
         .limit(capped * DEDUP_OVERFETCH)
         .getMany();
     });
-    // Over-fetch then trim to `capped` AFTER de-dup, so duplicates don't shrink
-    // the result below the requested cap in a dense OSM+FSQ bbox.
-    return dedupeAcrossSources(rows, poiDedupKey)
+    // Reclassify dual-tagged rows to the requested kind (#926) so the served
+    // marker kind matches the live path, then over-fetch-trim to `capped` AFTER
+    // de-dup so duplicates don't shrink the result below the cap in a dense
+    // OSM+FSQ bbox.
+    const reclassified =
+      kinds && kinds.length > 0
+        ? reclassifyByRequestedKinds(rows, kinds)
+        : rows;
+    return dedupeAcrossSources(reclassified, poiDedupKey)
       .slice(0, capped)
       .map(toStoredPoiDto);
   }
