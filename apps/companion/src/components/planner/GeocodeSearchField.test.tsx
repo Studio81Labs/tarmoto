@@ -39,6 +39,33 @@ describe("GeocodeSearchField", () => {
     );
   });
 
+  it("shows a Searching… state while the request is in flight", async () => {
+    let resolveGeocode!: (
+      results: { name: string; lat: number; lng: number }[],
+    ) => void;
+    geocodeMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeocode = resolve;
+      }),
+    );
+    render(
+      <GeocodeSearchField
+        placeholder="Search"
+        ariaLabel="Search start"
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Search start"), {
+      target: { value: "pra" },
+    });
+    // The dropdown opens with the loader as soon as the debounced fetch fires.
+    expect(await screen.findByText(/Searching/)).toBeInTheDocument();
+    // Resolving replaces the loader with the matches.
+    resolveGeocode([{ name: "Praha", lat: 50.0755, lng: 14.4378 }]);
+    expect(await screen.findByText("Praha")).toBeInTheDocument();
+    expect(screen.queryByText(/Searching/)).not.toBeInTheDocument();
+  });
+
   it("fires onSelect with the picked result and closes the dropdown", async () => {
     geocodeMock.mockResolvedValue([
       { name: "Split", lat: 43.5081, lng: 16.4402 },
@@ -65,6 +92,30 @@ describe("GeocodeSearchField", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     // The picked name lands in the input (relocate mode).
     expect(screen.getByLabelText("Search finish")).toHaveValue("Split");
+  });
+
+  it("does not re-open/search after picking in relocate mode", async () => {
+    geocodeMock.mockResolvedValue([
+      { name: "Brno, Czechia", lat: 49.1951, lng: 16.6068 },
+    ]);
+    render(
+      <GeocodeSearchField
+        placeholder="Search"
+        ariaLabel="Search start"
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Search start"), {
+      target: { value: "brn" },
+    });
+    fireEvent.click(await screen.findByText("Brno, Czechia"));
+    // The picked name is written back to the input…
+    expect(screen.getByLabelText("Search start")).toHaveValue("Brno, Czechia");
+    geocodeMock.mockClear();
+    // …but that must not re-arm the debounced search or re-open the dropdown.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(geocodeMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("clears after a pick in add-via mode", async () => {

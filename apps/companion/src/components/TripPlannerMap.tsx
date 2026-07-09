@@ -157,7 +157,6 @@ const ROUTE_CASING_LINE = "trip-planner-route-casing";
 const ROUTE_LINE = "trip-planner-route-line";
 const ROUTE_HIT_LINE = "trip-planner-route-hit";
 const WAYPOINT_PIN = "trip-planner-waypoint-pin";
-const WAYPOINT_LABEL = "trip-planner-waypoint-label";
 
 /**
  * Right-click tolerance around a waypoint pin, in screen px. Symbol-layer
@@ -3264,31 +3263,10 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-  if (!map.getLayer(WAYPOINT_LABEL)) {
-    map.addLayer({
-      id: WAYPOINT_LABEL,
-      type: "symbol",
-      source: WAYPOINT_SOURCE,
-      layout: {
-        "text-field": ["get", "label"],
-        "text-offset": [0, 1.5],
-        "text-size": 11,
-        "text-anchor": "top",
-        // Single hosted font, not a stack: OpenFreeMap's glyph server only
-        // serves single-face fontstacks, so MapLibre's default stack (and
-        // any comma-joined list) 404s on every label range and falls back
-        // to noisy local glyph rendering.
-        "text-font": ["Noto Sans Regular"],
-      },
-      paint: {
-        // Ink label with a cream halo for legibility on the cream basemap
-        // (was light text + dark halo for the old dark map).
-        "text-color": "#0E0E10",
-        "text-halo-color": "#F5EFE6",
-        "text-halo-width": 1.4,
-      },
-    });
-  }
+  // Waypoint pins are intentionally label-free: the geocoded place name is
+  // shown on click (the point dialog) rather than crowding the map with a text
+  // label on every start/finish/via pin. Day-break/overnight-town labels below
+  // are a separate, wanted layer.
   // Day-break markers (splitter boundaries): a pin-style dot + town label.
   if (!map.getSource(DAY_BREAK_SOURCE)) {
     map.addSource(DAY_BREAK_SOURCE, {
