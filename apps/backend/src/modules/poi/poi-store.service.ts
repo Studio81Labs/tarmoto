@@ -7,7 +7,11 @@ import type {
   AccommodationPoi,
   PointOfInterest,
 } from './poi-provider.interface.js';
-import { extractPoiHint } from './providers/overpass.provider.js';
+import {
+  classifyPoiTags,
+  extractPoiHint,
+  POI_KIND_TAGS,
+} from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
 import { cumulativeLengthKm, projectOntoRoute, type Bbox } from './poi-geo.js';
 import { withPoiRepo } from './poi-repo.js';
@@ -212,17 +216,37 @@ export class PoiStoreService {
         // out of the store reads, not just carry a `deactivated_at` stamp.
         .andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
-        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+        // Match the stored kind OR the venue tag (#926) so the pannable map layer
+        // surfaces a dual-tagged element under a secondary-kind request too.
+        const { sql, params: kindParams } = kindMatchClause(kinds, kinds);
+        qb.andWhere(sql, kindParams);
+        // Order EXACT stored-kind matches ahead of tag-only (secondary) matches
+        // (#926 review): the DB `LIMIT` runs before reclassification, so in a
+        // dense bbox the dual-tagged rows (which sort by their own stored kind,
+        // e.g. `restaurant` < `viewpoint`) must not fill the cap and starve real
+        // `kind = viewpoint` rows. `:kinds` is already bound above — TypeORM
+        // substitutes params across the whole query, ORDER BY included.
+        qb.orderBy(
+          'CASE WHEN poi.kind IN (:...kinds) THEN 0 ELSE 1 END',
+          'ASC',
+        ).addOrderBy('poi.kind', 'ASC');
+      } else {
+        qb.orderBy('poi.kind', 'ASC');
       }
       return qb
-        .orderBy('poi.kind', 'ASC')
         .addOrderBy('poi.name', 'ASC')
         .limit(capped * DEDUP_OVERFETCH)
         .getMany();
     });
-    // Over-fetch then trim to `capped` AFTER de-dup, so duplicates don't shrink
-    // the result below the requested cap in a dense OSM+FSQ bbox.
-    return dedupeAcrossSources(rows, poiDedupKey)
+    // Reclassify dual-tagged rows to the requested kind (#926) so the served
+    // marker kind matches the live path, then over-fetch-trim to `capped` AFTER
+    // de-dup so duplicates don't shrink the result below the cap in a dense
+    // OSM+FSQ bbox.
+    const reclassified =
+      kinds && kinds.length > 0
+        ? reclassifyByRequestedKinds(rows, kinds)
+        : rows;
+    return dedupeAcrossSources(reclassified, poiDedupKey)
       .slice(0, capped)
       .map(toStoredPoiDto);
   }
@@ -273,16 +297,27 @@ export class PoiStoreService {
                   buffer,
                   [kind],
                   STORE_PER_KIND_LIMIT,
+                  kinds, // full set for the tag-match exclusion (#926 review)
                 ),
               ),
             )
           ).flat()
         : await this.queryCorridorEntities(route, buffer, kinds, MAX_LIMIT);
+    // Reclassify dual-tagged rows to the requested kind + de-dup by external_id
+    // (#926) before projecting, so a `viewpoint` corridor query surfaces a
+    // dual-tagged `restaurant` element as a viewpoint. `/poi/in-corridor` accepts
+    // free-form stored kinds (e.g. `hotel`), so a requested stored kind is
+    // preserved — reclassifyByRequestedKinds only relabels tag-only matches. An
+    // all-kinds read needs no reclassify (stored kind is already the primary).
+    const rows =
+      kinds && kinds.length > 0
+        ? reclassifyByRequestedKinds(fetched, kinds)
+        : fetched;
     // Project each hit onto the nearest route segment for its along/off-route
     // distances; drop anything the precise perpendicular puts beyond the buffer
     // (the geography corridor is slightly looser).
     const cumKm = cumulativeLengthKm(route);
-    const withinBuffer = fetched
+    const withinBuffer = rows
       .map((poi) => {
         const [lng, lat] = poi.geom.coordinates;
         if (lng === undefined || lat === undefined) return null;
@@ -358,15 +393,21 @@ export class PoiStoreService {
           radiusKm,
           [kind],
           STORE_PER_KIND_LIMIT,
+          undefined,
+          kinds, // full set, so the tag-match excludes every requested kind
         ),
       ),
     );
+    // Reclassify dual-tagged rows to the requested kind + de-dup by external_id
+    // (#926), so a `viewpoint` request gets an `amenity=restaurant`+
+    // `tourism=viewpoint` element as a viewpoint, matching the live path.
     // Cross-source de-dup is deferred to `PoiService.rankPois` — it recomputes
-    // distance from each row's coordinates and caps per kind, so de-duping here
-    // (by coordinate, before distances exist) could drop a closer FSQ copy for a
-    // farther OSM twin that then sorts past the cap. The per-kind query already
-    // bounds hydration at STORE_PER_KIND_LIMIT.
-    return perKind.flat().map(storedPoiToPointOfInterest);
+    // distance from each row's coordinates and caps per kind, so de-duping there
+    // (not here) keeps a closer FSQ copy from being dropped for a farther OSM
+    // twin. The per-kind query already bounds hydration at STORE_PER_KIND_LIMIT.
+    return reclassifyByRequestedKinds(perKind.flat(), kinds).map(
+      storedPoiToPointOfInterest,
+    );
   }
 
   /**
@@ -426,13 +467,18 @@ export class PoiStoreService {
           bufferKm,
           [kind],
           STORE_PER_KIND_LIMIT,
+          kinds, // full set for the tag-match exclusion (#926 review)
         ),
       ),
     );
-    // Cross-source de-dup is deferred to `PoiService.rankAlongRoute` — it runs
-    // AFTER the precise per-route buffer filter, so an OSM copy that projects
-    // just outside the buffer can't suppress an FSQ copy that projects inside.
-    return perKind.flat().map(storedPoiToPointOfInterest);
+    // Reclassify dual-tagged rows to the requested kind + de-dup by external_id
+    // (#926) before ranking, matching the live path. Cross-source de-dup is
+    // deferred to `PoiService.rankAlongRoute` — it runs AFTER the precise
+    // per-route buffer filter, so an OSM copy that projects just outside the
+    // buffer can't suppress an FSQ copy that projects inside.
+    return reclassifyByRequestedKinds(perKind.flat(), kinds).map(
+      storedPoiToPointOfInterest,
+    );
   }
 
   /**
@@ -450,6 +496,11 @@ export class PoiStoreService {
     kinds: string[] | undefined,
     limit: number,
     minStars?: number,
+    // The full requested kind set (#926 review) — the per-kind fan-out passes a
+    // single `kind`, but the secondary tag-match must exclude EVERY requested
+    // kind so a dual-tagged element isn't tag-surfaced under one kind's budget
+    // while already found by another's. Defaults to `kinds` for all-at-once reads.
+    allKinds?: readonly string[],
   ): Promise<Poi[]> {
     const radiusM = Math.round(Math.max(0, radiusKm) * 1000);
     // Bind lat/lng as named params (never string-interpolated) and reuse the
@@ -462,7 +513,12 @@ export class PoiStoreService {
         .where(`ST_DWithin(poi.geom::geography, ${point}, :radius)`, params)
         .andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
-        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+        // Match the stored kind OR the venue tag (#926) — see kindMatchClause.
+        const { sql, params: kindParams } = kindMatchClause(
+          kinds,
+          allKinds ?? kinds,
+        );
+        qb.andWhere(sql, kindParams);
       }
       // Push `min_stars` into the query so an unrated cluster can't fill the cap
       // and starve rated accommodations (NULL stars fail `>=`, matching
@@ -491,6 +547,9 @@ export class PoiStoreService {
     bufferKm: number,
     kinds: string[] | undefined,
     limit?: number,
+    // Full requested kind set for the secondary tag-match (#926 review) — see
+    // queryRadiusEntities. Defaults to `kinds` for the all-kinds corridor read.
+    allKinds?: readonly string[],
   ): Promise<Poi[]> {
     const bufferM = Math.round(bufferKm * 1000);
     // Build the LineString via named params so user coordinates are never
@@ -512,7 +571,12 @@ export class PoiStoreService {
       // Exclude bulk-import tombstones (#850) from the corridor read too.
       qb.andWhere('poi.deactivated_at IS NULL');
       if (kinds && kinds.length > 0) {
-        qb.andWhere('poi.kind IN (:...kinds)', { kinds });
+        // Match the stored kind OR the venue tag (#926) — see kindMatchClause.
+        const { sql, params: kindParams } = kindMatchClause(
+          kinds,
+          allKinds ?? kinds,
+        );
+        qb.andWhere(sql, kindParams);
       }
       // Bound every corridor read at the DB — closest-to-route first — so a
       // dense urban corridor or a wide buffer can't hydrate thousands of rows.
@@ -578,6 +642,87 @@ function geomLngLat(poi: Poi): [number, number] {
 function poiDedupKey(poi: Poi): DedupPoi {
   const [lng, lat] = geomLngLat(poi);
   return { source: poi.source, kind: poi.kind, name: poi.name, lat, lng };
+}
+
+/**
+ * The WHERE fragment for a venue store read's kind filter (#926). Matches the
+ * stored primary `kind` OR — for a venue kind whose OSM classifier tag is known
+ * ({@link POI_KIND_TAGS}) — the raw `tags` bag, so a dual-tagged element stored
+ * under its amenity-first primary (`amenity=restaurant`+`tourism=viewpoint` →
+ * stored `restaurant`) is still matched by a `viewpoint` request, matching the
+ * live Overpass path. Kinds with no `POI_KIND_TAGS` entry (accommodations) get a
+ * plain `kind IN`, so those reads are unchanged.
+ *
+ * The secondary tag-match is gated on `poi.kind NOT IN (:...kinds)` (#926
+ * review): an element whose STORED kind was itself requested is already found by
+ * its own kind query, so tag-matching it a second time would only consume that
+ * other kind's per-kind budget (the `LIMIT` runs before reclassification) and
+ * could starve real rows of that kind. Only elements whose primary kind wasn't
+ * requested are surfaced by their secondary tag.
+ */
+function kindMatchClause(
+  queryKinds: readonly string[],
+  allRequestedKinds: readonly string[],
+): {
+  sql: string;
+  params: Record<string, unknown>;
+} {
+  const params: Record<string, unknown> = {
+    kinds: queryKinds,
+    allKinds: allRequestedKinds,
+  };
+  const clauses = ['poi.kind IN (:...kinds)'];
+  queryKinds.forEach((kind, i) => {
+    // OWN properties only (#926 review): `/poi/in-corridor` takes free-form
+    // stored kinds, so a value like `toString` or `constructor` would otherwise
+    // read an inherited `Object.prototype` member — a truthy non-tag that builds
+    // a `tags @> '{}'` clause matching essentially every POI.
+    const tag = Object.hasOwn(POI_KIND_TAGS, kind)
+      ? (POI_KIND_TAGS[kind as PoiKind] as { key: string; value: string })
+      : undefined;
+    if (!tag) return;
+    params[`ktag${i}`] = JSON.stringify({ [tag.key]: tag.value });
+    clauses.push(
+      `(poi.tags @> :ktag${i}::jsonb AND poi.kind NOT IN (:...allKinds))`,
+    );
+  });
+  return { sql: `(${clauses.join(' OR ')})`, params };
+}
+
+/**
+ * Reclassify venue store rows to the kind a `requestedKinds` query should serve
+ * them under (#926), deduping by `external_id`.
+ *
+ * A row matched by its STORED kind (that kind was requested) keeps it: the
+ * stored kind is the import's amenity-first primary, so it already matches the
+ * live path's amenity-first-among-requested choice — order-independently — and,
+ * crucially, a stored NON-venue kind (`hotel`, `camp_site`) is preserved rather
+ * than run through the venue-only `classifyPoiTags`, which would ignore it and
+ * mislabel a `/poi/in-corridor` accommodation (#926 review). Only a row surfaced
+ * PURELY by a secondary venue tag — its stored kind wasn't requested (see
+ * {@link kindMatchClause}) — is reclassified to that tag's kind. The served kind
+ * flows through the row→DTO mappers, so the derived `hint` follows it too.
+ */
+function reclassifyByRequestedKinds(
+  rows: readonly Poi[],
+  requestedKinds: readonly string[],
+): Poi[] {
+  const requested = new Set(requestedKinds);
+  const seen = new Set<string>();
+  const out: Poi[] = [];
+  for (const poi of rows) {
+    if (seen.has(poi.external_id)) continue;
+    seen.add(poi.external_id);
+    if (requested.has(poi.kind)) {
+      out.push(poi);
+      continue;
+    }
+    const served =
+      classifyPoiTags(poi.tags ?? {}, requestedKinds as readonly PoiKind[]) ??
+      poi.kind;
+    out.push(served === poi.kind ? poi : { ...poi, kind: served });
+  }
+  return out;
 }
 
 /**

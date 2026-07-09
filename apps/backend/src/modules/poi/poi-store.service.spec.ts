@@ -215,7 +215,51 @@ describe('PoiStoreService', () => {
     );
     const [sql, params] = qb.andWhere.mock.calls[1] as [string, unknown];
     expect(sql).toContain('poi.kind IN (:...kinds)');
-    expect(params).toEqual({ kinds: ['fuel_station', 'restaurant'] });
+    // #926: the map layer also gets the venue tag-match (gated on NOT IN).
+    expect(sql).toContain('poi.tags @> :ktag0::jsonb AND poi.kind NOT IN');
+    expect(params).toEqual({
+      kinds: ['fuel_station', 'restaurant'],
+      allKinds: ['fuel_station', 'restaurant'],
+      ktag0: '{"amenity":"fuel"}',
+      ktag1: '{"amenity":"restaurant"}',
+    });
+  });
+
+  it('reclassifies a dual-tagged element for a secondary-kind bbox request (#926)', async () => {
+    // The pannable map layer must surface a dual-tagged element under the
+    // requested category too, served as that kind — matching the live path.
+    qb.getMany.mockResolvedValueOnce([
+      makePoi({
+        external_id: 'osm:node:dual',
+        kind: 'restaurant',
+        name: 'Panorama Grill',
+        tags: { amenity: 'restaurant', tourism: 'viewpoint' },
+      }),
+    ]);
+    const res = await service.findInBbox(bbox, ['viewpoint'], 100);
+    expect(res.map((r) => r.external_id)).toEqual(['osm:node:dual']);
+    expect(res[0]?.kind).toBe('viewpoint');
+  });
+
+  it('orders exact stored-kind matches ahead of tag-only matches so the DB cap cannot starve them (#926)', async () => {
+    // The DB LIMIT runs before reclassification, so dual-tagged rows (which
+    // sort by their OWN stored kind, e.g. `restaurant` < `viewpoint`) must not
+    // fill the cap ahead of real `kind = viewpoint` rows. Exact stored-kind
+    // matches sort first (CASE → 0), tag-only matches after (CASE → 1).
+    await service.findInBbox(bbox, ['viewpoint'], 100);
+    expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toBe(
+      'CASE WHEN poi.kind IN (:...kinds) THEN 0 ELSE 1 END',
+    );
+    const addOrders = qb.addOrderBy.mock.calls.map((c) => (c as [string])[0]);
+    expect(addOrders).toEqual(['poi.kind', 'poi.name']);
+  });
+
+  it('orders an all-kinds bbox read by stored kind directly, without the priority CASE (#926)', async () => {
+    await service.findInBbox(bbox, undefined, 200);
+    expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toBe('poi.kind');
+    expect(qb.addOrderBy.mock.calls.map((c) => (c as [string])[0])).toEqual([
+      'poi.name',
+    ]);
   });
 
   it('rejects an inverted bbox before touching the database', async () => {
@@ -369,7 +413,57 @@ describe('PoiStoreService', () => {
         unknown,
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
-      expect(kindParams).toEqual({ kinds: ['fuel_station'] });
+      // #926: also match the venue tag — but only when the stored kind wasn't
+      // itself requested (NOT IN :allKinds), so it can't consume another kind's
+      // budget (#926 review).
+      expect(kindSql).toContain(
+        'poi.tags @> :ktag0::jsonb AND poi.kind NOT IN (:...allKinds)',
+      );
+      expect(kindParams).toEqual({
+        kinds: ['fuel_station'],
+        allKinds: ['fuel_station'],
+        ktag0: '{"amenity":"fuel"}',
+      });
+    });
+
+    it('preserves a requested stored non-venue kind (hotel), not reclassifying it (#926)', async () => {
+      // `/poi/in-corridor` accepts free-form stored kinds. A hotel carrying an
+      // amenity=restaurant tag, requested alongside restaurant, must stay a
+      // hotel — classifyPoiTags ignores `hotel`, so a naive reclassify would
+      // mislabel it; a requested stored kind is preserved instead.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({
+          external_id: 'osm:node:hotel',
+          kind: 'hotel',
+          name: 'Hotel Grill',
+          tags: { amenity: 'restaurant', tourism: 'hotel' },
+          geom: { type: 'Point', coordinates: [18.4, 49.5] }, // on the route
+        }),
+      ]);
+      const { pois } = await service.findAlongRoute(
+        route,
+        ['hotel', 'restaurant'],
+        2,
+      );
+      expect(pois.find((p) => p.external_id === 'osm:node:hotel')?.kind).toBe(
+        'hotel',
+      );
+    });
+
+    it('ignores a free-form kind that is an inherited Object property (e.g. toString) (#926)', async () => {
+      // A bogus kind matching an Object.prototype member must not read the
+      // inherited value and build a `tags @> \'{}\'` clause (which would match
+      // essentially every POI). Own-property lookups only.
+      await service.findAlongRoute(route, ['toString', 'restaurant'], 2);
+      const tagPatterns = qb.andWhere.mock.calls
+        .flatMap(([, params]) =>
+          params ? Object.entries(params as Record<string, unknown>) : [],
+        )
+        .filter(([key]) => key.startsWith('ktag'))
+        .map(([, value]) => value);
+      // `toString` yields no tag-match; only the real `restaurant` pattern.
+      expect(tagPatterns).not.toContain('{}');
+      expect(tagPatterns).toContain('{"amenity":"restaurant"}');
     });
   });
 
@@ -396,7 +490,15 @@ describe('PoiStoreService', () => {
         unknown,
       ];
       expect(kindSql).toContain('poi.kind IN (:...kinds)');
-      expect(kindParams).toEqual({ kinds: ['restaurant'] });
+      // #926: also match the venue tag, gated on NOT IN :allKinds (#926 review).
+      expect(kindSql).toContain(
+        'poi.tags @> :ktag0::jsonb AND poi.kind NOT IN (:...allKinds)',
+      );
+      expect(kindParams).toEqual({
+        kinds: ['restaurant'],
+        allKinds: ['restaurant'],
+        ktag0: '{"amenity":"restaurant"}',
+      });
       // Nearest-first + bounded per kind so a dense radius can't load unbounded
       // rows or let one kind crowd out sparser ones before rankPois.
       expect((qb.orderBy.mock.calls[0] as [string, string])[0]).toContain(
@@ -443,6 +545,69 @@ describe('PoiStoreService', () => {
         'restaurant',
       ]);
       expect(pois.map((p) => p.external_id)).toEqual(['osm:node:42', 'fsq:1']);
+    });
+
+    it('reclassifies a dual-tagged element to the requested kind (#926)', async () => {
+      // Stored under its amenity-first primary (restaurant) but also tagged
+      // tourism=viewpoint. A viewpoint request must serve it AS a viewpoint,
+      // matching the live Overpass path — the tag-match surfaces it and the
+      // reclassify re-labels it.
+      qb.getMany.mockResolvedValueOnce([
+        makePoi({
+          external_id: 'osm:node:dual',
+          kind: 'restaurant',
+          name: 'Panorama Grill',
+          tags: { amenity: 'restaurant', tourism: 'viewpoint' },
+        }),
+      ]);
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'viewpoint',
+      ]);
+      expect(pois).toHaveLength(1);
+      expect(pois[0]).toMatchObject({
+        external_id: 'osm:node:dual',
+        kind: 'viewpoint',
+      });
+    });
+
+    it('serves a dual-tagged element once, under its amenity-first kind, when both kinds are requested (#926)', async () => {
+      // restaurant + viewpoint both requested → two per-kind queries fetch the
+      // same element (kind match + tag match). It must appear once, as
+      // restaurant (amenity-first), exactly as classifyPoiTags would pick.
+      const dual = makePoi({
+        external_id: 'osm:node:dual',
+        kind: 'restaurant',
+        name: 'Panorama Grill',
+        tags: { amenity: 'restaurant', tourism: 'viewpoint' },
+      });
+      qb.getMany
+        .mockResolvedValueOnce([dual]) // restaurant per-kind query
+        .mockResolvedValueOnce([dual]); // viewpoint per-kind query (tag match)
+      const pois = await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+        'viewpoint',
+      ]);
+      const dualHits = pois.filter((p) => p.external_id === 'osm:node:dual');
+      expect(dualHits).toHaveLength(1);
+      expect(dualHits[0]?.kind).toBe('restaurant');
+    });
+
+    it('gates the secondary tag-match on the FULL requested set, so it cannot consume another kind budget (#926)', async () => {
+      await service.findPointsOfInterestNear(49.5, 18.4, 5, [
+        'restaurant',
+        'viewpoint',
+      ]);
+      // Each per-kind query's tag-match excludes NOT IN allKinds = the whole
+      // requested set — so a `restaurant`+`viewpoint` element (stored restaurant)
+      // is found only by its own restaurant query, never tag-surfaced into the
+      // viewpoint query's LIMIT budget.
+      const tagMatches = qb.andWhere.mock.calls
+        .filter(([sql]) => String(sql).includes('poi.tags @>'))
+        .map(([, params]) => params as { allKinds: string[] });
+      expect(tagMatches.length).toBeGreaterThan(0);
+      for (const params of tagMatches) {
+        expect(params.allKinds).toEqual(['restaurant', 'viewpoint']);
+      }
     });
   });
 

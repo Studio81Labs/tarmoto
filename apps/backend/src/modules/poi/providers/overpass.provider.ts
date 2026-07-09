@@ -53,7 +53,7 @@ const OVERPASS_IMPORT_TIMEOUT_MS = 190_000;
  * than in the DTO) so the Overpass-specific detail doesn't leak out of
  * the provider.
  */
-const POI_KIND_TAGS: Record<
+export const POI_KIND_TAGS: Record<
   PoiKind,
   { key: 'amenity' | 'tourism'; value: string }
 > = {
