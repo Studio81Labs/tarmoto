@@ -6,6 +6,7 @@ import {
   QUEUE_NAMES,
   RECURRING_PATTERNS,
 } from './jobs.constants.js';
+import { DIGEST_DISPATCH_PRIORITY } from './jobs.config.js';
 import { JOBS_CONFIG_TOKEN, type JobsConfig } from './jobs.tokens.js';
 
 interface FakeQueue {
@@ -74,6 +75,11 @@ describe('JobsScheduler', () => {
       { pattern: RECURRING_PATTERNS.HOURLY },
       expect.any(Object),
     );
+    // Dispatch outranks the compose jobs it shares the queue with, so a large
+    // fan-out can't delay it past the catch-up horizon.
+    const digestArgs = queues[QUEUE_NAMES.DIGEST_WEEKLY].upsertJobScheduler.mock
+      .calls[0] as [string, unknown, { opts?: { priority?: number } }];
+    expect(digestArgs[2].opts?.priority).toBe(DIGEST_DISPATCH_PRIORITY);
     expect(
       queues[QUEUE_NAMES.ACCOUNT_DELETION_SWEEP].upsertJobScheduler,
     ).toHaveBeenCalledWith(

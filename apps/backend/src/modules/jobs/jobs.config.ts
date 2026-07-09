@@ -93,6 +93,19 @@ export const DEFAULT_JOB_OPTIONS: JobsOptions = {
 };
 
 /**
+ * Priorities within the SHARED `digest.weekly` queue (BullMQ: 1 = highest,
+ * larger = lower). Compose (email-send) jobs are enqueued back onto the same
+ * queue as the hourly dispatch, so a large weekly fan-out could otherwise leave
+ * the next dispatch waiting behind thousands of sends — and if that delay
+ * exceeded the catch-up horizon, later timezone slots would be evaluated too
+ * late or skipped. Giving dispatch a higher priority than compose means a worker
+ * picks the next dispatch as soon as ANY slot frees (≈ one compose duration),
+ * independent of how deep the compose backlog is.
+ */
+export const DIGEST_DISPATCH_PRIORITY = 1;
+export const DIGEST_COMPOSE_PRIORITY = 10;
+
+/**
  * Default worker concurrency. Per-queue overrides can be set in the
  * processor's `@Processor` decorator (e.g. data-export streams large
  * archives and benefits from a low ceiling).

@@ -11,6 +11,7 @@ import {
   QUEUE_NAMES,
   RECURRING_PATTERNS,
 } from './jobs.constants.js';
+import { DIGEST_DISPATCH_PRIORITY } from './jobs.config.js';
 import { JOBS_CONFIG_TOKEN, type JobsConfig } from './jobs.tokens.js';
 
 interface RecurringJobSpec {
@@ -18,6 +19,8 @@ interface RecurringJobSpec {
   name: string;
   pattern: string;
   description: string;
+  /** BullMQ priority for the produced jobs (1 = highest). Omit for default. */
+  priority?: number;
 }
 
 /**
@@ -148,6 +151,9 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.DIGEST_WEEKLY_DISPATCH,
         pattern: RECURRING_PATTERNS.HOURLY,
         description: 'hourly weekly-digest timezone dispatcher',
+        // Outrank the compose (email-send) jobs that share this queue so a large
+        // fan-out can't delay the next dispatch past the catch-up horizon.
+        priority: DIGEST_DISPATCH_PRIORITY,
       },
       {
         queue: this.accountDeletionSweep,
@@ -226,6 +232,7 @@ export class JobsScheduler implements OnApplicationBootstrap {
           removeOnFail: { count: 1000 },
           attempts: 3,
           backoff: { type: 'exponential', delay: 60_000 },
+          ...(spec.priority !== undefined ? { priority: spec.priority } : {}),
         },
       },
     );

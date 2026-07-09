@@ -74,6 +74,14 @@ export const renderLayout = (ctx: LayoutContext): string => {
 </html>`;
 };
 
-export const renderTextFooter = (preferencesUrl: string): string => {
+export const renderTextFooter = (
+  preferencesUrl: string,
+  marketing = false,
+): string => {
+  // Marketing/digest mail must carry the unsubscribe language in the text part
+  // too — a text-only client never sees the HTML `marketingFooter`.
+  if (marketing) {
+    return `\n\n—\nTarmoto · weekly digest\nYou're receiving this as part of your Tarmoto subscription.\nUnsubscribe from marketing emails: ${preferencesUrl}\n`;
+  }
   return `\n\n—\nTarmoto · transactional email\nManage notifications: ${preferencesUrl}\n`;
 };

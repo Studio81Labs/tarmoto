@@ -19,6 +19,7 @@ import {
   type SubscriptionConfirmedContext,
   type TripInviteContext,
   type VerificationContext,
+  type WeeklyDigestContext,
   accountDeletionCompletedTemplate,
   accountDeletionScheduledTemplate,
   dataExportReadyTemplate,
@@ -28,6 +29,7 @@ import {
   subscriptionConfirmedTemplate,
   tripInviteTemplate,
   verificationTemplate,
+  weeklyDigestTemplate,
 } from './templates/index.js';
 
 const DEFAULT_SUPPORT_EMAIL = 'support@tarmoto.app';
@@ -123,6 +125,13 @@ export class EmailService {
     ctx: ContextWithoutBase<TripInviteContext>,
   ): Promise<EmailSendResult | null> {
     return this.dispatch(to, tripInviteTemplate(this.withBase(ctx)));
+  }
+
+  async sendWeeklyDigest(
+    to: string,
+    ctx: ContextWithoutBase<WeeklyDigestContext>,
+  ): Promise<EmailSendResult | null> {
+    return this.dispatch(to, weeklyDigestTemplate(this.withBase(ctx)));
   }
 
   async sendAccountDeletionScheduled(
