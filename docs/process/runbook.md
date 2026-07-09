@@ -194,9 +194,12 @@ COPY (
     -- CZ bbox from DEFAULT_REGIONS (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06)
     AND longitude BETWEEN 12.09 AND 18.86
     AND latitude  BETWEEN 48.55 AND 51.06
-    -- coarse category superset; the backend classifier is authoritative
+    -- Coarse category prefilter. It MUST stay a SUPERSET of the labels in
+    -- fsq-poi-categories.ts — loose is fine (the backend classifier drops false
+    -- positives), but a MISS drops rows the importer would keep and can later
+    -- tombstone them as absent. Mirror this when the classifier gains a label.
     AND len(list_filter(fsq_category_labels, x -> regexp_matches(lower(x),
-        'restaurant|caf|coffee|food|ice cream|gas|petrol|fuel|charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|apartment|camp|resort|cottage|chalet|cabin|caravan|breakfast'))) > 0
+        'restaurant|caf|coffee|tea room|tea house|food|ice cream|gas|petrol|fuel|charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|b&b|breakfast|apartment|camp|rv park|caravan|resort|cottage|chalet|cabin|vacation|holiday|rental'))) > 0
 ) TO '<TARMOTO_FSQ_IMPORT_DIR>/cz.fsq.jsonl' (FORMAT json);
 ```
 
