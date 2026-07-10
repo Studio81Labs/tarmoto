@@ -1346,23 +1346,23 @@ const TripPlannerMapContent = forwardRef<
     }
     // ── Ambient hazard pins (opt-in) → shared point popover ──
     ensureHazardLayers(map, { visible: false, beforeId: WAYPOINT_PIN });
-    const onHazardClick = (event: MapLayerMouseEvent) => {
-      if (drawRef.current?.getMode() !== "idle") return;
-      // Waypoint + condition markers sit ABOVE the hazard layer (hazards are
-      // inserted before WAYPOINT_PIN). If the click also hit one of those, it
-      // owns the click — don't clobber its popover with the hazard one.
-      const higherPriority = [
+    // Waypoint + condition markers sit ABOVE the hazard layer (hazards are
+    // inserted before WAYPOINT_PIN). If a click also hit one of those, it owns
+    // the click — the hazard pin/cluster must not clobber it or zoom the map.
+    const overHigherPriorityMarker = (event: MapLayerMouseEvent) => {
+      const layers = [
         WAYPOINT_PIN,
         CLOSURE_MARKER_LAYER,
         PASS_MARKER_LAYER,
       ].filter((id) => map.getLayer(id));
-      if (
-        higherPriority.length > 0 &&
-        map.queryRenderedFeatures(event.point, { layers: higherPriority })
-          .length > 0
-      ) {
-        return;
-      }
+      return (
+        layers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers }).length > 0
+      );
+    };
+    const onHazardClick = (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (overHigherPriorityMarker(event)) return;
       const feature = event.features?.[0];
       const props = feature?.properties as HazardProps | null;
       if (
@@ -1390,6 +1390,7 @@ const TripPlannerMapContent = forwardRef<
     map.on("click", HAZARD_ICON, onHazardClick);
     map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
+      if (overHigherPriorityMarker(event)) return;
       expandHazardCluster(map, event);
     });
     for (const layer of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
