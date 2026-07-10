@@ -1112,12 +1112,20 @@ const TripPlannerMapContent = forwardRef<
     });
     map.on("click", ROUTE_HIT_LINE, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
-      const overWaypoint =
-        map.getLayer(WAYPOINT_PIN) &&
-        map.queryRenderedFeatures(event.point, {
-          layers: [WAYPOINT_PIN],
-        }).length > 0;
-      if (overWaypoint) return;
+      // A waypoint or hazard pin sitting on the route owns the click — don't
+      // also select the segment / open the Road Preview underneath it.
+      const overOwnedPin = [
+        WAYPOINT_PIN,
+        HAZARD_BG,
+        HAZARD_ICON,
+        HAZARD_CLUSTERS,
+      ]
+        .filter((id) => map.getLayer(id))
+        .some(
+          (id) =>
+            map.queryRenderedFeatures(event.point, { layers: [id] }).length > 0,
+        );
+      if (overOwnedPin) return;
       const segmentId = event.features?.[0]?.properties?.segmentId as
         | string
         | undefined;
