@@ -122,7 +122,7 @@ export class PoiService {
    */
   private async readStoreFirst<T extends { external_id: string }>(
     fromStore: () => Promise<T[]>,
-    fromProvider: () => Promise<T[]>,
+    fromProvider: (extraLimit?: number) => Promise<T[]>,
     coverage?: CoverageDescriptor,
   ): Promise<T[]> {
     let stored: T[] | null = null;
@@ -146,13 +146,17 @@ export class PoiService {
     // dropping the rest.
     if (stored !== null && coverage) {
       if (await this.isCovered(coverage)) return stored;
-      // KNOWN LIMITATION (#945): `fromProvider` queries the WHOLE area, and the
-      // provider caps its result before we de-dupe. At a dense covered-side
-      // frontier those capped live rows can all be store duplicates, so the merge
-      // adds nothing and the uncovered side stays empty. Not a regression — the
-      // pre-#925 path returned store-only here too — but the full fix is an
-      // uncovered-only query, tracked in #945.
-      const live = await this.fromProviderSafe(fromProvider);
+      // Frontier merge (#945): `fromProvider` queries the WHOLE area, and the
+      // provider caps its result BEFORE we de-dupe. At a dense covered-side
+      // frontier the covered-side rows the store already has come back as
+      // duplicates that `mergeByExternalId` drops — but they'd fill the provider
+      // cap first and starve the uncovered side. Budget for them: raise the
+      // provider cap by the store row count (a good proxy for the covered-side
+      // live count — same OSM data), so ~one base cap of uncovered-side rows
+      // survives the de-dup. The ranker re-caps to the display limit downstream.
+      const live = await this.fromProviderSafe(() =>
+        fromProvider(stored.length),
+      );
       return mergeByExternalId(stored, live);
     }
     // No `coverage` (coverage unknown) or the store failed: the original
@@ -224,7 +228,14 @@ export class PoiService {
           resolvedKinds,
           minStars,
         ),
-      () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
+      (extra = 0) =>
+        this.provider.findAccommodations(
+          lat,
+          lng,
+          radius,
+          resolvedKinds,
+          extra,
+        ),
       { kind: 'radius', lat, lng, radiusKm: radius },
     );
     return {
@@ -325,7 +336,14 @@ export class PoiService {
     const raw = await this.readStoreFirst(
       () =>
         this.store.findPointsOfInterestNear(lat, lng, radius, resolvedKinds),
-      () => this.provider.findPointsOfInterest(lat, lng, radius, resolvedKinds),
+      (extra = 0) =>
+        this.provider.findPointsOfInterest(
+          lat,
+          lng,
+          radius,
+          resolvedKinds,
+          extra,
+        ),
       { kind: 'radius', lat, lng, radiusKm: radius },
     );
     return {
@@ -477,11 +495,12 @@ export class PoiService {
           bufferKm,
           resolvedKinds,
         ),
-      () =>
+      (extra = 0) =>
         this.provider.findPointsOfInterestAroundPoints(
           sampleRouteAnchors(dto.route, cumKm, bufferKm),
           bufferKm,
           resolvedKinds,
+          extra,
         ),
       // Region-membership coverage over the WHOLE buffered corridor in one
       // ST_Covers test (#944) — replaces the #925 centreline+rail sample probe;

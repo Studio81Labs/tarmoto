@@ -258,15 +258,17 @@ describe('PoiService', () => {
       expect(res.pois.map((p) => p.external_id)).toEqual(['store:1']);
     });
 
-    it('merges Overpass at a frontier: store (covered side) + Overpass (uncovered side)', async () => {
+    it('merges Overpass at a frontier and boosts the provider cap by the store row count so the uncovered side is not starved (#945)', async () => {
       store.isRequestCovered.mockResolvedValue(false); // no import near → not covered
       store.findPointsOfInterestNear.mockResolvedValue([
-        buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c1', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c2', kind: 'cafe' }),
       ]);
       provider.findPointsOfInterest.mockResolvedValue([
-        // Overpass covers the whole area, so it re-returns the covered POI (must
+        // Overpass covers the whole area, so it re-returns the covered POIs (must
         // de-dup, store wins) plus the uncovered-side one.
-        buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c1', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c2', kind: 'cafe' }),
         buildNearbyPoi({ external_id: 'osm:node:uncovered', kind: 'cafe' }),
       ]);
 
@@ -276,9 +278,19 @@ describe('PoiService', () => {
         5,
       );
 
-      expect(provider.findPointsOfInterest).toHaveBeenCalled();
+      // #945: on the merge path the provider cap is boosted by the store row
+      // count (2), so the covered-side duplicates can't fill the cap and starve
+      // the uncovered side.
+      expect(provider.findPointsOfInterest).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.any(Array),
+        2,
+      );
       expect(res.pois.map((p) => p.external_id).sort()).toEqual([
-        'osm:node:covered',
+        'osm:node:c1',
+        'osm:node:c2',
         'osm:node:uncovered',
       ]);
     });
@@ -439,6 +451,7 @@ describe('PoiService', () => {
           'chalet',
           'camp_site',
         ]),
+        0,
       );
       expect(result.radius_km).toBe(5);
       expect(result.accommodations).toEqual([]);
@@ -469,6 +482,7 @@ describe('PoiService', () => {
         anchor.lng,
         25,
         expect.any(Array),
+        0,
       );
       expect(result.radius_km).toBe(25);
     });
@@ -512,6 +526,7 @@ describe('PoiService', () => {
         anchor.lng,
         7,
         ['hotel', 'camp_site'],
+        0,
       );
       expect(result.kinds).toEqual(['hotel', 'camp_site']);
     });
@@ -530,6 +545,7 @@ describe('PoiService', () => {
         anchor.lng,
         5,
         ['hotel', 'motel'],
+        0,
       );
     });
 
@@ -744,6 +760,7 @@ describe('PoiService', () => {
           'cafe',
           'fuel_station',
         ]),
+        0,
       );
       expect(result.radius_km).toBe(5);
       expect(result.kinds).toEqual(
@@ -769,6 +786,7 @@ describe('PoiService', () => {
         anchor.lng,
         7,
         ['viewpoint'],
+        0,
       );
     });
 
@@ -786,6 +804,7 @@ describe('PoiService', () => {
         anchor.lng,
         25,
         expect.any(Array),
+        0,
       );
       expect(result.radius_km).toBe(25);
     });
