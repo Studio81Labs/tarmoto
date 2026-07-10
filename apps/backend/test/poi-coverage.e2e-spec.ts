@@ -32,8 +32,8 @@ import { PoiStoreService } from '../src/modules/poi/poi-store.service.js';
  * committed asset), so the geometry under test is exactly the same either way.
  *
  * Distinct primary keys alone are NOT enough isolation: `isRequestCovered`'s
- * query is table-wide (`EXISTS (... WHERE imported_at IS NOT NULL AND
- * ST_Covers(geom, request))`, no `code` filter — see `poi-store.service.ts`),
+ * query is table-wide (`ST_Covers(ST_Union(geom) OVER all imported regions the
+ * request intersects, request)`, no `code` filter — see `poi-store.service.ts`),
  * so it matches ANY imported region row, not just this test's 'Z1'. A real
  * `poi:import DE` against this same shared dev DB would stamp the real 'DE'
  * row's `imported_at`, silently flipping the DE-wedge / route-into-wedge /
@@ -63,6 +63,7 @@ describe('poi coverage: region-polygon membership, not proximity (#944)', () => 
   // doc-comment for why these aren't the real 'CZ' / 'DE' primary keys.
   const CZ_TEST_CODE = 'Z1'; // imported_at = now() (an imported region)
   const DE_TEST_CODE = 'Z2'; // imported_at = NULL (never imported)
+  const SK_TEST_CODE = 'Z3'; // imported_at = now() — CZ's imported neighbour
 
   // Real-world lat/lng points, empirically checked against the committed
   // boundary asset via ST_Covers / ST_Envelope before this test was written.
@@ -74,6 +75,10 @@ describe('poi coverage: region-polygon membership, not proximity (#944)', () => 
   // reported as CZ-covered. This is the border halo.
   const DE_WEDGE = { lat: 51.02, lng: 13.74 };
   const BERLIN = { lat: 52.52, lng: 13.405 }; // deep inside DE's actual polygon
+  // Interior NW Slovakia — well away from the SK/AT/HU borders, so a buffered
+  // Brno→Žilina corridor stays inside CZ∪SK (Bratislava, on the AT/HU border,
+  // would spill a 2 km buffer into un-imported territory). Verified via psql.
+  const ZILINA = { lat: 49.22, lng: 18.74 }; // inside SK's actual polygon
 
   /** Read one region's real GeoJSON geometry (by ISO code) out of the
    *  committed boundary asset — the same file `poi:load-boundaries` loads. */
@@ -136,6 +141,7 @@ describe('poi coverage: region-polygon membership, not proximity (#944)', () => 
 
     await seedRegion(CZ_TEST_CODE, 'CZ', true);
     await seedRegion(DE_TEST_CODE, 'DE', false);
+    await seedRegion(SK_TEST_CODE, 'SK', true); // CZ's imported neighbour
   }, 30_000);
 
   afterAll(async () => {
@@ -143,8 +149,8 @@ describe('poi coverage: region-polygon membership, not proximity (#944)', () => 
     // assigned, let that original error surface instead of masking it behind
     // a secondary TypeError from calling `.query` on `undefined`.
     await dataSource?.query(
-      `DELETE FROM poi_import_regions WHERE code IN ($1, $2)`,
-      [CZ_TEST_CODE, DE_TEST_CODE],
+      `DELETE FROM poi_import_regions WHERE code IN ($1, $2, $3)`,
+      [CZ_TEST_CODE, DE_TEST_CODE, SK_TEST_CODE],
     );
     // Skip when the snapshot was never captured (`beforeAll` failed before or
     // during that query) — there is nothing to restore.
@@ -199,6 +205,32 @@ describe('poi coverage: region-polygon membership, not proximity (#944)', () => 
         bufferKm: 2,
       }),
     ).resolves.toBe(true);
+  });
+
+  it('covers a cross-border route between two imported regions via the polygon UNION (#944 review)', async () => {
+    // Brno (CZ) → Žilina (SK), both imported. No single country polygon contains
+    // the whole corridor, but the UNION of the intersecting imported regions
+    // does — so it is covered. (The old single-region `ST_Covers` would have
+    // returned false here and merged Overpass unnecessarily.)
+    await expect(
+      service.isRequestCovered({
+        kind: 'route',
+        route: [BRNO, ZILINA],
+        bufferKm: 2,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('does NOT cover a cross-border route when only one side is imported', async () => {
+    // Brno (CZ, imported) → the DE wedge (DE is seeded imported_at NULL). The
+    // union covers only the CZ side, so the corridor is not fully covered.
+    await expect(
+      service.isRequestCovered({
+        kind: 'route',
+        route: [BRNO, DE_WEDGE],
+        bufferKm: 2,
+      }),
+    ).resolves.toBe(false);
   });
 
   it('never covers a region whose imported_at is NULL, even deep inside its real polygon', async () => {

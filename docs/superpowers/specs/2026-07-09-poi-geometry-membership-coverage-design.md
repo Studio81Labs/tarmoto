@@ -45,11 +45,12 @@ readStoreFirst(fromStore, fromProvider, coverageDescriptor?)
   descriptor = { kind: 'radius', lat, lng, radiusKm }
              | { kind: 'route',  route: {lat,lng}[], bufferKm }
   → PoiStoreService.isRequestCovered(descriptor): boolean
-      SELECT EXISTS (
-        SELECT 1 FROM poi_import_regions r
-        WHERE r.imported_at IS NOT NULL
-          AND ST_Covers(r.geom, ST_Buffer(<request>::geography, <bufferMeters>)::geometry)
+      SELECT ST_Covers(
+        (SELECT ST_Union(r.geom) FROM poi_import_regions r
+         WHERE r.imported_at IS NOT NULL AND ST_Intersects(r.geom, req.geom)),
+        req.geom
       )
+      FROM (SELECT ST_Buffer(<request>::geography, <bufferMeters>)::geometry AS geom) req
 ```
 
 - `<request>` for `radius` = `ST_SetSRID(ST_MakePoint($lng,$lat),4326)`, buffered by
@@ -61,10 +62,13 @@ readStoreFirst(fromStore, fromProvider, coverageDescriptor?)
   degenerate zero-length route yields a valid `LineString`/`Point` that buffers to
   the same disc the store's `ST_DWithin` corridor produces, so no special-case is
   needed.
-- Fully inside a single imported country → covered. Straddling the import frontier
-  (imported ↔ un-imported) → not covered → Overpass merge. Straddling two imported
-  countries → not covered by a single polygon → merge (harmless extra Overpass;
-  accepted, see Non-goals).
+- Covered iff the request is inside the **union of the imported regions it
+  intersects** (#944 review): a request inside one imported country → covered; a
+  request straddling **two imported** countries (a CZ→SK route, a radius on an
+  imported border) → covered by their union; straddling the frontier
+  (imported ↔ un-imported) → not covered → Overpass merge. The union is built
+  only over the polygons the request actually touches (`ST_Intersects`,
+  GiST-indexed — usually 1, at most a handful), so it stays cheap.
 
 ## Components
 
@@ -173,9 +177,6 @@ used elsewhere (checked during implementation; else removed).
 
 ## Non-goals / accepted limitations
 
-- A request straddling **two imported** countries isn't covered by a single
-  polygon → an extra (harmless) Overpass merge. A `ST_Union` of imported polygons
-  would fix it but is expensive per query; not worth it (rare, non-regressive).
 - A **truncated/partial** re-import is caught: the importer's `wouldWipeTooMuch`
   wipe guard already flags an extract that looks incomplete (it would tombstone an
   implausible share of the region), and the `imported_at` stamp is gated on

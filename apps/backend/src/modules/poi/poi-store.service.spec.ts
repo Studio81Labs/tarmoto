@@ -719,7 +719,7 @@ describe('PoiStoreService', () => {
   });
 
   describe('isRequestCovered (#944)', () => {
-    it('radius: ST_Covers over the buffered point, gated on imported_at, returns the EXISTS flag', async () => {
+    it('radius: ST_Covers over the UNION of intersecting imported regions, gated on imported_at', async () => {
       repo.query.mockResolvedValueOnce([{ covered: true }]);
       const res = await service.isRequestCovered({
         kind: 'radius',
@@ -734,6 +734,10 @@ describe('PoiStoreService', () => {
       expect(sql).toContain('ST_Covers');
       expect(sql).toContain('ST_MakePoint');
       expect(sql).toContain('ST_Buffer');
+      // Union only the regions the request touches (#944 review), so a
+      // cross-border request covered by two adjacent imported countries counts.
+      expect(sql).toContain('ST_Union');
+      expect(sql).toContain('ST_Intersects');
       // lng, lat, radius metres.
       expect(params).toEqual([18.4, 49.5, 25000]);
     });

@@ -169,12 +169,26 @@ export class PoiStoreService {
     const built = buildCoverageRequest(descriptor);
     if (built === null) return false; // non-finite / empty → not covered, no query
     const { requestSql, params } = built;
+    // Covered iff the request is inside the UNION of the imported regions it
+    // touches — not just one region (#944 review): a cross-border request
+    // (a CZ→SK route, a radius on an imported border) is fully covered when both
+    // sides are imported, even though no single country polygon contains it. The
+    // union is built only over the polygons that actually intersect the request
+    // (`ST_Intersects`, GiST-indexed — usually 1, at most a handful), so it stays
+    // cheap; unioning all 17 regions per call would not. No intersecting imported
+    // region → `ST_Union` is NULL → `ST_Covers(NULL, …)` is NULL → not covered.
+    // The request geometry is computed once in the `req` subquery, then reused.
     const sql = `
-      SELECT EXISTS (
-        SELECT 1 FROM poi_import_regions r
-        WHERE r.imported_at IS NOT NULL
-          AND ST_Covers(r.geom, ${requestSql})
-      ) AS covered`;
+      SELECT ST_Covers(
+        (
+          SELECT ST_Union(r.geom)
+          FROM poi_import_regions r
+          WHERE r.imported_at IS NOT NULL
+            AND ST_Intersects(r.geom, req.geom)
+        ),
+        req.geom
+      ) AS covered
+      FROM (SELECT ${requestSql} AS geom) req`;
     return withPoiRepo(this.poiDataSource, async (repo) => {
       const rows = await repo.query<{ covered: boolean | null }[]>(sql, params);
       return rows[0]?.covered === true;
