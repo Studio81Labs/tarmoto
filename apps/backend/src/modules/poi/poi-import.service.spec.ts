@@ -525,6 +525,28 @@ describe('PoiImportService', () => {
     expect(upsert).toHaveBeenCalled();
   });
 
+  it('does NOT stamp coverage (imported_at) when the wipe guard trips — an incomplete extract must not mark the whole region covered (#944 review)', async () => {
+    // Same incomplete-extract scenario as above (60 owned, extract carries 1):
+    // a real upsert happens, but the extract looks incomplete, so coverage must
+    // NOT be stamped — otherwise a request in the slices this run never loaded
+    // would read as covered and skip the Overpass fallback.
+    const existingRows = Array.from({ length: 60 }, (_, i) => ({
+      id: `uuid-${i}`,
+      external_id: `node/${i}`,
+      import_region: 'CZ',
+    }));
+    loadInBbox(existingRows);
+    mockExtract(poi({ external_id: 'node/0' }));
+
+    await service.importRegion(REGION);
+
+    expect(upsert).toHaveBeenCalled(); // the import DID run (not a skip)
+    expect(txQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining('poi_import_regions'),
+      expect.anything(),
+    );
+  });
+
   it('uses the pre-import region size for the wipe guard (a full-replacement wrong extract is refused)', async () => {
     // 60 existing rows + a wrong extract of 60 DIFFERENT in-bbox ids. The stale
     // set is all 60 existing; the guard denominator must be the pre-import 60

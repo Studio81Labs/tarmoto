@@ -176,7 +176,14 @@ used elsewhere (checked during implementation; else removed).
 - A request straddling **two imported** countries isn't covered by a single
   polygon → an extra (harmless) Overpass merge. A `ST_Union` of imported polygons
   would fix it but is expensive per query; not worth it (rare, non-regressive).
-- A **truncated/partial** extract that still completes stamps `imported_at` and
-  claims its whole country polygon. This is an operational error (monitored via
-  the importer's row-count logs), not handled here.
+- A **truncated/partial** re-import is caught: the importer's `wouldWipeTooMuch`
+  wipe guard already flags an extract that looks incomplete (it would tombstone an
+  implausible share of the region), and the `imported_at` stamp is gated on
+  `!wouldWipeTooMuch` (#944 review) — a suspect re-import does NOT (re-)stamp
+  coverage; the region keeps whatever a prior complete import gave it, or stays
+  uncovered. The residual is a **first** import with no baseline (a corrupt
+  first extract with a handful of rows): there is no in-process completeness
+  oracle for it (a row-count floor is defeated by a city-scoped extract, as #925
+  showed), so it stays an operational concern (importer fetched/upserted counts)
+  and self-heals on the next baseline-having run.
 - The dense-frontier merge cap-starvation (#945) is orthogonal and still applies.

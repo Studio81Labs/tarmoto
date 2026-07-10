@@ -401,24 +401,33 @@ export class PoiImportService {
           tombstoned = tombstoneIds.length;
         }
 
-        // 4. Stamp the region as genuinely imported — the signal later
-        // geometry-membership coverage queries key off (`WHERE imported_at IS
-        // NOT NULL`, #944). Reaching here means this run was neither of the
-        // two skip paths above (no extract / zero in-bbox rows), so a real
-        // upsert just happened — including when the wipe guard withheld the
-        // tombstone step above, which is still a genuine import, not a skip.
-        // Same `tx` as the surrounding upsert/tombstone, so the stamp commits
-        // atomically with them.
+        // 4. Stamp the region as genuinely imported — the signal geometry-
+        // membership coverage keys off (`WHERE imported_at IS NOT NULL`, #944).
+        // A real upsert just happened (neither skip path was taken).
         //
-        // OSM-only: the coverage query this feeds gates the Overpass
-        // live-read fallback on `source = 'osm'` rows (`PoiStoreService`), so
-        // an FSQ-only region must never read as covered — stamping here on an
-        // FSQ run would wrongly suppress the OSM fallback for a region OSM
-        // has never actually imported.
-        if (this.importSource.source === 'osm') {
+        // BUT NOT when the wipe guard tripped (#944 review): coverage marks the
+        // WHOLE region authoritative, so an INCOMPLETE extract would let
+        // `readStoreFirst` skip Overpass across the slices this run never loaded.
+        // `wouldWipeTooMuch` is exactly the "this extract looks incomplete"
+        // suspicion, so we must not (re-)stamp coverage off it — the region keeps
+        // whatever `imported_at` a prior COMPLETE import gave it (still covered),
+        // or stays uncovered until a complete import lands (Overpass keeps
+        // serving it). When the stamp does fire it shares the upsert's `tx`, so it
+        // commits atomically.
+        //
+        // OSM-only: the coverage query this feeds gates the OSM Overpass fallback
+        // (`source = 'osm'`, `PoiStoreService`), so an FSQ run must never stamp —
+        // it would wrongly suppress the OSM fallback for a region OSM never loaded.
+        if (this.importSource.source === 'osm' && !wouldWipeTooMuch) {
           await tx.query(
             `UPDATE "poi_import_regions" SET "imported_at" = now() WHERE "code" = $1`,
             [region.code],
+          );
+        } else if (this.importSource.source === 'osm') {
+          this.logger.warn(
+            `POI import (${region.code}): extract looks incomplete ` +
+              `(wipe guard tripped) — NOT stamping coverage; the region keeps ` +
+              `its prior coverage state`,
           );
         }
       });
