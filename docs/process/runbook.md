@@ -126,6 +126,36 @@ Both paths read the per-region `.osm` files an operator prepares out-of-band; pr
 
 A **second bulk source**, Foursquare OS Places (#869, `source='fsq'`), imports the same way from per-region `.fsq.jsonl` extracts — see [Producing per-country POI extracts (Foursquare OS Places)](#producing-per-country-poi-extracts-foursquare-os-places). It has its own env vars (`TARMOTO_FSQ_IMPORT_ENABLED/DIR/REGIONS`) and CLI (`pnpm fsq:import`), coexists with OSM in `pois` via the `(source, external_id)` key, and is now included in the weekly cron (above) when `TARMOTO_FSQ_IMPORT_ENABLED=true`. Cross-source de-dup has landed (#932), so an imported FSQ row no longer double-pins an OSM venue. **Still not prod-safe:** store reads filter by `kind`, not `source`, so an imported FSQ row is served immediately, and Apache-2.0 requires visible Foursquare attribution — which isn't wired into the companion yet. Until attribution lands, only import FSQ on dev/staging.
 
+### Region-coverage boundaries (#944)
+
+Store reads are **coverage-aware**: `PoiService.readStoreFirst` treats an empty
+store result as authoritative (skips the Overpass fallback) only when the request
+falls inside an **imported region's boundary polygon**, and merges Overpass at the
+import frontier otherwise. That decision (`PoiStoreService.isRequestCovered`) runs
+`ST_Covers(region_polygon, request)` against the `poi_import_regions` table, gated
+on `imported_at IS NOT NULL`.
+
+- **One-time (and whenever the asset changes):** `pnpm poi:load-boundaries` loads
+  the 17 country boundary polygons (Natural Earth 1:50m, committed at
+  `apps/backend/src/assets/import-region-boundaries.geojson`) into
+  `poi_import_regions`. Run it **after** `pnpm db:migrate:poi`; it needs
+  `TARMOTO_POI_DATABASE_*` where you run it. Idempotent (`ON CONFLICT (code)`),
+  and it never resets `imported_at`.
+- **`imported_at` is stamped by the OSM import:** a region counts as covered only
+  once `pnpm poi:import` (OSM) has successfully imported it — the importer stamps
+  `poi_import_regions.imported_at` for that region (FSQ imports do **not** stamp,
+  since the fallback this gates is OSM-backed). So the deploy/refresh order is
+  `db:migrate:poi` → `poi:load-boundaries` (once) → `poi:import`.
+- **Until boundaries are loaded, coverage is inert** — `isRequestCovered` returns
+  false for every request, so reads simply fall back to Overpass (safe, but the
+  import's Overpass-suppression never kicks in). Load them as part of provisioning.
+- **Halo regression is a manual pre-release gate:** `apps/backend/test/poi-coverage.e2e-spec.ts`
+  proves a point in a neighbouring country (inside the imported country's bounding
+  box but outside its polygon) reads as **not** covered. It needs real PostGIS and,
+  like the other backend `*.e2e-spec.ts`, does **not** run in CI — run it locally
+  (`pnpm --filter @tarmoto/backend exec jest --config ./test/jest-e2e.json test/poi-coverage.e2e-spec.ts`)
+  against a migrated + boundary-loaded POI DB before a coverage-affecting release.
+
 ### Producing per-country POI extracts
 
 The bulk POI import reads one `.osm` XML file per active region from `TARMOTO_POI_IMPORT_DIR`, named `<code>.osm` (lower-case ISO 3166-1 alpha-2, e.g. `cz.osm`). An operator prepares each file once per refresh from the country's Geofabrik download, mirroring the roads OSM importer's prep (`../../apps/backend/src/modules/roads/osm-import/README.md`). The importer reads `.osm` XML, not `.osm.pbf` directly — the maintained JS PBF parsers are stale; osmium decodes PBF far better.

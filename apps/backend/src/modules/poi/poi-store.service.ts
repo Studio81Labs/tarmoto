@@ -13,13 +13,7 @@ import {
   POI_KIND_TAGS,
 } from './providers/overpass.provider.js';
 import { googleMapsUrl, osmDetailUrl } from './poi-links.js';
-import {
-  COVERAGE_BUFFER_KM,
-  cumulativeLengthKm,
-  padBbox,
-  projectOntoRoute,
-  type Bbox,
-} from './poi-geo.js';
+import { cumulativeLengthKm, projectOntoRoute, type Bbox } from './poi-geo.js';
 import { withPoiRepo } from './poi-repo.js';
 import { dedupeAcrossSources, type DedupPoi } from './poi-dedup.js';
 import {
@@ -64,73 +58,57 @@ const STORE_PER_KIND_LIMIT = 100;
 const DEDUP_OVERFETCH = 2;
 
 /**
- * Max coverage-probe samples per SQL statement in
- * {@link PoiStoreService.hasImportedCoverage} (#925 review). A sample binds 6
- * params, so this keeps each VALUES list well under PostgreSQL's 65 535 param
- * ceiling (512 → 3 073). A request with more samples than this (a long route at
- * the fixed 20 km stride) is split into several statements and AND-ed, so the
- * limit is respected by CHUNKING — never by thinning the samples, which would
- * open coverage gaps between the surviving probes.
+ * Coverage request shape for {@link PoiStoreService.isRequestCovered} (#944): a
+ * radius disc (point + km) or a route corridor (polyline + buffer km). Mirrors
+ * the two point-anchored / corridor read shapes the store already serves, so
+ * each `PoiService` caller builds one straight from its own request params.
  */
-const MAX_COVERAGE_SAMPLES = 512;
+export type CoverageDescriptor =
+  | { kind: 'radius'; lat: number; lng: number; radiusKm: number }
+  | {
+      kind: 'route';
+      route: readonly { lat: number; lng: number }[];
+      bufferKm: number;
+    };
+
+function isFiniteLatLng(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
 
 /**
- * Build the `bool_and(EXISTS(...))` coverage query for one chunk of samples: true
- * only when EVERY sample has an active, region-imported OSM point nearby. Two
- * steps per EXISTS — the envelope `ST_Intersects` is the GiST-index prefilter,
- * then `ST_DWithin` on geography refines to the TRUE circular buffer (the
- * envelope is a square, so a POI at its corner is ~1.4× the buffer away and must
- * not count). The geography cast only touches the few index-prefiltered
- * candidates. Positional params ($1…$6n, then the buffer in metres) keep every
- * coordinate parameterised.
+ * Full request-geometry SQL (buffered disc/corridor) + its positional params,
+ * or null for a degenerate/invalid descriptor → treat as uncovered (#944).
+ * `requestSql` bakes the buffer distance in with its own `$` placeholder, so
+ * {@link PoiStoreService.isRequestCovered} just drops it straight into
+ * `ST_Covers` — no separate index-prefilter juggling like the old point-probe
+ * needed. Buffer distance is metric metres (`km * 1000`): `ST_Buffer` on a
+ * `geography` measures in metres, then the result is cast back to `geometry`
+ * so `ST_Covers` can compare it against the stored region polygon.
  */
-function coverageChunkQuery(chunk: readonly { lat: number; lng: number }[]): {
-  sql: string;
-  params: number[];
-} {
-  const valuesSql = chunk
-    .map((_, i) => {
-      const p = i * 6;
-      return `($${p + 1}::float8, $${p + 2}::float8, $${p + 3}::float8, $${p + 4}::float8, $${p + 5}::float8, $${p + 6}::float8)`;
-    })
-    .join(', ');
-  const params: number[] = chunk.flatMap((s) => {
-    // Clamp the CENTRE to valid WGS84 before it is cast to `geography`: a rim/rail
-    // sample of a near-polar or near-antimeridian request can land past ±90° /
-    // ±180°, and `ST_MakePoint(...)::geography` raises a (non-connection) SQL
-    // error for out-of-range coords, which would 500 the read instead of
-    // degrading to Overpass (#925 review). The envelope stays in geometry space
-    // (`ST_MakeEnvelope` / `ST_Intersects`), which tolerates the overflow, so only
-    // the geography centre needs clamping.
-    const lat = Math.max(-90, Math.min(90, s.lat));
-    const lng = Math.max(-180, Math.min(180, s.lng));
-    const env = padBbox(
-      { minLng: lng, minLat: lat, maxLng: lng, maxLat: lat },
-      COVERAGE_BUFFER_KM,
-    );
-    return [lng, lat, env.minLng, env.minLat, env.maxLng, env.maxLat];
-  });
-  const bufferParam = `$${chunk.length * 6 + 1}`;
-  params.push(COVERAGE_BUFFER_KM * 1000);
-  const sql = `
-    SELECT bool_and(EXISTS (
-      SELECT 1 FROM pois p
-      WHERE p.source = 'osm'
-        AND p.deactivated_at IS NULL
-        AND p.import_region IS NOT NULL
-        AND ST_Intersects(
-          p.geom,
-          ST_MakeEnvelope(s.min_lng, s.min_lat, s.max_lng, s.max_lat, 4326)
-        )
-        AND ST_DWithin(
-          p.geom::geography,
-          ST_SetSRID(ST_MakePoint(s.ctr_lng, s.ctr_lat), 4326)::geography,
-          ${bufferParam}
-        )
-    )) AS covered
-    FROM (VALUES ${valuesSql})
-      AS s(ctr_lng, ctr_lat, min_lng, min_lat, max_lng, max_lat)`;
-  return { sql, params };
+function buildCoverageRequest(
+  d: CoverageDescriptor,
+): { requestSql: string; params: (string | number)[] } | null {
+  if (d.kind === 'radius') {
+    if (!isFiniteLatLng(d.lat, d.lng) || !Number.isFinite(d.radiusKm))
+      return null;
+    return {
+      requestSql:
+        'ST_Buffer(ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)::geometry',
+      params: [d.lng, d.lat, Math.max(0, d.radiusKm) * 1000],
+    };
+  }
+  const pts = d.route.filter((p) => isFiniteLatLng(p.lat, p.lng));
+  if (pts.length === 0 || !Number.isFinite(d.bufferKm)) return null;
+  // GeoJSON is [lng,lat]; a LineString needs >= 2 positions — duplicate a lone
+  // point so a single-vertex route still buffers to a disc.
+  const coords = pts.map((p) => [p.lng, p.lat]);
+  if (coords.length === 1) coords.push(coords[0]!);
+  const line = JSON.stringify({ type: 'LineString', coordinates: coords });
+  return {
+    requestSql:
+      'ST_Buffer(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)::geography, $2)::geometry',
+    params: [line, Math.max(0, d.bufferKm) * 1000],
+  };
 }
 
 /**
@@ -167,62 +145,53 @@ export class PoiStoreService {
   }
 
   /**
-   * Whether the OSM bulk import has ACTUALLY populated the neighbourhood of
-   * EVERY supplied sample point (#925) — the coverage signal for
-   * {@link PoiService.readStoreFirst}. True only when each sample has an active,
-   * imported OSM point within {@link COVERAGE_BUFFER_KM} — a GiST-indexed
-   * `ST_Intersects` envelope prefilter refined by a geography `ST_DWithin` to the
-   * true circular distance (the envelope alone is a square and would count a
-   * ~1.4× corner hit).
+   * Whether `descriptor`'s request geometry (a radius disc or a buffered route
+   * corridor) sits ENTIRELY inside a region the OSM bulk import has completed
+   * (#944) — the coverage signal for {@link PoiService.readStoreFirst}. A single
+   * `ST_Covers(region_polygon, buffered_request_geometry)` query against
+   * `poi_import_regions`, gated on `imported_at IS NOT NULL` (Task 4 scopes that
+   * stamp to OSM, matching the OSM-backed Overpass fallback this gates).
    *
-   * Coverage is proven ACROSS the request, not from one point anywhere in it
-   * (#925 P1 review): the caller passes samples spanning the request geometry
-   * (a radius disc's centre + rim, or points strided along a route), so a large
-   * radius or a long corridor that starts on the imported side but runs into an
-   * un-imported area has an uncovered sample and returns false — `readStoreFirst`
-   * then merges Overpass for the uncovered stretch instead of trusting the store
-   * because a single imported point happened to sit inside the bounding box.
-   * Samples are checked in chunks (one SQL statement each, bounded by
-   * {@link MAX_COVERAGE_SAMPLES}); the first chunk with an uncovered sample
-   * short-circuits, so an off-coverage request returns without running the rest.
+   * Region MEMBERSHIP, not point PROXIMITY (#944): this replaces the #925
+   * sample-probe (`bool_and(EXISTS(...))` over rim/rail points near imported
+   * `pois` rows), whose point-radius shape reported a border wedge just outside
+   * the real import boundary as covered (the "border halo" documented on the
+   * old `COVERAGE_BUFFER_KM` constant, now removed). Testing the buffered
+   * request against the region's actual boundary polygon is exact regardless
+   * of rollout state.
    *
-   * Occupancy, not a region rectangle: coverage follows the real distribution of
-   * imported points, so it can't over-claim a country's shape — a border wedge
-   * never populated by a neighbour's import has no nearby point and falls back,
-   * while a genuinely-empty lookup INSIDE imported territory (a kind-/min_stars-
-   * filtered miss with other imported POIs around it) stays authoritative.
-   *
-   * Scoped to `source = 'osm'`: the Overpass fallback this gates is OSM-backed,
-   * so an FSQ-only area (imported before OSM populated it) must NOT count as
-   * covered, or a covered-empty read would skip the OSM fallback that should run.
-   * `import_region IS NOT NULL` excludes legacy/unclaimed rows so only rows a
-   * real regional import wrote can register coverage. No samples → not covered.
+   * `buildCoverageRequest` returns null for a degenerate/non-finite descriptor
+   * (NaN coordinates, an empty route) — that short-circuits to `false` (not
+   * covered) WITHOUT running a query, same "unknown → not covered" contract the
+   * old sample probe had for an empty sample list.
    */
-  async hasImportedCoverage(
-    samples: readonly { lat: number; lng: number }[],
-  ): Promise<boolean> {
-    if (samples.length === 0) return false;
+  async isRequestCovered(descriptor: CoverageDescriptor): Promise<boolean> {
+    const built = buildCoverageRequest(descriptor);
+    if (built === null) return false; // non-finite / empty → not covered, no query
+    const { requestSql, params } = built;
+    // Covered iff the request is inside the UNION of the imported regions it
+    // touches — not just one region (#944 review): a cross-border request
+    // (a CZ→SK route, a radius on an imported border) is fully covered when both
+    // sides are imported, even though no single country polygon contains it. The
+    // union is built only over the polygons that actually intersect the request
+    // (`ST_Intersects`, GiST-indexed — usually 1, at most a handful), so it stays
+    // cheap; unioning all 17 regions per call would not. No intersecting imported
+    // region → `ST_Union` is NULL → `ST_Covers(NULL, …)` is NULL → not covered.
+    // The request geometry is computed once in the `req` subquery, then reused.
+    const sql = `
+      SELECT ST_Covers(
+        (
+          SELECT ST_Union(r.geom)
+          FROM poi_import_regions r
+          WHERE r.imported_at IS NOT NULL
+            AND ST_Intersects(r.geom, req.geom)
+        ),
+        req.geom
+      ) AS covered
+      FROM (SELECT ${requestSql} AS geom) req`;
     return withPoiRepo(this.poiDataSource, async (repo) => {
-      // Chunk so no single VALUES list exceeds PG's bind-param ceiling, while the
-      // fixed 20 km stride keeps consecutive probes overlapping (≤ the probe
-      // radius, so no gaps): a long route is SPLIT across statements, not thinned.
-      // EVERY chunk must be covered; the first uncovered chunk short-circuits and
-      // an off-coverage request returns without running the rest.
-      for (
-        let start = 0;
-        start < samples.length;
-        start += MAX_COVERAGE_SAMPLES
-      ) {
-        const { sql, params } = coverageChunkQuery(
-          samples.slice(start, start + MAX_COVERAGE_SAMPLES),
-        );
-        const rows = await repo.query<{ covered: boolean | null }[]>(
-          sql,
-          params,
-        );
-        if (rows[0]?.covered !== true) return false;
-      }
-      return true;
+      const rows = await repo.query<{ covered: boolean | null }[]>(sql, params);
+      return rows[0]?.covered === true;
     });
   }
 
