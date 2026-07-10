@@ -674,6 +674,10 @@ const TripPlannerMapContent = forwardRef<
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const planningMode = useTripStore((s) => s.planningMode);
   const [poiViewportToken, setPoiViewportToken] = useState(0);
+  // Hazards can be toggled on read-only maps that never opt into POI browsing,
+  // so they need their own viewport token — the POI one only bumps while
+  // `poiBrowsing`, which would leave hazards stale after pan/zoom.
+  const [hazardViewportToken, setHazardViewportToken] = useState(0);
   const [poiMenu, setPoiMenu] = useState<{
     poi: Poi;
     x: number;
@@ -1002,8 +1006,19 @@ const TripPlannerMapContent = forwardRef<
   // REST-only viewport hazard feed (no websocket — ambient awareness only).
   useViewportHazards(handleRef, {
     enabled: hazardsVisible && ready,
-    viewportToken: poiViewportToken,
+    viewportToken: hazardViewportToken,
   });
+  // Refetch hazards on pan/zoom whenever they're enabled — independent of the
+  // POI-browsing gate so read-only preview maps stay fresh too.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !hazardsVisible) return;
+    const onMoveEnd = () => setHazardViewportToken((token) => token + 1);
+    map.on("moveend", onMoveEnd);
+    return () => {
+      map.off("moveend", onMoveEnd);
+    };
+  }, [ready, hazardsVisible]);
   useEffect(() => {
     conditionsRef.current = {
       closures,
