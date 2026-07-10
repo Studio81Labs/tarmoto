@@ -1348,6 +1348,21 @@ const TripPlannerMapContent = forwardRef<
     ensureHazardLayers(map, { visible: false, beforeId: WAYPOINT_PIN });
     const onHazardClick = (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
+      // Waypoint + condition markers sit ABOVE the hazard layer (hazards are
+      // inserted before WAYPOINT_PIN). If the click also hit one of those, it
+      // owns the click — don't clobber its popover with the hazard one.
+      const higherPriority = [
+        WAYPOINT_PIN,
+        CLOSURE_MARKER_LAYER,
+        PASS_MARKER_LAYER,
+      ].filter((id) => map.getLayer(id));
+      if (
+        higherPriority.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers: higherPriority })
+          .length > 0
+      ) {
+        return;
+      }
       const feature = event.features?.[0];
       const props = feature?.properties as HazardProps | null;
       if (
