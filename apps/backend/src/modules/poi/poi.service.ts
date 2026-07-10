@@ -36,13 +36,11 @@ import {
   MAX_BUFFER_KM,
   MAX_RADIUS_KM as POI_MAX_RADIUS_KM,
 } from './dto/point-of-interest.dto.js';
-import { PoiStoreService } from './poi-store.service.js';
 import {
-  cumulativeLengthKm,
-  projectOntoRoute,
-  radiusCoverageSamples,
-  routeCoverageSamples,
-} from './poi-geo.js';
+  PoiStoreService,
+  type CoverageDescriptor,
+} from './poi-store.service.js';
+import { cumulativeLengthKm, projectOntoRoute } from './poi-geo.js';
 import { dedupeAcrossSources, sourceOfExternalId } from './poi-dedup.js';
 
 // `cumulativeLengthKm` / `projectOntoRoute` live in `poi-geo.ts` so the store
@@ -109,14 +107,14 @@ export class PoiService {
    * never 500 on an outage, and rider coordinates stay out of the logs (only the
    * error message is logged).
    *
-   * Coverage-aware (#925): when `coverageSamples` are given and any one of them
-   * isn't within imported territory (a request straddling the import frontier),
-   * the store's rows are merged with a live Overpass query rather than treated as
-   * complete — so the uncovered side isn't silently dropped. A fully-covered
-   * request (every sample near an import) is authoritative and short-circuits
-   * with NO Overpass call — even when the store result is empty (a sparse/
-   * filtered covered lookup is genuinely empty, not un-imported). Omit
-   * `coverageSamples` to keep the plain empty→Overpass fallback.
+   * Coverage-aware (#925, region-membership since #944): when a `coverage`
+   * descriptor is given and the request geometry ISN'T entirely inside an
+   * OSM-imported region (a request straddling the import frontier), the store's
+   * rows are merged with a live Overpass query rather than treated as complete —
+   * so the uncovered side isn't silently dropped. A fully-covered request is
+   * authoritative and short-circuits with NO Overpass call — even when the store
+   * result is empty (a sparse/filtered covered lookup is genuinely empty, not
+   * un-imported). Omit `coverage` to keep the plain empty→Overpass fallback.
    *
    * A non-connection store error (a missed migration, a PostGIS/SQL bug) is a
    * real defect `withPoiRepo` deliberately rethrows — surface it (500) rather
@@ -125,7 +123,7 @@ export class PoiService {
   private async readStoreFirst<T extends { external_id: string }>(
     fromStore: () => Promise<T[]>,
     fromProvider: () => Promise<T[]>,
-    coverageSamples?: readonly { lat: number; lng: number }[],
+    coverage?: CoverageDescriptor,
   ): Promise<T[]> {
     let stored: T[] | null = null;
     try {
@@ -137,16 +135,17 @@ export class PoiService {
         `POI store unavailable, falling back to provider: ${err.message}`,
       );
     }
-    // Coverage-aware fallback (#925): a fully-covered request is authoritative —
-    // return the store result even when it's EMPTY, because a sparse or
-    // kind-/min_stars-filtered lookup inside imported coverage is genuinely
-    // empty, NOT un-imported, so it must not keep hitting Overpass. Only when a
-    // sample isn't covered (a request straddling the import frontier) do we MERGE
-    // the store's covered-side rows with a live Overpass query for the uncovered
-    // side (store rows win, richer decision-support), instead of treating the
-    // covered side as complete and dropping the rest.
-    if (stored !== null && coverageSamples) {
-      if (await this.isCovered(coverageSamples)) return stored;
+    // Coverage-aware fallback (#925, region-membership since #944): a
+    // fully-covered request is authoritative — return the store result even when
+    // it's EMPTY, because a sparse or kind-/min_stars-filtered lookup inside
+    // imported coverage is genuinely empty, NOT un-imported, so it must not keep
+    // hitting Overpass. Only when the request geometry ISN'T covered (a request
+    // straddling the import frontier) do we MERGE the store's rows with a live
+    // Overpass query for the uncovered side (store rows win, richer
+    // decision-support), instead of treating the covered side as complete and
+    // dropping the rest.
+    if (stored !== null && coverage) {
+      if (await this.isCovered(coverage)) return stored;
       // KNOWN LIMITATION (#945): `fromProvider` queries the WHOLE area, and the
       // provider caps its result before we de-dupe. At a dense covered-side
       // frontier those capped live rows can all be store duplicates, so the merge
@@ -156,21 +155,21 @@ export class PoiService {
       const live = await this.fromProviderSafe(fromProvider);
       return mergeByExternalId(stored, live);
     }
-    // No `coverageSamples` (coverage unknown) or the store failed: the original
+    // No `coverage` (coverage unknown) or the store failed: the original
     // store-first contract — store rows if any, else Overpass.
     if (stored !== null && stored.length > 0) return stored;
     return this.fromProviderSafe(fromProvider);
   }
 
   /**
-   * Whether the request sits within imported territory (#925) — every sample
-   * point has an active OSM point within the store's coverage buffer (occupancy,
-   * not a region rectangle, so a border wedge inside a country's bounding box
-   * that was never populated reads as un-covered). Proving coverage across the
-   * samples (not from one point anywhere in the area) means a large radius or a
-   * long corridor running past the frontier has an uncovered sample and falls
-   * through to a (harmless) Overpass merge rather than treating the store as
-   * complete (#925 P1 review).
+   * Whether `coverage`'s request geometry sits entirely within an OSM-imported
+   * region (#944) — `ST_Covers(region_polygon, buffered_request_geometry)`
+   * against `poi_import_regions`, replacing the #925 point-proximity sample
+   * probe. Region membership is exact regardless of rollout state, so a border
+   * wedge inside a country's bounding box that was never imported still reads as
+   * un-covered, and a large radius or a long corridor that crosses out of the
+   * imported region falls through to a (harmless) Overpass merge rather than
+   * treating the store as complete.
    *
    * A transient POI-store outage during the coverage lookup itself (the store
    * dropped between `fromStore()` and here) resolves to `false` = "not
@@ -178,11 +177,9 @@ export class PoiService {
    * 500ing an otherwise-answerable read. A real (non-connection) defect still
    * surfaces, same as the primary store read.
    */
-  private async isCovered(
-    samples: readonly { lat: number; lng: number }[],
-  ): Promise<boolean> {
+  private async isCovered(coverage: CoverageDescriptor): Promise<boolean> {
     try {
-      return await this.store.hasImportedCoverage(samples);
+      return await this.store.isRequestCovered(coverage);
     } catch (err) {
       if (err instanceof ServiceUnavailableException) {
         this.logger.warn(
@@ -228,7 +225,7 @@ export class PoiService {
           minStars,
         ),
       () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
-      radiusCoverageSamples(lat, lng, radius),
+      { kind: 'radius', lat, lng, radiusKm: radius },
     );
     return {
       accommodations: this.rank(raw, lat, lng, resolvedKinds, minStars),
@@ -329,7 +326,7 @@ export class PoiService {
       () =>
         this.store.findPointsOfInterestNear(lat, lng, radius, resolvedKinds),
       () => this.provider.findPointsOfInterest(lat, lng, radius, resolvedKinds),
-      radiusCoverageSamples(lat, lng, radius),
+      { kind: 'radius', lat, lng, radiusKm: radius },
     );
     return {
       pois: this.rankPois(raw, lat, lng, resolvedKinds),
@@ -486,11 +483,12 @@ export class PoiService {
           bufferKm,
           resolvedKinds,
         ),
-      // Coverage samples spanning the buffered corridor — centreline strides
-      // plus both rails — so a corridor that leaves imported territory, even
-      // only on its far rail, has an uncovered sample and merges Overpass
-      // instead of trusting the store off the covered centreline (#925 P2).
-      routeCoverageSamples(dto.route, bufferKm),
+      // Region-membership coverage over the WHOLE buffered corridor in one
+      // ST_Covers test (#944) — replaces the #925 centreline+rail sample probe;
+      // a corridor that crosses out of the imported region anywhere along its
+      // buffered width fails the single polygon-membership test and merges
+      // Overpass.
+      { kind: 'route', route: dto.route, bufferKm },
     );
 
     return {

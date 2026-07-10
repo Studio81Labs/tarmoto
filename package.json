@@ -49,6 +49,7 @@
     "db:seed": "pnpm shared:build && pnpm backend:build && pnpm --filter @tarmoto/backend seed:demo",
     "poi:import": "pnpm shared:build && pnpm backend:build && pnpm --filter @tarmoto/backend poi:import",
     "fsq:import": "pnpm shared:build && pnpm backend:build && pnpm --filter @tarmoto/backend fsq:import",
+    "poi:load-boundaries": "pnpm shared:build && pnpm backend:build && pnpm --filter @tarmoto/backend poi:load-boundaries",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "clean": "pnpm -r exec rm -rf dist node_modules"

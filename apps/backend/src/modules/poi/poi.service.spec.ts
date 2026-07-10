@@ -38,14 +38,15 @@ describe('PoiService', () => {
     findPointsOfInterestNear: jest.Mock;
     findAccommodationsNear: jest.Mock;
     findPointsOfInterestInCorridor: jest.Mock;
-    hasImportedCoverage: jest.Mock;
+    isRequestCovered: jest.Mock;
   };
 
-  // Coverage is now an occupancy probe (#925): `hasImportedCoverage` resolves
-  // true when the request area sits within imported territory. A test that wants
-  // the store treated as authoritative (imported area) sets it true; the default
-  // is false (un-imported), so store-empty reads fall through to Overpass exactly
-  // as the pre-#925 store-first path did.
+  // Coverage is now region-polygon membership (#944): `isRequestCovered`
+  // resolves true when the request geometry sits entirely within an
+  // OSM-imported region. A test that wants the store treated as authoritative
+  // (imported territory) sets it true; the default is false (un-imported), so
+  // store-empty reads fall through to Overpass exactly as the pre-#925
+  // store-first path did.
   const COVERED = true;
 
   const anchor = { lat: 49.1, lng: 16.75 };
@@ -92,10 +93,11 @@ describe('PoiService', () => {
       findPointsOfInterestNear: jest.fn().mockResolvedValue([]),
       findAccommodationsNear: jest.fn().mockResolvedValue([]),
       findPointsOfInterestInCorridor: jest.fn().mockResolvedValue([]),
-      // Default: NOTHING imported nearby (un-covered). An empty store then merges
-      // with Overpass (= Overpass), matching the pre-#925 fallback; tests that
-      // want the store treated as authoritative override this with COVERED.
-      hasImportedCoverage: jest.fn().mockResolvedValue(false),
+      // Default: request geometry NOT covered by any imported region. An empty
+      // store then merges with Overpass (= Overpass), matching the pre-#925
+      // fallback; tests that want the store treated as authoritative override
+      // this with COVERED.
+      isRequestCovered: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -116,7 +118,7 @@ describe('PoiService', () => {
     ];
 
     it('serves nearby POIs from the store and never calls the provider when the store has rows', async () => {
-      store.hasImportedCoverage.mockResolvedValue(COVERED); // imported area
+      store.isRequestCovered.mockResolvedValue(COVERED); // imported area
       store.findPointsOfInterestNear.mockResolvedValue([
         buildNearbyPoi({
           external_id: 'store:1',
@@ -196,7 +198,7 @@ describe('PoiService', () => {
     });
 
     it('serves accommodations from the store when present', async () => {
-      store.hasImportedCoverage.mockResolvedValue(COVERED); // imported area
+      store.isRequestCovered.mockResolvedValue(COVERED); // imported area
       store.findAccommodationsNear.mockResolvedValue([
         buildPoi({ external_id: 'store:h1', stars: 4 }),
       ]);
@@ -212,7 +214,7 @@ describe('PoiService', () => {
     });
 
     it('serves along-route POIs from the store corridor without sampling Overpass anchors', async () => {
-      store.hasImportedCoverage.mockResolvedValue(COVERED); // imported area
+      store.isRequestCovered.mockResolvedValue(COVERED); // imported area
       store.findPointsOfInterestInCorridor.mockResolvedValue([
         buildNearbyPoi({ external_id: 'store:r1', lat: 49.0, lng: 16.75 }),
       ]);
@@ -241,7 +243,7 @@ describe('PoiService', () => {
 
   describe('coverage-aware fallback at the import frontier (#925)', () => {
     it('trusts the store (no Overpass) when an imported point is near the request', async () => {
-      store.hasImportedCoverage.mockResolvedValue(true); // inside imported territory
+      store.isRequestCovered.mockResolvedValue(true); // inside imported territory
       store.findPointsOfInterestNear.mockResolvedValue([
         buildNearbyPoi({ external_id: 'store:1', kind: 'cafe' }),
       ]);
@@ -257,7 +259,7 @@ describe('PoiService', () => {
     });
 
     it('merges Overpass at a frontier: store (covered side) + Overpass (uncovered side)', async () => {
-      store.hasImportedCoverage.mockResolvedValue(false); // no import near → not covered
+      store.isRequestCovered.mockResolvedValue(false); // no import near → not covered
       store.findPointsOfInterestNear.mockResolvedValue([
         buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
       ]);
@@ -282,7 +284,7 @@ describe('PoiService', () => {
     });
 
     it('falls back entirely to Overpass when no import is near (un-imported gap / border wedge)', async () => {
-      store.hasImportedCoverage.mockResolvedValue(false);
+      store.isRequestCovered.mockResolvedValue(false);
       store.findPointsOfInterestNear.mockResolvedValue([]); // nothing imported here
       provider.findPointsOfInterest.mockResolvedValue([
         buildNearbyPoi({ external_id: 'live:1', kind: 'cafe' }),
@@ -301,7 +303,7 @@ describe('PoiService', () => {
     it('treats a covered but EMPTY store result as authoritative — no Overpass (#925 review)', async () => {
       // A sparse or kind-/min_stars-filtered lookup inside imported territory is
       // genuinely empty, not un-imported, so it must not keep hitting Overpass.
-      store.hasImportedCoverage.mockResolvedValue(true);
+      store.isRequestCovered.mockResolvedValue(true);
       store.findPointsOfInterestNear.mockResolvedValue([]);
 
       const res = await service.findPointsOfInterestNear(
@@ -319,7 +321,7 @@ describe('PoiService', () => {
         buildNearbyPoi({ external_id: 'store:1', kind: 'cafe' }),
       ]);
       // The store drops between fromStore() and the coverage query.
-      store.hasImportedCoverage.mockRejectedValue(
+      store.isRequestCovered.mockRejectedValue(
         new ServiceUnavailableException('POI store is temporarily unavailable'),
       );
       provider.findPointsOfInterest.mockResolvedValue([
