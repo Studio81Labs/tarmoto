@@ -1388,9 +1388,10 @@ const TripPlannerMapContent = forwardRef<
     };
     map.on("click", HAZARD_BG, onHazardClick);
     map.on("click", HAZARD_ICON, onHazardClick);
-    map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) =>
-      expandHazardCluster(map, event),
-    );
+    map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      expandHazardCluster(map, event);
+    });
     for (const layer of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
       map.on("mouseenter", layer, () => {
         if (drawRef.current?.getMode() !== "idle") return;
