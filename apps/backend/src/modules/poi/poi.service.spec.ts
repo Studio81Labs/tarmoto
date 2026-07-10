@@ -295,6 +295,63 @@ describe('PoiService', () => {
       ]);
     });
 
+    it('accommodations: boosts by the UNFILTERED covered count, not the min_stars-filtered store rows (#945 Codex P2)', async () => {
+      // At a dense frontier city full of unrated hotels the store read pushes
+      // `min_stars` into SQL, so `stored` holds only the rated few — but the live
+      // Overpass query is star-unfiltered, so its covered-side rows (rated AND
+      // unrated) fill the cap. Boosting by the rated count (1) would still starve
+      // the uncovered side; the boost must use the unfiltered count (5).
+      store.isRequestCovered.mockResolvedValue(false); // frontier → merge
+      store.findAccommodationsNear.mockImplementation(
+        (_lat, _lng, _radius, _kinds, minStars) =>
+          Promise.resolve(
+            minStars !== undefined
+              ? // filtered result: only the rated covered-side stay
+                [buildPoi({ external_id: 'osm:node:rated', stars: 4 })]
+              : // unfiltered covered-side count for the boost: 1 rated + 4 unrated
+                [
+                  buildPoi({ external_id: 'osm:node:rated', stars: 4 }),
+                  buildPoi({ external_id: 'osm:node:u1', stars: null }),
+                  buildPoi({ external_id: 'osm:node:u2', stars: null }),
+                  buildPoi({ external_id: 'osm:node:u3', stars: null }),
+                  buildPoi({ external_id: 'osm:node:u4', stars: null }),
+                ],
+          ),
+      );
+      provider.findAccommodations.mockResolvedValue([
+        buildPoi({ external_id: 'osm:node:rated', stars: 4 }), // covered dup
+        buildPoi({ external_id: 'osm:node:uncovered', stars: 5 }), // uncovered rated
+      ]);
+
+      const res = await service.findAccommodationsNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+        undefined,
+        4, // min_stars
+      );
+
+      // Boost = 5 (unfiltered covered count), NOT 1 (the star-filtered store rows).
+      expect(provider.findAccommodations).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.any(Array),
+        5,
+      );
+      // The boost is a second store read WITHOUT the min_stars arg (4 args).
+      expect(store.findAccommodationsNear).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.any(Array),
+      );
+      expect(res.accommodations.map((a) => a.external_id).sort()).toEqual([
+        'osm:node:rated',
+        'osm:node:uncovered',
+      ]);
+    });
+
     it('falls back entirely to Overpass when no import is near (un-imported gap / border wedge)', async () => {
       store.isRequestCovered.mockResolvedValue(false);
       store.findPointsOfInterestNear.mockResolvedValue([]); // nothing imported here
