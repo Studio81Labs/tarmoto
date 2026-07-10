@@ -990,6 +990,15 @@ const TripPlannerMapContent = forwardRef<
     setHazardLayersVisible(map, hazardsVisible);
     if (!hazardsVisible) setHazardMenu(null);
   }, [hazardsVisible, ready]);
+  // Only one point popover at a time. The hazard click clears the other menus
+  // when it opens; this is the reverse — close the hazard popover whenever any
+  // other point menu opens. Those handlers set `swallowNextClickRef`, so the
+  // map-level close-all is skipped and wouldn't otherwise clear it.
+  useEffect(() => {
+    if (poiMenu || waypointMenu || contextMenu || conditionMenu) {
+      setHazardMenu(null);
+    }
+  }, [poiMenu, waypointMenu, contextMenu, conditionMenu]);
   // REST-only viewport hazard feed (no websocket — ambient awareness only).
   useViewportHazards(handleRef, {
     enabled: hazardsVisible && ready,
