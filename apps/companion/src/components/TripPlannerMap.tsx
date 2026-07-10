@@ -1361,14 +1361,18 @@ const TripPlannerMapContent = forwardRef<
     }
     // ── Ambient hazard pins (opt-in) → shared point popover ──
     ensureHazardLayers(map, { visible: false, beforeId: WAYPOINT_PIN });
-    // Waypoint + condition markers sit ABOVE the hazard layer (hazards are
-    // inserted before WAYPOINT_PIN). If a click also hit one of those, it owns
-    // the click — the hazard pin/cluster must not clobber it or zoom the map.
+    // Waypoints, condition markers, and day-break splitter dots all sit ABOVE
+    // the hazard layer (hazards are inserted before WAYPOINT_PIN; day-breaks
+    // are added on top). If a click also hit one of those, it owns the click —
+    // the hazard pin/cluster must not clobber it or zoom the map. Day-breaks
+    // arm on `mousedown`, so an overlapping hazard `click` would otherwise fire
+    // alongside the splitter.
     const overHigherPriorityMarker = (event: MapLayerMouseEvent) => {
       const layers = [
         WAYPOINT_PIN,
         CLOSURE_MARKER_LAYER,
         PASS_MARKER_LAYER,
+        DAY_BREAK_CIRCLE_LAYER,
       ].filter((id) => map.getLayer(id));
       return (
         layers.length > 0 &&
@@ -1408,6 +1412,19 @@ const TripPlannerMapContent = forwardRef<
       if (overHigherPriorityMarker(event)) return;
       expandHazardCluster(map, event);
     });
+    // Hazards sit ABOVE the POI clusters (POI layers are added first, hazards
+    // slot in before WAYPOINT_PIN). A visible hazard pin/cluster owns an
+    // overlapping click — the POI cluster handler below must not also expand
+    // and fly the camera underneath it.
+    const overHazardMarker = (event: MapLayerMouseEvent) => {
+      const layers = [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS].filter((id) =>
+        map.getLayer(id),
+      );
+      return (
+        layers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers }).length > 0
+      );
+    };
     for (const layer of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
       map.on("mouseenter", layer, () => {
         if (drawRef.current?.getMode() !== "idle") return;
@@ -1421,6 +1438,7 @@ const TripPlannerMapContent = forwardRef<
     // Cluster click zooms toward the cluster's expansion level.
     map.on("click", POI_CLUSTER_LAYER, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
+      if (overHazardMarker(event)) return;
       const feature = event.features?.[0];
       const clusterId = feature?.properties?.cluster_id as number | undefined;
       const source = map.getSource(POI_SOURCE) as
