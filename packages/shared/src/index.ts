@@ -24,3 +24,4 @@ export * from "./trip-gpx";
 export * from "./units";
 export * from "./regions";
 export * from "./feature-flags";
+export * from "./i18n";
