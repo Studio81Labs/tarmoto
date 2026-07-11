@@ -91,6 +91,76 @@ export const en = {
   'dataExportReady.button': 'Download export',
   'dataExportReady.text.expiry': 'The link expires on {date}.',
   'dataExportReady.html.expiry': 'The link expires on <strong>{date}</strong>.',
+
+  // --- account deletion scheduled ---
+  'accountDeletionScheduled.subject':
+    'Your Tarmoto account is scheduled for deletion',
+  'accountDeletionScheduled.preheader':
+    'Your account will be permanently deleted on {date}.',
+  'accountDeletionScheduled.text.scheduled':
+    'Your Tarmoto account is scheduled for permanent deletion on {date}.',
+  'accountDeletionScheduled.html.scheduled':
+    'Your Tarmoto account is scheduled for <strong>permanent deletion</strong> on {date}.',
+  'accountDeletionScheduled.text.changedMind':
+    'Changed your mind? Email {email} before that date and our team will restore your account.',
+  'accountDeletionScheduled.html.changedMind':
+    'Changed your mind? Email {emailLink} before that date and our team will restore your account.',
+  'accountDeletionScheduled.graceWindow':
+    "Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.",
+  'accountDeletionScheduled.afterDate':
+    'After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.',
+
+  // --- trip invite ---
+  'tripInvite.subject': '{inviter} invited you to plan "{trip}" on Tarmoto',
+  'tripInvite.preheader': '{inviter} invited you to "{trip}".',
+  'tripInvite.intro':
+    '{inviter} invited you to collaborate on a Tarmoto trip: {trip}.',
+  'tripInvite.text.messageBlock': 'Message from {inviter}:',
+  'tripInvite.text.openLine': 'Open the trip planner to accept the invite:',
+  'tripInvite.text.codeLine':
+    "If the link doesn't open automatically, sign in to Tarmoto and enter this invite code on the join screen: {code}",
+  'tripInvite.text.noAccount':
+    "If you don't have a Tarmoto account yet, you can create one with this email and the invite will be waiting for you.",
+  'tripInvite.inviteCodeHtml':
+    'Invite code (in case the link doesn\'t open): <strong style="color:#f8fafc;">{code}</strong>',
+  'tripInvite.noAccountHtml':
+    "Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.",
+  'tripInvite.button': 'Open trip in Tarmoto',
+
+  // --- weekly digest ---
+  // `common.html.pasteLink` is reused by trip-invite for its "paste this
+  // link" hint — same copy as verification, no need for a duplicate key.
+  'digest.subject': 'Your week on Tarmoto — {rideCount} {rideWord}, {distance}',
+  'digest.preheader':
+    '{rideCount} {rideWord}, {distance} this week on Tarmoto.',
+  'digest.greeting.lead': "Here's your week on the road",
+  'digest.intro':
+    "Exploration: you've now ridden {segments} road sections — {percent}% of your area.",
+  'digest.row.rides': 'Rides',
+  'digest.row.distance': 'Distance',
+  'digest.row.time': 'Time in the saddle',
+  'digest.row.quality': 'Best road quality',
+  'digest.text.distanceRidden': '{distance} ridden',
+  'digest.text.timeInSaddle': '{duration} in the saddle',
+  'digest.explored':
+    'You\'ve now ridden <strong style="color:#f8fafc;">{segments}</strong> road sections — <strong style="color:#f8fafc;">{percent}%</strong> of your area explored.',
+  'digest.button': 'Find your next road',
+  'digest.rideWord.one': 'ride',
+  'digest.rideWord.other': 'rides',
+
+  // --- account deletion completed ---
+  'accountDeletionCompleted.subject': 'Your Tarmoto account has been deleted',
+  'accountDeletionCompleted.preheader':
+    'Your Tarmoto account has been permanently deleted.',
+  'accountDeletionCompleted.text.deleted':
+    'Your Tarmoto account was permanently deleted on {date}.',
+  'accountDeletionCompleted.html.deleted':
+    'Your Tarmoto account was permanently deleted on <strong>{date}</strong>.',
+  'accountDeletionCompleted.erased':
+    'Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.',
+  'accountDeletionCompleted.text.contact':
+    "If this wasn't you or you have questions, contact {email}.",
+  'accountDeletionCompleted.html.contact': 'Questions? Contact {emailLink}.',
 } as const satisfies Catalog<string>;
 
 export type EmailMessageKey = keyof typeof en;

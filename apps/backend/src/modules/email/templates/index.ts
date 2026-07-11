@@ -331,8 +331,16 @@ export interface AccountDeletionScheduledContext extends BaseContext {
 export const accountDeletionScheduledTemplate = (
   ctx: AccountDeletionScheduledContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto account is scheduled for deletion';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('accountDeletionScheduled.subject');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const scheduledFor = ctx.scheduledFor.toUTCString();
   // Restoration during the grace window is support-only: a soft-
   // deleted account is locked out of /auth/login and /auth/refresh
   // (see AuthService — `deleted_at != null` rejects with the same
@@ -343,21 +351,24 @@ export const accountDeletionScheduledTemplate = (
   // restoration the GDPR grace window grants.
   const text = `${greeting}
 
-Your Tarmoto account is scheduled for permanent deletion on ${ctx.scheduledFor.toUTCString()}.
+${t('accountDeletionScheduled.text.scheduled', { date: scheduledFor })}
 
-Changed your mind? Email ${ctx.supportEmail} before that date and our team will restore your account. Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.
+${t('accountDeletionScheduled.text.changedMind', { email: ctx.supportEmail })} ${t('accountDeletionScheduled.graceWindow')}
 
-After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('accountDeletionScheduled.afterDate')}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `Your account will be permanently deleted on ${ctx.scheduledFor.toUTCString()}.`,
+    preheader: t('accountDeletionScheduled.preheader', { date: scheduledFor }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto account is scheduled for <strong>permanent deletion</strong> on ${escapeHtml(ctx.scheduledFor.toUTCString())}.</p>
-      <p>Changed your mind? Email <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a> before that date and our team will restore your account.</p>
-      <p style="color:#94a3b8;font-size:13px;">Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.</p>
-      <p style="color:#94a3b8;font-size:13px;">After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('accountDeletionScheduled.html.scheduled', { date: escapeHtml(scheduledFor) })}</p>
+      <p>${t('accountDeletionScheduled.html.changedMind', {
+        // already-escaped HTML fragment — do not re-escape
+        emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+      })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('accountDeletionScheduled.graceWindow')}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('accountDeletionScheduled.afterDate')}</p>
     `,
   });
 
@@ -375,40 +386,58 @@ export interface TripInviteContext extends BaseContext {
 export const tripInviteTemplate = (
   ctx: TripInviteContext,
 ): RenderedTemplate => {
-  const subject = `${ctx.inviterDisplayName} invited you to plan "${ctx.tripTitle}" on Tarmoto`;
-  const intro = `${ctx.inviterDisplayName} invited you to collaborate on a Tarmoto trip: ${ctx.tripTitle}.`;
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  // Trip invites always greet an unauthenticated recipient — there's no
+  // displayName on this context, so it's the anon greeting, always.
+  const greeting = t('common.greeting.anon');
+  const subject = t('tripInvite.subject', {
+    inviter: ctx.inviterDisplayName, // subject is plain text — raw, not HTML-escaped
+    trip: ctx.tripTitle,
+  });
+  const intro = t('tripInvite.intro', {
+    inviter: ctx.inviterDisplayName,
+    trip: ctx.tripTitle,
+  });
+  const introHtml = t('tripInvite.intro', {
+    inviter: escapeHtml(ctx.inviterDisplayName),
+    trip: escapeHtml(ctx.tripTitle),
+  });
   const messageBlock = ctx.message
-    ? `\n\nMessage from ${ctx.inviterDisplayName}:\n${ctx.message}\n`
+    ? `\n\n${t('tripInvite.text.messageBlock', { inviter: ctx.inviterDisplayName })}\n${ctx.message}\n`
     : '';
-  const text = `Hi there,
+  const text = `${greeting}
 
 ${intro}${messageBlock}
 
-Open the trip planner to accept the invite:
+${t('tripInvite.text.openLine')}
 
 ${ctx.joinUrl}
 
-If the link doesn't open automatically, sign in to Tarmoto and enter this invite code on the join screen: ${ctx.inviteCode}
+${t('tripInvite.text.codeLine', { code: ctx.inviteCode })}
 
-If you don't have a Tarmoto account yet, you can create one with this email and the invite will be waiting for you.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('tripInvite.text.noAccount')}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `${ctx.inviterDisplayName} invited you to "${ctx.tripTitle}".`,
+    preheader: t('tripInvite.preheader', {
+      inviter: ctx.inviterDisplayName,
+      trip: ctx.tripTitle,
+    }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>Hi there,</p>
-      <p>${escapeHtml(intro)}</p>
+      <p>${greeting}</p>
+      <p>${introHtml}</p>
       ${
         ctx.message
           ? `<blockquote style="margin:24px 0;padding:12px 16px;border-left:3px solid #06b6d4;color:#cbd5e1;background:#0f172a;border-radius:4px;">${escapeHtml(ctx.message)}</blockquote>`
           : ''
       }
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.joinUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Open trip in Tarmoto</a>
+        <a href="${escapeHtml(ctx.joinUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('tripInvite.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="${escapeHtml(ctx.joinUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.joinUrl)}</a></p>
-      <p style="color:#94a3b8;font-size:13px;">Invite code (in case the link doesn't open): <strong style="color:#f8fafc;">${escapeHtml(ctx.inviteCode)}</strong></p>
-      <p style="color:#94a3b8;font-size:13px;">Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('common.html.pasteLink')}<br/><a href="${escapeHtml(ctx.joinUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.joinUrl)}</a></p>
+      <p style="color:#94a3b8;font-size:13px;">${t('tripInvite.inviteCodeHtml', { code: escapeHtml(ctx.inviteCode) })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('tripInvite.noAccountHtml')}</p>
     `,
   });
 
@@ -440,25 +469,44 @@ export interface WeeklyDigestContext extends BaseContext {
 export const weeklyDigestTemplate = (
   ctx: WeeklyDigestContext,
 ): RenderedTemplate => {
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const distance = formatDistance(ctx.totalKm, ctx.units);
   const duration = formatDuration(ctx.totalMinutes);
-  const rideWord = ctx.rideCount === 1 ? 'ride' : 'rides';
+  // Pluralization stays in code: which catalog key is picked is the
+  // plural rule, not something `t()`'s dumb {placeholder} substitution
+  // can express.
+  const rideWord =
+    ctx.rideCount === 1 ? t('digest.rideWord.one') : t('digest.rideWord.other');
   const quality =
     ctx.bestQuality != null ? `${ctx.bestQuality.toFixed(1)} / 5` : null;
-  const subject = `Your week on Tarmoto — ${ctx.rideCount} ${rideWord}, ${distance}`;
+  const subject = t('digest.subject', {
+    rideCount: ctx.rideCount,
+    rideWord,
+    distance,
+  });
+  // Shared stem for the line right after the greeting — text appends ":"
+  // (it introduces the bullet list below), html appends "." (standalone
+  // sentence ahead of the table).
+  const weekLead = t('digest.greeting.lead');
 
   const text = `${greeting}
 
-Here's your week on the road:
+${weekLead}:
 
   • ${ctx.rideCount} ${rideWord}
-  • ${distance} ridden
-  • ${duration} in the saddle${quality ? `\n  • Best road quality: ${quality}` : ''}
+  • ${t('digest.text.distanceRidden', { distance })}
+  • ${t('digest.text.timeInSaddle', { duration })}${quality ? `\n  • ${t('digest.row.quality')}: ${quality}` : ''}
 
-Exploration: you've now ridden ${ctx.riddenSegments} road sections — ${ctx.percentExplored}% of your area.
+${t('digest.intro', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}
 
-Find your next road:
+${t('digest.button')}:
 ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
 
   const row = (label: string, value: string): string => `
@@ -468,21 +516,25 @@ ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
       </tr>`;
 
   const html = renderLayout({
-    preheader: `${ctx.rideCount} ${rideWord}, ${distance} this week on Tarmoto.`,
+    preheader: t('digest.preheader', {
+      rideCount: ctx.rideCount,
+      rideWord,
+      distance,
+    }),
     preferencesUrl: ctx.preferencesUrl,
     marketingFooter: true,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Here's your week on the road.</p>
+      <p>${greetingHtml}</p>
+      <p>${weekLead}.</p>
       <table role="presentation" width="100%" style="margin:20px 0;border-collapse:collapse;">
-        ${row('Rides', String(ctx.rideCount))}
-        ${row('Distance', distance)}
-        ${row('Time in the saddle', duration)}
-        ${quality ? row('Best road quality', quality) : ''}
+        ${row(t('digest.row.rides'), String(ctx.rideCount))}
+        ${row(t('digest.row.distance'), distance)}
+        ${row(t('digest.row.time'), duration)}
+        ${quality ? row(t('digest.row.quality'), quality) : ''}
       </table>
-      <p style="color:#cbd5e1;">You've now ridden <strong style="color:#f8fafc;">${ctx.riddenSegments}</strong> road sections — <strong style="color:#f8fafc;">${ctx.percentExplored}%</strong> of your area explored.</p>
+      <p style="color:#cbd5e1;">${t('digest.explored', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Find your next road</a>
+        <a href="${escapeHtml(ctx.exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('digest.button')}</a>
       </p>
     `,
   });
@@ -499,24 +551,38 @@ export interface AccountDeletionCompletedContext extends BaseContext {
 export const accountDeletionCompletedTemplate = (
   ctx: AccountDeletionCompletedContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto account has been deleted';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('accountDeletionCompleted.subject');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const deletedAt = ctx.deletedAt.toUTCString();
   const text = `${greeting}
 
-Your Tarmoto account was permanently deleted on ${ctx.deletedAt.toUTCString()}.
+${t('accountDeletionCompleted.text.deleted', { date: deletedAt })}
 
-Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.
+${t('accountDeletionCompleted.erased')}
 
-If this wasn't you or you have questions, contact ${ctx.supportEmail}.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('accountDeletionCompleted.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Your Tarmoto account has been permanently deleted.',
+    preheader: t('accountDeletionCompleted.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto account was permanently deleted on <strong>${escapeHtml(ctx.deletedAt.toUTCString())}</strong>.</p>
-      <p>Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.</p>
-      <p style="color:#94a3b8;font-size:13px;">Questions? Contact <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('accountDeletionCompleted.html.deleted', { date: escapeHtml(deletedAt) })}</p>
+      <p>${t('accountDeletionCompleted.erased')}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t(
+        'accountDeletionCompleted.html.contact',
+        {
+          // already-escaped HTML fragment — do not re-escape
+          emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+        },
+      )}</p>
     `,
   });
 
