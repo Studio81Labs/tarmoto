@@ -16,7 +16,7 @@ import type {
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
-import { Layers3, TriangleAlert } from "lucide-react";
+import { Layers3, Siren, TriangleAlert } from "lucide-react";
 import {
   MapCanvas,
   SURFACE_COLORS,
@@ -49,6 +49,16 @@ import {
   CLOSURE_MARKER_LAYER,
   PASS_MARKER_LAYER,
 } from "@/components/map/ConditionMarkerLayer";
+import {
+  ensureHazardLayers,
+  expandHazardCluster,
+  setHazardLayersVisible,
+  HAZARD_BG,
+  HAZARD_ICON,
+  HAZARD_CLUSTERS,
+  type HazardProps,
+} from "@/components/map/HazardPinLayer";
+import { useViewportHazards } from "@/hooks/useViewportHazards";
 import { FSQ_ATTRIBUTION, OSM_ATTRIBUTION } from "@/components/map/attribution";
 import {
   QUALITY_BAND_COLORS,
@@ -615,6 +625,17 @@ const TripPlannerMapContent = forwardRef<
   const swallowNextClickRef = useRef(false);
   // ── Ambient conditions layer (revision 7): toggle + marker popover ──
   const [conditionsVisible, setConditionsVisible] = useState(true);
+  // Ambient hazards (opt-in on the trip maps — off by default so route
+  // planning isn't crowded). `hazardMenu` opens the shared point popover.
+  const [hazardsVisible, setHazardsVisible] = useState(false);
+  const [hazardMenu, setHazardMenu] = useState<{
+    hazard: HazardProps;
+    lng: number;
+    lat: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const closeHazardMenu = useCallback(() => setHazardMenu(null), []);
   const [conditionMenu, setConditionMenu] = useState<
     | {
         kind: "closure";
@@ -653,6 +674,10 @@ const TripPlannerMapContent = forwardRef<
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const planningMode = useTripStore((s) => s.planningMode);
   const [poiViewportToken, setPoiViewportToken] = useState(0);
+  // Hazards can be toggled on read-only maps that never opt into POI browsing,
+  // so they need their own viewport token — the POI one only bumps while
+  // `poiBrowsing`, which would leave hazards stale after pan/zoom.
+  const [hazardViewportToken, setHazardViewportToken] = useState(0);
   const [poiMenu, setPoiMenu] = useState<{
     poi: Poi;
     x: number;
@@ -964,6 +989,37 @@ const TripPlannerMapContent = forwardRef<
     if (!conditionsVisible) setConditionMenu(null);
   }, [conditionsVisible, ready]);
   useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    setHazardLayersVisible(map, hazardsVisible);
+    if (!hazardsVisible) setHazardMenu(null);
+  }, [hazardsVisible, ready]);
+  // Only one point popover at a time. The hazard click clears the other menus
+  // when it opens; this is the reverse — close the hazard popover whenever any
+  // other point menu opens. Those handlers set `swallowNextClickRef`, so the
+  // map-level close-all is skipped and wouldn't otherwise clear it.
+  useEffect(() => {
+    if (poiMenu || waypointMenu || contextMenu || conditionMenu) {
+      setHazardMenu(null);
+    }
+  }, [poiMenu, waypointMenu, contextMenu, conditionMenu]);
+  // REST-only viewport hazard feed (no websocket — ambient awareness only).
+  useViewportHazards(handleRef, {
+    enabled: hazardsVisible && ready,
+    viewportToken: hazardViewportToken,
+  });
+  // Refetch hazards on pan/zoom whenever they're enabled — independent of the
+  // POI-browsing gate so read-only preview maps stay fresh too.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !hazardsVisible) return;
+    const onMoveEnd = () => setHazardViewportToken((token) => token + 1);
+    map.on("moveend", onMoveEnd);
+    return () => {
+      map.off("moveend", onMoveEnd);
+    };
+  }, [ready, hazardsVisible]);
+  useEffect(() => {
     conditionsRef.current = {
       closures,
       passes,
@@ -1049,7 +1105,14 @@ const TripPlannerMapContent = forwardRef<
     closeWaypointMenu();
     closePoiMenu();
     closeConditionMenu();
-  }, [closeContextMenu, closeWaypointMenu, closePoiMenu, closeConditionMenu]);
+    closeHazardMenu();
+  }, [
+    closeContextMenu,
+    closeWaypointMenu,
+    closePoiMenu,
+    closeConditionMenu,
+    closeHazardMenu,
+  ]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
       setDrawnRegion(bbox);
@@ -1073,12 +1136,20 @@ const TripPlannerMapContent = forwardRef<
     });
     map.on("click", ROUTE_HIT_LINE, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
-      const overWaypoint =
-        map.getLayer(WAYPOINT_PIN) &&
-        map.queryRenderedFeatures(event.point, {
-          layers: [WAYPOINT_PIN],
-        }).length > 0;
-      if (overWaypoint) return;
+      // A waypoint or hazard pin sitting on the route owns the click — don't
+      // also select the segment / open the Road Preview underneath it.
+      const overOwnedPin = [
+        WAYPOINT_PIN,
+        HAZARD_BG,
+        HAZARD_ICON,
+        HAZARD_CLUSTERS,
+      ]
+        .filter((id) => map.getLayer(id))
+        .some(
+          (id) =>
+            map.queryRenderedFeatures(event.point, { layers: [id] }).length > 0,
+        );
+      if (overOwnedPin) return;
       const segmentId = event.features?.[0]?.properties?.segmentId as
         | string
         | undefined;
@@ -1098,6 +1169,11 @@ const TripPlannerMapContent = forwardRef<
         ROUTE_HIT_LINE,
         WAYPOINT_PIN,
         POI_PIN_LAYER,
+        // Hazard pins/clusters sit over the road layers and own their own
+        // click — don't also open the segment drawer underneath.
+        HAZARD_BG,
+        HAZARD_ICON,
+        HAZARD_CLUSTERS,
       ].filter((id) => map.getLayer(id));
       if (
         blockingLayers.length > 0 &&
@@ -1283,9 +1359,86 @@ const TripPlannerMapContent = forwardRef<
         map.getCanvas().style.cursor = "";
       });
     }
+    // ── Ambient hazard pins (opt-in) → shared point popover ──
+    ensureHazardLayers(map, { visible: false, beforeId: WAYPOINT_PIN });
+    // Waypoints, condition markers, and day-break splitter dots all sit ABOVE
+    // the hazard layer (hazards are inserted before WAYPOINT_PIN; day-breaks
+    // are added on top). If a click also hit one of those, it owns the click —
+    // the hazard pin/cluster must not clobber it or zoom the map. Day-breaks
+    // arm on `mousedown`, so an overlapping hazard `click` would otherwise fire
+    // alongside the splitter.
+    const overHigherPriorityMarker = (event: MapLayerMouseEvent) => {
+      const layers = [
+        WAYPOINT_PIN,
+        CLOSURE_MARKER_LAYER,
+        PASS_MARKER_LAYER,
+        DAY_BREAK_CIRCLE_LAYER,
+      ].filter((id) => map.getLayer(id));
+      return (
+        layers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers }).length > 0
+      );
+    };
+    const onHazardClick = (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (overHigherPriorityMarker(event)) return;
+      const feature = event.features?.[0];
+      const props = feature?.properties as HazardProps | null;
+      if (
+        !feature ||
+        !props?.hazard_type ||
+        feature.geometry.type !== "Point"
+      ) {
+        return;
+      }
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      setConditionMenu(null);
+      setHazardMenu({
+        hazard: props,
+        lng,
+        lat,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    };
+    map.on("click", HAZARD_BG, onHazardClick);
+    map.on("click", HAZARD_ICON, onHazardClick);
+    map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (overHigherPriorityMarker(event)) return;
+      expandHazardCluster(map, event);
+    });
+    // Hazards sit ABOVE the POI clusters (POI layers are added first, hazards
+    // slot in before WAYPOINT_PIN). A visible hazard pin/cluster owns an
+    // overlapping click — the POI cluster handler below must not also expand
+    // and fly the camera underneath it.
+    const overHazardMarker = (event: MapLayerMouseEvent) => {
+      const layers = [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS].filter((id) =>
+        map.getLayer(id),
+      );
+      return (
+        layers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers }).length > 0
+      );
+    };
+    for (const layer of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+      map.on("mouseenter", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layer, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "";
+      });
+    }
     // Cluster click zooms toward the cluster's expansion level.
     map.on("click", POI_CLUSTER_LAYER, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
+      if (overHazardMarker(event)) return;
       const feature = event.features?.[0];
       const clusterId = feature?.properties?.cluster_id as number | undefined;
       const source = map.getSource(POI_SOURCE) as
@@ -1828,7 +1981,7 @@ const TripPlannerMapContent = forwardRef<
   // every open menu is anchored to a geo coordinate and reprojected on
   // each map move instead of staying frozen at the click position. ──
   const anyMapMenuOpen = Boolean(
-    poiMenu || waypointMenu || contextMenu || conditionMenu,
+    poiMenu || waypointMenu || contextMenu || conditionMenu || hazardMenu,
   );
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -1854,6 +2007,9 @@ const TripPlannerMapContent = forwardRef<
           : menu,
       );
       setConditionMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
+      );
+      setHazardMenu((menu) =>
         menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
       );
     };
@@ -2512,6 +2668,16 @@ const TripPlannerMapContent = forwardRef<
             <TriangleAlert size={14} />
             {t("Conditions ")}
           </button>
+          <button
+            type="button"
+            aria-pressed={hazardsVisible}
+            aria-label={t("Toggle the hazards overlay")}
+            onClick={() => setHazardsVisible((visible) => !visible)}
+            className={toggleClassName(hazardsVisible)}
+          >
+            <Siren size={14} />
+            {t("Hazards ")}
+          </button>
         </div>
 
         {drawMode === "drawing" && !outlineStarted ? (
@@ -2630,6 +2796,14 @@ const TripPlannerMapContent = forwardRef<
                 },
               }
             : {})}
+        />
+      ) : null}
+      {hazardMenu ? (
+        <MapPointPopover
+          point={{ kind: "hazard", hazard: hazardMenu.hazard }}
+          x={hazardMenu.x}
+          y={hazardMenu.y}
+          onClose={closeHazardMenu}
         />
       ) : null}
       {poiMenu
