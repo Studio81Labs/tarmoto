@@ -435,8 +435,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         routes: [
           { layers: [POI_PIN_LAYER], handle: openPoi },
           { layers: [POI_CLUSTER_LAYER], handle: (f) => expandPoiCluster(f) },
-          { layers: [CLOSURE_MARKER_LAYER], handle: openClosure },
+          // Pass markers are painted after closures (ensureConditionLayers), so
+          // a pass badge sits visually on top — click priority must match.
           { layers: [PASS_MARKER_LAYER], handle: openPass },
+          { layers: [CLOSURE_MARKER_LAYER], handle: openClosure },
           { layers: [HAZARD_BG, HAZARD_ICON], handle: openHazard },
           {
             layers: [HAZARD_CLUSTERS],
