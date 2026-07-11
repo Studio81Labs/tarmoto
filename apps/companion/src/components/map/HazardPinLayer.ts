@@ -1,6 +1,8 @@
 /**
  * Reusable hazard pin layer for a MapLibre map: a clustered GeoJSON source with
- * teal cluster circles and per-hazard emoji-in-circle markers, faded by report
+ * teal cluster circles and, for individual hazards, the same rotated
+ * rounded-square "diamond" badge the conditions use — a cream fill with a
+ * per-hazard-type coloured border and the hazard emoji inside — faded by report
  * age. Extracted from the road explorer so every map surface can show hazards.
  * The caller owns the fetch/websocket merge and the click handlers; this module
  * owns the source, the layers, their visibility, and the feature projection.
@@ -9,7 +11,7 @@
 import type {
   GeoJSONSource,
   Map as MapLibreMap,
-  MapLayerMouseEvent,
+  MapGeoJSONFeature,
 } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import type { Feature, FeatureCollection, Point } from "geojson";
@@ -77,16 +79,45 @@ const EMPTY_COLLECTION: FeatureCollection<Point, HazardProps> = {
   features: [],
 };
 
-function buildHazardColorExpression(): ExpressionSpecification {
+const HAZARD_DIAMOND_PREFIX = "tarmoto-hazard-diamond-";
+
+/**
+ * Rasterize one diamond badge image per hazard type (cream fill, the type's
+ * hex as the border) — the same rotated rounded-square the conditions use, so
+ * hazards and conditions read as one visual family, just in the hazard palette.
+ * Async; jsdom renders none. The emoji is drawn separately on top by the icon
+ * layer, so the badge itself carries no glyph.
+ */
+function installHazardDiamondImages(map: MapLibreMap): void {
+  for (const type of HAZARD_TYPES_UI) {
+    const imageId = `${HAZARD_DIAMOND_PREFIX}${type}`;
+    if (map.hasImage?.(imageId)) continue;
+    const color = HAZARD_CONFIG[type].hex;
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">' +
+      `<rect x="12" y="12" width="36" height="36" rx="9" transform="rotate(45 30 30)" fill="#F5EFE6" stroke="${color}" stroke-width="4"/>` +
+      "</svg>";
+    const image = new Image(60, 60);
+    image.onload = () => {
+      if (!map.hasImage?.(imageId)) {
+        map.addImage(imageId, image, { pixelRatio: 2 });
+      }
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+}
+
+/** `icon-image` match: hazard_type → its diamond badge (unknown → `other`). */
+function buildHazardDiamondImageExpression(): ExpressionSpecification {
   const pairs = HAZARD_TYPES_UI.flatMap((type) => [
     type,
-    HAZARD_CONFIG[type].hex,
+    `${HAZARD_DIAMOND_PREFIX}${type}`,
   ]);
   return [
     "match",
     ["get", "hazard_type"],
     ...pairs,
-    HAZARD_CONFIG.other.hex,
+    `${HAZARD_DIAMOND_PREFIX}other`,
   ] as unknown as ExpressionSpecification;
 }
 
@@ -142,6 +173,7 @@ export function ensureHazardLayers(
   map: MapLibreMap,
   { visible, beforeId }: { visible: boolean; beforeId?: string },
 ): void {
+  installHazardDiamondImages(map);
   const before = beforeId && map.getLayer(beforeId) ? beforeId : undefined;
   if (!map.getSource(HAZARDS_SOURCE)) {
     map.addSource(HAZARDS_SOURCE, {
@@ -207,28 +239,28 @@ export function ensureHazardLayers(
     map.addLayer(
       {
         id: HAZARD_BG,
-        type: "circle",
+        type: "symbol",
         source: HAZARDS_SOURCE,
         filter: ["!", ["has", "point_count"]],
-        layout: { visibility },
-        paint: {
-          "circle-color": buildHazardColorExpression(),
-          "circle-opacity": ["coalesce", ["get", "opacity"], 1],
-          "circle-radius": [
+        layout: {
+          visibility,
+          "icon-image": buildHazardDiamondImageExpression(),
+          // Grow the badge with zoom the way the old circle did.
+          "icon-size": [
             "interpolate",
             ["linear"],
             ["zoom"],
             9,
-            10,
+            0.7,
             14,
-            14,
+            0.9,
             18,
-            18,
+            1,
           ] as ExpressionSpecification,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
         },
+        paint: { "icon-opacity": ["coalesce", ["get", "opacity"], 1] },
       },
       before,
     );
@@ -243,7 +275,19 @@ export function ensureHazardLayers(
         layout: {
           visibility,
           "text-field": ["get", "emoji"],
-          "text-size": 16,
+          // Sized to sit inside the diamond (its inscribed square is ~25px at
+          // full zoom), scaling with the badge instead of overflowing it.
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            9,
+            10,
+            14,
+            13,
+            18,
+            15,
+          ] as ExpressionSpecification,
           "text-allow-overlap": true,
           "text-ignore-placement": true,
         },
@@ -281,15 +325,14 @@ export function setHazardSourceData(
   src?.setData(hazardsToFeatureCollection(hazards, now));
 }
 
-/** Zoom a hazard cluster open on click. */
+/** Zoom a hazard cluster open, given the clicked cluster feature. */
 export function expandHazardCluster(
   map: MapLibreMap,
-  e: MapLayerMouseEvent,
+  feature: MapGeoJSONFeature,
 ): void {
-  const feature = e.features?.[0];
-  const clusterId = feature?.properties?.cluster_id as number | undefined;
+  const clusterId = feature.properties?.cluster_id as number | undefined;
   const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-  if (clusterId == null || !src || !feature) return;
+  if (clusterId == null || !src) return;
   src
     .getClusterExpansionZoom(clusterId)
     .then((expZoom) => {

@@ -10,7 +10,8 @@ import {
 import {
   type GeoJSONSource,
   type Map as MapLibreMap,
-  type MapLayerMouseEvent,
+  type MapGeoJSONFeature,
+  type MapMouseEvent,
 } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -70,6 +71,7 @@ import {
   CLOSURE_MARKER_LAYER,
   PASS_MARKER_LAYER,
 } from "@/components/map/ConditionMarkerLayer";
+import { installPointClickRouter } from "@/components/map/mapPointClickRouter";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import type {
@@ -321,21 +323,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
 
     const handleReady = (map: MapLibreMap) => {
       ensureHazardLayers(map, { visible: showHazards });
+      ensureConditionLayers(map);
+      setConditionLayersVisible(map, showConditions);
+      ensurePoiLayers(map);
 
-      // Cluster click → expand.
-      map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) =>
-        expandHazardCluster(map, e),
-      );
-
-      const onHazardClick = (e: MapLayerMouseEvent) => {
-        const feature = e.features?.[0];
-        const props = feature?.properties as HazardProps | null;
-        if (
-          !feature ||
-          !props?.hazard_type ||
-          feature.geometry.type !== "Point"
-        )
-          return;
+      // ── One click router ──
+      // MapLibre fires every overlapping layer's click handler, so the topmost
+      // marker used to need a manual "is a higher layer also hit?" guard. Here
+      // a single router picks the topmost interactive layer under the cursor;
+      // routes are listed topmost-first (render order POI > conditions >
+      // hazards), and a click that hits no marker falls through to `onMiss`
+      // (dismiss the popover, then try to select a road segment).
+      const openHazard = (feature: MapGeoJSONFeature, e: MapMouseEvent) => {
+        const props = feature.properties as HazardProps | null;
+        if (!props?.hazard_type || feature.geometry.type !== "Point") return;
         const [lng, lat] = feature.geometry.coordinates as [number, number];
         setPointMenu({
           point: { kind: "hazard", hazard: props },
@@ -345,14 +346,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           y: e.originalEvent.clientY,
         });
       };
-      map.on("click", HAZARD_BG, onHazardClick);
-      map.on("click", HAZARD_ICON, onHazardClick);
-
-      // ── Ambient condition markers (closures + passes) ──
-      ensureConditionLayers(map);
-      setConditionLayersVisible(map, showConditions);
-      map.on("click", CLOSURE_MARKER_LAYER, (e: MapLayerMouseEvent) => {
-        const id = e.features?.[0]?.properties?.id as string | undefined;
+      const openClosure = (feature: MapGeoJSONFeature, e: MapMouseEvent) => {
+        const id = feature.properties?.id as string | undefined;
         const closure = id
           ? closuresRef.current.find((c) => c.id === id)
           : undefined;
@@ -365,9 +360,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           x: e.originalEvent.clientX,
           y: e.originalEvent.clientY,
         });
-      });
-      map.on("click", PASS_MARKER_LAYER, (e: MapLayerMouseEvent) => {
-        const id = e.features?.[0]?.properties?.id as string | undefined;
+      };
+      const openPass = (feature: MapGeoJSONFeature, e: MapMouseEvent) => {
+        const id = feature.properties?.id as string | undefined;
         const pass = id
           ? passesRef.current.find((p) => p.id === id)
           : undefined;
@@ -379,17 +374,11 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           x: e.originalEvent.clientX,
           y: e.originalEvent.clientY,
         });
-      });
-
-      // ── Category-POI browse layer ──
-      ensurePoiLayers(map);
-      map.on("click", POI_PIN_LAYER, (e: MapLayerMouseEvent) => {
-        const props = e.features?.[0]?.properties as
-          | { poiId?: string }
-          | undefined;
-        const poi = props?.poiId
-          ? poisByIdRef.current.get(props.poiId)
-          : undefined;
+      };
+      const openPoi = (feature: MapGeoJSONFeature, e: MapMouseEvent) => {
+        const poiId = (feature.properties as { poiId?: string } | undefined)
+          ?.poiId;
+        const poi = poiId ? poisByIdRef.current.get(poiId) : undefined;
         if (!poi) return;
         setPointMenu({
           point: { kind: "poi", poi },
@@ -398,12 +387,11 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           x: e.originalEvent.clientX,
           y: e.originalEvent.clientY,
         });
-      });
-      map.on("click", POI_CLUSTER_LAYER, (e: MapLayerMouseEvent) => {
-        const feature = e.features?.[0];
-        const clusterId = feature?.properties?.cluster_id as number | undefined;
+      };
+      const expandPoiCluster = (feature: MapGeoJSONFeature) => {
+        const clusterId = feature.properties?.cluster_id as number | undefined;
         const src = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
-        if (clusterId == null || !src || !feature) return;
+        if (clusterId == null || !src) return;
         src
           .getClusterExpansionZoom(clusterId)
           .then((expZoom) => {
@@ -416,27 +404,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           .catch(() => {
             // Cluster may have been superseded by a refetch; drop the zoom-in.
           });
-      });
-
-      map.on("click", (e: MapLayerMouseEvent) => {
-        // POI pins/clusters, hazard markers, and condition markers own their
-        // click (handled above).
-        const pointLayers = [
-          POI_PIN_LAYER,
-          POI_CLUSTER_LAYER,
-          HAZARD_BG,
-          HAZARD_ICON,
-          HAZARD_CLUSTERS,
-          CLOSURE_MARKER_LAYER,
-          PASS_MARKER_LAYER,
-        ].filter((id) => map.getLayer(id));
-        if (
-          pointLayers.length > 0 &&
-          map.queryRenderedFeatures(e.point, { layers: pointLayers }).length > 0
-        ) {
-          return;
-        }
-        // Any other click (road or empty map) dismisses an open popover.
+      };
+      const selectSegmentAt = (e: MapMouseEvent) => {
+        // A non-marker click dismisses an open popover, then tries the road.
         setPointMenu(null);
         const {
           showQuality: canSelectQuality,
@@ -460,6 +430,22 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         );
         const segmentId = readSegmentId(feature);
         if (segmentId) selectSegment(segmentId);
+      };
+      installPointClickRouter(map, {
+        routes: [
+          { layers: [POI_PIN_LAYER], handle: openPoi },
+          { layers: [POI_CLUSTER_LAYER], handle: (f) => expandPoiCluster(f) },
+          // Pass markers are painted after closures (ensureConditionLayers), so
+          // a pass badge sits visually on top — click priority must match.
+          { layers: [PASS_MARKER_LAYER], handle: openPass },
+          { layers: [CLOSURE_MARKER_LAYER], handle: openClosure },
+          { layers: [HAZARD_BG, HAZARD_ICON], handle: openHazard },
+          {
+            layers: [HAZARD_CLUSTERS],
+            handle: (f) => expandHazardCluster(map, f),
+          },
+        ],
+        onMiss: selectSegmentAt,
       });
 
       const setPointer = () => {
