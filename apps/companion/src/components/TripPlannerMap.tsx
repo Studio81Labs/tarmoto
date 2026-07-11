@@ -2657,18 +2657,9 @@ const TripPlannerMapContent = forwardRef<
             <Layers3 size={14} />
             {t("Surface ")}
           </button>
-          {/* Ambient conditions overlay (revision 7) — a distinct layer
-              toggle, independent of basemap and line coloring. */}
-          <button
-            type="button"
-            aria-pressed={conditionsVisible}
-            aria-label={t("Toggle the conditions overlay")}
-            onClick={() => setConditionsVisible((visible) => !visible)}
-            className={toggleClassName(conditionsVisible)}
-          >
-            <TriangleAlert size={14} />
-            {t("Conditions ")}
-          </button>
+          {/* Ambient point overlays — a distinct set of layer toggles,
+              independent of basemap and line coloring. Ordered Hazards then
+              Conditions to match the road explorer's toggle row. */}
           <button
             type="button"
             aria-pressed={hazardsVisible}
@@ -2678,6 +2669,16 @@ const TripPlannerMapContent = forwardRef<
           >
             <Siren size={14} />
             {t("Hazards ")}
+          </button>
+          <button
+            type="button"
+            aria-pressed={conditionsVisible}
+            aria-label={t("Toggle the conditions overlay")}
+            onClick={() => setConditionsVisible((visible) => !visible)}
+            className={toggleClassName(conditionsVisible)}
+          >
+            <TriangleAlert size={14} />
+            {t("Conditions ")}
           </button>
         </div>
 
