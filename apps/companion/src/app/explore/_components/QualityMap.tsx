@@ -219,7 +219,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             const pass = passesRef.current.find(
               (p) => p.id === conditionRef.id,
             );
-            if (!pass) return;
+            // Open passes are filtered out of the marker layer — there is no
+            // pin to focus, so decline rather than float a popover over nothing.
+            if (!pass || pass.status === "open") return;
             lng = pass.lng;
             lat = pass.lat;
             point = { kind: "pass", pass, affectsRoute: false };
@@ -295,14 +297,18 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // Ambient conditions: closures + passes for the current viewport bbox,
     // gated on the toggle. Same bbox/date/month the info panel passes, so
     // React Query serves both from one cache entry instead of double-fetching.
+    // Wait for a real bbox — a missing bbox is an unbounded list request, so a
+    // click during map load would otherwise fetch the whole catalog (the panel
+    // shows "pan the map" in that window, so the markers must too).
+    const conditionsEnabled = showConditions && conditionBbox != null;
     const { closures } = useClosures(conditionsMonth, NO_ROUTES, {
       bbox: conditionBbox ?? undefined,
       previewDate: conditionsDate,
-      enabled: showConditions,
+      enabled: conditionsEnabled,
     });
     const { passes } = usePasses(conditionsMonth, NO_ROUTES, {
       bbox: conditionBbox ?? undefined,
-      enabled: showConditions,
+      enabled: conditionsEnabled,
     });
 
     useEffect(() => {
@@ -664,16 +670,30 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       closuresRef.current = closures;
       passesRef.current = passes;
       setConditionSourceData(map, { closures, passes });
-      // Reconcile an open condition popover with the fresh list: drop it if its
-      // condition is no longer present (panned away / toggled off → []).
+      // Reconcile an open condition popover with the fresh list: refresh its
+      // DTO (e.g. a new seasonal status after a month change), or drop it if the
+      // condition is gone (panned away / toggled off → []) — or, for a pass,
+      // now `open`, since open passes are filtered out of the marker layer and
+      // a popover with no marker to anchor would float over empty map.
       setPointMenu((menu) => {
         if (!menu) return menu;
         const point = menu.point;
         if (point.kind === "closure") {
-          return closures.some((c) => c.id === point.closure.id) ? menu : null;
+          const fresh = closures.find((c) => c.id === point.closure.id);
+          return fresh
+            ? {
+                ...menu,
+                point: { kind: "closure", closure: fresh, affectsRoute: false },
+              }
+            : null;
         }
         if (point.kind === "pass") {
-          return passes.some((p) => p.id === point.pass.id) ? menu : null;
+          const fresh = passes.find((p) => p.id === point.pass.id);
+          if (!fresh || fresh.status === "open") return null;
+          return {
+            ...menu,
+            point: { kind: "pass", pass: fresh, affectsRoute: false },
+          };
         }
         return menu;
       });

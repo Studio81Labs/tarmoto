@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { PassesPanel } from "./PassesPanel";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
+import type { MountainPass } from "@/lib/passes-summary";
 
 vi.mock("@/hooks/usePasses", () => ({
   usePasses: vi.fn(),
@@ -154,5 +155,51 @@ describe("PassesPanel", () => {
       ),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Seasonal passes")).toBeInTheDocument();
+  });
+
+  it("only makes non-open regional pass rows focusable (open passes have no marker)", () => {
+    const pass = (over: Partial<MountainPass>): MountainPass =>
+      ({
+        id: "x",
+        name: "Placeholder",
+        country_code: "CH",
+        region: null,
+        lat: 46.5,
+        lng: 8.3,
+        elevation_m: 2000,
+        status: "closed",
+        ...over,
+      }) as unknown as MountainPass;
+    const data: PassesQueryResult = {
+      passes: [
+        pass({ id: "closed-1", name: "Grimsel", status: "closed" }),
+        pass({ id: "open-1", name: "Brenner", status: "open" }),
+      ],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+    };
+
+    render(
+      <PassesPanel
+        month={7}
+        data={data}
+        showRouteWarnings={false}
+        onFocusPass={vi.fn()}
+      />,
+    );
+
+    // The closed pass is a "Show on map" button; the open pass is a plain row.
+    expect(
+      screen.getByRole("button", { name: /grimsel/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /brenner/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Brenner")).toBeInTheDocument();
   });
 });

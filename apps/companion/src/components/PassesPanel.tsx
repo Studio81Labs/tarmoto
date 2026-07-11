@@ -311,11 +311,15 @@ function PassesPanelBody({
 
           <ul className="space-y-1.5">
             {STATUS_DISPLAY_ORDER.flatMap((status) =>
-              groups[status]
-                .slice(0, MAX_PASSES_PER_GROUP)
-                .map((p) => (
-                  <PassRow key={p.id} pass={p} onFocus={onFocusPass} />
-                )),
+              groups[status].slice(0, MAX_PASSES_PER_GROUP).map((p) => (
+                <PassRow
+                  key={p.id}
+                  pass={p}
+                  // Open passes have no marker (the layer filters them out), so
+                  // don't offer a focus-to-marker click for them.
+                  onFocus={p.status === "open" ? undefined : onFocusPass}
+                />
+              )),
             )}
           </ul>
         </>
