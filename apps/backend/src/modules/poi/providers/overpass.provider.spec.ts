@@ -316,6 +316,31 @@ describe('OverpassPoiProvider.findPointsOfInterestAroundPoints', () => {
     expect(decoded).toContain('fuel');
   });
 
+  it('adds `extraLimit` to the `out` cap so the frontier merge can survive duplicates (#945)', async () => {
+    const provider = new OverpassPoiProvider(config);
+    await provider.findPointsOfInterestAroundPoints(
+      [{ lat: 49, lng: 16.75 }],
+      2,
+      ['restaurant'],
+      45,
+    );
+    expect(capturedBody).not.toBeNull();
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    // 200 base cap + 45 extra.
+    expect(decoded).toContain('out center tags 245;');
+  });
+
+  it('uses the plain base cap when no extraLimit is given', async () => {
+    const provider = new OverpassPoiProvider(config);
+    await provider.findPointsOfInterestAroundPoints(
+      [{ lat: 49, lng: 16.75 }],
+      2,
+      ['restaurant'],
+    );
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    expect(decoded).toContain('out center tags 200;');
+  });
+
   it('short-circuits to an empty array on zero points or kinds', async () => {
     const provider = new OverpassPoiProvider(config);
     const none = await provider.findPointsOfInterestAroundPoints([], 2, [

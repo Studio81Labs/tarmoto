@@ -258,15 +258,17 @@ describe('PoiService', () => {
       expect(res.pois.map((p) => p.external_id)).toEqual(['store:1']);
     });
 
-    it('merges Overpass at a frontier: store (covered side) + Overpass (uncovered side)', async () => {
+    it('merges Overpass at a frontier and boosts the provider cap by the store row count so the uncovered side is not starved (#945)', async () => {
       store.isRequestCovered.mockResolvedValue(false); // no import near → not covered
       store.findPointsOfInterestNear.mockResolvedValue([
-        buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c1', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c2', kind: 'cafe' }),
       ]);
       provider.findPointsOfInterest.mockResolvedValue([
-        // Overpass covers the whole area, so it re-returns the covered POI (must
+        // Overpass covers the whole area, so it re-returns the covered POIs (must
         // de-dup, store wins) plus the uncovered-side one.
-        buildNearbyPoi({ external_id: 'osm:node:covered', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c1', kind: 'cafe' }),
+        buildNearbyPoi({ external_id: 'osm:node:c2', kind: 'cafe' }),
         buildNearbyPoi({ external_id: 'osm:node:uncovered', kind: 'cafe' }),
       ]);
 
@@ -276,9 +278,76 @@ describe('PoiService', () => {
         5,
       );
 
-      expect(provider.findPointsOfInterest).toHaveBeenCalled();
+      // #945: on the merge path the provider cap is boosted by the store row
+      // count (2), so the covered-side duplicates can't fill the cap and starve
+      // the uncovered side.
+      expect(provider.findPointsOfInterest).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.any(Array),
+        2,
+      );
       expect(res.pois.map((p) => p.external_id).sort()).toEqual([
-        'osm:node:covered',
+        'osm:node:c1',
+        'osm:node:c2',
+        'osm:node:uncovered',
+      ]);
+    });
+
+    it('accommodations: boosts by the UNFILTERED covered count, not the min_stars-filtered store rows (#945 Codex P2)', async () => {
+      // At a dense frontier city full of unrated hotels the store read pushes
+      // `min_stars` into SQL, so `stored` holds only the rated few — but the live
+      // Overpass query is star-unfiltered, so its covered-side rows (rated AND
+      // unrated) fill the cap. Boosting by the rated count (1) would still starve
+      // the uncovered side; the boost must use the unfiltered count (5).
+      store.isRequestCovered.mockResolvedValue(false); // frontier → merge
+      store.findAccommodationsNear.mockImplementation(
+        (_lat, _lng, _radius, _kinds, minStars) =>
+          Promise.resolve(
+            minStars !== undefined
+              ? // filtered result: only the rated covered-side stay
+                [buildPoi({ external_id: 'osm:node:rated', stars: 4 })]
+              : // unfiltered covered-side count for the boost: 1 rated + 4 unrated
+                [
+                  buildPoi({ external_id: 'osm:node:rated', stars: 4 }),
+                  buildPoi({ external_id: 'osm:node:u1', stars: null }),
+                  buildPoi({ external_id: 'osm:node:u2', stars: null }),
+                  buildPoi({ external_id: 'osm:node:u3', stars: null }),
+                  buildPoi({ external_id: 'osm:node:u4', stars: null }),
+                ],
+          ),
+      );
+      provider.findAccommodations.mockResolvedValue([
+        buildPoi({ external_id: 'osm:node:rated', stars: 4 }), // covered dup
+        buildPoi({ external_id: 'osm:node:uncovered', stars: 5 }), // uncovered rated
+      ]);
+
+      const res = await service.findAccommodationsNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+        undefined,
+        4, // min_stars
+      );
+
+      // Boost = 5 (unfiltered covered count), NOT 1 (the star-filtered store rows).
+      expect(provider.findAccommodations).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.any(Array),
+        5,
+      );
+      // The boost is a second store read WITHOUT the min_stars arg (4 args).
+      expect(store.findAccommodationsNear).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.any(Array),
+      );
+      expect(res.accommodations.map((a) => a.external_id).sort()).toEqual([
+        'osm:node:rated',
         'osm:node:uncovered',
       ]);
     });
@@ -439,6 +508,7 @@ describe('PoiService', () => {
           'chalet',
           'camp_site',
         ]),
+        0,
       );
       expect(result.radius_km).toBe(5);
       expect(result.accommodations).toEqual([]);
@@ -469,6 +539,7 @@ describe('PoiService', () => {
         anchor.lng,
         25,
         expect.any(Array),
+        0,
       );
       expect(result.radius_km).toBe(25);
     });
@@ -512,6 +583,7 @@ describe('PoiService', () => {
         anchor.lng,
         7,
         ['hotel', 'camp_site'],
+        0,
       );
       expect(result.kinds).toEqual(['hotel', 'camp_site']);
     });
@@ -530,6 +602,7 @@ describe('PoiService', () => {
         anchor.lng,
         5,
         ['hotel', 'motel'],
+        0,
       );
     });
 
@@ -744,6 +817,7 @@ describe('PoiService', () => {
           'cafe',
           'fuel_station',
         ]),
+        0,
       );
       expect(result.radius_km).toBe(5);
       expect(result.kinds).toEqual(
@@ -769,6 +843,7 @@ describe('PoiService', () => {
         anchor.lng,
         7,
         ['viewpoint'],
+        0,
       );
     });
 
@@ -786,6 +861,7 @@ describe('PoiService', () => {
         anchor.lng,
         25,
         expect.any(Array),
+        0,
       );
       expect(result.radius_km).toBe(25);
     });
