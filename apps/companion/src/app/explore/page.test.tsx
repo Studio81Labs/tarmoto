@@ -162,8 +162,7 @@ function resetMapStore() {
     showQualityOverlay: true,
     showHazardOverlay: true,
     showSurfaceOverlay: false,
-    showClosuresLayer: false,
-    showPassesLayer: false,
+    showConditionsLayer: false,
     filters: cloneFilters(DEFAULT_MAP_FILTERS),
   });
 }
@@ -335,11 +334,11 @@ describe("ExplorerPage", () => {
       screen.getByRole("button", { name: /report mock viewport/i }),
     );
 
-    // Closures + Passes were previously always-rendered inside the
-    // filter column; #570 moved them behind explicit toggles in the
-    // top action row so the rider opts in when they want the data.
-    fireEvent.click(screen.getByRole("button", { name: /^closures\s*$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^passes\s*$/i }));
+    // Closures + Passes were previously always-rendered inside the filter
+    // column; #570 moved them behind toggles in the top action row, and the
+    // map-points unification collapsed the two pills into one "Conditions"
+    // toggle that opens both panels together.
+    fireEvent.click(screen.getByRole("button", { name: /^conditions\s*$/i }));
 
     expect(
       screen.getByText(/closures panel bbox=13\.1,48\.2,14\.9,49\.8/i),

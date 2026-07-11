@@ -8,10 +8,17 @@
  * layers, their visibility, and the diamond pin images.
  */
 
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import type { FeatureCollection } from "geojson";
 import { CONDITION_COLORS, type ConditionKind } from "@/lib/conditions-visual";
+import type { PlannerClosure } from "@/lib/closures-summary";
+import type { MountainPass } from "@/lib/passes-summary";
+import {
+  buildPlannerClosureLineCollection,
+  buildPlannerClosureMarkerCollection,
+  buildPlannerPassMarkerCollection,
+} from "@/lib/trip-planner-overlays";
 
 export const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
 export const CLOSURE_MARKER_SOURCE = "trip-planner-closure-markers";
@@ -172,6 +179,29 @@ export function ensureConditionLayers(
       before,
     );
   }
+}
+
+/**
+ * Replace the three condition sources' features from raw closures + passes
+ * (no-op per source that isn't ready). Mirrors `setHazardSourceData` so a
+ * caller only owns the fetch, not the GeoJSON projection — the planner keeps
+ * its own memoised `syncGeoJsonSource` wiring; the explorer uses this.
+ */
+export function setConditionSourceData(
+  map: MapLibreMap,
+  {
+    closures,
+    passes,
+  }: { closures: readonly PlannerClosure[]; passes: readonly MountainPass[] },
+): void {
+  const line = map.getSource(CLOSURE_LINE_SOURCE) as GeoJSONSource | undefined;
+  line?.setData(buildPlannerClosureLineCollection(closures));
+  const marker = map.getSource(CLOSURE_MARKER_SOURCE) as
+    | GeoJSONSource
+    | undefined;
+  marker?.setData(buildPlannerClosureMarkerCollection(closures));
+  const pass = map.getSource(PASS_MARKER_SOURCE) as GeoJSONSource | undefined;
+  pass?.setData(buildPlannerPassMarkerCollection(passes));
 }
 
 /** Toggle every condition layer's visibility. */
