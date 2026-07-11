@@ -99,6 +99,7 @@ export interface PoiProvider {
     lng: number,
     radiusKm: number,
     kinds: AccommodationKind[],
+    extraLimit?: number,
   ): Promise<AccommodationPoi[]>;
 
   /**
@@ -113,6 +114,7 @@ export interface PoiProvider {
     lng: number,
     radiusKm: number,
     kinds: PoiKind[],
+    extraLimit?: number,
   ): Promise<PointOfInterest[]>;
 
   /**
@@ -125,11 +127,18 @@ export interface PoiProvider {
    * Short-circuits to `[]` on an empty `points` or `kinds` array. The
    * service layer is responsible for downselecting samples to stay
    * under any upstream query-size limits.
+   *
+   * `extraLimit` (default 0) is added to the provider's per-query result cap.
+   * The store-first read raises it on the coverage-frontier MERGE path (#945) by
+   * the store row count, so covered-side rows the store already has (which the
+   * live query returns as de-dup-dropped duplicates) can't fill the cap and
+   * starve the uncovered side; the ranker still re-caps downstream.
    */
   findPointsOfInterestAroundPoints(
     points: readonly { lat: number; lng: number }[],
     radiusKm: number,
     kinds: PoiKind[],
+    extraLimit?: number,
   ): Promise<PointOfInterest[]>;
 
   /**

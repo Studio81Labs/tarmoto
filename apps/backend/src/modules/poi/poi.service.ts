@@ -122,8 +122,14 @@ export class PoiService {
    */
   private async readStoreFirst<T extends { external_id: string }>(
     fromStore: () => Promise<T[]>,
-    fromProvider: () => Promise<T[]>,
+    fromProvider: (extraLimit?: number) => Promise<T[]>,
     coverage?: CoverageDescriptor,
+    // Covered-side row estimate for the #945 frontier cap boost. Defaults to the
+    // store row count, but a read that FILTERS more tightly than the live query
+    // (accommodations push `min_stars` into SQL while Overpass fetches unrated
+    // rows too) undercounts the covered-side duplicates that fill the live cap —
+    // such callers pass an unfiltered count so the boost budgets the real load.
+    boostCount?: () => Promise<number>,
   ): Promise<T[]> {
     let stored: T[] | null = null;
     try {
@@ -146,19 +152,51 @@ export class PoiService {
     // dropping the rest.
     if (stored !== null && coverage) {
       if (await this.isCovered(coverage)) return stored;
-      // KNOWN LIMITATION (#945): `fromProvider` queries the WHOLE area, and the
-      // provider caps its result before we de-dupe. At a dense covered-side
-      // frontier those capped live rows can all be store duplicates, so the merge
-      // adds nothing and the uncovered side stays empty. Not a regression — the
-      // pre-#925 path returned store-only here too — but the full fix is an
-      // uncovered-only query, tracked in #945.
-      const live = await this.fromProviderSafe(fromProvider);
+      // Frontier merge (#945): `fromProvider` queries the WHOLE area, and the
+      // provider caps its result BEFORE we de-dupe. At a dense covered-side
+      // frontier the covered-side rows the store already has come back as
+      // duplicates that `mergeByExternalId` drops — but they'd fill the provider
+      // cap first and starve the uncovered side. Budget for them: raise the
+      // provider cap by the covered-side row estimate (same OSM data), so ~one
+      // base cap of uncovered-side rows survives the de-dup. The ranker re-caps
+      // to the display limit downstream.
+      const extra = await this.frontierBoost(boostCount, stored.length);
+      const live = await this.fromProviderSafe(() => fromProvider(extra));
       return mergeByExternalId(stored, live);
     }
     // No `coverage` (coverage unknown) or the store failed: the original
     // store-first contract — store rows if any, else Overpass.
     if (stored !== null && stored.length > 0) return stored;
     return this.fromProviderSafe(fromProvider);
+  }
+
+  /**
+   * The covered-side row count used to boost the provider cap on the #945
+   * frontier merge. Uses the caller's `boostCount` when given (a read that
+   * filters more tightly than the live query would otherwise undercount the
+   * duplicate load — see `readStoreFirst`), else the store row count. A store
+   * outage mid-merge (`boostCount` is a second store read after `fromStore`
+   * succeeded) degrades to the row count we already hold rather than 500ing an
+   * otherwise-answerable read — matching `isCovered`'s outage handling. Both
+   * counts are bounded by the store read caps, so the boost can't unbound the
+   * Overpass query.
+   */
+  private async frontierBoost(
+    boostCount: (() => Promise<number>) | undefined,
+    storeRowCount: number,
+  ): Promise<number> {
+    if (!boostCount) return storeRowCount;
+    try {
+      return await boostCount();
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) {
+        this.logger.warn(
+          `POI covered-count for the frontier boost unavailable, using the store row count: ${err.message}`,
+        );
+        return storeRowCount;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -224,8 +262,26 @@ export class PoiService {
           resolvedKinds,
           minStars,
         ),
-      () => this.provider.findAccommodations(lat, lng, radius, resolvedKinds),
+      (extra = 0) =>
+        this.provider.findAccommodations(
+          lat,
+          lng,
+          radius,
+          resolvedKinds,
+          extra,
+        ),
       { kind: 'radius', lat, lng, radiusKm: radius },
+      // #945 (Codex P2): the store read pushes `min_stars` into SQL, so its row
+      // count omits the unrated covered-side rows the (star-unfiltered) Overpass
+      // query still returns and then de-dups/`rank`-drops. Count them unfiltered
+      // (bounded by the same store cap) so the boost budgets the real duplicate
+      // load; with no `min_stars` the store row count already is that count.
+      minStars !== undefined
+        ? () =>
+            this.store
+              .findAccommodationsNear(lat, lng, radius, resolvedKinds)
+              .then((rows) => rows.length)
+        : undefined,
     );
     return {
       accommodations: this.rank(raw, lat, lng, resolvedKinds, minStars),
@@ -325,7 +381,14 @@ export class PoiService {
     const raw = await this.readStoreFirst(
       () =>
         this.store.findPointsOfInterestNear(lat, lng, radius, resolvedKinds),
-      () => this.provider.findPointsOfInterest(lat, lng, radius, resolvedKinds),
+      (extra = 0) =>
+        this.provider.findPointsOfInterest(
+          lat,
+          lng,
+          radius,
+          resolvedKinds,
+          extra,
+        ),
       { kind: 'radius', lat, lng, radiusKm: radius },
     );
     return {
@@ -477,11 +540,12 @@ export class PoiService {
           bufferKm,
           resolvedKinds,
         ),
-      () =>
+      (extra = 0) =>
         this.provider.findPointsOfInterestAroundPoints(
           sampleRouteAnchors(dto.route, cumKm, bufferKm),
           bufferKm,
           resolvedKinds,
+          extra,
         ),
       // Region-membership coverage over the WHOLE buffered corridor in one
       // ST_Covers test (#944) — replaces the #925 centreline+rail sample probe;
