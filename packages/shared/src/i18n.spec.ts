@@ -42,6 +42,7 @@ describe("i18n / resolveLocale", () => {
     expect(resolveLocale("zz-AA;q=1,xx-YY;q=0.9")).toBe(DEFAULT_LOCALE);
     expect(resolveLocale("xx;q=1.0,en;q=0.2")).toBe("en");
     expect(resolveLocale("en;q=garbage")).toBe("en");
+    expect(resolveLocale("en;q=0.001")).toBe("en");
   });
 });
 
@@ -65,6 +66,7 @@ describe("i18n / makeTranslator", () => {
   });
 
   it("falls back to the default-locale catalog for an unpopulated locale", () => {
-    expect(t("greeting", { name: "Riku" }, "en")).toBe("Hi Riku,");
+    // @ts-expect-error — "et" is not a registered SupportedLocale; exercises the English fallback
+    expect(t("greeting", { name: "Riku" }, "et")).toBe("Hi Riku,");
   });
 });
