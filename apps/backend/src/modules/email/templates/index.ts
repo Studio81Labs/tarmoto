@@ -99,27 +99,35 @@ export interface PasswordResetContext extends BaseContext {
 export const passwordResetTemplate = (
   ctx: PasswordResetContext,
 ): RenderedTemplate => {
-  const subject = 'Reset your Tarmoto password';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const subject = t('passwordReset.subject');
+
   const text = `${greeting}
 
-Someone (hopefully you) asked to reset your Tarmoto password. Use the link below to choose a new one:
+${t('passwordReset.text.intro')}
 
 ${ctx.resetUrl}
 
-This link expires in ${ctx.expiresInMinutes} minutes and can only be used once. If you didn't request this, ignore the message — your password stays the same.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('passwordReset.expiryText', { minutes: ctx.expiresInMinutes })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Use this link to set a new Tarmoto password.',
+    preheader: t('passwordReset.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>We received a request to reset your password. Tap the button below to choose a new one.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('passwordReset.html.intro')}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.resetUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Reset password</a>
+        <a href="${escapeHtml(ctx.resetUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('passwordReset.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">This link expires in <strong>${ctx.expiresInMinutes} minutes</strong> and can only be used once.</p>
-      <p style="color:#94a3b8;font-size:13px;">If you didn't request this, ignore the message — your password stays the same.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('passwordReset.expiryHtml', { minutes: ctx.expiresInMinutes })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('passwordReset.noRequest')}</p>
     `,
   });
 
@@ -135,24 +143,33 @@ export interface PasswordChangedContext extends BaseContext {
 export const passwordChangedTemplate = (
   ctx: PasswordChangedContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto password was changed';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('passwordChanged.subject');
   const when = ctx.changedAt.toUTCString();
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Your Tarmoto password was just changed (${when}). If this was you, no action is needed.
+${t('passwordChanged.text.body', { when })}
 
-If you didn't change your password, contact us immediately at ${ctx.supportEmail}. Your account may be at risk.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('passwordChanged.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Confirmation that your password was changed.',
+    preheader: t('passwordChanged.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto password was just changed.</p>
-      <p style="color:#94a3b8;font-size:13px;">When: <strong>${escapeHtml(when)}</strong></p>
-      <p>If this was you, no action is needed.</p>
-      <p style="color:#fca5a5;">If you didn't change your password, contact us immediately at <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('passwordChanged.html.changed')}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('passwordChanged.when', { when: escapeHtml(when) })}</p>
+      <p>${t('passwordChanged.html.ifYou')}</p>
+      <p style="color:#fca5a5;">${t('passwordChanged.html.contact', {
+        emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+      })}</p>
     `,
   });
 
@@ -170,34 +187,43 @@ export interface SubscriptionConfirmedContext extends BaseContext {
 export const subscriptionConfirmedTemplate = (
   ctx: SubscriptionConfirmedContext,
 ): RenderedTemplate => {
-  const subject = `Your Tarmoto ${ctx.planName} subscription is active`;
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('subscriptionConfirmed.subject', { plan: ctx.planName });
   const renews = ctx.renewsAt
-    ? `Your next renewal is on ${ctx.renewsAt.toUTCString()}.`
-    : 'Your subscription is active.';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+    ? t('subscriptionConfirmed.text.renews', {
+        date: ctx.renewsAt.toUTCString(),
+      })
+    : t('subscriptionConfirmed.text.noRenew');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Welcome to Tarmoto ${ctx.planName} — your subscription is now active.
+${t('subscriptionConfirmed.text.welcome', { plan: ctx.planName })}
 
-Plan: ${ctx.planName}
-Price: ${ctx.priceLabel}
+${t('subscriptionConfirmed.table.plan')}: ${ctx.planName}
+${t('subscriptionConfirmed.table.price')}: ${ctx.priceLabel}
 ${renews}
 
-Manage your billing or cancel anytime: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('subscriptionConfirmed.text.manageIntro')}: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `Your Tarmoto ${ctx.planName} subscription is active.`,
+    preheader: t('subscriptionConfirmed.preheader', { plan: ctx.planName }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Welcome to <strong>Tarmoto ${escapeHtml(ctx.planName)}</strong> — your subscription is now active.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('subscriptionConfirmed.welcome', { plan: escapeHtml(ctx.planName) })}</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border:1px solid #334155;border-radius:8px;">
-        <tr><td style="padding:12px 16px;color:#94a3b8;">Plan</td><td style="padding:12px 16px;text-align:right;"><strong>${escapeHtml(ctx.planName)}</strong></td></tr>
-        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Price</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.priceLabel)}</strong></td></tr>
-        ${ctx.renewsAt ? `<tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Next renewal</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.renewsAt.toUTCString())}</strong></td></tr>` : ''}
+        <tr><td style="padding:12px 16px;color:#94a3b8;">${t('subscriptionConfirmed.table.plan')}</td><td style="padding:12px 16px;text-align:right;"><strong>${escapeHtml(ctx.planName)}</strong></td></tr>
+        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.price')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.priceLabel)}</strong></td></tr>
+        ${ctx.renewsAt ? `<tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.renewal')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.renewsAt.toUTCString())}</strong></td></tr>` : ''}
       </table>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.manageBillingUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Manage billing</a>
+        <a href="${escapeHtml(ctx.manageBillingUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionConfirmed.manageButton')}</a>
       </p>
     `,
   });
@@ -215,28 +241,38 @@ export interface SubscriptionCancelledContext extends BaseContext {
 export const subscriptionCancelledTemplate = (
   ctx: SubscriptionCancelledContext,
 ): RenderedTemplate => {
-  const subject = `Your Tarmoto ${ctx.planName} subscription was cancelled`;
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('subscriptionCancelled.subject', { plan: ctx.planName });
   const accessLine = ctx.endsAt
-    ? `You'll keep ${ctx.planName} access until ${ctx.endsAt.toUTCString()}.`
-    : `Your ${ctx.planName} access has ended.`;
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+    ? t('subscriptionCancelled.accessKept', {
+        plan: ctx.planName,
+        date: ctx.endsAt.toUTCString(),
+      })
+    : t('subscriptionCancelled.accessEnded', { plan: ctx.planName });
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Your Tarmoto ${ctx.planName} subscription has been cancelled.
+${t('subscriptionCancelled.text.cancelled', { plan: ctx.planName })}
 
 ${accessLine}
 
-Changed your mind? Resubscribe anytime: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('subscriptionCancelled.text.resubscribeIntro')}: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `Your Tarmoto ${ctx.planName} subscription was cancelled.`,
+    preheader: t('subscriptionCancelled.preheader', { plan: ctx.planName }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your <strong>Tarmoto ${escapeHtml(ctx.planName)}</strong> subscription has been cancelled.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('subscriptionCancelled.html.cancelled', { plan: escapeHtml(ctx.planName) })}</p>
       <p>${escapeHtml(accessLine)}</p>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.resubscribeUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Resubscribe</a>
+        <a href="${escapeHtml(ctx.resubscribeUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionCancelled.resubscribeButton')}</a>
       </p>
     `,
   });
@@ -253,26 +289,33 @@ export interface DataExportReadyContext extends BaseContext {
 export const dataExportReadyTemplate = (
   ctx: DataExportReadyContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto data export is ready';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('dataExportReady.subject');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Your Tarmoto data export is ready. Download it here:
+${t('dataExportReady.text.ready')}
 
 ${ctx.downloadUrl}
 
-The link expires on ${ctx.expiresAt.toUTCString()}.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('dataExportReady.text.expiry', { date: ctx.expiresAt.toUTCString() })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Your Tarmoto data export is ready to download.',
+    preheader: t('dataExportReady.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto data export is ready.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('dataExportReady.html.ready')}</p>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.downloadUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Download export</a>
+        <a href="${escapeHtml(ctx.downloadUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('dataExportReady.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">The link expires on <strong>${escapeHtml(ctx.expiresAt.toUTCString())}</strong>.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('dataExportReady.html.expiry', { date: escapeHtml(ctx.expiresAt.toUTCString()) })}</p>
     `,
   });
 
