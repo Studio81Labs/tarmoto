@@ -168,6 +168,7 @@ ${t('passwordChanged.text.contact', { email: ctx.supportEmail })}${renderTextFoo
       <p style="color:#94a3b8;font-size:13px;">${t('passwordChanged.when', { when: escapeHtml(when) })}</p>
       <p>${t('passwordChanged.html.ifYou')}</p>
       <p style="color:#fca5a5;">${t('passwordChanged.html.contact', {
+        // already-escaped HTML fragment — do not re-escape
         emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
       })}</p>
     `,

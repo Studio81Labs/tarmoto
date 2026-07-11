@@ -126,10 +126,11 @@ export const en = {
   'tripInvite.noAccountHtml':
     "Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.",
   'tripInvite.button': 'Open trip in Tarmoto',
+  // `common.html.pasteLink` (shared section, above) is reused here for the
+  // "paste this link" hint — same copy as verification, no need for a
+  // duplicate key.
 
   // --- weekly digest ---
-  // `common.html.pasteLink` is reused by trip-invite for its "paste this
-  // link" hint — same copy as verification, no need for a duplicate key.
   'digest.subject': 'Your week on Tarmoto — {rideCount} {rideWord}, {distance}',
   'digest.preheader':
     '{rideCount} {rideWord}, {distance} this week on Tarmoto.',
