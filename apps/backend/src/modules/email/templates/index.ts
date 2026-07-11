@@ -1,4 +1,8 @@
-import { formatDistance, type UnitSystem } from '@tarmoto/shared';
+import {
+  formatDistance,
+  type SupportedLocale,
+  type UnitSystem,
+} from '@tarmoto/shared';
 import { escapeHtml, renderLayout, renderTextFooter } from './layout.js';
 
 /**
@@ -35,6 +39,7 @@ export interface RenderedTemplate {
 
 interface BaseContext {
   preferencesUrl: string;
+  locale: SupportedLocale;
 }
 
 export interface VerificationContext extends BaseContext {

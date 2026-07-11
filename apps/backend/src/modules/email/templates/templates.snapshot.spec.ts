@@ -20,6 +20,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'verification',
       verificationTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         verifyUrl: 'https://app.tarmoto.example/verify?t=TOKEN',
         expiresInHours: 24,
@@ -29,6 +30,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'password-reset',
       passwordResetTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         resetUrl: 'https://app.tarmoto.example/reset?t=TOKEN',
         expiresInMinutes: 30,
@@ -38,6 +40,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'password-changed',
       passwordChangedTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         supportEmail: 'support@tarmoto.app',
         changedAt: AT,
@@ -47,6 +50,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'subscription-confirmed',
       subscriptionConfirmedTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         planName: 'Pro',
         priceLabel: '€29.99/mo',
@@ -58,6 +62,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'subscription-cancelled',
       subscriptionCancelledTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         planName: 'Pro',
         endsAt: AT,
@@ -68,6 +73,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'data-export-ready',
       dataExportReadyTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         downloadUrl: 'https://app.tarmoto.example/export/abc',
         expiresAt: AT,
@@ -77,6 +83,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'account-deletion-scheduled',
       accountDeletionScheduledTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         scheduledFor: AT,
         supportEmail: 'support@tarmoto.app',
@@ -86,6 +93,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'trip-invite',
       tripInviteTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         inviterDisplayName: 'Riku',
         tripTitle: 'Alps Loop',
         joinUrl: 'https://app.tarmoto.example/join/xyz',
@@ -97,6 +105,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'weekly-digest',
       weeklyDigestTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         rideCount: 4,
         totalKm: 213.7,
@@ -112,6 +121,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'account-deletion-completed',
       accountDeletionCompletedTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         deletedAt: AT,
         supportEmail: 'support@tarmoto.app',
@@ -121,6 +131,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'verification-anon',
       verificationTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: '',
         verifyUrl: 'https://app.tarmoto.example/verify?t=TOKEN',
         expiresInHours: 24,
@@ -130,6 +141,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'subscription-confirmed-no-renewal',
       subscriptionConfirmedTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         planName: 'Pro',
         priceLabel: '€29.99/mo',
@@ -141,6 +153,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'subscription-cancelled-ended',
       subscriptionCancelledTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         planName: 'Pro',
         endsAt: null,
@@ -151,6 +164,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'weekly-digest-single-no-quality',
       weeklyDigestTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         displayName: 'Riku',
         rideCount: 1,
         totalKm: 213.7,
@@ -166,6 +180,7 @@ const cases: Array<[string, { subject: string; html: string; text: string }]> =
       'trip-invite-no-message',
       tripInviteTemplate({
         preferencesUrl: PREFS,
+        locale: 'en',
         inviterDisplayName: 'Riku',
         tripTitle: 'Alps Loop',
         joinUrl: 'https://app.tarmoto.example/join/xyz',

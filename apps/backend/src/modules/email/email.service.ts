@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { DEFAULT_LOCALE, type SupportedLocale } from '@tarmoto/shared';
 import { EmailLog } from '../../entities/email-log.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
@@ -37,7 +38,7 @@ import {
 
 const DEFAULT_SUPPORT_EMAIL = 'support@tarmoto.app';
 
-type ContextWithoutBase<T> = Omit<T, 'preferencesUrl'>;
+type ContextWithoutBase<T> = Omit<T, 'preferencesUrl' | 'locale'>;
 
 /**
  * Public surface for every place in the backend that needs to send a
@@ -84,25 +85,28 @@ export class EmailService {
   async sendVerification(
     to: string,
     ctx: ContextWithoutBase<VerificationContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, verificationTemplate(this.withBase(ctx)));
+    return this.dispatch(to, verificationTemplate(this.withBase(ctx, locale)));
   }
 
   async sendPasswordReset(
     to: string,
     ctx: ContextWithoutBase<PasswordResetContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, passwordResetTemplate(this.withBase(ctx)));
+    return this.dispatch(to, passwordResetTemplate(this.withBase(ctx, locale)));
   }
 
   async sendPasswordChanged(
     to: string,
     ctx: ContextWithoutBase<Omit<PasswordChangedContext, 'supportEmail'>>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
     return this.dispatch(
       to,
       passwordChangedTemplate(
-        this.withBase({ ...ctx, supportEmail: this.supportEmail() }),
+        this.withBase({ ...ctx, supportEmail: this.supportEmail() }, locale),
       ),
     );
   }
@@ -110,36 +114,50 @@ export class EmailService {
   async sendSubscriptionConfirmed(
     to: string,
     ctx: ContextWithoutBase<SubscriptionConfirmedContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, subscriptionConfirmedTemplate(this.withBase(ctx)));
+    return this.dispatch(
+      to,
+      subscriptionConfirmedTemplate(this.withBase(ctx, locale)),
+    );
   }
 
   async sendSubscriptionCancelled(
     to: string,
     ctx: ContextWithoutBase<SubscriptionCancelledContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, subscriptionCancelledTemplate(this.withBase(ctx)));
+    return this.dispatch(
+      to,
+      subscriptionCancelledTemplate(this.withBase(ctx, locale)),
+    );
   }
 
   async sendDataExportReady(
     to: string,
     ctx: ContextWithoutBase<DataExportReadyContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, dataExportReadyTemplate(this.withBase(ctx)));
+    return this.dispatch(
+      to,
+      dataExportReadyTemplate(this.withBase(ctx, locale)),
+    );
   }
 
   async sendTripInvite(
     to: string,
     ctx: ContextWithoutBase<TripInviteContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, tripInviteTemplate(this.withBase(ctx)));
+    return this.dispatch(to, tripInviteTemplate(this.withBase(ctx, locale)));
   }
 
   async sendWeeklyDigest(
     to: string,
     ctx: ContextWithoutBase<WeeklyDigestContext>,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, weeklyDigestTemplate(this.withBase(ctx)));
+    return this.dispatch(to, weeklyDigestTemplate(this.withBase(ctx, locale)));
   }
 
   async sendAccountDeletionScheduled(
@@ -147,11 +165,12 @@ export class EmailService {
     ctx: ContextWithoutBase<
       Omit<AccountDeletionScheduledContext, 'supportEmail'>
     >,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
     return this.dispatch(
       to,
       accountDeletionScheduledTemplate(
-        this.withBase({ ...ctx, supportEmail: this.supportEmail() }),
+        this.withBase({ ...ctx, supportEmail: this.supportEmail() }, locale),
       ),
     );
   }
@@ -161,11 +180,12 @@ export class EmailService {
     ctx: ContextWithoutBase<
       Omit<AccountDeletionCompletedContext, 'supportEmail'>
     >,
+    locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
     return this.dispatch(
       to,
       accountDeletionCompletedTemplate(
-        this.withBase({ ...ctx, supportEmail: this.supportEmail() }),
+        this.withBase({ ...ctx, supportEmail: this.supportEmail() }, locale),
       ),
     );
   }
@@ -279,8 +299,11 @@ export class EmailService {
     return template.subject;
   }
 
-  private withBase<T>(ctx: T): T & { preferencesUrl: string } {
-    return { ...ctx, preferencesUrl: this.preferencesUrl() };
+  private withBase<T>(
+    ctx: T,
+    locale: SupportedLocale,
+  ): T & { preferencesUrl: string; locale: SupportedLocale } {
+    return { ...ctx, preferencesUrl: this.preferencesUrl(), locale };
   }
 
   private preferencesUrl(): string {
