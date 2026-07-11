@@ -1,8 +1,10 @@
 import {
   formatDistance,
   type SupportedLocale,
+  type TranslationValues,
   type UnitSystem,
 } from '@tarmoto/shared';
+import { translateEmail, type EmailMessageKey } from '../i18n/index.js';
 import { escapeHtml, renderLayout, renderTextFooter } from './layout.js';
 
 /**
@@ -51,29 +53,37 @@ export interface VerificationContext extends BaseContext {
 export const verificationTemplate = (
   ctx: VerificationContext,
 ): RenderedTemplate => {
-  const subject = 'Verify your Tarmoto email';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName }) // text: raw name
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const subject = t('verification.subject');
+
   const text = `${greeting}
 
-Welcome to Tarmoto — the open road just got smarter.
+${t('verification.text.intro')}
 
-Confirm your email so we can send you trip invites, hazard alerts, and account notices:
+${t('verification.text.confirmLine')}
 
 ${ctx.verifyUrl}
 
-This link expires in ${ctx.expiresInHours} hours. If you didn't sign up for Tarmoto, you can ignore this message.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('verification.expiry', { hours: ctx.expiresInHours })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Confirm your email to finish setting up Tarmoto.',
+    preheader: t('verification.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Welcome to <strong>Tarmoto</strong> — confirm your email so we can deliver trip invites, hazard alerts, and important account notices.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('verification.html.welcome')}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.verifyUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Verify email</a>
+        <a href="${escapeHtml(ctx.verifyUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('verification.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="${escapeHtml(ctx.verifyUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.verifyUrl)}</a></p>
-      <p style="color:#94a3b8;font-size:13px;">This link expires in ${ctx.expiresInHours} hours. If you didn't sign up for Tarmoto, you can ignore this message.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('common.html.pasteLink')}<br/><a href="${escapeHtml(ctx.verifyUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.verifyUrl)}</a></p>
+      <p style="color:#94a3b8;font-size:13px;">${t('verification.expiry', { hours: ctx.expiresInHours })}</p>
     `,
   });
 
