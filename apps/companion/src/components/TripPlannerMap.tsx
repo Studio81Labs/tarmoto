@@ -1410,7 +1410,8 @@ const TripPlannerMapContent = forwardRef<
     map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
       if (overHigherPriorityMarker(event)) return;
-      expandHazardCluster(map, event);
+      const feature = event.features?.[0];
+      if (feature) expandHazardCluster(map, feature);
     });
     // Hazards sit ABOVE the POI clusters (POI layers are added first, hazards
     // slot in before WAYPOINT_PIN). A visible hazard pin/cluster owns an
