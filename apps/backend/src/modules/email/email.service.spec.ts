@@ -119,6 +119,70 @@ describe('EmailService', () => {
     });
   });
 
+  describe('locale seam', () => {
+    // Phase 1 of email i18n: `send*` grew a trailing `locale` param that
+    // flows into the rendered template context via `withBase`, but no
+    // template reads `ctx.locale` yet (that lands in later per-template
+    // tasks) — so both cases below still render the English subject.
+    // What these tests prove at this phase: the seam accepts an explicit
+    // locale AND a defaulted one without breaking the render+dispatch
+    // path — i.e. `EmailService.sendVerification(to, ctx, locale)` and its
+    // two-arg default-param form both complete and dispatch the expected
+    // rendered message through the provider.
+    function buildService(send: jest.Mock): Promise<EmailService> {
+      const provider: EmailProvider = { name: 'mock', send };
+      return Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: provider },
+          { provide: ConfigService, useValue: buildConfigService() },
+        ],
+      })
+        .compile()
+        .then((module) => module.get(EmailService));
+    }
+
+    const verifyCtx = {
+      displayName: 'Riku',
+      verifyUrl: 'https://x/y',
+      expiresInHours: 24,
+    };
+
+    it('passes an explicit locale through to the render+dispatch path', async () => {
+      const send = jest.fn().mockResolvedValue({
+        providerMessageId: 'loc_1',
+        providerName: 'mock',
+      });
+      const service = await buildService(send);
+
+      await service.sendVerification('rider@example.com', verifyCtx, 'en');
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      expect(message.subject).toBe('Verify your Tarmoto email');
+      expect(message.tag).toBe('verification');
+    });
+
+    it('defaults the locale when the caller omits it, rendering the same subject', async () => {
+      const send = jest.fn().mockResolvedValue({
+        providerMessageId: 'loc_2',
+        providerName: 'mock',
+      });
+      const service = await buildService(send);
+
+      await service.sendVerification('rider@example.com', verifyCtx);
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      expect(message.subject).toBe('Verify your Tarmoto email');
+      expect(message.tag).toBe('verification');
+    });
+  });
+
   describe('template rendering', () => {
     it.each([
       [

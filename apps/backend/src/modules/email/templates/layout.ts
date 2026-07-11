@@ -8,6 +8,10 @@
  * "manage notification preferences" link pointing at the companion
  * settings page so riders have one consistent place to opt out of
  * digests when those ship.
+ *
+ * i18n Phase 2: footer copy + <html lang> are English-only for now;
+ * localize here when a second locale lands (see
+ * docs/superpowers/specs/2026-07-11-email-template-i18n-design.md).
  */
 
 const BRAND = {

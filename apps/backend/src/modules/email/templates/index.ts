@@ -1,4 +1,10 @@
-import { formatDistance, type UnitSystem } from '@tarmoto/shared';
+import {
+  formatDistance,
+  type SupportedLocale,
+  type TranslationValues,
+  type UnitSystem,
+} from '@tarmoto/shared';
+import { translateEmail, type EmailMessageKey } from '../i18n/index.js';
 import { escapeHtml, renderLayout, renderTextFooter } from './layout.js';
 
 /**
@@ -35,6 +41,7 @@ export interface RenderedTemplate {
 
 interface BaseContext {
   preferencesUrl: string;
+  locale: SupportedLocale;
 }
 
 export interface VerificationContext extends BaseContext {
@@ -46,29 +53,37 @@ export interface VerificationContext extends BaseContext {
 export const verificationTemplate = (
   ctx: VerificationContext,
 ): RenderedTemplate => {
-  const subject = 'Verify your Tarmoto email';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName }) // text: raw name
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const subject = t('verification.subject');
+
   const text = `${greeting}
 
-Welcome to Tarmoto — the open road just got smarter.
+${t('verification.text.intro')}
 
-Confirm your email so we can send you trip invites, hazard alerts, and account notices:
+${t('verification.text.confirmLine')}
 
 ${ctx.verifyUrl}
 
-This link expires in ${ctx.expiresInHours} hours. If you didn't sign up for Tarmoto, you can ignore this message.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('verification.expiry', { hours: ctx.expiresInHours })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Confirm your email to finish setting up Tarmoto.',
+    preheader: t('verification.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Welcome to <strong>Tarmoto</strong> — confirm your email so we can deliver trip invites, hazard alerts, and important account notices.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('verification.html.welcome')}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.verifyUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Verify email</a>
+        <a href="${escapeHtml(ctx.verifyUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('verification.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="${escapeHtml(ctx.verifyUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.verifyUrl)}</a></p>
-      <p style="color:#94a3b8;font-size:13px;">This link expires in ${ctx.expiresInHours} hours. If you didn't sign up for Tarmoto, you can ignore this message.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('common.html.pasteLink')}<br/><a href="${escapeHtml(ctx.verifyUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.verifyUrl)}</a></p>
+      <p style="color:#94a3b8;font-size:13px;">${t('verification.expiry', { hours: ctx.expiresInHours })}</p>
     `,
   });
 
@@ -84,27 +99,35 @@ export interface PasswordResetContext extends BaseContext {
 export const passwordResetTemplate = (
   ctx: PasswordResetContext,
 ): RenderedTemplate => {
-  const subject = 'Reset your Tarmoto password';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const subject = t('passwordReset.subject');
+
   const text = `${greeting}
 
-Someone (hopefully you) asked to reset your Tarmoto password. Use the link below to choose a new one:
+${t('passwordReset.text.intro')}
 
 ${ctx.resetUrl}
 
-This link expires in ${ctx.expiresInMinutes} minutes and can only be used once. If you didn't request this, ignore the message — your password stays the same.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('passwordReset.expiryText', { minutes: ctx.expiresInMinutes })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Use this link to set a new Tarmoto password.',
+    preheader: t('passwordReset.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>We received a request to reset your password. Tap the button below to choose a new one.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('passwordReset.html.intro')}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.resetUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Reset password</a>
+        <a href="${escapeHtml(ctx.resetUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('passwordReset.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">This link expires in <strong>${ctx.expiresInMinutes} minutes</strong> and can only be used once.</p>
-      <p style="color:#94a3b8;font-size:13px;">If you didn't request this, ignore the message — your password stays the same.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('passwordReset.expiryHtml', { minutes: ctx.expiresInMinutes })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('passwordReset.noRequest')}</p>
     `,
   });
 
@@ -120,24 +143,34 @@ export interface PasswordChangedContext extends BaseContext {
 export const passwordChangedTemplate = (
   ctx: PasswordChangedContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto password was changed';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('passwordChanged.subject');
   const when = ctx.changedAt.toUTCString();
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Your Tarmoto password was just changed (${when}). If this was you, no action is needed.
+${t('passwordChanged.text.body', { when })}
 
-If you didn't change your password, contact us immediately at ${ctx.supportEmail}. Your account may be at risk.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('passwordChanged.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Confirmation that your password was changed.',
+    preheader: t('passwordChanged.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto password was just changed.</p>
-      <p style="color:#94a3b8;font-size:13px;">When: <strong>${escapeHtml(when)}</strong></p>
-      <p>If this was you, no action is needed.</p>
-      <p style="color:#fca5a5;">If you didn't change your password, contact us immediately at <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('passwordChanged.html.changed')}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('passwordChanged.when', { when: escapeHtml(when) })}</p>
+      <p>${t('passwordChanged.html.ifYou')}</p>
+      <p style="color:#fca5a5;">${t('passwordChanged.html.contact', {
+        // already-escaped HTML fragment — do not re-escape
+        emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+      })}</p>
     `,
   });
 
@@ -155,34 +188,43 @@ export interface SubscriptionConfirmedContext extends BaseContext {
 export const subscriptionConfirmedTemplate = (
   ctx: SubscriptionConfirmedContext,
 ): RenderedTemplate => {
-  const subject = `Your Tarmoto ${ctx.planName} subscription is active`;
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('subscriptionConfirmed.subject', { plan: ctx.planName });
   const renews = ctx.renewsAt
-    ? `Your next renewal is on ${ctx.renewsAt.toUTCString()}.`
-    : 'Your subscription is active.';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+    ? t('subscriptionConfirmed.text.renews', {
+        date: ctx.renewsAt.toUTCString(),
+      })
+    : t('subscriptionConfirmed.text.noRenew');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Welcome to Tarmoto ${ctx.planName} — your subscription is now active.
+${t('subscriptionConfirmed.text.welcome', { plan: ctx.planName })}
 
-Plan: ${ctx.planName}
-Price: ${ctx.priceLabel}
+${t('subscriptionConfirmed.table.plan')}: ${ctx.planName}
+${t('subscriptionConfirmed.table.price')}: ${ctx.priceLabel}
 ${renews}
 
-Manage your billing or cancel anytime: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('subscriptionConfirmed.text.manageIntro')}: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `Your Tarmoto ${ctx.planName} subscription is active.`,
+    preheader: t('subscriptionConfirmed.preheader', { plan: ctx.planName }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Welcome to <strong>Tarmoto ${escapeHtml(ctx.planName)}</strong> — your subscription is now active.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('subscriptionConfirmed.welcome', { plan: escapeHtml(ctx.planName) })}</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border:1px solid #334155;border-radius:8px;">
-        <tr><td style="padding:12px 16px;color:#94a3b8;">Plan</td><td style="padding:12px 16px;text-align:right;"><strong>${escapeHtml(ctx.planName)}</strong></td></tr>
-        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Price</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.priceLabel)}</strong></td></tr>
-        ${ctx.renewsAt ? `<tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Next renewal</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.renewsAt.toUTCString())}</strong></td></tr>` : ''}
+        <tr><td style="padding:12px 16px;color:#94a3b8;">${t('subscriptionConfirmed.table.plan')}</td><td style="padding:12px 16px;text-align:right;"><strong>${escapeHtml(ctx.planName)}</strong></td></tr>
+        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.price')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.priceLabel)}</strong></td></tr>
+        ${ctx.renewsAt ? `<tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.renewal')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.renewsAt.toUTCString())}</strong></td></tr>` : ''}
       </table>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.manageBillingUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Manage billing</a>
+        <a href="${escapeHtml(ctx.manageBillingUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionConfirmed.manageButton')}</a>
       </p>
     `,
   });
@@ -200,28 +242,38 @@ export interface SubscriptionCancelledContext extends BaseContext {
 export const subscriptionCancelledTemplate = (
   ctx: SubscriptionCancelledContext,
 ): RenderedTemplate => {
-  const subject = `Your Tarmoto ${ctx.planName} subscription was cancelled`;
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('subscriptionCancelled.subject', { plan: ctx.planName });
   const accessLine = ctx.endsAt
-    ? `You'll keep ${ctx.planName} access until ${ctx.endsAt.toUTCString()}.`
-    : `Your ${ctx.planName} access has ended.`;
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+    ? t('subscriptionCancelled.accessKept', {
+        plan: ctx.planName,
+        date: ctx.endsAt.toUTCString(),
+      })
+    : t('subscriptionCancelled.accessEnded', { plan: ctx.planName });
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Your Tarmoto ${ctx.planName} subscription has been cancelled.
+${t('subscriptionCancelled.text.cancelled', { plan: ctx.planName })}
 
 ${accessLine}
 
-Changed your mind? Resubscribe anytime: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('subscriptionCancelled.text.resubscribeIntro')}: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `Your Tarmoto ${ctx.planName} subscription was cancelled.`,
+    preheader: t('subscriptionCancelled.preheader', { plan: ctx.planName }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your <strong>Tarmoto ${escapeHtml(ctx.planName)}</strong> subscription has been cancelled.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('subscriptionCancelled.html.cancelled', { plan: escapeHtml(ctx.planName) })}</p>
       <p>${escapeHtml(accessLine)}</p>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.resubscribeUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Resubscribe</a>
+        <a href="${escapeHtml(ctx.resubscribeUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionCancelled.resubscribeButton')}</a>
       </p>
     `,
   });
@@ -238,26 +290,33 @@ export interface DataExportReadyContext extends BaseContext {
 export const dataExportReadyTemplate = (
   ctx: DataExportReadyContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto data export is ready';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('dataExportReady.subject');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const text = `${greeting}
 
-Your Tarmoto data export is ready. Download it here:
+${t('dataExportReady.text.ready')}
 
 ${ctx.downloadUrl}
 
-The link expires on ${ctx.expiresAt.toUTCString()}.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('dataExportReady.text.expiry', { date: ctx.expiresAt.toUTCString() })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Your Tarmoto data export is ready to download.',
+    preheader: t('dataExportReady.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto data export is ready.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('dataExportReady.html.ready')}</p>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.downloadUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Download export</a>
+        <a href="${escapeHtml(ctx.downloadUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('dataExportReady.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">The link expires on <strong>${escapeHtml(ctx.expiresAt.toUTCString())}</strong>.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('dataExportReady.html.expiry', { date: escapeHtml(ctx.expiresAt.toUTCString()) })}</p>
     `,
   });
 
@@ -273,8 +332,16 @@ export interface AccountDeletionScheduledContext extends BaseContext {
 export const accountDeletionScheduledTemplate = (
   ctx: AccountDeletionScheduledContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto account is scheduled for deletion';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('accountDeletionScheduled.subject');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const scheduledFor = ctx.scheduledFor.toUTCString();
   // Restoration during the grace window is support-only: a soft-
   // deleted account is locked out of /auth/login and /auth/refresh
   // (see AuthService — `deleted_at != null` rejects with the same
@@ -285,21 +352,24 @@ export const accountDeletionScheduledTemplate = (
   // restoration the GDPR grace window grants.
   const text = `${greeting}
 
-Your Tarmoto account is scheduled for permanent deletion on ${ctx.scheduledFor.toUTCString()}.
+${t('accountDeletionScheduled.text.scheduled', { date: scheduledFor })}
 
-Changed your mind? Email ${ctx.supportEmail} before that date and our team will restore your account. Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.
+${t('accountDeletionScheduled.text.changedMind', { email: ctx.supportEmail })} ${t('accountDeletionScheduled.graceWindow')}
 
-After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('accountDeletionScheduled.afterDate')}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `Your account will be permanently deleted on ${ctx.scheduledFor.toUTCString()}.`,
+    preheader: t('accountDeletionScheduled.preheader', { date: scheduledFor }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto account is scheduled for <strong>permanent deletion</strong> on ${escapeHtml(ctx.scheduledFor.toUTCString())}.</p>
-      <p>Changed your mind? Email <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a> before that date and our team will restore your account.</p>
-      <p style="color:#94a3b8;font-size:13px;">Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.</p>
-      <p style="color:#94a3b8;font-size:13px;">After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('accountDeletionScheduled.html.scheduled', { date: escapeHtml(scheduledFor) })}</p>
+      <p>${t('accountDeletionScheduled.html.changedMind', {
+        // already-escaped HTML fragment — do not re-escape
+        emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+      })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('accountDeletionScheduled.graceWindow')}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('accountDeletionScheduled.afterDate')}</p>
     `,
   });
 
@@ -317,40 +387,58 @@ export interface TripInviteContext extends BaseContext {
 export const tripInviteTemplate = (
   ctx: TripInviteContext,
 ): RenderedTemplate => {
-  const subject = `${ctx.inviterDisplayName} invited you to plan "${ctx.tripTitle}" on Tarmoto`;
-  const intro = `${ctx.inviterDisplayName} invited you to collaborate on a Tarmoto trip: ${ctx.tripTitle}.`;
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  // Trip invites always greet an unauthenticated recipient — there's no
+  // displayName on this context, so it's the anon greeting, always.
+  const greeting = t('common.greeting.anon');
+  const subject = t('tripInvite.subject', {
+    inviter: ctx.inviterDisplayName, // subject is plain text — raw, not HTML-escaped
+    trip: ctx.tripTitle,
+  });
+  const intro = t('tripInvite.intro', {
+    inviter: ctx.inviterDisplayName,
+    trip: ctx.tripTitle,
+  });
+  const introHtml = t('tripInvite.intro', {
+    inviter: escapeHtml(ctx.inviterDisplayName),
+    trip: escapeHtml(ctx.tripTitle),
+  });
   const messageBlock = ctx.message
-    ? `\n\nMessage from ${ctx.inviterDisplayName}:\n${ctx.message}\n`
+    ? `\n\n${t('tripInvite.text.messageBlock', { inviter: ctx.inviterDisplayName })}\n${ctx.message}\n`
     : '';
-  const text = `Hi there,
+  const text = `${greeting}
 
 ${intro}${messageBlock}
 
-Open the trip planner to accept the invite:
+${t('tripInvite.text.openLine')}
 
 ${ctx.joinUrl}
 
-If the link doesn't open automatically, sign in to Tarmoto and enter this invite code on the join screen: ${ctx.inviteCode}
+${t('tripInvite.text.codeLine', { code: ctx.inviteCode })}
 
-If you don't have a Tarmoto account yet, you can create one with this email and the invite will be waiting for you.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('tripInvite.text.noAccount')}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: `${ctx.inviterDisplayName} invited you to "${ctx.tripTitle}".`,
+    preheader: t('tripInvite.preheader', {
+      inviter: ctx.inviterDisplayName,
+      trip: ctx.tripTitle,
+    }),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>Hi there,</p>
-      <p>${escapeHtml(intro)}</p>
+      <p>${greeting}</p>
+      <p>${introHtml}</p>
       ${
         ctx.message
           ? `<blockquote style="margin:24px 0;padding:12px 16px;border-left:3px solid #06b6d4;color:#cbd5e1;background:#0f172a;border-radius:4px;">${escapeHtml(ctx.message)}</blockquote>`
           : ''
       }
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.joinUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Open trip in Tarmoto</a>
+        <a href="${escapeHtml(ctx.joinUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('tripInvite.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="${escapeHtml(ctx.joinUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.joinUrl)}</a></p>
-      <p style="color:#94a3b8;font-size:13px;">Invite code (in case the link doesn't open): <strong style="color:#f8fafc;">${escapeHtml(ctx.inviteCode)}</strong></p>
-      <p style="color:#94a3b8;font-size:13px;">Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('common.html.pasteLink')}<br/><a href="${escapeHtml(ctx.joinUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.joinUrl)}</a></p>
+      <p style="color:#94a3b8;font-size:13px;">${t('tripInvite.inviteCodeHtml', { code: escapeHtml(ctx.inviteCode) })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('tripInvite.noAccountHtml')}</p>
     `,
   });
 
@@ -382,25 +470,44 @@ export interface WeeklyDigestContext extends BaseContext {
 export const weeklyDigestTemplate = (
   ctx: WeeklyDigestContext,
 ): RenderedTemplate => {
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
   const distance = formatDistance(ctx.totalKm, ctx.units);
   const duration = formatDuration(ctx.totalMinutes);
-  const rideWord = ctx.rideCount === 1 ? 'ride' : 'rides';
+  // Pluralization stays in code: which catalog key is picked is the
+  // plural rule, not something `t()`'s dumb {placeholder} substitution
+  // can express.
+  const rideWord =
+    ctx.rideCount === 1 ? t('digest.rideWord.one') : t('digest.rideWord.other');
   const quality =
     ctx.bestQuality != null ? `${ctx.bestQuality.toFixed(1)} / 5` : null;
-  const subject = `Your week on Tarmoto — ${ctx.rideCount} ${rideWord}, ${distance}`;
+  const subject = t('digest.subject', {
+    rideCount: ctx.rideCount,
+    rideWord,
+    distance,
+  });
+  // Shared stem for the line right after the greeting — text appends ":"
+  // (it introduces the bullet list below), html appends "." (standalone
+  // sentence ahead of the table).
+  const weekLead = t('digest.greeting.lead');
 
   const text = `${greeting}
 
-Here's your week on the road:
+${weekLead}:
 
   • ${ctx.rideCount} ${rideWord}
-  • ${distance} ridden
-  • ${duration} in the saddle${quality ? `\n  • Best road quality: ${quality}` : ''}
+  • ${t('digest.text.distanceRidden', { distance })}
+  • ${t('digest.text.timeInSaddle', { duration })}${quality ? `\n  • ${t('digest.row.quality')}: ${quality}` : ''}
 
-Exploration: you've now ridden ${ctx.riddenSegments} road sections — ${ctx.percentExplored}% of your area.
+${t('digest.intro', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}
 
-Find your next road:
+${t('digest.button')}:
 ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
 
   const row = (label: string, value: string): string => `
@@ -410,21 +517,25 @@ ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
       </tr>`;
 
   const html = renderLayout({
-    preheader: `${ctx.rideCount} ${rideWord}, ${distance} this week on Tarmoto.`,
+    preheader: t('digest.preheader', {
+      rideCount: ctx.rideCount,
+      rideWord,
+      distance,
+    }),
     preferencesUrl: ctx.preferencesUrl,
     marketingFooter: true,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Here's your week on the road.</p>
+      <p>${greetingHtml}</p>
+      <p>${weekLead}.</p>
       <table role="presentation" width="100%" style="margin:20px 0;border-collapse:collapse;">
-        ${row('Rides', String(ctx.rideCount))}
-        ${row('Distance', distance)}
-        ${row('Time in the saddle', duration)}
-        ${quality ? row('Best road quality', quality) : ''}
+        ${row(t('digest.row.rides'), String(ctx.rideCount))}
+        ${row(t('digest.row.distance'), distance)}
+        ${row(t('digest.row.time'), duration)}
+        ${quality ? row(t('digest.row.quality'), quality) : ''}
       </table>
-      <p style="color:#cbd5e1;">You've now ridden <strong style="color:#f8fafc;">${ctx.riddenSegments}</strong> road sections — <strong style="color:#f8fafc;">${ctx.percentExplored}%</strong> of your area explored.</p>
+      <p style="color:#cbd5e1;">${t('digest.explored', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Find your next road</a>
+        <a href="${escapeHtml(ctx.exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('digest.button')}</a>
       </p>
     `,
   });
@@ -441,24 +552,38 @@ export interface AccountDeletionCompletedContext extends BaseContext {
 export const accountDeletionCompletedTemplate = (
   ctx: AccountDeletionCompletedContext,
 ): RenderedTemplate => {
-  const subject = 'Your Tarmoto account has been deleted';
-  const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  const t = (k: EmailMessageKey, v?: TranslationValues): string =>
+    translateEmail(k, v, ctx.locale);
+  const subject = t('accountDeletionCompleted.subject');
+  const greeting = ctx.displayName
+    ? t('common.greeting.named', { name: ctx.displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = ctx.displayName
+    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+    : t('common.greeting.anon');
+  const deletedAt = ctx.deletedAt.toUTCString();
   const text = `${greeting}
 
-Your Tarmoto account was permanently deleted on ${ctx.deletedAt.toUTCString()}.
+${t('accountDeletionCompleted.text.deleted', { date: deletedAt })}
 
-Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.
+${t('accountDeletionCompleted.erased')}
 
-If this wasn't you or you have questions, contact ${ctx.supportEmail}.${renderTextFooter(ctx.preferencesUrl)}`;
+${t('accountDeletionCompleted.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl)}`;
 
   const html = renderLayout({
-    preheader: 'Your Tarmoto account has been permanently deleted.',
+    preheader: t('accountDeletionCompleted.preheader'),
     preferencesUrl: ctx.preferencesUrl,
     bodyHtml: `
-      <p>${escapeHtml(greeting)}</p>
-      <p>Your Tarmoto account was permanently deleted on <strong>${escapeHtml(ctx.deletedAt.toUTCString())}</strong>.</p>
-      <p>Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.</p>
-      <p style="color:#94a3b8;font-size:13px;">Questions? Contact <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>.</p>
+      <p>${greetingHtml}</p>
+      <p>${t('accountDeletionCompleted.html.deleted', { date: escapeHtml(deletedAt) })}</p>
+      <p>${t('accountDeletionCompleted.erased')}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t(
+        'accountDeletionCompleted.html.contact',
+        {
+          // already-escaped HTML fragment — do not re-escape
+          emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+        },
+      )}</p>
     `,
   });
 
