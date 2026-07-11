@@ -1,0 +1,1000 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`email templates — characterization snapshots account-deletion-completed renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your Tarmoto account has been permanently deleted.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Your Tarmoto account was permanently deleted on <strong>Sun, 01 Mar 2026 08:00:00 GMT</strong>.</p>
+      <p>Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.</p>
+      <p style="color:#94a3b8;font-size:13px;">Questions? Contact <a href="mailto:support@tarmoto.app" style="color:#06b6d4;">support@tarmoto.app</a>.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots account-deletion-completed renders stable subject/html/text: subject 1`] = `"Your Tarmoto account has been deleted"`;
+
+exports[`email templates — characterization snapshots account-deletion-completed renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Your Tarmoto account was permanently deleted on Sun, 01 Mar 2026 08:00:00 GMT.
+
+Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.
+
+If this wasn't you or you have questions, contact support@tarmoto.app.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots account-deletion-scheduled renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your account will be permanently deleted on Sun, 01 Mar 2026 08:00:00 GMT.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Your Tarmoto account is scheduled for <strong>permanent deletion</strong> on Sun, 01 Mar 2026 08:00:00 GMT.</p>
+      <p>Changed your mind? Email <a href="mailto:support@tarmoto.app" style="color:#06b6d4;">support@tarmoto.app</a> before that date and our team will restore your account.</p>
+      <p style="color:#94a3b8;font-size:13px;">Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.</p>
+      <p style="color:#94a3b8;font-size:13px;">After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots account-deletion-scheduled renders stable subject/html/text: subject 1`] = `"Your Tarmoto account is scheduled for deletion"`;
+
+exports[`email templates — characterization snapshots account-deletion-scheduled renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Your Tarmoto account is scheduled for permanent deletion on Sun, 01 Mar 2026 08:00:00 GMT.
+
+Changed your mind? Email support@tarmoto.app before that date and our team will restore your account. Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.
+
+After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots data-export-ready renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your Tarmoto data export is ready to download.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Your Tarmoto data export is ready.</p>
+      <p style="margin:24px 0;">
+        <a href="https://app.tarmoto.example/export/abc" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Download export</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">The link expires on <strong>Sun, 01 Mar 2026 08:00:00 GMT</strong>.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots data-export-ready renders stable subject/html/text: subject 1`] = `"Your Tarmoto data export is ready"`;
+
+exports[`email templates — characterization snapshots data-export-ready renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Your Tarmoto data export is ready. Download it here:
+
+https://app.tarmoto.example/export/abc
+
+The link expires on Sun, 01 Mar 2026 08:00:00 GMT.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots password-changed renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Confirmation that your password was changed.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Your Tarmoto password was just changed.</p>
+      <p style="color:#94a3b8;font-size:13px;">When: <strong>Sun, 01 Mar 2026 08:00:00 GMT</strong></p>
+      <p>If this was you, no action is needed.</p>
+      <p style="color:#fca5a5;">If you didn't change your password, contact us immediately at <a href="mailto:support@tarmoto.app" style="color:#06b6d4;">support@tarmoto.app</a>.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots password-changed renders stable subject/html/text: subject 1`] = `"Your Tarmoto password was changed"`;
+
+exports[`email templates — characterization snapshots password-changed renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Your Tarmoto password was just changed (Sun, 01 Mar 2026 08:00:00 GMT). If this was you, no action is needed.
+
+If you didn't change your password, contact us immediately at support@tarmoto.app. Your account may be at risk.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots password-reset renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Use this link to set a new Tarmoto password.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>We received a request to reset your password. Tap the button below to choose a new one.</p>
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/reset?t=TOKEN" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Reset password</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">This link expires in <strong>30 minutes</strong> and can only be used once.</p>
+      <p style="color:#94a3b8;font-size:13px;">If you didn't request this, ignore the message — your password stays the same.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots password-reset renders stable subject/html/text: subject 1`] = `"Reset your Tarmoto password"`;
+
+exports[`email templates — characterization snapshots password-reset renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Someone (hopefully you) asked to reset your Tarmoto password. Use the link below to choose a new one:
+
+https://app.tarmoto.example/reset?t=TOKEN
+
+This link expires in 30 minutes and can only be used once. If you didn't request this, ignore the message — your password stays the same.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots subscription-cancelled renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your Tarmoto Pro subscription was cancelled.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Your <strong>Tarmoto Pro</strong> subscription has been cancelled.</p>
+      <p>You&#39;ll keep Pro access until Sun, 01 Mar 2026 08:00:00 GMT.</p>
+      <p style="margin:24px 0;">
+        <a href="https://app.tarmoto.example/billing" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Resubscribe</a>
+      </p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots subscription-cancelled renders stable subject/html/text: subject 1`] = `"Your Tarmoto Pro subscription was cancelled"`;
+
+exports[`email templates — characterization snapshots subscription-cancelled renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Your Tarmoto Pro subscription has been cancelled.
+
+You'll keep Pro access until Sun, 01 Mar 2026 08:00:00 GMT.
+
+Changed your mind? Resubscribe anytime: https://app.tarmoto.example/billing
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots subscription-cancelled-ended renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your Tarmoto Pro subscription was cancelled.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Your <strong>Tarmoto Pro</strong> subscription has been cancelled.</p>
+      <p>Your Pro access has ended.</p>
+      <p style="margin:24px 0;">
+        <a href="https://app.tarmoto.example/billing" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Resubscribe</a>
+      </p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots subscription-cancelled-ended renders stable subject/html/text: subject 1`] = `"Your Tarmoto Pro subscription was cancelled"`;
+
+exports[`email templates — characterization snapshots subscription-cancelled-ended renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Your Tarmoto Pro subscription has been cancelled.
+
+Your Pro access has ended.
+
+Changed your mind? Resubscribe anytime: https://app.tarmoto.example/billing
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots subscription-confirmed renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your Tarmoto Pro subscription is active.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Welcome to <strong>Tarmoto Pro</strong> — your subscription is now active.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border:1px solid #334155;border-radius:8px;">
+        <tr><td style="padding:12px 16px;color:#94a3b8;">Plan</td><td style="padding:12px 16px;text-align:right;"><strong>Pro</strong></td></tr>
+        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Price</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>€29.99/mo</strong></td></tr>
+        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Next renewal</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>Sun, 01 Mar 2026 08:00:00 GMT</strong></td></tr>
+      </table>
+      <p style="margin:24px 0;">
+        <a href="https://app.tarmoto.example/billing" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Manage billing</a>
+      </p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots subscription-confirmed renders stable subject/html/text: subject 1`] = `"Your Tarmoto Pro subscription is active"`;
+
+exports[`email templates — characterization snapshots subscription-confirmed renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Welcome to Tarmoto Pro — your subscription is now active.
+
+Plan: Pro
+Price: €29.99/mo
+Your next renewal is on Sun, 01 Mar 2026 08:00:00 GMT.
+
+Manage your billing or cancel anytime: https://app.tarmoto.example/billing
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots subscription-confirmed-no-renewal renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Your Tarmoto Pro subscription is active.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Welcome to <strong>Tarmoto Pro</strong> — your subscription is now active.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border:1px solid #334155;border-radius:8px;">
+        <tr><td style="padding:12px 16px;color:#94a3b8;">Plan</td><td style="padding:12px 16px;text-align:right;"><strong>Pro</strong></td></tr>
+        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">Price</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>€29.99/mo</strong></td></tr>
+        
+      </table>
+      <p style="margin:24px 0;">
+        <a href="https://app.tarmoto.example/billing" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Manage billing</a>
+      </p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots subscription-confirmed-no-renewal renders stable subject/html/text: subject 1`] = `"Your Tarmoto Pro subscription is active"`;
+
+exports[`email templates — characterization snapshots subscription-confirmed-no-renewal renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Welcome to Tarmoto Pro — your subscription is now active.
+
+Plan: Pro
+Price: €29.99/mo
+Your subscription is active.
+
+Manage your billing or cancel anytime: https://app.tarmoto.example/billing
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots trip-invite renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Riku invited you to &quot;Alps Loop&quot;.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi there,</p>
+      <p>Riku invited you to collaborate on a Tarmoto trip: Alps Loop.</p>
+      <blockquote style="margin:24px 0;padding:12px 16px;border-left:3px solid #06b6d4;color:#cbd5e1;background:#0f172a;border-radius:4px;">Come ride!</blockquote>
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/join/xyz" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Open trip in Tarmoto</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="https://app.tarmoto.example/join/xyz" style="color:#06b6d4;word-break:break-all;">https://app.tarmoto.example/join/xyz</a></p>
+      <p style="color:#94a3b8;font-size:13px;">Invite code (in case the link doesn't open): <strong style="color:#f8fafc;">ABC123</strong></p>
+      <p style="color:#94a3b8;font-size:13px;">Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots trip-invite renders stable subject/html/text: subject 1`] = `"Riku invited you to plan "Alps Loop" on Tarmoto"`;
+
+exports[`email templates — characterization snapshots trip-invite renders stable subject/html/text: text 1`] = `
+"Hi there,
+
+Riku invited you to collaborate on a Tarmoto trip: Alps Loop.
+
+Message from Riku:
+Come ride!
+
+
+Open the trip planner to accept the invite:
+
+https://app.tarmoto.example/join/xyz
+
+If the link doesn't open automatically, sign in to Tarmoto and enter this invite code on the join screen: ABC123
+
+If you don't have a Tarmoto account yet, you can create one with this email and the invite will be waiting for you.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots trip-invite-no-message renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Riku invited you to &quot;Alps Loop&quot;.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi there,</p>
+      <p>Riku invited you to collaborate on a Tarmoto trip: Alps Loop.</p>
+      
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/join/xyz" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Open trip in Tarmoto</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="https://app.tarmoto.example/join/xyz" style="color:#06b6d4;word-break:break-all;">https://app.tarmoto.example/join/xyz</a></p>
+      <p style="color:#94a3b8;font-size:13px;">Invite code (in case the link doesn't open): <strong style="color:#f8fafc;">ABC123</strong></p>
+      <p style="color:#94a3b8;font-size:13px;">Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots trip-invite-no-message renders stable subject/html/text: subject 1`] = `"Riku invited you to plan "Alps Loop" on Tarmoto"`;
+
+exports[`email templates — characterization snapshots trip-invite-no-message renders stable subject/html/text: text 1`] = `
+"Hi there,
+
+Riku invited you to collaborate on a Tarmoto trip: Alps Loop.
+
+Open the trip planner to accept the invite:
+
+https://app.tarmoto.example/join/xyz
+
+If the link doesn't open automatically, sign in to Tarmoto and enter this invite code on the join screen: ABC123
+
+If you don't have a Tarmoto account yet, you can create one with this email and the invite will be waiting for you.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots verification renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Confirm your email to finish setting up Tarmoto.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Welcome to <strong>Tarmoto</strong> — confirm your email so we can deliver trip invites, hazard alerts, and important account notices.</p>
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/verify?t=TOKEN" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Verify email</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="https://app.tarmoto.example/verify?t=TOKEN" style="color:#06b6d4;word-break:break-all;">https://app.tarmoto.example/verify?t=TOKEN</a></p>
+      <p style="color:#94a3b8;font-size:13px;">This link expires in 24 hours. If you didn't sign up for Tarmoto, you can ignore this message.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots verification renders stable subject/html/text: subject 1`] = `"Verify your Tarmoto email"`;
+
+exports[`email templates — characterization snapshots verification renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Welcome to Tarmoto — the open road just got smarter.
+
+Confirm your email so we can send you trip invites, hazard alerts, and account notices:
+
+https://app.tarmoto.example/verify?t=TOKEN
+
+This link expires in 24 hours. If you didn't sign up for Tarmoto, you can ignore this message.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots verification-anon renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">Confirm your email to finish setting up Tarmoto.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi there,</p>
+      <p>Welcome to <strong>Tarmoto</strong> — confirm your email so we can deliver trip invites, hazard alerts, and important account notices.</p>
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/verify?t=TOKEN" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Verify email</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="https://app.tarmoto.example/verify?t=TOKEN" style="color:#06b6d4;word-break:break-all;">https://app.tarmoto.example/verify?t=TOKEN</a></p>
+      <p style="color:#94a3b8;font-size:13px;">This link expires in 24 hours. If you didn't sign up for Tarmoto, you can ignore this message.</p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                This is a transactional message about your Tarmoto account. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Manage notifications</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots verification-anon renders stable subject/html/text: subject 1`] = `"Verify your Tarmoto email"`;
+
+exports[`email templates — characterization snapshots verification-anon renders stable subject/html/text: text 1`] = `
+"Hi there,
+
+Welcome to Tarmoto — the open road just got smarter.
+
+Confirm your email so we can send you trip invites, hazard alerts, and account notices:
+
+https://app.tarmoto.example/verify?t=TOKEN
+
+This link expires in 24 hours. If you didn't sign up for Tarmoto, you can ignore this message.
+
+—
+Tarmoto · transactional email
+Manage notifications: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots weekly-digest renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">4 rides, 213.7 km this week on Tarmoto.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Here's your week on the road.</p>
+      <table role="presentation" width="100%" style="margin:20px 0;border-collapse:collapse;">
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Rides</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">4</td>
+      </tr>
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Distance</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">213.7 km</td>
+      </tr>
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Time in the saddle</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">6h 12m</td>
+      </tr>
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Best road quality</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">4.2 / 5</td>
+      </tr>
+      </table>
+      <p style="color:#cbd5e1;">You've now ridden <strong style="color:#f8fafc;">512</strong> road sections — <strong style="color:#f8fafc;">38%</strong> of your area explored.</p>
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/explore" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Find your next road</a>
+      </p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                You're receiving this digest as part of your Tarmoto subscription. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Unsubscribe from marketing emails</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots weekly-digest renders stable subject/html/text: subject 1`] = `"Your week on Tarmoto — 4 rides, 213.7 km"`;
+
+exports[`email templates — characterization snapshots weekly-digest renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Here's your week on the road:
+
+  • 4 rides
+  • 213.7 km ridden
+  • 6h 12m in the saddle
+  • Best road quality: 4.2 / 5
+
+Exploration: you've now ridden 512 road sections — 38% of your area.
+
+Find your next road:
+https://app.tarmoto.example/explore
+
+—
+Tarmoto · weekly digest
+You're receiving this as part of your Tarmoto subscription.
+Unsubscribe from marketing emails: https://app.tarmoto.example/settings/notifications
+"
+`;
+
+exports[`email templates — characterization snapshots weekly-digest-single-no-quality renders stable subject/html/text: html 1`] = `
+"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tarmoto</title>
+  </head>
+  <body style="margin:0;padding:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <span style="display:none;visibility:hidden;opacity:0;color:transparent;height:0;width:0;font-size:0;">1 ride, 213.7 km this week on Tarmoto.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#1e293b;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #334155;">
+                <span style="color:#06b6d4;font-weight:700;font-size:20px;letter-spacing:0.02em;">Tarmoto</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;color:#f8fafc;font-size:15px;line-height:1.6;">
+                
+      <p>Hi Riku,</p>
+      <p>Here's your week on the road.</p>
+      <table role="presentation" width="100%" style="margin:20px 0;border-collapse:collapse;">
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Rides</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">1</td>
+      </tr>
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Distance</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">213.7 km</td>
+      </tr>
+        
+      <tr>
+        <td style="padding:6px 0;color:#94a3b8;font-size:14px;">Time in the saddle</td>
+        <td style="padding:6px 0;color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">6h 12m</td>
+      </tr>
+        
+      </table>
+      <p style="color:#cbd5e1;">You've now ridden <strong style="color:#f8fafc;">512</strong> road sections — <strong style="color:#f8fafc;">38%</strong> of your area explored.</p>
+      <p style="margin:32px 0;">
+        <a href="https://app.tarmoto.example/explore" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Find your next road</a>
+      </p>
+    
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
+                You're receiving this digest as part of your Tarmoto subscription. <a href="https://app.tarmoto.example/settings/notifications" style="color:#06b6d4;">Unsubscribe from marketing emails</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"
+`;
+
+exports[`email templates — characterization snapshots weekly-digest-single-no-quality renders stable subject/html/text: subject 1`] = `"Your week on Tarmoto — 1 ride, 213.7 km"`;
+
+exports[`email templates — characterization snapshots weekly-digest-single-no-quality renders stable subject/html/text: text 1`] = `
+"Hi Riku,
+
+Here's your week on the road:
+
+  • 1 ride
+  • 213.7 km ridden
+  • 6h 12m in the saddle
+
+Exploration: you've now ridden 512 road sections — 38% of your area.
+
+Find your next road:
+https://app.tarmoto.example/explore
+
+—
+Tarmoto · weekly digest
+You're receiving this as part of your Tarmoto subscription.
+Unsubscribe from marketing emails: https://app.tarmoto.example/settings/notifications
+"
+`;
