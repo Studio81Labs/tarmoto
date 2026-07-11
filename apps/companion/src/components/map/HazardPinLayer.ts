@@ -9,7 +9,7 @@
 import type {
   GeoJSONSource,
   Map as MapLibreMap,
-  MapLayerMouseEvent,
+  MapGeoJSONFeature,
 } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import type { Feature, FeatureCollection, Point } from "geojson";
@@ -281,15 +281,14 @@ export function setHazardSourceData(
   src?.setData(hazardsToFeatureCollection(hazards, now));
 }
 
-/** Zoom a hazard cluster open on click. */
+/** Zoom a hazard cluster open, given the clicked cluster feature. */
 export function expandHazardCluster(
   map: MapLibreMap,
-  e: MapLayerMouseEvent,
+  feature: MapGeoJSONFeature,
 ): void {
-  const feature = e.features?.[0];
-  const clusterId = feature?.properties?.cluster_id as number | undefined;
+  const clusterId = feature.properties?.cluster_id as number | undefined;
   const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-  if (clusterId == null || !src || !feature) return;
+  if (clusterId == null || !src) return;
   src
     .getClusterExpansionZoom(clusterId)
     .then((expZoom) => {
