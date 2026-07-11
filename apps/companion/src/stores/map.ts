@@ -18,12 +18,12 @@ interface MapState {
   showHazardOverlay: boolean;
   showSurfaceOverlay: boolean;
 
-  // Info-layer toggles — open a docked side panel with structured
-  // closure / pass data for the current viewport. Live in the same
-  // store as the paint overlays so the explore page can expose them
-  // as siblings in the top action row.
-  showClosuresLayer: boolean;
-  showPassesLayer: boolean;
+  // Conditions info-layer toggle — one control for closures AND passes
+  // together (mirrors the planner's combined "Conditions" toggle). Drives
+  // both the ambient map markers and the docked side panel. Lives in the
+  // same store as the paint overlays so the explore page can expose it as a
+  // sibling in the top action row.
+  showConditionsLayer: boolean;
 
   // Filters
   filters: MapFilters;
@@ -34,8 +34,7 @@ interface MapState {
   toggleQuality: () => void;
   toggleHazards: () => void;
   toggleSurface: () => void;
-  toggleClosuresLayer: () => void;
-  togglePassesLayer: () => void;
+  toggleConditionsLayer: () => void;
   toggleQualityTier: (tier: QualityTier) => void;
   toggleSurfaceType: (surface: FilterableSurface) => void;
   toggleHazardType: (type: HazardType) => void;
@@ -50,8 +49,7 @@ export const useMapStore = create<MapState>((set) => ({
   showQualityOverlay: true,
   showHazardOverlay: true,
   showSurfaceOverlay: false,
-  showClosuresLayer: false,
-  showPassesLayer: false,
+  showConditionsLayer: false,
 
   filters: cloneFilters(DEFAULT_MAP_FILTERS),
 
@@ -63,10 +61,8 @@ export const useMapStore = create<MapState>((set) => ({
     set((s) => ({ showHazardOverlay: !s.showHazardOverlay })),
   toggleSurface: () =>
     set((s) => ({ showSurfaceOverlay: !s.showSurfaceOverlay })),
-  toggleClosuresLayer: () =>
-    set((s) => ({ showClosuresLayer: !s.showClosuresLayer })),
-  togglePassesLayer: () =>
-    set((s) => ({ showPassesLayer: !s.showPassesLayer })),
+  toggleConditionsLayer: () =>
+    set((s) => ({ showConditionsLayer: !s.showConditionsLayer })),
   toggleQualityTier: (tier) =>
     set((s) => {
       const next = new Set(s.filters.quality);

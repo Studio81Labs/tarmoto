@@ -63,8 +63,26 @@ import {
   HAZARD_CLUSTERS,
   type HazardProps,
 } from "@/components/map/HazardPinLayer";
+import {
+  ensureConditionLayers,
+  setConditionLayersVisible,
+  setConditionSourceData,
+  CLOSURE_MARKER_LAYER,
+  PASS_MARKER_LAYER,
+} from "@/components/map/ConditionMarkerLayer";
+import { useClosures } from "@/hooks/useClosures";
+import { usePasses } from "@/hooks/usePasses";
+import type {
+  PlannerClosure,
+  PlannerClosureRoute,
+} from "@/lib/closures-summary";
+import type { MountainPass } from "@/lib/passes-summary";
 import { plannerApi } from "@/lib/planner/api";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
+
+// Stable empty route list — the explorer never checks conditions against a
+// route, so both hooks always fetch the viewport-only (regional) list.
+const NO_ROUTES: PlannerClosureRoute[] = [];
 
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
@@ -95,6 +113,17 @@ interface Props {
   showQuality: boolean;
   showSurface: boolean;
   showHazards: boolean;
+  /** When on, ambient closure + pass markers are fetched for the viewport. */
+  showConditions: boolean;
+  /**
+   * Viewport bbox string (`"w,s,e,n"`) the conditions are fetched for — the
+   * same value the info panel uses, so React Query shares one cache entry.
+   */
+  conditionBbox?: string | null;
+  /** Month-of-year for seasonal pass status (matches the Conditions panel). */
+  conditionsMonth: number;
+  /** Exact preview date for closures (matches the Conditions panel picker). */
+  conditionsDate: Date;
   onSegmentSelect?: (segmentId: string) => void;
   /** Segment whose detail drawer is open — painted with the highlight overlay. */
   selectedSegmentId?: string | null;
@@ -126,6 +155,8 @@ function readMapView(map: MapLibreMap): MapCanvasViewChange {
  */
 export interface QualityMapHandle {
   flyTo(target: { lng: number; lat: number; zoom: number }): void;
+  /** Fly to a condition and open its shared popover (list-row → map focus). */
+  openConditionPopover(ref: { kind: "closure" | "pass"; id: string }): void;
 }
 
 export const QualityMap = forwardRef<QualityMapHandle, Props>(
@@ -140,6 +171,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showQuality,
       showSurface,
       showHazards,
+      showConditions,
+      conditionBbox,
+      conditionsMonth,
+      conditionsDate,
       onSegmentSelect,
       selectedSegmentId,
       onViewChange,
@@ -147,6 +182,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     ref,
   ) {
     const handleRef = useRef<MapCanvasHandle>(null);
+    // Latest fetched conditions, so ready-time click handlers and the
+    // imperative focus method resolve a feature id → full DTO.
+    const closuresRef = useRef<readonly PlannerClosure[]>([]);
+    const passesRef = useRef<readonly MountainPass[]>([]);
 
     useImperativeHandle(
       ref,
@@ -159,6 +198,56 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             zoom: target.zoom,
             essential: true,
           });
+        },
+        openConditionPopover(conditionRef) {
+          const map = handleRef.current?.map;
+          if (!map) return;
+          let point: MapPoint;
+          let lng: number;
+          let lat: number;
+          if (conditionRef.kind === "closure") {
+            const closure = closuresRef.current.find(
+              (c) => c.id === conditionRef.id,
+            );
+            const anchor = closure?.geometry[0];
+            if (!closure || !anchor) return;
+            lng = anchor.lng;
+            lat = anchor.lat;
+            // No route on the explorer — conditions are always info-only.
+            point = { kind: "closure", closure, affectsRoute: false };
+          } else {
+            const pass = passesRef.current.find(
+              (p) => p.id === conditionRef.id,
+            );
+            if (!pass) return;
+            lng = pass.lng;
+            lat = pass.lat;
+            point = { kind: "pass", pass, affectsRoute: false };
+          }
+          const rect = map.getCanvas()?.getBoundingClientRect?.();
+          const projected =
+            typeof map.project === "function" ? map.project([lng, lat]) : null;
+          setPointMenu({
+            point,
+            lng,
+            lat,
+            x:
+              rect && projected
+                ? rect.left + projected.x + 10
+                : (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+            y:
+              rect && projected
+                ? rect.top + projected.y + 10
+                : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
+          });
+          if (typeof map.flyTo === "function") {
+            map.flyTo({
+              center: [lng, lat],
+              zoom: Math.max(map.getZoom?.() ?? 0, 9),
+              duration: 1200,
+              essential: true,
+            });
+          }
         },
       }),
       [],
@@ -203,6 +292,19 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     const qualityOpacity = buildQualityOpacityExpression(filters);
     const surfaceOpacity = buildSurfaceOpacityExpression(filters);
 
+    // Ambient conditions: closures + passes for the current viewport bbox,
+    // gated on the toggle. Same bbox/date/month the info panel passes, so
+    // React Query serves both from one cache entry instead of double-fetching.
+    const { closures } = useClosures(conditionsMonth, NO_ROUTES, {
+      bbox: conditionBbox ?? undefined,
+      previewDate: conditionsDate,
+      enabled: showConditions,
+    });
+    const { passes } = usePasses(conditionsMonth, NO_ROUTES, {
+      bbox: conditionBbox ?? undefined,
+      enabled: showConditions,
+    });
+
     useEffect(() => {
       segmentSelectionRef.current = {
         showQuality,
@@ -239,6 +341,39 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
       map.on("click", HAZARD_BG, onHazardClick);
       map.on("click", HAZARD_ICON, onHazardClick);
+
+      // ── Ambient condition markers (closures + passes) ──
+      ensureConditionLayers(map);
+      setConditionLayersVisible(map, showConditions);
+      map.on("click", CLOSURE_MARKER_LAYER, (e: MapLayerMouseEvent) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        const closure = id
+          ? closuresRef.current.find((c) => c.id === id)
+          : undefined;
+        if (!closure) return;
+        const anchor = closure.geometry[0];
+        setPointMenu({
+          point: { kind: "closure", closure, affectsRoute: false },
+          lng: anchor?.lng ?? e.lngLat.lng,
+          lat: anchor?.lat ?? e.lngLat.lat,
+          x: e.originalEvent.clientX,
+          y: e.originalEvent.clientY,
+        });
+      });
+      map.on("click", PASS_MARKER_LAYER, (e: MapLayerMouseEvent) => {
+        const id = e.features?.[0]?.properties?.id as string | undefined;
+        const pass = id
+          ? passesRef.current.find((p) => p.id === id)
+          : undefined;
+        if (!pass) return;
+        setPointMenu({
+          point: { kind: "pass", pass, affectsRoute: false },
+          lng: pass.lng,
+          lat: pass.lat,
+          x: e.originalEvent.clientX,
+          y: e.originalEvent.clientY,
+        });
+      });
 
       // ── Category-POI browse layer ──
       ensurePoiLayers(map);
@@ -278,13 +413,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       });
 
       map.on("click", (e: MapLayerMouseEvent) => {
-        // POI pins/clusters and hazard markers own their click (handled above).
+        // POI pins/clusters, hazard markers, and condition markers own their
+        // click (handled above).
         const pointLayers = [
           POI_PIN_LAYER,
           POI_CLUSTER_LAYER,
           HAZARD_BG,
           HAZARD_ICON,
           HAZARD_CLUSTERS,
+          CLOSURE_MARKER_LAYER,
+          PASS_MARKER_LAYER,
         ].filter((id) => map.getLayer(id));
         if (
           pointLayers.length > 0 &&
@@ -330,6 +468,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         HAZARD_CLUSTERS,
         POI_PIN_LAYER,
         POI_CLUSTER_LAYER,
+        CLOSURE_MARKER_LAYER,
+        PASS_MARKER_LAYER,
       ]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
@@ -516,6 +656,43 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       if (!map || !ready) return;
       setHazardLayersVisible(map, showHazards);
     }, [ready, showHazards]);
+
+    // ── conditions: keep refs + sources in sync with the fetched lists ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      closuresRef.current = closures;
+      passesRef.current = passes;
+      setConditionSourceData(map, { closures, passes });
+      // Reconcile an open condition popover with the fresh list: drop it if its
+      // condition is no longer present (panned away / toggled off → []).
+      setPointMenu((menu) => {
+        if (!menu) return menu;
+        const point = menu.point;
+        if (point.kind === "closure") {
+          return closures.some((c) => c.id === point.closure.id) ? menu : null;
+        }
+        if (point.kind === "pass") {
+          return passes.some((p) => p.id === point.pass.id) ? menu : null;
+        }
+        return menu;
+      });
+    }, [ready, closures, passes]);
+
+    // ── condition layer visibility ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setConditionLayersVisible(map, showConditions);
+      // Only dismiss a condition popover; POI/hazard popovers are independent.
+      if (!showConditions) {
+        setPointMenu((menu) =>
+          menu?.point.kind === "closure" || menu?.point.kind === "pass"
+            ? null
+            : menu,
+        );
+      }
+    }, [ready, showConditions]);
 
     // ── fetch hazards when viewport settles ──
     useEffect(() => {

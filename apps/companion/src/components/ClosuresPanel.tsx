@@ -290,6 +290,7 @@ function ClosuresPanelBody({
                 key={closure.id}
                 closure={closure}
                 units={unitSystem}
+                onFocus={onFocusClosure}
               />
             ))}
           </ul>
@@ -373,15 +374,17 @@ function ClosureRow({
   closure,
   compact = false,
   units,
+  onFocus,
 }: {
   closure: PlannerClosure;
   compact?: boolean;
   units: UnitSystem;
+  onFocus?: ((closure: PlannerClosure) => void) | undefined;
 }) {
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
-  return (
-    <li className="rounded-xl border border-line bg-paper p-3">
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-ink">{closure.title}</p>
@@ -408,6 +411,24 @@ function ClosureRow({
 
       {!compact && closure.notes && (
         <p className="mt-2 text-xs text-fg-dim">{closure.notes}</p>
+      )}
+    </>
+  );
+  // When a focus handler is supplied (the /explore Conditions list), the whole
+  // row is a button that flies the map to the marker + opens its popover.
+  return (
+    <li className="rounded-xl border border-line bg-paper p-3">
+      {onFocus ? (
+        <button
+          type="button"
+          onClick={() => onFocus(closure)}
+          className="block w-full text-left"
+          title={t("Show on map")}
+        >
+          {body}
+        </button>
+      ) : (
+        body
       )}
     </li>
   );

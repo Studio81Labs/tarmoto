@@ -26,6 +26,13 @@ export interface PassesQueryResult {
 
 interface UsePassesOptions {
   bbox?: string | undefined;
+  /**
+   * Gates the list query. Defaults to `true`; the explorer passes
+   * `false` while the Conditions toggle is off so the ambient pass
+   * markers don't fetch until the rider opts in. Route checks already
+   * gate on `routes.length`.
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -44,9 +51,11 @@ export function usePasses(
 ): PassesQueryResult {
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
+  const enabled = options?.enabled ?? true;
 
   const listQuery = useQuery({
     queryKey: ["passes", "list", forMonth ?? null, bbox, reconnectRevision],
+    enabled,
     queryFn: async ({ signal }) => {
       const query =
         forMonth != null || bbox
