@@ -12,8 +12,7 @@ import {
   Map as MapIcon,
   Layers3,
   TriangleAlert,
-  Construction,
-  MountainSnow,
+  Siren,
 } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -33,6 +32,8 @@ import {
 import { ApiError, roadsApi } from "@/lib/api";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
+import type { PlannerClosure } from "@/lib/closures-summary";
+import type { MountainPass } from "@/lib/passes-summary";
 import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
 import { POI_CATEGORY_META } from "@/components/planner/MapToolbar";
 import type { PoiCategory } from "@/lib/planner/types";
@@ -245,13 +246,11 @@ function ExplorerPageInner() {
     showQualityOverlay,
     showHazardOverlay,
     showSurfaceOverlay,
-    showClosuresLayer,
-    showPassesLayer,
+    showConditionsLayer,
     toggleQuality,
     toggleHazards,
     toggleSurface,
-    toggleClosuresLayer,
-    togglePassesLayer,
+    toggleConditionsLayer,
     filters,
     toggleQualityTier,
     toggleSurfaceType,
@@ -442,9 +441,7 @@ function ExplorerPageInner() {
             // (see the absolute-positioned aside below) so a phone
             // doesn't lose its entire map area to a fixed rail.
             "--explore-right":
-              isWideViewport && (showClosuresLayer || showPassesLayer)
-                ? "370px"
-                : "0px",
+              isWideViewport && showConditionsLayer ? "370px" : "0px",
           } as React.CSSProperties
         }
       >
@@ -560,6 +557,10 @@ function ExplorerPageInner() {
               showQuality={showQualityOverlay}
               showSurface={showSurfaceOverlay}
               showHazards={showHazardOverlay}
+              showConditions={showConditionsLayer}
+              conditionBbox={conditionBbox}
+              conditionsMonth={conditionsMonth}
+              conditionsDate={conditionsDate}
               onSegmentSelect={setSelectedSegmentId}
               selectedSegmentId={selectedSegmentId}
               onViewChange={(view) => {
@@ -658,7 +659,9 @@ function ExplorerPageInner() {
             </div>
 
             {/* Row 3 — layer pills. Road quality | Surface are mutually
-                exclusive; Hazards / Closures / Passes are independent. */}
+                exclusive; Hazards / Conditions are independent. "Conditions"
+                is one toggle for closures + passes together, matching the
+                planner/preview map. */}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -684,26 +687,17 @@ function ExplorerPageInner() {
                 aria-pressed={showHazardOverlay}
                 className={overlayPillClass(showHazardOverlay)}
               >
-                <TriangleAlert size={14} />
+                <Siren size={14} />
                 {t("Hazards ")}
               </button>
               <button
                 type="button"
-                onClick={toggleClosuresLayer}
-                aria-pressed={showClosuresLayer}
-                className={overlayPillClass(showClosuresLayer)}
+                onClick={toggleConditionsLayer}
+                aria-pressed={showConditionsLayer}
+                className={overlayPillClass(showConditionsLayer)}
               >
-                <Construction size={14} />
-                {t("Closures ")}
-              </button>
-              <button
-                type="button"
-                onClick={togglePassesLayer}
-                aria-pressed={showPassesLayer}
-                className={overlayPillClass(showPassesLayer)}
-              >
-                <MountainSnow size={14} />
-                {t("Passes ")}
+                <TriangleAlert size={14} />
+                {t("Conditions ")}
               </button>
             </div>
           </div>
@@ -728,30 +722,37 @@ function ExplorerPageInner() {
             underneath. Close button toggles off whichever info
             layer is active (mirrors how toggling the pill in the
             top overlay dismisses the panel). */}
-          {(showClosuresLayer || showPassesLayer) && !isWideViewport && (
+          {showConditionsLayer && !isWideViewport && (
             <aside
               className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
               aria-label={t("Info layers")}
             >
               <button
                 type="button"
-                onClick={() => {
-                  if (showClosuresLayer) toggleClosuresLayer();
-                  if (showPassesLayer) togglePassesLayer();
-                }}
+                onClick={toggleConditionsLayer}
                 className="absolute right-3 top-3 rounded-md border border-line-strong bg-cream px-2 py-1 text-[11px] font-bold uppercase tracking-[1px] text-ink transition hover:bg-paper-2"
                 aria-label={t("Close info panel")}
               >
                 {t("Close")}
               </button>
               <InfoPanelContent
-                showClosures={showClosuresLayer}
-                showPasses={showPassesLayer}
                 conditionsMonth={conditionsMonth}
                 setConditionsMonth={setConditionsMonth}
                 conditionsDate={conditionsDate}
                 setConditionsDate={setConditionsDate}
                 conditionBbox={conditionBbox}
+                onFocusClosure={(closure) =>
+                  mapRef.current?.openConditionPopover({
+                    kind: "closure",
+                    id: closure.id,
+                  })
+                }
+                onFocusPass={(pass) =>
+                  mapRef.current?.openConditionPopover({
+                    kind: "pass",
+                    id: pass.id,
+                  })
+                }
               />
             </aside>
           )}
@@ -764,16 +765,26 @@ function ExplorerPageInner() {
           grid column collapses to 0 and the same content renders
           as a top-anchored overlay over the map (with a close
           affordance) so a phone keeps a usable map underneath. */}
-        {(showClosuresLayer || showPassesLayer) && isWideViewport && (
+        {showConditionsLayer && isWideViewport && (
           <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4">
             <InfoPanelContent
-              showClosures={showClosuresLayer}
-              showPasses={showPassesLayer}
               conditionsMonth={conditionsMonth}
               setConditionsMonth={setConditionsMonth}
               conditionsDate={conditionsDate}
               setConditionsDate={setConditionsDate}
               conditionBbox={conditionBbox}
+              onFocusClosure={(closure) =>
+                mapRef.current?.openConditionPopover({
+                  kind: "closure",
+                  id: closure.id,
+                })
+              }
+              onFocusPass={(pass) =>
+                mapRef.current?.openConditionPopover({
+                  kind: "pass",
+                  id: pass.id,
+                })
+              }
             />
           </aside>
         )}
@@ -784,75 +795,75 @@ function ExplorerPageInner() {
 // Zoom the map flies to when a rider picks an address-search result.
 const EXPLORE_SEARCH_RESULT_ZOOM = 12;
 
-// Closures + Passes info-panel content. Shared between the wide-
-// viewport third-grid-column aside and the narrow-viewport
-// overlay aside so the closures date picker, ClosuresPanel, and
-// PassesPanel only get described once.
+// Conditions info-panel content (closures + passes together, one toggle).
+// Shared between the wide-viewport third-grid-column aside and the
+// narrow-viewport overlay aside so the closures date picker, ClosuresPanel,
+// and PassesPanel only get described once. `onFocusClosure`/`onFocusPass`
+// fly the map to a list-row's marker and open its shared popover.
 function InfoPanelContent({
-  showClosures,
-  showPasses,
   conditionsMonth,
   setConditionsMonth,
   conditionsDate,
   setConditionsDate,
   conditionBbox,
+  onFocusClosure,
+  onFocusPass,
 }: {
-  showClosures: boolean;
-  showPasses: boolean;
   conditionsMonth: number;
   setConditionsMonth: (month: number) => void;
   conditionsDate: Date;
   setConditionsDate: (date: Date) => void;
   conditionBbox: string | null;
+  onFocusClosure: (closure: PlannerClosure) => void;
+  onFocusPass: (pass: MountainPass) => void;
 }) {
   return (
     <>
-      {showClosures && (
-        <div className="space-y-3">
-          <label className="block space-y-1.5">
-            <span className="text-xs uppercase tracking-wider text-ink">
-              {t("Preview closures on")}
-            </span>
-            <input
-              type="date"
-              value={toDateInputValue(conditionsDate)}
-              onChange={(e) => {
-                const next = parseDateInputValue(e.target.value);
-                if (next) setConditionsDate(next);
-              }}
-              aria-label={t("Preview closures on")}
-              className="w-full rounded-lg border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
-            />
-          </label>
-          {conditionBbox ? (
-            <ClosuresPanel
-              month={conditionsMonth}
-              previewDate={conditionsDate}
-              routes={[]}
-              bbox={conditionBbox}
-              showRouteWarnings={false}
-            />
-          ) : (
-            <p className="text-xs text-fg-dim">
-              {t("Pan the map to load closures for this area.")}
-            </p>
-          )}
-        </div>
-      )}
-      {showPasses &&
-        (conditionBbox ? (
-          <PassesPanel
+      <div className="space-y-3">
+        <label className="block space-y-1.5">
+          <span className="text-xs uppercase tracking-wider text-ink">
+            {t("Preview closures on")}
+          </span>
+          <input
+            type="date"
+            value={toDateInputValue(conditionsDate)}
+            onChange={(e) => {
+              const next = parseDateInputValue(e.target.value);
+              if (next) setConditionsDate(next);
+            }}
+            aria-label={t("Preview closures on")}
+            className="w-full rounded-lg border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
+          />
+        </label>
+        {conditionBbox ? (
+          <ClosuresPanel
             month={conditionsMonth}
-            onMonthChange={setConditionsMonth}
+            previewDate={conditionsDate}
             routes={[]}
             bbox={conditionBbox}
             showRouteWarnings={false}
+            onFocusClosure={onFocusClosure}
           />
         ) : (
           <p className="text-xs text-fg-dim">
-            {t("Pan the map to load passes for this area.")}
+            {t("Pan the map to load closures for this area.")}
           </p>
-        ))}
+        )}
+      </div>
+      {conditionBbox ? (
+        <PassesPanel
+          month={conditionsMonth}
+          onMonthChange={setConditionsMonth}
+          routes={[]}
+          bbox={conditionBbox}
+          showRouteWarnings={false}
+          onFocusPass={onFocusPass}
+        />
+      ) : (
+        <p className="text-xs text-fg-dim">
+          {t("Pan the map to load passes for this area.")}
+        </p>
+      )}
     </>
   );
 }

@@ -10,8 +10,11 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-function TestHarness({ bbox }: { bbox?: string }) {
-  const result = useClosures(7, [], { bbox });
+function TestHarness({ bbox, enabled }: { bbox?: string; enabled?: boolean }) {
+  const result = useClosures(7, [], {
+    bbox,
+    ...(enabled !== undefined ? { enabled } : {}),
+  });
 
   return <div>{result.loading ? "loading" : "loaded"}</div>;
 }
@@ -41,5 +44,17 @@ describe("useClosures", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(closuresApi.checkRoute).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch the list while disabled", async () => {
+    render(<TestHarness bbox="17.5,49.6,18.9,49.9" enabled={false} />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("loaded")).toBeInTheDocument();
+    });
+
+    expect(closuresApi.list).not.toHaveBeenCalled();
   });
 });

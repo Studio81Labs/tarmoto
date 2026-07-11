@@ -33,6 +33,14 @@ interface UseClosuresOptions {
    * rider pick an exact date and threads it through directly.
    */
   previewDate?: Date;
+  /**
+   * Gates the list query. Defaults to `true`; the explorer passes
+   * `false` while the Conditions toggle is off so an ambient marker
+   * consumer doesn't fetch the whole viewport's closures until the
+   * rider opts in. Route checks are unaffected (they already gate on
+   * `routes.length`).
+   */
+  enabled?: boolean;
 }
 
 const EMPTY_COUNTS: ClosureSeverityCounts = {
@@ -51,6 +59,7 @@ export function useClosures(
 ): ClosuresQueryResult {
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
+  const enabled = options?.enabled ?? true;
   const previewDateOverride = options?.previewDate;
   const previewDate = useMemo(
     () => previewDateOverride ?? previewDateForMonth(month),
@@ -60,6 +69,7 @@ export function useClosures(
 
   const listQuery = useQuery({
     queryKey: ["closures", "list", previewIso, bbox, reconnectRevision],
+    enabled,
     queryFn: async ({ signal }) => {
       const { data } = await closuresApi.list(
         { active_on: previewIso, ...(bbox !== undefined ? { bbox } : {}) },

@@ -16,11 +16,16 @@ vi.mock("@/lib/api", () => ({
 function TestHarness({
   bbox,
   routes,
+  enabled,
 }: {
   bbox?: string;
   routes?: PlannerClosureRoute[];
+  enabled?: boolean;
 }) {
-  const result = usePasses(7, routes, { bbox });
+  const result = usePasses(7, routes, {
+    bbox,
+    ...(enabled !== undefined ? { enabled } : {}),
+  });
 
   return (
     <div>
@@ -81,6 +86,18 @@ describe("usePasses", () => {
         }),
       );
     });
+  });
+
+  it("does not fetch the list while disabled", async () => {
+    render(<TestHarness bbox="17.5,49.6,18.9,49.9" enabled={false} />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("loaded")).toBeInTheDocument();
+    });
+
+    expect(api.GET).not.toHaveBeenCalled();
   });
 
   it("keeps route loading active on the first render after routes appear", async () => {

@@ -311,9 +311,15 @@ function PassesPanelBody({
 
           <ul className="space-y-1.5">
             {STATUS_DISPLAY_ORDER.flatMap((status) =>
-              groups[status]
-                .slice(0, MAX_PASSES_PER_GROUP)
-                .map((p) => <PassRow key={p.id} pass={p} />),
+              groups[status].slice(0, MAX_PASSES_PER_GROUP).map((p) => (
+                <PassRow
+                  key={p.id}
+                  pass={p}
+                  // Open passes have no marker (the layer filters them out), so
+                  // don't offer a focus-to-marker click for them.
+                  onFocus={p.status === "open" ? undefined : onFocusPass}
+                />
+              )),
             )}
           </ul>
         </>
@@ -344,9 +350,15 @@ function Legend() {
     </div>
   );
 }
-function PassRow({ pass }: { pass: MountainPass }) {
-  return (
-    <li className="flex items-start gap-2 text-xs">
+function PassRow({
+  pass,
+  onFocus,
+}: {
+  pass: MountainPass;
+  onFocus?: ((pass: MountainPass) => void) | undefined;
+}) {
+  const body = (
+    <>
       <span
         aria-hidden
         className={`mt-1 inline-block w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[pass.status]}`}
@@ -359,6 +371,24 @@ function PassRow({ pass }: { pass: MountainPass }) {
           {pass.region ? ` · ${pass.region}` : ""}
         </span>
       </span>
+    </>
+  );
+  // When a focus handler is supplied (the /explore Conditions list), the whole
+  // row is a button that flies the map to the marker + opens its popover.
+  return (
+    <li>
+      {onFocus ? (
+        <button
+          type="button"
+          onClick={() => onFocus(pass)}
+          className="flex w-full items-start gap-2 text-left text-xs"
+          title={t("Show on map")}
+        >
+          {body}
+        </button>
+      ) : (
+        <span className="flex items-start gap-2 text-xs">{body}</span>
+      )}
     </li>
   );
 }
