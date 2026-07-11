@@ -99,6 +99,7 @@ export class OverpassPoiProvider implements PoiProvider {
     lng: number,
     radiusKm: number,
     kinds: AccommodationKind[],
+    extraLimit = 0,
   ): Promise<AccommodationPoi[]> {
     if (kinds.length === 0) return [];
     const radiusM = Math.round(radiusKm * 1000);
@@ -115,7 +116,7 @@ export class OverpassPoiProvider implements PoiProvider {
       `  way["tourism"~"^(${tourismFilter})$"](around:${radiusM},${lat},${lng});` +
       `  relation["tourism"~"^(${tourismFilter})$"](around:${radiusM},${lat},${lng});` +
       `);` +
-      `out center tags 60;`;
+      `out center tags ${60 + extraLimit};`;
 
     const data = await this.runQuery(query);
     const pois: AccommodationPoi[] = [];
@@ -132,21 +133,23 @@ export class OverpassPoiProvider implements PoiProvider {
     lng: number,
     radiusKm: number,
     kinds: PoiKind[],
+    extraLimit = 0,
   ): Promise<PointOfInterest[]> {
-    return this.runPoiQuery([{ lat, lng }], radiusKm, kinds, 80);
+    return this.runPoiQuery([{ lat, lng }], radiusKm, kinds, 80 + extraLimit);
   }
 
   async findPointsOfInterestAroundPoints(
     points: readonly { lat: number; lng: number }[],
     radiusKm: number,
     kinds: PoiKind[],
+    extraLimit = 0,
   ): Promise<PointOfInterest[]> {
     if (points.length === 0) return [];
     // Wider cap for the along-route case: one ride day can easily hit
     // dozens of fuel stations and restaurants. The service layer still
     // ranks and caps per-kind, so we just need the upstream response to
     // be large enough to rank from.
-    return this.runPoiQuery(points, radiusKm, kinds, 200);
+    return this.runPoiQuery(points, radiusKm, kinds, 200 + extraLimit);
   }
 
   private async runPoiQuery(
