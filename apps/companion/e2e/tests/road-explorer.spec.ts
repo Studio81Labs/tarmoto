@@ -121,11 +121,10 @@ test.describe("road quality explorer", () => {
       const page = await context.newPage();
       await page.goto("/explore");
 
-      // Closures + Passes are now opt-in info layers (#570) rather
-      // than always-visible filter-column children. Toggle each on
-      // before asserting the docked side panel mounts.
-      await page.getByRole("button", { name: /^closures\s*$/i }).click();
-      await page.getByRole("button", { name: /^passes\s*$/i }).click();
+      // Closures + Passes are opt-in info layers (#570); the map-points
+      // unification collapsed their two pills into one "Conditions" toggle
+      // that opens both docked panels together. Toggle it on before asserting.
+      await page.getByRole("button", { name: /^conditions\s*$/i }).click();
 
       await expect(page.getByText("Closures & roadworks")).toBeVisible();
       await expect(page.getByText("Seasonal passes")).toBeVisible();
