@@ -169,6 +169,20 @@ The steering choice is "commercial now." The **only compliant** way to do this i
 3. **Cost controls:** hydrate only on explicit detail view (not list/map render), Redis cache, per-day budget guard + rate limit, feature-flagged (`TARMOTO_POI_ENRICHMENT_ENABLED`, provider + key envs). Directional cost: on-demand + cache keeps this to detail-view volume, not POI-count volume. _(Confirm current Google/FSQ pricing at build time — pricing SKUs change.)_
 4. **Attribution/branding:** "Powered by Google" / FSQ attribution on any enriched detail surface, per each provider's brand requirements.
 
+### 6.1 v1 delivery scoping — FSQ-only, navigation-start batch, budget-locked
+
+The four points above are the target model. The **first cut** deliberately narrows it to stay inside a paid provider's free tier and de-risk recurring cost (scoping agreed 2026-07-11):
+
+- **FSQ only.** Foursquare Places is the sole v1 provider — more cache-friendly terms and a monthly free-request allotment. Google Places is deferred: its list / pre-fetch terms are stricter, so it is added later only if its ToS for this pattern checks out.
+- **Trigger = navigation start (batch), not continuous render.** When the **mobile** app starts navigation the route is locked; the backend enriches the POIs _along that locked route_ in one bounded batch and holds it for the nav session (short-TTL, keyed by route hash + POI ids). A re-route is a new route ⇒ a new (budgeted) batch. This is **not** the forbidden "enrich on every map pan / list scroll": it is a single, explicit, high-intent user action over a bounded POI set. The §6 point-2 detail-view trigger stays available for individual POI opens (same provider + budget lock).
+- **Hard budget lock.** An atomic Redis counter (reuse the queue Redis) tracks enrichment calls against the monthly free ceiling — `INCR` per batch; once the threshold is crossed the response **degrades to OSM-only** (no error, no blank — the commercial layer simply drops). Atomic so concurrent nav-starts cannot overshoot the free tier. Enforced on the **backend**, independent of client, so nothing bypasses it.
+- **Mobile-nav gated (v1).** Only active navigators trigger enrichment; companion route-planning does not enrich in v1 (a cost decision, revisitable). The _trigger_ is client-gated (a mobile-nav flag / dedicated enriched endpoint); the _budget_ is server-enforced.
+- **Matching = the call-volume lever.** Chosen at build time by call cost: (a) _match-then-details_ — match each OSM POI to an `fsq_id` (§6 point 1) then fetch details, ~1–2 calls/POI; or (b) _corridor nearby-search then merge_ FSQ's own places against OSM (fewer calls, reuses the #932 cross-source dedup). Cap enrichment to **top-N** POIs per route so a long route cannot burst dozens of calls.
+- **Latency.** Return OSM immediately and enrich **progressively** (stream / patch in) so navigation start never blocks on the batch.
+- **Degradation (as §6):** enrichment off / no match / provider error / **budget exhausted** → OSM fields render, no 500, no blank.
+
+**Still gated on a human decision** (AGENTS.md, §851): FSQ confirmed as provider, current FSQ pricing + free quota verified, API key provisioned, monthly cap set. No code until those land.
+
 ---
 
 ## 7. Rider decision-support — before vs. after
@@ -210,7 +224,7 @@ Each phase is independently shippable and issue-sized (AGENTS.md: one deliverabl
 - **Phase 0 — Enable + capture (backend).** Migration for the §3.1 columns; extend `overpass.provider` + `PoiImportService` to read/store the new OSM tags; turn the importer on for the **current CZ bbox** behind the flag; verify the write path end-to-end. No client changes. _Scope: `backend`, `docs`._
 - **Phase 1 — Read path + surface fields.** PostGIS read queries (`/poi/in-bbox`, switch nearby/along-route/accommodations to store-first + live fallback, `/poi/:id`). Wire companion's two mock resolvers to real endpoints; stop dropping fields; delete mock fixtures. Mobile + companion: surface website/phone/hours/address + `osm_url`. _Scope: `backend`, `companion`, `mobile`, `openapi`._
 - **Phase 2 — Continent-scale ingestion.** Geofabrik + `osmium` bulk import (reuse roads pattern), `TARMOTO_POI_IMPORT_REGIONS`, staggered per-country weekly jobs, bbox-bounded stale tombstoning, index/volume tuning. _Scope: `backend`, `infra`, `docs`._
-- **Phase 3 — Commercial enrichment.** `EnrichmentProvider` (FSQ primary / Google), OSM↔commercial matcher (store ids only), `GET /poi/:id` on-demand hydration + Redis cache + budget/rate guards, POI detail sheet (ratings/photos/reviews/price) with attribution. _Scope: `backend`, `companion`, `mobile`._
+- **Phase 3 — Commercial enrichment.** `EnrichmentProvider` (FSQ primary / Google), OSM↔commercial matcher (store ids only), `GET /poi/:id` on-demand hydration + Redis cache + budget/rate guards, POI detail sheet (ratings/photos/reviews/price) with attribution. _Scope: `backend`, `companion`, `mobile`._ **v1 lands per §6.1** (FSQ-only, mobile navigation-start batch, atomic budget lock, degrade-to-OSM); Google + companion enrichment are fast-follows.
 - **Phase 4 — Compliance + shared contract.** ODbL + commercial attribution wired into all POI surfaces; move POI enums/types into `@tarmoto/shared`; ADR + data-sources doc update. _Scope: `shared`, `companion`, `mobile`, `backend`, `docs`._
 
 ---
@@ -218,7 +232,7 @@ Each phase is independently shippable and issue-sized (AGENTS.md: one deliverabl
 ## 10. Risks & open questions
 
 - **Overpass at scale** — mitigated by moving bulk import to Geofabrik/osmium; Overpass stays fallback-only.
-- **Commercial cost drift** — bounded by on-demand-only + cache + budget guard; needs a real pricing check and a monthly cap at build time.
+- **Commercial cost drift** — bounded by on-demand-only + cache + the §6.1 atomic budget lock (degrade-to-OSM), a top-N-per-route cap, and progressive (non-blocking) enrichment; still needs a real pricing check and a monthly cap at build time.
 - **OSM↔commercial match quality** — name/geo matching is fuzzy; mis-matches show the wrong rating. Mitigate with a tight distance + category threshold and a "unverified match" state; prefer OSM `brand:wikidata` where present.
 - **`twisty_highlight` category** — Tarmoto-derived (curviness layer), not OSM; not covered by this pipeline. Keep as a follow-up layer; the companion keeps its client-side mapping.
 - **Storage/runtime** for 15+ countries — validate in Phase 2 before enabling all regions in prod.
