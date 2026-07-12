@@ -1,5 +1,6 @@
 import type { SupportedLocale } from '@tarmoto/shared';
 import { verificationTemplate, tripInviteTemplate } from './index.js';
+import { renderLayout, renderTextFooter } from './layout.js';
 
 /**
  * Locks security-relevant template behavior that the characterization
@@ -58,5 +59,30 @@ describe('email i18n — escaping + fallback', () => {
       message: null,
     });
     expect(out.subject).toContain('invited you to plan');
+  });
+});
+
+describe('layout footer localization', () => {
+  it('sets <html lang> to the passed locale and falls back to English footer copy', () => {
+    const html = renderLayout({
+      preheader: 'x',
+      bodyHtml: '<p>x</p>',
+      preferencesUrl: 'https://x/prefs',
+      // Unregistered locale — exercises the English fallback while lang reflects it.
+      locale: 'et' as SupportedLocale,
+    });
+    expect(html).toContain('<html lang="et">');
+    expect(html).toContain('Manage notifications');
+  });
+
+  it('renders the marketing text footer in English for an unregistered locale', () => {
+    const text = renderTextFooter(
+      'https://x/prefs',
+      true,
+      'et' as SupportedLocale,
+    );
+    expect(text).toContain(
+      'Unsubscribe from marketing emails: https://x/prefs',
+    );
   });
 });

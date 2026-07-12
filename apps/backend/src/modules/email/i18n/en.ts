@@ -162,6 +162,21 @@ export const en = {
   'accountDeletionCompleted.text.contact':
     "If this wasn't you or you have questions, contact {email}.",
   'accountDeletionCompleted.html.contact': 'Questions? Contact {emailLink}.',
+
+  // --- layout footer (shared chrome) ---
+  'layout.footer.transactional.lead':
+    'This is a transactional message about your Tarmoto account.',
+  'layout.footer.transactional.link': 'Manage notifications',
+  'layout.footer.marketing.lead':
+    "You're receiving this digest as part of your Tarmoto subscription.",
+  'layout.footer.marketing.link': 'Unsubscribe from marketing emails',
+  'layout.textFooter.transactional.tagline': 'Tarmoto · transactional email',
+  'layout.textFooter.transactional.line': 'Manage notifications: {url}',
+  'layout.textFooter.marketing.tagline': 'Tarmoto · weekly digest',
+  'layout.textFooter.marketing.lead':
+    "You're receiving this as part of your Tarmoto subscription.",
+  'layout.textFooter.marketing.unsub':
+    'Unsubscribe from marketing emails: {url}',
 } as const satisfies Catalog<string>;
 
 export type EmailMessageKey = keyof typeof en;
