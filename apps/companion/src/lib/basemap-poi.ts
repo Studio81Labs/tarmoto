@@ -4,8 +4,8 @@
  * OpenMapTiles `poi` source-layer. These are NOT our curated `pois`: a feature
  * carries only a name and an OSM class/subclass, so we surface a light card
  * (name + friendly category + a Google Maps link) rather than the rich curated
- * POI detail. Only NAMED points are exposed — unnamed OSM markers are skipped so
- * the map doesn't fill with empty cards.
+ * POI detail. Unnamed POIs (a bare parking / bin icon) are exposed too — the
+ * card falls back to the category ("Parking", "Waste bin") as its title.
  */
 
 import type { Map as MapLibreMap, MapGeoJSONFeature } from "maplibre-gl";
@@ -112,28 +112,32 @@ export function basemapPlaceMapsUrl(
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
-/** Project an OSM `poi` tile feature to a BasemapPlace, or null if unusable. */
+/**
+ * Project an OSM `poi` tile feature to a BasemapPlace, or null only for a
+ * non-point geometry. Unnamed POIs (a bare parking / bin / bench icon) keep an
+ * empty `name` — the card falls back to the category as its title.
+ */
 export function readBasemapPlace(
   feature: MapGeoJSONFeature,
 ): BasemapPlace | null {
   if (feature.geometry.type !== "Point") return null;
   const props = feature.properties ?? {};
   const name = typeof props.name === "string" ? props.name.trim() : "";
-  if (!name) return null;
   const [lng, lat] = feature.geometry.coordinates as [number, number];
   const klass = typeof props.class === "string" ? props.class : undefined;
   const subclass =
     typeof props.subclass === "string" ? props.subclass : undefined;
+  const category = basemapPlaceCategoryLabel(klass, subclass);
   return {
     name,
-    category: basemapPlaceCategoryLabel(klass, subclass),
+    category,
     lng,
     lat,
-    mapsUrl: basemapPlaceMapsUrl(name, lat, lng),
+    mapsUrl: basemapPlaceMapsUrl(name || category, lat, lng),
   };
 }
 
-/** The topmost NAMED basemap place under a click point, or null. */
+/** The topmost basemap place under a click point, or null. */
 export function topBasemapPlaceAt(
   map: MapLibreMap,
   point: { x: number; y: number },

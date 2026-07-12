@@ -519,28 +519,26 @@ describe("TripPlannerMap", () => {
       expect(screen.queryByText("Zbýšov")).toBeNull();
     });
 
-    it("scans past an unnamed hit to a named POI under the cursor", () => {
+    it("opens an unnamed POI titled by its category", () => {
       withBasemapPoiLayer();
       mockMap.queryRenderedFeatures.mockReturnValue([]);
       const clicks = captureLayerClicks();
       render(
         <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
       );
-      // An unnamed OSM point renders above the named one in the same layer.
       act(() =>
         clicks.get(POI_LAYER)?.({
           features: [
             {
               geometry: { type: "Point", coordinates: [16.6, 49.2] },
-              properties: { class: "amenity" },
+              properties: { class: "amenity", subclass: "parking" },
             },
-            namedPoiClick.features[0],
           ],
           point: { x: 100, y: 100 },
           originalEvent: { clientX: 100, clientY: 100 },
         }),
       );
-      expect(screen.getByText("Zbýšov")).toBeInTheDocument();
+      expect(screen.getByText("Parking")).toBeInTheDocument();
     });
 
     it("closes the place card when another marker opens its popover", () => {

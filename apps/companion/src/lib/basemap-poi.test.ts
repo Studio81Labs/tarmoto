@@ -88,9 +88,15 @@ describe("readBasemapPlace", () => {
     });
   });
 
-  it("returns null for an unnamed POI (cuts noise)", () => {
-    expect(readBasemapPlace(poiFeature({ class: "amenity" }))).toBeNull();
-    expect(readBasemapPlace(poiFeature({ name: "   " }))).toBeNull();
+  it("projects an unnamed POI with an empty name (category becomes the title)", () => {
+    const place = readBasemapPlace(
+      poiFeature({ class: "amenity", subclass: "parking" }),
+    );
+    expect(place).toMatchObject({ name: "", category: "Parking" });
+    // A whitespace-only name trims to empty too.
+    expect(
+      readBasemapPlace(poiFeature({ name: "   ", subclass: "bench" }))?.name,
+    ).toBe("");
   });
 
   it("returns null for a non-point geometry", () => {
@@ -105,12 +111,12 @@ describe("readBasemapPlace", () => {
 describe("topBasemapPlaceAt", () => {
   const point = { x: 10, y: 10 };
 
-  it("returns the first named place under the cursor, skipping unnamed hits", () => {
+  it("returns the topmost place under the cursor", () => {
     const map = {
       getLayer: (id: string) => (id === "poi_r7" ? ({} as never) : undefined),
       queryRenderedFeatures: () => [
-        poiFeature({ class: "amenity" }), // unnamed → skipped
         poiFeature({ name: "Park", class: "leisure", subclass: "park" }),
+        poiFeature({ name: "Below", class: "amenity" }),
       ],
     } as unknown as MapLibreMap;
     expect(topBasemapPlaceAt(map, point, ["poi_r7", "poi_missing"])?.name).toBe(

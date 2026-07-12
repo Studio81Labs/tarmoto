@@ -95,6 +95,24 @@ describe("MapPointPopover", () => {
       expect(screen.queryByRole("button", { name: /add as via/i })).toBeNull();
     });
 
+    it("titles an unnamed place by its category (no duplicate subtitle)", () => {
+      renderPopover({
+        kind: "place",
+        place: {
+          name: "",
+          category: "Parking",
+          lat: 49.2,
+          lng: 16.6,
+          mapsUrl: "https://www.google.com/maps/search/?api=1&query=x",
+        },
+      });
+      // "Parking" appears exactly once (as the title, not also a subtitle).
+      expect(screen.getAllByText("Parking")).toHaveLength(1);
+      expect(
+        screen.getByRole("link", { name: /google maps/i }),
+      ).toBeInTheDocument();
+    });
+
     it("renders placement actions when provided (editable planner)", () => {
       const onSetStart = vi.fn();
       renderPopover(

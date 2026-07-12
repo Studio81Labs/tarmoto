@@ -292,12 +292,16 @@ function PlaceBody({
   onClose: () => void;
   actions?: PoiPopoverActions;
 }) {
+  // Unnamed POIs (a bare parking / bin icon) fall back to the category as the
+  // title, so we don't repeat it as the subtitle.
+  const title = place.name || place.category;
+  const subtitle = place.name ? place.category : undefined;
   return (
     <>
       <PopoverHeader
         onClose={onClose}
-        title={place.name}
-        subtitle={place.category}
+        title={title}
+        {...(subtitle ? { subtitle } : {})}
         badge={
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
             <MapPin size={16} />
