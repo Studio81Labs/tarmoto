@@ -46,7 +46,6 @@ import {
   topBasemapPlaceAt,
   type BasemapPlace,
 } from "@/lib/basemap-poi";
-import { CONDITION_COLORS } from "@/lib/conditions-visual";
 import {
   ensureConditionLayers,
   setConditionLayersVisible,
@@ -71,6 +70,7 @@ import {
   QUALITY_BAND_COLORS,
   QUALITY_BAND_LABELS_SHORT,
 } from "@/lib/planner/quality-bands";
+import { MapLegend } from "@/components/map/MapLegend";
 import {
   insertionAnchorForPoint,
   nearestDayIndexToPoint,
@@ -176,6 +176,15 @@ export interface TripPlannerMapHandle {
    */
   openConditionPopover: (ref: { kind: "closure" | "pass"; id: string }) => void;
 }
+
+// The planner colours the route line in 4 coarse quality bands — the legend
+// uses the same colours + short labels the line is painted with.
+const PLANNER_QUALITY_LEGEND = (
+  Object.keys(QUALITY_BAND_COLORS) as (keyof typeof QUALITY_BAND_COLORS)[]
+).map((band) => ({
+  label: QUALITY_BAND_LABELS_SHORT[band],
+  color: QUALITY_BAND_COLORS[band],
+}));
 
 const ROUTE_SOURCE = "trip-planner-route";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
@@ -2844,64 +2853,17 @@ const TripPlannerMapContent = forwardRef<
         ) : null}
       </div>
 
-      {/* ── Conditions marker legend (revision 7) ── */}
-      {conditionsVisible ? (
-        <div className="absolute bottom-20 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
-          {(
-            [
-              [CONDITION_COLORS.roadworks, "Roadworks"],
-              [CONDITION_COLORS["closure-full"], "Full closure"],
-              [CONDITION_COLORS["closure-partial"], "Partial closure"],
-              [CONDITION_COLORS.pass, "Seasonal pass"],
-            ] as const
-          ).map(([color, label]) => (
-            <span
-              key={label}
-              className="flex items-center gap-1.5 text-[11px] text-fg-dim"
-            >
-              <span
-                aria-hidden
-                className="inline-block h-2.5 w-2.5 rotate-45 rounded-[3px] border-2 bg-cream"
-                style={{ borderColor: color }}
-              />
-              {t(label)}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {/* ── Route legend for the active line-coloring mode ── */}
-      {lineColorMode && routeCollection.features.length > 0 ? (
-        <div className="absolute bottom-8 left-3 z-10 flex gap-3.5 rounded-[10px] border border-line-strong bg-cream/90 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
-          {lineColorMode === "quality"
-            ? (
-                Object.entries(QUALITY_BAND_COLORS) as [
-                  keyof typeof QUALITY_BAND_COLORS,
-                  string,
-                ][]
-              ).map(([band, color]) => (
-                <span key={band} className="flex items-center gap-1.5">
-                  <span
-                    className="h-1 w-3.5 rounded-sm"
-                    style={{ background: color }}
-                  />
-                  <span className="text-[11px] font-semibold text-fg-dim">
-                    {QUALITY_BAND_LABELS_SHORT[band]}
-                  </span>
-                </span>
-              ))
-            : Object.entries(SURFACE_COLORS).map(([surface, color]) => (
-                <span key={surface} className="flex items-center gap-1.5">
-                  <span
-                    className="h-1 w-3.5 rounded-sm"
-                    style={{ background: color }}
-                  />
-                  <span className="text-[11px] font-semibold capitalize text-fg-dim">
-                    {surface}
-                  </span>
-                </span>
-              ))}
-        </div>
-      ) : null}
+      {/* ── Unified map legend (shared with the explorer + preview) ── */}
+      <MapLegend
+        {...(lineColorMode === "quality" && routeCollection.features.length > 0
+          ? { quality: PLANNER_QUALITY_LEGEND }
+          : {})}
+        surface={
+          lineColorMode === "surface" && routeCollection.features.length > 0
+        }
+        conditions={conditionsVisible}
+        hazards={hazardsVisible}
+      />
       {/* ── Road Preview Card — opened by clicking any route section ── */}
       {previewSegment ? (
         <RoadPreviewPopover

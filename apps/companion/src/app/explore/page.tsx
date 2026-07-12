@@ -22,7 +22,8 @@ import {
   type FilterableSurface,
   type QualityTier,
 } from "@/lib/map-filters";
-import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
+import { HAZARD_CONFIG, HAZARD_TYPES_UI, QUALITY_CONFIG } from "@/lib/utils";
+import { MapLegend } from "@/components/map/MapLegend";
 import type { HazardType } from "@tarmoto/shared";
 import { QualityMap, type QualityMapHandle } from "./_components/QualityMap";
 import {
@@ -63,6 +64,12 @@ const QUALITY_OPTIONS: {
   { key: "poor", label: "Poor", color: "bg-quality-poor" },
   { key: "very-poor", label: "Very Poor", color: "bg-quality-very-poor" },
 ];
+// The explorer colours all roads in the 5 quality tiers — the legend uses the
+// same hex the tile overlay paints (QUALITY_CONFIG), best → worst.
+const EXPLORE_QUALITY_LEGEND = QUALITY_OPTIONS.map((opt) => ({
+  label: opt.label,
+  color: QUALITY_CONFIG[opt.key].hex,
+}));
 const SURFACE_OPTIONS: {
   key: FilterableSurface;
   label: string;
@@ -703,9 +710,10 @@ function ExplorerPageInner() {
           </div>
 
           <MapLegend
-            showQuality={showQualityOverlay}
-            showSurface={showSurfaceOverlay}
-            showHazards={showHazardOverlay}
+            {...(showQualityOverlay ? { quality: EXPLORE_QUALITY_LEGEND } : {})}
+            surface={showSurfaceOverlay}
+            conditions={showConditionsLayer}
+            hazards={showHazardOverlay}
           />
           <SegmentDetailSidebar
             state={segmentDetailState}
@@ -924,72 +932,6 @@ function FilterCheckbox({
   );
 }
 
-interface MapLegendProps {
-  showQuality: boolean;
-  showSurface: boolean;
-  showHazards: boolean;
-}
-function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
-  if (!showQuality && !showSurface && !showHazards) return null;
-  return (
-    <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-paper/90 border border-line-strong backdrop-blur px-3 py-2.5 text-xs text-ink space-y-2 pointer-events-none">
-      {showQuality && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-ink mb-1.5">
-            {t("Road quality ")}
-          </p>
-          <div className="flex items-center gap-2">
-            {QUALITY_OPTIONS.map((opt) => (
-              <div key={opt.key} className="flex items-center gap-1">
-                <span className={`h-1.5 w-3 rounded-full ${opt.color}`} />
-                <span className="text-[10px]">{opt.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {showSurface && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-ink mb-1.5">
-            {t("Surface ")}
-          </p>
-          <div className="flex items-center gap-2">
-            {SURFACE_OPTIONS.map((opt) => (
-              <div key={opt.key} className="flex items-center gap-1">
-                <span className={`h-1.5 w-3 rounded-full ${opt.color}`} />
-                <span className="text-[10px]">{opt.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {showHazards && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-ink mb-1.5">
-            {t("Hazards ")}
-          </p>
-          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap max-w-[260px]">
-            {HAZARD_OPTIONS.map((opt) => (
-              <div key={opt.key} className="flex items-center gap-1">
-                <span
-                  aria-hidden="true"
-                  className="inline-flex w-3.5 h-3.5 items-center justify-center text-[10px] leading-none rounded-full"
-                  style={{ backgroundColor: opt.hex }}
-                >
-                  {opt.emoji}
-                </span>
-                <span className="text-[10px]">{opt.label}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-[9px] text-fg-dim mt-1">
-            {t("Opacity fades as reports age ")}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
 export default function ExplorerPage() {
   return (
     <Suspense fallback={null}>
