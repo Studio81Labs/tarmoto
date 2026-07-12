@@ -24,8 +24,9 @@ describe("MapLegend", () => {
     const { container } = render(<MapLegend surface conditions hazards />);
     // One card each for surface, conditions, hazards.
     expect(container.querySelector("div")?.children).toHaveLength(3);
-    // Surface (shared SURFACE_COLORS, capitalized keys)
+    // Surface (all SURFACE_COLORS incl. the grey "unknown" the maps paint)
     expect(screen.getByText("asphalt")).toBeInTheDocument();
+    expect(screen.getByText("unknown")).toBeInTheDocument();
     // Conditions (labels unique to this card)
     expect(screen.getByText("Full closure")).toBeInTheDocument();
     expect(screen.getByText("Seasonal pass")).toBeInTheDocument();

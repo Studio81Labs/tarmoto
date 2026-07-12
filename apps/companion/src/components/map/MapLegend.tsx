@@ -2,8 +2,11 @@
 import { t } from "@/i18n";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import { CONDITION_COLORS } from "@/lib/conditions-visual";
-import { FILTERABLE_SURFACES } from "@/lib/map-filters";
 import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
+
+const SURFACE_KEYS = Object.keys(
+  SURFACE_COLORS,
+) as (keyof typeof SURFACE_COLORS)[];
 
 /**
  * One legend for every map (explorer, planner, preview). Each active overlay is
@@ -112,7 +115,7 @@ export function MapLegend({
   const hasQuality = quality != null && quality.length > 0;
   if (!hasQuality && !surface && !conditions && !hazards) return null;
   return (
-    <div className="absolute bottom-8 left-3 z-10 flex flex-col items-start gap-2">
+    <div className="pointer-events-none absolute bottom-8 left-3 z-10 flex flex-col items-start gap-2">
       {hasQuality ? (
         <LegendCard>
           {quality.map((entry) => (
@@ -126,7 +129,9 @@ export function MapLegend({
       ) : null}
       {surface ? (
         <LegendCard>
-          {FILTERABLE_SURFACES.map((surfaceKey) => (
+          {/* Every surface the maps can paint, incl. `unknown` (grey) — the
+              planner route + explorer overlay both colour unknown segments. */}
+          {SURFACE_KEYS.map((surfaceKey) => (
             <LineSwatch
               key={surfaceKey}
               color={SURFACE_COLORS[surfaceKey]}
