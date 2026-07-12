@@ -855,6 +855,9 @@ const TripPlannerMapContent = forwardRef<
       if (!map) return;
       setPoiMenu(null);
       setWaypointMenu(null);
+      // The read-only preview never opens `contextMenu`, so the mutual-exclusion
+      // effect wouldn't clear an open basemap place card — do it directly.
+      setPlaceMenu(null);
       const coords = { lng: result.lng, lat: result.lat };
       if (editable) {
         const rect = map.getCanvas()?.getBoundingClientRect?.();
@@ -1543,8 +1546,15 @@ const TripPlannerMapContent = forwardRef<
       ) {
         return;
       }
-      const feature = event.features?.[0];
-      const place = feature ? readBasemapPlace(feature) : null;
+      // Scan every hit (not just the first) for a NAMED place — an unnamed OSM
+      // point can render above a named one in the same layer, and the route /
+      // drawer guards already defer to `topBasemapPlaceAt`, so bailing on the
+      // first unnamed hit would leave the click dead.
+      let place: BasemapPlace | null = null;
+      for (const feature of event.features ?? []) {
+        place = readBasemapPlace(feature);
+        if (place) break;
+      }
       if (!place) return;
       swallowNextClickRef.current = true;
       setContextMenu(null);
