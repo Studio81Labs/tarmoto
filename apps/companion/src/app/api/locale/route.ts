@@ -6,7 +6,9 @@ import { apiServer } from "@/lib/api/server";
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 // Bounds the best-effort user-record sync below so a slow or hanging backend
-// can't delay the cookie-set response indefinitely.
+// can't delay the cookie-set response indefinitely. Used both as the PATCH's
+// own abort timeout and as the outer race's cap in `POST` (which also covers
+// a hung `auth()` token refresh, upstream of the PATCH).
 const LOCALE_SYNC_TIMEOUT_MS = 3000;
 
 /**
@@ -66,7 +68,14 @@ export async function POST(request: Request) {
     httpOnly: false,
   });
 
-  await syncLanguageToUserRecord(locale);
+  // Bound the whole best-effort user-record sync so NO backend latency inside
+  // it (auth()'s token refresh, or the PATCH itself) can delay the cookie
+  // response. `syncLanguageToUserRecord` already swallows its own errors, so
+  // this promise never rejects — the race has no unhandled-rejection risk.
+  await Promise.race([
+    syncLanguageToUserRecord(locale),
+    new Promise<void>((resolve) => setTimeout(resolve, LOCALE_SYNC_TIMEOUT_MS)),
+  ]);
 
   return response;
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "next-auth";
 import { POST } from "./route";
 import { auth } from "@/lib/auth";
@@ -24,6 +24,11 @@ const AUTHENTICATED_SESSION: Session = {
   expires: "2099-01-01T00:00:00.000Z",
 };
 
+// Mirrors `LOCALE_SYNC_TIMEOUT_MS` in route.ts. Kept as a separate local
+// constant rather than imported: route.ts intentionally exports only the
+// HTTP handler and Next.js route-config fields, not internal constants.
+const SYNC_TIMEOUT_MS = 3000;
+
 function postRequest(locale: unknown) {
   return new Request("http://localhost/api/locale", {
     method: "POST",
@@ -45,6 +50,10 @@ describe("POST /api/locale", () => {
   beforeEach(() => {
     mockedAuth.mockReset();
     patch.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("persists the language to the user record when the request is authenticated", async () => {
@@ -81,6 +90,25 @@ describe("POST /api/locale", () => {
       { signal?: AbortSignal },
     ];
     expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns the cookie response even when auth() hangs indefinitely (e.g. stuck refreshing an expired token)", async () => {
+    vi.useFakeTimers();
+    // For a session mid-refresh, `auth()` runs the NextAuth JWT callback →
+    // `dedupedRefresh()` → a backend call with no abort signal of its own.
+    // If that backend call hangs, `auth()` itself never resolves — simulate
+    // the worst case with a promise that never settles, and prove the outer
+    // race in `POST` still bounds the total wait.
+    mockedAuth.mockReturnValueOnce(new Promise<Session | null>(() => {}));
+
+    const responsePromise = POST(postRequest("en"));
+    await vi.advanceTimersByTimeAsync(SYNC_TIMEOUT_MS + 1);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ locale: "en" });
+    expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("does not call the backend when unauthenticated, but still sets the cookie", async () => {
