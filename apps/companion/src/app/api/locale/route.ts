@@ -5,6 +5,10 @@ import { apiServer } from "@/lib/api/server";
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
+// Bounds the best-effort user-record sync below so a slow or hanging backend
+// can't delay the cookie-set response indefinitely.
+const LOCALE_SYNC_TIMEOUT_MS = 3000;
+
 /**
  * Best-effort sync of the rider's language choice to their user record, so
  * the backend (digest cron, transactional emails) picks it up too. Failures
@@ -27,6 +31,7 @@ async function syncLanguageToUserRecord(
     const { error, response } = await apiServer.PATCH("/api/v1/users/me", {
       body: { language: locale },
       headers: { Authorization: `Bearer ${session.accessToken}` },
+      signal: AbortSignal.timeout(LOCALE_SYNC_TIMEOUT_MS),
     });
     if (!response.ok) {
       console.error("Failed to persist language to user record", error);

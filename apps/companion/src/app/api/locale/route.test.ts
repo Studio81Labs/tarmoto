@@ -61,7 +61,26 @@ describe("POST /api/locale", () => {
     expect(patch).toHaveBeenCalledWith("/api/v1/users/me", {
       body: { language: "en" },
       headers: { Authorization: "Bearer access-token-abc" },
+      signal: expect.any(AbortSignal),
     });
+  });
+
+  it("bounds the backend sync call with a timeout signal so a hanging backend can't block the cookie response", async () => {
+    mockedAuth.mockResolvedValueOnce(AUTHENTICATED_SESSION);
+    patch.mockResolvedValueOnce(patchResult(200, { language: "en" }));
+
+    await POST(postRequest("en"));
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    // `patch.mock.calls[0]` is typed against the generic, overloaded
+    // `ClientMethod` signature, which collapses the options arg to `never`
+    // outside of a resolved call — a type-only cast to the shape we care
+    // about here, same rationale as the `mockedAuth` cast above.
+    const [, opts] = patch.mock.calls[0] as unknown as [
+      string,
+      { signal?: AbortSignal },
+    ];
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("does not call the backend when unauthenticated, but still sets the cookie", async () => {
