@@ -518,6 +518,36 @@ describe("TripPlannerMap", () => {
       act(() => clicks.get(POI_LAYER)?.(namedPoiClick));
       expect(screen.queryByText("Zbýšov")).toBeNull();
     });
+
+    it("closes the place card when another marker opens its popover", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]);
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      act(() => clicks.get(POI_LAYER)?.(namedPoiClick));
+      expect(screen.getByText("Zbýšov")).toBeInTheDocument();
+      // Opening a hazard popover must replace the place card (one active menu).
+      act(() =>
+        clicks.get("tarmoto-hazard-bg")?.({
+          features: [
+            {
+              geometry: { type: "Point", coordinates: [16.7, 49.3] },
+              properties: {
+                hazard_type: "pothole",
+                severity: "high",
+                confirmations: 0,
+                created_at: "2026-05-01T10:00:00.000Z",
+              },
+            },
+          ],
+          point: { x: 120, y: 120 },
+          originalEvent: { clientX: 120, clientY: 120 },
+        }),
+      );
+      expect(screen.queryByText("Zbýšov")).toBeNull();
+    });
   });
 
   it("snaps right-click contextmenu onto nearby road geometry before showing the placement menu", () => {
