@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -41,8 +42,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new account' })
   @ApiResponse({ status: 201, type: AuthResponseDto })
   @ApiResponse({ status: 409, description: 'Email already registered' })
-  async register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
-    return this.authService.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+  ): Promise<AuthResponseDto> {
+    return this.authService.register(dto, acceptLanguage);
   }
 
   @Post('login')
