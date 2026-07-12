@@ -179,6 +179,7 @@ The four points above are the target model. The **first cut** deliberately narro
 - **Mobile-nav gated (v1).** Only active navigators trigger enrichment; companion route-planning does not enrich in v1 (a cost decision, revisitable). The _trigger_ is client-gated (a mobile-nav flag / dedicated enriched endpoint); the _budget_ is server-enforced.
 - **Matching = the call-volume lever.** Chosen at build time by call cost: (a) _match-then-details_ — match each OSM POI to an `fsq_id` (§6 point 1) then fetch details, ~1–2 calls/POI; or (b) _corridor nearby-search then merge_ FSQ's own places against OSM (fewer calls, reuses the #932 cross-source dedup). Cap enrichment to **top-N** POIs per route so a long route cannot burst dozens of calls.
 - **Latency.** Return OSM immediately and enrich **progressively** (stream / patch in) so navigation start never blocks on the batch.
+- **Attribution follows the data (compliance blocker).** The nav-start batch means enriched FSQ fields can render in the **navigation list/map**, not only the detail view — so the required Foursquare branding must appear on **every** surface that shows enriched fields, not just enriched detail surfaces (widening §6 point 4 / §8, which scoped it to detail). Alternatively, constrain the batch to **pre-warm the cache only**, keeping enriched fields hidden until a properly-attributed detail view renders them. Either way, no enriched field is ever shown without its provider branding.
 - **Degradation (as §6):** enrichment off / no match / provider error / **budget exhausted** → OSM fields render, no 500, no blank.
 
 **Still gated on a human decision** (AGENTS.md, §851): FSQ confirmed as provider, current FSQ pricing + free quota verified, API key provisioned, monthly cap set. No code until those land.
@@ -212,7 +213,7 @@ Currently a documented obligation with **no UI implementation** — this is the 
 
 - **OSM / ODbL:** "© OpenStreetMap contributors" on every surface that shows POIs (map attribution control + list/detail footers). Our derived `pois` DB is ODbL; any offline pack inherits it.
 - **Separation:** commercial data never merged into `pois` (guaranteed by §2.1/§6).
-- **Commercial:** provider-required attribution/branding on enriched detail.
+- **Commercial:** provider-required attribution/branding on **every surface that displays enriched fields** — the detail view **and** the v1 nav-start list/map (§6.1) — never detail-only.
 - Update `docs/reference/data-sources-and-storage.md` §1/§8.3 (read-path switch, commercial layer, expanded coverage, attribution status) and add an **ADR** (`docs/decisions/0007-poi-data-and-enrichment.md`) capturing the store-backed read + commercial-provider + licence-separation decision.
 
 ---
