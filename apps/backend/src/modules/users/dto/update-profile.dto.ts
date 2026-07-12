@@ -11,6 +11,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { SUPPORTED_LOCALES, type SupportedLocale } from '@tarmoto/shared';
 import { ROUTE_PREFERENCES } from '../../routing/dto/route.dto.js';
 
 export const MIN_QUALITY_LEVELS = [
@@ -118,6 +119,11 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(500)
   bio?: string | null;
+
+  @ApiProperty({ enum: SUPPORTED_LOCALES, required: false })
+  @IsOptional()
+  @IsIn(SUPPORTED_LOCALES)
+  language?: SupportedLocale;
 
   @ApiProperty({ required: false, nullable: true })
   @IsOptional()

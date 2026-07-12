@@ -471,6 +471,9 @@ export class UsersService {
     if (dto.bio !== undefined) {
       user.bio = dto.bio;
     }
+    if (dto.language !== undefined) {
+      user.language = dto.language;
+    }
     if (dto.home_region !== undefined) {
       user.home_region = dto.home_region;
     }

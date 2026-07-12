@@ -52,6 +52,7 @@ describe('UsersService', () => {
       phone: null,
       avatar_url: null,
       bio: null,
+      language: 'en',
       home_region: null,
       home_location: null,
       work_location: null,
@@ -180,6 +181,7 @@ describe('UsersService', () => {
       expect(result.email).toBe('rider@tarmoto.app');
       expect(result.display_name).toBe('TestRider');
       expect(result.home_location).toBeNull();
+      expect(result.language).toBe('en');
     });
 
     it('should throw NotFoundException for missing user', async () => {
@@ -655,6 +657,17 @@ describe('UsersService', () => {
       );
     });
 
+    it('should update and persist language', async () => {
+      const result = await service.updateProfile('user-1', {
+        language: 'en',
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ language: 'en' }),
+      );
+      expect(result.language).toBe('en');
+    });
+
     it('should convert home_location to Point geometry', async () => {
       await service.updateProfile('user-1', {
         home_location: { lat: 49.1, lng: 16.75 },
@@ -747,6 +760,10 @@ describe('UsersService', () => {
       expect(saved.avatar_url).toBeNull();
       expect(saved.bio).toBeNull();
       expect(saved.home_region).toBeNull();
+      // Same guard for `language`: an unconditional `user.language =
+      // dto.language` would wipe the column to `undefined` on every
+      // profile update that doesn't touch the locale switcher.
+      expect(saved.language).toBe('en');
     });
 
     it('should throw NotFoundException for missing user', async () => {
