@@ -1,6 +1,7 @@
 "use client";
 import { t } from "@/i18n";
-import { ExternalLink, Plus, TriangleAlert, X } from "lucide-react";
+import { ExternalLink, MapPin, Plus, TriangleAlert, X } from "lucide-react";
+import type { BasemapPlace } from "@/lib/basemap-poi";
 import { poiCategoryMeta } from "@/components/planner/MapToolbar";
 import { PoiDetails } from "@/components/planner/PoiDetails";
 import { HAZARD_CONFIG, formatRelativeTime } from "@/lib/utils";
@@ -35,7 +36,9 @@ export type MapPoint =
   | { kind: "poi"; poi: Poi }
   | { kind: "hazard"; hazard: HazardPoint }
   | { kind: "closure"; closure: PlannerClosure; affectsRoute: boolean }
-  | { kind: "pass"; pass: MountainPass; affectsRoute: boolean };
+  | { kind: "pass"; pass: MountainPass; affectsRoute: boolean }
+  // A basemap (OpenStreetMap) POI — name + category only, no curated detail.
+  | { kind: "place"; place: BasemapPlace };
 
 /** Route actions for a POI (planner, editable). Omit for info-only surfaces. */
 export interface PoiPopoverActions {
@@ -87,6 +90,12 @@ export function MapPointPopover({
       {point.kind === "poi" ? (
         <PoiBody
           poi={point.poi}
+          onClose={onClose}
+          {...(actions?.poi ? { actions: actions.poi } : {})}
+        />
+      ) : point.kind === "place" ? (
+        <PlaceBody
+          place={point.place}
           onClose={onClose}
           {...(actions?.poi ? { actions: actions.poi } : {})}
         />
@@ -192,51 +201,7 @@ function PoiBody({
         ) : null}
       </PopoverHeader>
       <PoiDetails poi={poi} />
-      {actions?.onRemove ? (
-        <button
-          type="button"
-          onClick={actions.onRemove}
-          className="w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
-        >
-          {t("Remove from route")}
-        </button>
-      ) : actions?.onAddVia ? (
-        <>
-          <button
-            type="button"
-            onClick={actions.onAddVia}
-            className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
-          >
-            <Plus size={14} strokeWidth={3} />
-            {t("Add as via")}
-          </button>
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={actions.onSetStart}
-              className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
-            >
-              {t("Set as start")}
-            </button>
-            <button
-              type="button"
-              onClick={actions.onSetFinish}
-              className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
-            >
-              {t("Set as finish")}
-            </button>
-          </div>
-          {actions.onAddStop ? (
-            <button
-              type="button"
-              onClick={actions.onAddStop}
-              className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
-            >
-              {t("Add as stop")}
-            </button>
-          ) : null}
-        </>
-      ) : null}
+      <PlacementActions actions={actions} />
       {mapsUrl ? (
         <a
           href={mapsUrl}
@@ -248,6 +213,116 @@ function PoiBody({
           {t("View on Google Maps")}
         </a>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * The route-placement action block shared by POI and basemap-place bodies:
+ * Remove (a placed POI), or Add as via + Set start/finish (+ optional stop) on
+ * the editable planner. Renders nothing on info-only surfaces.
+ */
+function PlacementActions({
+  actions,
+}: {
+  actions: PoiPopoverActions | undefined;
+}) {
+  if (actions?.onRemove) {
+    return (
+      <button
+        type="button"
+        onClick={actions.onRemove}
+        className="w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2.5 text-[12.5px] font-bold text-quality-q1 transition hover:bg-paper"
+      >
+        {t("Remove from route")}
+      </button>
+    );
+  }
+  if (!actions?.onAddVia) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={actions.onAddVia}
+        className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent px-3 py-2.5 text-[13px] font-extrabold text-cream transition hover:brightness-95"
+      >
+        <Plus size={14} strokeWidth={3} />
+        {t("Add as via")}
+      </button>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={actions.onSetStart}
+          className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+        >
+          {t("Set as start")}
+        </button>
+        <button
+          type="button"
+          onClick={actions.onSetFinish}
+          className="rounded-[10px] border border-line-strong bg-cream px-2 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+        >
+          {t("Set as finish")}
+        </button>
+      </div>
+      {actions.onAddStop ? (
+        <button
+          type="button"
+          onClick={actions.onAddStop}
+          className="mt-1.5 w-full rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12.5px] font-bold text-ink transition hover:bg-paper"
+        >
+          {t("Add as stop")}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * A basemap (OpenStreetMap) POI: a light card — map-pin badge, name, category,
+ * an OSM credit, the placement actions (editable planner), and a Google Maps
+ * link. No curated detail, because the tile feature only carries name + class.
+ */
+function PlaceBody({
+  place,
+  onClose,
+  actions,
+}: {
+  place: BasemapPlace;
+  onClose: () => void;
+  actions?: PoiPopoverActions;
+}) {
+  return (
+    <>
+      <PopoverHeader
+        onClose={onClose}
+        title={place.name}
+        subtitle={place.category}
+        badge={
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
+            <MapPin size={16} />
+          </span>
+        }
+      >
+        <a
+          href="https://www.openstreetmap.org/copyright"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
+        >
+          © OpenStreetMap contributors
+        </a>
+      </PopoverHeader>
+      <PlacementActions actions={actions} />
+      <a
+        href={place.mapsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-line-strong bg-cream px-3 py-2 text-[12px] font-bold text-ink transition hover:bg-paper"
+      >
+        <ExternalLink size={13} strokeWidth={2.5} />
+        {t("View on Google Maps")}
+      </a>
     </>
   );
 }
