@@ -164,10 +164,10 @@ The steering choice is "commercial now." The **only compliant** way to do this i
 
 **Design:**
 
-1. **Match** OSM POIs to a commercial place (name-normalized + geo-proximity within ~50 m + category agreement), storing only `fsq_id` / `google_place_id` + `enrichment_matched_at`. Run as a low-priority pass after import (or lazily on first detail view).
+1. **Match** OSM POIs to a commercial place (name-normalized + geo-proximity within ~50 m + category agreement), storing only `fsq_id` / `google_place_id` + `enrichment_matched_at`. Run as a low-priority pass after import, or lazily on first enrichment (a detail open or a §6.1 nav-start batch).
 2. **Hydrate on demand** at `GET /poi/:id` via `EnrichmentProvider` (new interface, same pattern as routing/geocode provider abstractions): returns `rating`, `review_count`, `price_level`, `photos[]`, live `hours`, and the **upgraded `maps_url`** (exact-venue place-id link, replacing the free name+coordinates search link). Response cached short-TTL (Redis, ≤ provider limit) — **never written to `pois`**.
-3. **Cost controls:** hydrate only on explicit detail view (not list/map render), Redis cache, per-day budget guard + rate limit, feature-flagged (`TARMOTO_POI_ENRICHMENT_ENABLED`, provider + key envs). Directional cost: on-demand + cache keeps this to detail-view volume, not POI-count volume. _(Confirm current Google/FSQ pricing at build time — pricing SKUs change.)_
-4. **Attribution/branding:** "Powered by Google" / FSQ attribution on any enriched detail surface, per each provider's brand requirements.
+3. **Cost controls:** hydrate only on **discrete, explicit user actions** — a POI detail open (point 2) or a v1 navigation-start batch (§6.1) — **never on continuous list/map render** (every pan / scroll). Redis cache, request-count budget guard + rate limit (§6.1), feature-flagged (`TARMOTO_POI_ENRICHMENT_ENABLED`, provider + key envs). Directional cost scales with those trigger events and the top-N-per-route cap, not with rendered POI count. _(Confirm current Google/FSQ pricing at build time — pricing SKUs change.)_
+4. **Attribution/branding:** "Powered by Google" / FSQ attribution on **any surface that displays enriched fields** (the detail view and — in v1 — the nav list/map, §6.1), per each provider's brand requirements.
 
 ### 6.1 v1 delivery scoping — FSQ-only, navigation-start batch, budget-locked
 
