@@ -36,6 +36,7 @@ const mockMap = {
   getSource: vi.fn(),
   addLayer: vi.fn(),
   getLayer: vi.fn(),
+  getStyle: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
   queryRenderedFeatures: vi.fn(),
@@ -299,6 +300,9 @@ describe("TripPlannerMap", () => {
     mockMap.getLayer.mockImplementation((id) =>
       id === "fun-zones-selected" ? ({ id } as never) : undefined,
     );
+    mockMap.getStyle.mockReset();
+    // No basemap POI layers by default — tests that need them override this.
+    mockMap.getStyle.mockReturnValue({ layers: [] });
     mockMap.on.mockReset();
     mockMap.off.mockReset();
     mockMap.queryRenderedFeatures.mockReset();
@@ -440,6 +444,134 @@ describe("TripPlannerMap", () => {
       "none",
     );
     expect(canvas).toHaveAttribute("data-show-quality", "true");
+  });
+
+  describe("basemap (OpenStreetMap) POIs", () => {
+    const POI_LAYER = "poi_label";
+    const namedPoiClick = {
+      features: [
+        {
+          geometry: { type: "Point", coordinates: [16.6, 49.2] },
+          properties: { name: "Zbýšov", class: "railway", subclass: "station" },
+        },
+      ],
+      point: { x: 100, y: 100 },
+      originalEvent: { clientX: 100, clientY: 100 },
+    };
+
+    // Capture the layer-specific `click` handlers handleReady registers.
+    function captureLayerClicks() {
+      const clicks = new Map<string, (event: unknown) => void>();
+      mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+        if (
+          event === "click" &&
+          typeof layerOrHandler === "string" &&
+          typeof maybeHandler === "function"
+        ) {
+          clicks.set(layerOrHandler, maybeHandler as (e: unknown) => void);
+        }
+        return mockMap;
+      });
+      mockMap.off.mockImplementation(() => mockMap);
+      return clicks;
+    }
+    function withBasemapPoiLayer() {
+      mockMap.getStyle.mockReturnValue({
+        layers: [{ id: POI_LAYER, type: "symbol", "source-layer": "poi" }],
+      });
+    }
+
+    it("opens the shared place card with add-as-stop on the editable planner", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]); // no markers under cursor
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      act(() => clicks.get(POI_LAYER)?.(namedPoiClick));
+      expect(screen.getByText("Zbýšov")).toBeInTheDocument();
+      expect(screen.getByText("Station")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /add as via/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("is info-only (no placement actions) on a read-only preview", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]);
+      const clicks = captureLayerClicks();
+      render(<TripPlannerMap trip={trip()} month={7} />); // no onMoveWaypoint
+      act(() => clicks.get(POI_LAYER)?.(namedPoiClick));
+      expect(screen.getByText("Zbýšov")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /add as via/i })).toBeNull();
+    });
+
+    it("yields to our own markers under the cursor (no place card)", () => {
+      withBasemapPoiLayer();
+      // A marker layer is present AND a feature is under the cursor.
+      mockMap.getLayer.mockReturnValue({} as never);
+      mockMap.queryRenderedFeatures.mockReturnValue([{ properties: {} }]);
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      act(() => clicks.get(POI_LAYER)?.(namedPoiClick));
+      expect(screen.queryByText("Zbýšov")).toBeNull();
+    });
+
+    it("scans past an unnamed hit to a named POI under the cursor", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]);
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      // An unnamed OSM point renders above the named one in the same layer.
+      act(() =>
+        clicks.get(POI_LAYER)?.({
+          features: [
+            {
+              geometry: { type: "Point", coordinates: [16.6, 49.2] },
+              properties: { class: "amenity" },
+            },
+            namedPoiClick.features[0],
+          ],
+          point: { x: 100, y: 100 },
+          originalEvent: { clientX: 100, clientY: 100 },
+        }),
+      );
+      expect(screen.getByText("Zbýšov")).toBeInTheDocument();
+    });
+
+    it("closes the place card when another marker opens its popover", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]);
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      act(() => clicks.get(POI_LAYER)?.(namedPoiClick));
+      expect(screen.getByText("Zbýšov")).toBeInTheDocument();
+      // Opening a hazard popover must replace the place card (one active menu).
+      act(() =>
+        clicks.get("tarmoto-hazard-bg")?.({
+          features: [
+            {
+              geometry: { type: "Point", coordinates: [16.7, 49.3] },
+              properties: {
+                hazard_type: "pothole",
+                severity: "high",
+                confirmations: 0,
+                created_at: "2026-05-01T10:00:00.000Z",
+              },
+            },
+          ],
+          point: { x: 120, y: 120 },
+          originalEvent: { clientX: 120, clientY: 120 },
+        }),
+      );
+      expect(screen.queryByText("Zbýšov")).toBeNull();
+    });
   });
 
   it("snaps right-click contextmenu onto nearby road geometry before showing the placement menu", () => {

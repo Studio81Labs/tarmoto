@@ -39,6 +39,12 @@ import {
   MapPointPopover,
   type PoiPopoverActions,
 } from "@/components/map/MapPointPopover";
+import {
+  getBasemapPoiLayerIds,
+  readBasemapPlace,
+  topBasemapPlaceAt,
+  type BasemapPlace,
+} from "@/lib/basemap-poi";
 import { CONDITION_COLORS } from "@/lib/conditions-visual";
 import {
   ensureConditionLayers,
@@ -636,6 +642,13 @@ const TripPlannerMapContent = forwardRef<
     y: number;
   } | null>(null);
   const closeHazardMenu = useCallback(() => setHazardMenu(null), []);
+  // A basemap (OpenStreetMap) POI — the style's own parking/park/info icons.
+  const [placeMenu, setPlaceMenu] = useState<{
+    place: BasemapPlace;
+    x: number;
+    y: number;
+  } | null>(null);
+  const closePlaceMenu = useCallback(() => setPlaceMenu(null), []);
   const [conditionMenu, setConditionMenu] = useState<
     | {
         kind: "closure";
@@ -728,6 +741,12 @@ const TripPlannerMapContent = forwardRef<
   const [lineColorMode, setLineColorMode] =
     useState<PlannerLineColorMode | null>("quality");
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
+  // Current basemap for the ready-time basemap-POI click handler — on aerial the
+  // raster covers those icons, so they must not be interactive.
+  const basemapRef = useRef(basemap);
+  useEffect(() => {
+    basemapRef.current = basemap;
+  }, [basemap]);
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   // Ephemeral how-to hints (rider feedback): each hint lives exactly as
   // long as the action it describes is still pending, then it's gone.
@@ -836,6 +855,9 @@ const TripPlannerMapContent = forwardRef<
       if (!map) return;
       setPoiMenu(null);
       setWaypointMenu(null);
+      // The read-only preview never opens `contextMenu`, so the mutual-exclusion
+      // effect wouldn't clear an open basemap place card — do it directly.
+      setPlaceMenu(null);
       const coords = { lng: result.lng, lat: result.lat };
       if (editable) {
         const rect = map.getCanvas()?.getBoundingClientRect?.();
@@ -921,6 +943,51 @@ const TripPlannerMapContent = forwardRef<
     },
     [trip],
   );
+  // A basemap (OSM) place has no curated PoiCategory — otherwise these mirror
+  // the POI placement handlers, inserting a plain named waypoint.
+  const handleAddPlaceWaypoint = useCallback(
+    (place: BasemapPlace, type: Waypoint["type"]) => {
+      const store = useTripStore.getState();
+      const owningDay = nearestDayIndexToPoint(trip, {
+        lat: place.lat,
+        lng: place.lng,
+      });
+      const dayIndex = owningDay >= 0 ? owningDay : store.selectedDayIndex;
+      const day = trip?.days[dayIndex];
+      const anchorId = day
+        ? insertionAnchorForPoint(day, { lat: place.lat, lng: place.lng })
+        : null;
+      store.insertWaypointBefore(dayIndex, anchorId, {
+        id: `place-${place.lng},${place.lat}-${Date.now()}`,
+        name: place.name,
+        location: { lat: place.lat, lng: place.lng },
+        type,
+      });
+      setPlaceMenu(null);
+    },
+    [trip],
+  );
+  const handlePlacePlaceEndpoint = useCallback(
+    (place: BasemapPlace, endpoint: "start" | "end") => {
+      const store = useTripStore.getState();
+      const action =
+        endpoint === "start"
+          ? hasStart
+            ? "set-new-start"
+            : "set-start"
+          : hasEnd
+            ? "set-new-end"
+            : "set-end";
+      store.placeWaypoint(
+        { lat: place.lat, lng: place.lng },
+        action,
+        store.draftPlannerParameters ?? undefined,
+        { name: place.name },
+      );
+      setPlaceMenu(null);
+    },
+    [hasStart, hasEnd],
+  );
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {
       if (!contextMenu) return;
@@ -1003,6 +1070,13 @@ const TripPlannerMapContent = forwardRef<
       setHazardMenu(null);
     }
   }, [poiMenu, waypointMenu, contextMenu, conditionMenu]);
+  // Likewise close the basemap-place popover when any other point menu opens
+  // (the place click handler clears the others directly when it opens).
+  useEffect(() => {
+    if (poiMenu || waypointMenu || contextMenu || conditionMenu || hazardMenu) {
+      setPlaceMenu(null);
+    }
+  }, [poiMenu, waypointMenu, contextMenu, conditionMenu, hazardMenu]);
   // REST-only viewport hazard feed (no websocket — ambient awareness only).
   useViewportHazards(handleRef, {
     enabled: hazardsVisible && ready,
@@ -1106,12 +1180,14 @@ const TripPlannerMapContent = forwardRef<
     closePoiMenu();
     closeConditionMenu();
     closeHazardMenu();
+    closePlaceMenu();
   }, [
     closeContextMenu,
     closeWaypointMenu,
     closePoiMenu,
     closeConditionMenu,
     closeHazardMenu,
+    closePlaceMenu,
   ]);
   const updateDrawnRegion = useCallback(
     (bbox: RegionDrawBbox | null) => {
@@ -1123,6 +1199,14 @@ const TripPlannerMapContent = forwardRef<
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
     installFunZoneLayer(map);
+    // Basemap (OpenStreetMap) POIs — the style's own icons, below all our
+    // markers. Discovered from the live style so an env style override works.
+    const basemapPoiLayers = getBasemapPoiLayerIds(map);
+    // A NAMED basemap POI under the cursor (only on the "map" basemap — the
+    // aerial raster covers them). The route line + off-route drawer yield to it.
+    const overBasemapPlace = (event: MapLayerMouseEvent) =>
+      basemapRef.current === "map" &&
+      topBasemapPlaceAt(map, event.point, basemapPoiLayers) != null;
     // ── Route-section click → Road Preview Card (any segment, not just
     // flagged ones). Waypoints render on top and are the drag targets, so a
     // click that also hits a waypoint is theirs, not ours.
@@ -1136,8 +1220,8 @@ const TripPlannerMapContent = forwardRef<
     });
     map.on("click", ROUTE_HIT_LINE, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
-      // A waypoint or hazard pin sitting on the route owns the click — don't
-      // also select the segment / open the Road Preview underneath it.
+      // A waypoint, hazard pin, or named basemap POI sitting on the route owns
+      // the click — don't also select the segment / open Road Preview under it.
       const overOwnedPin = [
         WAYPOINT_PIN,
         HAZARD_BG,
@@ -1149,7 +1233,7 @@ const TripPlannerMapContent = forwardRef<
           (id) =>
             map.queryRenderedFeatures(event.point, { layers: [id] }).length > 0,
         );
-      if (overOwnedPin) return;
+      if (overOwnedPin || overBasemapPlace(event)) return;
       const segmentId = event.features?.[0]?.properties?.segmentId as
         | string
         | undefined;
@@ -1176,9 +1260,10 @@ const TripPlannerMapContent = forwardRef<
         HAZARD_CLUSTERS,
       ].filter((id) => map.getLayer(id));
       if (
-        blockingLayers.length > 0 &&
-        map.queryRenderedFeatures(event.point, { layers: blockingLayers })
-          .length > 0
+        (blockingLayers.length > 0 &&
+          map.queryRenderedFeatures(event.point, { layers: blockingLayers })
+            .length > 0) ||
+        overBasemapPlace(event)
       ) {
         return;
       }
@@ -1436,6 +1521,65 @@ const TripPlannerMapContent = forwardRef<
         map.getCanvas().style.cursor = "";
       });
     }
+    // ── Basemap (OpenStreetMap) POIs → shared place popover (lowest priority) ──
+    // Yields to every one of our markers under the cursor; wins over the route
+    // line + off-route drawer (which now defer to `overBasemapPlace`). Only a
+    // NAMED POI opens a card; gated to the "map" basemap (aerial covers them).
+    const onBasemapPoiClick = (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (basemapRef.current !== "map") return;
+      const ownLayers = [
+        WAYPOINT_PIN,
+        CLOSURE_MARKER_LAYER,
+        PASS_MARKER_LAYER,
+        DAY_BREAK_CIRCLE_LAYER,
+        HAZARD_BG,
+        HAZARD_ICON,
+        HAZARD_CLUSTERS,
+        POI_PIN_LAYER,
+        POI_CLUSTER_LAYER,
+        FUN_ZONES_FILL,
+      ].filter((id) => map.getLayer(id));
+      if (
+        ownLayers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers: ownLayers }).length > 0
+      ) {
+        return;
+      }
+      // Scan every hit (not just the first) for a NAMED place — an unnamed OSM
+      // point can render above a named one in the same layer, and the route /
+      // drawer guards already defer to `topBasemapPlaceAt`, so bailing on the
+      // first unnamed hit would leave the click dead.
+      let place: BasemapPlace | null = null;
+      for (const feature of event.features ?? []) {
+        place = readBasemapPlace(feature);
+        if (place) break;
+      }
+      if (!place) return;
+      swallowNextClickRef.current = true;
+      setContextMenu(null);
+      setWaypointMenu(null);
+      setPoiMenu(null);
+      setConditionMenu(null);
+      setHazardMenu(null);
+      setPlaceMenu({
+        place,
+        x: event.originalEvent.clientX,
+        y: event.originalEvent.clientY,
+      });
+    };
+    for (const id of basemapPoiLayers) {
+      map.on("click", id, onBasemapPoiClick);
+      map.on("mouseenter", id, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        if (basemapRef.current !== "map") return;
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", id, () => {
+        if (drawRef.current?.getMode() !== "idle") return;
+        map.getCanvas().style.cursor = "";
+      });
+    }
     // Cluster click zooms toward the cluster's expansion level.
     map.on("click", POI_CLUSTER_LAYER, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
@@ -1640,6 +1784,8 @@ const TripPlannerMapContent = forwardRef<
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     setAerialBasemapVisible(map, basemap === "aerial");
+    // Basemap POIs are covered by the aerial raster — drop an open place card.
+    if (basemap !== "map") setPlaceMenu(null);
   }, [basemap, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -1982,7 +2128,12 @@ const TripPlannerMapContent = forwardRef<
   // every open menu is anchored to a geo coordinate and reprojected on
   // each map move instead of staying frozen at the click position. ──
   const anyMapMenuOpen = Boolean(
-    poiMenu || waypointMenu || contextMenu || conditionMenu || hazardMenu,
+    poiMenu ||
+    waypointMenu ||
+    contextMenu ||
+    conditionMenu ||
+    hazardMenu ||
+    placeMenu,
   );
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -2012,6 +2163,9 @@ const TripPlannerMapContent = forwardRef<
       );
       setHazardMenu((menu) =>
         menu ? { ...menu, ...toScreen(menu.lng, menu.lat) } : menu,
+      );
+      setPlaceMenu((menu) =>
+        menu ? { ...menu, ...toScreen(menu.place.lng, menu.place.lat) } : menu,
       );
     };
     map.on("move", reposition);
@@ -2847,6 +3001,31 @@ const TripPlannerMapContent = forwardRef<
                 x={poiMenu.x}
                 y={poiMenu.y}
                 onClose={closePoiMenu}
+                {...(actions ? { actions: { poi: actions } } : {})}
+              />
+            );
+          })()
+        : null}
+      {placeMenu
+        ? (() => {
+            // Editable planner: add the basemap place to the route (info-only
+            // otherwise). A place has no PoiCategory, so no "add as stop".
+            const actions: PoiPopoverActions | undefined = editable
+              ? {
+                  onAddVia: () =>
+                    handleAddPlaceWaypoint(placeMenu.place, "via"),
+                  onSetStart: () =>
+                    handlePlacePlaceEndpoint(placeMenu.place, "start"),
+                  onSetFinish: () =>
+                    handlePlacePlaceEndpoint(placeMenu.place, "end"),
+                }
+              : undefined;
+            return (
+              <MapPointPopover
+                point={{ kind: "place", place: placeMenu.place }}
+                x={placeMenu.x}
+                y={placeMenu.y}
+                onClose={closePlaceMenu}
                 {...(actions ? { actions: { poi: actions } } : {})}
               />
             );
