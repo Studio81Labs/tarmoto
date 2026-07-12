@@ -232,7 +232,7 @@ Each phase is independently shippable and issue-sized (AGENTS.md: one deliverabl
 ## 10. Risks & open questions
 
 - **Overpass at scale** — mitigated by moving bulk import to Geofabrik/osmium; Overpass stays fallback-only.
-- **Commercial cost drift** — bounded by on-demand-only + cache + the §6.1 atomic budget lock (degrade-to-OSM), a top-N-per-route cap, and progressive (non-blocking) enrichment; still needs a real pricing check and a monthly cap at build time.
+- **Commercial cost drift** — the v1 volume driver is **navigation-start batches** (each enriches up to top-N POIs per route), not just detail-view opens, so cost is sized on request count, not detail-open count. Bounded by the §6.1 request-count budget lock (reserve-before-call, hard monthly ceiling → degrade-to-OSM), the top-N-per-route cap, and short-TTL cache, with progressive enrichment for latency. Still needs a real pricing check and a monthly cap at build time.
 - **OSM↔commercial match quality** — name/geo matching is fuzzy; mis-matches show the wrong rating. Mitigate with a tight distance + category threshold and a "unverified match" state; prefer OSM `brand:wikidata` where present.
 - **`twisty_highlight` category** — Tarmoto-derived (curviness layer), not OSM; not covered by this pipeline. Keep as a follow-up layer; the companion keeps its client-side mapping.
 - **Storage/runtime** for 15+ countries — validate in Phase 2 before enabling all regions in prod.
