@@ -61,4 +61,12 @@ describe('UpdateProfileDto / language', () => {
     const errors = await validateProfile({ language: 'xx' });
     expect(errors).toContain('isIn');
   });
+
+  it('rejects an explicit null (column is NOT NULL, unlike its nullable siblings)', async () => {
+    // Regression: `@IsOptional()` would have skipped validation for `null`
+    // too, letting `{ language: null }` reach the service and crash the
+    // NOT NULL column instead of failing validation with a 400.
+    const errors = await validateProfile({ language: null });
+    expect(errors).toContain('isIn');
+  });
 });

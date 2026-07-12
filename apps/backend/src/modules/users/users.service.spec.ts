@@ -668,6 +668,19 @@ describe('UsersService', () => {
       expect(result.language).toBe('en');
     });
 
+    it('should not assign language when the dto sends null (NOT NULL column guard)', async () => {
+      // DTO validation should already reject `null` (see
+      // update-profile.dto.spec.ts), but the service guard is
+      // defense-in-depth: `language` is NOT NULL, so if a `null` ever
+      // reached here the naive `!== undefined` check would still assign
+      // it and crash the save. `!= null` must skip it, leaving the
+      // fixture's existing value untouched.
+      await service.updateProfile('user-1', { language: null as never });
+
+      const saved = userRepo.save!.mock.calls[0][0] as Record<string, unknown>;
+      expect(saved.language).toBe('en');
+    });
+
     it('should convert home_location to Point geometry', async () => {
       await service.updateProfile('user-1', {
         home_location: { lat: 49.1, lng: 16.75 },
