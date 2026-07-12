@@ -6,9 +6,11 @@ import { apiServer } from "@/lib/api/server";
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 // Bounds the best-effort user-record sync below so a slow or hanging backend
-// can't delay the cookie-set response indefinitely. Used both as the PATCH's
-// own abort timeout and as the outer race's cap in `POST` (which also covers
-// a hung `auth()` token refresh, upstream of the PATCH).
+// can't delay the cookie-set response indefinitely, and doubles as the
+// deadline `POST` uses to abort the sync outright (see the `AbortController`
+// there) — covering both a hung `auth()` token refresh and an in-flight
+// PATCH, and blocking a *new* PATCH from firing after the deadline already
+// passed (see `syncLanguageToUserRecord`'s `signal` param).
 const LOCALE_SYNC_TIMEOUT_MS = 3000;
 
 /**
@@ -22,18 +24,26 @@ const LOCALE_SYNC_TIMEOUT_MS = 3000;
  * client) with the bearer attached explicitly per-request, since this is the
  * one server-side caller that actually has an authenticated session to hand
  * it — see the docstring on `apiServer`.
+ *
+ * `signal` comes from the `AbortController` `POST` creates: once its deadline
+ * fires, the signal aborts an in-flight PATCH, and the `signal.aborted` guard
+ * below blocks a PATCH that hasn't started yet from firing at all. Without
+ * that guard, a request whose `auth()` call (e.g. a token refresh) stalls
+ * past the deadline could still PATCH afterwards with its now-stale locale,
+ * clobbering a newer locale a later, faster request already persisted.
  */
 async function syncLanguageToUserRecord(
   locale: SupportedLocale,
+  signal: AbortSignal,
 ): Promise<void> {
   try {
     const session = await auth();
-    if (!session?.user) return;
+    if (!session?.user || signal.aborted) return;
 
     const { error, response } = await apiServer.PATCH("/api/v1/users/me", {
       body: { language: locale },
       headers: { Authorization: `Bearer ${session.accessToken}` },
-      signal: AbortSignal.timeout(LOCALE_SYNC_TIMEOUT_MS),
+      signal,
     });
     if (!response.ok) {
       console.error("Failed to persist language to user record", error);
@@ -72,10 +82,25 @@ export async function POST(request: Request) {
   // it (auth()'s token refresh, or the PATCH itself) can delay the cookie
   // response. `syncLanguageToUserRecord` already swallows its own errors, so
   // this promise never rejects — the race has no unhandled-rejection risk.
+  //
+  // The timeout owns an `AbortController` rather than just resolving: when it
+  // wins the race, it also aborts `controller.signal`, which cancels an
+  // in-flight PATCH and blocks a not-yet-started one (see the `signal`
+  // docstring on `syncLanguageToUserRecord`) — otherwise the sync would keep
+  // running in the background and could still PATCH with a since-superseded
+  // locale after this response has already gone out.
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
-    syncLanguageToUserRecord(locale),
-    new Promise<void>((resolve) => setTimeout(resolve, LOCALE_SYNC_TIMEOUT_MS)),
+    syncLanguageToUserRecord(locale, controller.signal),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort(); // cancel in-flight PATCH AND block a post-deadline stale PATCH
+        resolve(); // stop gating the cookie response on backend latency
+      }, LOCALE_SYNC_TIMEOUT_MS);
+    }),
   ]);
+  if (timer) clearTimeout(timer);
 
   return response;
 }

@@ -111,6 +111,36 @@ describe("POST /api/locale", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
+  it("does not fire a stale PATCH when auth() only resolves after the sync deadline already fired", async () => {
+    vi.useFakeTimers();
+    // Simulate request A: its `auth()` (e.g. a token refresh) stalls past the
+    // deadline. Unlike the "hangs indefinitely" test above, this `auth()`
+    // eventually resolves — but only after `POST` has already returned,
+    // which is exactly when a second, faster request could have persisted a
+    // newer locale. The fix must block this request from PATCHing at all.
+    let releaseAuth!: (session: Session | null) => void;
+    mockedAuth.mockReturnValueOnce(
+      new Promise<Session | null>((resolve) => {
+        releaseAuth = resolve;
+      }),
+    );
+
+    const responsePromise = POST(postRequest("en"));
+    await vi.advanceTimersByTimeAsync(SYNC_TIMEOUT_MS + 1);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ locale: "en" });
+    expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+
+    // Only now does the stalled auth() resolve — after the deadline already
+    // aborted the controller. The `signal.aborted` guard must stop the PATCH.
+    releaseAuth(AUTHENTICATED_SESSION);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("does not call the backend when unauthenticated, but still sets the cookie", async () => {
     mockedAuth.mockResolvedValueOnce(null);
 
