@@ -44,6 +44,7 @@ describe('AccountDeletionService', () => {
       phone: null,
       avatar_url: null,
       bio: null,
+      language: 'en',
       home_region: null,
       home_location: null,
       work_location: null,
@@ -202,6 +203,15 @@ describe('AccountDeletionService', () => {
           event: 'requested',
           details: { reason: 'no longer riding' },
         }),
+      );
+      // Scheduled-deletion notice goes out in the rider's stored language.
+      const email = service['email'] as unknown as {
+        sendAccountDeletionScheduled: jest.Mock;
+      };
+      expect(email.sendAccountDeletionScheduled).toHaveBeenCalledWith(
+        'rider@tarmoto.app',
+        expect.objectContaining({ displayName: 'Test Rider' }),
+        'en',
       );
     });
 
@@ -364,6 +374,36 @@ describe('AccountDeletionService', () => {
             deletion_reason: 'gdpr',
           }),
         }),
+      );
+    });
+
+    it('emails the deletion-completed receipt using the language captured BEFORE the purge (the row is gone by send time)', async () => {
+      const due = buildUser({
+        id: 'expired-lang',
+        email: 'lang-rider@tarmoto.app',
+        display_name: 'Lang Rider',
+        language: 'en',
+        deleted_at: new Date('2026-03-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-03-31T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+      // The purge pre-flight's OWN findOne (inside `purgeUser`) only ever
+      // returns `{ id }` (see the default `userRepo.findOne` mock above) —
+      // so if the implementation regressed to reading `language` from that
+      // re-fetch instead of the value captured before the purge, this
+      // would surface as `undefined` here instead of the seeded 'en'.
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-01T00:00:00Z'),
+      );
+
+      expect(purged).toBe(1);
+      const email = service['email'] as unknown as {
+        sendAccountDeletionCompleted: jest.Mock;
+      };
+      expect(email.sendAccountDeletionCompleted).toHaveBeenCalledWith(
+        'lang-rider@tarmoto.app',
+        expect.objectContaining({ displayName: 'Lang Rider' }),
+        'en',
       );
     });
 
@@ -708,9 +748,15 @@ describe('AccountDeletionService', () => {
       const email = service['email'] as {
         sendAccountDeletionCompleted: jest.Mock;
       };
+      // Locale comes from the `target` snapshot `finalizeUser` captured
+      // BEFORE `purgeUser` ran — the internal pre-flight re-fetch inside
+      // `purgeUser` (default `userRepo.findOne` mock) only ever returns
+      // `{ id }`, so a value of 'en' here proves the pre-purge capture
+      // path, not a post-purge re-read.
       expect(email.sendAccountDeletionCompleted).toHaveBeenCalledWith(
         'rider@tarmoto.app',
         expect.objectContaining({ displayName: 'Final Rider' }),
+        'en',
       );
       jest.useRealTimers();
     });

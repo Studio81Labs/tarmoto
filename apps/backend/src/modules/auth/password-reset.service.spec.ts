@@ -34,6 +34,7 @@ describe('PasswordResetService', () => {
       display_name: 'Rider',
       deleted_at: null,
       password_hash: 'old-hash',
+      language: 'en',
     }) as unknown as User;
 
   beforeEach(async () => {
@@ -139,6 +140,8 @@ describe('PasswordResetService', () => {
             /^https:\/\/app\.tarmoto\.app\/reset-password\?token=/,
           ),
         }),
+        // Recipient's stored language, not the service default.
+        'en',
       );
     });
 
@@ -212,6 +215,8 @@ describe('PasswordResetService', () => {
           displayName: 'Rider',
           changedAt: expect.any(Date),
         }),
+        // Recipient's stored language, not the service default.
+        'en',
       );
     });
 

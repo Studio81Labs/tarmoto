@@ -1728,7 +1728,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false,\n    \"route_prefs\": {\n      \"road_preference\": \"direct\",\n      \"avoid_highways\": false,\n      \"avoid_tolls\": false,\n      \"avoid_unpaved\": false,\n      \"surfaces\": [\n        \"\"\n      ],\n      \"min_quality\": \"any\"\n    }\n  }\n}",
+              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"language\": \"en\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false,\n    \"route_prefs\": {\n      \"road_preference\": \"direct\",\n      \"avoid_highways\": false,\n      \"avoid_tolls\": false,\n      \"avoid_unpaved\": false,\n      \"surfaces\": [\n        \"\"\n      ],\n      \"min_quality\": \"any\"\n    }\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

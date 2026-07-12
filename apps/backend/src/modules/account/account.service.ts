@@ -431,13 +431,17 @@ export class AccountService {
   ): Promise<void> {
     const plan = PLAN_CATALOG[tier];
     try {
-      await this.email.sendSubscriptionConfirmed(user.email, {
-        displayName: user.display_name,
-        planName: plan.name,
-        priceLabel: plan.priceLabel,
-        renewsAt,
-        manageBillingUrl: this.subscriptionPageUrl(),
-      });
+      await this.email.sendSubscriptionConfirmed(
+        user.email,
+        {
+          displayName: user.display_name,
+          planName: plan.name,
+          priceLabel: plan.priceLabel,
+          renewsAt,
+          manageBillingUrl: this.subscriptionPageUrl(),
+        },
+        user.language,
+      );
     } catch (err) {
       this.logger.warn(
         `Subscription-confirmed email failed for user ${user.id}: ${
@@ -453,12 +457,16 @@ export class AccountService {
     endsAt: Date | null,
   ): Promise<void> {
     try {
-      await this.email.sendSubscriptionCancelled(user.email, {
-        displayName: user.display_name,
-        planName,
-        endsAt,
-        resubscribeUrl: this.subscriptionPageUrl(),
-      });
+      await this.email.sendSubscriptionCancelled(
+        user.email,
+        {
+          displayName: user.display_name,
+          planName,
+          endsAt,
+          resubscribeUrl: this.subscriptionPageUrl(),
+        },
+        user.language,
+      );
     } catch (err) {
       this.logger.warn(
         `Subscription-cancelled email failed for user ${user.id}: ${

@@ -125,6 +125,7 @@ import { SwapTierNamesAddLaunchMode1796000000000 } from './migrations/1796000000
 import { DropPois1797000000000 } from './migrations/1797000000000-DropPois.js';
 import { DropTripFromRouteCollections1798000000000 } from './migrations/1798000000000-DropTripFromRouteCollections.js';
 import { AddEmailLog1799000000000 } from './migrations/1799000000000-AddEmailLog.js';
+import { AddUserLanguage1800000000000 } from './migrations/1800000000000-AddUserLanguage.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -268,6 +269,7 @@ export const AppDataSource = new DataSource({
     DropPois1797000000000,
     DropTripFromRouteCollections1798000000000,
     AddEmailLog1799000000000,
+    AddUserLanguage1800000000000,
   ],
   synchronize: false,
 });

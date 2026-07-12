@@ -1,9 +1,15 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { UserRoutePrefsDto } from './update-profile.dto.js';
+import { UserRoutePrefsDto, UpdateProfileDto } from './update-profile.dto.js';
 
 async function validatePrefs(body: unknown): Promise<string[]> {
   const dto = plainToInstance(UserRoutePrefsDto, body);
+  const errors = await validate(dto);
+  return errors.flatMap((e) => Object.keys(e.constraints ?? {}));
+}
+
+async function validateProfile(body: unknown): Promise<string[]> {
+  const dto = plainToInstance(UpdateProfileDto, body);
   const errors = await validate(dto);
   return errors.flatMap((e) => Object.keys(e.constraints ?? {}));
 }
@@ -39,5 +45,28 @@ describe('UserRoutePrefsDto', () => {
       surfaces: ['asphalt', 42],
     });
     expect(errors).toContain('isString');
+  });
+});
+
+describe('UpdateProfileDto / language', () => {
+  it('accepts a supported locale', async () => {
+    expect(await validateProfile({ language: 'en' })).toEqual([]);
+  });
+
+  it('accepts an omitted language (optional)', async () => {
+    expect(await validateProfile({ display_name: 'Rider' })).toEqual([]);
+  });
+
+  it('rejects an unsupported locale', async () => {
+    const errors = await validateProfile({ language: 'xx' });
+    expect(errors).toContain('isIn');
+  });
+
+  it('rejects an explicit null (column is NOT NULL, unlike its nullable siblings)', async () => {
+    // Regression: `@IsOptional()` would have skipped validation for `null`
+    // too, letting `{ language: null }` reach the service and crash the
+    // NOT NULL column instead of failing validation with a 400.
+    const errors = await validateProfile({ language: null });
+    expect(errors).toContain('isIn');
   });
 });

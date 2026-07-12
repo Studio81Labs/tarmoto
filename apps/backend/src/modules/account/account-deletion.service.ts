@@ -171,10 +171,14 @@ export class AccountDeletionService {
     // failure doesn't surface a 500 from a deletion the row already
     // committed.
     try {
-      await this.email.sendAccountDeletionScheduled(user.email, {
-        displayName: user.display_name,
-        scheduledFor: actualSchedule,
-      });
+      await this.email.sendAccountDeletionScheduled(
+        user.email,
+        {
+          displayName: user.display_name,
+          scheduledFor: actualSchedule,
+        },
+        user.language,
+      );
     } catch (err) {
       this.logger.warn(
         `Account-deletion-scheduled email failed for user ${user.id}: ${
@@ -211,19 +215,25 @@ export class AccountDeletionService {
     for (const user of due) {
       try {
         // Capture user-facing fields before the transaction so the
-        // post-purge confirmation email has the rider's display name
-        // and address even though their row no longer exists.
+        // post-purge confirmation email has the rider's display name,
+        // address, and language preference even though their row no
+        // longer exists.
         const purgedFields = {
           email: user.email,
           displayName: user.display_name,
+          language: user.language,
         };
         if (await this.purgeUser(user, now)) {
           purged += 1;
           try {
-            await this.email.sendAccountDeletionCompleted(purgedFields.email, {
-              displayName: purgedFields.displayName,
-              deletedAt: now,
-            });
+            await this.email.sendAccountDeletionCompleted(
+              purgedFields.email,
+              {
+                displayName: purgedFields.displayName,
+                deletedAt: now,
+              },
+              purgedFields.language,
+            );
           } catch (err) {
             this.logger.warn(
               `Account-deletion-completed email failed for user ${user.id}: ${
@@ -276,11 +286,13 @@ export class AccountDeletionService {
     }
 
     // Capture user-facing fields before the transaction so the
-    // post-purge confirmation email has the rider's display name
-    // and address even though their row no longer exists.
+    // post-purge confirmation email has the rider's display name,
+    // address, and language preference even though their row no
+    // longer exists.
     const purgedFields = {
       email: user.email,
       displayName: user.display_name,
+      language: user.language,
     };
 
     const purged = await this.purgeUser(user, now);
@@ -289,10 +301,14 @@ export class AccountDeletionService {
     }
 
     try {
-      await this.email.sendAccountDeletionCompleted(purgedFields.email, {
-        displayName: purgedFields.displayName,
-        deletedAt: now,
-      });
+      await this.email.sendAccountDeletionCompleted(
+        purgedFields.email,
+        {
+          displayName: purgedFields.displayName,
+          deletedAt: now,
+        },
+        purgedFields.language,
+      );
     } catch (err) {
       // Email failure must not bubble — the row is gone, the audit
       // is written, and re-running the job would do nothing useful.

@@ -471,6 +471,13 @@ export class UsersService {
     if (dto.bio !== undefined) {
       user.bio = dto.bio;
     }
+    // `!= null` (not `!== undefined`): `language` is a NOT NULL column, so a
+    // `null` here — which should never pass DTO validation, but this guard
+    // is defense-in-depth in case that's ever bypassed — must be skipped
+    // rather than written, unlike the nullable sibling fields above.
+    if (dto.language != null) {
+      user.language = dto.language;
+    }
     if (dto.home_region !== undefined) {
       user.home_region = dto.home_region;
     }

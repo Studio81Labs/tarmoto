@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { resolveLocale } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { toUserResponse } from '../users/user-response.mapper.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
@@ -37,7 +38,7 @@ export class AuthService {
     private readonly appSettings: AppSettingsService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, acceptLanguage?: string) {
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     // Launch mode (sibling `launch_all_pro` pattern): while an operator
@@ -50,6 +51,12 @@ export class AuthService {
       email: dto.email,
       password_hash,
       display_name: dto.display_name,
+      // Best-effort capture of the rider's browser/OS locale from the
+      // registration request. `resolveLocale` falls back to
+      // `DEFAULT_LOCALE` for a missing header or an unregistered tag, so
+      // this is always safe to set. Only the value is seeded here — the
+      // verification-email send stays on its own locale wiring.
+      language: resolveLocale(acceptLanguage),
       ...(launchTier
         ? { subscription_tier: launchTier, plan_source: 'founder' as const }
         : {}),

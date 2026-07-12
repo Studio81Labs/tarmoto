@@ -42,6 +42,7 @@ const ELIGIBLE_USER = {
   email: 'rider@tarmoto.app',
   display_name: 'Ada',
   preferences: { units: 'imperial' },
+  language: 'en',
 };
 
 describe('DigestWeeklyProcessor.compose (#866)', () => {
@@ -111,6 +112,8 @@ describe('DigestWeeklyProcessor.compose (#866)', () => {
         units: 'imperial',
         exploreUrl: 'https://app.tarmoto.app/explore',
       }),
+      // The composed user's stored language, not the service default.
+      'en',
     );
   });
 

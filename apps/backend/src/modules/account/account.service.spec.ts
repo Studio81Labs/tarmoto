@@ -28,6 +28,7 @@ describe('AccountService', () => {
       phone: null,
       avatar_url: null,
       bio: null,
+      language: 'en',
       home_region: null,
       home_location: null,
       work_location: null,
@@ -417,6 +418,15 @@ describe('AccountService', () => {
       );
       // Conditional activation claim is what writes the status.
       expect(activationClaimExecute).toHaveBeenCalled();
+      // Confirmation email goes out in the rider's stored language.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).toHaveBeenCalledWith(
+        'rider@tarmoto.app',
+        expect.objectContaining({ planName: 'Pro' }),
+        'en',
+      );
     });
 
     it('lets the configured price ID beat a stale pre-swap lookup key', async () => {
@@ -488,6 +498,15 @@ describe('AccountService', () => {
           subscription_status: 'canceled',
           stripe_subscription_id: null,
         }),
+      );
+      // Cancellation email goes out in the rider's stored language.
+      const emailService = service['email'] as unknown as {
+        sendSubscriptionCancelled: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionCancelled).toHaveBeenCalledWith(
+        'rider@tarmoto.app',
+        expect.objectContaining({ planName: 'Pro' }),
+        'en',
       );
     });
 
