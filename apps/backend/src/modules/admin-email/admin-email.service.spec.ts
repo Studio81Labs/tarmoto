@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { DEFAULT_LOCALE } from '@tarmoto/shared';
 import { AdminEmailService } from './admin-email.service.js';
 
 function makeQb(result: [unknown[], number]) {
@@ -113,14 +114,18 @@ describe('AdminEmailService', () => {
       const { service, email } = make();
       const res = await service.sendTestDigest('admin@tarmoto.app');
       expect(res).toEqual({ status: 'sent' });
-      const [to, ctx] = email.sendWeeklyDigest.mock.calls[0] as [
+      const [to, ctx, locale] = email.sendWeeklyDigest.mock.calls[0] as [
         string,
         Record<string, unknown>,
+        string,
       ];
       expect(to).toBe('admin@tarmoto.app');
       expect(typeof ctx.rideCount).toBe('number');
       expect(ctx.units).toBe('metric');
       expect(ctx.exploreUrl).toContain('/explore');
+      // Fixed-sample preview — always the product default, never a
+      // per-rider preference (there is no real recipient to look up).
+      expect(locale).toBe(DEFAULT_LOCALE);
     });
 
     it('reports failed when the provider swallowed the send (null)', async () => {

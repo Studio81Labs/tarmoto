@@ -95,11 +95,15 @@ export class EmailVerificationService {
     )}`;
 
     try {
-      await this.email.sendVerification(user.email, {
-        displayName: user.display_name,
-        verifyUrl,
-        expiresInHours: VERIFY_TOKEN_TTL_HOURS,
-      });
+      await this.email.sendVerification(
+        user.email,
+        {
+          displayName: user.display_name,
+          verifyUrl,
+          expiresInHours: VERIFY_TOKEN_TTL_HOURS,
+        },
+        user.language,
+      );
     } catch (err) {
       this.logger.warn(
         `Verification email send failed for user ${user.id}: ${

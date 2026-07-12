@@ -10,7 +10,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
-import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
+import {
+  DEFAULT_LOCALE,
+  haversineKm,
+  latLngToPoint,
+  pointToLatLng,
+} from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripFolder } from '../../entities/trip-folder.entity.js';
@@ -722,13 +727,21 @@ export class TripsService {
 
     const joinUrl = this.buildInviteUrl(tripId, personalCode);
 
-    await this.email.sendTripInvite(dto.email, {
-      inviterDisplayName: inviterName,
-      tripTitle: trip.title,
-      joinUrl,
-      inviteCode: personalCode,
-      message: dto.message?.trim() ? dto.message.trim() : null,
-    });
+    // The recipient may not have a Tarmoto account yet — `existingUser`
+    // (looked up above by `dto.email`) is the only source of a stored
+    // language preference; an external invitee falls back to the
+    // product default.
+    await this.email.sendTripInvite(
+      dto.email,
+      {
+        inviterDisplayName: inviterName,
+        tripTitle: trip.title,
+        joinUrl,
+        inviteCode: personalCode,
+        message: dto.message?.trim() ? dto.message.trim() : null,
+      },
+      existingUser?.language ?? DEFAULT_LOCALE,
+    );
 
     await this.activity.recordSafe(tripId, userId, 'member_invited', {
       recipient_email_domain: emailDomain(dto.email),

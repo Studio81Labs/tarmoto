@@ -46,6 +46,7 @@ beforeAll(() => {
       phone: null,
       avatar_url: null,
       bio: null,
+      language: "en",
       home_region: null,
       home_location: null,
       work_location: null,

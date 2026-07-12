@@ -3636,6 +3636,8 @@ export interface components {
             phone: string | null;
             avatar_url: string | null;
             bio: string | null;
+            /** @enum {string} */
+            language: "en";
             home_region: string | null;
             home_location: components["schemas"]["LatLngResponse"] | null;
             work_location: components["schemas"]["LatLngResponse"] | null;
@@ -4595,6 +4597,8 @@ export interface components {
             phone?: string;
             avatar_url?: string | null;
             bio?: string | null;
+            /** @enum {string} */
+            language?: "en";
             home_region?: string | null;
             home_location?: components["schemas"]["LatLngDto"];
             work_location?: components["schemas"]["LatLngDto"];

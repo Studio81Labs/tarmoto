@@ -25,6 +25,7 @@ export function toUserResponse(
     phone: user.phone,
     avatar_url: user.avatar_url,
     bio: user.bio,
+    language: user.language,
     home_region: user.home_region,
     home_location: pointToLatLng(user.home_location),
     work_location: pointToLatLng(user.work_location),

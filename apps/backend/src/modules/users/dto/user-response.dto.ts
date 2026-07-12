@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { SUBSCRIPTION_TIERS, type SubscriptionTier } from '@tarmoto/shared';
+import {
+  SUBSCRIPTION_TIERS,
+  type SubscriptionTier,
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+} from '@tarmoto/shared';
 import { FeatureSnapshotDto } from '../../features/dto/feature-snapshot.dto.js';
 
 class LatLngResponse {
@@ -95,6 +100,9 @@ export class UserResponseDto {
 
   @ApiProperty({ nullable: true })
   bio!: string | null;
+
+  @ApiProperty({ enum: SUPPORTED_LOCALES })
+  language!: SupportedLocale;
 
   @ApiProperty({ nullable: true })
   home_region!: string | null;

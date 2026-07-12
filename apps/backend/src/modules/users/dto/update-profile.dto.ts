@@ -7,10 +7,12 @@ import {
   IsBoolean,
   IsIn,
   MaxLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { SUPPORTED_LOCALES, type SupportedLocale } from '@tarmoto/shared';
 import { ROUTE_PREFERENCES } from '../../routing/dto/route.dto.js';
 
 export const MIN_QUALITY_LEVELS = [
@@ -118,6 +120,17 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(500)
   bio?: string | null;
+
+  // `language`'s column is NOT NULL (unlike its nullable siblings above), so
+  // `@IsOptional()` would be wrong here: it skips validation for `null` too,
+  // letting `{ language: null }` bypass `@IsIn` and hit the DB as a NOT NULL
+  // violation instead of a 400. `@ValidateIf` only skips validation when the
+  // field is `undefined` (absent/omitted) — an explicit `null` still runs
+  // `@IsIn`, which rejects it since `null` is never in `SUPPORTED_LOCALES`.
+  @ApiProperty({ enum: SUPPORTED_LOCALES, required: false })
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsIn(SUPPORTED_LOCALES)
+  language?: SupportedLocale;
 
   @ApiProperty({ required: false, nullable: true })
   @IsOptional()

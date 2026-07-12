@@ -29,6 +29,7 @@ describe('EmailVerificationService', () => {
       email: 'rider@tarmoto.app',
       display_name: 'Rider',
       email_verified_at: null,
+      language: 'en',
     }) as unknown as User;
 
   beforeEach(async () => {
@@ -128,6 +129,8 @@ describe('EmailVerificationService', () => {
             /^https:\/\/app\.tarmoto\.app\/verify-email\?token=/,
           ),
         }),
+        // Recipient's stored language, not the service default.
+        'en',
       );
     });
 

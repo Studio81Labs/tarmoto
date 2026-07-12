@@ -72,11 +72,15 @@ export class DataExportProcessor {
         const view = this.service.buildPublicView(ready);
         if (view.downloadUrl) {
           this.email
-            .sendDataExportReady(user.email, {
-              displayName: user.display_name,
-              downloadUrl: view.downloadUrl,
-              expiresAt: new Date(view.expiresAt),
-            })
+            .sendDataExportReady(
+              user.email,
+              {
+                displayName: user.display_name,
+                downloadUrl: view.downloadUrl,
+                expiresAt: new Date(view.expiresAt),
+              },
+              user.language,
+            )
             .catch((mailErr) => {
               const mailMsg =
                 mailErr instanceof Error ? mailErr.message : String(mailErr);
