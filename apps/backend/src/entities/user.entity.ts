@@ -7,7 +7,11 @@ import {
   OneToMany,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
-import type { PlanSource, SubscriptionTier } from '@tarmoto/shared';
+import type {
+  PlanSource,
+  SubscriptionTier,
+  SupportedLocale,
+} from '@tarmoto/shared';
 import { UserContact } from './user-contact.entity.js';
 import { Ride } from './ride.entity.js';
 import { HazardReport } from './hazard-report.entity.js';
@@ -37,6 +41,9 @@ export class User {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   bio!: string | null;
+
+  @Column({ type: 'varchar', length: 10, default: 'en' })
+  language!: SupportedLocale;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
   home_region!: string | null;
