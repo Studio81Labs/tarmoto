@@ -72,6 +72,7 @@ import {
   PASS_MARKER_LAYER,
 } from "@/components/map/ConditionMarkerLayer";
 import { installPointClickRouter } from "@/components/map/mapPointClickRouter";
+import { getBasemapPoiLayerIds, topBasemapPlaceAt } from "@/lib/basemap-poi";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import type {
@@ -405,7 +406,22 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             // Cluster may have been superseded by a refetch; drop the zoom-in.
           });
       };
+      // Basemap (OpenStreetMap) POIs — the style's own parking/park/info icons.
+      // Lowest priority: our markers (router routes) win, then a named basemap
+      // POI, then the road beneath it.
+      const basemapPoiLayers = getBasemapPoiLayerIds(map);
       const selectSegmentAt = (e: MapMouseEvent) => {
+        const place = topBasemapPlaceAt(map, e.point, basemapPoiLayers);
+        if (place) {
+          setPointMenu({
+            point: { kind: "place", place },
+            lng: place.lng,
+            lat: place.lat,
+            x: e.originalEvent.clientX,
+            y: e.originalEvent.clientY,
+          });
+          return;
+        }
         // A non-marker click dismisses an open popover, then tries the road.
         setPointMenu(null);
         const {
@@ -462,6 +478,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         POI_CLUSTER_LAYER,
         CLOSURE_MARKER_LAYER,
         PASS_MARKER_LAYER,
+        ...basemapPoiLayers,
       ]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
