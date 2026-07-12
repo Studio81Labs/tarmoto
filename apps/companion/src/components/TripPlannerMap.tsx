@@ -954,7 +954,9 @@ const TripPlannerMapContent = forwardRef<
         : null;
       store.insertWaypointBefore(dayIndex, anchorId, {
         id: `place-${place.lng},${place.lat}-${Date.now()}`,
-        name: place.name,
+        // Unnamed POIs carry an empty name — fall back to the category so the
+        // saved waypoint isn't blank (the same label the card shows).
+        name: place.name || place.category,
         location: { lat: place.lat, lng: place.lng },
         type,
       });
@@ -977,7 +979,7 @@ const TripPlannerMapContent = forwardRef<
         { lat: place.lat, lng: place.lng },
         action,
         store.draftPlannerParameters ?? undefined,
-        { name: place.name },
+        { name: place.name || place.category },
       );
       setPlaceMenu(null);
     },

@@ -519,6 +519,17 @@ describe("TripPlannerMap", () => {
       expect(screen.queryByText("Zbýšov")).toBeNull();
     });
 
+    const unnamedParkingClick = {
+      features: [
+        {
+          geometry: { type: "Point", coordinates: [16.6, 49.2] },
+          properties: { class: "amenity", subclass: "parking" },
+        },
+      ],
+      point: { x: 100, y: 100 },
+      originalEvent: { clientX: 100, clientY: 100 },
+    };
+
     it("opens an unnamed POI titled by its category", () => {
       withBasemapPoiLayer();
       mockMap.queryRenderedFeatures.mockReturnValue([]);
@@ -526,19 +537,24 @@ describe("TripPlannerMap", () => {
       render(
         <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
       );
-      act(() =>
-        clicks.get(POI_LAYER)?.({
-          features: [
-            {
-              geometry: { type: "Point", coordinates: [16.6, 49.2] },
-              properties: { class: "amenity", subclass: "parking" },
-            },
-          ],
-          point: { x: 100, y: 100 },
-          originalEvent: { clientX: 100, clientY: 100 },
-        }),
-      );
+      act(() => clicks.get(POI_LAYER)?.(unnamedParkingClick));
       expect(screen.getByText("Parking")).toBeInTheDocument();
+    });
+
+    it("adds an unnamed POI as a waypoint named by its category", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]);
+      useTripStore.setState({ activeTrip: trip(), selectedDayIndex: 0 });
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      act(() => clicks.get(POI_LAYER)?.(unnamedParkingClick));
+      fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+      const waypoints =
+        useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+      // No blank name — the category becomes the saved waypoint's name.
+      expect(waypoints.find((w) => w.type === "via")?.name).toBe("Parking");
     });
 
     it("closes the place card when another marker opens its popover", () => {
