@@ -73,6 +73,46 @@ describe("MapPointPopover", () => {
     });
   });
 
+  describe("place (basemap OSM POI)", () => {
+    const place = {
+      name: "Brněnská oblast",
+      category: "Information",
+      lat: 49.2,
+      lng: 16.6,
+      mapsUrl: "https://www.google.com/maps/search/?api=1&query=x",
+    };
+
+    it("shows name, category, OSM credit and the Google Maps link (info-only)", () => {
+      renderPopover({ kind: "place", place });
+      expect(screen.getByText("Brněnská oblast")).toBeInTheDocument();
+      expect(screen.getByText("Information")).toBeInTheDocument();
+      expect(
+        screen.getByText(/OpenStreetMap contributors/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: /google maps/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /add as via/i })).toBeNull();
+    });
+
+    it("renders placement actions when provided (editable planner)", () => {
+      const onSetStart = vi.fn();
+      renderPopover(
+        { kind: "place", place },
+        {
+          actions: {
+            poi: { onAddVia: vi.fn(), onSetStart, onSetFinish: vi.fn() },
+          },
+        },
+      );
+      expect(
+        screen.getByRole("button", { name: /add as via/i }),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /set as start/i }));
+      expect(onSetStart).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("hazard", () => {
     it("shows the hazard label, severity, note and confirmations — no actions", () => {
       renderPopover({
