@@ -324,6 +324,11 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     }, [showQuality, showSurface, onSegmentSelect]);
 
     const handleReady = (map: MapLibreMap) => {
+      // Capture the base style's first symbol layer BEFORE we append our own
+      // symbol layers below — otherwise, on a style with no base symbols,
+      // `firstSymbolLayerId` would return one of ours and slot the aerial raster
+      // above our overlays instead of falling back to the quality layer.
+      const baseSymbolLayerId = firstSymbolLayerId(map);
       ensureHazardLayers(map, { visible: showHazards });
       ensureConditionLayers(map);
       setConditionLayersVisible(map, showConditions);
@@ -496,10 +501,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       // Aerial imagery basemap, slotted below the base labels + OSM POI icons
       // (which stay visible over the imagery) and below our overlays. Hidden
       // until toggled.
-      ensureAerialBasemap(
-        map,
-        firstSymbolLayerId(map) ?? TARMOTO_QUALITY_LAYER,
-      );
+      ensureAerialBasemap(map, baseSymbolLayerId ?? TARMOTO_QUALITY_LAYER);
       setAerialBasemapVisible(map, basemap === "aerial");
 
       setReady(true);
