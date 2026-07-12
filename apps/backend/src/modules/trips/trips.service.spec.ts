@@ -11,6 +11,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { In, Repository } from 'typeorm';
+import { DEFAULT_LOCALE } from '@tarmoto/shared';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
@@ -1732,13 +1733,17 @@ describe('TripsService', () => {
       const inviteCall = email.sendTripInvite.mock.calls[0];
       if (!inviteCall)
         throw new Error('expected sendTripInvite to have been called');
-      const [to, ctx] = inviteCall;
+      const [to, ctx, locale] = inviteCall;
       expect(to).toBe(RECIPIENT);
       expect(ctx).toMatchObject({
         inviterDisplayName: 'Adam',
         tripTitle: 'Big Italian Loop',
         message: 'Come ride with us!',
       });
+      // The recipient has no Tarmoto account (second userRepo.findOne
+      // resolved null above) — no stored preference to honour, so the
+      // invite falls back to the product default.
+      expect(locale).toBe(DEFAULT_LOCALE);
       // The mail carries a PERSONAL invite code (minted per invite and
       // stored on the pending-invite row), not the trip-wide code — so
       // revoking this invite kills exactly this link.
@@ -1925,6 +1930,32 @@ describe('TripsService', () => {
       // outlive the trip and persist someone else's email forever.
       expect(JSON.stringify(payload)).not.toContain('private.address');
       expect(JSON.stringify(payload)).not.toContain('plus');
+    });
+
+    it("forwards the existing recipient user's stored language when the email belongs to a known (not-yet-member) account", async () => {
+      memberRepo.findOne
+        .mockResolvedValueOnce({ role: 'owner' } as TripMember) // caller's privileged-role check
+        .mockResolvedValueOnce(null); // recipient account exists but hasn't joined this trip
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce({
+          id: OTHER_ID,
+          email: RECIPIENT,
+          language: 'en',
+        } as User);
+
+      await service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT });
+
+      expect(email.sendTripInvite).toHaveBeenCalledTimes(1);
+      const inviteCall = email.sendTripInvite.mock.calls[0];
+      if (!inviteCall)
+        throw new Error('expected sendTripInvite to have been called');
+      const [, , locale] = inviteCall;
+      expect(locale).toBe('en');
     });
   });
 

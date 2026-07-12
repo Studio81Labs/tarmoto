@@ -124,11 +124,15 @@ export class PasswordResetService {
     )}`;
 
     try {
-      await this.email.sendPasswordReset(user.email, {
-        displayName: user.display_name,
-        resetUrl,
-        expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
-      });
+      await this.email.sendPasswordReset(
+        user.email,
+        {
+          displayName: user.display_name,
+          resetUrl,
+          expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+        },
+        user.language,
+      );
     } catch (err) {
       this.logger.warn(
         `Password-reset email send failed for user ${user.id}: ${
@@ -195,10 +199,14 @@ export class PasswordResetService {
     );
 
     try {
-      await this.email.sendPasswordChanged(user.email, {
-        displayName: user.display_name,
-        changedAt: now,
-      });
+      await this.email.sendPasswordChanged(
+        user.email,
+        {
+          displayName: user.display_name,
+          changedAt: now,
+        },
+        user.language,
+      );
     } catch (err) {
       this.logger.warn(
         `Password-changed email send failed for user ${user.id}: ${

@@ -7,6 +7,7 @@ describe('DataExportProcessor', () => {
     id: 'u1',
     email: 'r@example.com',
     display_name: 'Rider',
+    language: 'en',
   };
   const usersRepo = { findOne: jest.fn() };
   const service = {
@@ -99,6 +100,8 @@ describe('DataExportProcessor', () => {
         downloadUrl: expect.stringContaining('req-1/download'),
         expiresAt,
       }),
+      // Recipient's stored language, not the service default.
+      'en',
     );
   });
 

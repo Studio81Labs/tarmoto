@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
-import type { UnitSystem } from '@tarmoto/shared';
+import { DEFAULT_LOCALE, type UnitSystem } from '@tarmoto/shared';
 import { EmailLog } from '../../entities/email-log.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
@@ -48,6 +48,9 @@ export class AdminEmailService {
     const result = await this.email.sendWeeklyDigest(
       toEmail,
       sampleDigestContext(`${getCompanionUrl(this.config)}/explore`),
+      // Fixed-sample preview, not a real rider — there is no stored
+      // recipient preference to honour.
+      DEFAULT_LOCALE,
     );
     return { status: result ? 'sent' : 'failed' };
   }

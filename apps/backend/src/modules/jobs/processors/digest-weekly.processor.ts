@@ -4,7 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import type { DataSource } from 'typeorm';
-import type { UnitSystem } from '@tarmoto/shared';
+import type { SupportedLocale, UnitSystem } from '@tarmoto/shared';
 import { getCompanionUrl } from '../../../common/companion-url.js';
 import { EmailService } from '../../email/email.service.js';
 import {
@@ -261,9 +261,10 @@ export class DigestWeeklyProcessor extends WorkerHost {
         email: string;
         display_name: string;
         preferences: Record<string, unknown> | null;
+        language: SupportedLocale;
       }[]
     >(
-      `SELECT u.email, u.display_name, u.preferences
+      `SELECT u.email, u.display_name, u.preferences, u.language
        FROM users u
        LEFT JOIN notification_preferences np ON np.user_id = u.id
        WHERE u.id = $1
@@ -306,17 +307,21 @@ export class DigestWeeklyProcessor extends WorkerHost {
     const units: UnitSystem =
       user.preferences?.units === 'imperial' ? 'imperial' : 'metric';
 
-    const sent = await this.emailService.sendWeeklyDigest(user.email, {
-      displayName: user.display_name,
-      rideCount: summary.rideCount,
-      totalKm: summary.totalKm,
-      totalMinutes: summary.totalMinutes,
-      bestQuality: summary.bestQuality,
-      percentExplored: exploration.percentExplored,
-      riddenSegments: exploration.riddenSegments,
-      units,
-      exploreUrl: `${getCompanionUrl(this.config)}/explore`,
-    });
+    const sent = await this.emailService.sendWeeklyDigest(
+      user.email,
+      {
+        displayName: user.display_name,
+        rideCount: summary.rideCount,
+        totalKm: summary.totalKm,
+        totalMinutes: summary.totalMinutes,
+        bestQuality: summary.bestQuality,
+        percentExplored: exploration.percentExplored,
+        riddenSegments: exploration.riddenSegments,
+        units,
+        exploreUrl: `${getCompanionUrl(this.config)}/explore`,
+      },
+      user.language,
+    );
     if (!sent) {
       // EmailService swallows provider errors and returns null. For a delivery
       // job that IS a real failure — throw so BullMQ retries per the queue
