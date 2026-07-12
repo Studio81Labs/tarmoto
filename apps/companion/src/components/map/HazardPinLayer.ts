@@ -125,6 +125,16 @@ export function normalizeHazardType(raw: string): HazardType {
   return HAZARD_CONFIG[raw as HazardType] ? (raw as HazardType) : "other";
 }
 
+/**
+ * Strip the U+FE0F emoji variation selector for the map marker. MapLibre
+ * renders it as an extra advancing glyph in a `text-field`, which shifts the
+ * emoji left of centre and off the diamond (e.g. 🕳️, 🛢️, ⚠️). HTML — the
+ * legend — handles the selector fine, so only the pins need this.
+ */
+export function mapMarkerEmoji(emoji: string): string {
+  return emoji.replace(/\uFE0F/g, "");
+}
+
 /** Filter raw hazards to the active type set (all → passthrough, none → empty). */
 export function selectHazards(
   raw: HazardResponse[],
@@ -156,7 +166,7 @@ export function hazardsToFeatureCollection(
         road_name: h.road_name,
         created_at: h.created_at,
         expires_at: h.expires_at,
-        emoji: HAZARD_CONFIG[type].emoji,
+        emoji: mapMarkerEmoji(HAZARD_CONFIG[type].emoji),
         opacity: hazardFadeOpacity(h.created_at, h.expires_at, now),
       },
     };
