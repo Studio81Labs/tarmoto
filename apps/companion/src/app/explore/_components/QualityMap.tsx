@@ -24,6 +24,7 @@ import {
 } from "@/components/map/MapCanvas";
 import {
   ensureAerialBasemap,
+  firstSymbolLayerId,
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
 import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
@@ -279,7 +280,6 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showQuality,
       showSurface,
       onSegmentSelect,
-      basemap,
     });
 
     const rawHazardsRef = useRef<HazardResponse[]>([]);
@@ -320,11 +320,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         showQuality,
         showSurface,
         onSegmentSelect,
-        basemap,
       };
-    }, [showQuality, showSurface, onSegmentSelect, basemap]);
+    }, [showQuality, showSurface, onSegmentSelect]);
 
     const handleReady = (map: MapLibreMap) => {
+      // Capture the base style's first symbol layer BEFORE we append our own
+      // symbol layers below — otherwise, on a style with no base symbols,
+      // `firstSymbolLayerId` would return one of ours and slot the aerial raster
+      // above our overlays instead of falling back to the quality layer.
+      const baseSymbolLayerId = firstSymbolLayerId(map);
       ensureHazardLayers(map, { visible: showHazards });
       ensureConditionLayers(map);
       setConditionLayersVisible(map, showConditions);
@@ -410,15 +414,11 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
       // Basemap (OpenStreetMap) POIs — the style's own parking/park/info icons.
       // Lowest priority: our markers (router routes) win, then a named basemap
-      // POI, then the road beneath it. Only on the "map" basemap — the aerial
-      // raster covers these icons, so on aerial they're invisible and must not
-      // be interactive.
+      // POI, then the road beneath it. Visible + clickable on both basemaps —
+      // the aerial raster is slotted below the labels/POIs.
       const basemapPoiLayers = getBasemapPoiLayerIds(map);
       const selectSegmentAt = (e: MapMouseEvent) => {
-        const place =
-          segmentSelectionRef.current.basemap === "map"
-            ? topBasemapPlaceAt(map, e.point, basemapPoiLayers)
-            : null;
+        const place = topBasemapPlaceAt(map, e.point, basemapPoiLayers);
         if (place) {
           setPointMenu({
             point: { kind: "place", place },
@@ -489,13 +489,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
-      // Basemap POIs are only clickable on the "map" basemap (hidden under the
-      // aerial raster), so only show the pointer there.
-      const setBasemapPoiPointer = () => {
-        if (segmentSelectionRef.current.basemap === "map") setPointer();
-      };
       for (const id of basemapPoiLayers) {
-        map.on("mouseenter", id, setBasemapPoiPointer);
+        map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
       for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
@@ -503,9 +498,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         map.on("mouseleave", id, unsetPointer);
       }
 
-      // Aerial imagery basemap, inserted below the quality overlay so the
-      // road-quality lines still read on top of it. Hidden until toggled.
-      ensureAerialBasemap(map, TARMOTO_QUALITY_LAYER);
+      // Aerial imagery basemap, slotted below the base labels + OSM POI icons
+      // (which stay visible over the imagery) and below our overlays. Hidden
+      // until toggled.
+      ensureAerialBasemap(map, baseSymbolLayerId ?? TARMOTO_QUALITY_LAYER);
       setAerialBasemapVisible(map, basemap === "aerial");
 
       setReady(true);

@@ -31,6 +31,7 @@ import {
 } from "@/lib/map-segment-hit";
 import {
   ensureAerialBasemap,
+  firstSymbolLayerId,
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
 import { RoadPreviewPopover } from "@/components/planner/RoadPreviewPopover";
@@ -741,12 +742,6 @@ const TripPlannerMapContent = forwardRef<
   const [lineColorMode, setLineColorMode] =
     useState<PlannerLineColorMode | null>("quality");
   const [basemap, setBasemap] = useState<"map" | "aerial">("map");
-  // Current basemap for the ready-time basemap-POI click handler — on aerial the
-  // raster covers those icons, so they must not be interactive.
-  const basemapRef = useRef(basemap);
-  useEffect(() => {
-    basemapRef.current = basemap;
-  }, [basemap]);
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   // Ephemeral how-to hints (rider feedback): each hint lives exactly as
   // long as the action it describes is still pending, then it's gone.
@@ -1202,10 +1197,9 @@ const TripPlannerMapContent = forwardRef<
     // Basemap (OpenStreetMap) POIs — the style's own icons, below all our
     // markers. Discovered from the live style so an env style override works.
     const basemapPoiLayers = getBasemapPoiLayerIds(map);
-    // A NAMED basemap POI under the cursor (only on the "map" basemap — the
-    // aerial raster covers them). The route line + off-route drawer yield to it.
+    // A NAMED basemap POI under the cursor (visible on both basemaps — the
+    // aerial raster sits below the labels/POIs). Route + drawer yield to it.
     const overBasemapPlace = (event: MapLayerMouseEvent) =>
-      basemapRef.current === "map" &&
       topBasemapPlaceAt(map, event.point, basemapPoiLayers) != null;
     // ── Route-section click → Road Preview Card (any segment, not just
     // flagged ones). Waypoints render on top and are the drag targets, so a
@@ -1524,10 +1518,10 @@ const TripPlannerMapContent = forwardRef<
     // ── Basemap (OpenStreetMap) POIs → shared place popover (lowest priority) ──
     // Yields to every one of our markers under the cursor; wins over the route
     // line + off-route drawer (which now defer to `overBasemapPlace`). Only a
-    // NAMED POI opens a card; gated to the "map" basemap (aerial covers them).
+    // NAMED POI opens a card. Works on both basemaps — the aerial raster is
+    // slotted below the labels/POIs so they stay visible + clickable.
     const onBasemapPoiClick = (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
-      if (basemapRef.current !== "map") return;
       const ownLayers = [
         WAYPOINT_PIN,
         CLOSURE_MARKER_LAYER,
@@ -1572,7 +1566,6 @@ const TripPlannerMapContent = forwardRef<
       map.on("click", id, onBasemapPoiClick);
       map.on("mouseenter", id, () => {
         if (drawRef.current?.getMode() !== "idle") return;
-        if (basemapRef.current !== "map") return;
         map.getCanvas().style.cursor = "pointer";
       });
       map.on("mouseleave", id, () => {
@@ -1784,8 +1777,6 @@ const TripPlannerMapContent = forwardRef<
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     setAerialBasemapVisible(map, basemap === "aerial");
-    // Basemap POIs are covered by the aerial raster — drop an open place card.
-    if (basemap !== "map") setPlaceMenu(null);
   }, [basemap, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -3316,9 +3307,9 @@ function ensurePoiLayers(map: MapLibreMap): void {
 }
 
 function ensurePlannerLayers(map: MapLibreMap): void {
-  // Aerial basemap raster sits under every planner layer AND under the
-  // tarmoto tile overlays (the lowest custom layer MapCanvas installs).
-  ensureAerialBasemap(map, TARMOTO_QUALITY_LAYER);
+  // Aerial raster sits under our overlays but ABOVE the base fills/roads and
+  // BELOW the base labels + OSM POI icons, so those stay visible over imagery.
+  ensureAerialBasemap(map, firstSymbolLayerId(map) ?? TARMOTO_QUALITY_LAYER);
   if (!map.getSource(ROUTE_SOURCE)) {
     map.addSource(ROUTE_SOURCE, {
       type: "geojson",
