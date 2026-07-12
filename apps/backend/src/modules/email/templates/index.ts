@@ -71,11 +71,12 @@ ${t('verification.text.confirmLine')}
 
 ${ctx.verifyUrl}
 
-${t('verification.expiry', { hours: ctx.expiresInHours })}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('verification.expiry', { hours: ctx.expiresInHours })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('verification.preheader'),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('verification.html.welcome')}</p>
@@ -115,11 +116,12 @@ ${t('passwordReset.text.intro')}
 
 ${ctx.resetUrl}
 
-${t('passwordReset.expiryText', { minutes: ctx.expiresInMinutes })}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('passwordReset.expiryText', { minutes: ctx.expiresInMinutes })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('passwordReset.preheader'),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('passwordReset.html.intro')}</p>
@@ -157,11 +159,12 @@ export const passwordChangedTemplate = (
 
 ${t('passwordChanged.text.body', { when })}
 
-${t('passwordChanged.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('passwordChanged.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('passwordChanged.preheader'),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('passwordChanged.html.changed')}</p>
@@ -210,11 +213,12 @@ ${t('subscriptionConfirmed.table.plan')}: ${ctx.planName}
 ${t('subscriptionConfirmed.table.price')}: ${ctx.priceLabel}
 ${renews}
 
-${t('subscriptionConfirmed.text.manageIntro')}: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('subscriptionConfirmed.text.manageIntro')}: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('subscriptionConfirmed.preheader', { plan: ctx.planName }),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('subscriptionConfirmed.welcome', { plan: escapeHtml(ctx.planName) })}</p>
@@ -263,11 +267,12 @@ ${t('subscriptionCancelled.text.cancelled', { plan: ctx.planName })}
 
 ${accessLine}
 
-${t('subscriptionCancelled.text.resubscribeIntro')}: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('subscriptionCancelled.text.resubscribeIntro')}: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('subscriptionCancelled.preheader', { plan: ctx.planName }),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('subscriptionCancelled.html.cancelled', { plan: escapeHtml(ctx.planName) })}</p>
@@ -305,11 +310,12 @@ ${t('dataExportReady.text.ready')}
 
 ${ctx.downloadUrl}
 
-${t('dataExportReady.text.expiry', { date: ctx.expiresAt.toUTCString() })}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('dataExportReady.text.expiry', { date: ctx.expiresAt.toUTCString() })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('dataExportReady.preheader'),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('dataExportReady.html.ready')}</p>
@@ -356,11 +362,12 @@ ${t('accountDeletionScheduled.text.scheduled', { date: scheduledFor })}
 
 ${t('accountDeletionScheduled.text.changedMind', { email: ctx.supportEmail })} ${t('accountDeletionScheduled.graceWindow')}
 
-${t('accountDeletionScheduled.afterDate')}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('accountDeletionScheduled.afterDate')}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('accountDeletionScheduled.preheader', { date: scheduledFor }),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('accountDeletionScheduled.html.scheduled', { date: escapeHtml(scheduledFor) })}</p>
@@ -417,7 +424,7 @@ ${ctx.joinUrl}
 
 ${t('tripInvite.text.codeLine', { code: ctx.inviteCode })}
 
-${t('tripInvite.text.noAccount')}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('tripInvite.text.noAccount')}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('tripInvite.preheader', {
@@ -425,6 +432,7 @@ ${t('tripInvite.text.noAccount')}${renderTextFooter(ctx.preferencesUrl)}`;
       trip: ctx.tripTitle,
     }),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greeting}</p>
       <p>${introHtml}</p>
@@ -508,7 +516,7 @@ ${weekLead}:
 ${t('digest.intro', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}
 
 ${t('digest.button')}:
-${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
+${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true, ctx.locale)}`;
 
   const row = (label: string, value: string): string => `
       <tr>
@@ -523,6 +531,7 @@ ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true)}`;
       distance,
     }),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     marketingFooter: true,
     bodyHtml: `
       <p>${greetingHtml}</p>
@@ -568,11 +577,12 @@ ${t('accountDeletionCompleted.text.deleted', { date: deletedAt })}
 
 ${t('accountDeletionCompleted.erased')}
 
-${t('accountDeletionCompleted.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl)}`;
+${t('accountDeletionCompleted.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('accountDeletionCompleted.preheader'),
     preferencesUrl: ctx.preferencesUrl,
+    locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
       <p>${t('accountDeletionCompleted.html.deleted', { date: escapeHtml(deletedAt) })}</p>

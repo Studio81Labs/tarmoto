@@ -9,10 +9,14 @@
  * settings page so riders have one consistent place to opt out of
  * digests when those ship.
  *
- * i18n Phase 2: footer copy + <html lang> are English-only for now;
- * localize here when a second locale lands (see
+ * i18n Phase 2: footer copy + <html lang> flow through `ctx.locale` via
+ * `translateEmail`, defaulting to English when the locale is omitted or
+ * not yet registered (see
  * docs/superpowers/specs/2026-07-11-email-template-i18n-design.md).
  */
+
+import { translateEmail } from '../i18n/index.js';
+import { DEFAULT_LOCALE, type SupportedLocale } from '@tarmoto/shared';
 
 const BRAND = {
   name: 'Tarmoto',
@@ -27,6 +31,8 @@ export interface LayoutContext {
   preferencesUrl: string;
   /** Footer text for marketing/digest mails. Transactional mails omit it. */
   marketingFooter?: boolean;
+  /** Recipient locale for footer copy + <html lang>. Defaults to English. */
+  locale?: SupportedLocale;
 }
 
 export const escapeHtml = (raw: string): string =>
@@ -38,8 +44,9 @@ export const escapeHtml = (raw: string): string =>
     .replace(/'/g, '&#39;');
 
 export const renderLayout = (ctx: LayoutContext): string => {
+  const loc = ctx.locale ?? DEFAULT_LOCALE;
   return `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(loc)}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -63,11 +70,19 @@ export const renderLayout = (ctx: LayoutContext): string => {
             </tr>
             <tr>
               <td style="padding:24px 32px;border-top:1px solid #334155;color:#94a3b8;font-size:12px;line-height:1.5;">
-                ${
+                ${translateEmail(
                   ctx.marketingFooter
-                    ? `You're receiving this digest as part of your Tarmoto subscription. <a href="${escapeHtml(ctx.preferencesUrl)}" style="color:${BRAND.primary};">Unsubscribe from marketing emails</a>.`
-                    : `This is a transactional message about your Tarmoto account. <a href="${escapeHtml(ctx.preferencesUrl)}" style="color:${BRAND.primary};">Manage notifications</a>.`
-                }
+                    ? 'layout.footer.marketing.lead'
+                    : 'layout.footer.transactional.lead',
+                  undefined,
+                  loc,
+                )} <a href="${escapeHtml(ctx.preferencesUrl)}" style="color:${BRAND.primary};">${translateEmail(
+                  ctx.marketingFooter
+                    ? 'layout.footer.marketing.link'
+                    : 'layout.footer.transactional.link',
+                  undefined,
+                  loc,
+                )}</a>.
               </td>
             </tr>
           </table>
@@ -81,11 +96,12 @@ export const renderLayout = (ctx: LayoutContext): string => {
 export const renderTextFooter = (
   preferencesUrl: string,
   marketing = false,
+  locale: SupportedLocale = DEFAULT_LOCALE,
 ): string => {
   // Marketing/digest mail must carry the unsubscribe language in the text part
   // too — a text-only client never sees the HTML `marketingFooter`.
   if (marketing) {
-    return `\n\n—\nTarmoto · weekly digest\nYou're receiving this as part of your Tarmoto subscription.\nUnsubscribe from marketing emails: ${preferencesUrl}\n`;
+    return `\n\n—\n${translateEmail('layout.textFooter.marketing.tagline', undefined, locale)}\n${translateEmail('layout.textFooter.marketing.lead', undefined, locale)}\n${translateEmail('layout.textFooter.marketing.unsub', { url: preferencesUrl }, locale)}\n`;
   }
-  return `\n\n—\nTarmoto · transactional email\nManage notifications: ${preferencesUrl}\n`;
+  return `\n\n—\n${translateEmail('layout.textFooter.transactional.tagline', undefined, locale)}\n${translateEmail('layout.textFooter.transactional.line', { url: preferencesUrl }, locale)}\n`;
 };
