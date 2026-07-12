@@ -279,6 +279,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showQuality,
       showSurface,
       onSegmentSelect,
+      basemap,
     });
 
     const rawHazardsRef = useRef<HazardResponse[]>([]);
@@ -319,8 +320,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         showQuality,
         showSurface,
         onSegmentSelect,
+        basemap,
       };
-    }, [showQuality, showSurface, onSegmentSelect]);
+    }, [showQuality, showSurface, onSegmentSelect, basemap]);
 
     const handleReady = (map: MapLibreMap) => {
       ensureHazardLayers(map, { visible: showHazards });
@@ -408,10 +410,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
       // Basemap (OpenStreetMap) POIs — the style's own parking/park/info icons.
       // Lowest priority: our markers (router routes) win, then a named basemap
-      // POI, then the road beneath it.
+      // POI, then the road beneath it. Only on the "map" basemap — the aerial
+      // raster covers these icons, so on aerial they're invisible and must not
+      // be interactive.
       const basemapPoiLayers = getBasemapPoiLayerIds(map);
       const selectSegmentAt = (e: MapMouseEvent) => {
-        const place = topBasemapPlaceAt(map, e.point, basemapPoiLayers);
+        const place =
+          segmentSelectionRef.current.basemap === "map"
+            ? topBasemapPlaceAt(map, e.point, basemapPoiLayers)
+            : null;
         if (place) {
           setPointMenu({
             point: { kind: "place", place },
@@ -478,9 +485,17 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         POI_CLUSTER_LAYER,
         CLOSURE_MARKER_LAYER,
         PASS_MARKER_LAYER,
-        ...basemapPoiLayers,
       ]) {
         map.on("mouseenter", id, setPointer);
+        map.on("mouseleave", id, unsetPointer);
+      }
+      // Basemap POIs are only clickable on the "map" basemap (hidden under the
+      // aerial raster), so only show the pointer there.
+      const setBasemapPoiPointer = () => {
+        if (segmentSelectionRef.current.basemap === "map") setPointer();
+      };
+      for (const id of basemapPoiLayers) {
+        map.on("mouseenter", id, setBasemapPoiPointer);
         map.on("mouseleave", id, unsetPointer);
       }
       for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
