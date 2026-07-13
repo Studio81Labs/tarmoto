@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
-import { getDataSourceToken } from '@nestjs/typeorm';
+import { getDataSourceToken, TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { POI_PROVIDER } from './poi-provider.interface.js';
 import { OverpassPoiProvider } from './providers/overpass.provider.js';
@@ -15,6 +15,8 @@ import {
 import { FsqPoiImportSource } from './poi-import-source.js';
 import { fsqImportConfig, poiImportConfig } from './poi-import.config.js';
 import { PoiDatabaseModule } from './poi-database.module.js';
+import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import { PoiImportRunRecorder } from './poi-import-run.recorder.js';
 
 /**
  * POI module with pluggable provider.
@@ -33,6 +35,7 @@ import { PoiDatabaseModule } from './poi-database.module.js';
     ConfigModule.forFeature(poiImportConfig),
     ConfigModule.forFeature(fsqImportConfig),
     PoiDatabaseModule,
+    TypeOrmModule.forFeature([PoiImportRun], 'poi'),
   ],
   controllers: [PoiController],
   providers: [
@@ -40,6 +43,7 @@ import { PoiDatabaseModule } from './poi-database.module.js';
     PoiService,
     PoiStoreService,
     PoiImportService,
+    PoiImportRunRecorder,
     {
       provide: FSQ_POI_IMPORT,
       useFactory: (
@@ -56,6 +60,12 @@ import { PoiDatabaseModule } from './poi-database.module.js';
       inject: [PoiImportService, FSQ_POI_IMPORT],
     },
   ],
-  exports: [PoiService, PoiImportService, FSQ_POI_IMPORT, POI_IMPORT_SOURCES],
+  exports: [
+    PoiService,
+    PoiImportService,
+    FSQ_POI_IMPORT,
+    POI_IMPORT_SOURCES,
+    PoiImportRunRecorder,
+  ],
 })
 export class PoiModule {}

@@ -1,0 +1,92 @@
+import { PoiImportRunRecorder } from './poi-import-run.recorder.js';
+import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+
+function mockRepo() {
+  const saved: Partial<PoiImportRun>[] = [];
+  return {
+    saved,
+    create: (v: Partial<PoiImportRun>) => v,
+    save: jest.fn((v: Partial<PoiImportRun>) => {
+      const row = { id: v.id ?? '1', ...v };
+      saved.push(row);
+      return row;
+    }),
+    update: jest.fn((id: string, patch: Partial<PoiImportRun>) => {
+      saved.push({ id, ...patch });
+      return { affected: 1 };
+    }),
+  };
+}
+
+describe('PoiImportRunRecorder', () => {
+  it('start() inserts a running row and returns its id', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    const id = await rec.start({
+      source: 'osm',
+      regionCode: 'CZ',
+      trigger: 'manual',
+      jobId: 'job-1',
+    });
+    expect(id).toBe('1');
+    expect(repo.saved[0]).toMatchObject({
+      source: 'osm',
+      region_code: 'CZ',
+      status: 'running',
+      trigger: 'manual',
+      job_id: 'job-1',
+    });
+  });
+
+  it('finish() records success with counts', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    await rec.finish('7', {
+      region: 'CZ',
+      fetched: 10,
+      upserted: 9,
+      tombstoned: 1,
+      skipped: false,
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      '7',
+      expect.objectContaining({
+        status: 'success',
+        fetched: 10,
+        upserted: 9,
+        tombstoned: 1,
+      }),
+    );
+  });
+
+  it('finish() records skipped with a reason', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    await rec.finish('8', {
+      region: 'CZ',
+      fetched: 0,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      '8',
+      expect.objectContaining({
+        status: 'skipped',
+      }),
+    );
+  });
+
+  it('fail() records failed with a truncated error', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    await rec.fail('9', new Error('boom'));
+    expect(repo.update).toHaveBeenCalledWith(
+      '9',
+      expect.objectContaining({
+        status: 'failed',
+        error: expect.stringContaining('boom') as string,
+      }),
+    );
+  });
+});
