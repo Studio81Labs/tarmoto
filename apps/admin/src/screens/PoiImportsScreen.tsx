@@ -115,7 +115,17 @@ function lastRunSummary(run: RunRow | null): {
   if (!run) return { text: "—", className: "text-fg-dim" };
   switch (run.status) {
     case "success":
-      return { text: `✓ upserted ${run.upserted ?? 0}`, className: "text-ink" };
+      // A wipe-guard partial accept (backend #847 review) upserted cleanly
+      // but withheld tombstoning (and, for OSM, the coverage stamp) — flag it
+      // distinctly from a fully clean success rather than rendering an
+      // identical "✓ upserted N" that would hide the caveat.
+      return run.warning
+        ? {
+            text: `⚠ upserted ${run.upserted ?? 0} — ${run.warning}`,
+            className: "text-quality-q2",
+            title: run.warning,
+          }
+        : { text: `✓ upserted ${run.upserted ?? 0}`, className: "text-ink" };
     case "skipped":
       return {
         text: `⤼ skipped: ${run.skip_reason ?? "unknown reason"}`,
@@ -134,14 +144,39 @@ function lastRunSummary(run: RunRow | null): {
   }
 }
 
+/**
+ * Add/remove one `(source, code)` cell key from an immutable in-flight-keys
+ * set (#847 review). `pendingImportKey`/`pendingUploadKey` used to be a
+ * single scalar, so two uploads (or two imports) started before either
+ * settled would stomp each other's key, and whichever settled FIRST would
+ * clear the flag for BOTH cells via its own `onSettled` — wrongly
+ * re-enabling Import against a still-in-flight sibling cell's replacement
+ * extract. Tracking a `Set` of the same keys the cells already use fixes
+ * that: each mutation's start adds its OWN key, its OWN `onSettled` removes
+ * only that key, and a cell's pending flag is a `set.has(cellKey)` lookup —
+ * concurrent cells never see or clear each other's state.
+ */
+function withKey(keys: ReadonlySet<string>, key: string): Set<string> {
+  return new Set(keys).add(key);
+}
+function withoutKey(keys: ReadonlySet<string>, key: string): Set<string> {
+  const next = new Set(keys);
+  next.delete(key);
+  return next;
+}
+
 export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
   const canMutate = canAccess(currentRole, "admin");
   const { data, isPending, error, refetch } = useAdminPoiRegions();
   const importMutation = useTriggerPoiImport();
   const uploadMutation = useUploadPoiExtract();
 
-  const [pendingImportKey, setPendingImportKey] = useState<string | null>(null);
-  const [pendingUploadKey, setPendingUploadKey] = useState<string | null>(null);
+  const [pendingImportKeys, setPendingImportKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [pendingUploadKeys, setPendingUploadKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [actionMsg, setActionMsg] = useState<{
     kind: "success" | "danger";
     text: string;
@@ -151,7 +186,7 @@ export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
 
   function handleImport(source: PoiSource, code: string) {
     const key = `${source}:${code}`;
-    setPendingImportKey(key);
+    setPendingImportKeys((prev) => withKey(prev, key));
     setActionMsg(null);
     importMutation.mutate(
       { params: { path: { source, code } } },
@@ -165,14 +200,14 @@ export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
         },
         onError: (err: unknown) =>
           setActionMsg({ kind: "danger", text: importErrorMessage(err) }),
-        onSettled: () => setPendingImportKey(null),
+        onSettled: () => setPendingImportKeys((prev) => withoutKey(prev, key)),
       },
     );
   }
 
   function handleUpload(source: PoiSource, code: string, file: File) {
     const key = `${source}:${code}`;
-    setPendingUploadKey(key);
+    setPendingUploadKeys((prev) => withKey(prev, key));
     setActionMsg(null);
     uploadMutation.mutate(
       {
@@ -199,7 +234,7 @@ export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
         },
         onError: (err: unknown) =>
           setActionMsg({ kind: "danger", text: uploadErrorMessage(err) }),
-        onSettled: () => setPendingUploadKey(null),
+        onSettled: () => setPendingUploadKeys((prev) => withoutKey(prev, key)),
       },
     );
   }
@@ -222,8 +257,8 @@ export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
           source="osm"
           status={row.osm}
           canMutate={canMutate}
-          pendingImport={pendingImportKey === `osm:${row.code}`}
-          pendingUpload={pendingUploadKey === `osm:${row.code}`}
+          pendingImport={pendingImportKeys.has(`osm:${row.code}`)}
+          pendingUpload={pendingUploadKeys.has(`osm:${row.code}`)}
           onImport={() => handleImport("osm", row.code)}
           onUpload={(file) => handleUpload("osm", row.code, file)}
         />
@@ -237,8 +272,8 @@ export function PoiImportsScreen({ currentRole }: { currentRole: AdminRole }) {
           source="fsq"
           status={row.fsq}
           canMutate={canMutate}
-          pendingImport={pendingImportKey === `fsq:${row.code}`}
-          pendingUpload={pendingUploadKey === `fsq:${row.code}`}
+          pendingImport={pendingImportKeys.has(`fsq:${row.code}`)}
+          pendingUpload={pendingUploadKeys.has(`fsq:${row.code}`)}
           onImport={() => handleImport("fsq", row.code)}
           onUpload={(file) => handleUpload("fsq", row.code, file)}
         />
@@ -446,7 +481,13 @@ function RunsPanel() {
         <Pill
           variant={
             row.status === "success"
-              ? "accent"
+              ? // A wipe-guard partial accept is still `success` (it DID
+                // upsert), but the amber "warning" variant flags it as
+                // distinct from a fully clean run — mirrors the coverage
+                // table's own "⚠ upserted N" cell summary.
+                row.warning
+                ? "warning"
+                : "accent"
               : row.status === "failed"
                 ? "danger"
                 : row.status === "running"
@@ -479,7 +520,10 @@ function RunsPanel() {
           ? (row.error ?? "—")
           : row.status === "skipped"
             ? (row.skip_reason ?? "—")
-            : "—",
+            : // A `success` row's only possible detail is the wipe-guard
+              // partial-accept advisory — "—" for every clean success, same
+              // as before this field existed.
+              (row.warning ?? "—"),
     },
   ];
 

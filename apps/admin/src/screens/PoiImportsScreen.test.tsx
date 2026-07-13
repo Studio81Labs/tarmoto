@@ -46,6 +46,7 @@ const REGIONS: RegionStatus[] = [
       upserted: 90,
       tombstoned: 2,
       skip_reason: null,
+      warning: null,
       error: null,
       started_at: "2026-06-30T09:55:00Z",
       finished_at: "2026-06-30T10:00:00Z",
@@ -79,6 +80,7 @@ const REGIONS: RegionStatus[] = [
       upserted: null,
       tombstoned: null,
       skip_reason: null,
+      warning: null,
       error: "boom",
       started_at: "2026-06-29T00:00:00Z",
       finished_at: "2026-06-29T00:01:00Z",
@@ -98,6 +100,7 @@ const RUNS: RunRow[] = [
     upserted: 90,
     tombstoned: 2,
     skip_reason: null,
+    warning: null,
     error: null,
     started_at: "2026-06-30T09:55:00Z",
     finished_at: "2026-06-30T10:00:00Z",
@@ -112,6 +115,7 @@ const RUNS: RunRow[] = [
     upserted: null,
     tombstoned: null,
     skip_reason: null,
+    warning: null,
     error: "boom",
     started_at: "2026-06-29T00:00:00Z",
     finished_at: "2026-06-29T00:01:00Z",
@@ -214,6 +218,28 @@ describe("PoiImportsScreen", () => {
     expect(cz.getByText("no extract")).toBeInTheDocument();
   });
 
+  it("shows a distinct '⚠ upserted N — <warning>' summary for a success run that carries a wipe-guard warning", () => {
+    const warning =
+      "extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract";
+    const regionsWithWarning = REGIONS.map((r) =>
+      r.source === "osm" && r.code === "CZ" && r.last_run
+        ? { ...r, last_run: { ...r.last_run, warning } }
+        : r,
+    );
+    mockUseAdminPoiRegions.mockReturnValue({
+      data: regionsWithWarning,
+      isPending: false,
+      error: null,
+      refetch: mockRefetchRegions,
+    });
+    render(<PoiImportsScreen currentRole="admin" />);
+    const cz = within(regionRow("CZ"));
+
+    // Not the plain "✓ upserted 90" a clean success would show.
+    expect(cz.queryByText("✓ upserted 90")).not.toBeInTheDocument();
+    expect(cz.getByText(`⚠ upserted 90 — ${warning}`)).toBeInTheDocument();
+  });
+
   it("disables Import when live_state isn't idle, or when no extract is present", () => {
     render(<PoiImportsScreen currentRole="admin" />);
     const cz = within(regionRow("CZ"));
@@ -264,6 +290,68 @@ describe("PoiImportsScreen", () => {
     // invoke onSettled), so `pendingImport` stays true for osm:CZ — Upload
     // for the SAME cell must be disabled while that import is in flight.
     expect(cz.getAllByRole("button", { name: "Upload" })[0]).toBeDisabled();
+  });
+
+  it("keeps BOTH cells' Import disabled while two concurrent uploads are in flight, and clears only the cell that settles (concurrent-upload race)", () => {
+    // Give CZ's FSQ cell an extract too, so its Import starts enabled just
+    // like its OSM sibling — the point is proving per-cell state, not
+    // re-testing the already-covered "no extract" disablement.
+    const regionsWithBothExtracts = REGIONS.map((r) =>
+      r.source === "fsq" && r.code === "CZ"
+        ? {
+            ...r,
+            extract: {
+              present: true,
+              size_bytes: 1024,
+              modified_at: "2026-06-30T10:00:00Z",
+            },
+          }
+        : r,
+    );
+    mockUseAdminPoiRegions.mockReturnValue({
+      data: regionsWithBothExtracts,
+      isPending: false,
+      error: null,
+      refetch: mockRefetchRegions,
+    });
+    render(<PoiImportsScreen currentRole="admin" />);
+    const cz = within(regionRow("CZ"));
+    const [osmImportBtn, fsqImportBtn] = cz.getAllByRole("button", {
+      name: "Import",
+    });
+    expect(osmImportBtn).toBeEnabled();
+    expect(fsqImportBtn).toBeEnabled();
+
+    const inputs =
+      regionRow("CZ").querySelectorAll<HTMLInputElement>('input[type="file"]');
+    const [osmInput, fsqInput] = inputs;
+    fireEvent.change(osmInput!, {
+      target: { files: [new File(["osm"], "cz.osm")] },
+    });
+    fireEvent.change(fsqInput!, {
+      target: { files: [new File(["fsq"], "cz.fsq.jsonl")] },
+    });
+
+    // With a single scalar `pendingUploadKey`, starting the SECOND upload
+    // would overwrite the first upload's key — wrongly re-enabling the OSM
+    // cell's Import even though its own upload is still in flight.
+    expect(osmImportBtn).toBeDisabled();
+    expect(fsqImportBtn).toBeDisabled();
+
+    // Settle only the FIRST (osm:CZ) upload. With a scalar key, ANY
+    // onSettled cleared the shared flag for every cell; the Set fix must
+    // clear only osm:CZ's own key, leaving the still-in-flight fsq:CZ
+    // upload's Import disabled.
+    const [, osmOptions] = mockUploadExtract.mock.calls[0] as [
+      unknown,
+      { onSettled: () => void },
+    ];
+    act(() => {
+      osmOptions.onSettled();
+    });
+
+    expect(osmImportBtn).toBeEnabled();
+    expect(fsqImportBtn).toBeDisabled();
   });
 
   it("hides Upload/Import controls for a support-role admin", () => {
@@ -427,6 +515,21 @@ describe("PoiImportsScreen", () => {
     expect(within(panel).getByText("success")).toBeInTheDocument();
     expect(within(panel).getByText("failed")).toBeInTheDocument();
     expect(within(panel).getByText("boom")).toBeInTheDocument();
+  });
+
+  it("shows a success run's wipe-guard warning in the Detail column, distinctly from a clean success", () => {
+    const warning =
+      "extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract";
+    mockUseAdminPoiRuns.mockReturnValue({
+      data: [{ ...RUNS[0]!, warning }],
+      isPending: false,
+      error: null,
+    });
+    render(<PoiImportsScreen currentRole="admin" />);
+    const panel = screen.getByText("Recent runs").closest("div");
+    if (!panel) throw new Error("runs panel not found");
+
+    expect(within(panel).getByText(warning)).toBeInTheDocument();
   });
 
   it("shows a load error alert when run history fails to load", () => {
