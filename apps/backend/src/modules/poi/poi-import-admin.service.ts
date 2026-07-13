@@ -459,7 +459,28 @@ export class PoiImportAdminService {
     await this.queue.add(
       JOB_NAMES.POI_IMPORT_REGION,
       { code, source, trigger: 'manual' },
-      { ...DEFAULT_JOB_OPTIONS, jobId, attempts: 3 },
+      {
+        ...DEFAULT_JOB_OPTIONS,
+        jobId,
+        attempts: 3,
+        // Override DEFAULT_JOB_OPTIONS's count/age-based retention
+        // (`removeOnComplete: { count: 1000 }`, `removeOnFail: { age: 24h }`)
+        // with immediate removal. This job uses the STABLE `manualJobId`
+        // above, and BullMQ's `add()` dedupes against ANY existing job with
+        // that id — including a completed/failed one still retained in
+        // Redis. On a low-volume queue like manual admin imports, the
+        // shared retention would keep the terminal job around for a very
+        // long time, so re-importing (upload a fresh extract → click Import
+        // again) would silently dedupe against the stale terminal job and
+        // never actually enqueue, even though the endpoint reports success.
+        // Freeing the id the instant the job terminates is safe here:
+        // durable run history lives in `poi_import_runs` (not the BullMQ
+        // job record), `live_state` above maps a missing job to `idle`, and
+        // the in-flight scan only inspects active/waiting/delayed/
+        // prioritized — never completed/failed.
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
     );
     return { job_id: jobId };
   }

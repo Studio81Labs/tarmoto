@@ -445,6 +445,40 @@ describe('PoiImportAdminService', () => {
       );
     });
 
+    // #847 final-review fix F1: this job's jobId is STABLE
+    // (`manualJobId`), and BullMQ's `add()` dedupes against ANY existing
+    // job with that id — including a completed/failed one still retained
+    // in Redis. `DEFAULT_JOB_OPTIONS`'s shared count/age-based retention
+    // (`removeOnComplete: { count: 1000 }`, `removeOnFail: { age: 24h }`)
+    // is fine for high-volume queues, but on this low-volume manual-import
+    // queue it would keep the terminal job around long enough that a
+    // re-import (fresh extract upload → click Import again) silently
+    // dedupes against the stale job and never re-enqueues, even though the
+    // endpoint reports success. Asserting the override here directly (not
+    // just via the id/attempts fields above) pins the fix so a future edit
+    // can't silently reintroduce count/age retention on this job.
+    it('frees the stable manual jobId immediately on completion/failure so a re-import is never deduped away', async () => {
+      const add = jest.fn(() => ({ id: 'x' }));
+      const queue = { getJobs: jest.fn(() => []), add };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      await svc.triggerImport('osm', 'CZ');
+
+      expect(add).toHaveBeenCalledWith(
+        'import-region',
+        { code: 'CZ', source: 'osm', trigger: 'manual' },
+        expect.objectContaining({
+          removeOnComplete: true,
+          removeOnFail: true,
+        }),
+      );
+    });
+
     it('rejects with 409 when a MANUAL job for the same (source, code) is already in flight', async () => {
       const add = jest.fn();
       const queue = {
