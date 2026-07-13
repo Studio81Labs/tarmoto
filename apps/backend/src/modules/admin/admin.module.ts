@@ -25,6 +25,7 @@ import { AppSettingsModule } from '../app-settings/app-settings.module.js';
 import { AdminAppSettingsController } from '../app-settings/admin-app-settings.controller.js';
 import { PushModule } from '../push/index.js';
 import { EmailModule } from '../email/index.js';
+import { PoiModule } from '../poi/index.js';
 import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { InternalGuard } from './internal.guard.js';
 import {
@@ -33,6 +34,7 @@ import {
 } from './admin-audit.interceptor.js';
 import { AdminMetricsController } from './admin-metrics.controller.js';
 import { AdminMetricsService } from './admin-metrics.service.js';
+import { AdminPoiController } from './admin-poi.controller.js';
 import { AdminUsersController } from '../admin-users/admin-users.controller.js';
 import { AdminUsersService } from '../admin-users/admin-users.service.js';
 import { AdminAdminsController } from '../admin-admins/admin-admins.controller.js';
@@ -75,6 +77,11 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     PushModule,
     // admin-email test-send reuses EmailService.
     EmailModule,
+    // Exposes PoiImportAdminService so admin-poi can read region/run status
+    // and drive uploads/manual triggers. No forwardRef needed: PoiModule
+    // (and everything it imports — PoiDatabaseModule, its own
+    // BullModule.registerQueue) has no dependency back on AdminModule.
+    PoiModule,
     // Register the digest queue TOKEN so admin-email can enqueue a resend. The
     // connection + workers come from JobsModule.forRoot() (imported once in
     // AppModule); importing JobsModule here can't provide JobsProducer because
@@ -90,6 +97,7 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     AdminContentController,
     AdminAppSettingsController,
     AdminEmailController,
+    AdminPoiController,
   ],
   providers: [
     AdminAuditService,
