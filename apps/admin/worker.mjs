@@ -60,13 +60,19 @@ async function proxyApiRequest({ request, requestUrl, env, fetchImpl }) {
   };
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    try {
-      init.body = await readRequestBody(request);
-    } catch (error) {
-      if (error instanceof PayloadTooLargeError) {
-        return jsonResponse(413, { error: "payload_too_large" });
-      }
-      throw error;
+    const declaredLength = readContentLength(request.headers);
+    if (declaredLength !== null && declaredLength > MAX_PROXY_BODY_BYTES) {
+      return jsonResponse(413, { error: "payload_too_large" });
+    }
+    // Stream the body straight through — do NOT buffer it. A Worker has a
+    // ~128 MB memory limit, so buffering a file upload (a POI extract) would
+    // OOM, and the old buffer path capped every upload at 1 MB. The backend's
+    // multer limit is the definitive enforcer; the check above only fast-rejects
+    // an honestly-oversized declared length. `duplex: 'half'` is required when a
+    // Request carries a streaming body.
+    if (request.body) {
+      init.body = request.body;
+      init.duplex = "half";
     }
   }
 
@@ -127,44 +133,6 @@ function buildProxyHeaders(sourceHeaders, internalToken) {
   headers.set("x-forwarded-for", clientIp);
   headers.set("x-real-ip", clientIp);
   return headers;
-}
-
-class PayloadTooLargeError extends Error {
-  constructor() {
-    super("admin proxy request body exceeds the configured limit");
-    this.name = "PayloadTooLargeError";
-  }
-}
-
-async function readRequestBody(request) {
-  const contentLength = readContentLength(request.headers);
-  if (contentLength !== null && contentLength > MAX_PROXY_BODY_BYTES) {
-    throw new PayloadTooLargeError();
-  }
-  if (!request.body) return null;
-
-  const reader = request.body.getReader();
-  const chunks = [];
-  let totalBytes = 0;
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > MAX_PROXY_BODY_BYTES) {
-      await reader.cancel();
-      throw new PayloadTooLargeError();
-    }
-    chunks.push(value);
-  }
-
-  const body = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
 }
 
 function readContentLength(headers) {
