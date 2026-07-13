@@ -11,6 +11,7 @@ import { AdministratorsScreen } from "../screens/AdministratorsScreen.js";
 import { FeatureFlagsScreen } from "../screens/FeatureFlagsScreen.js";
 import { ContentScreen } from "../screens/ContentScreen.js";
 import { EmailScreen } from "../screens/EmailScreen.js";
+import { PoiImportsScreen } from "../screens/PoiImportsScreen.js";
 import { routes, useHashRoute } from "./routes.js";
 import { canAccess } from "../lib/roleRank.js";
 
@@ -98,6 +99,8 @@ export function App() {
             <ContentScreen currentRole={currentUser.role} />
           ) : active === "email" ? (
             <EmailScreen />
+          ) : active === "poi-imports" ? (
+            <PoiImportsScreen currentRole={currentUser.role} />
           ) : (
             <section>
               <Heading as="h2">

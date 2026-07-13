@@ -3549,6 +3549,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/poi/regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-(source, region) import status, across OSM + FSQ OS */
+        get: operations["AdminPoiController_regions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/poi/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent poi_import_runs history, newest first */
+        get: operations["AdminPoiController_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/poi/regions/{source}/{code}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manually trigger an import for (source, code) */
+        post: operations["AdminPoiController_triggerImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/poi/regions/{source}/{code}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a pre-produced extract for (source, code) */
+        post: operations["AdminPoiController_uploadExtract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config/flags": {
         parameters: {
             query?: never;
@@ -6346,6 +6414,42 @@ export interface components {
             /** @description Resolved user id the resend was queued for. */
             user_id: string;
         };
+        ExtractStatDto: {
+            present: boolean;
+            size_bytes: number;
+            modified_at: string;
+        };
+        RunDto: {
+            id: string;
+            source: string;
+            region_code: string;
+            /** @enum {string} */
+            status: "running" | "success" | "skipped" | "failed";
+            /** @enum {string} */
+            trigger: "manual" | "cron";
+            fetched: number | null;
+            upserted: number | null;
+            tombstoned: number | null;
+            skip_reason: string | null;
+            warning: string | null;
+            error: string | null;
+            started_at: string;
+            finished_at: string | null;
+        };
+        RegionImportStatusDto: {
+            source: string;
+            code: string;
+            configured: boolean;
+            imported_at: string | null;
+            poi_count: number;
+            extract: components["schemas"]["ExtractStatDto"] | null;
+            last_run: components["schemas"]["RunDto"] | null;
+            /** @enum {string} */
+            live_state: "idle" | "queued" | "running";
+        };
+        TriggerImportResponseDto: {
+            job_id: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -6628,6 +6732,10 @@ export type SchemaAdminEmailLogListResponseDto = components['schemas']['AdminEma
 export type SchemaTestDigestResponseDto = components['schemas']['TestDigestResponseDto'];
 export type SchemaResendDigestDto = components['schemas']['ResendDigestDto'];
 export type SchemaResendDigestResponseDto = components['schemas']['ResendDigestResponseDto'];
+export type SchemaExtractStatDto = components['schemas']['ExtractStatDto'];
+export type SchemaRunDto = components['schemas']['RunDto'];
+export type SchemaRegionImportStatusDto = components['schemas']['RegionImportStatusDto'];
+export type SchemaTriggerImportResponseDto = components['schemas']['TriggerImportResponseDto'];
 export type $defs = Record<string, never>;
 export interface operations {
     AppController_getHello: {
@@ -12831,6 +12939,128 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResendDigestResponseDto"];
                 };
+            };
+        };
+    };
+    AdminPoiController_regions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionImportStatusDto"][];
+                };
+            };
+        };
+    };
+    AdminPoiController_runs: {
+        parameters: {
+            query?: {
+                source?: string;
+                code?: string;
+                /** @description Max rows to return (clamped to 1-200, default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunDto"][];
+                };
+            };
+        };
+    };
+    AdminPoiController_triggerImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerImportResponseDto"];
+                };
+            };
+            /** @description Unknown source or region code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An import for (source, code) is already queued or running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminPoiController_uploadExtract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractStatDto"];
+                };
+            };
+            /** @description No file, unknown source/region, wrong extension for the source, or oversize */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File exceeds the configured upload size cap */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -19,6 +19,7 @@ import {
   type PoiImportSource,
   type StorableImportRow,
 } from './poi-import-source.js';
+import { poiAdvisoryLockKey } from './poi-import.lock.js';
 import { withPoiRepo } from './poi-repo.js';
 
 /**
@@ -53,6 +54,25 @@ const UPSERT_CHUNK = 500;
  */
 const MAX_TOMBSTONE_FRACTION = 0.5;
 const MIN_REGION_FOR_TOMBSTONE_GUARD = 50;
+
+/**
+ * `PoiImportResult.warning` text for the tombstone wipe-guard's partial-accept
+ * path (below). Exported (rather than inlined at the one return site that
+ * sets it) so tests here and in `poi-import-run.recorder.spec.ts` can assert
+ * against the same constant instead of a duplicated string literal that could
+ * silently drift from it.
+ */
+export const WIPE_GUARD_WARNING =
+  'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract';
+
+/**
+ * Fixed namespace for the per-(source, region) advisory lock (#847) that
+ * serializes a manual admin trigger against the weekly cron on the same
+ * region — `pg_try_advisory_lock(ns, key)`'s first arg, scoping these locks
+ * away from any other 2-int advisory lock the app might add later. Arbitrary
+ * but stable across the process ('POI\x01' packed into an int32).
+ */
+const LOCK_NAMESPACE = 0x504f_4901;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -92,6 +112,37 @@ export interface PoiImportResult {
    * the region.
    */
   skipped?: boolean;
+  /**
+   * Operator-actionable reason the region was skipped this run — null
+   * whenever `skipped` is not true. Carries the REAL, path-specific cause
+   * (e.g. "no extract file at <path>" vs. "extract yielded 0 in-bbox rows")
+   * so `PoiImportRunRecorder.finish` can persist it verbatim instead of
+   * synthesizing one generic message that can't tell a missing-extract/
+   * storage gap (needs an upload) from a zero-row gap (needs the extract
+   * rebuilt) apart (#847 review).
+   *
+   * NOTE: the tombstone wipe-guard (`wouldWipeTooMuch` below) does NOT set
+   * `skipped: true` — it still upserts the incoming rows and only withholds
+   * the tombstone + coverage-stamp sub-steps, so that run is a genuine
+   * (partial) success, not a skip, and falls through to the `skipReason:
+   * null` return like any other successful import — flagged instead via
+   * `warning` below.
+   */
+  skipReason: string | null;
+  /**
+   * Operator-actionable advisory for a run that completed as a genuine
+   * `success` (never `skipped`) but withheld part of its normal work — null
+   * on every clean success AND on both skip paths above. The only producer
+   * today is the tombstone wipe-guard partial-accept path
+   * (`wouldWipeTooMuch` below): the incoming rows were upserted, but
+   * tombstoning (and, for OSM, the coverage stamp) were withheld because the
+   * extract looks incomplete. `PoiImportRunRecorder.finish` persists this
+   * verbatim into `poi_import_runs.warning` so the admin Runs panel can flag
+   * a run that upserted cleanly yet isn't a fully-trustworthy replacement of
+   * the region's prior extract — distinct from `skipReason`, which only ever
+   * fires when NO upsert happened at all.
+   */
+  warning: string | null;
 }
 
 /**
@@ -154,6 +205,35 @@ export class PoiImportService {
     return this.config.regions;
   }
 
+  /**
+   * Whether this source's extract directory is configured (its
+   * `TARMOTO_*_IMPORT_DIR` is set). When false, `getExtractPath` throws — the
+   * admin upload route checks this to return a clear 503 rather than a 500 (#847).
+   */
+  get extractDirConfigured(): boolean {
+    return this.config.extractDir !== null;
+  }
+
+  /**
+   * Public accessor for a configured region's resolved extract path (#847
+   * admin status read — `PoiImportAdminService.listRegionStatus` stats this
+   * path per region to report whether an extract has been uploaded yet).
+   * Delegates to the same resolver `importRegionBody` uses internally, so
+   * `<extractDir>/<code>.osm` (or `.fsq.jsonl` for the FSQ strategy) stays
+   * defined in exactly one place. Throws under the same conditions as the
+   * private resolver below (`extractDir` unset), and also for a code outside
+   * this instance's configured `regions` — the admin read wraps the call in
+   * a try/catch and reports `extract: null` rather than a 500 for an
+   * unconfigured or not-yet-provisioned region.
+   */
+  getExtractPath(code: string): string {
+    const region = this.config.regions.find((r) => r.code === code);
+    if (!region) {
+      throw new Error(`Unknown POI import region code: ${code}`);
+    }
+    return this.extractPath(region);
+  }
+
   /** Resolve a region's extract path: `<extractDir>/<source filename>`. */
   private extractPath(region: PoiImportRegion): string {
     if (!this.config.extractDir) {
@@ -199,6 +279,58 @@ export class PoiImportService {
   async importRegion(region: PoiImportRegion): Promise<PoiImportResult> {
     await this.assertStoreReachable();
 
+    // Serialize same-(source, region) imports (#847): a manual admin trigger
+    // must not race the weekly cron importing the same region. A PostgreSQL
+    // SESSION advisory lock (`pg_try_advisory_lock` / `pg_advisory_unlock`) is
+    // held by the specific DB CONNECTION that acquired it — issuing the lock
+    // and the unlock as two separate calls through the pooled `poiDataSource`
+    // risks the pool handing them to two DIFFERENT connections, which would
+    // run the unlock on a connection that never held the lock and leak the
+    // lock forever (it would then never release until that connection is
+    // torn down). A dedicated QueryRunner pins ONE connection for exactly
+    // this lock/unlock pair. `importRegionBody` below does NOT need `runner`
+    // — it's free to use the pool as before (`withPoiRepo`); serialization
+    // comes from a concurrent same-(source, region) caller failing ITS OWN
+    // `pg_try_advisory_lock` call on ITS OWN runner, not from which
+    // connection does the writing.
+    const key = poiAdvisoryLockKey(this.source, region.code);
+    const runner = this.poiDataSource.createQueryRunner();
+    await runner.connect();
+    try {
+      // `QueryRunner.query` (unlike `EntityManager.query`) has no generic
+      // overload in this TypeORM version — it always returns `Promise<any>` —
+      // so the shape is asserted on the result instead.
+      const got = (await runner.query(
+        'SELECT pg_try_advisory_lock($1, $2) AS locked',
+        [LOCK_NAMESPACE, key],
+      )) as { locked: boolean }[];
+      if (!got?.[0]?.locked) {
+        throw new Error(
+          `POI import for ${this.source}/${region.code} is already running — retry later`,
+        );
+      }
+      try {
+        return await this.importRegionBody(region);
+      } finally {
+        await runner.query('SELECT pg_advisory_unlock($1, $2)', [
+          LOCK_NAMESPACE,
+          key,
+        ]);
+      }
+    } finally {
+      await runner.release();
+    }
+  }
+
+  /**
+   * The parse + upsert + tombstone body, run while `importRegion` holds the
+   * per-(source, region) advisory lock (see there for why the lock needs a
+   * pinned connection). Split out purely so that lock/unlock wrapper doesn't
+   * force re-indenting this whole (already long) method.
+   */
+  private async importRegionBody(
+    region: PoiImportRegion,
+  ): Promise<PoiImportResult> {
     const path = this.extractPath(region);
     if (!existsSync(path)) {
       // A configured region without an extract yet — skip (with a clear log)
@@ -212,6 +344,8 @@ export class PoiImportService {
         upserted: 0,
         tombstoned: 0,
         skipped: true,
+        skipReason: `no extract file at ${path}`,
+        warning: null,
       };
     }
 
@@ -280,6 +414,10 @@ export class PoiImportService {
     const rows = [...byExternalId.values()];
     const incomingIds = new Set(byExternalId.keys());
     let tombstoned = 0;
+    // Set inside the transaction below, from the same `wouldWipeTooMuch` the
+    // tombstone/coverage steps already gate on — read back after the
+    // transaction to build the final result's `warning` (#847 review).
+    let wipeGuardTripped = false;
 
     // Guard against a broken extract wiping a region: a valid-but-empty file
     // (`<osm/>`, a failed `osmium tags-filter`, or points all outside the bbox)
@@ -300,6 +438,8 @@ export class PoiImportService {
         upserted: 0,
         tombstoned: 0,
         skipped: true,
+        skipReason: `extract yielded 0 in-bbox rows (fetched=${fetched})`,
+        warning: null,
       };
     }
 
@@ -373,6 +513,7 @@ export class PoiImportService {
         const wouldWipeTooMuch =
           owned.length >= MIN_REGION_FOR_TOMBSTONE_GUARD &&
           tombstoneIds.length > owned.length * MAX_TOMBSTONE_FRACTION;
+        wipeGuardTripped = wouldWipeTooMuch;
 
         // 2. Upsert (insert new + revive/refresh existing) in param-safe chunks.
         for (const part of chunk(rows, UPSERT_CHUNK)) {
@@ -442,6 +583,8 @@ export class PoiImportService {
       fetched,
       upserted: rows.length,
       tombstoned,
+      skipReason: null,
+      warning: wipeGuardTripped ? WIPE_GUARD_WARNING : null,
     };
   }
 }

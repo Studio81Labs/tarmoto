@@ -29,6 +29,12 @@ export interface PoiImportRegionJobData {
    * `osm`, the only source at the time).
    */
   source?: string;
+  /**
+   * Who enqueued this region job (#847). `manual` = an admin trigger via the
+   * POI admin UI; `cron`/absent = the weekly dispatcher. Recorded in
+   * poi_import_runs so history distinguishes the two.
+   */
+  trigger?: 'manual' | 'cron';
 }
 
 export interface AccountDeletionFinalizeJobData {

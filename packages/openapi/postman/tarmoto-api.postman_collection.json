@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "391f029e-b39e-4c7e-9fc4-1f0b1abcd404",
+    "_postman_id": "fc5432f2-9549-41df-92d8-8ddac00b91c8",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -6754,6 +6754,127 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Per-(source, region) import status, across OSM + FSQ OS",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/poi/regions",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "poi", "regions"]
+            }
+          }
+        },
+        {
+          "name": "Recent poi_import_runs history, newest first",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/poi/runs",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "poi", "runs"],
+              "query": [
+                {
+                  "key": "source",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "code",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max rows to return (clamped to 1-200, default 50).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Manually trigger an import for (source, code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/poi/regions/:source/:code/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "poi", "regions", ":source", ":code", "import"],
+              "variable": [
+                {
+                  "key": "source",
+                  "value": ""
+                },
+                {
+                  "key": "code",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload a pre-produced extract for (source, code)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/poi/regions/:source/:code/extract",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "poi",
+                "regions",
+                ":source",
+                ":code",
+                "extract"
+              ],
+              "variable": [
+                {
+                  "key": "source",
+                  "value": ""
+                },
+                {
+                  "key": "code",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
             }
           }
         }

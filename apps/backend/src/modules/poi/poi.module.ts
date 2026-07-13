@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, type ConfigType } from '@nestjs/config';
-import { getDataSourceToken } from '@nestjs/typeorm';
+import { getDataSourceToken, TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { DataSource } from 'typeorm';
 import { POI_PROVIDER } from './poi-provider.interface.js';
 import { OverpassPoiProvider } from './providers/overpass.provider.js';
@@ -12,9 +13,13 @@ import {
   POI_IMPORT_SOURCES,
   PoiImportService,
 } from './poi-import.service.js';
+import { PoiImportAdminService } from './poi-import-admin.service.js';
 import { FsqPoiImportSource } from './poi-import-source.js';
 import { fsqImportConfig, poiImportConfig } from './poi-import.config.js';
 import { PoiDatabaseModule } from './poi-database.module.js';
+import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import { PoiImportRunRecorder } from './poi-import-run.recorder.js';
+import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 
 /**
  * POI module with pluggable provider.
@@ -33,6 +38,15 @@ import { PoiDatabaseModule } from './poi-database.module.js';
     ConfigModule.forFeature(poiImportConfig),
     ConfigModule.forFeature(fsqImportConfig),
     PoiDatabaseModule,
+    TypeOrmModule.forFeature([PoiImportRun], 'poi'),
+    // Register the poi.import queue TOKEN so PoiImportAdminService can
+    // `@InjectQueue` it (read-only: probing `getJob` for live_state). The
+    // connection + the actual processor come from JobsModule.forRoot()
+    // (imported once in AppModule, which already imports PoiModule to wire
+    // that processor's own dependencies) — re-importing forRoot here would
+    // double-register the queue/processor. Mirrors admin.module's identical
+    // registerQueue for DIGEST_WEEKLY and data-export.module for DATA_EXPORT.
+    BullModule.registerQueue({ name: QUEUE_NAMES.POI_IMPORT }),
   ],
   controllers: [PoiController],
   providers: [
@@ -40,6 +54,8 @@ import { PoiDatabaseModule } from './poi-database.module.js';
     PoiService,
     PoiStoreService,
     PoiImportService,
+    PoiImportRunRecorder,
+    PoiImportAdminService,
     {
       provide: FSQ_POI_IMPORT,
       useFactory: (
@@ -56,6 +72,13 @@ import { PoiDatabaseModule } from './poi-database.module.js';
       inject: [PoiImportService, FSQ_POI_IMPORT],
     },
   ],
-  exports: [PoiService, PoiImportService, FSQ_POI_IMPORT, POI_IMPORT_SOURCES],
+  exports: [
+    PoiService,
+    PoiImportService,
+    FSQ_POI_IMPORT,
+    POI_IMPORT_SOURCES,
+    PoiImportRunRecorder,
+    PoiImportAdminService,
+  ],
 })
 export class PoiModule {}

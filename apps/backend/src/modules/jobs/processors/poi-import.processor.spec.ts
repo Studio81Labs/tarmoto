@@ -6,6 +6,7 @@ import type {
   PoiImportService,
 } from '../../poi/poi-import.service.js';
 import type { PoiImportRegion } from '../../poi/poi-import.config.js';
+import type { PoiImportRunRecorder } from '../../poi/poi-import-run.recorder.js';
 import type { JobsProducer } from '../jobs.producer.js';
 
 describe('PoiImportProcessor', () => {
@@ -27,6 +28,22 @@ describe('PoiImportProcessor', () => {
     } as unknown as PoiImportService;
   }
 
+  /** A no-op recorder — the dispatch tests and most import-region tests don't
+   * assert on run recording; the two run-recording tests below build their
+   * own recorder mock and construct the processor directly instead of going
+   * through `build`. */
+  function fakeRecorder(): {
+    start: jest.Mock;
+    finish: jest.Mock;
+    fail: jest.Mock;
+  } {
+    return {
+      start: jest.fn().mockResolvedValue('run-x'),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
   function build(importers: PoiImportService[]): {
     processor: PoiImportProcessor;
     enqueuePoiImportRegion: jest.Mock;
@@ -34,7 +51,11 @@ describe('PoiImportProcessor', () => {
     const enqueuePoiImportRegion = jest.fn().mockResolvedValue(undefined);
     const producer = { enqueuePoiImportRegion } as unknown as JobsProducer;
     return {
-      processor: new PoiImportProcessor(importers, producer),
+      processor: new PoiImportProcessor(
+        importers,
+        producer,
+        fakeRecorder() as unknown as PoiImportRunRecorder,
+      ),
       enqueuePoiImportRegion,
     };
   }
@@ -137,6 +158,8 @@ describe('PoiImportProcessor', () => {
       fetched: 10,
       upserted: 9,
       tombstoned: 1,
+      skipReason: null,
+      warning: null,
     };
     const osmImport = jest.fn();
     const fsqImport = jest.fn().mockResolvedValue(importResult);
@@ -162,6 +185,8 @@ describe('PoiImportProcessor', () => {
       fetched: 1,
       upserted: 1,
       tombstoned: 0,
+      skipReason: null,
+      warning: null,
     } satisfies PoiImportResult);
     const fsqImport = jest.fn();
     const { processor } = build([
@@ -205,6 +230,178 @@ describe('PoiImportProcessor', () => {
     await expect(
       processor.process(jobNamed(JOB_NAMES.POI_IMPORT_REGION, {})),
     ).rejects.toThrow(/missing code/);
+  });
+
+  it('records a run row for a successful region import', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('run-1'),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest.fn().mockResolvedValue({
+        region: 'CZ',
+        fetched: 5,
+        upserted: 5,
+        tombstoned: 0,
+        skipped: false,
+      }),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+    await processor.process({
+      name: 'import-region',
+      id: 'j1',
+      data: { code: 'CZ', source: 'osm', trigger: 'manual' },
+    } as never);
+
+    expect(recorder.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'osm',
+        regionCode: 'CZ',
+        trigger: 'manual',
+        jobId: 'j1',
+      }),
+    );
+    expect(recorder.finish).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({
+        upserted: 5,
+      }),
+    );
+  });
+
+  it('defaults recorder.start trigger to `cron` when the job carries no `trigger` field (legacy dispatch-enqueued jobs, #847)', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('run-legacy'),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest.fn().mockResolvedValue({
+        region: 'CZ',
+        fetched: 1,
+        upserted: 1,
+        tombstoned: 0,
+        skipReason: null,
+        warning: null,
+      } satisfies PoiImportResult),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+
+    await processor.process({
+      name: 'import-region',
+      id: 'j-legacy',
+      data: { code: 'CZ', source: 'osm' }, // no `trigger`
+    } as never);
+
+    expect(recorder.start).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'cron' }),
+    );
+  });
+
+  it('routes a skipped result to recorder.finish, not recorder.fail, and does not throw', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('run-skip'),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const skippedResult: PoiImportResult = {
+      region: 'CZ',
+      fetched: 0,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+      skipReason: 'no extract file at /extracts/cz.osm',
+      warning: null,
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest.fn().mockResolvedValue(skippedResult),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+
+    await expect(
+      processor.process({
+        name: 'import-region',
+        id: 'j-skip',
+        data: { code: 'CZ', source: 'osm' },
+      } as never),
+    ).resolves.toEqual(skippedResult);
+
+    expect(recorder.finish).toHaveBeenCalledWith('run-skip', skippedResult);
+    expect(recorder.fail).not.toHaveBeenCalled();
+  });
+
+  it('records failed + rethrows when the import throws', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('r'),
+      finish: jest.fn(),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest.fn().mockRejectedValue(new Error('parse fail')),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+    await expect(
+      processor.process({
+        name: 'import-region',
+        id: 'j2',
+        data: { code: 'CZ', source: 'osm' },
+      } as never),
+    ).rejects.toThrow('parse fail');
+    expect(recorder.fail).toHaveBeenCalledWith('r', expect.any(Error));
+  });
+
+  it('does not let a recorder.fail() failure mask the original import error', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('r2'),
+      finish: jest.fn(),
+      fail: jest.fn().mockRejectedValue(new Error('poi db dropped mid-import')),
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest
+        .fn()
+        .mockRejectedValue(new Error('original import error')),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+
+    await expect(
+      processor.process({
+        name: 'import-region',
+        id: 'j3',
+        data: { code: 'CZ', source: 'osm' },
+      } as never),
+    ).rejects.toThrow('original import error');
+    expect(recorder.fail).toHaveBeenCalledWith('r2', expect.any(Error));
   });
 
   it('throws on an unknown job name so a producer typo surfaces immediately', async () => {

@@ -7,6 +7,7 @@ import {
   PoiImportService,
   type PoiImportResult,
 } from '../../poi/poi-import.service.js';
+import { PoiImportRunRecorder } from '../../poi/poi-import-run.recorder.js';
 import { JobsProducer } from '../jobs.producer.js';
 
 /**
@@ -55,6 +56,7 @@ export class PoiImportProcessor extends WorkerHost {
     @Inject(POI_IMPORT_SOURCES)
     private readonly importers: readonly PoiImportService[],
     private readonly producer: JobsProducer,
+    private readonly recorder: PoiImportRunRecorder,
   ) {
     super();
   }
@@ -110,7 +112,11 @@ export class PoiImportProcessor extends WorkerHost {
   }
 
   private async importRegion(job: Job): Promise<PoiImportResult> {
-    const data = job.data as { code?: string; source?: string };
+    const data = job.data as {
+      code?: string;
+      source?: string;
+      trigger?: 'manual' | 'cron';
+    };
     if (!data.code) {
       throw new Error('poi-import region job missing code');
     }
@@ -128,12 +134,53 @@ export class PoiImportProcessor extends WorkerHost {
         `poi-import region job unknown code: ${data.code} (source ${source})`,
       );
     }
-    const result = await importer.importRegion(region);
-    this.logger.log(
-      `[${job.id ?? 'no-id'}] POI import (${source}/${result.region}): ` +
-        `fetched=${result.fetched} upserted=${result.upserted} ` +
-        `tombstoned=${result.tombstoned}${result.skipped ? ' (skipped)' : ''}`,
-    );
-    return result;
+
+    // Record this attempt in `poi_import_runs` (#847) — cron AND manual
+    // triggers, so admin history shows both. `data.trigger` is absent for
+    // every pre-#847 dispatch-enqueued job (and any legacy job replayed from
+    // Redis), so it defaults to `cron`, the only trigger that existed before
+    // the admin UI could enqueue one manually.
+    const runId = await this.recorder.start({
+      source,
+      regionCode: region.code,
+      trigger: data.trigger ?? 'cron',
+      jobId: job.id ?? null,
+    });
+    try {
+      const result = await importer.importRegion(region);
+      // Best-effort, mirroring `fail` below: a `finish()` failure here (e.g. a
+      // sub-second poi-DB blip on the run-record UPDATE) must never turn a
+      // SUCCESSFUL import into a recorded failure. Left unguarded, the throw
+      // would fall into the `catch` below, `fail()` would record this run as
+      // failed, and rethrowing would make BullMQ retry an import that already
+      // succeeded — a wasteful full re-import plus corrupted run history.
+      try {
+        await this.recorder.finish(runId, result);
+      } catch (recErr) {
+        this.logger.warn(
+          `[${job.id ?? 'no-id'}] failed to record poi import run ${runId}: ` +
+            `${recErr instanceof Error ? recErr.message : String(recErr)}`,
+        );
+      }
+      this.logger.log(
+        `[${job.id ?? 'no-id'}] POI import (${source}/${result.region}): ` +
+          `fetched=${result.fetched} upserted=${result.upserted} ` +
+          `tombstoned=${result.tombstoned}${result.skipped ? ' (skipped)' : ''}`,
+      );
+      return result;
+    } catch (err) {
+      // Best-effort: a failure here (e.g. the POI DB drops mid-import) must
+      // never replace the ORIGINAL import error — that's the one BullMQ and
+      // the caller need to see and retry on.
+      try {
+        await this.recorder.fail(runId, err);
+      } catch (recordingErr) {
+        this.logger.warn(
+          `[${job.id ?? 'no-id'}] failed to record poi_import_runs failure ` +
+            `for run ${runId}: ${String(recordingErr)}`,
+        );
+      }
+      throw err;
+    }
   }
 }

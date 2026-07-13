@@ -21,7 +21,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { createReadStream, existsSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { PoiImportService } from './poi-import.service.js';
+import { PoiImportService, WIPE_GUARD_WARNING } from './poi-import.service.js';
 import { parsePoiExtract } from './poi-extract-source.js';
 import { FsqPoiImportSource } from './poi-import-source.js';
 import type { PoiImportConfig, PoiImportRegion } from './poi-import.config.js';
@@ -141,6 +141,10 @@ describe('PoiImportService', () => {
   let upsert: jest.Mock;
   let txQuery: jest.Mock;
   let probe: jest.Mock;
+  let runnerConnect: jest.Mock;
+  let runnerQuery: jest.Mock;
+  let runnerRelease: jest.Mock;
+  let createQueryRunner: jest.Mock;
   let dataSource: DataSource;
   let config: PoiImportConfig;
   let service: PoiImportService;
@@ -163,10 +167,24 @@ describe('PoiImportService', () => {
       },
     };
     probe = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+    // The per-(source, region) advisory lock (#847) runs on a dedicated
+    // QueryRunner (connection affinity for lock + unlock), not the pooled
+    // `dataSource.query`. Default to "lock acquired" so every existing import
+    // test proceeds unaffected; the lock-specific tests below override
+    // `runnerQuery`'s resolved value per case.
+    runnerConnect = jest.fn().mockResolvedValue(undefined);
+    runnerQuery = jest.fn().mockResolvedValue([{ locked: true }]);
+    runnerRelease = jest.fn().mockResolvedValue(undefined);
+    createQueryRunner = jest.fn(() => ({
+      connect: runnerConnect,
+      query: runnerQuery,
+      release: runnerRelease,
+    }));
     dataSource = {
       isInitialized: true,
       query: probe,
       getRepository: jest.fn(() => repo),
+      createQueryRunner,
     } as unknown as DataSource;
     config = { enabled: true, extractDir: '/extracts', regions: [REGION] };
     service = new PoiImportService(dataSource, config);
@@ -201,6 +219,88 @@ describe('PoiImportService', () => {
   it('reflects the enabled flag and the configured regions', () => {
     expect(service.enabled).toBe(true);
     expect(service.regions).toEqual([REGION]);
+  });
+
+  describe('getExtractPath (#847 admin status read)', () => {
+    it('resolves a configured region to <extractDir>/<code>.osm for the OSM strategy', () => {
+      expect(service.getExtractPath('CZ')).toBe('/extracts/cz.osm');
+    });
+
+    it('resolves to <extractDir>/<code>.fsq.jsonl for the FSQ strategy', () => {
+      const fsqService = new PoiImportService(
+        dataSource,
+        config,
+        new FsqPoiImportSource(),
+      );
+      expect(fsqService.getExtractPath('CZ')).toBe('/extracts/cz.fsq.jsonl');
+    });
+
+    it("throws for a code outside this instance's configured regions", () => {
+      expect(() => service.getExtractPath('XX')).toThrow(
+        /Unknown POI import region/,
+      );
+    });
+
+    it('throws when extractDir is not configured, same as the internal resolver', () => {
+      config.extractDir = null;
+      service = new PoiImportService(dataSource, config);
+      expect(() => service.getExtractPath('CZ')).toThrow(
+        /TARMOTO_POI_IMPORT_DIR is not set/,
+      );
+    });
+  });
+
+  describe('per-region advisory lock (#847: manual trigger vs. cron)', () => {
+    it('acquires and releases the lock on ONE pinned QueryRunner (connection affinity)', async () => {
+      mockExtract(poi({ external_id: 'node/1' }));
+
+      await service.importRegion(REGION);
+
+      // Exactly one QueryRunner is created for the whole call — the lock and
+      // the unlock must run on the SAME connection, not two pool checkouts.
+      expect(createQueryRunner).toHaveBeenCalledTimes(1);
+      expect(runnerConnect).toHaveBeenCalledTimes(1);
+      expect(runnerQuery).toHaveBeenCalledTimes(2);
+      const lockCalls = runnerQuery.mock.calls as Array<[string, unknown[]]>;
+      expect(lockCalls[0]?.[0]).toMatch(/pg_try_advisory_lock/);
+      expect(lockCalls[1]?.[0]).toMatch(/pg_advisory_unlock/);
+      // Both calls target the same (namespace, key) pair.
+      expect(lockCalls[1]?.[1]).toEqual(lockCalls[0]?.[1]);
+      expect(runnerRelease).toHaveBeenCalledTimes(1);
+      // The pooled `dataSource.query` never sees the advisory-lock SQL — the
+      // lock/unlock ran on the pinned runner, never the shared pool.
+      expect(probe).not.toHaveBeenCalledWith(
+        expect.stringContaining('advisory'),
+      );
+    });
+
+    it('throws (and never touches the extract) when the region is already locked by a concurrent import', async () => {
+      runnerQuery.mockResolvedValueOnce([{ locked: false }]); // the pg_try_advisory_lock call only
+
+      await expect(service.importRegion(REGION)).rejects.toThrow(
+        /already running/,
+      );
+      expect(existsSyncMock).not.toHaveBeenCalled();
+      expect(parsePoiExtractMock).not.toHaveBeenCalled();
+      expect(upsert).not.toHaveBeenCalled();
+      // No unlock call — the lock was never acquired — but the runner backing
+      // the failed attempt is still released back to the pool.
+      expect(runnerQuery).toHaveBeenCalledTimes(1);
+      expect(runnerRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('still unlocks and releases the runner when the import body throws', async () => {
+      mockExtract(poi({ external_id: 'node/1' }));
+      upsert.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(service.importRegion(REGION)).rejects.toThrow('boom');
+
+      // The finally-unwind still ran despite the throw deep inside the body.
+      expect(runnerQuery).toHaveBeenCalledTimes(2);
+      const unlockCalls = runnerQuery.mock.calls as Array<[string, unknown[]]>;
+      expect(unlockCalls[1]?.[0]).toMatch(/pg_advisory_unlock/);
+      expect(runnerRelease).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('imports a region: upserts by (source, external_id) with a revive (deactivated_at:null) and a Point geom', async () => {
@@ -239,6 +339,8 @@ describe('PoiImportService', () => {
       fetched: 2,
       upserted: 2,
       tombstoned: 0,
+      skipReason: null,
+      warning: null,
     });
   });
 
@@ -273,6 +375,8 @@ describe('PoiImportService', () => {
     // fell inside the bbox, and was upserted — so the absence of the stamp
     // below is the source gate, not an incidental skip path.
     expect(result.skipped).toBeUndefined();
+    expect(result.skipReason).toBeNull();
+    expect(result.warning).toBeNull();
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
@@ -297,6 +401,11 @@ describe('PoiImportService', () => {
     const result = await service.importRegion(REGION);
 
     expect(result.skipped).toBe(true);
+    // #847 review: the concrete, operator-actionable reason — not a generic
+    // "skipped" string — flows out on the result itself.
+    expect(result.skipReason).toBe(
+      'extract yielded 0 in-bbox rows (fetched=0)',
+    );
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
       expect.anything(),
@@ -342,6 +451,8 @@ describe('PoiImportService', () => {
       fetched: 2,
       upserted: 1,
       tombstoned: 0,
+      skipReason: null,
+      warning: null,
     });
   });
 
@@ -363,6 +474,8 @@ describe('PoiImportService', () => {
       fetched: 2,
       upserted: 1,
       tombstoned: 0,
+      skipReason: null,
+      warning: null,
     });
   });
 
@@ -494,6 +607,8 @@ describe('PoiImportService', () => {
       upserted: 0,
       tombstoned: 0,
       skipped: true,
+      skipReason: 'extract yielded 0 in-bbox rows (fetched=0)',
+      warning: null,
     });
     expect(upsert).not.toHaveBeenCalled();
     const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
@@ -523,6 +638,12 @@ describe('PoiImportService', () => {
     // The rows we DID get are still upserted — only the destructive delete is
     // withheld.
     expect(upsert).toHaveBeenCalled();
+    // #847 review: the partial-accept advisory flows out on the result so
+    // `PoiImportRunRecorder.finish` can persist it — this run is a `success`
+    // (never `skipped`), so `warning` is the only signal an operator gets
+    // that the extract looks incomplete.
+    expect(result.warning).toBe(WIPE_GUARD_WARNING);
+    expect(result.skipped).toBeUndefined();
   });
 
   it('does NOT stamp coverage (imported_at) when the wipe guard trips — an incomplete extract must not mark the whole region covered (#944 review)', async () => {
@@ -538,13 +659,16 @@ describe('PoiImportService', () => {
     loadInBbox(existingRows);
     mockExtract(poi({ external_id: 'node/0' }));
 
-    await service.importRegion(REGION);
+    const result = await service.importRegion(REGION);
 
     expect(upsert).toHaveBeenCalled(); // the import DID run (not a skip)
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
       expect.anything(),
     );
+    // Paired with the missing coverage stamp: the same trip that withholds
+    // the stamp also carries the operator-facing advisory.
+    expect(result.warning).toBe(WIPE_GUARD_WARNING);
   });
 
   it('uses the pre-import region size for the wipe guard (a full-replacement wrong extract is refused)', async () => {
@@ -575,6 +699,7 @@ describe('PoiImportService', () => {
     );
     expect(tombstone).toBeUndefined();
     expect(result.tombstoned).toBe(0);
+    expect(result.warning).toBe(WIPE_GUARD_WARNING);
   });
 
   it('skips a region with no extract file yet (no parse, no write) for gradual provisioning', async () => {
@@ -588,6 +713,8 @@ describe('PoiImportService', () => {
       upserted: 0,
       tombstoned: 0,
       skipped: true,
+      skipReason: 'no extract file at /extracts/cz.osm',
+      warning: null,
     });
     expect(parsePoiExtractMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
