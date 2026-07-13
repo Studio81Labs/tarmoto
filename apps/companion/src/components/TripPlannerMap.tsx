@@ -60,7 +60,6 @@ import {
   expandHazardCluster,
   setHazardLayersVisible,
   HAZARD_BG,
-  HAZARD_ICON,
   HAZARD_CLUSTERS,
   type HazardProps,
 } from "@/components/map/HazardPinLayer";
@@ -1227,12 +1226,7 @@ const TripPlannerMapContent = forwardRef<
       if (drawRef.current?.getMode() !== "idle") return;
       // A waypoint, hazard pin, or named basemap POI sitting on the route owns
       // the click — don't also select the segment / open Road Preview under it.
-      const overOwnedPin = [
-        WAYPOINT_PIN,
-        HAZARD_BG,
-        HAZARD_ICON,
-        HAZARD_CLUSTERS,
-      ]
+      const overOwnedPin = [WAYPOINT_PIN, HAZARD_BG, HAZARD_CLUSTERS]
         .filter((id) => map.getLayer(id))
         .some(
           (id) =>
@@ -1261,7 +1255,6 @@ const TripPlannerMapContent = forwardRef<
         // Hazard pins/clusters sit over the road layers and own their own
         // click — don't also open the segment drawer underneath.
         HAZARD_BG,
-        HAZARD_ICON,
         HAZARD_CLUSTERS,
       ].filter((id) => map.getLayer(id));
       if (
@@ -1496,7 +1489,6 @@ const TripPlannerMapContent = forwardRef<
       });
     };
     map.on("click", HAZARD_BG, onHazardClick);
-    map.on("click", HAZARD_ICON, onHazardClick);
     map.on("click", HAZARD_CLUSTERS, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
       if (overHigherPriorityMarker(event)) return;
@@ -1508,7 +1500,7 @@ const TripPlannerMapContent = forwardRef<
     // overlapping click — the POI cluster handler below must not also expand
     // and fly the camera underneath it.
     const overHazardMarker = (event: MapLayerMouseEvent) => {
-      const layers = [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS].filter((id) =>
+      const layers = [HAZARD_BG, HAZARD_CLUSTERS].filter((id) =>
         map.getLayer(id),
       );
       return (
@@ -1516,7 +1508,7 @@ const TripPlannerMapContent = forwardRef<
         map.queryRenderedFeatures(event.point, { layers }).length > 0
       );
     };
-    for (const layer of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+    for (const layer of [HAZARD_BG, HAZARD_CLUSTERS]) {
       map.on("mouseenter", layer, () => {
         if (drawRef.current?.getMode() !== "idle") return;
         map.getCanvas().style.cursor = "pointer";
@@ -1539,7 +1531,6 @@ const TripPlannerMapContent = forwardRef<
         PASS_MARKER_LAYER,
         DAY_BREAK_CIRCLE_LAYER,
         HAZARD_BG,
-        HAZARD_ICON,
         HAZARD_CLUSTERS,
         POI_PIN_LAYER,
         POI_CLUSTER_LAYER,

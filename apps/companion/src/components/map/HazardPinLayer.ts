@@ -45,17 +45,18 @@ export function viewportRadiusMeters(map: MapLibreMap): number {
 export const HAZARDS_SOURCE = "hazards-src";
 export const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
 export const HAZARD_CLUSTER_COUNT = "tarmoto-hazard-cluster-count";
+// The individual-hazard marker: a diamond sprite with the emoji baked in (one
+// symbol layer — no separate text layer to keep aligned).
 export const HAZARD_BG = "tarmoto-hazard-bg";
-export const HAZARD_ICON = "tarmoto-hazard-icon";
 
 /** All hazard layer ids, e.g. for hover cursors or blocking hit-tests. */
-export const HAZARD_LAYERS = [HAZARD_CLUSTERS, HAZARD_BG, HAZARD_ICON] as const;
+export const HAZARD_LAYERS = [HAZARD_CLUSTERS, HAZARD_BG] as const;
 
 /**
  * GeoJSON feature-properties bag for a hazard marker. The passthrough wire
  * fields are derived from the generated `HazardResponse` (a backend rename
- * breaks here at typecheck time); `hazard_type` is the normalised shared enum,
- * and `emoji` / `opacity` are computed client-side for the map paint.
+ * breaks here at typecheck time); `hazard_type` is the normalised shared enum
+ * (it picks the diamond sprite) and `opacity` is the client-side age fade.
  */
 export type HazardProps = Pick<
   HazardResponse,
@@ -70,7 +71,6 @@ export type HazardProps = Pick<
 > & {
   hazard_type: HazardType;
   severity: string;
-  emoji: string;
   opacity: number;
 };
 
@@ -82,11 +82,12 @@ const EMPTY_COLLECTION: FeatureCollection<Point, HazardProps> = {
 const HAZARD_DIAMOND_PREFIX = "tarmoto-hazard-diamond-";
 
 /**
- * Rasterize one diamond badge image per hazard type (cream fill, the type's
- * hex as the border) — the same rotated rounded-square the conditions use, so
- * hazards and conditions read as one visual family, just in the hazard palette.
- * Async; jsdom renders none. The emoji is drawn separately on top by the icon
- * layer, so the badge itself carries no glyph.
+ * Rasterize one badge image per hazard type: the same rotated rounded-square
+ * "diamond" the conditions use (cream fill, the type's hex as the border), with
+ * the hazard emoji drawn CENTRED inside. Baking the emoji into the sprite (vs a
+ * separate text layer) keeps it perfectly centred and lets the browser render
+ * the emoji — in colour, honouring its variation sequence — instead of a
+ * shifted monochrome text glyph. Async; jsdom renders none.
  */
 function installHazardDiamondImages(map: MapLibreMap): void {
   for (const type of HAZARD_TYPES_UI) {
@@ -96,6 +97,7 @@ function installHazardDiamondImages(map: MapLibreMap): void {
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">' +
       `<rect x="12" y="12" width="36" height="36" rx="9" transform="rotate(45 30 30)" fill="#F5EFE6" stroke="${color}" stroke-width="4"/>` +
+      `<text x="30" y="30" text-anchor="middle" dominant-baseline="central" font-size="24">${HAZARD_CONFIG[type].emoji}</text>` +
       "</svg>";
     const image = new Image(60, 60);
     image.onload = () => {
@@ -156,7 +158,6 @@ export function hazardsToFeatureCollection(
         road_name: h.road_name,
         created_at: h.created_at,
         expires_at: h.expires_at,
-        emoji: HAZARD_CONFIG[type].emoji,
         opacity: hazardFadeOpacity(h.created_at, h.expires_at, now),
       },
     };
@@ -265,37 +266,6 @@ export function ensureHazardLayers(
       before,
     );
   }
-  if (!map.getLayer(HAZARD_ICON)) {
-    map.addLayer(
-      {
-        id: HAZARD_ICON,
-        type: "symbol",
-        source: HAZARDS_SOURCE,
-        filter: ["!", ["has", "point_count"]],
-        layout: {
-          visibility,
-          "text-field": ["get", "emoji"],
-          // Sized to sit inside the diamond (its inscribed square is ~25px at
-          // full zoom), scaling with the badge instead of overflowing it.
-          "text-size": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            9,
-            10,
-            14,
-            13,
-            18,
-            15,
-          ] as ExpressionSpecification,
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
-      },
-      before,
-    );
-  }
 }
 
 /** Toggle every hazard layer's visibility. */
@@ -303,12 +273,7 @@ export function setHazardLayersVisible(
   map: MapLibreMap,
   visible: boolean,
 ): void {
-  for (const id of [
-    HAZARD_CLUSTERS,
-    HAZARD_CLUSTER_COUNT,
-    HAZARD_BG,
-    HAZARD_ICON,
-  ]) {
+  for (const id of [HAZARD_CLUSTERS, HAZARD_CLUSTER_COUNT, HAZARD_BG]) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
     }

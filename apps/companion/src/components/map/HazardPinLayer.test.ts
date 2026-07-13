@@ -47,14 +47,14 @@ describe("selectHazards", () => {
 });
 
 describe("hazardsToFeatureCollection", () => {
-  it("projects each hazard to a Point feature with emoji + fade opacity", () => {
+  it("projects each hazard to a Point feature with type + fade opacity", () => {
     const now = Date.parse("2026-05-01T10:00:00.000Z"); // same instant → full opacity
     const fc = hazardsToFeatureCollection([hazard()], now);
     expect(fc.features).toHaveLength(1);
     const f = fc.features[0]!;
     expect(f.geometry).toEqual({ type: "Point", coordinates: [14, 49] });
+    // hazard_type selects the diamond sprite (emoji is baked into the image).
     expect(f.properties.hazard_type).toBe("pothole");
-    expect(typeof f.properties.emoji).toBe("string");
     expect(f.properties.opacity).toBeGreaterThan(0);
     expect(f.properties.opacity).toBeLessThanOrEqual(1);
   });
