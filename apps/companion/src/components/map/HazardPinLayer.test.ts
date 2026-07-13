@@ -3,7 +3,6 @@ import {
   normalizeHazardType,
   selectHazards,
   hazardsToFeatureCollection,
-  mapMarkerEmoji,
 } from "./HazardPinLayer";
 
 function hazard(over: Partial<HazardResponse> = {}): HazardResponse {
@@ -48,14 +47,14 @@ describe("selectHazards", () => {
 });
 
 describe("hazardsToFeatureCollection", () => {
-  it("projects each hazard to a Point feature with emoji + fade opacity", () => {
+  it("projects each hazard to a Point feature with type + fade opacity", () => {
     const now = Date.parse("2026-05-01T10:00:00.000Z"); // same instant → full opacity
     const fc = hazardsToFeatureCollection([hazard()], now);
     expect(fc.features).toHaveLength(1);
     const f = fc.features[0]!;
     expect(f.geometry).toEqual({ type: "Point", coordinates: [14, 49] });
+    // hazard_type selects the diamond sprite (emoji is baked into the image).
     expect(f.properties.hazard_type).toBe("pothole");
-    expect(typeof f.properties.emoji).toBe("string");
     expect(f.properties.opacity).toBeGreaterThan(0);
     expect(f.properties.opacity).toBeLessThanOrEqual(1);
   });
@@ -66,20 +65,5 @@ describe("hazardsToFeatureCollection", () => {
       Date.parse("2026-05-01T10:00:00.000Z"),
     );
     expect(fc.features[0]!.properties.hazard_type).toBe("other");
-  });
-
-  it("strips the variation selector so the emoji centres on the diamond", () => {
-    // Pothole is 🕳️ = U+1F573 U+FE0F; the U+FE0F must not reach the text-field.
-    const fc = hazardsToFeatureCollection([hazard()], Date.now());
-    expect(fc.features[0]!.properties.emoji).not.toContain("️");
-  });
-});
-
-describe("mapMarkerEmoji", () => {
-  it("removes U+FE0F but keeps the base emoji glyph", () => {
-    expect(mapMarkerEmoji("🕳️")).toBe("🕳");
-    expect(mapMarkerEmoji("⚠️")).toBe("⚠");
-    // Single-codepoint emoji are unchanged.
-    expect(mapMarkerEmoji("🚧")).toBe("🚧");
   });
 });

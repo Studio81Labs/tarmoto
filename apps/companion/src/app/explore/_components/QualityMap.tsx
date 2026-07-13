@@ -61,7 +61,6 @@ import {
   setHazardLayersVisible,
   setHazardSourceData,
   HAZARD_BG,
-  HAZARD_ICON,
   HAZARD_CLUSTERS,
   type HazardProps,
 } from "@/components/map/HazardPinLayer";
@@ -462,7 +461,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           // a pass badge sits visually on top — click priority must match.
           { layers: [PASS_MARKER_LAYER], handle: openPass },
           { layers: [CLOSURE_MARKER_LAYER], handle: openClosure },
-          { layers: [HAZARD_BG, HAZARD_ICON], handle: openHazard },
+          { layers: [HAZARD_BG], handle: openHazard },
           {
             layers: [HAZARD_CLUSTERS],
             handle: (f) => expandHazardCluster(map, f),
@@ -479,7 +478,6 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
       for (const id of [
         HAZARD_BG,
-        HAZARD_ICON,
         HAZARD_CLUSTERS,
         POI_PIN_LAYER,
         POI_CLUSTER_LAYER,
