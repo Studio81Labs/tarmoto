@@ -252,8 +252,33 @@ describe("PoiImportsScreen", () => {
     const sk = within(regionRow("SK"));
     // OSM: queued (and no extract) → disabled.
     expect(sk.getByRole("button", { name: "Import" })).toBeDisabled();
+    // Upload must ALSO be disabled while live_state isn't idle (queued here)
+    // — a cron job or another admin could be mid-import against this exact
+    // extract; replacing it out from under that read would be unsafe.
+    expect(sk.getByRole("button", { name: "Upload" })).toBeDisabled();
     // No FSQ row for SK at all → no Import/Upload controls in that cell.
     expect(sk.getAllByRole("button", { name: "Import" })).toHaveLength(1);
+  });
+
+  it("disables Upload when live_state is running (a cron job or another admin's import), independent of any local pending state (#847 review)", () => {
+    const regionsWithRunningImport = REGIONS.map((r) =>
+      r.source === "osm" && r.code === "CZ"
+        ? { ...r, live_state: "running" as const }
+        : r,
+    );
+    mockUseAdminPoiRegions.mockReturnValue({
+      data: regionsWithRunningImport,
+      isPending: false,
+      error: null,
+      refetch: mockRefetchRegions,
+    });
+    render(<PoiImportsScreen currentRole="admin" />);
+    const cz = within(regionRow("CZ"));
+
+    // OSM/CZ otherwise has an extract and would be idle — isolating
+    // live_state as the sole reason Upload is disabled here, with no local
+    // pendingUpload/pendingImport ever set in this test.
+    expect(cz.getAllByRole("button", { name: "Upload" })[0]).toBeDisabled();
   });
 
   it("disables Import for a cell while that SAME cell's upload is pending (replacement-upload race, #847 review)", () => {

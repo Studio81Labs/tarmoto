@@ -368,13 +368,21 @@ function RegionSourceCell({
   // clickable and can fire against the outgoing extract. Disabling on this
   // cell's OWN `pendingUpload`/`pendingImport` (not the mutation's global
   // `isPending`, which isn't scoped per row) closes that window; the
-  // symmetric `disabled` on the Upload button below keeps a mid-import click
-  // from starting a second, concurrent upload into the same target path.
+  // symmetric `disableUpload` below keeps a mid-import click from starting a
+  // second, concurrent upload into the same target path — and ALSO disables
+  // Upload whenever `live_state` isn't idle, since a queued/running import
+  // can be a CRON dispatch or another admin's manual trigger, neither of
+  // which this browser's own `pendingImport` flag ever sees. Replacing the
+  // on-disk extract while a worker may be mid-read of it is exactly the race
+  // the backend's own `importInFlight` 409 guard defends against
+  // server-side (`storeExtract`, #847 review) — this keeps Upload disabled
+  // before a click ever reaches that guard.
   const disableImport =
     !hasExtract ||
     status.live_state !== "idle" ||
     pendingUpload ||
     pendingImport;
+  const disableUpload = pendingImport || status.live_state !== "idle";
 
   return (
     <div className="flex flex-col gap-1.5 py-1">
@@ -426,7 +434,7 @@ function RegionSourceCell({
             variant="secondary"
             size="sm"
             loading={pendingUpload}
-            disabled={pendingImport}
+            disabled={disableUpload}
             onClick={() => fileInputRef.current?.click()}
           >
             Upload
