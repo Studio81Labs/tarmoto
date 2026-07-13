@@ -72,7 +72,14 @@ import {
   PASS_MARKER_LAYER,
 } from "@/components/map/ConditionMarkerLayer";
 import { installPointClickRouter } from "@/components/map/mapPointClickRouter";
+import {
+  ensureTripRouteLayers,
+  setTripRouteLayersVisible,
+  setTripRouteSourceData,
+  TRIP_ROUTE_LAYER,
+} from "@/components/map/TripRouteLayer";
 import { getBasemapPoiLayerIds, topBasemapPlaceAt } from "@/lib/basemap-poi";
+import type { TripSummary } from "@/lib/types";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import type {
@@ -127,6 +134,12 @@ interface Props {
   conditionsMonth: number;
   /** Exact preview date for closures (matches the Conditions panel picker). */
   conditionsDate: Date;
+  /** When on, overlay the rider's own planned trip routes (coral). */
+  showMyTrips: boolean;
+  /** The rider's trips, drawn from each trip's per-day overview geometry. */
+  trips: readonly TripSummary[];
+  /** Clicking a trip route opens its detail drawer. */
+  onTripSelect: (tripId: string) => void;
   onSegmentSelect?: (segmentId: string) => void;
   /** Segment whose detail drawer is open — painted with the highlight overlay. */
   selectedSegmentId?: string | null;
@@ -178,6 +191,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       conditionBbox,
       conditionsMonth,
       conditionsDate,
+      showMyTrips,
+      trips,
+      onTripSelect,
       onSegmentSelect,
       selectedSegmentId,
       onViewChange,
@@ -332,6 +348,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       ensureConditionLayers(map);
       setConditionLayersVisible(map, showConditions);
       ensurePoiLayers(map);
+      // "My trips" route lines, slotted UNDER the markers (before the first
+      // hazard layer) so a marker on a route still owns the click.
+      ensureTripRouteLayers(map, {
+        visible: showMyTrips,
+        beforeId: HAZARD_CLUSTERS,
+      });
 
       // ── One click router ──
       // MapLibre fires every overlapping layer's click handler, so the topmost
@@ -466,6 +488,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             layers: [HAZARD_CLUSTERS],
             handle: (f) => expandHazardCluster(map, f),
           },
+          // Route lines are below the markers, so they're listed last — a
+          // marker sitting on a route still wins the click.
+          {
+            layers: [TRIP_ROUTE_LAYER],
+            handle: (f) => {
+              const tripId = f.properties?.tripId;
+              if (typeof tripId === "string") onTripSelect(tripId);
+            },
+          },
         ],
         onMiss: selectSegmentAt,
       });
@@ -483,6 +514,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         POI_CLUSTER_LAYER,
         CLOSURE_MARKER_LAYER,
         PASS_MARKER_LAYER,
+        TRIP_ROUTE_LAYER,
       ]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
@@ -725,6 +757,18 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         );
       }
     }, [ready, showConditions]);
+
+    // ── "My trips" route overlay: keep the source + visibility in sync ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setTripRouteSourceData(map, trips);
+    }, [ready, trips]);
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setTripRouteLayersVisible(map, showMyTrips);
+    }, [ready, showMyTrips]);
 
     // ── fetch hazards when viewport settles ──
     useEffect(() => {

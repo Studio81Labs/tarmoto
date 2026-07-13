@@ -30,7 +30,13 @@ import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
 } from "@/components/roads/SegmentDetailSidebar";
-import { ApiError, roadsApi } from "@/lib/api";
+import {
+  TripDetailSidebar,
+  type TripDetailPanelState,
+} from "@/components/roads/TripDetailSidebar";
+import { ApiError, roadsApi, tripsApi } from "@/lib/api";
+import { useUserTrips } from "@/hooks/useUserTrips";
+import { tripFromDetail } from "@/lib/trip-from-detail";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -244,6 +250,12 @@ function ExplorerPageInner() {
   const [conditionBbox, setConditionBbox] = useState<string | null>(null);
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
+  // "My trips" overlay: the rider's trips + the drawer for a clicked route.
+  const { trips } = useUserTrips();
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [tripDetailState, setTripDetailState] = useState<TripDetailPanelState>({
+    status: "idle",
+  });
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -360,6 +372,40 @@ function ExplorerPageInner() {
       controller.abort();
     };
   }, [selectedSegmentId]);
+  // Load the clicked trip's detail into the drawer (mirrors the segment fetch).
+  useEffect(() => {
+    if (!selectedTripId) {
+      setTripDetailState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setTripDetailState({ status: "loading", tripId: selectedTripId });
+    tripsApi
+      .get(selectedTripId)
+      .then((result) => {
+        if (cancelled) return;
+        setTripDetailState({
+          status: "ready",
+          trip: tripFromDetail(result.data),
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTripDetailState({
+          status: "error",
+          tripId: selectedTripId,
+          message:
+            err instanceof Error ? err.message : "Could not load this trip.",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTripId]);
+  // Toggling "My trips" off closes any open trip drawer.
+  useEffect(() => {
+    if (!showMyTrips) setSelectedTripId(null);
+  }, [showMyTrips]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   // Road quality and surface are mutually exclusive overlays (one line-coloring
   // vocabulary at a time, like the planner): activating one clears the other;
@@ -568,7 +614,17 @@ function ExplorerPageInner() {
               conditionBbox={conditionBbox}
               conditionsMonth={conditionsMonth}
               conditionsDate={conditionsDate}
-              onSegmentSelect={setSelectedSegmentId}
+              showMyTrips={showMyTrips}
+              trips={trips}
+              onTripSelect={(tripId) => {
+                // One drawer at a time — a trip click supersedes a segment.
+                setSelectedSegmentId(null);
+                setSelectedTripId(tripId);
+              }}
+              onSegmentSelect={(segmentId) => {
+                setSelectedTripId(null);
+                setSelectedSegmentId(segmentId);
+              }}
               selectedSegmentId={selectedSegmentId}
               onViewChange={(view) => {
                 setCenter({ lng: view.lng, lat: view.lat });
@@ -722,6 +778,11 @@ function ExplorerPageInner() {
             // the only chrome it covers, same as the trip views). Public
             // visitors stay container-anchored so it never covers the
             // PublicExploreHeader's sign-in / create-account CTAs.
+            anchor={isAuthenticated ? "viewport" : "container"}
+          />
+          <TripDetailSidebar
+            state={tripDetailState}
+            onClose={() => setSelectedTripId(null)}
             anchor={isAuthenticated ? "viewport" : "container"}
           />
 
