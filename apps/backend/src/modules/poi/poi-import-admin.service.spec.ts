@@ -1,5 +1,5 @@
-// Stub `node:fs/promises` so `stat()` is deterministic per test. This is the
-// seam `PoiImportAdminService` uses for extract-file presence instead of a
+// Stub `stat` from `node:fs/promises` so extract-file presence is
+// deterministic per test — the seam `PoiImportAdminService` uses instead of a
 // constructor-injected `fs` param: Nest resolves EVERY constructor parameter
 // from its DI container, so an object-literal-typed param has no provider —
 // Nest would inject `undefined` (silently overriding any JS default) instead
@@ -7,9 +7,25 @@
 // the module here (mirrors the existing `node:fs` stub in
 // poi-import.service.spec.ts) sidesteps that: the constructor only takes
 // Nest-resolvable params, and this file drives `stat` directly.
-jest.mock('node:fs/promises', () => ({ stat: jest.fn() }));
+//
+// Everything else in the module is passed through via `requireActual`
+// (given an explicit generic so `actual` keeps the real module's types
+// instead of `any`) — `storeExtract`'s atomic-upload tests below exercise
+// REAL `open`/`rename`/`unlink` against a throwaway temp directory rather
+// than mocking the filesystem, since the thing worth proving (temp-file
+// write → fsync → atomic rename, cleanup on failure) is a real filesystem
+// property, not something a mock can stand in for.
+jest.mock('node:fs/promises', () => {
+  const actual =
+    jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return { ...actual, stat: jest.fn() };
+});
 
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { PoiImportAdminService } from './poi-import-admin.service.js';
 import type { PoiImportRun } from '../../entities/poi-import-run.entity.js';
 
@@ -374,6 +390,378 @@ describe('PoiImportAdminService', () => {
       expect(qb.andWhere).toHaveBeenCalledWith('r.region_code = :code', {
         code: 'SK',
       });
+    });
+  });
+
+  describe('triggerImport', () => {
+    const inFlightStates = ['active', 'waiting', 'delayed', 'prioritized'];
+
+    it('enqueues a manual region job and returns its id', async () => {
+      const add = jest.fn(() => ({ id: 'x' }));
+      const queue = { getJobs: jest.fn(() => []), add };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      const res = await svc.triggerImport('osm', 'CZ');
+
+      expect(res.job_id).toBe('import-region_manual_osm_CZ');
+      expect(queue.getJobs).toHaveBeenCalledWith(inFlightStates);
+      expect(add).toHaveBeenCalledWith(
+        'import-region',
+        { code: 'CZ', source: 'osm', trigger: 'manual' },
+        expect.objectContaining({
+          jobId: 'import-region_manual_osm_CZ',
+          attempts: 3,
+        }),
+      );
+    });
+
+    it('rejects with 409 when a MANUAL job for the same (source, code) is already in flight', async () => {
+      const add = jest.fn();
+      const queue = {
+        getJobs: jest.fn(() => [
+          { data: { code: 'CZ', source: 'osm', trigger: 'manual' } },
+        ]),
+        add,
+      };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      await expect(svc.triggerImport('osm', 'CZ')).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    // #847 review (Task 3): `importRegion` holds a non-blocking PostgreSQL
+    // advisory lock per (source, code), so a manual trigger racing an
+    // in-progress CRON import doesn't queue behind it — it FAILS, after
+    // burning through `attempts: 3` (30s/60s exponential backoff, ~90s
+    // total). A country-scale import can run for minutes, so a
+    // `getJob(manualJobId)`-only check (which only ever sees the MANUAL
+    // jobId) would miss a live cron job entirely — it enqueues under a
+    // DIFFERENT id (`import-region_<dispatchId>_<source>_<code>`,
+    // `JobsProducer.enqueuePoiImportRegion`) and never sets `trigger` on the
+    // wire (the processor defaults an absent `trigger` to `'cron'`). This
+    // job simulates exactly that real payload shape to prove the scan
+    // catches it by payload, not by id.
+    it('rejects with 409 when a CRON-style job (different jobId, matching data.code/data.source) is in flight', async () => {
+      const add = jest.fn();
+      const queue = {
+        getJobs: jest.fn(() => [
+          {
+            id: 'import-region_wk42_osm_CZ',
+            data: { code: 'CZ', source: 'osm' },
+          },
+        ]),
+        add,
+      };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      await expect(svc.triggerImport('osm', 'CZ')).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('does not block on an in-flight job for a different region code or a different source', async () => {
+      const add = jest.fn(() => ({ id: 'x' }));
+      const queue = {
+        getJobs: jest.fn(() => [
+          { data: { code: 'SK', source: 'osm' } },
+          { data: { code: 'CZ', source: 'fsq' } },
+        ]),
+        add,
+      };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      const res = await svc.triggerImport('osm', 'CZ');
+
+      expect(res.job_id).toBe('import-region_manual_osm_CZ');
+      expect(add).toHaveBeenCalled();
+    });
+
+    it('defaults an in-flight job with an absent `source` field to osm when matching', async () => {
+      const legacyJob = { data: { code: 'CZ' } }; // pre-#869 payload, no `source`
+
+      const blockedQueue = {
+        getJobs: jest.fn(() => [legacyJob]),
+        add: jest.fn(),
+      };
+      const svcOsm = new PoiImportAdminService(
+        [makeImporter({ source: 'osm' })] as never,
+        {} as never,
+        {} as never,
+        blockedQueue as never,
+      );
+      await expect(svcOsm.triggerImport('osm', 'CZ')).rejects.toMatchObject({
+        status: 409,
+      });
+
+      // The SAME legacy job must NOT block a different source — proves the
+      // fallback is `?? 'osm'`, not "an absent source matches anything".
+      const openQueue = {
+        getJobs: jest.fn(() => [legacyJob]),
+        add: jest.fn(() => ({ id: 'x' })),
+      };
+      const svcFsq = new PoiImportAdminService(
+        [makeImporter({ source: 'fsq' })] as never,
+        {} as never,
+        {} as never,
+        openQueue as never,
+      );
+      await expect(svcFsq.triggerImport('fsq', 'CZ')).resolves.toMatchObject({
+        job_id: 'import-region_manual_fsq_CZ',
+      });
+    });
+
+    it('rejects an unknown (source, code) with 400 before ever scanning the queue', async () => {
+      const getJobs = jest.fn();
+      const queue = { getJobs, add: jest.fn() };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      await expect(svc.triggerImport('osm', 'ZZ')).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(getJobs).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('storeExtract', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tarmoto-poi-admin-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    /** Importer whose `getExtractPath` resolves INSIDE the throwaway temp
+     *  dir, mirroring the real `<code>.osm` / `<code>.fsq.jsonl` naming
+     *  (`OsmPoiImportSource`/`FsqPoiImportSource.extractFilename`) closely
+     *  enough for the extension-validation tests below to be meaningful. */
+    function makeStoreImporter(
+      over: {
+        source?: string;
+        regions?: { code: string; bbox: unknown }[];
+      } = {},
+    ) {
+      const source = over.source ?? 'osm';
+      const ext = source === 'fsq' ? '.fsq.jsonl' : '.osm';
+      return {
+        source,
+        regions: over.regions ?? [{ code: 'CZ', bbox: {} }],
+        getExtractPath: (code: string) =>
+          join(dir, `${code.toLowerCase()}${ext}`),
+      };
+    }
+
+    it('rejects an oversize upload with 400 before touching the filesystem', async () => {
+      const original = process.env.TARMOTO_POI_UPLOAD_MAX_BYTES;
+      process.env.TARMOTO_POI_UPLOAD_MAX_BYTES = '10';
+      try {
+        const importer = makeStoreImporter();
+        const svc = new PoiImportAdminService(
+          [importer] as never,
+          {} as never,
+          {} as never,
+          {} as never,
+        );
+
+        await expect(
+          svc.storeExtract('osm', 'CZ', {
+            stream: Readable.from(Buffer.from('irrelevant')),
+            size: 11,
+            originalName: 'cz.osm',
+          }),
+        ).rejects.toMatchObject({ status: 400 });
+
+        expect(existsSync(`${importer.getExtractPath('CZ')}.part`)).toBe(false);
+      } finally {
+        if (original === undefined) {
+          delete process.env.TARMOTO_POI_UPLOAD_MAX_BYTES;
+        } else {
+          process.env.TARMOTO_POI_UPLOAD_MAX_BYTES = original;
+        }
+      }
+    });
+
+    it('rejects an unknown source with 400', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter()] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        svc.storeExtract('bogus', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('rejects an unknown region code for a known source with 400', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter()] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'ZZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'zz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('rejects a filename whose extension does not match the source (fsq name against osm)', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter({ source: 'osm' })] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.fsq.jsonl',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('rejects a filename whose extension does not match the source (osm name against fsq)', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter({ source: 'fsq' })] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        svc.storeExtract('fsq', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('streams the upload atomically (temp file + fsync + rename) and returns the extract stat', async () => {
+      const importer = makeStoreImporter();
+      const target = importer.getExtractPath('CZ');
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      statMock.mockResolvedValueOnce({
+        size: 13,
+        mtimeMs: 1_720_000_000_000,
+      } as never);
+
+      const result = await svc.storeExtract('osm', 'CZ', {
+        // Uppercase extension proves the extension match is case-insensitive.
+        stream: Readable.from(Buffer.from('<osm-extract>')),
+        size: 13,
+        originalName: 'CZ.OSM',
+      });
+
+      expect(result).toEqual({
+        present: true,
+        size_bytes: 13,
+        modified_at: new Date(1_720_000_000_000).toISOString(),
+      });
+      // Real filesystem effects: the target exists with the streamed bytes,
+      // and the `.part` staging file is gone.
+      expect(readFileSync(target, 'utf8')).toBe('<osm-extract>');
+      expect(existsSync(`${target}.part`)).toBe(false);
+    });
+
+    it('replaces an existing extract in place on re-upload', async () => {
+      const importer = makeStoreImporter();
+      const target = importer.getExtractPath('CZ');
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      statMock.mockResolvedValue({ size: 0, mtimeMs: 0 } as never);
+
+      await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('first')),
+        size: 5,
+        originalName: 'cz.osm',
+      });
+      await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('second-upload')),
+        size: 13,
+        originalName: 'cz.osm',
+      });
+
+      expect(readFileSync(target, 'utf8')).toBe('second-upload');
+    });
+
+    it('cleans up the .part file and rethrows when the source stream errors mid-write', async () => {
+      const importer = makeStoreImporter();
+      const target = importer.getExtractPath('CZ');
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      const erroring = new Readable({
+        read() {
+          this.push(Buffer.from('partial'));
+          process.nextTick(() => this.destroy(new Error('stream interrupted')));
+        },
+      });
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: erroring,
+          size: 100,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toThrow(/stream interrupted/);
+
+      expect(existsSync(`${target}.part`)).toBe(false);
+      expect(existsSync(target)).toBe(false);
     });
   });
 });

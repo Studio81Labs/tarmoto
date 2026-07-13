@@ -1,10 +1,20 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
-import { stat } from 'node:fs/promises';
-import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
+import { createWriteStream } from 'node:fs';
+import { open, rename, stat, unlink } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
+import { DEFAULT_JOB_OPTIONS } from '../jobs/jobs.config.js';
+import type { PoiImportRegionJobData } from '../jobs/jobs.producer.js';
 import {
   POI_IMPORT_SOURCES,
   type PoiImportService,
@@ -57,38 +67,53 @@ export interface RegionImportStatus {
 }
 
 /**
- * Read side of the POI import admin surface (#847): per-`(source, region)`
- * coverage/count/extract-presence/last-run/live-queue-state
- * (`listRegionStatus`), plus the run history (`listRuns`). Pure reads — the
- * write side (extract upload + manual trigger, a later task) is a separate
- * service sharing only `manualJobId`, the deterministic id both sides need to
- * agree on: this service probes it to report `live_state`, and the write
- * side enqueues with it so a repeated manual trigger dedupes against the SAME
- * BullMQ job instead of double-running the import.
+ * Admin surface for the POI import system (#847). Read side —
+ * per-`(source, region)` coverage/count/extract-presence/last-run/
+ * live-queue-state (`listRegionStatus`), plus run history (`listRuns`).
+ * Write side — validated atomic extract upload (`storeExtract`) and a manual
+ * region-import trigger (`triggerImport`). Both sides share `manualJobId`,
+ * the deterministic id that ties them together: `listRegionStatus` probes it
+ * to report `live_state`, and `triggerImport` enqueues with it so a repeated
+ * manual click dedupes against the SAME BullMQ job instead of double-running
+ * the import.
  */
 @Injectable()
 export class PoiImportAdminService {
+  /**
+   * Upload size cap for an operator-provided extract (#847), configurable
+   * via `TARMOTO_POI_UPLOAD_MAX_BYTES` — default 200 MB, comfortably above
+   * any filtered/clipped single-country `.osm`/`.fsq.jsonl` extract (design
+   * spec §11) while still bounding a runaway or mistaken upload. Read once
+   * per instance rather than per call — fine in practice since this only
+   * changes via a redeploy, which constructs a fresh instance anyway.
+   */
+  private readonly MAX_UPLOAD_BYTES =
+    Number(process.env.TARMOTO_POI_UPLOAD_MAX_BYTES) || 200 * 1024 * 1024;
+
   constructor(
     @Inject(POI_IMPORT_SOURCES)
     private readonly importers: readonly PoiImportService[],
     @InjectDataSource('poi') private readonly poi: DataSource,
     @InjectRepository(PoiImportRun, 'poi')
     private readonly runs: Repository<PoiImportRun>,
-    @InjectQueue(QUEUE_NAMES.POI_IMPORT) private readonly queue: Queue,
+    @InjectQueue(QUEUE_NAMES.POI_IMPORT)
+    private readonly queue: Queue<PoiImportRegionJobData>,
   ) {}
 
   /**
    * Deterministic BullMQ job id for a manual admin trigger of `(source,
    * code)`. `listRegionStatus` probes this id (via `queue.getJob`) to report
-   * `live_state`; the write-side manual trigger (a later task) enqueues the
-   * region job with this SAME id, so BullMQ's duplicate-jobId dedup keeps a
-   * second admin click from double-running an import that's already queued
-   * or in flight. `:` is BullMQ's Redis-key delimiter (mirrors
+   * `live_state`; `triggerImport` (below) enqueues the region job with this
+   * SAME id, so BullMQ's duplicate-jobId dedup keeps a second admin click
+   * from double-running an import that's already queued or in flight. `:` is
+   * BullMQ's Redis-key delimiter (mirrors
    * `JobsProducer.enqueuePoiImportRegion`'s identical convention for the
    * cron-dispatched sibling jobId), so it's stripped after building the
    * readable id. The literal `manual` segment (rather than a dispatch/run id)
    * is what keeps this permanently distinct from any cron-dispatched
-   * `import-region:<dispatchId>:<source>:<code>` job for the same region.
+   * `import-region:<dispatchId>:<source>:<code>` job for the same region —
+   * `triggerImport`'s in-flight scan is what actually catches THAT job (a
+   * different id entirely), by matching its payload instead of its id.
    */
   manualJobId(source: string, code: string): string {
     return `import-region:manual:${source}:${code}`.replace(/:/g, '_');
@@ -263,5 +288,156 @@ export class PoiImportAdminService {
       started_at: r.started_at.toISOString(),
       finished_at: r.finished_at ? r.finished_at.toISOString() : null,
     };
+  }
+
+  /**
+   * Resolve the importer for `source`, and confirm `code` is one of ITS
+   * configured regions. Shared validation for both write-side entry points
+   * below — an upload or a trigger for an unregistered source, or a region
+   * outside that source's configured coverage, is a client mistake (400),
+   * not a 404/500: the admin UI only ever offers configured `(source, code)`
+   * pairs, so reaching here with an unknown pair means a stale page, a
+   * hand-crafted request, or a typo.
+   */
+  private importerFor(source: string, code: string): PoiImportService {
+    const importer = this.importers.find((i) => i.source === source);
+    if (!importer) {
+      throw new BadRequestException(`unknown source: ${source}`);
+    }
+    if (!importer.regions.some((r) => r.code === code)) {
+      throw new BadRequestException(
+        `unknown region ${code} for source ${source}`,
+      );
+    }
+    return importer;
+  }
+
+  /**
+   * Validated, atomic upload of an operator-provided extract (#847) — the
+   * write-side counterpart to `listRegionStatus`'s `extract` stat. Checks run
+   * cheapest-first: declared size against `MAX_UPLOAD_BYTES` (no I/O), then
+   * `(source, code)` (in-memory), then the filename extension — all before a
+   * single byte is written.
+   *
+   * Atomicity: the upload streams to a SIBLING temp file (`<target>.part`,
+   * same directory as `target` so the final rename is same-filesystem and
+   * therefore atomic — POSIX `rename(2)` never exposes a partially-written
+   * destination), `fsync`s it so the bytes are durable on disk BEFORE the
+   * rename lands (the import job that reads `target` next runs in a
+   * separate worker process — possibly after a crash — so "written" has to
+   * mean "on disk", not "sitting in this process's or the OS's write
+   * buffers"), then renames onto `target`. A failure at any step (open,
+   * write, fsync, or rename) removes the `.part` file best-effort and
+   * rethrows the original error; `target` itself is only ever touched by the
+   * final, all-or-nothing rename, so a failed upload can never truncate or
+   * corrupt a previously-good extract.
+   *
+   * The write and the fsync use TWO separate file handles rather than one:
+   * `pipeline()` (via `stream.finished` under the hood) waits for the
+   * writable's `'close'` event, which a plain `fs.createWriteStream` emits
+   * once it auto-closes its own fd on `'finish'`. Opening a SECOND handle
+   * (`open(tmp, 'r+')`) purely to `sync()` + `close()` afterward avoids
+   * fighting that lifecycle — passing `autoClose: false` to keep the first
+   * handle's fd alive for a post-pipeline `sync()` sounds equivalent, but it
+   * suppresses the very `'close'` event `pipeline()` is waiting for, so the
+   * write never resolves at all.
+   */
+  async storeExtract(
+    source: string,
+    code: string,
+    file: { stream: Readable; size: number; originalName: string },
+  ): Promise<{ present: true; size_bytes: number; modified_at: string }> {
+    if (file.size > this.MAX_UPLOAD_BYTES) {
+      throw new BadRequestException(
+        `extract exceeds ${this.MAX_UPLOAD_BYTES} bytes`,
+      );
+    }
+    const importer = this.importerFor(source, code);
+    const target = importer.getExtractPath(code);
+    const expectedExt = source === 'fsq' ? '.fsq.jsonl' : '.osm';
+    if (!file.originalName.toLowerCase().endsWith(expectedExt)) {
+      throw new BadRequestException(
+        `expected a ${expectedExt} file for ${source}`,
+      );
+    }
+
+    const tmp = `${target}.part`;
+    try {
+      await pipeline(file.stream, createWriteStream(tmp));
+      const handle = await open(tmp, 'r+');
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await rename(tmp, target);
+    } catch (err) {
+      await unlink(tmp).catch(() => undefined);
+      throw err;
+    }
+
+    const s = await stat(target);
+    return {
+      present: true as const,
+      size_bytes: s.size,
+      modified_at: new Date(s.mtimeMs).toISOString(),
+    };
+  }
+
+  /**
+   * Enqueue a manual admin-triggered import for `(source, code)` (#847).
+   *
+   * The in-flight check scans EVERY live job on this queue — active,
+   * waiting, delayed, or prioritized — for one whose payload already targets
+   * this `(source, code)`, rather than only probing `manualJobId`. Probing
+   * just the manual jobId would catch a duplicate manual click (same id) but
+   * miss the weekly dispatcher's own in-flight job for the SAME region: the
+   * cron path enqueues under a DIFFERENT id
+   * (`import-region_<dispatchId>_<source>_<code>`), so it's invisible to a
+   * `getJob(manualJobId)` probe. That gap matters because `importRegion`
+   * holds a non-blocking PostgreSQL advisory lock per `(source, code)` — the
+   * loser doesn't queue behind the winner, it FAILS after burning through
+   * its retry budget (`attempts: 3`, 30s/60s exponential backoff — ~90s
+   * total) — so an admin trigger racing an in-progress cron import (which
+   * can run for minutes on a country-sized extract) would enqueue a job
+   * that's certain to exhaust its retries and land in `failed`, polluting
+   * run history with a false failure instead of just telling the admin to
+   * wait. Scanning every in-flight job's `data.code`/`data.source`
+   * (defaulting an absent `source` to `osm`, mirroring the processor's own
+   * legacy fallback) closes that gap for both directions — cron-vs-manual
+   * AND manual-vs-manual — with one check.
+   *
+   * On a clear queue, enqueues with `manualJobId` as the BullMQ `jobId` so a
+   * second click before this one is even picked up still dedupes to the
+   * same job (BullMQ rejects a duplicate id rather than double-enqueuing).
+   */
+  async triggerImport(
+    source: string,
+    code: string,
+  ): Promise<{ job_id: string }> {
+    this.importerFor(source, code);
+
+    const inFlight = await this.queue.getJobs([
+      'active',
+      'waiting',
+      'delayed',
+      'prioritized',
+    ]);
+    const busy = inFlight.some(
+      (j) => j?.data?.code === code && (j?.data?.source ?? 'osm') === source,
+    );
+    if (busy) {
+      throw new ConflictException(
+        `import for ${source}/${code} already in flight`,
+      );
+    }
+
+    const jobId = this.manualJobId(source, code);
+    await this.queue.add(
+      JOB_NAMES.POI_IMPORT_REGION,
+      { code, source, trigger: 'manual' },
+      { ...DEFAULT_JOB_OPTIONS, jobId, attempts: 3 },
+    );
+    return { job_id: jobId };
   }
 }
