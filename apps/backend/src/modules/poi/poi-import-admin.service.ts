@@ -441,6 +441,36 @@ export class PoiImportAdminService {
   }
 
   /**
+   * Redis key for the server-side per-`(source, code)` upload lock (#847
+   * review). Set by `storeExtract` for the duration of a single upload's
+   * streaming + atomic rename, and consulted by `triggerImport` (via
+   * `uploadInProgress`) so a manual trigger can't enqueue a worker while a
+   * replacement upload for the same region is still landing. Reuses the
+   * queue's own Redis connection (`this.queue.client`) rather than any new
+   * DI wiring; BullMQ prefixes its OWN keys with the queue name
+   * (`bull:<queue>:*`), so this `poi:import:` namespace can never collide
+   * with a BullMQ-managed key on the same connection.
+   */
+  private uploadLockKey(source: string, code: string): string {
+    return `poi:import:upload-lock:${source}:${code}`;
+  }
+
+  /**
+   * True while an extract upload for `(source, code)` is mid-stream — i.e.
+   * `storeExtract` has SET but not yet released this pair's upload lock.
+   * `importInFlight` (above) only knows about BullMQ jobs, so it has no
+   * visibility into an upload that hasn't reached the queue at all; this is
+   * `triggerImport`'s other 409 guard, closing that gap.
+   */
+  private async uploadInProgress(
+    source: string,
+    code: string,
+  ): Promise<boolean> {
+    const redis = await this.queue.client;
+    return (await redis.exists(this.uploadLockKey(source, code))) > 0;
+  }
+
+  /**
    * Validated, atomic upload of an operator-provided extract (#847) — the
    * write-side counterpart to `listRegionStatus`'s `extract` stat. Checks run
    * cheapest-first: declared size against `POI_UPLOAD_MAX_BYTES` (no I/O), then
@@ -454,6 +484,16 @@ export class PoiImportAdminService {
    * `triggerImport`'s own 409 guard) that rejects a replacement upload while
    * a worker may be mid-read of the CURRENT extract. All of this runs before
    * a single byte is written.
+   *
+   * Server-side upload lock (#847 review): right after the in-flight-import
+   * check above and still before any streaming, this call SETs a per-
+   * `(source, code)` Redis key (`uploadLockKey`, 600s TTL as a
+   * crash/abort safety net) on the queue's own Redis connection
+   * (`this.queue.client`). `triggerImport` consults the same key
+   * (`uploadInProgress`) before enqueuing, so a manual trigger fired while
+   * THIS upload is still mid-stream can't queue a worker that reads the OLD
+   * target before this upload's rename lands. The lock is released in the
+   * `finally` below on both the success and failure paths.
    *
    * Atomicity: the upload streams to a SIBLING temp file
    * (`<target>.<pid>.<random-hex>.part`, same directory as `target` so the
@@ -562,6 +602,22 @@ export class PoiImportAdminService {
       );
     }
 
+    // Server-side upload lock (#847 review): `triggerImport` only guards
+    // against an in-flight BullMQ import — it has no server-side knowledge
+    // of an upload that hasn't reached the queue at all, i.e. THIS call,
+    // still mid-stream below. Without this, a trigger fired while another
+    // client is still streaming a replacement upload for this exact
+    // (source, code) could queue a worker that reads the OLD target before
+    // the new upload's atomic rename lands — a "successful" run tied to
+    // stale input. Set BEFORE a single byte streams, released in the
+    // `finally` below on both the success and failure paths. The 600s TTL
+    // is a safety net, not the primary release mechanism — it just makes
+    // sure a crashed or aborted upload (which skips the `finally`, e.g. a
+    // killed process) can never permanently block this region's imports.
+    const redis = await this.queue.client;
+    const lockKey = this.uploadLockKey(source, code);
+    await redis.set(lockKey, '1', 'EX', 600);
+
     // Unique per call (not a fixed `<target>.part`) — see the doc comment
     // above: this is what keeps two concurrent uploads for the same
     // (source, code) from interleaving writes into one shared temp path.
@@ -586,6 +642,8 @@ export class PoiImportAdminService {
     } catch (err) {
       await unlink(tmp).catch(() => undefined);
       throw err;
+    } finally {
+      await redis.del(lockKey);
     }
 
     const s = await stat(target);
@@ -627,6 +685,14 @@ export class PoiImportAdminService {
    * called from `storeExtract`'s own defense-in-depth 409 guard against a
    * replacement upload racing this same live-import condition — so both
    * call sites share one definition of "in flight" that can't drift apart.
+   *
+   * A second, independent 409 guard (`uploadInProgress`, #847 review) checks
+   * the server-side upload lock `storeExtract` holds for the duration of its
+   * own streaming + atomic rename. `importInFlight` only has visibility into
+   * BullMQ jobs, so on its own it can't see a replacement upload that hasn't
+   * reached the queue yet — without this second guard, a trigger fired
+   * while that upload is still mid-stream would enqueue a worker that reads
+   * the OLD target right before the new upload's rename replaces it.
    */
   async triggerImport(
     source: string,
@@ -637,6 +703,18 @@ export class PoiImportAdminService {
     if (await this.importInFlight(source, code)) {
       throw new ConflictException(
         `import for ${source}/${code} already in flight`,
+      );
+    }
+    // Server-side upload lock (#847 review): `importInFlight` only sees
+    // BullMQ jobs, so it's blind to a replacement upload that's still
+    // mid-stream (`storeExtract`'s `.part` write, before the atomic rename
+    // lands) and hasn't reached the queue yet. Without this, a trigger
+    // fired during that window would queue a worker that could read the
+    // OLD target before the new upload replaces it — a run tied to stale
+    // input that still reports success. See `uploadInProgress`.
+    if (await this.uploadInProgress(source, code)) {
+      throw new ConflictException(
+        `an extract upload is in progress for ${source}/${code}; wait for it to finish before importing`,
       );
     }
 

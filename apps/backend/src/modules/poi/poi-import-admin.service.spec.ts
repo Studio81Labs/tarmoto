@@ -78,6 +78,25 @@ function makeImporter(
   };
 }
 
+/**
+ * Fake ioredis client double for the queue's own Redis connection
+ * (`this.queue.client`, #847 review) — the seam both `storeExtract`'s
+ * per-`(source, code)` upload lock and `triggerImport`'s `uploadInProgress`
+ * 409 guard go through. `exists` defaults to `0` (no upload in progress) so
+ * every queue mock across `triggerImport`/`storeExtract` that doesn't care
+ * about the lock stays green without individually overriding it. Shared at
+ * module scope (not nested in either `describe` block) since both
+ * `triggerImport` and `storeExtract` tests are siblings under the same
+ * top-level `describe` and both need it.
+ */
+function makeFakeRedis(over: { exists?: number } = {}) {
+  return {
+    set: jest.fn().mockResolvedValue('OK'),
+    del: jest.fn().mockResolvedValue(1),
+    exists: jest.fn().mockResolvedValue(over.exists ?? 0),
+  };
+}
+
 describe('PoiImportAdminService', () => {
   beforeEach(() => {
     statMock.mockReset();
@@ -575,7 +594,11 @@ describe('PoiImportAdminService', () => {
 
     it('enqueues a manual region job and returns its id', async () => {
       const add = jest.fn(() => ({ id: 'x' }));
-      const queue = { getJobs: jest.fn(() => []), add };
+      const queue = {
+        getJobs: jest.fn(() => []),
+        add,
+        client: Promise.resolve(makeFakeRedis()),
+      };
       const svc = new PoiImportAdminService(
         [makeImporter()] as never,
         {} as never,
@@ -611,7 +634,11 @@ describe('PoiImportAdminService', () => {
     // can't silently reintroduce count/age retention on this job.
     it('frees the stable manual jobId immediately on completion/failure so a re-import is never deduped away', async () => {
       const add = jest.fn(() => ({ id: 'x' }));
-      const queue = { getJobs: jest.fn(() => []), add };
+      const queue = {
+        getJobs: jest.fn(() => []),
+        add,
+        client: Promise.resolve(makeFakeRedis()),
+      };
       const svc = new PoiImportAdminService(
         [makeImporter()] as never,
         {} as never,
@@ -638,6 +665,7 @@ describe('PoiImportAdminService', () => {
           { data: { code: 'CZ', source: 'osm', trigger: 'manual' } },
         ]),
         add,
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
         [makeImporter()] as never,
@@ -674,6 +702,7 @@ describe('PoiImportAdminService', () => {
           },
         ]),
         add,
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
         [makeImporter()] as never,
@@ -696,6 +725,7 @@ describe('PoiImportAdminService', () => {
           { data: { code: 'CZ', source: 'fsq' } },
         ]),
         add,
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
         [makeImporter()] as never,
@@ -716,6 +746,7 @@ describe('PoiImportAdminService', () => {
       const blockedQueue = {
         getJobs: jest.fn(() => [legacyJob]),
         add: jest.fn(),
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svcOsm = new PoiImportAdminService(
         [makeImporter({ source: 'osm' })] as never,
@@ -732,6 +763,7 @@ describe('PoiImportAdminService', () => {
       const openQueue = {
         getJobs: jest.fn(() => [legacyJob]),
         add: jest.fn(() => ({ id: 'x' })),
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svcFsq = new PoiImportAdminService(
         [makeImporter({ source: 'fsq' })] as never,
@@ -746,7 +778,11 @@ describe('PoiImportAdminService', () => {
 
     it('rejects an unknown (source, code) with 400 before ever scanning the queue', async () => {
       const getJobs = jest.fn();
-      const queue = { getJobs, add: jest.fn() };
+      const queue = {
+        getJobs,
+        add: jest.fn(),
+        client: Promise.resolve(makeFakeRedis()),
+      };
       const svc = new PoiImportAdminService(
         [makeImporter()] as never,
         {} as never,
@@ -758,6 +794,32 @@ describe('PoiImportAdminService', () => {
         status: 400,
       });
       expect(getJobs).not.toHaveBeenCalled();
+    });
+
+    // #847 review (this fix): `importInFlight` only has visibility into
+    // BullMQ jobs, so a replacement upload that hasn't reached the queue
+    // yet (still streaming inside `storeExtract`) is invisible to it. This
+    // proves the SECOND, independent guard (`uploadInProgress`) catches
+    // exactly that case: no BullMQ job at all, but the upload lock key
+    // exists (`exists` → 1) because `storeExtract` set it.
+    it('rejects with 409 when an extract upload is in progress for (source, code), even with no BullMQ job in flight', async () => {
+      const add = jest.fn();
+      const queue = {
+        getJobs: jest.fn(() => []),
+        add,
+        client: Promise.resolve(makeFakeRedis({ exists: 1 })),
+      };
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+
+      await expect(svc.triggerImport('osm', 'CZ')).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(add).not.toHaveBeenCalled();
     });
   });
 
@@ -850,9 +912,14 @@ describe('PoiImportAdminService', () => {
      *  (#847 review, this fix). `storeExtract` didn't touch `this.queue` at
      *  all before this fix, so every pre-existing happy-path test's bare `{}`
      *  queue mock needs a real `getJobs` now that `importInFlight` runs on
-     *  every call that gets this far. */
+     *  every call that gets this far. `client` (a fresh `makeFakeRedis()` per
+     *  call, #847 review, this fix) is likewise required now that a
+     *  happy-path upload also sets + releases the server-side upload lock. */
     function idleQueue() {
-      return { getJobs: jest.fn().mockResolvedValue([]) };
+      return {
+        getJobs: jest.fn().mockResolvedValue([]),
+        client: Promise.resolve(makeFakeRedis()),
+      };
     }
 
     // `POI_UPLOAD_MAX_BYTES` is a module-level constant now shared with
@@ -1053,6 +1120,7 @@ describe('PoiImportAdminService', () => {
         getJobs: jest
           .fn()
           .mockResolvedValue([{ data: { code: 'CZ', source: 'osm' } }]),
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
         [makeStoreImporter()] as never,
@@ -1083,6 +1151,7 @@ describe('PoiImportAdminService', () => {
             { data: { code: 'SK', source: 'osm' } },
             { data: { code: 'CZ', source: 'fsq' } },
           ]),
+        client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
         [importer] as never,
@@ -1311,6 +1380,84 @@ describe('PoiImportAdminService', () => {
 
       expect(leftoverPartFiles()).toEqual([]);
       expect(existsSync(target)).toBe(false);
+    });
+
+    // #847 review (this fix): `triggerImport`'s `importInFlight` guard only
+    // has visibility into BullMQ jobs, so it had no server-side knowledge of
+    // an upload that's still mid-stream — a trigger fired during that window
+    // could queue a worker that reads the OLD target before this upload's
+    // rename lands. These two tests pin the upload-lock half of that fix:
+    // the lock key is SET before a single byte streams, and released
+    // (`del`) in the `finally` on BOTH the success and the failure path.
+    // (`triggerImport`'s own consumption of the lock, via `uploadInProgress`,
+    // is covered by the `triggerImport` describe block above.)
+    it('sets the upload lock before streaming and releases it after a successful write', async () => {
+      const importer = makeStoreImporter();
+      const redis = makeFakeRedis();
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([]),
+        client: Promise.resolve(redis),
+      };
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+      // First stat is the parent-dir mount check; second is the post-rename
+      // result stat — same two-call shape as every other happy-path test.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
+
+      await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('hello')),
+        size: 5,
+        originalName: 'cz.osm',
+      });
+
+      const lockKey = 'poi:import:upload-lock:osm:CZ';
+      expect(redis.set).toHaveBeenCalledWith(lockKey, '1', 'EX', 600);
+      expect(redis.del).toHaveBeenCalledWith(lockKey);
+      // Released after being set, not left held, on the success path.
+      expect(redis.set.mock.invocationCallOrder[0]).toBeLessThan(
+        redis.del.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('releases the upload lock even when the write fails mid-stream', async () => {
+      const importer = makeStoreImporter();
+      const redis = makeFakeRedis();
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([]),
+        client: Promise.resolve(redis),
+      };
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+      // Parent-dir mount check must pass so the test actually reaches the
+      // streaming pipeline the erroring source exercises.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      const erroring = new Readable({
+        read() {
+          this.push(Buffer.from('partial'));
+          process.nextTick(() => this.destroy(new Error('stream interrupted')));
+        },
+      });
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: erroring,
+          size: 100,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toThrow(/stream interrupted/);
+
+      const lockKey = 'poi:import:upload-lock:osm:CZ';
+      expect(redis.set).toHaveBeenCalledWith(lockKey, '1', 'EX', 600);
+      expect(redis.del).toHaveBeenCalledWith(lockKey);
     });
   });
 });
