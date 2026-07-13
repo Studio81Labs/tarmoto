@@ -118,6 +118,7 @@ The same page + controller + `poi_import_runs` + queue-state pattern absorb late
 ## 11. Assumptions & notes
 
 - The operator still produces the filtered extract offline; a committed `build-poi-extract.sh` (separate follow-up) makes that a one-liner. Phase A does not download or run osmium/DuckDB server-side.
+- **Shared storage (split-deployment constraint):** the upload writes the extract to `TARMOTO_*_IMPORT_DIR` on the **API** process, but the import job runs on the **worker** — so in a split API/worker deployment that dir MUST be a shared volume mounted in both. Otherwise the upload shows "present" (API filesystem) while the worker's import misses the file and records a **visible skipped run** (not silent). Documented in the runbook. Follow-up: back uploads with worker-visible object storage (S3/MinIO — already used for review photos) to remove the shared-mount requirement.
 - FSQ coverage (`imported_at`) is intentionally never stamped (OSM-only, per the coverage design); the FSQ cell shows count + extract + runs, and "coverage: OSM-only" rather than a misleading badge.
 - `poi_count` uses `import_region`; rows imported before `import_region` existed (if any legacy seed) count as unowned and won't attribute to a region until re-imported — acceptable, and re-import fixes it.
 - Upload max size is configurable (`TARMOTO_POI_UPLOAD_MAX_BYTES`, default 200 MB); filtered+clipped extracts are well under this.
