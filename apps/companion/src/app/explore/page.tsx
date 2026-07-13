@@ -281,6 +281,7 @@ function ExplorerPageInner() {
     resetFilters,
   } = useMapStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id ?? null);
   // Public visitors get no in-page header — the layout's PublicExploreHeader
   // already carries the brand + auth CTAs. Without our header there's no Filter
   // toggle for them, so the filter column is always shown.
@@ -407,6 +408,11 @@ function ExplorerPageInner() {
   useEffect(() => {
     if (!showMyTrips) setSelectedTripId(null);
   }, [showMyTrips]);
+  // A session/account change (sign-in as another user, sign-out) must never
+  // leave the previous rider's private trip drawer open.
+  useEffect(() => {
+    setSelectedTripId(null);
+  }, [authUserId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   // Road quality and surface are mutually exclusive overlays (one line-coloring
   // vocabulary at a time, like the planner): activating one clears the other;
