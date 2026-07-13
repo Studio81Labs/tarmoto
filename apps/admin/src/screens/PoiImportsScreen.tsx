@@ -327,7 +327,19 @@ function RegionSourceCell({
         ? "warning"
         : "ghost";
   const summary = lastRunSummary(status.last_run);
-  const disableImport = !hasExtract || status.live_state !== "idle";
+  // `hasExtract` can be stale for one poll cycle during a REPLACEMENT upload:
+  // the old extract is still `present: true` right up until the new file's
+  // atomic rename lands, so without the pending checks below Import stays
+  // clickable and can fire against the outgoing extract. Disabling on this
+  // cell's OWN `pendingUpload`/`pendingImport` (not the mutation's global
+  // `isPending`, which isn't scoped per row) closes that window; the
+  // symmetric `disabled` on the Upload button below keeps a mid-import click
+  // from starting a second, concurrent upload into the same target path.
+  const disableImport =
+    !hasExtract ||
+    status.live_state !== "idle" ||
+    pendingUpload ||
+    pendingImport;
 
   return (
     <div className="flex flex-col gap-1.5 py-1">
@@ -379,6 +391,7 @@ function RegionSourceCell({
             variant="secondary"
             size="sm"
             loading={pendingUpload}
+            disabled={pendingImport}
             onClick={() => fileInputRef.current?.click()}
           >
             Upload

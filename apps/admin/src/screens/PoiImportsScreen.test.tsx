@@ -230,6 +230,42 @@ describe("PoiImportsScreen", () => {
     expect(sk.getAllByRole("button", { name: "Import" })).toHaveLength(1);
   });
 
+  it("disables Import for a cell while that SAME cell's upload is pending (replacement-upload race, #847 review)", () => {
+    render(<PoiImportsScreen currentRole="admin" />);
+    const cz = within(regionRow("CZ"));
+    // OSM: idle + extract present → enabled before any upload starts.
+    expect(cz.getAllByRole("button", { name: "Import" })[0]).toBeEnabled();
+
+    // Locate the OSM file input directly (mirrors the upload test below).
+    const inputs =
+      regionRow("CZ").querySelectorAll<HTMLInputElement>('input[type="file"]');
+    const file = new File(["osm extract"], "cz.osm", {
+      type: "application/octet-stream",
+    });
+    fireEvent.change(inputs[0]!, { target: { files: [file] } });
+
+    // handleUpload never settles in this test (the mocked mutate() doesn't
+    // invoke onSettled), so `pendingUpload` stays true for osm:CZ — exactly
+    // the window between a replacement upload starting and its atomic
+    // rename landing. Import for the SAME cell must be disabled throughout.
+    expect(cz.getAllByRole("button", { name: "Import" })[0]).toBeDisabled();
+  });
+
+  it("disables Upload for a cell while that SAME cell's import is pending (symmetric fix)", async () => {
+    const user = userEvent.setup();
+    render(<PoiImportsScreen currentRole="admin" />);
+    const cz = within(regionRow("CZ"));
+    // OSM: idle + extract present → both controls enabled before any click.
+    expect(cz.getAllByRole("button", { name: "Upload" })[0]).toBeEnabled();
+
+    await user.click(cz.getAllByRole("button", { name: "Import" })[0]!);
+
+    // handleImport never settles in this test (the mocked mutate() doesn't
+    // invoke onSettled), so `pendingImport` stays true for osm:CZ — Upload
+    // for the SAME cell must be disabled while that import is in flight.
+    expect(cz.getAllByRole("button", { name: "Upload" })[0]).toBeDisabled();
+  });
+
   it("hides Upload/Import controls for a support-role admin", () => {
     render(<PoiImportsScreen currentRole="support" />);
     expect(regionRow("CZ")).toBeTruthy();
