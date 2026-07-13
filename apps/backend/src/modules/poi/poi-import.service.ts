@@ -164,6 +164,26 @@ export class PoiImportService {
     return this.config.regions;
   }
 
+  /**
+   * Public accessor for a configured region's resolved extract path (#847
+   * admin status read — `PoiImportAdminService.listRegionStatus` stats this
+   * path per region to report whether an extract has been uploaded yet).
+   * Delegates to the same resolver `importRegionBody` uses internally, so
+   * `<extractDir>/<code>.osm` (or `.fsq.jsonl` for the FSQ strategy) stays
+   * defined in exactly one place. Throws under the same conditions as the
+   * private resolver below (`extractDir` unset), and also for a code outside
+   * this instance's configured `regions` — the admin read wraps the call in
+   * a try/catch and reports `extract: null` rather than a 500 for an
+   * unconfigured or not-yet-provisioned region.
+   */
+  getExtractPath(code: string): string {
+    const region = this.config.regions.find((r) => r.code === code);
+    if (!region) {
+      throw new Error(`Unknown POI import region code: ${code}`);
+    }
+    return this.extractPath(region);
+  }
+
   /** Resolve a region's extract path: `<extractDir>/<source filename>`. */
   private extractPath(region: PoiImportRegion): string {
     if (!this.config.extractDir) {

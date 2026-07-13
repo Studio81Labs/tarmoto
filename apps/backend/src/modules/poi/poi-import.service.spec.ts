@@ -221,6 +221,35 @@ describe('PoiImportService', () => {
     expect(service.regions).toEqual([REGION]);
   });
 
+  describe('getExtractPath (#847 admin status read)', () => {
+    it('resolves a configured region to <extractDir>/<code>.osm for the OSM strategy', () => {
+      expect(service.getExtractPath('CZ')).toBe('/extracts/cz.osm');
+    });
+
+    it('resolves to <extractDir>/<code>.fsq.jsonl for the FSQ strategy', () => {
+      const fsqService = new PoiImportService(
+        dataSource,
+        config,
+        new FsqPoiImportSource(),
+      );
+      expect(fsqService.getExtractPath('CZ')).toBe('/extracts/cz.fsq.jsonl');
+    });
+
+    it("throws for a code outside this instance's configured regions", () => {
+      expect(() => service.getExtractPath('XX')).toThrow(
+        /Unknown POI import region/,
+      );
+    });
+
+    it('throws when extractDir is not configured, same as the internal resolver', () => {
+      config.extractDir = null;
+      service = new PoiImportService(dataSource, config);
+      expect(() => service.getExtractPath('CZ')).toThrow(
+        /TARMOTO_POI_IMPORT_DIR is not set/,
+      );
+    });
+  });
+
   describe('per-region advisory lock (#847: manual trigger vs. cron)', () => {
     it('acquires and releases the lock on ONE pinned QueryRunner (connection affinity)', async () => {
       mockExtract(poi({ external_id: 'node/1' }));
