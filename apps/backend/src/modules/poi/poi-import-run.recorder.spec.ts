@@ -73,6 +73,7 @@ describe('PoiImportRunRecorder', () => {
       '8',
       expect.objectContaining({
         status: 'skipped',
+        skip_reason: expect.stringContaining('skipped') as string,
       }),
     );
   });
@@ -80,13 +81,11 @@ describe('PoiImportRunRecorder', () => {
   it('fail() records failed with a truncated error', async () => {
     const repo = mockRepo();
     const rec = new PoiImportRunRecorder(repo as never);
-    await rec.fail('9', new Error('boom'));
-    expect(repo.update).toHaveBeenCalledWith(
-      '9',
-      expect.objectContaining({
-        status: 'failed',
-        error: expect.stringContaining('boom') as string,
-      }),
-    );
+    const long = 'x'.repeat(2500);
+    await rec.fail('9', new Error(long));
+    const patch = repo.update.mock.calls[0]![1];
+    expect(patch.status).toBe('failed');
+    expect(patch.error).toHaveLength(2000);
+    expect(patch.error?.startsWith('xxx')).toBe(true);
   });
 });
