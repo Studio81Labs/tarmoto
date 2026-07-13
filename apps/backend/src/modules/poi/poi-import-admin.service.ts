@@ -10,7 +10,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import { randomBytes } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, type Stats } from 'node:fs';
 import { open, rename, stat, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -420,11 +420,40 @@ export class PoiImportAdminService {
   }
 
   /**
+   * True when a job already targets this exact `(source, code)` across every
+   * LIVE BullMQ state — active, waiting, delayed, or prioritized — whether
+   * cron-dispatched or manual. Shared by `triggerImport`'s 409 guard and
+   * `storeExtract`'s own defense-in-depth 409 guard (#847 review) so the two
+   * checks can never desync; extracted here rather than left duplicated
+   * inline in each call site. Defaults an absent `data.source` to `osm`
+   * (mirroring the processor's own legacy fallback for a pre-#869 payload).
+   */
+  private async importInFlight(source: string, code: string): Promise<boolean> {
+    const inFlight = await this.queue.getJobs([
+      'active',
+      'waiting',
+      'delayed',
+      'prioritized',
+    ]);
+    return inFlight.some(
+      (j) => j?.data?.code === code && (j?.data?.source ?? 'osm') === source,
+    );
+  }
+
+  /**
    * Validated, atomic upload of an operator-provided extract (#847) — the
    * write-side counterpart to `listRegionStatus`'s `extract` stat. Checks run
    * cheapest-first: declared size against `POI_UPLOAD_MAX_BYTES` (no I/O), then
-   * `(source, code)` (in-memory), then the filename extension — all before a
-   * single byte is written.
+   * `(source, code)` (in-memory), then the filename extension, then whether
+   * the extract directory is even configured — all before touching the
+   * filesystem. Two more checks follow once a target path exists (#847
+   * review): a `stat` of the target's PARENT directory (catches a mount
+   * that's configured but never actually attached — `extractDirConfigured`
+   * only proves the env var is SET, not that the shared volume is really
+   * there) and an in-flight scan (`importInFlight`, shared with
+   * `triggerImport`'s own 409 guard) that rejects a replacement upload while
+   * a worker may be mid-read of the CURRENT extract. All of this runs before
+   * a single byte is written.
    *
    * Atomicity: the upload streams to a SIBLING temp file
    * (`<target>.<pid>.<random-hex>.part`, same directory as `target` so the
@@ -497,6 +526,42 @@ export class PoiImportAdminService {
     }
     const target = importer.getExtractPath(code);
 
+    // `extractDirConfigured` only proves TARMOTO_*_IMPORT_DIR is SET, not
+    // that the shared extract volume actually attached — a mount that failed
+    // at container start (or an operator mistake leaving a plain file where
+    // a directory belongs) still passes that check. Stat the PARENT
+    // directory before streaming a single byte: without this,
+    // `createWriteStream(tmp)` below would throw a raw ENOENT deep inside
+    // the pipeline — AFTER the multipart body has already been fully
+    // accepted — surfacing as a raw 500 instead of the same 503 class as the
+    // unconfigured-dir case above. A non-ENOENT stat error on the parent
+    // (EACCES/EIO/...) is a distinct real fault and propagates unchanged
+    // (#847 review).
+    const parentDir = dirname(target);
+    let parentStat: Stats | undefined;
+    try {
+      parentStat = await stat(parentDir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+    if (!parentStat || !parentStat.isDirectory()) {
+      throw new ServiceUnavailableException(
+        `POI extract storage directory is absent for ${source} — the shared mount may not have attached`,
+      );
+    }
+
+    // Defense-in-depth against a replacement upload racing a LIVE import for
+    // this exact (source, code): a worker may be mid-read of the CURRENT
+    // extract file while an operator's new upload is about to atomically
+    // replace it out from under it. Same in-flight criteria as
+    // `triggerImport`'s own 409 guard, shared via `importInFlight` so the two
+    // checks can never desync (#847 review).
+    if (await this.importInFlight(source, code)) {
+      throw new ConflictException(
+        `an import is in progress for ${source}/${code}; wait before replacing the extract`,
+      );
+    }
+
     // Unique per call (not a fixed `<target>.part`) — see the doc comment
     // above: this is what keeps two concurrent uploads for the same
     // (source, code) from interleaving writes into one shared temp path.
@@ -557,6 +622,11 @@ export class PoiImportAdminService {
    * On a clear queue, enqueues with `manualJobId` as the BullMQ `jobId` so a
    * second click before this one is even picked up still dedupes to the
    * same job (BullMQ rejects a duplicate id rather than double-enqueuing).
+   *
+   * The in-flight scan itself lives in `importInFlight` (#847 review) — also
+   * called from `storeExtract`'s own defense-in-depth 409 guard against a
+   * replacement upload racing this same live-import condition — so both
+   * call sites share one definition of "in flight" that can't drift apart.
    */
   async triggerImport(
     source: string,
@@ -564,16 +634,7 @@ export class PoiImportAdminService {
   ): Promise<{ job_id: string }> {
     this.importerFor(source, code);
 
-    const inFlight = await this.queue.getJobs([
-      'active',
-      'waiting',
-      'delayed',
-      'prioritized',
-    ]);
-    const busy = inFlight.some(
-      (j) => j?.data?.code === code && (j?.data?.source ?? 'osm') === source,
-    );
-    if (busy) {
+    if (await this.importInFlight(source, code)) {
       throw new ConflictException(
         `import for ${source}/${code} already in flight`,
       );

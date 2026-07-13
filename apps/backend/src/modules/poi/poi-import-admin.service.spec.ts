@@ -845,6 +845,16 @@ describe('PoiImportAdminService', () => {
       return readdirSync(dir).filter((f) => f.endsWith('.part'));
     }
 
+    /** Queue double whose `getJobs` resolves empty — the common case for any
+     *  test below that isn't specifically exercising the in-flight 409 guard
+     *  (#847 review, this fix). `storeExtract` didn't touch `this.queue` at
+     *  all before this fix, so every pre-existing happy-path test's bare `{}`
+     *  queue mock needs a real `getJobs` now that `importInFlight` runs on
+     *  every call that gets this far. */
+    function idleQueue() {
+      return { getJobs: jest.fn().mockResolvedValue([]) };
+    }
+
     // `POI_UPLOAD_MAX_BYTES` is a module-level constant now shared with
     // `AdminPoiController`'s multer config (#847 review Task 6 fix 3), read
     // once at module load rather than per instance — so this test exercises
@@ -961,6 +971,137 @@ describe('PoiImportAdminService', () => {
       ).rejects.toMatchObject({ status: 400 });
     });
 
+    // #847 review (this fix): `extractDirConfigured` only proves
+    // TARMOTO_*_IMPORT_DIR is SET, not that the shared mount actually
+    // attached — a volume that failed to mount leaves the configured path's
+    // PARENT directory simply absent. Without this check, `createWriteStream`
+    // deep inside the pipeline below would throw a raw ENOENT — AFTER the
+    // multipart body has already been fully accepted — surfacing as a raw
+    // 500 instead of the same 503 class as the unconfigured-dir case.
+    it('returns 503 (not 500) when the extract directory is configured but the mount never attached (ENOENT)', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter()] as never,
+        {} as never,
+        {} as never,
+        idleQueue() as never,
+      );
+      statMock.mockRejectedValueOnce(
+        Object.assign(new Error('nope'), { code: 'ENOENT' }),
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(leftoverPartFiles()).toEqual([]);
+    });
+
+    it('returns 503 when the parent directory stats successfully but is not a directory', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter()] as never,
+        {} as never,
+        {} as never,
+        idleQueue() as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => false } as never);
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(leftoverPartFiles()).toEqual([]);
+    });
+
+    it('propagates a non-ENOENT parent-dir stat error (e.g. EACCES) instead of collapsing to 503', async () => {
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter()] as never,
+        {} as never,
+        {} as never,
+        idleQueue() as never,
+      );
+      statMock.mockRejectedValueOnce(
+        Object.assign(new Error('denied'), { code: 'EACCES' }),
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toThrow(/denied/);
+
+      expect(leftoverPartFiles()).toEqual([]);
+    });
+
+    // #847 review (this fix): defense-in-depth against a replacement upload
+    // racing a LIVE import for this exact (source, code) — a worker may be
+    // mid-read of the CURRENT extract file while an operator's new upload is
+    // about to atomically replace it out from under it. Same in-flight
+    // criteria as `triggerImport`'s own 409 guard, shared via the new
+    // `importInFlight` helper so the two checks can never desync.
+    it('rejects with 409 when an import is already in flight for (source, code), and writes nothing', async () => {
+      const queue = {
+        getJobs: jest
+          .fn()
+          .mockResolvedValue([{ data: { code: 'CZ', source: 'osm' } }]),
+      };
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter()] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      expect(leftoverPartFiles()).toEqual([]);
+    });
+
+    it('does not block a storeExtract upload on an in-flight job for a different region or source', async () => {
+      const importer = makeStoreImporter();
+      const target = importer.getExtractPath('CZ');
+      const queue = {
+        getJobs: jest
+          .fn()
+          .mockResolvedValue([
+            { data: { code: 'SK', source: 'osm' } },
+            { data: { code: 'CZ', source: 'fsq' } },
+          ]),
+      };
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        queue as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      statMock.mockResolvedValueOnce({ size: 1, mtimeMs: 0 } as never);
+
+      await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('x')),
+        size: 1,
+        originalName: 'cz.osm',
+      });
+
+      expect(readFileSync(target, 'utf8')).toBe('x');
+    });
+
     it('streams the upload atomically (temp file + fsync + rename) and returns the extract stat', async () => {
       const importer = makeStoreImporter();
       const target = importer.getExtractPath('CZ');
@@ -968,8 +1109,11 @@ describe('PoiImportAdminService', () => {
         [importer] as never,
         {} as never,
         {} as never,
-        {} as never,
+        idleQueue() as never,
       );
+      // First call is the new parent-dir mount check (#847 review, this
+      // fix); second is the existing post-rename result stat.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
       statMock.mockResolvedValueOnce({
         size: 13,
         mtimeMs: 1_720_000_000_000,
@@ -1015,8 +1159,11 @@ describe('PoiImportAdminService', () => {
         [importer] as never,
         {} as never,
         {} as never,
-        {} as never,
+        idleQueue() as never,
       );
+      // First call is the new parent-dir mount check (#847 review, this
+      // fix); second is the existing post-rename result stat.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
       statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
 
       let openedPath: string | undefined;
@@ -1056,8 +1203,11 @@ describe('PoiImportAdminService', () => {
         [importer] as never,
         {} as never,
         {} as never,
-        {} as never,
+        idleQueue() as never,
       );
+      // First call is the new parent-dir mount check (#847 review, this
+      // fix); second is the existing post-rename result stat.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
       statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
 
       const tmpSync = jest.fn().mockResolvedValue(undefined);
@@ -1106,9 +1256,17 @@ describe('PoiImportAdminService', () => {
         [importer] as never,
         {} as never,
         {} as never,
-        {} as never,
+        idleQueue() as never,
       );
-      statMock.mockResolvedValue({ size: 0, mtimeMs: 0 } as never);
+      // One value satisfies EVERY stat call across both uploads (parent-dir
+      // check + final result stat, twice each, #847 review this fix) —
+      // `isDirectory` is simply ignored by the final-stat read, which only
+      // looks at size/mtimeMs.
+      statMock.mockResolvedValue({
+        size: 0,
+        mtimeMs: 0,
+        isDirectory: () => true,
+      } as never);
 
       await svc.storeExtract('osm', 'CZ', {
         stream: Readable.from(Buffer.from('first')),
@@ -1131,8 +1289,11 @@ describe('PoiImportAdminService', () => {
         [importer] as never,
         {} as never,
         {} as never,
-        {} as never,
+        idleQueue() as never,
       );
+      // Parent-dir mount check (#847 review, this fix) must pass so the test
+      // actually reaches the streaming pipeline the erroring source exercises.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
       const erroring = new Readable({
         read() {
           this.push(Buffer.from('partial'));
