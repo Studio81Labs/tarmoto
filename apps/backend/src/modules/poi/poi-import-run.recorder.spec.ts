@@ -1,4 +1,5 @@
 import { PoiImportRunRecorder } from './poi-import-run.recorder.js';
+import { WIPE_GUARD_WARNING } from './poi-import.service.js';
 import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
 
 function mockRepo() {
@@ -48,6 +49,7 @@ describe('PoiImportRunRecorder', () => {
       tombstoned: 1,
       skipped: false,
       skipReason: null,
+      warning: null,
     });
     expect(repo.update).toHaveBeenCalledWith(
       '7',
@@ -57,6 +59,33 @@ describe('PoiImportRunRecorder', () => {
         upserted: 9,
         tombstoned: 1,
         skip_reason: null,
+        warning: null,
+      }),
+    );
+  });
+
+  // #847 review (this fix): finish() must also persist ANY non-null advisory
+  // the service attaches to a run that still completed as a genuine success
+  // (the tombstone wipe-guard's partial-accept path) — not just the
+  // fetched/upserted/tombstoned counts and a null skip_reason.
+  it('finish() persists a non-null warning verbatim on an otherwise-successful run', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    await rec.finish('10', {
+      region: 'CZ',
+      fetched: 60,
+      upserted: 60,
+      tombstoned: 0,
+      skipped: false,
+      skipReason: null,
+      warning: WIPE_GUARD_WARNING,
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      '10',
+      expect.objectContaining({
+        status: 'success',
+        skip_reason: null,
+        warning: WIPE_GUARD_WARNING,
       }),
     );
   });
@@ -75,6 +104,7 @@ describe('PoiImportRunRecorder', () => {
       tombstoned: 0,
       skipped: true,
       skipReason: 'no extract file at /extracts/cz.osm',
+      warning: null,
     });
     expect(repo.update).toHaveBeenCalledWith(
       '8',
@@ -95,6 +125,7 @@ describe('PoiImportRunRecorder', () => {
       tombstoned: 0,
       skipped: true,
       skipReason: 'extract yielded 0 in-bbox rows (fetched=12)',
+      warning: null,
     });
     expect(repo.update).toHaveBeenCalledWith(
       '8b',
@@ -118,6 +149,7 @@ describe('PoiImportRunRecorder', () => {
       tombstoned: 0,
       skipped: true,
       skipReason: null,
+      warning: null,
     });
     expect(repo.update).toHaveBeenCalledWith(
       '9',

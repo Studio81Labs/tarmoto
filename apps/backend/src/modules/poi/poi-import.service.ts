@@ -56,6 +56,16 @@ const MAX_TOMBSTONE_FRACTION = 0.5;
 const MIN_REGION_FOR_TOMBSTONE_GUARD = 50;
 
 /**
+ * `PoiImportResult.warning` text for the tombstone wipe-guard's partial-accept
+ * path (below). Exported (rather than inlined at the one return site that
+ * sets it) so tests here and in `poi-import-run.recorder.spec.ts` can assert
+ * against the same constant instead of a duplicated string literal that could
+ * silently drift from it.
+ */
+export const WIPE_GUARD_WARNING =
+  'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract';
+
+/**
  * Fixed namespace for the per-(source, region) advisory lock (#847) that
  * serializes a manual admin trigger against the weekly cron on the same
  * region — `pg_try_advisory_lock(ns, key)`'s first arg, scoping these locks
@@ -115,9 +125,24 @@ export interface PoiImportResult {
    * `skipped: true` — it still upserts the incoming rows and only withholds
    * the tombstone + coverage-stamp sub-steps, so that run is a genuine
    * (partial) success, not a skip, and falls through to the `skipReason:
-   * null` return like any other successful import.
+   * null` return like any other successful import — flagged instead via
+   * `warning` below.
    */
   skipReason: string | null;
+  /**
+   * Operator-actionable advisory for a run that completed as a genuine
+   * `success` (never `skipped`) but withheld part of its normal work — null
+   * on every clean success AND on both skip paths above. The only producer
+   * today is the tombstone wipe-guard partial-accept path
+   * (`wouldWipeTooMuch` below): the incoming rows were upserted, but
+   * tombstoning (and, for OSM, the coverage stamp) were withheld because the
+   * extract looks incomplete. `PoiImportRunRecorder.finish` persists this
+   * verbatim into `poi_import_runs.warning` so the admin Runs panel can flag
+   * a run that upserted cleanly yet isn't a fully-trustworthy replacement of
+   * the region's prior extract — distinct from `skipReason`, which only ever
+   * fires when NO upsert happened at all.
+   */
+  warning: string | null;
 }
 
 /**
@@ -320,6 +345,7 @@ export class PoiImportService {
         tombstoned: 0,
         skipped: true,
         skipReason: `no extract file at ${path}`,
+        warning: null,
       };
     }
 
@@ -388,6 +414,10 @@ export class PoiImportService {
     const rows = [...byExternalId.values()];
     const incomingIds = new Set(byExternalId.keys());
     let tombstoned = 0;
+    // Set inside the transaction below, from the same `wouldWipeTooMuch` the
+    // tombstone/coverage steps already gate on — read back after the
+    // transaction to build the final result's `warning` (#847 review).
+    let wipeGuardTripped = false;
 
     // Guard against a broken extract wiping a region: a valid-but-empty file
     // (`<osm/>`, a failed `osmium tags-filter`, or points all outside the bbox)
@@ -409,6 +439,7 @@ export class PoiImportService {
         tombstoned: 0,
         skipped: true,
         skipReason: `extract yielded 0 in-bbox rows (fetched=${fetched})`,
+        warning: null,
       };
     }
 
@@ -482,6 +513,7 @@ export class PoiImportService {
         const wouldWipeTooMuch =
           owned.length >= MIN_REGION_FOR_TOMBSTONE_GUARD &&
           tombstoneIds.length > owned.length * MAX_TOMBSTONE_FRACTION;
+        wipeGuardTripped = wouldWipeTooMuch;
 
         // 2. Upsert (insert new + revive/refresh existing) in param-safe chunks.
         for (const part of chunk(rows, UPSERT_CHUNK)) {
@@ -552,6 +584,7 @@ export class PoiImportService {
       upserted: rows.length,
       tombstoned,
       skipReason: null,
+      warning: wipeGuardTripped ? WIPE_GUARD_WARNING : null,
     };
   }
 }

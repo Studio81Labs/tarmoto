@@ -41,6 +41,15 @@ export class PoiImportRun {
   @Column({ name: 'skip_reason', type: 'text', nullable: true })
   skip_reason!: string | null;
 
+  /**
+   * Advisory for a `success` run that withheld part of its normal work (#847
+   * review) — currently only the tombstone wipe-guard's partial-accept path
+   * (see `PoiImportResult.warning`). Null on every clean success, both skip
+   * statuses, and every `running`/`failed` row.
+   */
+  @Column({ type: 'text', nullable: true })
+  warning!: string | null;
+
   @Column({ type: 'text', nullable: true })
   error!: string | null;
 

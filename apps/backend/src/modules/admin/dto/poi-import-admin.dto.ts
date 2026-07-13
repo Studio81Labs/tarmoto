@@ -20,6 +20,7 @@ export class RunDto implements RunSummary {
   @ApiProperty({ nullable: true }) upserted!: number | null;
   @ApiProperty({ nullable: true }) tombstoned!: number | null;
   @ApiProperty({ nullable: true }) skip_reason!: string | null;
+  @ApiProperty({ nullable: true }) warning!: string | null;
   @ApiProperty({ nullable: true }) error!: string | null;
   @ApiProperty() started_at!: string;
   @ApiProperty({ nullable: true }) finished_at!: string | null;

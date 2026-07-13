@@ -271,7 +271,7 @@ describe('PoiImportAdminService', () => {
       expect(rows[0]?.live_state).toBe('idle');
     });
 
-    it('reports the most recent poi_import_runs row as last_run, ISO-serialized', async () => {
+    it('reports the most recent poi_import_runs row as last_run, ISO-serialized, including a non-null warning', async () => {
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runRow: Partial<PoiImportRun> = {
         id: '7',
@@ -283,6 +283,11 @@ describe('PoiImportAdminService', () => {
         upserted: 9,
         tombstoned: 1,
         skip_reason: null,
+        // Non-null (rather than the more common null) so this test proves
+        // `toSummary` maps a REAL wipe-guard partial-accept advisory through
+        // `last_run`, not just that a null passes through unchanged.
+        warning:
+          'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract',
         error: null,
         started_at: new Date('2026-07-01T00:00:00Z'),
         finished_at: new Date('2026-07-01T00:05:00Z'),
@@ -312,6 +317,8 @@ describe('PoiImportAdminService', () => {
         upserted: 9,
         tombstoned: 1,
         skip_reason: null,
+        warning:
+          'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract',
         error: null,
         started_at: '2026-07-01T00:00:00.000Z',
         finished_at: '2026-07-01T00:05:00.000Z',
@@ -471,6 +478,7 @@ describe('PoiImportAdminService', () => {
       upserted: null,
       tombstoned: null,
       skip_reason: null,
+      warning: null,
       error: 'boom',
       started_at: new Date('2026-07-05T00:00:00Z'),
       finished_at: null,
@@ -504,11 +512,41 @@ describe('PoiImportAdminService', () => {
           upserted: null,
           tombstoned: null,
           skip_reason: null,
+          warning: null,
           error: 'boom',
           started_at: '2026-07-05T00:00:00.000Z',
           finished_at: null,
         },
       ]);
+    });
+
+    // #847 review (this fix): a run row can be a `success` that still carries
+    // a non-null `warning` (the tombstone wipe-guard's partial-accept path) —
+    // `toSummary` must map it through to `RunSummary` verbatim, not just the
+    // more common null.
+    it('passes a non-null warning through to RunSummary verbatim (wipe-guard partial-accept advisory)', async () => {
+      const qb = makeQb([
+        {
+          ...RUN_ROW,
+          status: 'success',
+          error: null,
+          warning:
+            'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract',
+        },
+      ]);
+      const runsRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
+      const svc = new PoiImportAdminService(
+        [] as never,
+        {} as never,
+        runsRepo as never,
+        {} as never,
+      );
+
+      const out = await svc.listRuns({ limit: 20 });
+
+      expect(out[0]?.warning).toBe(
+        'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract',
+      );
     });
 
     it('applies source + code filters as separate andWhere clauses when provided', async () => {
@@ -1002,6 +1040,62 @@ describe('PoiImportAdminService', () => {
       expect(renameMock).toHaveBeenCalledTimes(1);
       expect(sync.mock.invocationCallOrder[0]).toBeLessThan(
         renameMock.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    // #847 review (this fix): fsyncing the renamed file's own fd does not make
+    // the rename's DIRECTORY-entry update durable on POSIX — only fsyncing the
+    // containing directory does. Mirrors the temp-file fsync test above, but
+    // targets the SECOND `open()` call (the directory), which runs after the
+    // rename.
+    it('fsyncs the containing directory after the atomic rename', async () => {
+      openMock.mockClear();
+      renameMock.mockClear();
+      const importer = makeStoreImporter();
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
+
+      const tmpSync = jest.fn().mockResolvedValue(undefined);
+      const tmpClose = jest.fn().mockResolvedValue(undefined);
+      const dirSync = jest.fn().mockResolvedValue(undefined);
+      const dirClose = jest.fn().mockResolvedValue(undefined);
+      let dirOpenedPath: string | undefined;
+      openMock
+        .mockImplementationOnce(
+          () =>
+            Promise.resolve({
+              sync: tmpSync,
+              close: tmpClose,
+            }) as unknown as Promise<FileHandle>,
+        )
+        .mockImplementationOnce((path) => {
+          dirOpenedPath = String(path);
+          return Promise.resolve({
+            sync: dirSync,
+            close: dirClose,
+          } as unknown as FileHandle);
+        });
+
+      await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('hello')),
+        size: 5,
+        originalName: 'cz.osm',
+      });
+
+      // The second open() targets the extract's containing directory — the
+      // directory ENTRY the rename just updated, not the file itself.
+      expect(dirOpenedPath).toBe(dir);
+      expect(dirSync).toHaveBeenCalledTimes(1);
+      expect(dirClose).toHaveBeenCalledTimes(1);
+      // Fsyncing the directory before the rename lands would be meaningless —
+      // there'd be no new directory entry yet to make durable.
+      expect(renameMock.mock.invocationCallOrder[0]).toBeLessThan(
+        dirSync.mock.invocationCallOrder[0]!,
       );
     });
 

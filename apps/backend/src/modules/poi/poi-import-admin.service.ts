@@ -12,6 +12,7 @@ import { DataSource, Repository } from 'typeorm';
 import { randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { open, rename, stat, unlink } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
@@ -35,6 +36,10 @@ export interface RunSummary {
   upserted: number | null;
   tombstoned: number | null;
   skip_reason: string | null;
+  /** Set when a `success` run withheld part of its normal work (e.g. the
+   *  tombstone wipe-guard's partial-accept path) — null on every clean
+   *  success, both skip reasons, and any `running`/`failed` row. */
+  warning: string | null;
   error: string | null;
   started_at: string;
   finished_at: string | null;
@@ -385,6 +390,7 @@ export class PoiImportAdminService {
       upserted: r.upserted,
       tombstoned: r.tombstoned,
       skip_reason: r.skip_reason,
+      warning: r.warning,
       error: r.error,
       started_at: r.started_at.toISOString(),
       finished_at: r.finished_at ? r.finished_at.toISOString() : null,
@@ -450,6 +456,16 @@ export class PoiImportAdminService {
    * handle's fd alive for a post-pipeline `sync()` sounds equivalent, but it
    * suppresses the very `'close'` event `pipeline()` is waiting for, so the
    * write never resolves at all.
+   *
+   * The rename itself gets the same durability treatment (#847 review): on
+   * POSIX, fsyncing the renamed FILE's own fd does not guarantee the
+   * directory-entry update `rename(2)` just made is durable — only fsyncing
+   * the CONTAINING DIRECTORY does that. Without it, a crash right after
+   * `rename()` returns can lose the new directory entry, so `target` (or, on
+   * a replacement upload, the old file it replaced) may not exist after a
+   * reboot even though `rename()` reported success. This is a best-effort
+   * step inside the same try as everything above: a failure here still
+   * unlinks this call's OWN temp file and rethrows, same as any other step.
    */
   async storeExtract(
     source: string,
@@ -494,6 +510,14 @@ export class PoiImportAdminService {
         await handle.close();
       }
       await rename(tmp, target);
+      // Fsync the containing directory so the rename's directory-entry
+      // update is crash-durable too — see the doc comment above.
+      const dir = await open(dirname(target));
+      try {
+        await dir.sync();
+      } finally {
+        await dir.close();
+      }
     } catch (err) {
       await unlink(tmp).catch(() => undefined);
       throw err;

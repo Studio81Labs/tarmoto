@@ -51,6 +51,10 @@ export class PoiImportRunRecorder {
       skip_reason: result.skipped
         ? (result.skipReason ?? `import skipped (fetched=${result.fetched})`)
         : null,
+      // Advisory for a run that completed as `success` but withheld part of
+      // its normal work (e.g. the tombstone wipe-guard's partial-accept
+      // path) — persisted verbatim; null on a clean success or either skip.
+      warning: result.warning,
       finished_at: new Date(),
     });
   }

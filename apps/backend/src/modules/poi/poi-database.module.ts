@@ -12,6 +12,7 @@ import { AddPoiGeographyIndex1799000000000 } from '../../migrations-poi/17990000
 import { AddPoiImportRegions1800000000000 } from '../../migrations-poi/1800000000000-AddPoiImportRegions.js';
 import { AddPoiImportRuns1801000000000 } from '../../migrations-poi/1801000000000-AddPoiImportRuns.js';
 import { AddPoisSourceRegionIndex1802000000000 } from '../../migrations-poi/1802000000000-AddPoisSourceRegionIndex.js';
+import { AddPoiImportRunWarning1803000000000 } from '../../migrations-poi/1803000000000-AddPoiImportRunWarning.js';
 import { isPoiConnectionError } from './poi-repo.js';
 
 const logger = new Logger('PoiDatabase');
@@ -107,6 +108,7 @@ export function buildPoiTypeOrmOptions(
       AddPoiImportRegions1800000000000,
       AddPoiImportRuns1801000000000,
       AddPoisSourceRegionIndex1802000000000,
+      AddPoiImportRunWarning1803000000000,
     ],
     migrationsRun: !isOpenApiExport,
     // `AddPoiGeographyIndex` builds its GiST index `CONCURRENTLY` (so a

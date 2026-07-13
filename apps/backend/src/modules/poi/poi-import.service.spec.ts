@@ -21,7 +21,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { createReadStream, existsSync } from 'node:fs';
 import { Readable } from 'node:stream';
-import { PoiImportService } from './poi-import.service.js';
+import { PoiImportService, WIPE_GUARD_WARNING } from './poi-import.service.js';
 import { parsePoiExtract } from './poi-extract-source.js';
 import { FsqPoiImportSource } from './poi-import-source.js';
 import type { PoiImportConfig, PoiImportRegion } from './poi-import.config.js';
@@ -340,6 +340,7 @@ describe('PoiImportService', () => {
       upserted: 2,
       tombstoned: 0,
       skipReason: null,
+      warning: null,
     });
   });
 
@@ -375,6 +376,7 @@ describe('PoiImportService', () => {
     // below is the source gate, not an incidental skip path.
     expect(result.skipped).toBeUndefined();
     expect(result.skipReason).toBeNull();
+    expect(result.warning).toBeNull();
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
@@ -450,6 +452,7 @@ describe('PoiImportService', () => {
       upserted: 1,
       tombstoned: 0,
       skipReason: null,
+      warning: null,
     });
   });
 
@@ -472,6 +475,7 @@ describe('PoiImportService', () => {
       upserted: 1,
       tombstoned: 0,
       skipReason: null,
+      warning: null,
     });
   });
 
@@ -604,6 +608,7 @@ describe('PoiImportService', () => {
       tombstoned: 0,
       skipped: true,
       skipReason: 'extract yielded 0 in-bbox rows (fetched=0)',
+      warning: null,
     });
     expect(upsert).not.toHaveBeenCalled();
     const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
@@ -633,6 +638,12 @@ describe('PoiImportService', () => {
     // The rows we DID get are still upserted — only the destructive delete is
     // withheld.
     expect(upsert).toHaveBeenCalled();
+    // #847 review: the partial-accept advisory flows out on the result so
+    // `PoiImportRunRecorder.finish` can persist it — this run is a `success`
+    // (never `skipped`), so `warning` is the only signal an operator gets
+    // that the extract looks incomplete.
+    expect(result.warning).toBe(WIPE_GUARD_WARNING);
+    expect(result.skipped).toBeUndefined();
   });
 
   it('does NOT stamp coverage (imported_at) when the wipe guard trips — an incomplete extract must not mark the whole region covered (#944 review)', async () => {
@@ -648,13 +659,16 @@ describe('PoiImportService', () => {
     loadInBbox(existingRows);
     mockExtract(poi({ external_id: 'node/0' }));
 
-    await service.importRegion(REGION);
+    const result = await service.importRegion(REGION);
 
     expect(upsert).toHaveBeenCalled(); // the import DID run (not a skip)
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
       expect.anything(),
     );
+    // Paired with the missing coverage stamp: the same trip that withholds
+    // the stamp also carries the operator-facing advisory.
+    expect(result.warning).toBe(WIPE_GUARD_WARNING);
   });
 
   it('uses the pre-import region size for the wipe guard (a full-replacement wrong extract is refused)', async () => {
@@ -685,6 +699,7 @@ describe('PoiImportService', () => {
     );
     expect(tombstone).toBeUndefined();
     expect(result.tombstoned).toBe(0);
+    expect(result.warning).toBe(WIPE_GUARD_WARNING);
   });
 
   it('skips a region with no extract file yet (no parse, no write) for gradual provisioning', async () => {
@@ -699,6 +714,7 @@ describe('PoiImportService', () => {
       tombstoned: 0,
       skipped: true,
       skipReason: 'no extract file at /extracts/cz.osm',
+      warning: null,
     });
     expect(parsePoiExtractMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();

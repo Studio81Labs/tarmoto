@@ -6431,6 +6431,7 @@ export interface components {
             upserted: number | null;
             tombstoned: number | null;
             skip_reason: string | null;
+            warning: string | null;
             error: string | null;
             started_at: string;
             finished_at: string | null;
