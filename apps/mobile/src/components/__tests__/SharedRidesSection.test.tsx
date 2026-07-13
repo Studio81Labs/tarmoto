@@ -7,12 +7,14 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react-native";
 
-jest.mock("@react-native-vector-icons/material-design-icons", () => {
+jest.mock("@/components/Icon", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactLib = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Text } = require("react-native");
-  return function MockIcon({ name }: { name?: string }) {
-    return ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
-  };
+  const MockIcon = ({ name }: { name?: string }) =>
+    ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  return { Icon: MockIcon };
 });
 
 // `useFocusEffect` runs on every screen focus in the real navigator;

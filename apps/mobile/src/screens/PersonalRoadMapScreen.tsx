@@ -32,7 +32,7 @@ import {
   VectorSource,
 } from "@maplibre/maplibre-react-native";
 import type { LineLayerStyle } from "@maplibre/maplibre-react-native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { qualityLabel } from "@/theme";

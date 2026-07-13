@@ -8,14 +8,13 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import HazardReportFab from "../HazardReportFab";
 
-jest.mock("@react-native-vector-icons/material-design-icons", () => {
+jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ReactStub = require("react");
+  const ReactLib = require("react");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Text } = require("react-native");
-  return function MockIcon() {
-    return ReactStub.createElement(Text, null, "icon");
-  };
+  const MockIcon = () => ReactLib.createElement(Text, null, "icon");
+  return { Icon: MockIcon };
 });
 
 describe("HazardReportFab", () => {

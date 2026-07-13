@@ -47,7 +47,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import DeviceInfo from "react-native-device-info";
 import HazardReportFab from "@/components/HazardReportFab";

@@ -12,7 +12,7 @@ import {
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { ACCENT_DARK, brandColorsLight } from "@/theme/brand";
 import type { HazardType, LatLng, Waypoint } from "@/types";

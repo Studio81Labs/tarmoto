@@ -25,7 +25,7 @@
  */
 import React, { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   brandColorsLight,
