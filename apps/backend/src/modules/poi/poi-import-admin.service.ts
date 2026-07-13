@@ -22,6 +22,7 @@ import {
   type PoiImportService,
 } from './poi-import.service.js';
 import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import { isPoiConnectionError } from './poi-repo.js';
 
 /** One `poi_import_runs` row, serialized for the admin API (#847). */
 export interface RunSummary {
@@ -153,19 +154,21 @@ export class PoiImportAdminService {
       importer.regions.map((region) => ({ importer, code: region.code })),
     );
 
-    const [coverageRows, countRows] = await Promise.all([
-      this.poi.query<{ code: string; imported_at: string | null }[]>(
-        `SELECT code, imported_at FROM poi_import_regions`,
-      ),
-      this.poi.query<
-        { source: string; import_region: string; n: number | string }[]
-      >(
-        `SELECT source, import_region, count(*)::int AS n
-           FROM pois
-           WHERE deactivated_at IS NULL AND import_region IS NOT NULL
-           GROUP BY source, import_region`,
-      ),
-    ]);
+    const [coverageRows, countRows] = await this.withPoiStore(() =>
+      Promise.all([
+        this.poi.query<{ code: string; imported_at: string | null }[]>(
+          `SELECT code, imported_at FROM poi_import_regions`,
+        ),
+        this.poi.query<
+          { source: string; import_region: string; n: number | string }[]
+        >(
+          `SELECT source, import_region, count(*)::int AS n
+             FROM pois
+             WHERE deactivated_at IS NULL AND import_region IS NOT NULL
+             GROUP BY source, import_region`,
+        ),
+      ]),
+    );
     const coverageByCode = new Map(
       coverageRows.map((r) => [r.code, r.imported_at]),
     );
@@ -178,6 +181,29 @@ export class PoiImportAdminService {
         this.statusFor(importer, code, coverageByCode, countBySourceRegion),
       ),
     );
+  }
+
+  /**
+   * Run a POI-DB read with the same resilience the store uses (poi-repo's
+   * `withPoiRepo`): an uninitialized datasource (POI DB down at boot) or a
+   * connection-level error surfaces as a 503 "store unavailable" (spec §7),
+   * not a raw 500; a real (non-connection) error still propagates (#847 review).
+   * `=== false` (not `!isInitialized`) so a real DataSource's boolean is the only
+   * thing that trips it — a partial test mock without the field still reads.
+   */
+  private async withPoiStore<T>(op: () => Promise<T>): Promise<T> {
+    if (this.poi.isInitialized === false) {
+      throw new ServiceUnavailableException('POI store is unavailable');
+    }
+    try {
+      return await op();
+    } catch (err) {
+      if (err instanceof ServiceUnavailableException) throw err;
+      if (isPoiConnectionError(err)) {
+        throw new ServiceUnavailableException('POI store is unavailable');
+      }
+      throw err;
+    }
   }
 
   private async statusFor(
@@ -220,10 +246,12 @@ export class PoiImportAdminService {
       // `extract` is left at its initial `null` rather than reassigned.
     }
 
-    const runRow = await this.runs.findOne({
-      where: { source, region_code: code },
-      order: { started_at: 'DESC', id: 'DESC' },
-    });
+    const runRow = await this.withPoiStore(() =>
+      this.runs.findOne({
+        where: { source, region_code: code },
+        order: { started_at: 'DESC', id: 'DESC' },
+      }),
+    );
 
     // `live_state` reflects the ONE manual job this (source, region) can have
     // in flight — the weekly dispatcher's own per-region jobs use a different
@@ -283,7 +311,8 @@ export class PoiImportAdminService {
     if (filter.code) {
       qb.andWhere('r.region_code = :code', { code: filter.code });
     }
-    return (await qb.getMany()).map((r) => this.toSummary(r));
+    const rows = await this.withPoiStore(() => qb.getMany());
+    return rows.map((r) => this.toSummary(r));
   }
 
   private toSummary(r: PoiImportRun): RunSummary {

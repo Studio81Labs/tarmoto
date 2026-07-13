@@ -609,6 +609,42 @@ describe('PoiImportAdminService', () => {
     });
   });
 
+  describe('POI store resilience (#847 review)', () => {
+    it('listRegionStatus returns 503 when the POI datasource is uninitialized', async () => {
+      // POI DB down at boot → datasource never initialized. Must surface a clear
+      // "store unavailable" (503, spec §7), not a raw TypeORM 500.
+      const svc = new PoiImportAdminService(
+        [] as never,
+        { isInitialized: false, query: jest.fn() } as never,
+        {} as never,
+        {} as never,
+      );
+      await expect(svc.listRegionStatus()).rejects.toMatchObject({
+        status: 503,
+      });
+    });
+
+    it('listRuns returns 503 when the POI datasource is uninitialized', async () => {
+      const qb = {
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn(),
+      };
+      const svc = new PoiImportAdminService(
+        [] as never,
+        { isInitialized: false } as never,
+        { createQueryBuilder: () => qb } as never,
+        {} as never,
+      );
+      await expect(svc.listRuns({ limit: 10 })).rejects.toMatchObject({
+        status: 503,
+      });
+      expect(qb.getMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('storeExtract', () => {
     let dir: string;
 
