@@ -9,6 +9,7 @@ import {
   haversineKm as sharedHaversineKm,
   type TripGpxInput,
 } from "@tarmoto/shared";
+import type { IconName } from "@/components/Icon";
 import type {
   Accommodation,
   AccommodationKind,
@@ -85,7 +86,7 @@ export function formatWaypointType(t: WaypointType): string {
   return capitalize(t);
 }
 
-export const WAYPOINT_ICONS: Record<WaypointType, string> = {
+export const WAYPOINT_ICONS: Record<WaypointType, IconName> = {
   start: "flag-outline",
   via: "map-marker",
   fuel: "gas-station",

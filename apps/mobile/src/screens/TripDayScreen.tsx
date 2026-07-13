@@ -797,8 +797,7 @@ function WaypointRow({
   isLast: boolean;
 }) {
   const isFuel = waypoint.waypoint_type === "fuel";
-  const iconName = (WAYPOINT_ICONS[waypoint.waypoint_type] ??
-    "map-marker") as IconName;
+  const iconName = WAYPOINT_ICONS[waypoint.waypoint_type] ?? "map-marker";
   const iconColor = isFuel ? statusFg.warning : t.fg;
 
   return (
