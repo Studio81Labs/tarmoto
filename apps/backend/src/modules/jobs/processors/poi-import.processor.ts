@@ -148,7 +148,20 @@ export class PoiImportProcessor extends WorkerHost {
     });
     try {
       const result = await importer.importRegion(region);
-      await this.recorder.finish(runId, result);
+      // Best-effort, mirroring `fail` below: a `finish()` failure here (e.g. a
+      // sub-second poi-DB blip on the run-record UPDATE) must never turn a
+      // SUCCESSFUL import into a recorded failure. Left unguarded, the throw
+      // would fall into the `catch` below, `fail()` would record this run as
+      // failed, and rethrowing would make BullMQ retry an import that already
+      // succeeded — a wasteful full re-import plus corrupted run history.
+      try {
+        await this.recorder.finish(runId, result);
+      } catch (recErr) {
+        this.logger.warn(
+          `[${job.id ?? 'no-id'}] failed to record poi import run ${runId}: ` +
+            `${recErr instanceof Error ? recErr.message : String(recErr)}`,
+        );
+      }
       this.logger.log(
         `[${job.id ?? 'no-id'}] POI import (${source}/${result.region}): ` +
           `fetched=${result.fetched} upserted=${result.upserted} ` +

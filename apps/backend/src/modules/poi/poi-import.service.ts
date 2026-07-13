@@ -19,6 +19,7 @@ import {
   type PoiImportSource,
   type StorableImportRow,
 } from './poi-import-source.js';
+import { poiAdvisoryLockKey } from './poi-import.lock.js';
 import { withPoiRepo } from './poi-repo.js';
 
 /**
@@ -205,19 +206,6 @@ export class PoiImportService {
     return results;
   }
 
-  /**
-   * Deterministic 32-bit key from `source:code` so e.g. (osm, CZ) and
-   * (fsq, CZ) never collide under the shared `LOCK_NAMESPACE`.
-   */
-  private advisoryKey(source: string, code: string): number {
-    const s = `${source}:${code}`;
-    let h = 0;
-    for (let i = 0; i < s.length; i++) {
-      h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-    }
-    return h;
-  }
-
   async importRegion(region: PoiImportRegion): Promise<PoiImportResult> {
     await this.assertStoreReachable();
 
@@ -235,7 +223,7 @@ export class PoiImportService {
     // comes from a concurrent same-(source, region) caller failing ITS OWN
     // `pg_try_advisory_lock` call on ITS OWN runner, not from which
     // connection does the writing.
-    const key = this.advisoryKey(this.source, region.code);
+    const key = poiAdvisoryLockKey(this.source, region.code);
     const runner = this.poiDataSource.createQueryRunner();
     await runner.connect();
     try {

@@ -272,6 +272,75 @@ describe('PoiImportProcessor', () => {
     );
   });
 
+  it('defaults recorder.start trigger to `cron` when the job carries no `trigger` field (legacy dispatch-enqueued jobs, #847)', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('run-legacy'),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest.fn().mockResolvedValue({
+        region: 'CZ',
+        fetched: 1,
+        upserted: 1,
+        tombstoned: 0,
+      } satisfies PoiImportResult),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+
+    await processor.process({
+      name: 'import-region',
+      id: 'j-legacy',
+      data: { code: 'CZ', source: 'osm' }, // no `trigger`
+    } as never);
+
+    expect(recorder.start).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'cron' }),
+    );
+  });
+
+  it('routes a skipped result to recorder.finish, not recorder.fail, and does not throw', async () => {
+    const recorder = {
+      start: jest.fn().mockResolvedValue('run-skip'),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const skippedResult: PoiImportResult = {
+      region: 'CZ',
+      fetched: 0,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+    };
+    const importer = {
+      source: 'osm',
+      regions: [{ code: 'CZ', bbox: {} }],
+      importRegion: jest.fn().mockResolvedValue(skippedResult),
+    };
+    const processor = new PoiImportProcessor(
+      [importer] as never,
+      {} as never,
+      recorder as never,
+    );
+
+    await expect(
+      processor.process({
+        name: 'import-region',
+        id: 'j-skip',
+        data: { code: 'CZ', source: 'osm' },
+      } as never),
+    ).resolves.toEqual(skippedResult);
+
+    expect(recorder.finish).toHaveBeenCalledWith('run-skip', skippedResult);
+    expect(recorder.fail).not.toHaveBeenCalled();
+  });
+
   it('records failed + rethrows when the import throws', async () => {
     const recorder = {
       start: jest.fn().mockResolvedValue('r'),
