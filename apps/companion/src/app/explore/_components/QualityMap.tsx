@@ -494,7 +494,11 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             layers: [TRIP_ROUTE_LAYER],
             handle: (f) => {
               const tripId = f.properties?.tripId;
-              if (typeof tripId === "string") onTripSelect(tripId);
+              if (typeof tripId !== "string") return;
+              // The route owns this click (not `onMiss`), so dismiss any open
+              // point popover ourselves before opening the trip drawer.
+              setPointMenu(null);
+              onTripSelect(tripId);
             },
           },
         ],

@@ -6,7 +6,11 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, MapPin, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { TripDetail } from "@/lib/types";
-import { formatDistance, formatDuration } from "@/lib/utils";
+import {
+  formatDistance,
+  formatDuration,
+  splitFormattedElevation,
+} from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 
 export type TripDetailPanelState =
@@ -135,6 +139,7 @@ function TripBody({ trip }: { trip: TripDetail }) {
     0,
   );
   const waypoints = trip.days.flatMap((day) => day.waypoints);
+  const elevation = splitFormattedElevation(elevationM, units);
 
   const tiles: MetricTileProps[] = [
     {
@@ -150,7 +155,8 @@ function TripBody({ trip }: { trip: TripDetail }) {
     { label: t("Days"), value: String(trip.days.length || trip.num_days) },
     {
       label: t("Elevation"),
-      value: elevationM > 0 ? `${Math.round(elevationM)} m` : "—",
+      value: elevationM > 0 ? elevation.value : "—",
+      ...(elevationM > 0 ? { unit: elevation.unit } : {}),
       accentNumber: true,
     },
   ];

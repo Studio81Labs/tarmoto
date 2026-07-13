@@ -251,7 +251,8 @@ function ExplorerPageInner() {
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   // "My trips" overlay: the rider's trips + the drawer for a clicked route.
-  const { trips } = useUserTrips();
+  // Only fetch the (geospatial) trip outlines while the overlay is on.
+  const { trips } = useUserTrips({ enabled: showMyTrips });
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [tripDetailState, setTripDetailState] = useState<TripDetailPanelState>({
     status: "idle",
