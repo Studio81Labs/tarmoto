@@ -79,6 +79,9 @@ vi.mock("@/hooks/useUserTrips", () => ({
     tripById: new Map(),
   }),
 }));
+vi.mock("@/hooks/useUserRideTracks", () => ({
+  useUserRideTracks: () => ({ tracks: [], loading: false, error: false }),
+}));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
   SegmentTrendChart: ({ segmentId }: { segmentId: string }) => (

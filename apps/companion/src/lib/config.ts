@@ -49,3 +49,15 @@ export const AERIAL_TILES_URL =
 
 /** Attribution line shown while the aerial basemap is active. */
 export const AERIAL_ATTRIBUTION = "© ČÚZK";
+
+/**
+ * How many of the rider's rides the "My rides" explorer overlay draws at once.
+ * `GET /api/v1/rides/tracks` hard-caps at 500 server-side, so this is clamped
+ * to [1, 500]; override with NEXT_PUBLIC_RIDE_OVERLAY_LIMIT (e.g. to keep the
+ * map calmer for very active riders).
+ */
+export const RIDE_OVERLAY_LIMIT = (() => {
+  const raw = Number(process.env.NEXT_PUBLIC_RIDE_OVERLAY_LIMIT);
+  const value = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 500;
+  return Math.min(500, Math.max(1, value));
+})();
