@@ -15,6 +15,7 @@ export const routes: AdminRoute[] = [
   { key: "feature-flags", label: "Feature Flags", minRole: "admin" },
   { key: "content", label: "Content", minRole: "support" },
   { key: "email", label: "Email Log", minRole: "support" },
+  { key: "poi-imports", label: "POI Imports", minRole: "support" },
 ];
 
 function currentKey(): string {
