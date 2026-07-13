@@ -716,15 +716,20 @@ describe('PoiImportAdminService', () => {
         andWhere: jest.fn().mockReturnThis(),
         getMany: jest.fn(),
       };
+      const createQueryBuilder = jest.fn().mockReturnValue(qb);
       const svc = new PoiImportAdminService(
         [] as never,
         { isInitialized: false } as never,
-        { createQueryBuilder: () => qb } as never,
+        { createQueryBuilder } as never,
         {} as never,
       );
       await expect(svc.listRuns({ limit: 10 })).rejects.toMatchObject({
         status: 503,
       });
+      // The guard gates the ENTIRE build+run: even createQueryBuilder (which can
+      // throw EntityMetadataNotFoundError on a cold-start datasource) is never
+      // reached when the store is unavailable (#847 review).
+      expect(createQueryBuilder).not.toHaveBeenCalled();
       expect(qb.getMany).not.toHaveBeenCalled();
     });
   });

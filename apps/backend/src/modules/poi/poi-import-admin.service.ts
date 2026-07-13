@@ -343,18 +343,25 @@ export class PoiImportAdminService {
     // the `Math.max(1, ...)` floor instead), and anything above 200 is
     // capped — an untrusted huge value would otherwise over-fetch.
     const limit = Math.min(Math.max(1, Math.trunc(filter.limit) || 50), 200);
-    const qb = this.runs
-      .createQueryBuilder('r')
-      .orderBy('r.started_at', 'DESC')
-      .addOrderBy('r.id', 'DESC')
-      .limit(limit);
-    if (filter.source) {
-      qb.andWhere('r.source = :source', { source: filter.source });
-    }
-    if (filter.code) {
-      qb.andWhere('r.region_code = :code', { code: filter.code });
-    }
-    const rows = await this.withPoiStore(() => qb.getMany());
+    // Build AND run inside the store guard: on a cold-start outage the `poi`
+    // datasource is returned uninitialized, so even `createQueryBuilder`
+    // (entity-metadata access) can throw before any query runs — the whole thing
+    // must sit behind withPoiStore's isInitialized check so the outage surfaces
+    // as 503, not a raw 500 (#847 review).
+    const rows = await this.withPoiStore(() => {
+      const qb = this.runs
+        .createQueryBuilder('r')
+        .orderBy('r.started_at', 'DESC')
+        .addOrderBy('r.id', 'DESC')
+        .limit(limit);
+      if (filter.source) {
+        qb.andWhere('r.source = :source', { source: filter.source });
+      }
+      if (filter.code) {
+        qb.andWhere('r.region_code = :code', { code: filter.code });
+      }
+      return qb.getMany();
+    });
     return rows.map((r) => this.toSummary(r));
   }
 
