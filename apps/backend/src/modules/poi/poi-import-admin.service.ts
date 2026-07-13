@@ -280,11 +280,20 @@ export class PoiImportAdminService {
     // (EACCES/ENOTDIR/EIO — a broken mount or permissions problem on the
     // shared extract volume) is a real operational fault, not "no extract
     // yet", so it's rethrown rather than silently reported as missing (#847
-    // review).
+    // review). A stat that SUCCEEDS but resolves to a non-regular node
+    // (directory / FIFO / other — a broken mount or a manual mistake left at
+    // `<code>.osm`) is treated the same way: thrown from inside the `try` so
+    // it falls into the same non-ENOENT rethrow below, rather than reporting
+    // `present: true` for something the worker would later error or hang on
+    // trying to `createReadStream` (#847 review).
     let extract: RegionImportStatus['extract'] = null;
     if (importer.extractDirConfigured) {
       try {
-        const s = await stat(importer.getExtractPath(code));
+        const path = importer.getExtractPath(code);
+        const s = await stat(path);
+        if (!s.isFile()) {
+          throw new Error(`POI extract path is not a regular file: ${path}`);
+        }
         extract = {
           present: true,
           size_bytes: s.size,

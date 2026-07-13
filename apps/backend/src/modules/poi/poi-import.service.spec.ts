@@ -339,6 +339,7 @@ describe('PoiImportService', () => {
       fetched: 2,
       upserted: 2,
       tombstoned: 0,
+      skipReason: null,
     });
   });
 
@@ -373,6 +374,7 @@ describe('PoiImportService', () => {
     // fell inside the bbox, and was upserted — so the absence of the stamp
     // below is the source gate, not an incidental skip path.
     expect(result.skipped).toBeUndefined();
+    expect(result.skipReason).toBeNull();
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
@@ -397,6 +399,11 @@ describe('PoiImportService', () => {
     const result = await service.importRegion(REGION);
 
     expect(result.skipped).toBe(true);
+    // #847 review: the concrete, operator-actionable reason — not a generic
+    // "skipped" string — flows out on the result itself.
+    expect(result.skipReason).toBe(
+      'extract yielded 0 in-bbox rows (fetched=0)',
+    );
     expect(txQuery).not.toHaveBeenCalledWith(
       expect.stringContaining('poi_import_regions'),
       expect.anything(),
@@ -442,6 +449,7 @@ describe('PoiImportService', () => {
       fetched: 2,
       upserted: 1,
       tombstoned: 0,
+      skipReason: null,
     });
   });
 
@@ -463,6 +471,7 @@ describe('PoiImportService', () => {
       fetched: 2,
       upserted: 1,
       tombstoned: 0,
+      skipReason: null,
     });
   });
 
@@ -594,6 +603,7 @@ describe('PoiImportService', () => {
       upserted: 0,
       tombstoned: 0,
       skipped: true,
+      skipReason: 'extract yielded 0 in-bbox rows (fetched=0)',
     });
     expect(upsert).not.toHaveBeenCalled();
     const tombstone = (txQuery.mock.calls as Array<[string, unknown[]]>).find(
@@ -688,6 +698,7 @@ describe('PoiImportService', () => {
       upserted: 0,
       tombstoned: 0,
       skipped: true,
+      skipReason: 'no extract file at /extracts/cz.osm',
     });
     expect(parsePoiExtractMock).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();

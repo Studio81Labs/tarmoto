@@ -158,6 +158,7 @@ describe('PoiImportProcessor', () => {
       fetched: 10,
       upserted: 9,
       tombstoned: 1,
+      skipReason: null,
     };
     const osmImport = jest.fn();
     const fsqImport = jest.fn().mockResolvedValue(importResult);
@@ -183,6 +184,7 @@ describe('PoiImportProcessor', () => {
       fetched: 1,
       upserted: 1,
       tombstoned: 0,
+      skipReason: null,
     } satisfies PoiImportResult);
     const fsqImport = jest.fn();
     const { processor } = build([
@@ -286,6 +288,7 @@ describe('PoiImportProcessor', () => {
         fetched: 1,
         upserted: 1,
         tombstoned: 0,
+        skipReason: null,
       } satisfies PoiImportResult),
     };
     const processor = new PoiImportProcessor(
@@ -317,6 +320,7 @@ describe('PoiImportProcessor', () => {
       upserted: 0,
       tombstoned: 0,
       skipped: true,
+      skipReason: 'no extract file at /extracts/cz.osm',
     };
     const importer = {
       source: 'osm',

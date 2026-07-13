@@ -38,7 +38,7 @@ describe('PoiImportRunRecorder', () => {
     });
   });
 
-  it('finish() records success with counts', async () => {
+  it('finish() records success with counts and a null skip_reason', async () => {
     const repo = mockRepo();
     const rec = new PoiImportRunRecorder(repo as never);
     await rec.finish('7', {
@@ -47,6 +47,7 @@ describe('PoiImportRunRecorder', () => {
       upserted: 9,
       tombstoned: 1,
       skipped: false,
+      skipReason: null,
     });
     expect(repo.update).toHaveBeenCalledWith(
       '7',
@@ -55,11 +56,16 @@ describe('PoiImportRunRecorder', () => {
         fetched: 10,
         upserted: 9,
         tombstoned: 1,
+        skip_reason: null,
       }),
     );
   });
 
-  it('finish() records skipped with a reason', async () => {
+  // #847 review: `finish()` must persist the REAL, path-specific reason
+  // `PoiImportService` attached to the result (distinct per skip cause) —
+  // not synthesize one generic message that can't tell a missing-extract
+  // skip from a zero-row skip apart.
+  it('finish() persists the real skip reason PoiImportService attached to the result, verbatim', async () => {
     const repo = mockRepo();
     const rec = new PoiImportRunRecorder(repo as never);
     await rec.finish('8', {
@@ -68,9 +74,53 @@ describe('PoiImportRunRecorder', () => {
       upserted: 0,
       tombstoned: 0,
       skipped: true,
+      skipReason: 'no extract file at /extracts/cz.osm',
     });
     expect(repo.update).toHaveBeenCalledWith(
       '8',
+      expect.objectContaining({
+        status: 'skipped',
+        skip_reason: 'no extract file at /extracts/cz.osm',
+      }),
+    );
+  });
+
+  it('finish() carries a DIFFERENT skip reason through for a different skip cause (proves it is not a fixed string)', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    await rec.finish('8b', {
+      region: 'CZ',
+      fetched: 12,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+      skipReason: 'extract yielded 0 in-bbox rows (fetched=12)',
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      '8b',
+      expect.objectContaining({
+        status: 'skipped',
+        skip_reason: 'extract yielded 0 in-bbox rows (fetched=12)',
+      }),
+    );
+  });
+
+  // Defensive fallback only — no current PoiImportService code path produces
+  // `skipped: true` with a null `skipReason`, but `finish()` must still
+  // record SOMETHING readable rather than a bare `null` if that ever happens.
+  it('finish() falls back to a generic message when skipped is true but skipReason is null', async () => {
+    const repo = mockRepo();
+    const rec = new PoiImportRunRecorder(repo as never);
+    await rec.finish('9', {
+      region: 'CZ',
+      fetched: 3,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+      skipReason: null,
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      '9',
       expect.objectContaining({
         status: 'skipped',
         skip_reason: expect.stringContaining('skipped') as string,

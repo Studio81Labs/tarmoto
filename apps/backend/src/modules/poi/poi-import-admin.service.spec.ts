@@ -117,6 +117,7 @@ describe('PoiImportAdminService', () => {
       statMock.mockResolvedValueOnce({
         size: 10,
         mtimeMs: 1_720_000_000_000,
+        isFile: () => true,
       } as never);
 
       const svc = new PoiImportAdminService(
@@ -154,6 +155,35 @@ describe('PoiImportAdminService', () => {
       expect(dataSource.query).toHaveBeenCalledWith(
         expect.stringContaining('GROUP BY'),
       );
+    });
+
+    // #847 review Fix C: a directory / FIFO / other non-regular node left at
+    // the expected extract path (broken mount, manual mistake) still resolves
+    // `stat` successfully, so without an explicit `isFile()` check it would
+    // read as a ready extract — the worker would then error or hang trying to
+    // `createReadStream` it. Must surface as a fault (thrown, same as any
+    // other non-ENOENT stat error), never as `present: true`.
+    it('surfaces a fault (does not report present) when the extract path stats successfully but is not a regular file', async () => {
+      const dataSource = { query: jest.fn().mockResolvedValue([]) };
+      const runsRepo = { findOne: jest.fn() };
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
+      statMock.mockResolvedValueOnce({
+        size: 4096,
+        mtimeMs: 1_720_000_000_000,
+        isFile: () => false,
+      } as never);
+
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        dataSource as never,
+        runsRepo as never,
+        queue as never,
+      );
+
+      await expect(svc.listRegionStatus()).rejects.toThrow(
+        /not a regular file/,
+      );
+      expect(runsRepo.findOne).not.toHaveBeenCalled();
     });
 
     it('reports live_state running when the queue has an active job, and extract: null on ENOENT', async () => {

@@ -102,6 +102,22 @@ export interface PoiImportResult {
    * the region.
    */
   skipped?: boolean;
+  /**
+   * Operator-actionable reason the region was skipped this run — null
+   * whenever `skipped` is not true. Carries the REAL, path-specific cause
+   * (e.g. "no extract file at <path>" vs. "extract yielded 0 in-bbox rows")
+   * so `PoiImportRunRecorder.finish` can persist it verbatim instead of
+   * synthesizing one generic message that can't tell a missing-extract/
+   * storage gap (needs an upload) from a zero-row gap (needs the extract
+   * rebuilt) apart (#847 review).
+   *
+   * NOTE: the tombstone wipe-guard (`wouldWipeTooMuch` below) does NOT set
+   * `skipped: true` — it still upserts the incoming rows and only withholds
+   * the tombstone + coverage-stamp sub-steps, so that run is a genuine
+   * (partial) success, not a skip, and falls through to the `skipReason:
+   * null` return like any other successful import.
+   */
+  skipReason: string | null;
 }
 
 /**
@@ -303,6 +319,7 @@ export class PoiImportService {
         upserted: 0,
         tombstoned: 0,
         skipped: true,
+        skipReason: `no extract file at ${path}`,
       };
     }
 
@@ -391,6 +408,7 @@ export class PoiImportService {
         upserted: 0,
         tombstoned: 0,
         skipped: true,
+        skipReason: `extract yielded 0 in-bbox rows (fetched=${fetched})`,
       };
     }
 
@@ -533,6 +551,7 @@ export class PoiImportService {
       fetched,
       upserted: rows.length,
       tombstoned,
+      skipReason: null,
     };
   }
 }
