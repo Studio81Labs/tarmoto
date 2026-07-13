@@ -3,12 +3,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { DataSource, type DataSourceOptions } from 'typeorm';
 import { Poi } from '../../entities/poi.entity.js';
+import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
 import { poiDatabaseConfig } from '../../config/poi-database.config.js';
 import { AddPois1787000000000 } from '../../migrations-poi/1787000000000-AddPois.js';
 import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations-poi/1793000000000-AddPoiDecisionSupportFields.js';
 import { AddPoiDeactivatedAt1798000000000 } from '../../migrations-poi/1798000000000-AddPoiDeactivatedAt.js';
 import { AddPoiGeographyIndex1799000000000 } from '../../migrations-poi/1799000000000-AddPoiGeographyIndex.js';
 import { AddPoiImportRegions1800000000000 } from '../../migrations-poi/1800000000000-AddPoiImportRegions.js';
+import { AddPoiImportRuns1801000000000 } from '../../migrations-poi/1801000000000-AddPoiImportRuns.js';
 import { isPoiConnectionError } from './poi-repo.js';
 
 const logger = new Logger('PoiDatabase');
@@ -95,13 +97,14 @@ export function buildPoiTypeOrmOptions(
     ...(database !== undefined ? { database } : {}),
     ...(username !== undefined ? { username } : {}),
     ...(password !== undefined ? { password } : {}),
-    entities: [Poi],
+    entities: [Poi, PoiImportRun],
     migrations: [
       AddPois1787000000000,
       AddPoiDecisionSupportFields1793000000000,
       AddPoiDeactivatedAt1798000000000,
       AddPoiGeographyIndex1799000000000,
       AddPoiImportRegions1800000000000,
+      AddPoiImportRuns1801000000000,
     ],
     migrationsRun: !isOpenApiExport,
     // `AddPoiGeographyIndex` builds its GiST index `CONCURRENTLY` (so a
