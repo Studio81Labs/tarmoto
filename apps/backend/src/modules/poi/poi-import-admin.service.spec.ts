@@ -628,6 +628,7 @@ describe('PoiImportAdminService', () => {
       over: {
         source?: string;
         regions?: { code: string; bbox: unknown }[];
+        extractDirConfigured?: boolean;
       } = {},
     ) {
       const source = over.source ?? 'osm';
@@ -635,6 +636,7 @@ describe('PoiImportAdminService', () => {
       return {
         source,
         regions: over.regions ?? [{ code: 'CZ', bbox: {} }],
+        extractDirConfigured: over.extractDirConfigured ?? true,
         getExtractPath: (code: string) =>
           join(dir, `${code.toLowerCase()}${ext}`),
       };
@@ -708,6 +710,28 @@ describe('PoiImportAdminService', () => {
           originalName: 'zz.osm',
         }),
       ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('returns 503 (not 500) when the source has no configured extract dir', async () => {
+      // TARMOTO_POI_IMPORT_DIR unset → extractDirConfigured false → getExtractPath
+      // would throw a plain Error (500); storeExtract must surface a clear 503
+      // and write nothing (#847 review).
+      const svc = new PoiImportAdminService(
+        [makeStoreImporter({ extractDirConfigured: false })] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(leftoverPartFiles()).toEqual([]);
     });
 
     it('rejects a filename whose extension does not match the source (fsq name against osm)', async () => {

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -373,13 +374,24 @@ export class PoiImportAdminService {
       );
     }
     const importer = this.importerFor(source, code);
-    const target = importer.getExtractPath(code);
     const expectedExt = source === 'fsq' ? '.fsq.jsonl' : '.osm';
     if (!file.originalName.toLowerCase().endsWith(expectedExt)) {
       throw new BadRequestException(
         `expected a ${expectedExt} file for ${source}`,
       );
     }
+    // A deployment without TARMOTO_*_IMPORT_DIR set has no upload target;
+    // `getExtractPath` would throw a plain Error → 500. Surface a clear 503
+    // instead (the status read collapses the same condition to `extract: null`,
+    // so the UI still offers Upload) (#847 review).
+    if (!importer.extractDirConfigured) {
+      throw new ServiceUnavailableException(
+        `POI extract storage is not configured for ${source} — set ${
+          source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR'
+        }`,
+      );
+    }
+    const target = importer.getExtractPath(code);
 
     // Unique per call (not a fixed `<target>.part`) — see the doc comment
     // above: this is what keeps two concurrent uploads for the same

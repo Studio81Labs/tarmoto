@@ -165,6 +165,15 @@ export class PoiImportService {
   }
 
   /**
+   * Whether this source's extract directory is configured (its
+   * `TARMOTO_*_IMPORT_DIR` is set). When false, `getExtractPath` throws — the
+   * admin upload route checks this to return a clear 503 rather than a 500 (#847).
+   */
+  get extractDirConfigured(): boolean {
+    return this.config.extractDir !== null;
+  }
+
+  /**
    * Public accessor for a configured region's resolved extract path (#847
    * admin status read — `PoiImportAdminService.listRegionStatus` stats this
    * path per region to report whether an extract has been uploaded yet).
