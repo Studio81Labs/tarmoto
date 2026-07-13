@@ -8,6 +8,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
+import { randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { open, rename, stat, unlink } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
@@ -319,18 +320,26 @@ export class PoiImportAdminService {
    * `(source, code)` (in-memory), then the filename extension — all before a
    * single byte is written.
    *
-   * Atomicity: the upload streams to a SIBLING temp file (`<target>.part`,
-   * same directory as `target` so the final rename is same-filesystem and
-   * therefore atomic — POSIX `rename(2)` never exposes a partially-written
-   * destination), `fsync`s it so the bytes are durable on disk BEFORE the
-   * rename lands (the import job that reads `target` next runs in a
-   * separate worker process — possibly after a crash — so "written" has to
-   * mean "on disk", not "sitting in this process's or the OS's write
-   * buffers"), then renames onto `target`. A failure at any step (open,
-   * write, fsync, or rename) removes the `.part` file best-effort and
-   * rethrows the original error; `target` itself is only ever touched by the
-   * final, all-or-nothing rename, so a failed upload can never truncate or
-   * corrupt a previously-good extract.
+   * Atomicity: the upload streams to a SIBLING temp file
+   * (`<target>.<pid>.<random-hex>.part`, same directory as `target` so the
+   * final rename is same-filesystem and therefore atomic — POSIX
+   * `rename(2)` never exposes a partially-written destination), `fsync`s it
+   * so the bytes are durable on disk BEFORE the rename lands (the import job
+   * that reads `target` next runs in a separate worker process — possibly
+   * after a crash — so "written" has to mean "on disk", not "sitting in this
+   * process's or the OS's write buffers"), then renames onto `target`. The
+   * temp name is unique PER CALL (pid + random hex, not a fixed
+   * `<target>.part`) so two concurrent uploads for the same `(source, code)`
+   * each stream into their OWN temp file instead of interleaving writes into
+   * one shared path — only the final rename ever touches the shared
+   * `target` name, and rename is atomic, so whichever call lands last simply
+   * wins cleanly rather than corrupting the other's in-progress write (or
+   * failing its own rename with ENOENT because the other call's cleanup
+   * already unlinked the shared temp file). A failure at any step (open,
+   * write, fsync, or rename) removes that call's OWN temp file best-effort
+   * and rethrows the original error; `target` itself is only ever touched
+   * by the final, all-or-nothing rename, so a failed upload can never
+   * truncate or corrupt a previously-good extract.
    *
    * The write and the fsync use TWO separate file handles rather than one:
    * `pipeline()` (via `stream.finished` under the hood) waits for the
@@ -361,7 +370,10 @@ export class PoiImportAdminService {
       );
     }
 
-    const tmp = `${target}.part`;
+    // Unique per call (not a fixed `<target>.part`) — see the doc comment
+    // above: this is what keeps two concurrent uploads for the same
+    // (source, code) from interleaving writes into one shared temp path.
+    const tmp = `${target}.${process.pid}.${randomBytes(6).toString('hex')}.part`;
     try {
       await pipeline(file.stream, createWriteStream(tmp));
       const handle = await open(tmp, 'r+');

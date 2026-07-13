@@ -8,21 +8,41 @@
 // poi-import.service.spec.ts) sidesteps that: the constructor only takes
 // Nest-resolvable params, and this file drives `stat` directly.
 //
+// `open` and `rename` are ALSO wrapped (`jest.fn(actual.X)`, not left as bare
+// `actual.X`) rather than passed through untouched: by default they still
+// call straight through to the real implementation, so every existing test
+// below keeps exercising a REAL temp directory (`storeExtract`'s
+// atomic-upload tests cover write → fsync → atomic rename, cleanup on
+// failure — a genuine filesystem property, not something a mock can stand
+// in for) — but wrapping makes them individually spy-able so ONE test
+// (the fsync-ordering regression test, #847 review Task 5 fix 1) can swap in
+// a fake handle / assert call order without disturbing that real-filesystem
+// behavior everywhere else. `unlink` is left unwrapped since no test needs
+// to spy on it.
+//
 // Everything else in the module is passed through via `requireActual`
 // (given an explicit generic so `actual` keeps the real module's types
-// instead of `any`) — `storeExtract`'s atomic-upload tests below exercise
-// REAL `open`/`rename`/`unlink` against a throwaway temp directory rather
-// than mocking the filesystem, since the thing worth proving (temp-file
-// write → fsync → atomic rename, cleanup on failure) is a real filesystem
-// property, not something a mock can stand in for.
+// instead of `any`).
 jest.mock('node:fs/promises', () => {
   const actual =
     jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises');
-  return { ...actual, stat: jest.fn() };
+  return {
+    ...actual,
+    stat: jest.fn(),
+    open: jest.fn(actual.open),
+    rename: jest.fn(actual.rename),
+  };
 });
 
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { open, rename, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -30,6 +50,8 @@ import { PoiImportAdminService } from './poi-import-admin.service.js';
 import type { PoiImportRun } from '../../entities/poi-import-run.entity.js';
 
 const statMock = jest.mocked(stat);
+const openMock = jest.mocked(open);
+const renameMock = jest.mocked(rename);
 
 /** Minimal `PoiImportService` test double — only the surface
  *  `PoiImportAdminService` reads (`source`, `regions`, `getExtractPath`). */
@@ -581,6 +603,16 @@ describe('PoiImportAdminService', () => {
       };
     }
 
+    /** Any leftover `*.part` staging file left in `dir`. The atomic-write
+     *  temp name is unique PER CALL (`<target>.<pid>.<random-hex>.part`,
+     *  #847 review Task 5 fix 2 — see `storeExtract`), so a literal
+     *  `` `${target}.part` `` string no longer names a real path; scanning
+     *  the directory for the shared `.part` SUFFIX is what actually proves
+     *  no temp file was left behind, regardless of the random component. */
+    function leftoverPartFiles(): string[] {
+      return readdirSync(dir).filter((f) => f.endsWith('.part'));
+    }
+
     it('rejects an oversize upload with 400 before touching the filesystem', async () => {
       const original = process.env.TARMOTO_POI_UPLOAD_MAX_BYTES;
       process.env.TARMOTO_POI_UPLOAD_MAX_BYTES = '10';
@@ -601,7 +633,7 @@ describe('PoiImportAdminService', () => {
           }),
         ).rejects.toMatchObject({ status: 400 });
 
-        expect(existsSync(`${importer.getExtractPath('CZ')}.part`)).toBe(false);
+        expect(leftoverPartFiles()).toEqual([]);
       } finally {
         if (original === undefined) {
           delete process.env.TARMOTO_POI_UPLOAD_MAX_BYTES;
@@ -708,7 +740,57 @@ describe('PoiImportAdminService', () => {
       // Real filesystem effects: the target exists with the streamed bytes,
       // and the `.part` staging file is gone.
       expect(readFileSync(target, 'utf8')).toBe('<osm-extract>');
-      expect(existsSync(`${target}.part`)).toBe(false);
+      expect(leftoverPartFiles()).toEqual([]);
+    });
+
+    // #847 review (Task 5 fix 1): the steps above (`pipeline` → `open` →
+    // `sync` (fsync) → `close` → `rename`) previously had ONLY end-state
+    // coverage (content correct, `.part` gone) — that would still pass even
+    // if the `sync()` call were deleted outright, since neither the
+    // temp file's bytes nor the renamed target change either way. This test
+    // swaps in a bare `{ sync, close }` double for `open`'s return value
+    // (the real bytes already land via the untouched `createWriteStream`
+    // pipeline that runs before `open` — this second handle exists ONLY for
+    // the fsync step, see the method's doc comment) so `sync`/`close` are
+    // directly spyable, then asserts `sync()` actually runs, and runs
+    // BEFORE the atomic `rename` — the durability guarantee the docstring
+    // promises (bytes durable on disk before the rename makes them visible
+    // to the import job that reads `target` next, possibly from a separate
+    // process after a crash).
+    it('fsyncs the temp file handle before the atomic rename', async () => {
+      openMock.mockClear();
+      renameMock.mockClear();
+      const importer = makeStoreImporter();
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
+
+      let openedPath: string | undefined;
+      const sync = jest.fn().mockResolvedValue(undefined);
+      const close = jest.fn().mockResolvedValue(undefined);
+      openMock.mockImplementationOnce((path) => {
+        openedPath = String(path);
+        return Promise.resolve({ sync, close } as unknown as FileHandle);
+      });
+
+      await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('hello')),
+        size: 5,
+        originalName: 'cz.osm',
+      });
+
+      // Opened against the temp staging file, never the final target.
+      expect(openedPath).toMatch(/\.part$/);
+      expect(sync).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(renameMock).toHaveBeenCalledTimes(1);
+      expect(sync.mock.invocationCallOrder[0]).toBeLessThan(
+        renameMock.mock.invocationCallOrder[0]!,
+      );
     });
 
     it('replaces an existing extract in place on re-upload', async () => {
@@ -760,7 +842,7 @@ describe('PoiImportAdminService', () => {
         }),
       ).rejects.toThrow(/stream interrupted/);
 
-      expect(existsSync(`${target}.part`)).toBe(false);
+      expect(leftoverPartFiles()).toEqual([]);
       expect(existsSync(target)).toBe(false);
     });
   });
