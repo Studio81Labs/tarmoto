@@ -68,6 +68,28 @@ export interface RegionImportStatus {
 }
 
 /**
+ * Streaming cap for an operator-provided extract upload (#847), configurable
+ * via `TARMOTO_POI_UPLOAD_MAX_BYTES` — default 200 MB, comfortably above any
+ * filtered/clipped single-country `.osm`/`.fsq.jsonl` extract (design spec
+ * §11) while still bounding a runaway or mistaken upload. Read once at
+ * module load (not per call) — fine in practice since this only changes via
+ * a redeploy, which reloads the module anyway.
+ *
+ * Shared by the two enforcement points that must never desync (#847 review
+ * Task 6 fix 3 — each used to compute this independently):
+ *  - `AdminPoiController`'s multer `limits.fileSize`, which is what actually
+ *    enforces the cap on the wire: multer aborts the STREAM mid-upload
+ *    (surfaced by `@nestjs/platform-express` as a 413) once the byte count
+ *    crosses it, before disk ever holds the full file.
+ *  - `storeExtract` below, which re-checks the caller-declared `size` field
+ *    AFTER an upload has already fully landed — a defense-in-depth backstop
+ *    for any other caller of `storeExtract` (e.g. a future CLI path), not
+ *    the primary guard for the upload route itself.
+ */
+export const POI_UPLOAD_MAX_BYTES =
+  Number(process.env.TARMOTO_POI_UPLOAD_MAX_BYTES) || 200 * 1024 * 1024;
+
+/**
  * Admin surface for the POI import system (#847). Read side —
  * per-`(source, region)` coverage/count/extract-presence/last-run/
  * live-queue-state (`listRegionStatus`), plus run history (`listRuns`).
@@ -80,17 +102,6 @@ export interface RegionImportStatus {
  */
 @Injectable()
 export class PoiImportAdminService {
-  /**
-   * Upload size cap for an operator-provided extract (#847), configurable
-   * via `TARMOTO_POI_UPLOAD_MAX_BYTES` — default 200 MB, comfortably above
-   * any filtered/clipped single-country `.osm`/`.fsq.jsonl` extract (design
-   * spec §11) while still bounding a runaway or mistaken upload. Read once
-   * per instance rather than per call — fine in practice since this only
-   * changes via a redeploy, which constructs a fresh instance anyway.
-   */
-  private readonly MAX_UPLOAD_BYTES =
-    Number(process.env.TARMOTO_POI_UPLOAD_MAX_BYTES) || 200 * 1024 * 1024;
-
   constructor(
     @Inject(POI_IMPORT_SOURCES)
     private readonly importers: readonly PoiImportService[],
@@ -316,7 +327,7 @@ export class PoiImportAdminService {
   /**
    * Validated, atomic upload of an operator-provided extract (#847) — the
    * write-side counterpart to `listRegionStatus`'s `extract` stat. Checks run
-   * cheapest-first: declared size against `MAX_UPLOAD_BYTES` (no I/O), then
+   * cheapest-first: declared size against `POI_UPLOAD_MAX_BYTES` (no I/O), then
    * `(source, code)` (in-memory), then the filename extension — all before a
    * single byte is written.
    *
@@ -356,9 +367,9 @@ export class PoiImportAdminService {
     code: string,
     file: { stream: Readable; size: number; originalName: string },
   ): Promise<{ present: true; size_bytes: number; modified_at: string }> {
-    if (file.size > this.MAX_UPLOAD_BYTES) {
+    if (file.size > POI_UPLOAD_MAX_BYTES) {
       throw new BadRequestException(
-        `extract exceeds ${this.MAX_UPLOAD_BYTES} bytes`,
+        `extract exceeds ${POI_UPLOAD_MAX_BYTES} bytes`,
       );
     }
     const importer = this.importerFor(source, code);

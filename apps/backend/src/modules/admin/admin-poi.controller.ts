@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -23,28 +24,18 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminRoles } from '../admin-auth/admin-role.decorator.js';
-import { PoiImportAdminService } from '../poi/poi-import-admin.service.js';
+import { setAdminAuditTarget } from './admin-audit-context.js';
+import type { AdminRequest } from './internal.guard.js';
+import {
+  POI_UPLOAD_MAX_BYTES,
+  PoiImportAdminService,
+} from '../poi/poi-import-admin.service.js';
 import {
   ExtractStatDto,
   RegionImportStatusDto,
   RunDto,
   TriggerImportResponseDto,
 } from './dto/poi-import-admin.dto.js';
-
-/**
- * Streaming cap for an operator-provided extract upload (#847) — same env
- * var + default as `PoiImportAdminService`'s own `MAX_UPLOAD_BYTES`, read
- * once at module load. This is what actually enforces the cap on the wire:
- * multer's `limits.fileSize` aborts the STREAM mid-upload (surfaced by
- * `@nestjs/platform-express` as a 413) once the byte count crosses it,
- * before disk ever holds the full file. The service's own `MAX_UPLOAD_BYTES`
- * check runs AFTER an upload has already fully landed, against the
- * caller-declared `size` field — a defense-in-depth backstop for any other
- * caller of `storeExtract` (e.g. a future CLI path), not the primary guard
- * for THIS route.
- */
-const MAX_UPLOAD_BYTES =
-  Number(process.env.TARMOTO_POI_UPLOAD_MAX_BYTES) || 200 * 1024 * 1024;
 
 /**
  * Admin surface for the POI import system (#847) — a thin HTTP layer over
@@ -120,9 +111,14 @@ export class AdminPoiController {
     description: 'An import for (source, code) is already queued or running',
   })
   triggerImport(
+    @Req() req: AdminRequest,
     @Param('source') source: string,
     @Param('code') code: string,
   ): Promise<TriggerImportResponseDto> {
+    setAdminAuditTarget(req, {
+      target_type: 'poi_import',
+      target_id: `${source}/${code}`,
+    });
     return this.svc.triggerImport(source, code);
   }
 
@@ -131,14 +127,14 @@ export class AdminPoiController {
   @UseInterceptors(
     FileInterceptor('file', {
       // Disk (not memory) storage: an operator-provided extract can be up to
-      // MAX_UPLOAD_BYTES (default 200 MB), so it must never sit fully
+      // POI_UPLOAD_MAX_BYTES (default 200 MB), so it must never sit fully
       // buffered in process memory. `diskStorage({})` — no destination or
       // filename override — is multer's own default disk engine: it writes
       // to `os.tmpdir()` under a random 32-character hex name, and (per
       // multer's own `make-middleware.js`) already unlinks that file itself
       // if THIS `limits.fileSize` cap aborts the upload mid-stream.
       storage: diskStorage({}),
-      limits: { fileSize: MAX_UPLOAD_BYTES },
+      limits: { fileSize: POI_UPLOAD_MAX_BYTES },
     }),
   )
   @ApiConsumes('multipart/form-data')
@@ -163,6 +159,7 @@ export class AdminPoiController {
     description: 'File exceeds the configured upload size cap',
   })
   async uploadExtract(
+    @Req() req: AdminRequest,
     @Param('source') source: string,
     @Param('code') code: string,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -170,15 +167,33 @@ export class AdminPoiController {
     if (!file) {
       throw new BadRequestException('extract file is required');
     }
+    setAdminAuditTarget(req, {
+      target_type: 'poi_import',
+      target_id: `${source}/${code}`,
+    });
+    // Captured in a variable (rather than inlined into the call below) so a
+    // rejection from `storeExtract` can still reach and `destroy()` it:
+    // `storeExtract` validates size/source/code/extension BEFORE it ever
+    // starts reading from the stream, so on every rejected upload this
+    // stream would otherwise sit open and unconsumed — its fd leaking until
+    // process exit — since nothing else ever reads or closes it.
+    const stream = createReadStream(file.path);
     try {
       // `storeExtract` streams this into its OWN atomic temp+rename dance
       // under the importer's extract dir — a SEPARATE file from multer's
       // own disk-temp file at `file.path`, which is cleaned up below.
       return await this.svc.storeExtract(source, code, {
-        stream: createReadStream(file.path),
+        stream,
         size: file.size,
         originalName: file.originalname,
       });
+    } catch (err) {
+      // On success, `storeExtract`'s own `pipeline()` already consumed and
+      // closed this stream, so this branch only runs on rejection — where
+      // the stream was never opened for reading and needs an explicit
+      // `destroy()` to release its fd.
+      stream.destroy();
+      throw err;
     } finally {
       // Best-effort cleanup of MULTER's disk-temp file — success or
       // failure, it's ours to remove; Nest/multer never delete it once the

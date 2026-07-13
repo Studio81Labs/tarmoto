@@ -14,8 +14,11 @@ jest.mock('node:fs/promises', () => {
   return { ...actual, unlink: jest.fn() };
 });
 
+import { BadRequestException } from '@nestjs/common';
 import { createReadStream } from 'node:fs';
 import { unlink } from 'node:fs/promises';
+import { getAdminAuditTarget } from './admin-audit-context.js';
+import type { AdminRequest } from './internal.guard.js';
 import { AdminPoiController } from './admin-poi.controller.js';
 
 const createReadStreamMock = jest.mocked(createReadStream);
@@ -41,6 +44,12 @@ describe('AdminPoiController', () => {
   };
   const ctrl = new AdminPoiController(svc as never);
 
+  // Mirrors `admin-flags.controller.spec.ts`'s fake `AdminRequest` — a bare
+  // object is enough since `setAdminAuditTarget`/`getAdminAuditTarget` just
+  // stash/read a property on it, and neither mutating handler reads
+  // `req.adminUser` directly (unlike `AdminFlagsController.setGlobal`).
+  const adminReq = () => ({}) as unknown as AdminRequest;
+
   beforeEach(() => {
     createReadStreamMock.mockReset();
     unlinkMock.mockReset().mockResolvedValue(undefined);
@@ -50,9 +59,17 @@ describe('AdminPoiController', () => {
     expect(await ctrl.regions()).toEqual([{ source: 'osm', code: 'CZ' }]);
   });
 
-  it('POST import delegates with (source, code)', async () => {
-    expect(await ctrl.triggerImport('osm', 'CZ')).toEqual({ job_id: 'j' });
+  it('POST import delegates with (source, code) and tags the audit target', async () => {
+    const req = adminReq();
+
+    expect(await ctrl.triggerImport(req, 'osm', 'CZ')).toEqual({
+      job_id: 'j',
+    });
     expect(svc.triggerImport).toHaveBeenCalledWith('osm', 'CZ');
+    expect(getAdminAuditTarget(req)).toEqual({
+      target_type: 'poi_import',
+      target_id: 'osm/CZ',
+    });
   });
 
   it('GET runs passes the limit + filters', async () => {
@@ -81,18 +98,19 @@ describe('AdminPoiController', () => {
 
     it('rejects with 400 when no file is present, without calling the service', async () => {
       await expect(
-        ctrl.uploadExtract('osm', 'CZ', undefined),
+        ctrl.uploadExtract(adminReq(), 'osm', 'CZ', undefined),
       ).rejects.toMatchObject({ status: 400 });
 
       expect(svc.storeExtract).not.toHaveBeenCalled();
       expect(unlinkMock).not.toHaveBeenCalled();
     });
 
-    it("streams multer's temp file into storeExtract and cleans it up on success", async () => {
-      const fakeStream = {} as never;
-      createReadStreamMock.mockReturnValue(fakeStream);
+    it("streams multer's temp file into storeExtract, tags the audit target, and cleans up on success", async () => {
+      const fakeStream = { destroy: jest.fn() };
+      createReadStreamMock.mockReturnValue(fakeStream as never);
+      const req = adminReq();
 
-      const result = await ctrl.uploadExtract('osm', 'CZ', file);
+      const result = await ctrl.uploadExtract(req, 'osm', 'CZ', file);
 
       expect(createReadStreamMock).toHaveBeenCalledWith(file.path);
       expect(svc.storeExtract).toHaveBeenCalledWith('osm', 'CZ', {
@@ -105,19 +123,35 @@ describe('AdminPoiController', () => {
         size_bytes: 1,
         modified_at: 'x',
       });
+      expect(getAdminAuditTarget(req)).toEqual({
+        target_type: 'poi_import',
+        target_id: 'osm/CZ',
+      });
+      // `storeExtract`'s own `pipeline()` already consumed + closed the
+      // stream on this path — the handler must not ALSO destroy it.
+      expect(fakeStream.destroy).not.toHaveBeenCalled();
       // Multer's OWN disk-temp file (distinct from storeExtract's internal
       // `.part` staging file, which it manages itself) is ours to remove.
       expect(unlinkMock).toHaveBeenCalledWith(file.path);
     });
 
-    it('still cleans up the multer temp file when storeExtract rejects', async () => {
-      createReadStreamMock.mockReturnValue({} as never);
-      svc.storeExtract.mockRejectedValueOnce(new Error('boom'));
+    // #847 review Task 6 fix 1: `storeExtract` validates size/source/
+    // code/extension BEFORE it ever starts reading from the stream, so a
+    // rejected upload used to leave the just-opened read stream neither
+    // consumed nor destroyed — an fd leak that only clears on process exit.
+    // Repeated bad admin uploads (wrong extension, oversize, unknown
+    // source/region) would eventually exhaust the process fd ulimit.
+    it('destroys the stream, rethrows, and still cleans up the multer temp file when storeExtract rejects', async () => {
+      const fakeStream = { destroy: jest.fn() };
+      createReadStreamMock.mockReturnValue(fakeStream as never);
+      const rejection = new BadRequestException('expected a .osm file');
+      svc.storeExtract.mockRejectedValueOnce(rejection);
 
-      await expect(ctrl.uploadExtract('osm', 'CZ', file)).rejects.toThrow(
-        'boom',
-      );
+      await expect(
+        ctrl.uploadExtract(adminReq(), 'osm', 'CZ', file),
+      ).rejects.toBe(rejection);
 
+      expect(fakeStream.destroy).toHaveBeenCalledTimes(1);
       expect(unlinkMock).toHaveBeenCalledWith(file.path);
     });
   });

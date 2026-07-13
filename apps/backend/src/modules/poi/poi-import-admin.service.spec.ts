@@ -46,7 +46,10 @@ import type { FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { PoiImportAdminService } from './poi-import-admin.service.js';
+import {
+  POI_UPLOAD_MAX_BYTES,
+  PoiImportAdminService,
+} from './poi-import-admin.service.js';
 import type { PoiImportRun } from '../../entities/poi-import-run.entity.js';
 
 const statMock = jest.mocked(stat);
@@ -613,34 +616,30 @@ describe('PoiImportAdminService', () => {
       return readdirSync(dir).filter((f) => f.endsWith('.part'));
     }
 
+    // `POI_UPLOAD_MAX_BYTES` is a module-level constant now shared with
+    // `AdminPoiController`'s multer config (#847 review Task 6 fix 3), read
+    // once at module load rather than per instance — so this test exercises
+    // the real configured boundary (`+ 1`) instead of overriding
+    // `TARMOTO_POI_UPLOAD_MAX_BYTES` at runtime, which would no longer have
+    // any effect once the module has already been imported.
     it('rejects an oversize upload with 400 before touching the filesystem', async () => {
-      const original = process.env.TARMOTO_POI_UPLOAD_MAX_BYTES;
-      process.env.TARMOTO_POI_UPLOAD_MAX_BYTES = '10';
-      try {
-        const importer = makeStoreImporter();
-        const svc = new PoiImportAdminService(
-          [importer] as never,
-          {} as never,
-          {} as never,
-          {} as never,
-        );
+      const importer = makeStoreImporter();
+      const svc = new PoiImportAdminService(
+        [importer] as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
 
-        await expect(
-          svc.storeExtract('osm', 'CZ', {
-            stream: Readable.from(Buffer.from('irrelevant')),
-            size: 11,
-            originalName: 'cz.osm',
-          }),
-        ).rejects.toMatchObject({ status: 400 });
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('irrelevant')),
+          size: POI_UPLOAD_MAX_BYTES + 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
 
-        expect(leftoverPartFiles()).toEqual([]);
-      } finally {
-        if (original === undefined) {
-          delete process.env.TARMOTO_POI_UPLOAD_MAX_BYTES;
-        } else {
-          process.env.TARMOTO_POI_UPLOAD_MAX_BYTES = original;
-        }
-      }
+      expect(leftoverPartFiles()).toEqual([]);
     });
 
     it('rejects an unknown source with 400', async () => {
