@@ -761,12 +761,15 @@ function RatingSelector({
             style={styles.ratingStar}
           >
             <Icon
-              name={filled ? "star" : "star-outline"}
+              name="star"
               size={36}
-              // Empty stars are the required, interactive rating target, so
-              // they use `dim` (~5:1) rather than `faint` (~1.5:1) to stay
-              // discoverable; the filled state keeps the accent.
+              // Lucide's star is a single outline glyph, so the selected state
+              // is the accent stroke *plus* an accent fill — matching the old
+              // Material filled/outline pair. Empty stars are the required,
+              // interactive rating target, so they use `dim` (~5:1) rather than
+              // `faint` (~1.5:1) to stay discoverable.
               color={filled ? ACCENT_DARK : t.dim}
+              fill={filled ? ACCENT_DARK : "none"}
             />
           </Pressable>
         );
