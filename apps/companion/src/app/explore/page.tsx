@@ -13,6 +13,7 @@ import {
   Layers3,
   TriangleAlert,
   Siren,
+  Info,
 } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -34,8 +35,13 @@ import {
   TripDetailSidebar,
   type TripDetailPanelState,
 } from "@/components/roads/TripDetailSidebar";
-import { ApiError, roadsApi, tripsApi } from "@/lib/api";
+import {
+  RideDetailSidebar,
+  type RideDetailPanelState,
+} from "@/components/roads/RideDetailSidebar";
+import { ApiError, api, roadsApi, tripsApi } from "@/lib/api";
 import { useUserTrips } from "@/hooks/useUserTrips";
+import { useUserRideTracks } from "@/hooks/useUserRideTracks";
 import { tripFromDetail } from "@/lib/trip-from-detail";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -257,6 +263,13 @@ function ExplorerPageInner() {
   const [tripDetailState, setTripDetailState] = useState<TripDetailPanelState>({
     status: "idle",
   });
+  // "My rides" overlay: the rider's ride tracks + the drawer for a clicked ride.
+  const { tracks: rideTracks, truncated: rideTracksTruncated } =
+    useUserRideTracks({ enabled: showMyRides });
+  const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  const [rideDetailState, setRideDetailState] = useState<RideDetailPanelState>({
+    status: "idle",
+  });
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -404,14 +417,62 @@ function ExplorerPageInner() {
       cancelled = true;
     };
   }, [selectedTripId]);
-  // Toggling "My trips" off closes any open trip drawer.
+  // Load the clicked ride's detail into the drawer.
+  useEffect(() => {
+    if (!selectedRideId) {
+      setRideDetailState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setRideDetailState({ status: "loading", rideId: selectedRideId });
+    api
+      .GET("/api/v1/rides/{rideId}", {
+        params: { path: { rideId: selectedRideId } },
+        signal: controller.signal,
+      })
+      .then(({ data, error, response }) => {
+        if (cancelled) return;
+        if (response?.status === 404) {
+          setRideDetailState({ status: "not-found", rideId: selectedRideId });
+          return;
+        }
+        if (error || !data) {
+          setRideDetailState({
+            status: "error",
+            rideId: selectedRideId,
+            message: "Could not load this ride.",
+          });
+          return;
+        }
+        setRideDetailState({ status: "ready", ride: data });
+      })
+      .catch((err) => {
+        if (cancelled || (err as { name?: string }).name === "AbortError")
+          return;
+        setRideDetailState({
+          status: "error",
+          rideId: selectedRideId,
+          message: "Could not load this ride.",
+        });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedRideId]);
+  // Toggling a route overlay off closes its drawer.
   useEffect(() => {
     if (!showMyTrips) setSelectedTripId(null);
   }, [showMyTrips]);
+  useEffect(() => {
+    if (!showMyRides) setSelectedRideId(null);
+  }, [showMyRides]);
   // A session/account change (sign-in as another user, sign-out) must never
-  // leave the previous rider's private trip drawer open.
+  // leave the previous rider's private trip/ride drawer open.
   useEffect(() => {
     setSelectedTripId(null);
+    setSelectedRideId(null);
   }, [authUserId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   // Road quality and surface are mutually exclusive overlays (one line-coloring
@@ -624,12 +685,21 @@ function ExplorerPageInner() {
               showMyTrips={showMyTrips}
               trips={trips}
               onTripSelect={(tripId) => {
-                // One drawer at a time — a trip click supersedes a segment.
+                // One drawer at a time — a trip click supersedes ride/segment.
                 setSelectedSegmentId(null);
+                setSelectedRideId(null);
                 setSelectedTripId(tripId);
+              }}
+              showMyRides={showMyRides}
+              rideTracks={rideTracks}
+              onRideSelect={(rideId) => {
+                setSelectedSegmentId(null);
+                setSelectedTripId(null);
+                setSelectedRideId(rideId);
               }}
               onSegmentSelect={(segmentId) => {
                 setSelectedTripId(null);
+                setSelectedRideId(null);
                 setSelectedSegmentId(segmentId);
               }}
               selectedSegmentId={selectedSegmentId}
@@ -778,6 +848,21 @@ function ExplorerPageInner() {
             conditions={showConditionsLayer}
             hazards={showHazardOverlay}
           />
+
+          {/* The overlay caps how many routes it draws (server-side, ≤500).
+              When the rider has more route-bearing rides than that, say so
+              rather than letting the partial overlay read as complete history.
+              Uses the actual returned count so the copy stays correct whatever
+              the configured cap is. Bottom-center clears the bottom-left
+              legend; pointer-events-none so it never blocks the map. */}
+          {showMyRides && rideTracksTruncated && (
+            <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+              <Info size={13} className="shrink-0 text-accent" aria-hidden />
+              {t("Showing your {count} most recent routes", {
+                count: rideTracks.length,
+              })}
+            </div>
+          )}
           <SegmentDetailSidebar
             state={segmentDetailState}
             onClose={() => setSelectedSegmentId(null)}
@@ -790,6 +875,11 @@ function ExplorerPageInner() {
           <TripDetailSidebar
             state={tripDetailState}
             onClose={() => setSelectedTripId(null)}
+            anchor={isAuthenticated ? "viewport" : "container"}
+          />
+          <RideDetailSidebar
+            state={rideDetailState}
+            onClose={() => setSelectedRideId(null)}
             anchor={isAuthenticated ? "viewport" : "container"}
           />
 

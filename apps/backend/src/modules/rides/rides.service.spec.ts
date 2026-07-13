@@ -1038,6 +1038,15 @@ describe('RidesService', () => {
       expect(res.truncated).toBe(true);
     });
 
+    it('bounds the geometry query at the overlay cap (default 500)', async () => {
+      const qb = makeTracksQbSpy([], 0);
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.getTracks('user-1', {});
+
+      expect(qb.limit).toHaveBeenCalledWith(500);
+    });
+
     it('excludes null-geometry rides at query level', async () => {
       const qb = makeTracksQbSpy([], 0);
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
