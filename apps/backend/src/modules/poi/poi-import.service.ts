@@ -54,6 +54,15 @@ const UPSERT_CHUNK = 500;
 const MAX_TOMBSTONE_FRACTION = 0.5;
 const MIN_REGION_FOR_TOMBSTONE_GUARD = 50;
 
+/**
+ * Fixed namespace for the per-(source, region) advisory lock (#847) that
+ * serializes a manual admin trigger against the weekly cron on the same
+ * region — `pg_try_advisory_lock(ns, key)`'s first arg, scoping these locks
+ * away from any other 2-int advisory lock the app might add later. Arbitrary
+ * but stable across the process ('POI\x01' packed into an int32).
+ */
+const LOCK_NAMESPACE = 0x504f_4901;
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size)
@@ -196,9 +205,74 @@ export class PoiImportService {
     return results;
   }
 
+  /**
+   * Deterministic 32-bit key from `source:code` so e.g. (osm, CZ) and
+   * (fsq, CZ) never collide under the shared `LOCK_NAMESPACE`.
+   */
+  private advisoryKey(source: string, code: string): number {
+    const s = `${source}:${code}`;
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+    }
+    return h;
+  }
+
   async importRegion(region: PoiImportRegion): Promise<PoiImportResult> {
     await this.assertStoreReachable();
 
+    // Serialize same-(source, region) imports (#847): a manual admin trigger
+    // must not race the weekly cron importing the same region. A PostgreSQL
+    // SESSION advisory lock (`pg_try_advisory_lock` / `pg_advisory_unlock`) is
+    // held by the specific DB CONNECTION that acquired it — issuing the lock
+    // and the unlock as two separate calls through the pooled `poiDataSource`
+    // risks the pool handing them to two DIFFERENT connections, which would
+    // run the unlock on a connection that never held the lock and leak the
+    // lock forever (it would then never release until that connection is
+    // torn down). A dedicated QueryRunner pins ONE connection for exactly
+    // this lock/unlock pair. `importRegionBody` below does NOT need `runner`
+    // — it's free to use the pool as before (`withPoiRepo`); serialization
+    // comes from a concurrent same-(source, region) caller failing ITS OWN
+    // `pg_try_advisory_lock` call on ITS OWN runner, not from which
+    // connection does the writing.
+    const key = this.advisoryKey(this.source, region.code);
+    const runner = this.poiDataSource.createQueryRunner();
+    await runner.connect();
+    try {
+      // `QueryRunner.query` (unlike `EntityManager.query`) has no generic
+      // overload in this TypeORM version — it always returns `Promise<any>` —
+      // so the shape is asserted on the result instead.
+      const got = (await runner.query(
+        'SELECT pg_try_advisory_lock($1, $2) AS locked',
+        [LOCK_NAMESPACE, key],
+      )) as { locked: boolean }[];
+      if (!got?.[0]?.locked) {
+        throw new Error(
+          `POI import for ${this.source}/${region.code} is already running — retry later`,
+        );
+      }
+      try {
+        return await this.importRegionBody(region);
+      } finally {
+        await runner.query('SELECT pg_advisory_unlock($1, $2)', [
+          LOCK_NAMESPACE,
+          key,
+        ]);
+      }
+    } finally {
+      await runner.release();
+    }
+  }
+
+  /**
+   * The parse + upsert + tombstone body, run while `importRegion` holds the
+   * per-(source, region) advisory lock (see there for why the lock needs a
+   * pinned connection). Split out purely so that lock/unlock wrapper doesn't
+   * force re-indenting this whole (already long) method.
+   */
+  private async importRegionBody(
+    region: PoiImportRegion,
+  ): Promise<PoiImportResult> {
     const path = this.extractPath(region);
     if (!existsSync(path)) {
       // A configured region without an extract yet — skip (with a clear log)

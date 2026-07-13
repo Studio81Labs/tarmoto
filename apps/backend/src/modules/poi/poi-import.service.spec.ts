@@ -141,6 +141,10 @@ describe('PoiImportService', () => {
   let upsert: jest.Mock;
   let txQuery: jest.Mock;
   let probe: jest.Mock;
+  let runnerConnect: jest.Mock;
+  let runnerQuery: jest.Mock;
+  let runnerRelease: jest.Mock;
+  let createQueryRunner: jest.Mock;
   let dataSource: DataSource;
   let config: PoiImportConfig;
   let service: PoiImportService;
@@ -163,10 +167,24 @@ describe('PoiImportService', () => {
       },
     };
     probe = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+    // The per-(source, region) advisory lock (#847) runs on a dedicated
+    // QueryRunner (connection affinity for lock + unlock), not the pooled
+    // `dataSource.query`. Default to "lock acquired" so every existing import
+    // test proceeds unaffected; the lock-specific tests below override
+    // `runnerQuery`'s resolved value per case.
+    runnerConnect = jest.fn().mockResolvedValue(undefined);
+    runnerQuery = jest.fn().mockResolvedValue([{ locked: true }]);
+    runnerRelease = jest.fn().mockResolvedValue(undefined);
+    createQueryRunner = jest.fn(() => ({
+      connect: runnerConnect,
+      query: runnerQuery,
+      release: runnerRelease,
+    }));
     dataSource = {
       isInitialized: true,
       query: probe,
       getRepository: jest.fn(() => repo),
+      createQueryRunner,
     } as unknown as DataSource;
     config = { enabled: true, extractDir: '/extracts', regions: [REGION] };
     service = new PoiImportService(dataSource, config);
@@ -201,6 +219,59 @@ describe('PoiImportService', () => {
   it('reflects the enabled flag and the configured regions', () => {
     expect(service.enabled).toBe(true);
     expect(service.regions).toEqual([REGION]);
+  });
+
+  describe('per-region advisory lock (#847: manual trigger vs. cron)', () => {
+    it('acquires and releases the lock on ONE pinned QueryRunner (connection affinity)', async () => {
+      mockExtract(poi({ external_id: 'node/1' }));
+
+      await service.importRegion(REGION);
+
+      // Exactly one QueryRunner is created for the whole call — the lock and
+      // the unlock must run on the SAME connection, not two pool checkouts.
+      expect(createQueryRunner).toHaveBeenCalledTimes(1);
+      expect(runnerConnect).toHaveBeenCalledTimes(1);
+      expect(runnerQuery).toHaveBeenCalledTimes(2);
+      const lockCalls = runnerQuery.mock.calls as Array<[string, unknown[]]>;
+      expect(lockCalls[0]?.[0]).toMatch(/pg_try_advisory_lock/);
+      expect(lockCalls[1]?.[0]).toMatch(/pg_advisory_unlock/);
+      // Both calls target the same (namespace, key) pair.
+      expect(lockCalls[1]?.[1]).toEqual(lockCalls[0]?.[1]);
+      expect(runnerRelease).toHaveBeenCalledTimes(1);
+      // The pooled `dataSource.query` never sees the advisory-lock SQL — the
+      // lock/unlock ran on the pinned runner, never the shared pool.
+      expect(probe).not.toHaveBeenCalledWith(
+        expect.stringContaining('advisory'),
+      );
+    });
+
+    it('throws (and never touches the extract) when the region is already locked by a concurrent import', async () => {
+      runnerQuery.mockResolvedValueOnce([{ locked: false }]); // the pg_try_advisory_lock call only
+
+      await expect(service.importRegion(REGION)).rejects.toThrow(
+        /already running/,
+      );
+      expect(existsSyncMock).not.toHaveBeenCalled();
+      expect(parsePoiExtractMock).not.toHaveBeenCalled();
+      expect(upsert).not.toHaveBeenCalled();
+      // No unlock call — the lock was never acquired — but the runner backing
+      // the failed attempt is still released back to the pool.
+      expect(runnerQuery).toHaveBeenCalledTimes(1);
+      expect(runnerRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('still unlocks and releases the runner when the import body throws', async () => {
+      mockExtract(poi({ external_id: 'node/1' }));
+      upsert.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(service.importRegion(REGION)).rejects.toThrow('boom');
+
+      // The finally-unwind still ran despite the throw deep inside the body.
+      expect(runnerQuery).toHaveBeenCalledTimes(2);
+      const unlockCalls = runnerQuery.mock.calls as Array<[string, unknown[]]>;
+      expect(unlockCalls[1]?.[0]).toMatch(/pg_advisory_unlock/);
+      expect(runnerRelease).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('imports a region: upserts by (source, external_id) with a revive (deactivated_at:null) and a Point geom', async () => {
