@@ -14,9 +14,14 @@ const EMPTY: RideTrack[] = [];
  * (`TARMOTO_RIDE_OVERLAY_LIMIT`, ≤500), so the client sends no limit. Geometry
  * only — the drawer fetches full ride detail on click. Auth-gated + `enabled`
  * so the explorer only pulls it while the overlay is on.
+ *
+ * `truncated` is carried through from the response so the caller can tell the
+ * rider when older routes are hidden by the cap (rather than silently showing
+ * an incomplete overlay).
  */
 export function useUserRideTracks(options?: { enabled?: boolean }): {
   tracks: RideTrack[];
+  truncated: boolean;
   loading: boolean;
   error: boolean;
 } {
@@ -31,12 +36,14 @@ export function useUserRideTracks(options?: { enabled?: boolean }): {
         signal,
       });
       if (error || !data) throw new Error("ride tracks fetch failed");
-      return (data as RideTracksResponse).tracks ?? [];
+      const res = data as RideTracksResponse;
+      return { tracks: res.tracks ?? EMPTY, truncated: res.truncated ?? false };
     },
   });
 
   return {
-    tracks: query.data ?? EMPTY,
+    tracks: query.data?.tracks ?? EMPTY,
+    truncated: query.data?.truncated ?? false,
     loading: query.isLoading,
     error: query.isError,
   };

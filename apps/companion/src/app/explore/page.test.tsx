@@ -80,7 +80,12 @@ vi.mock("@/hooks/useUserTrips", () => ({
   }),
 }));
 vi.mock("@/hooks/useUserRideTracks", () => ({
-  useUserRideTracks: () => ({ tracks: [], loading: false, error: false }),
+  useUserRideTracks: () => ({
+    tracks: [],
+    truncated: false,
+    loading: false,
+    error: false,
+  }),
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({

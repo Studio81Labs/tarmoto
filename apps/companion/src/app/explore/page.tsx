@@ -13,6 +13,7 @@ import {
   Layers3,
   TriangleAlert,
   Siren,
+  Info,
 } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -263,7 +264,8 @@ function ExplorerPageInner() {
     status: "idle",
   });
   // "My rides" overlay: the rider's ride tracks + the drawer for a clicked ride.
-  const { tracks: rideTracks } = useUserRideTracks({ enabled: showMyRides });
+  const { tracks: rideTracks, truncated: rideTracksTruncated } =
+    useUserRideTracks({ enabled: showMyRides });
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
   const [rideDetailState, setRideDetailState] = useState<RideDetailPanelState>({
     status: "idle",
@@ -846,6 +848,21 @@ function ExplorerPageInner() {
             conditions={showConditionsLayer}
             hazards={showHazardOverlay}
           />
+
+          {/* The overlay caps how many routes it draws (server-side, ≤500).
+              When the rider has more route-bearing rides than that, say so
+              rather than letting the partial overlay read as complete history.
+              Uses the actual returned count so the copy stays correct whatever
+              the configured cap is. Bottom-center clears the bottom-left
+              legend; pointer-events-none so it never blocks the map. */}
+          {showMyRides && rideTracksTruncated && (
+            <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+              <Info size={13} className="shrink-0 text-accent" aria-hidden />
+              {t("Showing your {count} most recent routes", {
+                count: rideTracks.length,
+              })}
+            </div>
+          )}
           <SegmentDetailSidebar
             state={segmentDetailState}
             onClose={() => setSelectedSegmentId(null)}
