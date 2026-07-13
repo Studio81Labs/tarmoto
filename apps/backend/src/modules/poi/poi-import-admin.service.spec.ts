@@ -59,8 +59,9 @@ describe('PoiImportAdminService', () => {
       const dataSource = {
         query: jest.fn((sql: string) => {
           if (sql.includes('poi_import_regions'))
-            return [{ imported_at: '2026-07-10T00:00:00Z' }];
-          if (sql.includes('count(')) return [{ n: '42' }];
+            return [{ code: 'CZ', imported_at: '2026-07-10T00:00:00Z' }];
+          if (sql.toLowerCase().includes('group by'))
+            return [{ source: 'osm', import_region: 'CZ', n: '42' }];
           return [];
         }),
       };
@@ -96,19 +97,20 @@ describe('PoiImportAdminService', () => {
         size_bytes: 10,
         modified_at: new Date(1_720_000_000_000).toISOString(),
       });
-      // Params are bound positionally in (region) / (source, region) order.
+      // The two bulk queries run ONCE each, up front — not once per
+      // (source, region) pair — and take no params (both scan/group across
+      // every row rather than filtering to one region).
+      expect(dataSource.query).toHaveBeenCalledTimes(2);
       expect(dataSource.query).toHaveBeenCalledWith(
         expect.stringContaining('poi_import_regions'),
-        ['CZ'],
       );
       expect(dataSource.query).toHaveBeenCalledWith(
-        expect.stringContaining('count('),
-        ['osm', 'CZ'],
+        expect.stringContaining('GROUP BY'),
       );
     });
 
     it('reports live_state running when the queue has an active job, and extract: null on ENOENT', async () => {
-      const dataSource = { query: jest.fn().mockResolvedValue([{ n: '0' }]) };
+      const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
       const job = { getState: jest.fn().mockResolvedValue('active') };
       const queue = { getJob: jest.fn().mockResolvedValue(job) };
@@ -224,8 +226,20 @@ describe('PoiImportAdminService', () => {
       });
     });
 
-    it('assembles one row per (source, region) across multiple importers/regions, in registry order', async () => {
-      const dataSource = { query: jest.fn().mockResolvedValue([]) };
+    it('assembles one row per (source, region) across multiple importers/regions, in registry order, scoping coverage to OSM only and counts per (source, region)', async () => {
+      const dataSource = {
+        query: jest.fn((sql: string) => {
+          if (sql.includes('poi_import_regions'))
+            return [{ code: 'CZ', imported_at: '2026-07-10T00:00:00Z' }];
+          if (sql.toLowerCase().includes('group by'))
+            return [
+              { source: 'osm', import_region: 'CZ', n: '42' },
+              { source: 'osm', import_region: 'SK', n: '7' },
+              { source: 'fsq', import_region: 'CZ', n: '13' },
+            ];
+          return [];
+        }),
+      };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
       const queue = { getJob: jest.fn().mockResolvedValue(null) };
       statMock.mockRejectedValue(
@@ -257,6 +271,28 @@ describe('PoiImportAdminService', () => {
         ['osm', 'SK'],
         ['fsq', 'CZ'],
       ]);
+
+      const [osmCz, osmSk, fsqCz] = rows;
+      // OSM/CZ keeps the coverage stamp `poi_import_regions` has for CZ...
+      expect(osmCz?.imported_at).toBe('2026-07-10T00:00:00.000Z');
+      // ...OSM/SK has no coverage row in the mock, so it's uncovered...
+      expect(osmSk?.imported_at).toBeNull();
+      // ...and FSQ/CZ must NOT reuse OSM/CZ's stamp for the SAME region code
+      // — `poi_import_regions` has no `source` column, so without the
+      // source-scope check every non-OSM row would falsely inherit
+      // whatever OSM's own coverage says (#847 review, fix 1).
+      expect(fsqCz?.imported_at).toBeNull();
+
+      // Each row's poi_count comes from the grouped (source, import_region)
+      // map, not a shared/misattributed count.
+      expect(osmCz?.poi_count).toBe(42);
+      expect(osmSk?.poi_count).toBe(7);
+      expect(fsqCz?.poi_count).toBe(13);
+
+      // Both bulk queries run exactly once regardless of how many (source,
+      // region) pairs exist — 2 calls total, not 2-per-pair (6) — proving
+      // the N+1 fix (#847 review, fix 2).
+      expect(dataSource.query).toHaveBeenCalledTimes(2);
     });
   });
 

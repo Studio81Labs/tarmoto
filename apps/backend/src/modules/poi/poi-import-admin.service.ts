@@ -39,6 +39,12 @@ export interface RegionImportStatus {
    *  `regions` list, so `listRegionStatus` never asks about an out-of-scope
    *  code. Kept on the wire shape for a future "known but unconfigured" row. */
   configured: boolean;
+  /** Coverage stamp — OSM-only. `poi_import_regions` (the table this comes
+   *  from) has no `source` column and is only ever stamped by the OSM
+   *  import path (`PoiImportService.importRegionBody`, gated on `source ===
+   *  'osm'`), so a non-OSM row (e.g. `fsq`) always reports `null` here
+   *  instead of reusing OSM's own stamp for the same region code (design
+   *  spec §11 — "coverage: OSM-only" rather than a misleading badge). */
   imported_at: string | null;
   poi_count: number;
   extract: {
@@ -91,39 +97,69 @@ export class PoiImportAdminService {
   /**
    * One row per `(source, region)` across every registered importer, in
    * registry order (OSM first, then FSQ — see `POI_IMPORT_SOURCES`).
+   *
+   * Two bulk queries up front (#847 review) replace what used to be two
+   * queries PER `(source, region)` pair — at continent scale (~34 pairs)
+   * that was ~68 sequential round-trips per page load, each count query
+   * re-scanning `pois` for just its own `(source, region)`. Now:
+   *  - one scan of `poi_import_regions` for every region's coverage stamp, and
+   *  - one `GROUP BY (source, import_region)` count over `pois`
+   * cover every pair, keyed into two `Map`s the per-pair loop below just
+   * reads. The remaining per-region work — an extract-file `stat`, a
+   * `poi_import_runs` lookup, and a BullMQ `getJob` probe — can't be batched
+   * the same way, so it runs concurrently across every pair via
+   * `Promise.all` instead of the previous sequential `for` loop.
    */
   async listRegionStatus(): Promise<RegionImportStatus[]> {
-    const out: RegionImportStatus[] = [];
-    for (const importer of this.importers) {
-      for (const region of importer.regions) {
-        out.push(await this.statusFor(importer, region.code));
-      }
-    }
-    return out;
+    const pairs = this.importers.flatMap((importer) =>
+      importer.regions.map((region) => ({ importer, code: region.code })),
+    );
+
+    const [coverageRows, countRows] = await Promise.all([
+      this.poi.query<{ code: string; imported_at: string | null }[]>(
+        `SELECT code, imported_at FROM poi_import_regions`,
+      ),
+      this.poi.query<
+        { source: string; import_region: string; n: number | string }[]
+      >(
+        `SELECT source, import_region, count(*)::int AS n
+           FROM pois
+           WHERE deactivated_at IS NULL AND import_region IS NOT NULL
+           GROUP BY source, import_region`,
+      ),
+    ]);
+    const coverageByCode = new Map(
+      coverageRows.map((r) => [r.code, r.imported_at]),
+    );
+    const countBySourceRegion = new Map(
+      countRows.map((r) => [`${r.source}:${r.import_region}`, Number(r.n)]),
+    );
+
+    return Promise.all(
+      pairs.map(({ importer, code }) =>
+        this.statusFor(importer, code, coverageByCode, countBySourceRegion),
+      ),
+    );
   }
 
   private async statusFor(
     importer: PoiImportService,
     code: string,
+    coverageByCode: Map<string, string | null>,
+    countBySourceRegion: Map<string, number>,
   ): Promise<RegionImportStatus> {
     const source = importer.source;
-    const [covRows, countRows] = await Promise.all([
-      this.poi.query<{ imported_at: string | null }[]>(
-        `SELECT imported_at FROM poi_import_regions WHERE code = $1`,
-        [code],
-      ),
-      this.poi.query<{ n: number | string }[]>(
-        `SELECT count(*)::int AS n FROM pois
-           WHERE source = $1 AND import_region = $2 AND deactivated_at IS NULL`,
-        [source, code],
-      ),
-    ]);
-    const covRow = covRows[0];
-    const countRow = countRows[0];
-    const imported_at = covRow?.imported_at
-      ? new Date(covRow.imported_at).toISOString()
-      : null;
-    const poi_count = Number(countRow?.n ?? 0);
+
+    // OSM-only (design spec §11): `poi_import_regions` has no `source`
+    // column and is only ever stamped by the OSM import path, so reading
+    // the coverage map for a non-OSM source would silently surface OSM's
+    // own stamp under e.g. the `fsq` row for the same region code. Every
+    // non-OSM source gets `imported_at: null` without even consulting the
+    // map.
+    const coverageAt =
+      source === 'osm' ? (coverageByCode.get(code) ?? null) : null;
+    const imported_at = coverageAt ? new Date(coverageAt).toISOString() : null;
+    const poi_count = countBySourceRegion.get(`${source}:${code}`) ?? 0;
 
     // The extract file lives outside the DB (an operator-uploaded blob under
     // TARMOTO_*_IMPORT_DIR), so its presence is a filesystem stat, not a
@@ -184,18 +220,25 @@ export class PoiImportAdminService {
 
   /**
    * Run history, newest first, optionally scoped to a source and/or region
-   * code and capped at `limit` — the admin page's run-log panel.
+   * code and capped at `limit` (clamped to `[1, 200]`, default `50` — see
+   * below) — the admin page's run-log panel.
    */
   async listRuns(filter: {
     source?: string;
     code?: string;
     limit: number;
   }): Promise<RunSummary[]> {
+    // Clamp caller-supplied limit: a 0/negative/NaN value falls back to the
+    // 50 default (`Math.trunc(...) || 50` — `||` only catches falsy, so a
+    // genuine negative int isn't redirected to the default; it's caught by
+    // the `Math.max(1, ...)` floor instead), and anything above 200 is
+    // capped — an untrusted huge value would otherwise over-fetch.
+    const limit = Math.min(Math.max(1, Math.trunc(filter.limit) || 50), 200);
     const qb = this.runs
       .createQueryBuilder('r')
       .orderBy('r.started_at', 'DESC')
       .addOrderBy('r.id', 'DESC')
-      .limit(filter.limit);
+      .limit(limit);
     if (filter.source) {
       qb.andWhere('r.source = :source', { source: filter.source });
     }
