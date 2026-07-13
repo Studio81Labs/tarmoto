@@ -89,15 +89,42 @@ test("preserves multiple Set-Cookie headers from the backend", async () => {
   assert.ok(cookies.some((c) => c.startsWith("tarmoto_admin_refresh=")));
 });
 
-test("rejects an over-large request body with 413", async () => {
-  const big = "x".repeat(1024 * 1024 + 1);
+test("fast-rejects a body whose declared content-length exceeds the cap with 413", async () => {
+  // Declared content-length over the 200 MB cap → 413 before streaming a byte.
   const res = await handleAdminRequest(
-    new Request("https://admin.tarmoto.test/admin/content", {
+    {
       method: "POST",
-      body: big,
-    }),
+      url: "https://admin.tarmoto.test/admin/poi/regions/osm/CZ/extract",
+      headers: new Headers({
+        "content-length": String(200 * 1024 * 1024 + 1),
+      }),
+      body: null,
+    },
     ENV,
     () => new Response("{}", { status: 200 }),
   );
   assert.equal(res.status, 413);
+});
+
+test("streams a multi-MB upload body through (no 1 MB buffer cap)", async () => {
+  // A >1 MB body — which the old buffer cap 413'd — now streams straight to the
+  // backend, which is the real size enforcer.
+  let captured;
+  const fetchImpl = (req) => {
+    captured = req;
+    return new Response("{}", { status: 200 });
+  };
+  const res = await handleAdminRequest(
+    new Request("https://admin.tarmoto.test/admin/poi/regions/osm/CZ/extract", {
+      method: "POST",
+      body: "x".repeat(1024 * 1024 + 1),
+    }),
+    ENV,
+    fetchImpl,
+  );
+  assert.equal(res.status, 200);
+  assert.equal(
+    new URL(captured.url).pathname,
+    "/admin/poi/regions/osm/CZ/extract",
+  );
 });

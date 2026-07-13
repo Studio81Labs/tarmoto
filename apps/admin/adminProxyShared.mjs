@@ -14,7 +14,14 @@
 // depth).
 
 export const API_PROXY_PREFIX = "/admin/";
-export const MAX_PROXY_BODY_BYTES = 1024 * 1024;
+// Fast-reject cap on a proxied request's DECLARED content-length. Sized to the
+// backend's POI extract-upload limit (TARMOTO_POI_UPLOAD_MAX_BYTES default,
+// 200 MB) so admin file uploads pass — the old 1 MB cap 413'd every upload. The
+// worker STREAMS the body (never buffers — a Worker has a ~128 MB memory cap),
+// so the backend's multer limit is the real enforcer; this only fast-rejects an
+// honestly-oversized declared length. NOTE: Cloudflare's platform separately
+// caps request bodies per plan (~100 MB Free/Pro) in front of the Worker.
+export const MAX_PROXY_BODY_BYTES = 200 * 1024 * 1024;
 export const INTERNAL_TOKEN_HEADER = "x-internal-token";
 
 export const HOP_BY_HOP_HEADERS = new Set([
