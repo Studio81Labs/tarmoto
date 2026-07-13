@@ -64,6 +64,16 @@ COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
 COPY docs/database/ docs/database/
 
+# Persistent POI-extract volume mount point (#847 admin uploads). The admin
+# upload writes the extract here and the import reads it, so this must be a
+# writable volume mounted at TARMOTO_POI_IMPORT_DIR / TARMOTO_FSQ_IMPORT_DIR.
+# Create it owned by `tarmoto` while still root so a FRESH named volume mounted
+# here inherits that ownership (Docker copies an empty volume's owner from the
+# image mount point on first mount) and the non-root runtime user can write —
+# otherwise the volume comes up root-owned and uploads fail with EACCES. If the
+# volume already exists root-owned, recreate it (or chown it once).
+RUN mkdir -p /data/poi-extracts && chown tarmoto:tarmoto /data/poi-extracts
+
 USER tarmoto
 EXPOSE 3000
 
