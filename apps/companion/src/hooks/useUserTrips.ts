@@ -41,7 +41,7 @@ export const USER_TRIPS_QUERY_KEY = (userId: string | null) =>
  * available until refetch lands, which would let this write-
  * through overwrite the post-mutation store).
  */
-export function useUserTrips(): {
+export function useUserTrips(options?: { enabled?: boolean }): {
   trips: TripSummary[];
   loading: boolean;
   error: boolean;
@@ -52,10 +52,13 @@ export function useUserTrips(): {
   const storeTrips = useTripStore((s) => s.trips);
   const tripsOwnerId = useTripStore((s) => s.tripsOwnerId);
   const queryClient = useQueryClient();
+  // Defaults to on; the explorer passes `false` while the My-trips overlay is
+  // off so opening Explorer doesn't fire the (geospatial) trip-outline list.
+  const enabled = userId != null && (options?.enabled ?? true);
 
   const query = useQuery({
     queryKey: USER_TRIPS_QUERY_KEY(userId),
-    enabled: userId != null,
+    enabled,
     queryFn: async ({ signal }) => {
       const { data, error } = await api.GET("/api/v1/trips", { signal });
       if (error) throw new Error("trips fetch failed");
