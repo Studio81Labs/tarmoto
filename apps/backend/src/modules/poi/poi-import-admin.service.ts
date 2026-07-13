@@ -96,11 +96,14 @@ export const POI_UPLOAD_MAX_BYTES =
  * per-`(source, region)` coverage/count/extract-presence/last-run/
  * live-queue-state (`listRegionStatus`), plus run history (`listRuns`).
  * Write side — validated atomic extract upload (`storeExtract`) and a manual
- * region-import trigger (`triggerImport`). Both sides share `manualJobId`,
- * the deterministic id that ties them together: `listRegionStatus` probes it
- * to report `live_state`, and `triggerImport` enqueues with it so a repeated
- * manual click dedupes against the SAME BullMQ job instead of double-running
- * the import.
+ * region-import trigger (`triggerImport`). `triggerImport` enqueues with the
+ * deterministic `manualJobId`, so a repeated manual click dedupes against the
+ * SAME BullMQ job instead of double-running the import. `listRegionStatus`'s
+ * `live_state` is derived separately — a broader in-flight scan matching
+ * payload `(source, code)` across active/waiting/delayed/prioritized jobs
+ * (cron-dispatched or manual alike), mirroring `triggerImport`'s own 409
+ * guard, rather than a `manualJobId` probe (#847 review — a `manualJobId`-only
+ * probe missed the weekly dispatcher's own in-flight jobs).
  */
 @Injectable()
 export class PoiImportAdminService {
@@ -116,18 +119,19 @@ export class PoiImportAdminService {
 
   /**
    * Deterministic BullMQ job id for a manual admin trigger of `(source,
-   * code)`. `listRegionStatus` probes this id (via `queue.getJob`) to report
-   * `live_state`; `triggerImport` (below) enqueues the region job with this
-   * SAME id, so BullMQ's duplicate-jobId dedup keeps a second admin click
-   * from double-running an import that's already queued or in flight. `:` is
+   * code)`. `triggerImport` (below) enqueues the region job with this id, so
+   * BullMQ's duplicate-jobId dedup keeps a second admin click from
+   * double-running an import that's already queued or in flight. `:` is
    * BullMQ's Redis-key delimiter (mirrors
    * `JobsProducer.enqueuePoiImportRegion`'s identical convention for the
    * cron-dispatched sibling jobId), so it's stripped after building the
    * readable id. The literal `manual` segment (rather than a dispatch/run id)
    * is what keeps this permanently distinct from any cron-dispatched
-   * `import-region:<dispatchId>:<source>:<code>` job for the same region —
-   * `triggerImport`'s in-flight scan is what actually catches THAT job (a
-   * different id entirely), by matching its payload instead of its id.
+   * `import-region:<dispatchId>:<source>:<code>` job for the same region.
+   * Neither `triggerImport`'s in-flight guard nor `listRegionStatus`'s
+   * `live_state` probes this id directly — both match a job's payload
+   * (`data.source`/`data.code`) instead, which is what lets them also catch
+   * that differently-id'd cron job for the same region (#847 review).
    */
   manualJobId(source: string, code: string): string {
     return `import-region:manual:${source}:${code}`.replace(/:/g, '_');
@@ -141,13 +145,18 @@ export class PoiImportAdminService {
    * queries PER `(source, region)` pair — at continent scale (~34 pairs)
    * that was ~68 sequential round-trips per page load, each count query
    * re-scanning `pois` for just its own `(source, region)`. Now:
-   *  - one scan of `poi_import_regions` for every region's coverage stamp, and
-   *  - one `GROUP BY (source, import_region)` count over `pois`
-   * cover every pair, keyed into two `Map`s the per-pair loop below just
-   * reads. The remaining per-region work — an extract-file `stat`, a
-   * `poi_import_runs` lookup, and a BullMQ `getJob` probe — can't be batched
-   * the same way, so it runs concurrently across every pair via
-   * `Promise.all` instead of the previous sequential `for` loop.
+   *  - one scan of `poi_import_regions` for every region's coverage stamp,
+   *  - one `GROUP BY (source, import_region)` count over `pois`, and
+   *  - one BullMQ `getJobs` scan for every in-flight (active/waiting/
+   *    delayed/prioritized) import, cron-dispatched or manual (#847 review
+   *    — `live_state` used to probe `getJob(manualJobId)` per pair, which
+   *    only ever sees a manual admin trigger and misses the weekly
+   *    dispatcher's own jobs entirely; see `statusFor`)
+   * cover every pair, keyed into `Map`s the per-pair loop below just reads.
+   * The remaining per-region work — an extract-file `stat` and a
+   * `poi_import_runs` lookup — can't be batched the same way, so it runs
+   * concurrently across every pair via `Promise.all` instead of the
+   * previous sequential `for` loop.
    */
   async listRegionStatus(): Promise<RegionImportStatus[]> {
     const pairs = this.importers.flatMap((importer) =>
@@ -176,9 +185,45 @@ export class PoiImportAdminService {
       countRows.map((r) => [`${r.source}:${r.import_region}`, Number(r.n)]),
     );
 
+    // Same in-flight criteria as `triggerImport`'s 409 guard, scanned ONCE
+    // here (not once per pair) rather than a per-pair `getJob(manualJobId)`
+    // probe — see the docstring above and `statusFor`'s `live_state` below.
+    const inFlight = await this.queue.getJobs([
+      'active',
+      'waiting',
+      'delayed',
+      'prioritized',
+    ]);
+    const liveBySourceRegion = new Map<string, 'running' | 'queued'>();
+    for (const job of inFlight) {
+      const data = job?.data as PoiImportRegionJobData | undefined;
+      if (!data?.code) continue;
+      const key = `${data.source ?? 'osm'}:${data.code}`;
+      const state = await job.getState();
+      if (state === 'active') {
+        liveBySourceRegion.set(key, 'running');
+      } else if (
+        (state === 'waiting' ||
+          state === 'delayed' ||
+          state === 'prioritized') &&
+        !liveBySourceRegion.has(key)
+      ) {
+        liveBySourceRegion.set(key, 'queued');
+      }
+      // Otherwise (completed/failed/unknown — raced between the scan above
+      // and this job's `getState()`) leave the key unset so the pair below
+      // falls back to 'idle'.
+    }
+
     return Promise.all(
       pairs.map(({ importer, code }) =>
-        this.statusFor(importer, code, coverageByCode, countBySourceRegion),
+        this.statusFor(
+          importer,
+          code,
+          coverageByCode,
+          countBySourceRegion,
+          liveBySourceRegion,
+        ),
       ),
     );
   }
@@ -211,6 +256,7 @@ export class PoiImportAdminService {
     code: string,
     coverageByCode: Map<string, string | null>,
     countBySourceRegion: Map<string, number>,
+    liveBySourceRegion: Map<string, 'running' | 'queued'>,
   ): Promise<RegionImportStatus> {
     const source = importer.source;
 
@@ -227,23 +273,26 @@ export class PoiImportAdminService {
 
     // The extract file lives outside the DB (an operator-uploaded blob under
     // TARMOTO_*_IMPORT_DIR), so its presence is a filesystem stat, not a
-    // query. `getExtractPath` throws when this source's extractDir isn't
-    // configured — same as an ENOENT stat failure, both mean "no extract
-    // available yet" — so both collapse to `extract: null` here rather than
-    // ever 500ing the admin page for an unconfigured/not-yet-provisioned
-    // region.
+    // query. Guarded on `extractDirConfigured` FIRST: an unconfigured extract
+    // dir means "no extract available" without ever calling `getExtractPath`
+    // or touching the filesystem. Once configured, only ENOENT (no extract
+    // uploaded yet) collapses to `extract: null` — any OTHER stat error
+    // (EACCES/ENOTDIR/EIO — a broken mount or permissions problem on the
+    // shared extract volume) is a real operational fault, not "no extract
+    // yet", so it's rethrown rather than silently reported as missing (#847
+    // review).
     let extract: RegionImportStatus['extract'] = null;
-    try {
-      const s = await stat(importer.getExtractPath(code));
-      extract = {
-        present: true,
-        size_bytes: s.size,
-        modified_at: new Date(s.mtimeMs).toISOString(),
-      };
-    } catch {
-      // ENOENT (no extract uploaded yet) or getExtractPath's own throw
-      // (unconfigured extractDir) — both mean "no extract available", so
-      // `extract` is left at its initial `null` rather than reassigned.
+    if (importer.extractDirConfigured) {
+      try {
+        const s = await stat(importer.getExtractPath(code));
+        extract = {
+          present: true,
+          size_bytes: s.size,
+          modified_at: new Date(s.mtimeMs).toISOString(),
+        };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
     }
 
     const runRow = await this.withPoiStore(() =>
@@ -253,24 +302,18 @@ export class PoiImportAdminService {
       }),
     );
 
-    // `live_state` reflects the ONE manual job this (source, region) can have
-    // in flight — the weekly dispatcher's own per-region jobs use a different
-    // (dispatch-scoped) jobId, so they're intentionally invisible here; the
-    // admin page only needs to know whether an admin-triggered run is already
-    // queued/running so it can disable a duplicate manual trigger.
-    const job = await this.queue.getJob(this.manualJobId(source, code));
-    let live_state: RegionImportStatus['live_state'] = 'idle';
-    if (job) {
-      const state = await job.getState();
-      live_state =
-        state === 'active'
-          ? 'running'
-          : state === 'waiting' ||
-              state === 'delayed' ||
-              state === 'prioritized'
-            ? 'queued'
-            : 'idle';
-    }
+    // `live_state` reflects ANY in-flight import for this (source, region)
+    // — cron-dispatched or manual alike — matching `triggerImport`'s own 409
+    // guard (active/waiting/delayed/prioritized, keyed by payload
+    // `data.source`/`data.code`, not a specific jobId). Derived once, up
+    // front, by `listRegionStatus`'s single queue scan (`liveBySourceRegion`
+    // — the caller passes it in) rather than a per-pair `getJob(manualJobId)`
+    // probe: probing only the manual jobId would miss the weekly
+    // dispatcher's own `import-region` jobs (a different id), reporting
+    // `idle` mid-cron-import and letting an admin's Import click 409 (#847
+    // review).
+    const live_state: RegionImportStatus['live_state'] =
+      liveBySourceRegion.get(`${source}:${code}`) ?? 'idle';
 
     return {
       source,

@@ -57,17 +57,22 @@ const openMock = jest.mocked(open);
 const renameMock = jest.mocked(rename);
 
 /** Minimal `PoiImportService` test double — only the surface
- *  `PoiImportAdminService` reads (`source`, `regions`, `getExtractPath`). */
+ *  `PoiImportAdminService` reads (`source`, `regions`, `extractDirConfigured`,
+ *  `getExtractPath`). `extractDirConfigured` defaults `true` so the status
+ *  tests below (which drive `stat` directly via `statMock`) actually reach
+ *  the `stat` call rather than short-circuiting on Fix B's guard. */
 function makeImporter(
   over: {
     source?: string;
     regions?: { code: string; bbox: unknown }[];
+    extractDirConfigured?: boolean;
     getExtractPath?: (code: string) => string;
   } = {},
 ) {
   return {
     source: 'osm',
     regions: [{ code: 'CZ', bbox: {} }],
+    extractDirConfigured: true,
     getExtractPath: (code: string) => `/extracts/${code}.osm`,
     ...over,
   };
@@ -89,8 +94,9 @@ describe('PoiImportAdminService', () => {
 
       expect(svc.manualJobId('osm', 'CZ')).toBe('import-region_manual_osm_CZ');
       expect(svc.manualJobId('fsq', 'CZ')).toBe('import-region_manual_fsq_CZ');
-      // Deterministic — the (later) write-side enqueue must derive the exact
-      // same id for `queue.getJob` here to ever find it.
+      // Deterministic — `triggerImport` (below) must derive the exact same
+      // id on a later call for BullMQ's own jobId dedup to recognize a
+      // repeat manual click as the SAME job.
       expect(svc.manualJobId('osm', 'CZ')).toBe(svc.manualJobId('osm', 'CZ'));
     });
   });
@@ -107,7 +113,7 @@ describe('PoiImportAdminService', () => {
         }),
       };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
-      const queue = { getJob: jest.fn().mockResolvedValue(null) };
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
       statMock.mockResolvedValueOnce({
         size: 10,
         mtimeMs: 1_720_000_000_000,
@@ -153,8 +159,14 @@ describe('PoiImportAdminService', () => {
     it('reports live_state running when the queue has an active job, and extract: null on ENOENT', async () => {
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
-      const job = { getState: jest.fn().mockResolvedValue('active') };
-      const queue = { getJob: jest.fn().mockResolvedValue(job) };
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([
+          {
+            data: { code: 'CZ', source: 'osm' },
+            getState: jest.fn().mockResolvedValue('active'),
+          },
+        ]),
+      };
       statMock.mockRejectedValueOnce(
         Object.assign(new Error('nope'), { code: 'ENOENT' }),
       );
@@ -170,15 +182,22 @@ describe('PoiImportAdminService', () => {
 
       expect(rows[0]?.live_state).toBe('running');
       expect(rows[0]?.extract).toBeNull();
-      // Probed with the SAME deterministic id `manualJobId` derives.
-      expect(queue.getJob).toHaveBeenCalledWith(svc.manualJobId('osm', 'CZ'));
+      // live_state now reflects ANY in-flight job matching (source, code)
+      // from a single `getJobs` scan (Fix A), not a `getJob(manualJobId)`
+      // probe — this job's id is irrelevant, only its `data` payload matters.
     });
 
     it('reports live_state queued when the job is waiting/delayed/prioritized', async () => {
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
-      const job = { getState: jest.fn().mockResolvedValue('waiting') };
-      const queue = { getJob: jest.fn().mockResolvedValue(job) };
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([
+          {
+            data: { code: 'CZ', source: 'osm' },
+            getState: jest.fn().mockResolvedValue('waiting'),
+          },
+        ]),
+      };
       statMock.mockRejectedValueOnce(
         Object.assign(new Error('nope'), { code: 'ENOENT' }),
       );
@@ -198,8 +217,14 @@ describe('PoiImportAdminService', () => {
     it('reports a completed/failed/unknown job state as idle (only active/waiting/delayed/prioritized are live)', async () => {
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
-      const job = { getState: jest.fn().mockResolvedValue('completed') };
-      const queue = { getJob: jest.fn().mockResolvedValue(job) };
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([
+          {
+            data: { code: 'CZ', source: 'osm' },
+            getState: jest.fn().mockResolvedValue('completed'),
+          },
+        ]),
+      };
       statMock.mockRejectedValueOnce(
         Object.assign(new Error('nope'), { code: 'ENOENT' }),
       );
@@ -233,7 +258,7 @@ describe('PoiImportAdminService', () => {
         finished_at: new Date('2026-07-01T00:05:00Z'),
       };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(runRow) };
-      const queue = { getJob: jest.fn().mockResolvedValue(null) };
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
       statMock.mockRejectedValueOnce(
         Object.assign(new Error('nope'), { code: 'ENOENT' }),
       );
@@ -282,7 +307,7 @@ describe('PoiImportAdminService', () => {
         }),
       };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
-      const queue = { getJob: jest.fn().mockResolvedValue(null) };
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
       statMock.mockRejectedValue(
         Object.assign(new Error('nope'), { code: 'ENOENT' }),
       );
@@ -334,6 +359,65 @@ describe('PoiImportAdminService', () => {
       // region) pairs exist — 2 calls total, not 2-per-pair (6) — proving
       // the N+1 fix (#847 review, fix 2).
       expect(dataSource.query).toHaveBeenCalledTimes(2);
+    });
+
+    // #847 review Fix A: a CRON-dispatched `import-region` job uses a
+    // DIFFERENT jobId (`JobsProducer.enqueuePoiImportRegion`'s
+    // `import-region_<dispatchId>_<source>_<code>`, not `manualJobId`) and
+    // never sets `trigger` on the wire (the processor defaults an absent
+    // `trigger` to `'cron'`) — this simulates that exact payload shape to
+    // prove `live_state` reflects it anyway: the scan matches by
+    // `data.source`/`data.code`, never by job id.
+    it('reports live_state running for a CRON-style job (different jobId, no trigger field) — not just the manual job', async () => {
+      const dataSource = { query: jest.fn().mockResolvedValue([]) };
+      const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([
+          {
+            id: 'import-region_wk42_osm_CZ',
+            data: { code: 'CZ', source: 'osm' },
+            getState: jest.fn().mockResolvedValue('active'),
+          },
+        ]),
+      };
+      statMock.mockRejectedValueOnce(
+        Object.assign(new Error('nope'), { code: 'ENOENT' }),
+      );
+
+      const svc = new PoiImportAdminService(
+        [makeImporter()] as never,
+        dataSource as never,
+        runsRepo as never,
+        queue as never,
+      );
+
+      const rows = await svc.listRegionStatus();
+
+      expect(rows[0]?.live_state).toBe('running');
+    });
+
+    // #847 review Fix B: a stat error that ISN'T ENOENT (e.g. EACCES/ENOTDIR/
+    // EIO — a broken mount or bad permissions on the shared extract volume)
+    // must not be swallowed into `extract: null`, which would make a real
+    // infrastructure fault look identical to "no extract uploaded yet". Only
+    // ENOENT collapses to null; every other stat error propagates.
+    it('propagates a non-ENOENT stat error (e.g. EACCES) instead of reporting extract: null', async () => {
+      const dataSource = { query: jest.fn().mockResolvedValue([]) };
+      const runsRepo = { findOne: jest.fn() };
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
+      statMock.mockRejectedValueOnce(
+        Object.assign(new Error('denied'), { code: 'EACCES' }),
+      );
+
+      const svc = new PoiImportAdminService(
+        [makeImporter({ extractDirConfigured: true })] as never,
+        dataSource as never,
+        runsRepo as never,
+        queue as never,
+      );
+
+      await expect(svc.listRegionStatus()).rejects.toThrow(/denied/);
+      expect(runsRepo.findOne).not.toHaveBeenCalled();
     });
   });
 
