@@ -44,6 +44,16 @@ const SURFACE_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 };
 
+// How many ride-route geometries the "My rides" map overlay returns at once.
+// Hard-capped at 500 to bound the geospatial query + payload; tunable downward
+// via `TARMOTO_RIDE_OVERLAY_LIMIT` (e.g. to keep the overlay calmer for very
+// active riders). Clamped to [1, 500]; non-numeric/unset falls back to 500.
+const RIDE_OVERLAY_CAP = (() => {
+  const raw = Number(process.env.TARMOTO_RIDE_OVERLAY_LIMIT);
+  const value = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 500;
+  return Math.min(500, Math.max(1, value));
+})();
+
 // Curviness bands over the canonical 0–5 `road_segments.curviness_score`
 // scale (the same scale the fun-zone clustering uses: `>= 3.0`, `/ 5.0`).
 // The SQL `CASE` in `breakdown()` mirrors these boundaries exactly.
@@ -573,7 +583,7 @@ export class RidesService {
     userId: string,
     query: ListRidesDto,
   ): Promise<RideTracksResponseDto> {
-    const CAP = 500;
+    const CAP = RIDE_OVERLAY_CAP;
     const SIMPLIFY_TOLERANCE_DEG = 0.0005; // ~50 m at mid-latitudes
 
     // Build two independent query builders: one for the geometry-bearing
