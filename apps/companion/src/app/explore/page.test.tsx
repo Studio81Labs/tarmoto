@@ -69,6 +69,25 @@ vi.mock("./_components/QualityMap", () => ({
   }),
 }));
 
+// The "My trips" overlay hook needs a QueryClient; stub it (no trips) so the
+// page renders without one, like the closures/passes panels are stubbed.
+vi.mock("@/hooks/useUserTrips", () => ({
+  useUserTrips: () => ({
+    trips: [],
+    loading: false,
+    error: false,
+    tripById: new Map(),
+  }),
+}));
+vi.mock("@/hooks/useUserRideTracks", () => ({
+  useUserRideTracks: () => ({
+    tracks: [],
+    truncated: false,
+    loading: false,
+    error: false,
+  }),
+}));
+
 vi.mock("@/components/SegmentTrendChart", () => ({
   SegmentTrendChart: ({ segmentId }: { segmentId: string }) => (
     <div data-testid={`segment-trend-chart-${segmentId}`}>Trend chart</div>

@@ -72,7 +72,21 @@ import {
   PASS_MARKER_LAYER,
 } from "@/components/map/ConditionMarkerLayer";
 import { installPointClickRouter } from "@/components/map/mapPointClickRouter";
+import {
+  ensureTripRouteLayers,
+  setTripRouteLayersVisible,
+  setTripRouteSourceData,
+  TRIP_ROUTE_LAYER,
+} from "@/components/map/TripRouteLayer";
+import {
+  ensureRideRouteLayers,
+  setRideRouteLayersVisible,
+  setRideRouteSourceData,
+  RIDE_ROUTE_LAYER,
+  type RideTrack,
+} from "@/components/map/RideRouteLayer";
 import { getBasemapPoiLayerIds, topBasemapPlaceAt } from "@/lib/basemap-poi";
+import type { TripSummary } from "@/lib/types";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import type {
@@ -127,6 +141,18 @@ interface Props {
   conditionsMonth: number;
   /** Exact preview date for closures (matches the Conditions panel picker). */
   conditionsDate: Date;
+  /** When on, overlay the rider's own planned trip routes (coral). */
+  showMyTrips: boolean;
+  /** The rider's trips, drawn from each trip's per-day overview geometry. */
+  trips: readonly TripSummary[];
+  /** Clicking a trip route opens its detail drawer. */
+  onTripSelect: (tripId: string) => void;
+  /** When on, overlay the rider's own finished ride routes (indigo). */
+  showMyRides: boolean;
+  /** The rider's ride tracks (id + geometry) from `/rides/tracks`. */
+  rideTracks: readonly RideTrack[];
+  /** Clicking a ride route opens its detail drawer. */
+  onRideSelect: (rideId: string) => void;
   onSegmentSelect?: (segmentId: string) => void;
   /** Segment whose detail drawer is open — painted with the highlight overlay. */
   selectedSegmentId?: string | null;
@@ -178,6 +204,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       conditionBbox,
       conditionsMonth,
       conditionsDate,
+      showMyTrips,
+      trips,
+      onTripSelect,
+      showMyRides,
+      rideTracks,
+      onRideSelect,
       onSegmentSelect,
       selectedSegmentId,
       onViewChange,
@@ -332,6 +364,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       ensureConditionLayers(map);
       setConditionLayersVisible(map, showConditions);
       ensurePoiLayers(map);
+      // "My trips" / "My rides" route lines, slotted UNDER the markers (before
+      // the first hazard layer) so a marker on a route still owns the click.
+      ensureRideRouteLayers(map, {
+        visible: showMyRides,
+        beforeId: HAZARD_CLUSTERS,
+      });
+      ensureTripRouteLayers(map, {
+        visible: showMyTrips,
+        beforeId: HAZARD_CLUSTERS,
+      });
 
       // ── One click router ──
       // MapLibre fires every overlapping layer's click handler, so the topmost
@@ -466,6 +508,28 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             layers: [HAZARD_CLUSTERS],
             handle: (f) => expandHazardCluster(map, f),
           },
+          // Route lines are below the markers, so they're listed last — a
+          // marker sitting on a route still wins the click.
+          {
+            layers: [TRIP_ROUTE_LAYER],
+            handle: (f) => {
+              const tripId = f.properties?.tripId;
+              if (typeof tripId !== "string") return;
+              // The route owns this click (not `onMiss`), so dismiss any open
+              // point popover ourselves before opening the trip drawer.
+              setPointMenu(null);
+              onTripSelect(tripId);
+            },
+          },
+          {
+            layers: [RIDE_ROUTE_LAYER],
+            handle: (f) => {
+              const rideId = f.properties?.rideId;
+              if (typeof rideId !== "string") return;
+              setPointMenu(null);
+              onRideSelect(rideId);
+            },
+          },
         ],
         onMiss: selectSegmentAt,
       });
@@ -483,6 +547,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         POI_CLUSTER_LAYER,
         CLOSURE_MARKER_LAYER,
         PASS_MARKER_LAYER,
+        TRIP_ROUTE_LAYER,
+        RIDE_ROUTE_LAYER,
       ]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
@@ -725,6 +791,30 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         );
       }
     }, [ready, showConditions]);
+
+    // ── "My trips" route overlay: keep the source + visibility in sync ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setTripRouteSourceData(map, trips);
+    }, [ready, trips]);
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setTripRouteLayersVisible(map, showMyTrips);
+    }, [ready, showMyTrips]);
+
+    // ── "My rides" route overlay: keep the source + visibility in sync ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setRideRouteSourceData(map, rideTracks);
+    }, [ready, rideTracks]);
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setRideRouteLayersVisible(map, showMyRides);
+    }, [ready, showMyRides]);
 
     // ── fetch hazards when viewport settles ──
     useEffect(() => {
