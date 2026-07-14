@@ -795,6 +795,21 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       });
     }, [ready, closures, passes, closuresLoading, passesLoading]);
 
+    // ── close a condition popover when its own date/month input changes ──
+    // The reconcile above defers while its query reloads so a viewport pan/fly
+    // doesn't drop the popover on the transient empty frame. But a preview-date
+    // change (closures) or travel-month change (passes) also reloads the query,
+    // and there the open card is now for the wrong date/month — deferring would
+    // render stale details as current until the refetch lands. A closure is
+    // date-specific and a pass is month-specific, so drop the matching popover
+    // on that input change and let the rider re-open it against the new data.
+    useEffect(() => {
+      setPointMenu((menu) => (menu?.point.kind === "closure" ? null : menu));
+    }, [conditionsDate]);
+    useEffect(() => {
+      setPointMenu((menu) => (menu?.point.kind === "pass" ? null : menu));
+    }, [conditionsMonth]);
+
     // ── condition layer visibility ──
     useEffect(() => {
       const map = handleRef.current?.map;
