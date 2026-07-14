@@ -1,0 +1,90 @@
+# syntax=docker/dockerfile:1.23
+#
+# Scheduled POI extract-refresh container (#976) — the "fetch" half of the
+# offline POI pipeline. Downloads Geofabrik country PBFs, `osmium`-filters +
+# clips them to `<code>.osm` on the shared import volume BEFORE the weekly import
+# cron (Sunday 03:00 UTC) reads them, so the store mirrors CURRENT data instead
+# of re-importing a static file.
+#
+# SEPARATE from the backend runtime image on purpose: `osmium` + multi-GB PBF
+# handling must never bloat the app runtime (the whole codebase keeps osmium an
+# external ops tool). It reuses the backend BUILD, though — the refresh script
+# and `DEFAULT_REGIONS` bboxes compile into `apps/backend/dist`, so the clip box
+# can never drift from the importer's.
+#
+# DEBIAN, not Alpine (unlike apps/backend/Dockerfile): Alpine only ships
+# `libosmium` (the C++ library), NOT the `osmium` CLI — verified against
+# node:24-alpine's repos — whereas Debian's `osmium-tool` provides the binary we
+# shell out to. The base + pnpm are hardcoded (not ARG-parameterised) for the
+# same reason as the backend image: the PaaS auto-injects every app env var as a
+# build ARG, and a stray NODE_VERSION/packageManager would otherwise break it.
+#
+# Run on a schedule (e.g. a Coolify scheduled task / cron, Saturday — comfortably
+# before the Sunday tick) with:
+#   - TARMOTO_POI_REFRESH_ENABLED=true
+#   - TARMOTO_POI_IMPORT_DIR = the SAME shared volume mounted on the API/worker
+#   - (optional) TARMOTO_POI_IMPORT_REGIONS to narrow the set
+# Needs enough ephemeral disk for the largest single country PBF (~4 GB for DE)
+# plus its filtered copy — regions run sequentially and clean up between, so peak
+# disk is one country, not all 17.
+
+FROM node:24-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+WORKDIR /workspace
+
+# ---------- deps ----------
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY apps/backend/package.json apps/backend/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/openapi/package.json packages/openapi/package.json
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# ---------- build ----------
+FROM deps AS build
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/backend apps/backend
+RUN pnpm --filter @tarmoto/shared build \
+ && pnpm --filter @tarmoto/backend build
+
+# ---------- runtime ----------
+FROM node:24-slim AS runtime
+ENV NODE_ENV=production \
+    PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH
+RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+# `osmium-tool` (Debian) provides the `osmium` binary the script shells out to;
+# tini reaps the osmium child processes as PID 1.
+#
+# The runtime user is pinned to uid 100 / gid 101 to MATCH the backend image's
+# `tarmoto` and therefore the shared extract volume's owner — so files this
+# container writes are owned the same as the API/worker read them, and a later
+# refresh (or an admin upload) can replace them cleanly. Both ids are free on
+# node:24-slim (verified).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends osmium-tool tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd -g 101 tarmoto \
+ && useradd -u 100 -g 101 -M -s /usr/sbin/nologin tarmoto
+WORKDIR /app
+
+COPY --from=build /workspace/pnpm-workspace.yaml /workspace/package.json /workspace/pnpm-lock.yaml ./
+COPY --from=build /workspace/apps/backend/package.json apps/backend/package.json
+COPY --from=build /workspace/packages/shared/package.json packages/shared/package.json
+COPY --from=build /workspace/packages/openapi/package.json packages/openapi/package.json
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prod --ignore-scripts --filter @tarmoto/backend...
+
+COPY --from=build /workspace/apps/backend/dist apps/backend/dist
+COPY --from=build /workspace/packages/shared/dist packages/shared/dist
+
+USER tarmoto
+ENTRYPOINT ["/usr/bin/tini", "--"]
+# One-shot: refresh every configured region's extract, then exit (non-zero if any
+# region failed, so the scheduler can alert). The volume mounted at
+# TARMOTO_POI_IMPORT_DIR must be writable by uid 100 (see the runbook).
+CMD ["node", "apps/backend/dist/scripts/refresh-poi-extracts.js"]

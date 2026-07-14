@@ -196,6 +196,59 @@ Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` 
 
 **Validate volume + runtime before enabling all regions in production (#850 acceptance criterion).** Region-wide the filtered set is low millions of rows; `pois` is GiST-indexed on `geom` and GIN-indexed on `tags` (plus the `(source, external_id)` unique and `(address_country, kind)` browse index), so store reads stay bounded — but the import's fetch/upsert cost and the worker's memory/runtime scale with coverage. Bring regions online **incrementally**: validate per-country row counts and a full-run wall-clock on staging before flipping all 17 on in production at once.
 
+#### Automating the OSM refresh (scheduled container, #976)
+
+The manual steps above (download → `tags-filter` → clip → place) can run
+automatically so the weekly import mirrors **current** data instead of
+re-importing a static file. `apps/backend/Dockerfile.poi-refresh` builds a small
+osmium + node image whose one-shot entrypoint (`pnpm poi:refresh` →
+`dist/scripts/refresh-poi-extracts.js`) runs exactly that per-country pipeline
+for every configured region, writing each `<code>.osm` **atomically** to
+`TARMOTO_POI_IMPORT_DIR`.
+
+It's kept **separate** from the backend/worker image on purpose — osmium and
+multi-GB PBF handling don't belong in the app runtime — but reuses the backend
+build, so the clip bbox comes straight from `DEFAULT_REGIONS` and can't drift.
+Region set + target dir are the **same** env as the importer
+(`TARMOTO_POI_IMPORT_REGIONS` / `TARMOTO_POI_IMPORT_DIR`); the Geofabrik country
+slugs live in `poi-refresh.config.ts` (a spec asserts every region has one).
+
+Operate it as a **scheduled task** (Coolify scheduled task / cron), timed to
+finish comfortably **before** the Sunday 03:00 UTC import tick (e.g. Saturday):
+
+- `TARMOTO_POI_REFRESH_ENABLED=true` — off by default; the container is a no-op
+  otherwise.
+- Mount the **same shared extract volume** at `TARMOTO_POI_IMPORT_DIR` that the
+  API/worker read. One refresh container can feed **both staging and prod** from
+  a single shared volume — the `<code>.osm` files are environment-agnostic
+  (filtered OSM), so producing them once avoids duplicating the (multi-GB) set
+  per environment. Every party that touches the volume — this container, the
+  staging backend, the prod backend — runs as **uid 100** (the image pins it to
+  match the backend `tarmoto` and the volume owner), so writes here are readable
+  by, and replaceable by, all of them. (A corollary of one shared volume: an
+  admin upload on one environment lands the same file every environment then
+  imports — intended here, but worth knowing.)
+- (optional) `TARMOTO_POI_IMPORT_REGIONS` to refresh a subset.
+- Ephemeral disk for the largest single country PBF (~4 GB for DE) plus its
+  filtered copy — regions run sequentially and clean up between, so peak disk is
+  one country, not all 17.
+
+Behaviour:
+
+- **Atomic + keep-last-good:** each extract is built at a sibling `.part` file
+  and only renamed onto `<code>.osm` after every step succeeds. A failed
+  download/filter/clip leaves the previous good extract untouched (never a
+  truncated file) and the run continues to the next region.
+- **Observable:** the container exits **non-zero** if any region failed (so the
+  scheduler can alert), and logs every region's outcome. The next import simply
+  re-imports whatever landed — a region whose refresh failed re-imports its prior
+  extract.
+
+The manual pipeline above stays the fallback (one-off refresh, a region with no
+Geofabrik slug, or before the scheduled container is provisioned). **FSQ is not
+automated** — OS Places is a token-gated DuckDB/Iceberg pull (below); refresh it
+via the manual recipe.
+
 ### Producing per-country POI extracts (Foursquare OS Places)
 
 The FSQ bulk import (#869) reads one **newline-delimited JSON** file per active region from `TARMOTO_FSQ_IMPORT_DIR`, named `<code>.fsq.jsonl` (lower-case ISO code, e.g. `cz.fsq.jsonl`). It's a second `source` (`'fsq'`) stored alongside OSM in `pois`; it uses [FSQ OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) — the free, Apache-2.0, monthly-refreshed open dataset — **not** the Places API (the API's ToS forbids bulk-storing its data; OS Places is built for it).
