@@ -237,6 +237,33 @@ describe('AdminEmailTemplateService', () => {
     expect(result.version).toBe(6);
   });
 
+  it('publish 400s and mutates nothing when the stored draft is invalid', async () => {
+    const { service, manager } = make();
+    // A draft that reached the table out-of-band (or under since-tightened
+    // rules) with a CRLF subject. The render path interpolates the subject raw
+    // into a plain-text header and does NOT sanitize control chars, so publish
+    // is the gate that must reject it before it goes live.
+    const badDraft = {
+      template_tag: 'weekly-digest',
+      locale: 'en',
+      status: 'draft',
+      version: 1,
+      subject: 'Weekly\r\nBcc: evil@example.com',
+      blocks: [],
+    };
+    manager.findOne.mockImplementation(
+      (_entity: unknown, opts: { where: { status: string } }) =>
+        Promise.resolve(opts.where.status === 'draft' ? badDraft : null),
+    );
+
+    await expect(service.publish('weekly-digest', 'en')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    // Rejected before mutating anything — the live published row is untouched.
+    expect(manager.delete).not.toHaveBeenCalled();
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
   it('reset deletes the published row for (tag, locale)', async () => {
     const { service, templates } = make();
     await service.reset('weekly-digest', 'en');

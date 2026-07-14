@@ -170,6 +170,19 @@ export class AdminEmailTemplateService {
       if (!draft) {
         throw new NotFoundException(`No draft to publish for ${tag}/${locale}`);
       }
+      // Publish is the safety gate, so re-validate the stored draft before it
+      // goes live. Drafts are normally validated at save time, but re-checking
+      // here rejects any written out-of-band or under since-tightened rules —
+      // and the subject's control-char/whitelist rules are NOT re-enforced at
+      // render time (the subject is interpolated raw into a plain-text header,
+      // so a CRLF there would otherwise reach the mail provider unchecked).
+      const check = validateBlockDocument(tag, {
+        subject: draft.subject,
+        blocks: draft.blocks,
+      });
+      if (!check.ok) {
+        throw new BadRequestException(check.errors);
+      }
       const priorPublished = await m.findOne(EmailTemplate, {
         where: { template_tag: tag, locale, status: 'published' },
       });
