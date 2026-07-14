@@ -121,6 +121,21 @@ export class EmailService {
     this.fallback = new LogEmailProvider();
   }
 
+  /** Send an already-rendered email (used by the admin template editor's test-send). */
+  async sendRendered(
+    to: string,
+    rendered: RenderedTemplate,
+  ): Promise<EmailSendResult | null> {
+    return this.dispatch(to, rendered);
+  }
+
+  /** The notification-preferences URL used in email footers, exposed so the admin
+   *  template preview/test-send renders the same footer chrome a real send would.
+   *  Single source of truth — do NOT duplicate the URL logic in the template service. */
+  resolvePreferencesUrl(): string {
+    return this.preferencesUrl();
+  }
+
   async sendVerification(
     to: string,
     ctx: ContextWithoutBase<VerificationContext>,
