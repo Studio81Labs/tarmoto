@@ -89,12 +89,16 @@ describe("reconcileConditionMenu", () => {
     });
   });
 
-  it("closes a pass that is now open (no marker to anchor)", () => {
-    const action = reconcileConditionMenu(passPoint(pass("p1")), {
+  it("refreshes a pass that is now open (explorer markers open passes too)", () => {
+    const fresh = pass("p1", "open");
+    const action = reconcileConditionMenu(passPoint(pass("p1", "closed")), {
       ...base,
-      passes: [pass("p1", "open")],
+      passes: [fresh],
     });
-    expect(action).toEqual({ type: "close" });
+    expect(action).toEqual({
+      type: "refresh",
+      point: { kind: "pass", pass: fresh, affectsRoute: false },
+    });
   });
 
   it("keeps an absent pass that is pinned", () => {

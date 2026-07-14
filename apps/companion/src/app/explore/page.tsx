@@ -1024,6 +1024,7 @@ function InfoPanelContent({
           bbox={conditionBbox}
           showRouteWarnings={false}
           onFocusPass={onFocusPass}
+          focusOpenPasses
         />
       ) : (
         <p className="text-xs text-fg-dim">

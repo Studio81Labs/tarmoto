@@ -90,6 +90,14 @@ function installConditionImages(map: MapLibreMap): void {
 export function ensureConditionLayers(
   map: MapLibreMap,
   beforeId?: string,
+  options?: {
+    /**
+     * Include open passes in the pass marker layer. Default off — the planner
+     * keeps its ambient-awareness view (only passes you might not clear). The
+     * explorer opts in so every listed pass is a marker you can focus.
+     */
+    includeOpenPasses?: boolean;
+  },
 ): void {
   installConditionImages(map);
   const before = beforeId && map.getLayer(beforeId) ? beforeId : undefined;
@@ -167,8 +175,11 @@ export function ensureConditionLayers(
         source: PASS_MARKER_SOURCE,
         minzoom: CONDITION_MARKER_MINZOOM,
         // Ambient awareness cares about passes you might NOT clear — open
-        // passes stay off the map (revision 7).
-        filter: ["!=", ["get", "status"], "open"],
+        // passes stay off the map (revision 7), unless the caller opts them in
+        // (the explorer, so every listed pass is focusable).
+        ...(options?.includeOpenPasses
+          ? {}
+          : { filter: ["!=", ["get", "status"], "open"] as const }),
         layout: {
           "icon-image": `${CONDITION_IMAGE_PREFIX}pass`,
           "icon-size": 1,

@@ -281,9 +281,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             const pass = passesRef.current.find(
               (p) => p.id === conditionRef.id,
             );
-            // Open passes are filtered out of the marker layer — there is no
-            // pin to focus, so decline rather than float a popover over nothing.
-            if (!pass || pass.status === "open") return;
+            // The explorer shows every pass as a marker (incl. open), so any
+            // listed pass can be focused.
+            if (!pass) return;
             lng = pass.lng;
             lat = pass.lat;
             point = { kind: "pass", pass, affectsRoute: false };
@@ -422,7 +422,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       // above our overlays instead of falling back to the quality layer.
       const baseSymbolLayerId = firstSymbolLayerId(map);
       ensureHazardLayers(map, { visible: showHazards });
-      ensureConditionLayers(map);
+      ensureConditionLayers(map, undefined, { includeOpenPasses: true });
       setConditionLayersVisible(map, showConditions);
       ensurePoiLayers(map);
       // "My trips" / "My rides" route lines, slotted UNDER the markers (before
