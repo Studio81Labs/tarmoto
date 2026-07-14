@@ -31,7 +31,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import { SURFACE_LABELS, type SurfaceLabel } from "@tarmoto/shared";
 import {

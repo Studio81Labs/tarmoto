@@ -30,7 +30,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import { hazardIcons } from "@/theme";
 import {

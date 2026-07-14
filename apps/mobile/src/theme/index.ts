@@ -10,6 +10,8 @@
  * second source of truth.
  */
 
+import type { IconName } from "@/components/Icon";
+
 /**
  * Map quality score to label
  */
@@ -78,9 +80,11 @@ export function meetsQualityThreshold(
 }
 
 /**
- * Map hazard type to icon name (@react-native-vector-icons/material-design-icons)
+ * Map hazard type to a Tarmoto icon name (see `@/components/Icon`). Typed as
+ * `IconName` so a hazard pointing at a glyph the registry doesn't define is a
+ * compile error rather than a blank icon at runtime.
  */
-export const hazardIcons: Record<string, string> = {
+export const hazardIcons: Record<string, IconName> = {
   pothole: "circle-off-outline",
   gravel: "grain",
   oil_spill: "water-alert",

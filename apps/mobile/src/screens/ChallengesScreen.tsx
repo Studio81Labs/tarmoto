@@ -27,7 +27,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 import { api } from "@/services/api";

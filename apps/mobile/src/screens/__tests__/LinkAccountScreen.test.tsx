@@ -25,12 +25,13 @@ jest.mock("@/services/api", () => ({
   },
 }));
 
-jest.mock("@react-native-vector-icons/material-design-icons", () => {
-  const React = require("react");
+jest.mock("@/components/Icon", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactLib = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Text } = require("react-native");
-  return function MockIcon() {
-    return React.createElement(Text, null, "icon");
-  };
+  const MockIcon = () => ReactLib.createElement(Text, null, "icon");
+  return { Icon: MockIcon };
 });
 
 jest.mock("@/stores", () => ({

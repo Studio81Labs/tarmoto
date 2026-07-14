@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";

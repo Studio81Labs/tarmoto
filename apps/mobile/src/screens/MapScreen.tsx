@@ -56,7 +56,7 @@ import {
   type ViewStateChangeEvent,
   VectorSource,
 } from "@maplibre/maplibre-react-native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import HazardReportFab from "@/components/HazardReportFab";

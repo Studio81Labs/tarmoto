@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import RNFS from "react-native-fs";
 import RNShare from "react-native-share";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { qualityLabel } from "@/theme";

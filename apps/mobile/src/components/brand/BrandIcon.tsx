@@ -6,9 +6,9 @@ import Svg, { Circle, Path, Rect, type SvgProps } from "react-native-svg";
  *
  * Ported from `mobile/tokens.jsx` (`Icon`) in the design handoff
  * (`docs/design/mobile-spec/source/`). Brand rule #3: no icon font — these
- * are geometric SVG glyphs on a 24×24 grid. The legacy app uses
- * `@react-native-vector-icons/material-design-icons`; brand surfaces use
- * this set so the icon language matches the spec exactly.
+ * are geometric SVG glyphs on a 24×24 grid. General-purpose UI icons come
+ * from the shared Lucide set (`@/components/Icon`); these brand glyphs are a
+ * small, separate set so the brand icon language matches the spec exactly.
  */
 
 export type BrandIconName =
