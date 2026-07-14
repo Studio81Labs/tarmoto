@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ComboBox as AriaComboBox,
   Input,
@@ -63,6 +63,15 @@ export function Combobox({
 }: ComboboxProps) {
   const selected = options.find((o) => o.value === value);
   const [query, setQuery] = useState(labelText(selected?.label ?? "", ""));
+
+  useEffect(() => {
+    const sel = options.find((o) => o.value === value);
+    setQuery(labelText(sel?.label, ""));
+    // Intentionally keyed on `value` only. Including `options` would reset the
+    // query on every render for callers that pass an inline options array (new
+    // identity each render), breaking typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -131,7 +140,7 @@ export function Combobox({
               {({ isSelected }) => (
                 <>
                   <span className="truncate">
-                    {highlight(labelText(opt.label, opt.value), query)}
+                    {highlight(labelText(opt.label, opt.value), query.trim())}
                   </span>
                   {isSelected && (
                     <svg
