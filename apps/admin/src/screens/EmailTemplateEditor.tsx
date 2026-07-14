@@ -1,0 +1,417 @@
+import { useEffect, useState } from "react";
+import { Alert, Button, Input, Pill } from "@tarmoto/ui";
+import { Dialog } from "../components/Dialog.js";
+import {
+  BlockCard,
+  type EditorBlock,
+} from "../components/email-template/BlockCard.js";
+import { VarChips } from "../components/email-template/VarChips.js";
+import { PreviewPane } from "../components/email-template/PreviewPane.js";
+import { useAdminAuth } from "../auth/useAdminAuth.js";
+import { canAccess } from "../lib/roleRank.js";
+import {
+  useEmailTemplate,
+  useSaveDraft,
+  useTestSend,
+  usePublish,
+  useReset,
+} from "../data/useAdminEmailTemplates.js";
+
+const BLOCK_TYPES: EditorBlock["type"][] = [
+  "heading",
+  "paragraph",
+  "button",
+  "stat-row",
+  "divider",
+  "spacer",
+];
+
+function emptyBlock(type: EditorBlock["type"]): EditorBlock {
+  switch (type) {
+    case "heading":
+    case "paragraph":
+      return { type, text: "" };
+    case "stat-row":
+      return { type, label: "", value: "" };
+    case "button":
+      return { type, label: "", urlVar: "" };
+    default:
+      return { type };
+  }
+}
+function serverMessage(err: unknown, fallback: string): string {
+  return (err as { message?: string } | undefined)?.message ?? fallback;
+}
+
+export function EmailTemplateEditor({
+  tag,
+  locale,
+  onBack,
+}: {
+  tag: string;
+  locale: string;
+  onBack: () => void;
+}) {
+  const { data, isPending, error, refetch } = useEmailTemplate(tag, locale);
+  const role = useAdminAuth().user?.role;
+  const isSuper = role ? canAccess(role, "super_admin") : false;
+
+  const saveDraft = useSaveDraft();
+  const testSend = useTestSend();
+  const publish = usePublish();
+  const reset = useReset();
+
+  const [subject, setSubject] = useState("");
+  const [blocks, setBlocks] = useState<EditorBlock[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [msg, setMsg] = useState<{
+    kind: "success" | "danger";
+    text: string;
+  } | null>(null);
+  const [confirm, setConfirm] = useState<null | "publish" | "reset">(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setSubject(data.subject);
+    setBlocks(data.blocks);
+    setDirty(false);
+  }, [data]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  const whitelist = data?.whitelist ?? { textVars: [], urlVars: [] };
+  const status = data?.status ?? "none";
+  const params = { path: { tag, locale } };
+
+  const setSubjectDirty = (v: string) => {
+    setSubject(v);
+    setDirty(true);
+  };
+  function setBlock(i: number, next: EditorBlock) {
+    setBlocks((b) => b.map((x, j) => (j === i ? next : x)));
+    setDirty(true);
+  }
+  function moveBlock(i: number, dir: -1 | 1) {
+    setBlocks((b) => {
+      const j = i + dir;
+      if (j < 0 || j >= b.length) return b;
+      const copy = [...b];
+      [copy[i], copy[j]] = [copy[j]!, copy[i]!];
+      return copy;
+    });
+    setDirty(true);
+  }
+  function removeBlock(i: number) {
+    setBlocks((b) => b.filter((_, j) => j !== i));
+    setDirty(true);
+  }
+  function addBlock(type: EditorBlock["type"]) {
+    setBlocks((b) => [...b, emptyBlock(type)]);
+    setDirty(true);
+    setAddOpen(false);
+  }
+
+  function handleSave() {
+    saveDraft.mutate(
+      { params, body: { subject, blocks } },
+      {
+        onSuccess: () => {
+          setMsg({ kind: "success", text: "Draft saved." });
+          setDirty(false);
+          void refetch();
+        },
+        onError: (err: unknown) =>
+          setMsg({
+            kind: "danger",
+            text: serverMessage(err, "Failed to save the draft."),
+          }),
+      },
+    );
+  }
+  function handleTestSend() {
+    testSend.mutate(
+      { params, body: { subject, blocks } },
+      {
+        onSuccess: (res: { status: string }) =>
+          setMsg({
+            kind: res.status === "sent" ? "success" : "danger",
+            text:
+              res.status === "sent"
+                ? "Test email sent to your address."
+                : "Test send failed — check the provider.",
+          }),
+        onError: (err: unknown) =>
+          setMsg({
+            kind: "danger",
+            text: serverMessage(err, "Failed to send the test."),
+          }),
+      },
+    );
+  }
+  function doPublish() {
+    publish.mutate(
+      { params },
+      {
+        onSuccess: () => {
+          setMsg({
+            kind: "success",
+            text: "Published. This override is now live.",
+          });
+          setConfirm(null);
+          setDirty(false);
+          void refetch();
+        },
+        onError: (err: unknown) => {
+          setMsg({
+            kind: "danger",
+            text: serverMessage(err, "Failed to publish."),
+          });
+          setConfirm(null);
+        },
+      },
+    );
+  }
+  function doReset() {
+    reset.mutate(
+      { params },
+      {
+        onSuccess: () => {
+          setMsg({
+            kind: "success",
+            text: "Override removed — the code email renders again.",
+          });
+          setConfirm(null);
+          void refetch();
+        },
+        onError: (err: unknown) => {
+          setMsg({
+            kind: "danger",
+            text: serverMessage(err, "Failed to reset."),
+          });
+          setConfirm(null);
+        },
+      },
+    );
+  }
+  function handleBack() {
+    if (
+      dirty &&
+      !window.confirm("You have unsaved changes. Leave without saving?")
+    )
+      return;
+    onBack();
+  }
+
+  const legalSensitive = tag.startsWith("account-deletion");
+  if (error)
+    return <Alert intent="danger" title="Failed to load this template." />;
+
+  return (
+    <section>
+      <div className="mb-4 flex items-center gap-3">
+        <Button variant="secondary" size="sm" onClick={handleBack}>
+          ← Templates
+        </Button>
+        <h2 className="text-lg font-extrabold text-ink">{data?.tag ?? tag}</h2>
+        <Pill variant={status === "published" ? "accent" : "ghost"}>
+          {status === "published"
+            ? "Live"
+            : status === "draft"
+              ? "Draft"
+              : "Default"}
+        </Pill>
+        {data ? (
+          <span className="text-xs text-fg-dim">v{data.version}</span>
+        ) : null}
+      </div>
+
+      {msg ? (
+        <Alert intent={msg.kind} title={msg.text} compact className="mb-4" />
+      ) : null}
+
+      {isPending ? (
+        <p className="text-sm text-fg-dim">Loading…</p>
+      ) : (
+        <div className="grid gap-4">
+          <div>
+            <label className="mb-1 block text-sm font-bold text-ink">
+              Subject
+            </label>
+            <Input
+              value={subject}
+              onChange={setSubjectDirty}
+              ariaLabel="Subject"
+              placeholder="Subject (may contain {vars})"
+            />
+            <VarChips
+              vars={whitelist.textVars}
+              onInsert={(token) => setSubjectDirty(subject + token)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {blocks.map((block, i) => (
+              <BlockCard
+                key={i}
+                block={block}
+                index={i}
+                total={blocks.length}
+                textVars={whitelist.textVars}
+                urlVars={whitelist.urlVars}
+                onChange={(next) => setBlock(i, next)}
+                onMove={(dir) => moveBlock(i, dir)}
+                onRemove={() => removeBlock(i)}
+              />
+            ))}
+            <div className="relative">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setAddOpen((o) => !o)}
+              >
+                + Add block
+              </Button>
+              {addOpen ? (
+                <div className="absolute z-10 mt-1 flex flex-col rounded-lg border border-line bg-cream p-1 shadow">
+                  {BLOCK_TYPES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => addBlock(t)}
+                      className="rounded px-3 py-1 text-left text-sm text-ink hover:bg-paper"
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <PreviewPane
+            tag={tag}
+            locale={locale}
+            subject={subject}
+            blocks={blocks}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              loading={saveDraft.isPending}
+              onClick={handleSave}
+            >
+              Save draft
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={testSend.isPending}
+              onClick={handleTestSend}
+            >
+              Send test to me
+            </Button>
+            {isSuper ? (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setConfirm("publish")}
+                >
+                  Publish
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setConfirm("reset")}
+                >
+                  Reset
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      <Dialog
+        open={confirm === "publish"}
+        title="Publish this override?"
+        onClose={() => setConfirm(null)}
+        busy={publish.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirm(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={publish.isPending}
+              onClick={doPublish}
+            >
+              Publish now
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink">
+          This makes the override the live email for <strong>{tag}</strong>.
+          Save your draft first if you haven't.
+        </p>
+        {legalSensitive ? (
+          <Alert
+            intent="warning"
+            compact
+            className="mt-3"
+            title="This is a GDPR/legal notice — check the wording carefully before publishing."
+          />
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={confirm === "reset"}
+        title="Remove the published override?"
+        onClose={() => setConfirm(null)}
+        busy={reset.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirm(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={reset.isPending}
+              onClick={doReset}
+            >
+              Remove override
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink">
+          The code email will render again for <strong>{tag}</strong>. Your
+          draft (if any) is kept.
+        </p>
+      </Dialog>
+    </section>
+  );
+}
