@@ -18,6 +18,11 @@ export interface ClosuresQueryResult {
   counts: ClosureSeverityCounts;
   routeCounts: ClosureSeverityCounts;
   loading: boolean;
+  /**
+   * True whenever the viewport list query is fetching (incl. background).
+   * Optional so hand-built test fixtures needn't set it; the hook always does.
+   */
+  fetching?: boolean;
   routeLoading: boolean;
   error: string | null;
   routeError: string | null;
@@ -153,6 +158,7 @@ export function useClosures(
     counts,
     routeCounts,
     loading: listQuery.isLoading,
+    fetching: listQuery.isFetching,
     routeLoading: routes.length > 0 && routeQuery.isLoading,
     error: listQuery.isError
       ? (listQuery.error as Error)?.message || "Failed to load closures"

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   type GeoJSONSource,
   type Map as MapLibreMap,
@@ -96,6 +97,10 @@ import type {
 import type { MountainPass } from "@/lib/passes-summary";
 import { plannerApi } from "@/lib/planner/api";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
+import {
+  pinnedConditionRetired,
+  reconcileConditionMenu,
+} from "./conditionPopoverReconcile";
 
 // Stable empty route list — the explorer never checks conditions against a
 // route, so both hooks always fetch the viewport-only (regional) list.
@@ -221,6 +226,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // imperative focus method resolve a feature id → full DTO.
     const closuresRef = useRef<readonly PlannerClosure[]>([]);
     const passesRef = useRef<readonly MountainPass[]>([]);
+    // The condition a row tap just flew the map to. The reconcile won't close
+    // this one even when the settled destination list lacks it — that list can
+    // be a <30s-fresh cache predating the tapped row, so `loading === false`
+    // doesn't guarantee it contains the item. Cleared on the next user-driven
+    // map move (a real pan-away), after which the normal "gone → close" applies.
+    const pinnedConditionRef = useRef<{
+      kind: "closure" | "pass";
+      id: string;
+    } | null>(null);
+    // Previous fetching state per list, to detect a fetch *completing*
+    // (true → false) — the point at which absence of the pinned item is
+    // authoritative rather than a pre-refetch stale read.
+    const prevFetchingRef = useRef({ closures: false, passes: false });
+    const queryClient = useQueryClient();
 
     useImperativeHandle(
       ref,
@@ -228,6 +247,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         flyTo(target) {
           const map = handleRef.current?.map;
           if (!map) return;
+          // A deliberate navigate-away (e.g. address search), not a fly to the
+          // pinned condition — release the pin so its popover reconciles/closes
+          // normally at the destination instead of lingering over a new area.
+          pinnedConditionRef.current = null;
           map.flyTo({
             center: [target.lng, target.lat],
             zoom: target.zoom,
@@ -277,6 +300,28 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
                 ? rect.top + projected.y + 10
                 : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
           });
+          // Pin this condition: the fly may land on a viewport whose cached
+          // list predates it, so the reconcile must not close it until the
+          // rider actually pans away (see `pinnedConditionRef`).
+          pinnedConditionRef.current = {
+            kind: conditionRef.kind,
+            id: conditionRef.id,
+          };
+          // The pin keeps the card alive, but the destination list also feeds
+          // the markers. A <30s-fresh cache there can omit or outdate this row,
+          // so invalidate that list (matches the hook keys `["closures"|
+          // "passes", "list", …]`). Default `refetchType: "active"` refetches
+          // the current key too — needed when the item is already centred / zoom
+          // ≥9 and the fly leaves `conditionBbox` unchanged, so nothing remounts;
+          // it's a background refetch (data stays visible), and any new key the
+          // fly lands on refetches on mount since it's now stale. Either way the
+          // completed fetch feeds the falling-edge close if the row is gone.
+          void queryClient.invalidateQueries({
+            queryKey: [
+              conditionRef.kind === "closure" ? "closures" : "passes",
+              "list",
+            ],
+          });
           if (typeof map.flyTo === "function") {
             map.flyTo({
               center: [lng, lat],
@@ -287,7 +332,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           }
         },
       }),
-      [],
+      // `queryClient` is a stable singleton, so this doesn't re-create the
+      // handle; it's listed only to satisfy exhaustive-deps.
+      [queryClient],
     );
     const [ready, setReady] = useState(false);
     // POI browse layer: the open info popover, a viewport token bumped on
@@ -336,12 +383,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // click during map load would otherwise fetch the whole catalog (the panel
     // shows "pan the map" in that window, so the markers must too).
     const conditionsEnabled = showConditions && conditionBbox != null;
-    const { closures } = useClosures(conditionsMonth, NO_ROUTES, {
+    const {
+      closures,
+      loading: closuresLoading,
+      fetching: closuresFetching = false,
+    } = useClosures(conditionsMonth, NO_ROUTES, {
       bbox: conditionBbox ?? undefined,
       previewDate: conditionsDate,
       enabled: conditionsEnabled,
     });
-    const { passes } = usePasses(conditionsMonth, NO_ROUTES, {
+    const {
+      passes,
+      loading: passesLoading,
+      fetching: passesFetching = false,
+    } = usePasses(conditionsMonth, NO_ROUTES, {
       bbox: conditionBbox ?? undefined,
       enabled: conditionsEnabled,
     });
@@ -437,6 +492,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         });
       };
       const expandPoiCluster = (feature: MapGeoJSONFeature) => {
+        // Zooming into a cluster is a deliberate navigate-away (a programmatic
+        // easeTo with no originalEvent), so release any flown-to condition pin.
+        pinnedConditionRef.current = null;
         const clusterId = feature.properties?.cluster_id as number | undefined;
         const src = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
         if (clusterId == null || !src) return;
@@ -506,7 +564,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           { layers: [HAZARD_BG], handle: openHazard },
           {
             layers: [HAZARD_CLUSTERS],
-            handle: (f) => expandHazardCluster(map, f),
+            handle: (f) => {
+              // Same as the POI cluster: a programmatic zoom-in navigate-away,
+              // so drop any flown-to condition pin.
+              pinnedConditionRef.current = null;
+              expandHazardCluster(map, f);
+            },
           },
           // Route lines are below the markers, so they're listed last — a
           // marker sitting on a route still wins the click.
@@ -715,6 +778,22 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
     }, [ready, pointMenuOpen]);
 
+    // ── release a flown-to condition pin once the rider drives the map ──
+    // A user-initiated move carries `originalEvent`; the row-tap `flyTo` does
+    // not. Clearing on the former means a real pan-away lets the reconcile close
+    // the popover normally, while the programmatic fly keeps it pinned.
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      const releasePin = (e: { originalEvent?: unknown }) => {
+        if (e.originalEvent) pinnedConditionRef.current = null;
+      };
+      map.on("moveend", releasePin);
+      return () => {
+        map.off("moveend", releasePin);
+      };
+    }, [ready]);
+
     // ── project raw hazards → filtered GeoJSON source ──
     useEffect(() => {
       const map = handleRef.current?.map;
@@ -748,34 +827,82 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       closuresRef.current = closures;
       passesRef.current = passes;
       setConditionSourceData(map, { closures, passes });
-      // Reconcile an open condition popover with the fresh list: refresh its
-      // DTO (e.g. a new seasonal status after a month change), or drop it if the
-      // condition is gone (panned away / toggled off → []) — or, for a pass,
-      // now `open`, since open passes are filtered out of the marker layer and
-      // a popover with no marker to anchor would float over empty map.
+      // Reconcile the open condition popover against the fresh lists — refresh
+      // its DTO, keep it (still loading, or the pinned row we flew to), or close
+      // it if genuinely gone. Policy lives in `reconcileConditionMenu` so it can
+      // be unit tested without the map.
+      const pinned = pinnedConditionRef.current;
       setPointMenu((menu) => {
         if (!menu) return menu;
-        const point = menu.point;
-        if (point.kind === "closure") {
-          const fresh = closures.find((c) => c.id === point.closure.id);
-          return fresh
-            ? {
-                ...menu,
-                point: { kind: "closure", closure: fresh, affectsRoute: false },
-              }
-            : null;
-        }
-        if (point.kind === "pass") {
-          const fresh = passes.find((p) => p.id === point.pass.id);
-          if (!fresh || fresh.status === "open") return null;
-          return {
-            ...menu,
-            point: { kind: "pass", pass: fresh, affectsRoute: false },
-          };
-        }
-        return menu;
+        const action = reconcileConditionMenu(menu.point, {
+          closures,
+          passes,
+          closuresLoading,
+          passesLoading,
+          pinned,
+        });
+        if (action.type === "keep") return menu;
+        if (action.type === "close") return null;
+        return { ...menu, point: action.point };
       });
-    }, [ready, closures, passes]);
+    }, [ready, closures, passes, closuresLoading, passesLoading]);
+
+    // ── retire a pinned popover once a completed fetch still lacks it ──
+    // The pin bridges a row-fly over a stale destination cache, but it must not
+    // hold forever: if the row came from a stale list, or the closure/pass was
+    // deleted/expired, fresh data will settle without it. Act on the fetch's
+    // falling edge (was fetching → now idle) so this fires only on a *completed*
+    // fetch — the pre-refetch stale frame (idle + stale) can't trip it — and
+    // close the pinned card so it doesn't linger over a marker-less viewport.
+    useEffect(() => {
+      const prev = prevFetchingRef.current;
+      const closuresSettled = prev.closures && !closuresFetching;
+      const passesSettled = prev.passes && !passesFetching;
+      prevFetchingRef.current = {
+        closures: closuresFetching,
+        passes: passesFetching,
+      };
+      const pin = pinnedConditionRef.current;
+      if (!pin) return;
+      if (
+        !pinnedConditionRetired(pin, {
+          closures,
+          passes,
+          closuresSettled,
+          passesSettled,
+        })
+      ) {
+        return;
+      }
+      pinnedConditionRef.current = null;
+      setPointMenu((menu) => {
+        if (!menu) return menu;
+        if (pin.kind === "closure") {
+          return menu.point.kind === "closure" &&
+            menu.point.closure.id === pin.id
+            ? null
+            : menu;
+        }
+        return menu.point.kind === "pass" && menu.point.pass.id === pin.id
+          ? null
+          : menu;
+      });
+    }, [closuresFetching, passesFetching, closures, passes]);
+
+    // ── close a condition popover when its own date/month input changes ──
+    // The reconcile above defers while its query reloads so a viewport pan/fly
+    // doesn't drop the popover on the transient empty frame. But a preview-date
+    // change (closures) or travel-month change (passes) also reloads the query,
+    // and there the open card is now for the wrong date/month — deferring would
+    // render stale details as current until the refetch lands. A closure is
+    // date-specific and a pass is month-specific, so drop the matching popover
+    // on that input change and let the rider re-open it against the new data.
+    useEffect(() => {
+      setPointMenu((menu) => (menu?.point.kind === "closure" ? null : menu));
+    }, [conditionsDate]);
+    useEffect(() => {
+      setPointMenu((menu) => (menu?.point.kind === "pass" ? null : menu));
+    }, [conditionsMonth]);
 
     // ── condition layer visibility ──
     useEffect(() => {
@@ -935,7 +1062,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             point={pointMenu.point}
             x={pointMenu.x}
             y={pointMenu.y}
-            onClose={() => setPointMenu(null)}
+            onClose={() => {
+              // Dismissing the card also drops any condition pin, so a later
+              // settle can't treat it as still-pinned.
+              pinnedConditionRef.current = null;
+              setPointMenu(null);
+            }}
           />
         ) : null}
       </MapCanvas>
