@@ -202,4 +202,46 @@ describe("PassesPanel", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("Brenner")).toBeInTheDocument();
   });
+
+  it("makes open passes focusable when focusOpenPasses is set (/explore)", () => {
+    const pass = (over: Partial<MountainPass>): MountainPass =>
+      ({
+        id: "x",
+        name: "Placeholder",
+        country_code: "CH",
+        region: null,
+        lat: 46.5,
+        lng: 8.3,
+        elevation_m: 2000,
+        status: "closed",
+        ...over,
+      }) as unknown as MountainPass;
+    const onFocusPass = vi.fn();
+    const openPass = pass({ id: "open-1", name: "Brenner", status: "open" });
+    const data: PassesQueryResult = {
+      passes: [openPass],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+    };
+
+    render(
+      <PassesPanel
+        month={7}
+        data={data}
+        showRouteWarnings={false}
+        onFocusPass={onFocusPass}
+        focusOpenPasses
+      />,
+    );
+
+    // The explorer markers every pass, so the open pass is now a button too.
+    const openButton = screen.getByRole("button", { name: /brenner/i });
+    fireEvent.click(openButton);
+    expect(onFocusPass).toHaveBeenCalledWith(openPass);
+  });
 });
