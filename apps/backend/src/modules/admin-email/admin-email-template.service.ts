@@ -170,13 +170,19 @@ export class AdminEmailTemplateService {
       if (!draft) {
         throw new NotFoundException(`No draft to publish for ${tag}/${locale}`);
       }
+      const priorPublished = await m.findOne(EmailTemplate, {
+        where: { template_tag: tag, locale, status: 'published' },
+      });
       await m.delete(EmailTemplate, {
         template_tag: tag,
         locale,
         status: 'published',
       });
       draft.status = 'published';
-      draft.version += 1;
+      // Monotonic per (tag, locale): continue from the prior published version, not
+      // the fresh draft's default. First publish (no prior) → 2; each later publish
+      // increments the last published version.
+      draft.version = (priorPublished?.version ?? draft.version) + 1;
       draft.published_at = new Date();
       return m.save(draft);
     });
