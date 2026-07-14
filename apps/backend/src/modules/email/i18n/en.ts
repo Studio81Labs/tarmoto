@@ -131,12 +131,16 @@ export const en = {
   // duplicate key.
 
   // --- weekly digest ---
-  'digest.subject': 'Your week on Tarmoto — {rideCount} {rideWord}, {distance}',
-  'digest.preheader':
-    '{rideCount} {rideWord}, {distance} this week on Tarmoto.',
+  // `{rideSummary}` = the pre-pluralized "{rideCount} {rideWord}" (e.g. "4
+  // rides"); `{percentExplored}` carries its own "%" suffix — see
+  // presentation/index.ts's `digestPresentation`. Both were split
+  // placeholders here until the presentationContext extraction folded them
+  // into single pre-formatted vars; the rendered copy is unchanged.
+  'digest.subject': 'Your week on Tarmoto — {rideSummary}, {distance}',
+  'digest.preheader': '{rideSummary}, {distance} this week on Tarmoto.',
   'digest.greeting.lead': "Here's your week on the road",
   'digest.intro':
-    "Exploration: you've now ridden {segments} road sections — {percent}% of your area.",
+    "Exploration: you've now ridden {segments} road sections — {percentExplored} of your area.",
   'digest.row.rides': 'Rides',
   'digest.row.distance': 'Distance',
   'digest.row.time': 'Time in the saddle',
@@ -144,7 +148,7 @@ export const en = {
   'digest.text.distanceRidden': '{distance} ridden',
   'digest.text.timeInSaddle': '{duration} in the saddle',
   'digest.explored':
-    'You\'ve now ridden <strong style="color:#f8fafc;">{segments}</strong> road sections — <strong style="color:#f8fafc;">{percent}%</strong> of your area explored.',
+    'You\'ve now ridden <strong style="color:#f8fafc;">{segments}</strong> road sections — <strong style="color:#f8fafc;">{percentExplored}</strong> of your area explored.',
   'digest.button': 'Find your next road',
   'digest.rideWord.one': 'ride',
   'digest.rideWord.other': 'rides',

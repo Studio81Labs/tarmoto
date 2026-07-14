@@ -2,8 +2,13 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DEFAULT_LOCALE, type SupportedLocale } from '@tarmoto/shared';
+import {
+  DEFAULT_LOCALE,
+  isEmailBlockDocument,
+  type SupportedLocale,
+} from '@tarmoto/shared';
 import { EmailLog } from '../../entities/email-log.entity.js';
+import { EmailTemplate } from '../../entities/email-template.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   EMAIL_PROVIDER,
@@ -11,6 +16,17 @@ import {
   type EmailSendResult,
 } from './email-provider.js';
 import { LogEmailProvider } from './providers/log.provider.js';
+import {
+  accountDeletionCompletedPresentation,
+  accountDeletionScheduledPresentation,
+  dataExportReadyPresentation,
+  digestPresentation,
+  subscriptionCancelledPresentation,
+  subscriptionConfirmedPresentation,
+  EDITABLE_TAGS,
+  type EditableTag,
+} from './presentation/index.js';
+import { renderBlocks } from './render/render-blocks.js';
 import {
   type AccountDeletionCompletedContext,
   type AccountDeletionScheduledContext,
@@ -39,6 +55,23 @@ import {
 const DEFAULT_SUPPORT_EMAIL = 'support@tarmoto.app';
 
 type ContextWithoutBase<T> = Omit<T, 'preferencesUrl' | 'locale'>;
+
+/** Contexts of the 6 editable tags — each already carries `preferencesUrl` +
+ * `locale` via `BaseContext` once run through `withBase`. */
+type OverridableContext =
+  | WeeklyDigestContext
+  | SubscriptionConfirmedContext
+  | SubscriptionCancelledContext
+  | DataExportReadyContext
+  | AccountDeletionScheduledContext
+  | AccountDeletionCompletedContext;
+
+// `EDITABLE_TAGS` is a `readonly EditableTag[]` (narrower than `EmailTag`);
+// widen to `readonly string[]` so `.includes` accepts any `EmailTag`,
+// including the locked ones this guard exists to reject.
+function isEditableTag(tag: EmailTag): tag is EditableTag {
+  return (EDITABLE_TAGS as readonly string[]).includes(tag);
+}
 
 /**
  * Public surface for every place in the backend that needs to send a
@@ -78,6 +111,12 @@ export class EmailService {
     @Optional()
     @InjectRepository(EmailLog)
     private readonly emailLog: Repository<EmailLog> | null = null,
+    // Same rationale as `emailLog` above — optional so tests without the DB
+    // layer still construct the service. Bound in production via the same
+    // `TypeOrmModule.forFeature`.
+    @Optional()
+    @InjectRepository(EmailTemplate)
+    private readonly emailTemplate: Repository<EmailTemplate> | null = null,
   ) {
     this.fallback = new LogEmailProvider();
   }
@@ -116,10 +155,12 @@ export class EmailService {
     ctx: ContextWithoutBase<SubscriptionConfirmedContext>,
     locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(
-      to,
-      subscriptionConfirmedTemplate(this.withBase(ctx, locale)),
+    const base = this.withBase(ctx, locale);
+    const overridden = await this.renderOverride(
+      'subscription-confirmed',
+      base,
     );
+    return this.dispatch(to, overridden ?? subscriptionConfirmedTemplate(base));
   }
 
   async sendSubscriptionCancelled(
@@ -127,10 +168,12 @@ export class EmailService {
     ctx: ContextWithoutBase<SubscriptionCancelledContext>,
     locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(
-      to,
-      subscriptionCancelledTemplate(this.withBase(ctx, locale)),
+    const base = this.withBase(ctx, locale);
+    const overridden = await this.renderOverride(
+      'subscription-cancelled',
+      base,
     );
+    return this.dispatch(to, overridden ?? subscriptionCancelledTemplate(base));
   }
 
   async sendDataExportReady(
@@ -138,10 +181,9 @@ export class EmailService {
     ctx: ContextWithoutBase<DataExportReadyContext>,
     locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(
-      to,
-      dataExportReadyTemplate(this.withBase(ctx, locale)),
-    );
+    const base = this.withBase(ctx, locale);
+    const overridden = await this.renderOverride('data-export-ready', base);
+    return this.dispatch(to, overridden ?? dataExportReadyTemplate(base));
   }
 
   async sendTripInvite(
@@ -157,7 +199,9 @@ export class EmailService {
     ctx: ContextWithoutBase<WeeklyDigestContext>,
     locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
-    return this.dispatch(to, weeklyDigestTemplate(this.withBase(ctx, locale)));
+    const base = this.withBase(ctx, locale);
+    const overridden = await this.renderOverride('weekly-digest', base);
+    return this.dispatch(to, overridden ?? weeklyDigestTemplate(base));
   }
 
   async sendAccountDeletionScheduled(
@@ -167,11 +211,17 @@ export class EmailService {
     >,
     locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
+    const base = this.withBase(
+      { ...ctx, supportEmail: this.supportEmail() },
+      locale,
+    );
+    const overridden = await this.renderOverride(
+      'account-deletion-scheduled',
+      base,
+    );
     return this.dispatch(
       to,
-      accountDeletionScheduledTemplate(
-        this.withBase({ ...ctx, supportEmail: this.supportEmail() }, locale),
-      ),
+      overridden ?? accountDeletionScheduledTemplate(base),
     );
   }
 
@@ -182,11 +232,17 @@ export class EmailService {
     >,
     locale: SupportedLocale = DEFAULT_LOCALE,
   ): Promise<EmailSendResult | null> {
+    const base = this.withBase(
+      { ...ctx, supportEmail: this.supportEmail() },
+      locale,
+    );
+    const overridden = await this.renderOverride(
+      'account-deletion-completed',
+      base,
+    );
     return this.dispatch(
       to,
-      accountDeletionCompletedTemplate(
-        this.withBase({ ...ctx, supportEmail: this.supportEmail() }, locale),
-      ),
+      overridden ?? accountDeletionCompletedTemplate(base),
     );
   }
 
@@ -244,6 +300,85 @@ export class EmailService {
         error: errMessage,
       });
       return null;
+    }
+  }
+
+  /**
+   * Admin-authored render override (admin email template editor, Phase 1).
+   * For one of the 6 editable tags, looks up the single `published`
+   * `EmailTemplate` row for `(tag, ctx.locale)` and — if it exists and is a
+   * structurally valid `EmailBlockDocument` — renders it through the
+   * code-owned block renderer instead of the code template. Locked tags
+   * (verification, password-reset, trip-invite, password-changed) never
+   * reach this from a `send*` method, but the guard below makes that
+   * contractual rather than incidental on caller discipline.
+   *
+   * Every failure mode — no published row, an invalid doc, or any thrown
+   * error (DB down, bad query, etc.) — resolves to `null` so the caller
+   * falls back to the code template. An override LOOKUP must never block a
+   * send; same rationale as `recordSend`'s best-effort `email_log` write.
+   */
+  private async renderOverride(
+    tag: EmailTag,
+    ctx: OverridableContext,
+  ): Promise<RenderedTemplate | null> {
+    try {
+      if (!isEditableTag(tag) || !this.emailTemplate) return null;
+      const row = await this.emailTemplate.findOne({
+        where: { template_tag: tag, locale: ctx.locale, status: 'published' },
+      });
+      if (!row) return null;
+      const doc = { subject: row.subject, blocks: row.blocks };
+      if (!isEmailBlockDocument(doc)) return null;
+      const { subject, html, text } = renderBlocks(
+        doc,
+        this.presentationFor(tag, ctx),
+        {
+          locale: ctx.locale,
+          preferencesUrl: ctx.preferencesUrl,
+          marketingFooter: tag === 'weekly-digest',
+        },
+      );
+      return { subject, html, text, tag };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Email template override lookup failed: tag=${tag} locale=${ctx.locale} error="${msg}". Falling back to the code template.`,
+      );
+      return null;
+    }
+  }
+
+  /** tag → presentation function dispatch (Task 3's `{ textVars, urlVars }`
+   * shape). Each editable tag's presentation function takes a differently
+   * shaped context, so this can't be a uniform record lookup — the switch is
+   * exhaustive over `EditableTag`, so a new editable tag without a case here
+   * is a compile error, not a silent no-op at render time. */
+  private presentationFor(
+    tag: EditableTag,
+    ctx: OverridableContext,
+  ): { textVars: Record<string, string>; urlVars: Record<string, string> } {
+    switch (tag) {
+      case 'weekly-digest':
+        return digestPresentation(ctx as WeeklyDigestContext);
+      case 'subscription-confirmed':
+        return subscriptionConfirmedPresentation(
+          ctx as SubscriptionConfirmedContext,
+        );
+      case 'subscription-cancelled':
+        return subscriptionCancelledPresentation(
+          ctx as SubscriptionCancelledContext,
+        );
+      case 'data-export-ready':
+        return dataExportReadyPresentation(ctx as DataExportReadyContext);
+      case 'account-deletion-scheduled':
+        return accountDeletionScheduledPresentation(
+          ctx as AccountDeletionScheduledContext,
+        );
+      case 'account-deletion-completed':
+        return accountDeletionCompletedPresentation(
+          ctx as AccountDeletionCompletedContext,
+        );
     }
   }
 

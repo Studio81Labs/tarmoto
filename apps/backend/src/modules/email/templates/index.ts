@@ -1,11 +1,18 @@
 import {
-  formatDistance,
   type SupportedLocale,
   type TranslationValues,
   type UnitSystem,
 } from '@tarmoto/shared';
 import { translateEmail, type EmailMessageKey } from '../i18n/index.js';
 import { escapeHtml, renderLayout, renderTextFooter } from './layout.js';
+import {
+  accountDeletionCompletedPresentation,
+  accountDeletionScheduledPresentation,
+  dataExportReadyPresentation,
+  digestPresentation,
+  subscriptionCancelledPresentation,
+  subscriptionConfirmedPresentation,
+} from '../presentation/index.js';
 
 /**
  * Each entry rendered into the same `{ subject, html, text }`
@@ -193,42 +200,41 @@ export const subscriptionConfirmedTemplate = (
 ): RenderedTemplate => {
   const t = (k: EmailMessageKey, v?: TranslationValues): string =>
     translateEmail(k, v, ctx.locale);
-  const subject = t('subscriptionConfirmed.subject', { plan: ctx.planName });
-  const renews = ctx.renewsAt
-    ? t('subscriptionConfirmed.text.renews', {
-        date: ctx.renewsAt.toUTCString(),
-      })
-    : t('subscriptionConfirmed.text.noRenew');
-  const greeting = ctx.displayName
-    ? t('common.greeting.named', { name: ctx.displayName })
+  const presentation = subscriptionConfirmedPresentation(ctx);
+  const { displayName, planName, priceLabel, renewsText, renewsDate } =
+    presentation.textVars;
+  const { manageBillingUrl } = presentation.urlVars;
+  const subject = t('subscriptionConfirmed.subject', { plan: planName });
+  const greeting = displayName
+    ? t('common.greeting.named', { name: displayName })
     : t('common.greeting.anon');
-  const greetingHtml = ctx.displayName
-    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+  const greetingHtml = displayName
+    ? t('common.greeting.named', { name: escapeHtml(displayName) })
     : t('common.greeting.anon');
   const text = `${greeting}
 
-${t('subscriptionConfirmed.text.welcome', { plan: ctx.planName })}
+${t('subscriptionConfirmed.text.welcome', { plan: planName })}
 
-${t('subscriptionConfirmed.table.plan')}: ${ctx.planName}
-${t('subscriptionConfirmed.table.price')}: ${ctx.priceLabel}
-${renews}
+${t('subscriptionConfirmed.table.plan')}: ${planName}
+${t('subscriptionConfirmed.table.price')}: ${priceLabel}
+${renewsText}
 
-${t('subscriptionConfirmed.text.manageIntro')}: ${ctx.manageBillingUrl}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
+${t('subscriptionConfirmed.text.manageIntro')}: ${manageBillingUrl}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
-    preheader: t('subscriptionConfirmed.preheader', { plan: ctx.planName }),
+    preheader: t('subscriptionConfirmed.preheader', { plan: planName }),
     preferencesUrl: ctx.preferencesUrl,
     locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
-      <p>${t('subscriptionConfirmed.welcome', { plan: escapeHtml(ctx.planName) })}</p>
+      <p>${t('subscriptionConfirmed.welcome', { plan: escapeHtml(planName) })}</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border:1px solid #334155;border-radius:8px;">
-        <tr><td style="padding:12px 16px;color:#94a3b8;">${t('subscriptionConfirmed.table.plan')}</td><td style="padding:12px 16px;text-align:right;"><strong>${escapeHtml(ctx.planName)}</strong></td></tr>
-        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.price')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.priceLabel)}</strong></td></tr>
-        ${ctx.renewsAt ? `<tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.renewal')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(ctx.renewsAt.toUTCString())}</strong></td></tr>` : ''}
+        <tr><td style="padding:12px 16px;color:#94a3b8;">${t('subscriptionConfirmed.table.plan')}</td><td style="padding:12px 16px;text-align:right;"><strong>${escapeHtml(planName)}</strong></td></tr>
+        <tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.price')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(priceLabel)}</strong></td></tr>
+        ${renewsDate ? `<tr><td style="padding:12px 16px;color:#94a3b8;border-top:1px solid #334155;">${t('subscriptionConfirmed.table.renewal')}</td><td style="padding:12px 16px;text-align:right;border-top:1px solid #334155;"><strong>${escapeHtml(renewsDate)}</strong></td></tr>` : ''}
       </table>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.manageBillingUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionConfirmed.manageButton')}</a>
+        <a href="${escapeHtml(manageBillingUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionConfirmed.manageButton')}</a>
       </p>
     `,
   });
@@ -248,37 +254,34 @@ export const subscriptionCancelledTemplate = (
 ): RenderedTemplate => {
   const t = (k: EmailMessageKey, v?: TranslationValues): string =>
     translateEmail(k, v, ctx.locale);
-  const subject = t('subscriptionCancelled.subject', { plan: ctx.planName });
-  const accessLine = ctx.endsAt
-    ? t('subscriptionCancelled.accessKept', {
-        plan: ctx.planName,
-        date: ctx.endsAt.toUTCString(),
-      })
-    : t('subscriptionCancelled.accessEnded', { plan: ctx.planName });
-  const greeting = ctx.displayName
-    ? t('common.greeting.named', { name: ctx.displayName })
+  const presentation = subscriptionCancelledPresentation(ctx);
+  const { displayName, planName, accessText } = presentation.textVars;
+  const { resubscribeUrl } = presentation.urlVars;
+  const subject = t('subscriptionCancelled.subject', { plan: planName });
+  const greeting = displayName
+    ? t('common.greeting.named', { name: displayName })
     : t('common.greeting.anon');
-  const greetingHtml = ctx.displayName
-    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+  const greetingHtml = displayName
+    ? t('common.greeting.named', { name: escapeHtml(displayName) })
     : t('common.greeting.anon');
   const text = `${greeting}
 
-${t('subscriptionCancelled.text.cancelled', { plan: ctx.planName })}
+${t('subscriptionCancelled.text.cancelled', { plan: planName })}
 
-${accessLine}
+${accessText}
 
-${t('subscriptionCancelled.text.resubscribeIntro')}: ${ctx.resubscribeUrl}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
+${t('subscriptionCancelled.text.resubscribeIntro')}: ${resubscribeUrl}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
-    preheader: t('subscriptionCancelled.preheader', { plan: ctx.planName }),
+    preheader: t('subscriptionCancelled.preheader', { plan: planName }),
     preferencesUrl: ctx.preferencesUrl,
     locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
-      <p>${t('subscriptionCancelled.html.cancelled', { plan: escapeHtml(ctx.planName) })}</p>
-      <p>${escapeHtml(accessLine)}</p>
+      <p>${t('subscriptionCancelled.html.cancelled', { plan: escapeHtml(planName) })}</p>
+      <p>${escapeHtml(accessText)}</p>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.resubscribeUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionCancelled.resubscribeButton')}</a>
+        <a href="${escapeHtml(resubscribeUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('subscriptionCancelled.resubscribeButton')}</a>
       </p>
     `,
   });
@@ -297,20 +300,23 @@ export const dataExportReadyTemplate = (
 ): RenderedTemplate => {
   const t = (k: EmailMessageKey, v?: TranslationValues): string =>
     translateEmail(k, v, ctx.locale);
+  const presentation = dataExportReadyPresentation(ctx);
+  const { displayName, expiresText } = presentation.textVars;
+  const { downloadUrl } = presentation.urlVars;
   const subject = t('dataExportReady.subject');
-  const greeting = ctx.displayName
-    ? t('common.greeting.named', { name: ctx.displayName })
+  const greeting = displayName
+    ? t('common.greeting.named', { name: displayName })
     : t('common.greeting.anon');
-  const greetingHtml = ctx.displayName
-    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+  const greetingHtml = displayName
+    ? t('common.greeting.named', { name: escapeHtml(displayName) })
     : t('common.greeting.anon');
   const text = `${greeting}
 
 ${t('dataExportReady.text.ready')}
 
-${ctx.downloadUrl}
+${downloadUrl}
 
-${t('dataExportReady.text.expiry', { date: ctx.expiresAt.toUTCString() })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
+${t('dataExportReady.text.expiry', { date: expiresText })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('dataExportReady.preheader'),
@@ -320,9 +326,9 @@ ${t('dataExportReady.text.expiry', { date: ctx.expiresAt.toUTCString() })}${rend
       <p>${greetingHtml}</p>
       <p>${t('dataExportReady.html.ready')}</p>
       <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.downloadUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('dataExportReady.button')}</a>
+        <a href="${escapeHtml(downloadUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('dataExportReady.button')}</a>
       </p>
-      <p style="color:#94a3b8;font-size:13px;">${t('dataExportReady.html.expiry', { date: escapeHtml(ctx.expiresAt.toUTCString()) })}</p>
+      <p style="color:#94a3b8;font-size:13px;">${t('dataExportReady.html.expiry', { date: escapeHtml(expiresText) })}</p>
     `,
   });
 
@@ -340,14 +346,15 @@ export const accountDeletionScheduledTemplate = (
 ): RenderedTemplate => {
   const t = (k: EmailMessageKey, v?: TranslationValues): string =>
     translateEmail(k, v, ctx.locale);
+  const presentation = accountDeletionScheduledPresentation(ctx);
+  const { displayName, scheduledDate, supportEmail } = presentation.textVars;
   const subject = t('accountDeletionScheduled.subject');
-  const greeting = ctx.displayName
-    ? t('common.greeting.named', { name: ctx.displayName })
+  const greeting = displayName
+    ? t('common.greeting.named', { name: displayName })
     : t('common.greeting.anon');
-  const greetingHtml = ctx.displayName
-    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+  const greetingHtml = displayName
+    ? t('common.greeting.named', { name: escapeHtml(displayName) })
     : t('common.greeting.anon');
-  const scheduledFor = ctx.scheduledFor.toUTCString();
   // Restoration during the grace window is support-only: a soft-
   // deleted account is locked out of /auth/login and /auth/refresh
   // (see AuthService — `deleted_at != null` rejects with the same
@@ -358,22 +365,24 @@ export const accountDeletionScheduledTemplate = (
   // restoration the GDPR grace window grants.
   const text = `${greeting}
 
-${t('accountDeletionScheduled.text.scheduled', { date: scheduledFor })}
+${t('accountDeletionScheduled.text.scheduled', { date: scheduledDate })}
 
-${t('accountDeletionScheduled.text.changedMind', { email: ctx.supportEmail })} ${t('accountDeletionScheduled.graceWindow')}
+${t('accountDeletionScheduled.text.changedMind', { email: supportEmail })} ${t('accountDeletionScheduled.graceWindow')}
 
 ${t('accountDeletionScheduled.afterDate')}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
-    preheader: t('accountDeletionScheduled.preheader', { date: scheduledFor }),
+    preheader: t('accountDeletionScheduled.preheader', {
+      date: scheduledDate,
+    }),
     preferencesUrl: ctx.preferencesUrl,
     locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
-      <p>${t('accountDeletionScheduled.html.scheduled', { date: escapeHtml(scheduledFor) })}</p>
+      <p>${t('accountDeletionScheduled.html.scheduled', { date: escapeHtml(scheduledDate) })}</p>
       <p>${t('accountDeletionScheduled.html.changedMind', {
         // already-escaped HTML fragment — do not re-escape
-        emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+        emailLink: `<a href="mailto:${escapeHtml(supportEmail)}" style="color:#06b6d4;">${escapeHtml(supportEmail)}</a>`,
       })}</p>
       <p style="color:#94a3b8;font-size:13px;">${t('accountDeletionScheduled.graceWindow')}</p>
       <p style="color:#94a3b8;font-size:13px;">${t('accountDeletionScheduled.afterDate')}</p>
@@ -453,14 +462,6 @@ ${t('tripInvite.text.noAccount')}${renderTextFooter(ctx.preferencesUrl, false, c
   return { subject, html, text, tag: 'trip-invite' };
 };
 
-/** "2h 15m" / "45m" from a raw minute count. */
-function formatDuration(minutes: number): string {
-  const m = Math.max(0, Math.round(minutes));
-  const h = Math.floor(m / 60);
-  const rem = m % 60;
-  return h > 0 ? `${h}h ${rem}m` : `${rem}m`;
-}
-
 export interface WeeklyDigestContext extends BaseContext {
   displayName: string;
   /** Completed rides in the window (guaranteed > 0 — empty weeks aren't sent). */
@@ -480,26 +481,25 @@ export const weeklyDigestTemplate = (
 ): RenderedTemplate => {
   const t = (k: EmailMessageKey, v?: TranslationValues): string =>
     translateEmail(k, v, ctx.locale);
-  const greeting = ctx.displayName
-    ? t('common.greeting.named', { name: ctx.displayName })
-    : t('common.greeting.anon');
-  const greetingHtml = ctx.displayName
-    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
-    : t('common.greeting.anon');
-  const distance = formatDistance(ctx.totalKm, ctx.units);
-  const duration = formatDuration(ctx.totalMinutes);
-  // Pluralization stays in code: which catalog key is picked is the
-  // plural rule, not something `t()`'s dumb {placeholder} substitution
-  // can express.
-  const rideWord =
-    ctx.rideCount === 1 ? t('digest.rideWord.one') : t('digest.rideWord.other');
-  const quality =
-    ctx.bestQuality != null ? `${ctx.bestQuality.toFixed(1)} / 5` : null;
-  const subject = t('digest.subject', {
-    rideCount: ctx.rideCount,
-    rideWord,
+  const presentation = digestPresentation(ctx);
+  const {
+    displayName,
+    rideCount,
+    rideSummary,
     distance,
-  });
+    duration,
+    quality,
+    riddenSegments,
+    percentExplored,
+  } = presentation.textVars;
+  const { exploreUrl } = presentation.urlVars;
+  const greeting = displayName
+    ? t('common.greeting.named', { name: displayName })
+    : t('common.greeting.anon');
+  const greetingHtml = displayName
+    ? t('common.greeting.named', { name: escapeHtml(displayName) })
+    : t('common.greeting.anon');
+  const subject = t('digest.subject', { rideSummary, distance });
   // Shared stem for the line right after the greeting — text appends ":"
   // (it introduces the bullet list below), html appends "." (standalone
   // sentence ahead of the table).
@@ -509,14 +509,14 @@ export const weeklyDigestTemplate = (
 
 ${weekLead}:
 
-  • ${ctx.rideCount} ${rideWord}
+  • ${rideSummary}
   • ${t('digest.text.distanceRidden', { distance })}
   • ${t('digest.text.timeInSaddle', { duration })}${quality ? `\n  • ${t('digest.row.quality')}: ${quality}` : ''}
 
-${t('digest.intro', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}
+${t('digest.intro', { segments: riddenSegments, percentExplored })}
 
 ${t('digest.button')}:
-${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true, ctx.locale)}`;
+${exploreUrl}${renderTextFooter(ctx.preferencesUrl, true, ctx.locale)}`;
 
   const row = (label: string, value: string): string => `
       <tr>
@@ -525,11 +525,7 @@ ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true, ctx.locale)}`;
       </tr>`;
 
   const html = renderLayout({
-    preheader: t('digest.preheader', {
-      rideCount: ctx.rideCount,
-      rideWord,
-      distance,
-    }),
+    preheader: t('digest.preheader', { rideSummary, distance }),
     preferencesUrl: ctx.preferencesUrl,
     locale: ctx.locale,
     marketingFooter: true,
@@ -537,14 +533,14 @@ ${ctx.exploreUrl}${renderTextFooter(ctx.preferencesUrl, true, ctx.locale)}`;
       <p>${greetingHtml}</p>
       <p>${weekLead}.</p>
       <table role="presentation" width="100%" style="margin:20px 0;border-collapse:collapse;">
-        ${row(t('digest.row.rides'), String(ctx.rideCount))}
+        ${row(t('digest.row.rides'), rideCount)}
         ${row(t('digest.row.distance'), distance)}
         ${row(t('digest.row.time'), duration)}
         ${quality ? row(t('digest.row.quality'), quality) : ''}
       </table>
-      <p style="color:#cbd5e1;">${t('digest.explored', { segments: ctx.riddenSegments, percent: ctx.percentExplored })}</p>
+      <p style="color:#cbd5e1;">${t('digest.explored', { segments: riddenSegments, percentExplored })}</p>
       <p style="margin:32px 0;">
-        <a href="${escapeHtml(ctx.exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('digest.button')}</a>
+        <a href="${escapeHtml(exploreUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${t('digest.button')}</a>
       </p>
     `,
   });
@@ -563,21 +559,22 @@ export const accountDeletionCompletedTemplate = (
 ): RenderedTemplate => {
   const t = (k: EmailMessageKey, v?: TranslationValues): string =>
     translateEmail(k, v, ctx.locale);
+  const presentation = accountDeletionCompletedPresentation(ctx);
+  const { displayName, deletedDate, supportEmail } = presentation.textVars;
   const subject = t('accountDeletionCompleted.subject');
-  const greeting = ctx.displayName
-    ? t('common.greeting.named', { name: ctx.displayName })
+  const greeting = displayName
+    ? t('common.greeting.named', { name: displayName })
     : t('common.greeting.anon');
-  const greetingHtml = ctx.displayName
-    ? t('common.greeting.named', { name: escapeHtml(ctx.displayName) })
+  const greetingHtml = displayName
+    ? t('common.greeting.named', { name: escapeHtml(displayName) })
     : t('common.greeting.anon');
-  const deletedAt = ctx.deletedAt.toUTCString();
   const text = `${greeting}
 
-${t('accountDeletionCompleted.text.deleted', { date: deletedAt })}
+${t('accountDeletionCompleted.text.deleted', { date: deletedDate })}
 
 ${t('accountDeletionCompleted.erased')}
 
-${t('accountDeletionCompleted.text.contact', { email: ctx.supportEmail })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
+${t('accountDeletionCompleted.text.contact', { email: supportEmail })}${renderTextFooter(ctx.preferencesUrl, false, ctx.locale)}`;
 
   const html = renderLayout({
     preheader: t('accountDeletionCompleted.preheader'),
@@ -585,13 +582,13 @@ ${t('accountDeletionCompleted.text.contact', { email: ctx.supportEmail })}${rend
     locale: ctx.locale,
     bodyHtml: `
       <p>${greetingHtml}</p>
-      <p>${t('accountDeletionCompleted.html.deleted', { date: escapeHtml(deletedAt) })}</p>
+      <p>${t('accountDeletionCompleted.html.deleted', { date: escapeHtml(deletedDate) })}</p>
       <p>${t('accountDeletionCompleted.erased')}</p>
       <p style="color:#94a3b8;font-size:13px;">${t(
         'accountDeletionCompleted.html.contact',
         {
           // already-escaped HTML fragment — do not re-escape
-          emailLink: `<a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a>`,
+          emailLink: `<a href="mailto:${escapeHtml(supportEmail)}" style="color:#06b6d4;">${escapeHtml(supportEmail)}</a>`,
         },
       )}</p>
     `,

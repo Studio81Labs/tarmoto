@@ -2,6 +2,7 @@ import { Logger, Module, type Provider } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailLog } from '../../entities/email-log.entity.js';
+import { EmailTemplate } from '../../entities/email-template.entity.js';
 import { EMAIL_PROVIDER, type EmailProvider } from './email-provider.js';
 import { EmailService } from './email.service.js';
 import { LogEmailProvider } from './providers/log.provider.js';
@@ -65,7 +66,7 @@ const emailProvider: Provider = {
 };
 
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([EmailLog])],
+  imports: [ConfigModule, TypeOrmModule.forFeature([EmailLog, EmailTemplate])],
   providers: [emailProvider, EmailService],
   exports: [EmailService],
 })
