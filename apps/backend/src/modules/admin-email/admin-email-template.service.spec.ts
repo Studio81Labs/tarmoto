@@ -20,6 +20,7 @@ function make() {
     findOne: jest.fn(),
     delete: jest.fn(),
     save: jest.fn((row: EmailTemplate) => Promise.resolve(row)),
+    query: jest.fn(),
   };
 
   const dataSource = {
@@ -230,6 +231,12 @@ describe('AdminEmailTemplateService', () => {
       expect.anything(),
       expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
     );
+    // ...and the promote runs under the (tag, locale) advisory lock reset also
+    // takes, serializing publish/reset for the same template.
+    expect(manager.query).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      ['email_template:weekly-digest:en'],
+    );
   });
 
   it('publish continues the version from the prior published row, not the draft default', async () => {
@@ -293,10 +300,17 @@ describe('AdminEmailTemplateService', () => {
     expect(manager.save).not.toHaveBeenCalled();
   });
 
-  it('reset deletes the published row for (tag, locale)', async () => {
-    const { service, templates } = make();
+  it('reset deletes the published row under the advisory lock', async () => {
+    const { service, manager } = make();
     await service.reset('weekly-digest', 'en');
-    expect(templates.delete).toHaveBeenCalledWith({
+    // Runs inside the transaction and takes the same (tag, locale) advisory
+    // lock as publish, so a reset overlapping a publish can't return 200 while
+    // the just-published override stays live.
+    expect(manager.query).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      ['email_template:weekly-digest:en'],
+    );
+    expect(manager.delete).toHaveBeenCalledWith(expect.anything(), {
       template_tag: 'weekly-digest',
       locale: 'en',
       status: 'published',

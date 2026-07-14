@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, type EntityManager, In, Repository } from 'typeorm';
 import type { SupportedLocale } from '@tarmoto/shared';
 import { EmailTemplate } from '../../entities/email-template.entity.js';
 import { EmailService } from '../email/email.service.js';
@@ -159,6 +159,26 @@ export class AdminEmailTemplateService {
   }
 
   /**
+   * Acquire a transaction-scoped Postgres advisory lock serializing the
+   * mutations for one (tag, locale). publish and reset both act on the single
+   * published row — one promotes a draft into it, the other deletes it — but
+   * observe/target it in separate transactions, so without a shared lock a
+   * reset can overlap a publish and miss the row it commits. An advisory lock
+   * rather than a row lock, because the row is being created/deleted so there
+   * is no stable row to lock; keyed on a stable hash of (tag, locale) and
+   * released automatically at commit/rollback.
+   */
+  private async lockTemplate(
+    m: EntityManager,
+    tag: string,
+    locale: SupportedLocale,
+  ): Promise<void> {
+    await m.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      `email_template:${tag}:${locale}`,
+    ]);
+  }
+
+  /**
    * Promotes the draft row to published, atomically. The delete-old-published
    * + promote-draft MUST run in one transaction, or the partial unique index
    * (at most one `published` row per (tag, locale)) rejects the promote when
@@ -170,6 +190,7 @@ export class AdminEmailTemplateService {
   ): Promise<EmailTemplateDetailDto> {
     this.assertEditable(tag);
     const saved = await this.dataSource.transaction(async (m) => {
+      await this.lockTemplate(m, tag, locale);
       const draft = await m.findOne(EmailTemplate, {
         where: { template_tag: tag, locale, status: 'draft' },
         // Lock the draft row for the promotion. Without it a concurrent
@@ -219,10 +240,18 @@ export class AdminEmailTemplateService {
   /** Deletes the published override for (tag, locale) — the code template renders again. Idempotent. */
   async reset(tag: string, locale: SupportedLocale): Promise<void> {
     this.assertEditable(tag);
-    await this.templates.delete({
-      template_tag: tag,
-      locale,
-      status: 'published',
+    // Serialize with publish under the same advisory lock. Otherwise a reset
+    // overlapping a publish runs its DELETE against a snapshot where the
+    // promote is still uncommitted, returns 200, and leaves the just-published
+    // override live. Under the lock, reset waits for the publish to commit and
+    // then deletes the row it created.
+    await this.dataSource.transaction(async (m) => {
+      await this.lockTemplate(m, tag, locale);
+      await m.delete(EmailTemplate, {
+        template_tag: tag,
+        locale,
+        status: 'published',
+      });
     });
   }
 
