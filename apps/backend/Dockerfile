@@ -64,15 +64,26 @@ COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
 COPY docs/database/ docs/database/
 
-# Persistent POI-extract volume mount point (#847 admin uploads). The admin
-# upload writes the extract here and the import reads it, so this must be a
-# writable volume mounted at TARMOTO_POI_IMPORT_DIR / TARMOTO_FSQ_IMPORT_DIR.
-# Create it owned by `tarmoto` while still root so a FRESH named volume mounted
-# here inherits that ownership (Docker copies an empty volume's owner from the
-# image mount point on first mount) and the non-root runtime user can write —
-# otherwise the volume comes up root-owned and uploads fail with EACCES. If the
-# volume already exists root-owned, recreate it (or chown it once).
-RUN mkdir -p /data/poi-extracts && chown tarmoto:tarmoto /data/poi-extracts
+# Persistent POI-extract volume mount point(s) (#847 admin uploads). Each bulk
+# source's admin upload writes its extract to that source's OWN configured dir
+# and the import reads it back — OSM under TARMOTO_POI_IMPORT_DIR, FSQ under its
+# independent TARMOTO_FSQ_IMPORT_DIR (#869) — so BOTH must be writable volumes.
+# Create + chown each while still root so a FRESH named volume mounted there
+# inherits that ownership (Docker copies an empty volume's owner from the image
+# mount point on first mount) and the non-root runtime user can write —
+# otherwise the volume comes up root-owned and uploads fail with EACCES.
+#
+# Seed the exact paths the deployment configures: the PaaS injects every app env
+# var as a build ARG (see the base-image note above), so TARMOTO_*_IMPORT_DIR
+# reach this stage. The defaults preserve the prior single-dir behaviour for a
+# local `docker build`; an unset/empty FSQ dir falls back to the OSM dir (the
+# common single-shared-volume topology, so seeding it twice is a harmless no-op).
+# If a volume already exists root-owned, recreate it (or chown it once).
+ARG TARMOTO_POI_IMPORT_DIR=/data/poi-extracts
+ARG TARMOTO_FSQ_IMPORT_DIR=""
+RUN poi_dir="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}"; \
+    fsq_dir="${TARMOTO_FSQ_IMPORT_DIR:-$poi_dir}"; \
+    mkdir -p "$poi_dir" "$fsq_dir" && chown tarmoto:tarmoto "$poi_dir" "$fsq_dir"
 
 USER tarmoto
 EXPOSE 3000
