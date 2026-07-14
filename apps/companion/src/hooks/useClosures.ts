@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { closuresApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -70,6 +70,11 @@ export function useClosures(
   const listQuery = useQuery({
     queryKey: ["closures", "list", previewIso, bbox, reconnectRevision],
     enabled,
+    // Keep the prior viewport's closures while a pan/zoom refetches the new
+    // bbox, so the list never blinks through `[]`. The explorer reconciles an
+    // open closure popover against this list and would otherwise close it on
+    // that empty frame — e.g. right after tapping a row flies the map.
+    placeholderData: keepPreviousData,
     queryFn: async ({ signal }) => {
       const { data } = await closuresApi.list(
         { active_on: previewIso, ...(bbox !== undefined ? { bbox } : {}) },
