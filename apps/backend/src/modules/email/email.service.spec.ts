@@ -107,6 +107,39 @@ describe('EmailService', () => {
       expect(message.subject).toBe('Hi Bob  Bcc: evil@example.com');
     });
 
+    it('records the sanitized subject in the delivery log, not the raw one', async () => {
+      const send = jest.fn().mockResolvedValue({
+        providerMessageId: 'res_log',
+        providerName: 'mock',
+      });
+      const insert = jest.fn().mockResolvedValue(undefined);
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: { name: 'mock', send } },
+          { provide: ConfigService, useValue: buildConfigService() },
+          { provide: getRepositoryToken(EmailLog), useValue: { insert } },
+        ],
+      }).compile();
+      const service = module.get(EmailService);
+
+      const crlf = String.fromCharCode(13, 10);
+      await service.sendRendered('rider@tarmoto.app', {
+        subject: `Weekly digest${crlf}Bcc: evil@example.com`,
+        html: '<p>hi</p>',
+        text: 'hi',
+        tag: 'weekly-digest',
+      });
+
+      expect(insert).toHaveBeenCalledTimes(1);
+      const [row] = insert.mock.calls[0] as [{ subject: string }];
+      // email_log must match what the provider received (sanitized), not the
+      // raw CRLF subject — otherwise the admin log UI diverges from the
+      // delivered mail and the log stream is forgeable.
+      expect(row.subject).not.toMatch(/\p{Cc}/u);
+    });
+
     it('returns null and emits a metadata-only warning when the primary throws (no body re-logged)', async () => {
       const failing: EmailProvider = {
         name: 'flaky',

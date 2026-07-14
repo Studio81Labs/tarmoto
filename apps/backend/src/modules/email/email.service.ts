@@ -291,14 +291,22 @@ export class EmailService {
     to: string,
     template: RenderedTemplate,
   ): Promise<EmailSendResult | null> {
-    const headers = this.bulkHeaders(template.tag);
+    // Sanitize the subject once and thread the sanitized copy through the
+    // provider message, the delivery-log write, and the failure warning — so
+    // email_log and the logs match what the provider actually received, and a
+    // CR/LF in a user-controlled subject var can't forge log lines (CWE-117).
+    const safe: RenderedTemplate = {
+      ...template,
+      subject: sanitizeSubject(template.subject),
+    };
+    const headers = this.bulkHeaders(safe.tag);
     const message = {
       to,
-      subject: sanitizeSubject(template.subject),
-      html: template.html,
-      text: template.text,
+      subject: safe.subject,
+      html: safe.html,
+      text: safe.text,
       headers,
-      tag: template.tag,
+      tag: safe.tag,
     };
 
     const primary = this.provider ?? this.fallback;
@@ -306,10 +314,10 @@ export class EmailService {
     try {
       const result = await primary.send(message);
       this.logger.log(
-        `Sent ${template.tag} to ${to} via ${result.providerName}` +
+        `Sent ${safe.tag} to ${to} via ${result.providerName}` +
           (result.providerMessageId ? ` (${result.providerMessageId})` : ''),
       );
-      await this.recordSend(to, template, {
+      await this.recordSend(to, safe, {
         status: 'sent',
         provider: result.providerName,
         providerMessageId: result.providerMessageId ?? null,
@@ -323,9 +331,9 @@ export class EmailService {
       // provider; this redaction only applies when a real provider
       // failed and we'd otherwise leak the token into log aggregators.
       this.logger.warn(
-        `Email NOT delivered: tag=${template.tag} to=${to} subject="${template.subject}" provider=${primary.name} error="${errMessage}". Body redacted from logs to avoid leaking one-time tokens; if the user expected this mail, ask them to retry the originating action.`,
+        `Email NOT delivered: tag=${safe.tag} to=${to} subject="${safe.subject}" provider=${primary.name} error="${errMessage}". Body redacted from logs to avoid leaking one-time tokens; if the user expected this mail, ask them to retry the originating action.`,
       );
-      await this.recordSend(to, template, {
+      await this.recordSend(to, safe, {
         status: 'failed',
         provider: primary.name,
         error: errMessage,
