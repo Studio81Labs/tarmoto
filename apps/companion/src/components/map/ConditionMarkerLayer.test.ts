@@ -3,10 +3,12 @@ import type { FeatureCollection } from "geojson";
 import type { PlannerClosure } from "@/lib/closures-summary";
 import type { MountainPass } from "@/lib/passes-summary";
 import {
+  ensureConditionLayers,
   setConditionSourceData,
   CLOSURE_LINE_SOURCE,
   CLOSURE_MARKER_SOURCE,
   PASS_MARKER_SOURCE,
+  PASS_MARKER_LAYER,
 } from "./ConditionMarkerLayer";
 
 function closure(over: Partial<PlannerClosure> = {}): PlannerClosure {
@@ -118,5 +120,43 @@ describe("setConditionSourceData", () => {
     expect(() =>
       setConditionSourceData(map, { closures: [closure()], passes: [pass()] }),
     ).not.toThrow();
+  });
+});
+
+/** Fake map that records the layer spec passed to each `addLayer` by id. */
+function layerCapturingMap() {
+  const layers: Record<string, { filter?: unknown }> = {};
+  const map = {
+    hasImage: () => true, // skip the sprite install entirely
+    addImage: () => {},
+    getSource: () => undefined, // force addSource for every source
+    addSource: () => {},
+    getLayer: () => undefined, // force addLayer for every layer
+    addLayer: (spec: { id: string; filter?: unknown }) => {
+      layers[spec.id] = spec;
+    },
+  } as unknown as MapLibreMap;
+  return { map, layers };
+}
+
+describe("ensureConditionLayers pass filter", () => {
+  it("hides open passes by default (ambient-awareness view)", () => {
+    const { map, layers } = layerCapturingMap();
+
+    ensureConditionLayers(map);
+
+    expect(layers[PASS_MARKER_LAYER]!.filter).toEqual([
+      "!=",
+      ["get", "status"],
+      "open",
+    ]);
+  });
+
+  it("includes open passes when opted in (/explore markers every pass)", () => {
+    const { map, layers } = layerCapturingMap();
+
+    ensureConditionLayers(map, undefined, { includeOpenPasses: true });
+
+    expect(layers[PASS_MARKER_LAYER]!.filter).toBeUndefined();
   });
 });

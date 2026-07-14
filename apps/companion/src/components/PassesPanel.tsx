@@ -32,6 +32,11 @@ interface PassesPanelProps {
   showRegionalList?: boolean;
   /** Fly to the pass marker + open its popover (revision 7). */
   onFocusPass?: (pass: MountainPass) => void;
+  /**
+   * Also make open passes focusable. Off by default (the planner keeps open
+   * passes off the map); the explorer opts in since it markers every pass.
+   */
+  focusOpenPasses?: boolean;
   /** Insert a via around this on-route pass and re-route. */
   onReroutePass?: (pass: MountainPass) => void;
 }
@@ -64,6 +69,7 @@ export function PassesPanel({
   data,
   showRegionalList = true,
   onFocusPass,
+  focusOpenPasses = false,
   onReroutePass,
 }: PassesPanelProps) {
   const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
@@ -89,6 +95,7 @@ export function PassesPanel({
         data={data}
         showRegionalList={showRegionalList}
         onFocusPass={onFocusPass}
+        focusOpenPasses={focusOpenPasses}
         onReroutePass={onReroutePass}
       />
     );
@@ -103,6 +110,7 @@ export function PassesPanel({
       showRouteWarnings={showRouteWarnings}
       showRegionalList={showRegionalList}
       onFocusPass={onFocusPass}
+      focusOpenPasses={focusOpenPasses}
       onReroutePass={onReroutePass}
     />
   );
@@ -116,6 +124,7 @@ function FetchedPassesPanel({
   showRouteWarnings,
   showRegionalList,
   onFocusPass,
+  focusOpenPasses,
   onReroutePass,
 }: {
   month: number;
@@ -126,6 +135,7 @@ function FetchedPassesPanel({
   showRouteWarnings: boolean;
   showRegionalList?: boolean | undefined;
   onFocusPass?: ((pass: MountainPass) => void) | undefined;
+  focusOpenPasses?: boolean | undefined;
   onReroutePass?: ((pass: MountainPass) => void) | undefined;
 }) {
   const data = usePasses(month, routes, bbox ? { bbox } : undefined);
@@ -139,6 +149,7 @@ function FetchedPassesPanel({
       data={data}
       showRegionalList={showRegionalList}
       onFocusPass={onFocusPass}
+      focusOpenPasses={focusOpenPasses}
       onReroutePass={onReroutePass}
     />
   );
@@ -152,6 +163,7 @@ function PassesPanelBody({
   data,
   showRegionalList = true,
   onFocusPass,
+  focusOpenPasses = false,
   onReroutePass,
 }: {
   month: number;
@@ -162,6 +174,7 @@ function PassesPanelBody({
   data: PassesQueryResult;
   showRegionalList?: boolean | undefined;
   onFocusPass?: ((pass: MountainPass) => void) | undefined;
+  focusOpenPasses?: boolean | undefined;
   onReroutePass?: ((pass: MountainPass) => void) | undefined;
 }) {
   const {
@@ -309,15 +322,20 @@ function PassesPanelBody({
             </span>
           </p>
 
-          <ul className="space-y-1.5">
+          <ul className="space-y-2">
             {STATUS_DISPLAY_ORDER.flatMap((status) =>
               groups[status].slice(0, MAX_PASSES_PER_GROUP).map((p) => (
                 <PassRow
                   key={p.id}
                   pass={p}
-                  // Open passes have no marker (the layer filters them out), so
-                  // don't offer a focus-to-marker click for them.
-                  onFocus={p.status === "open" ? undefined : onFocusPass}
+                  // Open passes have no marker in the planner (the layer filters
+                  // them out) so they aren't focusable there; the explorer opts
+                  // in via `focusOpenPasses` since it markers every pass.
+                  onFocus={
+                    p.status === "open" && !focusOpenPasses
+                      ? undefined
+                      : onFocusPass
+                  }
                 />
               )),
             )}
@@ -373,15 +391,16 @@ function PassRow({
       </span>
     </>
   );
+  // Card layout matching ClosureRow so both Conditions lists read the same.
   // When a focus handler is supplied (the /explore Conditions list), the whole
   // row is a button that flies the map to the marker + opens its popover.
   return (
-    <li>
+    <li className="rounded-xl border border-line bg-paper p-3">
       {onFocus ? (
         <button
           type="button"
           onClick={() => onFocus(pass)}
-          className="flex w-full items-start gap-2 text-left text-xs"
+          className="flex w-full cursor-pointer items-start gap-2 text-left text-xs"
           title={t("Show on map")}
         >
           {body}
@@ -410,7 +429,7 @@ function OnRoutePassCard({
       <button
         type="button"
         onClick={() => onFocus?.(pass)}
-        className="block w-full text-left"
+        className="block w-full cursor-pointer text-left"
         title={t("Show on map")}
       >
         <div className="flex items-start justify-between gap-3">
