@@ -1,14 +1,17 @@
 # syntax=docker/dockerfile:1.23
 #
 # Scheduled POI extract-refresh container (#976) — the "fetch" half of the
-# offline POI pipeline. Downloads Geofabrik country PBFs, `osmium`-filters +
-# clips them to `<code>.osm` on the shared import volume BEFORE the weekly import
-# cron (Sunday 03:00 UTC) reads them, so the store mirrors CURRENT data instead
-# of re-importing a static file.
+# offline POI pipeline, for BOTH bulk sources. It writes fresh per-region
+# extracts to the shared import volume BEFORE the import cron reads them, so the
+# store mirrors CURRENT data instead of re-importing a static file:
+#   - OSM  (weekly):  refresh-poi-extracts — download Geofabrik PBFs, `osmium`
+#                     tags-filter + clip to `<code>.osm`.
+#   - FSQ  (monthly): refresh-fsq-extracts — a token-gated `duckdb` pull from the
+#                     Foursquare OS Places Iceberg catalog to `<code>.fsq.jsonl`.
 #
-# SEPARATE from the backend runtime image on purpose: `osmium` + multi-GB PBF
-# handling must never bloat the app runtime (the whole codebase keeps osmium an
-# external ops tool). It reuses the backend BUILD, though — the refresh script
+# SEPARATE from the backend runtime image on purpose: `osmium`/`duckdb` + multi-GB
+# data handling must never bloat the app runtime (the codebase keeps both as
+# external ops tools). It reuses the backend BUILD, though — the refresh scripts
 # and `DEFAULT_REGIONS` bboxes compile into `apps/backend/dist`, so the clip box
 # can never drift from the importer's.
 #
@@ -19,14 +22,19 @@
 # same reason as the backend image: the PaaS auto-injects every app env var as a
 # build ARG, and a stray NODE_VERSION/packageManager would otherwise break it.
 #
-# Run on a schedule (e.g. a Coolify scheduled task / cron, Saturday — comfortably
-# before the Sunday tick) with:
-#   - TARMOTO_POI_REFRESH_ENABLED=true
-#   - TARMOTO_POI_IMPORT_DIR = the SAME shared volume mounted on the API/worker
-#   - (optional) TARMOTO_POI_IMPORT_REGIONS to narrow the set
+# Run on schedules (e.g. Coolify scheduled tasks that `docker exec` the commands
+# under CMD into the idle container):
+#   - OSM, weekly (Saturday, before the Sunday import tick): poi:refresh, with
+#       TARMOTO_POI_REFRESH_ENABLED=true, TARMOTO_POI_IMPORT_DIR = the shared
+#       volume mounted on the API/worker, (optional) TARMOTO_POI_IMPORT_REGIONS.
+#   - FSQ, monthly (the OS Places drop + token are monthly): fsq:refresh, with
+#       TARMOTO_FSQ_REFRESH_ENABLED=true, TARMOTO_FSQ_TOKEN = a Places Portal
+#       access token (rotated monthly), TARMOTO_FSQ_IMPORT_DIR, (optional)
+#       TARMOTO_FSQ_IMPORT_REGIONS. The token stays in THIS container only — it
+#       never reaches the API/worker, which read only the extract files.
 # Needs enough ephemeral disk for the largest single country PBF (~4 GB for DE)
-# plus its filtered copy — regions run sequentially and clean up between, so peak
-# disk is one country, not all 17.
+# plus its filtered copy — OSM regions run sequentially and clean up between, so
+# peak disk is one country, not all 17. FSQ streams a small NDJSON per region.
 
 FROM node:24-slim AS base
 ENV PNPM_HOME=/pnpm
@@ -57,19 +65,38 @@ ENV NODE_ENV=production \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
-# `osmium-tool` (Debian) provides the `osmium` binary the script shells out to;
-# tini reaps the osmium child processes as PID 1.
+# Tools the refresh scripts shell out to: `osmium-tool` (Debian) provides the
+# `osmium` binary (OSM); a pinned `duckdb` CLI does the FSQ Iceberg pull. tini
+# reaps their child processes as PID 1. DuckDB is a GitHub release download
+# (Debian has no package) — pinned to 1.4.0 (FSQ OS Places needs >= 1.4.0 for the
+# Iceberg REST catalog) and arch-aware (amd64 on the VPS; arm64 for a local
+# build). curl/unzip are removed after use; ca-certificates stays for runtime TLS
+# (osmium/duckdb fetch over HTTPS).
 #
 # The runtime user is pinned to uid 100 / gid 101 to MATCH the backend image's
 # `tarmoto` and therefore the shared extract volume's owner — so files this
 # container writes are owned the same as the API/worker read them, and a later
 # refresh (or an admin upload) can replace them cleanly. Both ids are free on
-# node:24-slim (verified).
-RUN apt-get update \
- && apt-get install -y --no-install-recommends osmium-tool tini \
+# node:24-slim (verified). It gets a real home (`-m`) so DuckDB can install +
+# cache its httpfs/iceberg extensions under `$HOME/.duckdb` at runtime; HOME is
+# pointed at it just before USER (below) — deliberately NOT in the top ENV, so
+# the earlier root steps (corepack/pnpm) don't pre-create it root-owned, which
+# would make `useradd -m` a no-op on ownership and EACCES the runtime `~/.duckdb`.
+RUN arch="$(dpkg --print-architecture)" \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      osmium-tool tini ca-certificates curl unzip \
+ && curl -fsSL -o /tmp/duckdb.zip \
+      "https://github.com/duckdb/duckdb/releases/download/v1.4.0/duckdb_cli-linux-${arch}.zip" \
+ && unzip -o /tmp/duckdb.zip -d /usr/local/bin \
+ && rm /tmp/duckdb.zip \
+ && chmod +x /usr/local/bin/duckdb \
+ && apt-get purge -y curl unzip \
+ && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/* \
+ && duckdb --version \
  && groupadd -g 101 tarmoto \
- && useradd -u 100 -g 101 -M -s /usr/sbin/nologin tarmoto
+ && useradd -u 100 -g 101 -m -d /home/tarmoto -s /usr/sbin/nologin tarmoto
 WORKDIR /app
 
 COPY --from=build /workspace/pnpm-workspace.yaml /workspace/package.json /workspace/pnpm-lock.yaml ./
@@ -82,27 +109,39 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
 
-# Seed the extract-volume mount point owned by uid 100 (like the backend image,
+# Seed the extract-volume mount points owned by uid 100 (like the backend image,
 # #975/#982) so a FRESH named volume first attached to THIS container comes up
 # writable — otherwise Docker roots it and the non-root refresh fails with
-# EACCES. Only the OSM dir (the refresh writes `<code>.osm`). The PaaS injects
-# the env var as a build ARG; the default covers a local `docker build`.
+# EACCES. Both the OSM dir (`<code>.osm`) and the FSQ dir (`<code>.fsq.jsonl`);
+# they may be one shared path or two volumes (idempotent either way). The PaaS
+# injects the env vars as build ARGs; the defaults cover a local `docker build`.
+# (A pre-existing root-owned BIND mount still needs a one-time host `chown` — the
+# image seed only governs fresh named volumes; see the runbook.)
 ARG TARMOTO_POI_IMPORT_DIR=/data/poi-extracts
-RUN dir="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}" \
- && mkdir -p "$dir" \
- && chown tarmoto:tarmoto "$dir"
+ARG TARMOTO_FSQ_IMPORT_DIR=/data/poi-extracts
+RUN osm="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}" \
+ && fsq="${TARMOTO_FSQ_IMPORT_DIR:-/data/poi-extracts}" \
+ && mkdir -p "$osm" "$fsq" \
+ && chown tarmoto:tarmoto "$osm" "$fsq"
 
+# Point the runtime user's HOME at its own dir so DuckDB's `~/.duckdb` (extension
+# cache) is writable by uid 100. Set HERE — after `useradd -m` made the dir
+# tarmoto-owned — not in the top ENV, so no earlier root step creates it first.
+ENV HOME=/home/tarmoto
 USER tarmoto
 ENTRYPOINT ["/usr/bin/tini", "--"]
 # Idle by default. On a PaaS like Coolify the image runs as a long-lived
-# application and the weekly refresh is fired by a **Scheduled Task** that
-# `docker exec`s the command below into this running container — so the main
+# application and each refresh is fired by a **Scheduled Task** that `docker
+# exec`s one of the commands below into this running container — so the main
 # process must stay up (a one-shot CMD would exit and get restart-looped,
-# re-downloading gigabytes every cycle). Run the refresh explicitly:
+# re-downloading gigabytes every cycle). Run a refresh explicitly:
 #
-#   node apps/backend/dist/scripts/refresh-poi-extracts.js
-#   (or, from the repo:  pnpm --filter @tarmoto/backend poi:refresh)
+#   OSM (weekly):   node apps/backend/dist/scripts/refresh-poi-extracts.js
+#                   (or:  pnpm --filter @tarmoto/backend poi:refresh)
+#   FSQ (monthly):  node apps/backend/dist/scripts/refresh-fsq-extracts.js
+#                   (or:  pnpm --filter @tarmoto/backend fsq:refresh)
 #
-# It no-ops unless TARMOTO_POI_REFRESH_ENABLED=true, and writes to the volume
-# mounted at TARMOTO_POI_IMPORT_DIR (must be writable by uid 100 — see runbook).
+# OSM no-ops unless TARMOTO_POI_REFRESH_ENABLED=true; FSQ unless
+# TARMOTO_FSQ_REFRESH_ENABLED=true (and needs TARMOTO_FSQ_TOKEN). Each writes to
+# its TARMOTO_*_IMPORT_DIR (must be writable by uid 100 — see runbook).
 CMD ["sleep", "infinity"]
