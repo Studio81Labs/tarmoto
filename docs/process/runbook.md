@@ -249,6 +249,20 @@ Geofabrik slug, or before the scheduled container is provisioned). **FSQ is not
 automated** — OS Places is a token-gated DuckDB/Iceberg pull (below); refresh it
 via the manual recipe.
 
+**Manual uploads vs. the refresh — who owns which region.** The scheduled
+container is the **authoritative** source for the extracts of the regions it
+refreshes (`TARMOTO_POI_IMPORT_REGIONS`). Do **not** hand-upload those regions
+via the admin UI: the next refresh re-overwrites the file, so a manual override
+won't survive the following run (the atomic rename means it's never _corrupt_,
+just replaced). Reserve the admin upload for regions the container does **not**
+refresh, or for one-off / pre-provisioning loads. And because the extract volume
+is shared, any write — a refresh **or** an admin upload — lands the same file
+that **every** environment's import then reads, so treat a manual upload as a
+cross-env action. (This operational contract is why the refresh doesn't take the
+admin upload lock: it owns its regions and the atomic rename rules out a torn
+file — see #986 for the analysis and the heavier per-region-lock option, which
+was deferred as disproportionate.)
+
 ### Producing per-country POI extracts (Foursquare OS Places)
 
 The FSQ bulk import (#869) reads one **newline-delimited JSON** file per active region from `TARMOTO_FSQ_IMPORT_DIR`, named `<code>.fsq.jsonl` (lower-case ISO code, e.g. `cz.fsq.jsonl`). It's a second `source` (`'fsq'`) stored alongside OSM in `pois`; it uses [FSQ OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) — the free, Apache-2.0, monthly-refreshed open dataset — **not** the Places API (the API's ToS forbids bulk-storing its data; OS Places is built for it).
