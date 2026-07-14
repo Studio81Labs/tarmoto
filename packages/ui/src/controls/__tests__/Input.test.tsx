@@ -36,3 +36,19 @@ test("leading icon is decorative (aria-hidden), input still reachable by label",
   );
   expect(screen.getByRole("textbox", { name: "search" })).toBeInTheDocument();
 });
+
+test("associates the hint for an ariaLabel-only field with no id", () => {
+  render(
+    <Input
+      value="x"
+      onChange={() => {}}
+      ariaLabel="Email"
+      error
+      hint="Enter a valid email address."
+    />,
+  );
+  const input = screen.getByRole("textbox", { name: "Email" });
+  const hint = screen.getByText("Enter a valid email address.");
+  expect(hint.id).toBeTruthy();
+  expect(input).toHaveAttribute("aria-describedby", hint.id);
+});

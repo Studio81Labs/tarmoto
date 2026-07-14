@@ -26,6 +26,21 @@ test("error sets aria-invalid", () => {
   expect(screen.getByRole("textbox")).toHaveAttribute("aria-invalid", "true");
 });
 
+test("associates the hint for an ariaLabel-only field with no id", () => {
+  render(
+    <Textarea
+      value=""
+      onChange={() => {}}
+      ariaLabel="Notes"
+      hint="Markdown supported."
+    />,
+  );
+  const ta = screen.getByRole("textbox", { name: "Notes" });
+  const hint = screen.getByText("Markdown supported.");
+  expect(hint.id).toBeTruthy();
+  expect(ta).toHaveAttribute("aria-describedby", hint.id);
+});
+
 test("honors an external hintId with no local hint (Field composition)", () => {
   // Field renders the hint itself and passes only `hintId` to the child.
   render(

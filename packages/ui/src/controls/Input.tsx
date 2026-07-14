@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { FieldHint } from "./field/FieldHint";
@@ -44,8 +44,12 @@ export function Input({
   hintId,
   className,
 }: InputProps) {
+  // When a hint is shown, always resolve an id so `aria-describedby` can point
+  // at it — falling back to a generated id for `ariaLabel`-only fields that
+  // pass no `id`/`hintId` (otherwise the hint renders but is invisible to AT).
+  const autoHintId = useId();
   const resolvedHintId =
-    hintId ?? (hint ? (id ? `${id}-hint` : undefined) : undefined);
+    hintId ?? (hint ? (id ? `${id}-hint` : autoHintId) : undefined);
   return (
     <div className={cn("w-full", className)}>
       <div className="relative">

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { FieldHint } from "./field/FieldHint";
@@ -40,10 +40,12 @@ export function Textarea({
   className,
 }: TextareaProps) {
   // Mirror Input: honor an externally-supplied `hintId` even without a local
-  // `hint`, so a `Field`-wrapped Textarea (Field renders the hint and passes
-  // only `hintId`) still wires `aria-describedby`.
+  // `hint` (so a `Field`-wrapped Textarea still wires `aria-describedby`), and
+  // fall back to a generated id for `ariaLabel`-only fields with a local hint
+  // but no `id`/`hintId` (otherwise the hint is invisible to AT).
+  const autoHintId = useId();
   const resolvedHintId =
-    hintId ?? (hint ? (id ? `${id}-hint` : undefined) : undefined);
+    hintId ?? (hint ? (id ? `${id}-hint` : autoHintId) : undefined);
   return (
     <div className={cn("w-full", className)}>
       <textarea
