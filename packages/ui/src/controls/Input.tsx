@@ -23,7 +23,7 @@ export interface InputProps {
   leadingIcon?: ReactNode;
   error?: boolean;
   hint?: ReactNode;
-  hintId?: string;
+  hintId?: string | undefined;
   className?: string;
 }
 
@@ -44,9 +44,8 @@ export function Input({
   hintId,
   className,
 }: InputProps) {
-  const resolvedHintId = hint
-    ? (hintId ?? (id ? `${id}-hint` : undefined))
-    : undefined;
+  const resolvedHintId =
+    hintId ?? (hint ? (id ? `${id}-hint` : undefined) : undefined);
   return (
     <div className={cn("w-full", className)}>
       <div className="relative">
