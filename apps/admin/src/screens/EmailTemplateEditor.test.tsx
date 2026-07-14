@@ -2,20 +2,28 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EmailTemplateEditor } from "./EmailTemplateEditor.js";
 
-const detail = {
-  tag: "weekly-digest",
-  locale: "en",
-  subject: "Hi {displayName}",
-  blocks: [{ type: "paragraph", text: "hello" }],
-  status: "none",
-  version: 0,
-  whitelist: { textVars: ["displayName"], urlVars: ["exploreUrl"] },
-};
+// `vi.hoisted` mirrors the `authState` pattern below: `templateState.data`
+// needs to change identity *within* a test (to simulate a background
+// refetch resolving with fresh server data), and a `vi.mock` factory can't
+// close over a reassigned out-of-scope variable — only a stable, hoisted,
+// mutable container.
+const templateState = vi.hoisted(() => {
+  const initial = {
+    tag: "weekly-digest",
+    locale: "en",
+    subject: "Hi {displayName}",
+    blocks: [{ type: "paragraph", text: "hello" }],
+    status: "none",
+    version: 0,
+    whitelist: { textVars: ["displayName"], urlVars: ["exploreUrl"] },
+  };
+  return { data: initial, initial };
+});
 const saveMutate = vi.fn();
 const publishMutate = vi.fn();
 vi.mock("../data/useAdminEmailTemplates.js", () => ({
   useEmailTemplate: () => ({
-    data: detail,
+    data: templateState.data,
     isPending: false,
     error: null,
     refetch: vi.fn(),
@@ -40,6 +48,7 @@ describe("EmailTemplateEditor", () => {
   beforeEach(() => {
     saveMutate.mockReset();
     publishMutate.mockReset();
+    templateState.data = templateState.initial;
   });
 
   it("hides Publish/Reset for support and shows Save draft", () => {
@@ -82,6 +91,38 @@ describe("EmailTemplateEditor", () => {
         body: expect.objectContaining({ subject: "Hi {displayName}" }),
       }),
       expect.anything(),
+    );
+  });
+
+  it("does not clobber an in-progress edit when a background refetch resolves with fresh data for the same template", () => {
+    authState.role = "support";
+    const { rerender } = render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "Edited while a refetch is in flight" },
+    });
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Edited while a refetch is in flight",
+    );
+
+    // Simulate the background GET that Save/Publish fire off (`void refetch()`)
+    // resolving with fresh server data for the SAME (tag, locale) — a new
+    // `data` object, e.g. with a bumped version. The seed effect must
+    // recognize this (tag, locale) was already seeded and leave the
+    // in-progress edit alone instead of reverting it.
+    templateState.data = {
+      ...templateState.data,
+      subject: "Subject from the server",
+      version: 1,
+    };
+    rerender(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Edited while a refetch is in flight",
     );
   });
 });

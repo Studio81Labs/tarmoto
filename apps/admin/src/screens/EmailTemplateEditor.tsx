@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Input, Pill } from "@tarmoto/ui";
 import { Dialog } from "../components/Dialog.js";
 import {
@@ -71,12 +71,20 @@ export function EmailTemplateEditor({
   const [confirm, setConfirm] = useState<null | "publish" | "reset">(null);
   const [addOpen, setAddOpen] = useState(false);
 
+  // Seed the editor once per (tag, locale). A later background refetch — e.g.
+  // after Save/Publish, to refresh the status pill + version — must NOT overwrite
+  // the admin's in-progress edits: status/version are read from `data` in the
+  // header, but subject/blocks stay owned by local state after the first load.
+  const seededKey = useRef<string | null>(null);
   useEffect(() => {
     if (!data) return;
+    const key = `${tag}/${locale}`;
+    if (seededKey.current === key) return;
+    seededKey.current = key;
     setSubject(data.subject);
     setBlocks(data.blocks);
     setDirty(false);
-  }, [data]);
+  }, [data, tag, locale]);
 
   useEffect(() => {
     if (!dirty) return;
