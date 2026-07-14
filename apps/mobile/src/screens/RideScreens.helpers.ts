@@ -14,6 +14,7 @@ import {
   type LeanDistribution,
 } from "@tarmoto/shared";
 
+import type { IconName } from "@/components/Icon";
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
 import { QUALITY_COLORS, UNSCORED_COLOR } from "@/theme/brand";
@@ -104,10 +105,12 @@ export function formatCurveCount(count: number | null | undefined): string {
 }
 
 /**
- * Material Design icon name for a road surface. Falls back to a neutral
- * "road" glyph for `unknown` so the icon slot never collapses.
+ * Icon name (see `@/components/Icon`) for a road surface. Falls back to a
+ * neutral "road" glyph for `unknown` so the icon slot never collapses. Typed
+ * as `IconName` so a surface pointing at an unregistered glyph is a compile
+ * error rather than a blank slot / invalid-element crash at runtime.
  */
-export function surfaceIcon(surface: SurfaceType): string {
+export function surfaceIcon(surface: SurfaceType): IconName {
   switch (surface) {
     case "asphalt":
       return "road";

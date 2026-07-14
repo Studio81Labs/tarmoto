@@ -61,14 +61,14 @@ jest.mock("@/stores", () => ({
   ) => selector({ user: { id: "user-1" } }),
 }));
 
-jest.mock("@react-native-vector-icons/material-design-icons", () => {
+jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ReactStub = require("react");
+  const ReactLib = require("react");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Text } = require("react-native");
-  return function MockIcon({ name }: { name?: string }) {
-    return ReactStub.createElement(Text, null, `icon:${name ?? ""}`);
-  };
+  const MockIcon = ({ name }: { name?: string }) =>
+    ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  return { Icon: MockIcon };
 });
 
 // React Native's Modal pulls in the native renderer (`Animated.timing`

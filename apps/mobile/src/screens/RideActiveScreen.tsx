@@ -28,13 +28,7 @@
  * The US-4 hazard-report FAB stays mounted in the bottom-right corner
  * so a rider can flag a pothole or oil spill without leaving the HUD.
  */
-import React, {
-  type ComponentProps,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   PermissionsAndroid,
@@ -47,7 +41,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import DeviceInfo from "react-native-device-info";
 import HazardReportFab from "@/components/HazardReportFab";
@@ -87,7 +81,6 @@ type RideActiveNav = NativeStackNavigationProp<
   RideStackParamList,
   "RideActive"
 >;
-type IconName = ComponentProps<typeof Icon>["name"];
 
 // Always-dark immersive HUD → the brand night palette. On this near-black
 // surface the Q1–Q5 ramp clears AA as text/icon, so the quality card keeps
@@ -623,7 +616,7 @@ export default function RideActiveScreen() {
           ]}
         >
           <Icon
-            name={surfaceIcon(surface ?? "unknown") as IconName}
+            name={surfaceIcon(surface ?? "unknown")}
             size={32}
             color={qColor}
           />

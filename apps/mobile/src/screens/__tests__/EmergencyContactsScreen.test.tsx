@@ -18,12 +18,14 @@ import { Alert } from "react-native";
 import EmergencyContactsScreen from "../EmergencyContactsScreen";
 import { api } from "@/services/api";
 
-jest.mock("@react-native-vector-icons/material-design-icons", () => {
+jest.mock("@/components/Icon", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactLib = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Text } = require("react-native");
-  return function MockIcon({ name }: { name?: string }) {
-    return ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
-  };
+  const MockIcon = ({ name }: { name?: string }) =>
+    ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  return { Icon: MockIcon };
 });
 
 jest.mock("@/services/api", () => ({

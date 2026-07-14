@@ -25,7 +25,7 @@ import {
 } from "react-native";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import Icon from "@react-native-vector-icons/material-design-icons";
+import { Icon } from "@/components/Icon";
 import { meetsQualityThreshold, qualityLabel } from "@/theme";
 import {
   brandColorsLight,
@@ -797,8 +797,7 @@ function WaypointRow({
   isLast: boolean;
 }) {
   const isFuel = waypoint.waypoint_type === "fuel";
-  const iconName = (WAYPOINT_ICONS[waypoint.waypoint_type] ??
-    "map-marker") as IconName;
+  const iconName = WAYPOINT_ICONS[waypoint.waypoint_type] ?? "map-marker";
   const iconColor = isFuel ? statusFg.warning : t.fg;
 
   return (
