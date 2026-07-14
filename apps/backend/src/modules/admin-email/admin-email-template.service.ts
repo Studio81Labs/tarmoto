@@ -172,6 +172,14 @@ export class AdminEmailTemplateService {
     const saved = await this.dataSource.transaction(async (m) => {
       const draft = await m.findOne(EmailTemplate, {
         where: { template_tag: tag, locale, status: 'draft' },
+        // Lock the draft row for the promotion. Without it a concurrent
+        // saveDraft UPDATE could land between this read and the m.save below,
+        // and the stale in-memory entity we promote would overwrite those newer
+        // subject/blocks — losing the edit with no draft copy left. FOR UPDATE
+        // makes that save wait until we commit; it then sees the row published
+        // and creates a fresh draft instead. (EmailTemplate has no relations,
+        // so there is no join to trip the PG "FOR UPDATE on outer join" error.)
+        lock: { mode: 'pessimistic_write' },
       });
       if (!draft) {
         throw new NotFoundException(`No draft to publish for ${tag}/${locale}`);

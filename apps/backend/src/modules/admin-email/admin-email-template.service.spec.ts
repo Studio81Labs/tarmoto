@@ -224,6 +224,12 @@ describe('AdminEmailTemplateService', () => {
     );
     expect(result.status).toBe('published');
     expect(result.version).toBe(2);
+    // The draft is read FOR UPDATE so a concurrent saveDraft can't slip newer
+    // edits in between this read and the promote (they would be lost).
+    expect(manager.findOne).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
+    );
   });
 
   it('publish continues the version from the prior published row, not the draft default', async () => {
