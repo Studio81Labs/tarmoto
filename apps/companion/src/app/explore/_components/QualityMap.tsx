@@ -756,22 +756,24 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       closuresRef.current = closures;
       passesRef.current = passes;
       setConditionSourceData(map, { closures, passes });
-      // Only reconcile the open popover against SETTLED data. A viewport change
-      // re-keys the closures/passes queries, so mid-fetch the hooks momentarily
-      // report empty lists; reconciling against that transient `[]` is what
-      // closed a just-opened condition popover when tapping a row flies the map.
-      // Refs + markers still track the live (incl. empty) state above, so no
-      // stale data is shown as current — we only defer the open/close decision.
-      if (closuresLoading || passesLoading) return;
       // Reconcile an open condition popover with the fresh list: refresh its
       // DTO (e.g. a new seasonal status after a month change), or drop it if the
       // condition is gone (panned away / toggled off → []) — or, for a pass,
       // now `open`, since open passes are filtered out of the marker layer and
       // a popover with no marker to anchor would float over empty map.
+      //
+      // Only reconcile against SETTLED data, and only for the list that backs
+      // the open popover: a viewport change re-keys both queries, so mid-fetch
+      // each momentarily reports `[]`. Deferring against that transient empty is
+      // what kept a just-tapped condition's popover from closing when the row
+      // tap flies the map. Gating per-kind (not on `closuresLoading ||
+      // passesLoading`) so a closure card isn't held open while an unrelated
+      // passes refetch is still in flight, and vice versa.
       setPointMenu((menu) => {
         if (!menu) return menu;
         const point = menu.point;
         if (point.kind === "closure") {
+          if (closuresLoading) return menu;
           const fresh = closures.find((c) => c.id === point.closure.id);
           return fresh
             ? {
@@ -781,6 +783,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             : null;
         }
         if (point.kind === "pass") {
+          if (passesLoading) return menu;
           const fresh = passes.find((p) => p.id === point.pass.id);
           if (!fresh || fresh.status === "open") return null;
           return {
