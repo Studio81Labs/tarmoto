@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdministratorsScreen } from "./AdministratorsScreen.js";
 
@@ -129,21 +129,22 @@ describe("AdministratorsScreen", () => {
     expect(buttons).toHaveLength(1);
   });
 
-  it("role Select for a manageable row does not include admin/super_admin for a non-super_admin actor", () => {
+  it("role Select for a manageable row does not include admin/super_admin for a non-super_admin actor", async () => {
+    const user = userEvent.setup();
     render(
       // admin actor can only manage a2 (support); a1 (admin peer) gets no controls
       <AdministratorsScreen currentRole="admin" currentAdminId="other" />,
     );
-    // The per-row role Select for a2 should only expose roles the admin can assign
-    const roleSelect = screen.getByRole("combobox", {
-      name: /role for support@tarmoto\.app/i,
-    });
-    const options = within(roleSelect).getAllByRole("option");
-    const values = options.map((o) => o.getAttribute("value"));
-    expect(values).not.toContain("admin");
-    expect(values).not.toContain("super_admin");
-    expect(values).toContain("read_only");
-    expect(values).toContain("support");
+    // react-aria Select renders a <button> trigger; open it to reveal options
+    await user.click(
+      screen.getByRole("button", { name: /role for support@tarmoto\.app/i }),
+    );
+    const options = screen.getAllByRole("option");
+    const labels = options.map((o) => o.textContent ?? "");
+    expect(labels).not.toContain("Admin");
+    expect(labels).not.toContain("Super Admin");
+    expect(labels).toContain("Read-only");
+    expect(labels).toContain("Support");
   });
 
   it("calls patchMutate with correct body and refetches on success", async () => {

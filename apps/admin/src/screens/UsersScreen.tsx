@@ -201,31 +201,33 @@ export function UsersScreen() {
               setPage(1);
             }
           }}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "deleted", label: "Deleted" },
+            { value: "all", label: "All" },
+          ]}
           ariaLabel="Filter by status"
           className="w-36"
-        >
-          <option value="active">Active</option>
-          <option value="deleted">Deleted</option>
-          <option value="all">All</option>
-        </Select>
+        />
         <Select
           value={subscription}
           onChange={(v) => {
             setSubscription(v);
             setPage(1);
           }}
+          options={[
+            { value: "", label: "All subscriptions" },
+            { value: "free", label: "Free" },
+            { value: "premium", label: "Premium" },
+            { value: "pro", label: "Pro" },
+            { value: "active", label: "Active" },
+            { value: "trialing", label: "Trialing" },
+            { value: "past_due", label: "Past due" },
+            { value: "canceled", label: "Canceled" },
+          ]}
           ariaLabel="Filter by subscription"
           className="w-44"
-        >
-          <option value="">All subscriptions</option>
-          <option value="free">Free</option>
-          <option value="premium">Premium</option>
-          <option value="pro">Pro</option>
-          <option value="active">Active</option>
-          <option value="trialing">Trialing</option>
-          <option value="past_due">Past due</option>
-          <option value="canceled">Canceled</option>
-        </Select>
+        />
       </div>
       <DataTable
         columns={columns}
@@ -334,14 +336,15 @@ function NotificationPreferencesCard({ userId }: { userId: string }) {
                     patch({ email_digest: v });
                   }
                 }}
+                options={[
+                  { value: "weekly", label: "Weekly" },
+                  { value: "daily", label: "Daily" },
+                  { value: "never", label: "Never" },
+                ]}
                 ariaLabel="Email digest cadence"
                 className="w-40"
                 disabled={saving}
-              >
-                <option value="weekly">Weekly</option>
-                <option value="daily">Daily</option>
-                <option value="never">Never</option>
-              </Select>
+              />
             </dd>
           </div>
           <div className="flex items-center gap-3">

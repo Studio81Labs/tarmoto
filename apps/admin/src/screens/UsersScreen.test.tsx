@@ -432,10 +432,11 @@ describe("UsersScreen", () => {
     const user = userEvent.setup();
     render(<UsersScreen />);
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /filter by subscription/i }),
-      "free",
+    // react-aria Select renders a <button> trigger; open it then click the option
+    await user.click(
+      screen.getByRole("button", { name: /filter by subscription/i }),
     );
+    await user.click(screen.getByRole("option", { name: "Free" }));
 
     const lastCall = mockUseAdminUsersList.mock.calls.at(-1)?.[0] as
       | Record<string, unknown>
@@ -458,10 +459,11 @@ describe("UsersScreen", () => {
     );
 
     // Changing subscription filter should reset page to 1
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /filter by subscription/i }),
-      "pro",
+    // react-aria Select renders a <button> trigger; open it then click the option
+    await user.click(
+      screen.getByRole("button", { name: /filter by subscription/i }),
     );
+    await user.click(screen.getByRole("option", { name: "Pro" }));
 
     const lastCall = mockUseAdminUsersList.mock.calls.at(-1)?.[0] as
       | Record<string, unknown>
@@ -477,10 +479,11 @@ describe("UsersScreen", () => {
     expect(screen.getByText("Notification preferences")).toBeInTheDocument();
 
     // Changing the digest cadence PATCHes just that field for the selected user.
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /email digest cadence/i }),
-      "never",
+    // react-aria Select renders a <button> trigger; open it then click the option
+    await user.click(
+      screen.getByRole("button", { name: /email digest cadence/i }),
     );
+    await user.click(screen.getByRole("option", { name: "Never" }));
     expect(mockUpdatePrefsMutate).toHaveBeenCalledWith(
       { params: { path: { id: "u1" } }, body: { email_digest: "never" } },
       expect.anything(),
