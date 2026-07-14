@@ -494,6 +494,10 @@ function ClosureRow({
             {REASON_LABEL[closure.reason]}
             {closure.region ? ` · ${closure.region}` : ""}
           </p>
+          {/* The severity dot above is decorative (aria-hidden); carry the
+              label for screen readers + non-hover devices, since colour and a
+              hover tooltip alone don't convey it. */}
+          <span className="sr-only">{SEVERITY_LABEL[closure.severity]}</span>
         </div>
       </div>
 
