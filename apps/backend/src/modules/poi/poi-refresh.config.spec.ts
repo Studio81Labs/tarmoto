@@ -69,5 +69,11 @@ describe('poi-refresh.config', () => {
     it('targetDir is null when TARMOTO_POI_IMPORT_DIR is unset', () => {
       expect(resolvePoiRefreshConfig({}).targetDir).toBeNull();
     });
+
+    it('fails fast on an unknown region code instead of silently dropping it (#976 review)', () => {
+      expect(() =>
+        resolvePoiRefreshConfig({ TARMOTO_POI_IMPORT_REGIONS: 'CZ,ZZ' }),
+      ).toThrow(/unknown region "ZZ"/);
+    });
   });
 });

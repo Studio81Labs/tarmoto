@@ -90,9 +90,10 @@ export interface PoiRefreshConfig {
   targetDir: string | null;
   /**
    * Regions to refresh: `DEFAULT_REGIONS` narrowed by
-   * `TARMOTO_POI_IMPORT_REGIONS` (default all), then dropped to those with a
-   * Geofabrik slug. Shares the importer's region env so the refresh and the
-   * import always target the same set.
+   * `TARMOTO_POI_IMPORT_REGIONS` (default all). Shares the importer's region env
+   * so the refresh and the import always target the same set; an unknown code
+   * fails fast (like the importer's `parseRegions`) rather than being silently
+   * dropped.
    */
   regions: readonly PoiImportRegion[];
 }
@@ -104,17 +105,28 @@ export interface PoiRefreshConfig {
 export function resolvePoiRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): PoiRefreshConfig {
+  const known = new Set(DEFAULT_REGIONS.map((r) => r.code));
   const requested = env.TARMOTO_POI_IMPORT_REGIONS?.trim();
   const codes = requested
-    ? new Set(
-        requested
-          .split(',')
-          .map((c) => c.trim().toUpperCase())
-          .filter(Boolean),
-      )
-    : null; // null = all configured regions
+    ? requested
+        .split(',')
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean)
+    : [];
+  // Fail fast on a typo/unsupported code, matching the importer's `parseRegions`
+  // (#976 review): silently dropping it would let the scheduled task exit green
+  // having refreshed nothing, while the import keeps reusing stale files.
+  for (const code of codes) {
+    if (!known.has(code)) {
+      throw new Error(
+        `Invalid TARMOTO_POI_IMPORT_REGIONS: unknown region "${code}". ` +
+          `Known regions: ${DEFAULT_REGIONS.map((r) => r.code).join(', ')}`,
+      );
+    }
+  }
+  const wanted = codes.length > 0 ? new Set(codes) : null; // null = all
   const regions = DEFAULT_REGIONS.filter(
-    (r) => (codes === null || codes.has(r.code)) && GEOFABRIK_SLUGS[r.code],
+    (r) => wanted === null || wanted.has(r.code),
   );
   const dir = env.TARMOTO_POI_IMPORT_DIR?.trim();
   return {

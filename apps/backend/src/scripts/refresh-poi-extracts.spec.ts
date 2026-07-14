@@ -79,6 +79,9 @@ describe('refresh-poi-extracts', () => {
       );
       expect(calls[1]?.[0]).toBe('extract');
       expect(calls[1]).toContain(bboxArg(CZ.bbox));
+      // Explicit output format — osmium can't detect it from the `.part` temp
+      // suffix, so the extract must pass `-f osm` (#976 review).
+      expect(calls[1]).toEqual(expect.arrayContaining(['-f', 'osm']));
       // Intermediates cleaned; only the final file remains, never a `.part`.
       expect(await readdir(workDir)).toEqual([]);
       expect(await readdir(targetDir)).toEqual(['cz.osm']);

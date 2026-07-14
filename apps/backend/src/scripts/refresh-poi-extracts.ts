@@ -109,6 +109,12 @@ export async function refreshRegion(
       '-b',
       bboxArg(region.bbox),
       filtered,
+      // Write OSM XML explicitly. osmium otherwise autodetects the output format
+      // from the filename suffix, and our atomic temp name ends in `.part` (not
+      // `.osm`) — which osmium can't detect ("Could not detect file format"), so
+      // without this the extract fails for every region (#976 review).
+      '-f',
+      'osm',
       '-o',
       tmpOut,
       '--overwrite',
