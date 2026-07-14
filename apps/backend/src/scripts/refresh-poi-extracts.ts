@@ -27,7 +27,7 @@
  */
 
 import { createWriteStream } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -45,6 +45,14 @@ import {
 } from '../modules/poi/poi-refresh.config.js';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Suffix for the refresh's atomic temp files — **distinct** from the admin
+ * upload's plain `.part` (`storeExtract`) so the startup sweep can remove OUR
+ * orphans (from a killed/restarted run) without ever touching an in-progress
+ * upload's temp on the same shared volume (#976 review).
+ */
+const REFRESH_TMP_SUFFIX = '.refresh.part';
 
 /** Injectable I/O seams so the orchestration is unit-testable without a network
  *  or a real `osmium` binary. */
@@ -91,8 +99,10 @@ export async function refreshRegion(
   const filtered = join(workDir, `${region.code}-poi.osm.pbf`);
   const finalOut = join(targetDir, `${region.code.toLowerCase()}.osm`);
   // Unique per run so a re-run (or a crashed prior run) can't collide, and the
-  // live `<code>.osm` is only ever touched by the final atomic rename.
-  const tmpOut = `${finalOut}.${process.pid}.${randomBytes(6).toString('hex')}.part`;
+  // live `<code>.osm` is only ever touched by the final atomic rename. The
+  // `.refresh.part` marker lets `sweepStaleTempFiles` reclaim an orphan from a
+  // killed run without touching an admin upload's plain `.part`.
+  const tmpOut = `${finalOut}.${process.pid}.${randomBytes(6).toString('hex')}${REFRESH_TMP_SUFFIX}`;
 
   try {
     await deps.download(url, pbf);
@@ -136,6 +146,25 @@ export interface RefreshSummary {
 }
 
 /**
+ * Remove stale refresh temp files (`*.refresh.part`) orphaned by a killed or
+ * restarted run — with a fresh random name each run they would otherwise
+ * accumulate on the persistent shared volume and eventually fill it (#976
+ * review). Only OUR suffix is swept, so an in-progress admin upload's plain
+ * `.part` on the same volume is never removed. Best-effort per file.
+ */
+async function sweepStaleTempFiles(
+  dir: string,
+  log: (msg: string) => void,
+): Promise<void> {
+  const stale = (await readdir(dir)).filter((name) =>
+    name.endsWith(REFRESH_TMP_SUFFIX),
+  );
+  if (stale.length === 0) return;
+  await Promise.all(stale.map((name) => rm(join(dir, name), { force: true })));
+  log(`POI refresh: swept ${stale.length} stale temp file(s) from ${dir}`);
+}
+
+/**
  * Refresh every region in `config`, isolating failures: one region's
  * download/filter error is logged and recorded, and the loop moves on (its live
  * extract stays as-is). Returns the per-region outcome for the caller to surface.
@@ -151,6 +180,8 @@ export async function refreshAll(
       'TARMOTO_POI_IMPORT_DIR is not set — nowhere to write refreshed extracts',
     );
   }
+  // Reclaim orphans from a previously killed run before writing new temps.
+  await sweepStaleTempFiles(config.targetDir, log);
   const summary: RefreshSummary = { ok: [], failed: [] };
   log(
     `POI refresh: ${config.regions.length} region(s) — ` +

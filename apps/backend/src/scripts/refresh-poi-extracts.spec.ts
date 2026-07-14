@@ -170,5 +170,31 @@ describe('refresh-poi-extracts', () => {
       // Only CZ's extract landed; SK kept nothing (it had none) — no sk.osm.
       expect(await readdir(targetDir)).toEqual(['cz.osm']);
     });
+
+    it('sweeps stale refresh temp files at startup but preserves an in-progress upload .part (#976 review)', async () => {
+      await writeFile(
+        join(targetDir, 'cz.osm.9.deadbeef.refresh.part'),
+        'orphaned refresh temp',
+      );
+      // storeExtract's plain `.part` suffix — an in-progress admin upload.
+      await writeFile(
+        join(targetDir, 'cz.osm.1.abc123.part'),
+        'in-progress upload',
+      );
+      await writeFile(join(targetDir, 'cz.osm'), 'live extract');
+
+      await refreshAll(
+        { enabled: true, targetDir, regions: [] },
+        workDir,
+        { download: fakeDownload(), osmium: fakeOsmium() },
+        () => undefined,
+      );
+
+      // Our orphan swept; the upload's `.part` and the live extract untouched.
+      expect((await readdir(targetDir)).sort()).toEqual([
+        'cz.osm',
+        'cz.osm.1.abc123.part',
+      ]);
+    });
   });
 });
