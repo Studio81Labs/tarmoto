@@ -560,10 +560,26 @@ export class PoiImportService {
         // (`source = 'osm'`, `PoiStoreService`), so an FSQ run must never stamp —
         // it would wrongly suppress the OSM fallback for a region OSM never loaded.
         if (this.importSource.source === 'osm' && !wouldWipeTooMuch) {
-          await tx.query(
-            `UPDATE "poi_import_regions" SET "imported_at" = now() WHERE "code" = $1`,
+          // `RETURNING` surfaces the silent no-op (#978): this is an
+          // existing-row-only UPDATE, so a region whose boundary polygon was
+          // never loaded (`poi:load-boundaries` not run before the import)
+          // matches 0 rows — the POIs upsert fine, but the region would read
+          // "not covered" forever. Warn instead of dropping coverage silently;
+          // the import still commits (the upserted rows are valid — a re-import
+          // after loading boundaries stamps it).
+          const stamped: { code: string }[] = await tx.query(
+            `UPDATE "poi_import_regions" SET "imported_at" = now() WHERE "code" = $1 RETURNING "code"`,
             [region.code],
           );
+          if (stamped.length === 0) {
+            this.logger.warn(
+              `POI import (${region.code}): coverage NOT stamped — no ` +
+                `"poi_import_regions" row for this code. Run "poi:load-boundaries" ` +
+                `before importing (it seeds the region polygons), then re-import ` +
+                `to stamp coverage; until then the region reads as "not covered" ` +
+                `despite the upsert.`,
+            );
+          }
         } else if (this.importSource.source === 'osm') {
           this.logger.warn(
             `POI import (${region.code}): extract looks incomplete ` +
