@@ -20,7 +20,7 @@ export interface TextareaProps {
   maxLength?: number;
   error?: boolean;
   hint?: ReactNode;
-  hintId?: string;
+  hintId?: string | undefined;
   className?: string;
 }
 
@@ -39,9 +39,11 @@ export function Textarea({
   hintId,
   className,
 }: TextareaProps) {
-  const resolvedHintId = hint
-    ? (hintId ?? (id ? `${id}-hint` : undefined))
-    : undefined;
+  // Mirror Input: honor an externally-supplied `hintId` even without a local
+  // `hint`, so a `Field`-wrapped Textarea (Field renders the hint and passes
+  // only `hintId`) still wires `aria-describedby`.
+  const resolvedHintId =
+    hintId ?? (hint ? (id ? `${id}-hint` : undefined) : undefined);
   return (
     <div className={cn("w-full", className)}>
       <textarea
