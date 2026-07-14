@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { EmailService } from './email.service.js';
 import { EMAIL_PROVIDER, type EmailProvider } from './email-provider.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
+import { EmailTemplate } from '../../entities/email-template.entity.js';
 
 const buildConfigService = (): ConfigService =>
   ({
@@ -459,6 +460,126 @@ describe('EmailService', () => {
       // own account deletion can't purge (it's keyed on the external recipient).
       expect(JSON.stringify(row)).not.toContain('Adam');
       expect(JSON.stringify(row)).not.toContain('Italian Loop');
+    });
+  });
+
+  describe('render override (admin email template editor)', () => {
+    async function buildWithTemplateRepo(
+      send: jest.Mock,
+      findOne: jest.Mock,
+    ): Promise<EmailService> {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: { name: 'mock', send } },
+          { provide: ConfigService, useValue: buildConfigService() },
+          {
+            provide: getRepositoryToken(EmailTemplate),
+            useValue: { findOne },
+          },
+        ],
+      }).compile();
+      return module.get(EmailService);
+    }
+
+    const digestCtx = {
+      displayName: 'Rider',
+      rideCount: 3,
+      totalKm: 128.4,
+      totalMinutes: 195,
+      bestQuality: 4.3,
+      percentExplored: 62,
+      riddenSegments: 540,
+      units: 'metric' as const,
+      exploreUrl: 'https://app.tarmoto.app/explore',
+    };
+
+    it('renders the published block override instead of the code template', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'ov_1', providerName: 'mock' });
+      const findOne = jest.fn().mockResolvedValue({
+        id: 'row-1',
+        template_tag: 'weekly-digest',
+        locale: 'en',
+        status: 'published',
+        subject: 'Custom digest: {rideSummary}',
+        blocks: [{ type: 'heading', text: 'Hey {displayName}, nice week!' }],
+      });
+      const service = await buildWithTemplateRepo(send, findOne);
+
+      await service.sendWeeklyDigest('rider@tarmoto.app', digestCtx);
+
+      expect(findOne).toHaveBeenCalledTimes(1);
+      expect(findOne).toHaveBeenCalledWith({
+        where: {
+          template_tag: 'weekly-digest',
+          locale: 'en',
+          status: 'published',
+        },
+      });
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      // Block-rendered subject/body — distinct from the code template's copy
+      // ("Your week on Tarmoto — ...", see i18n `digest.subject`).
+      expect(message.subject).toBe('Custom digest: 3 rides');
+      expect(message.subject).not.toContain('Your week on Tarmoto');
+      expect(message.html).toContain('Hey Rider, nice week!');
+      expect(message.tag).toBe('weekly-digest');
+    });
+
+    it('falls back to the code template when no published override exists', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'ov_2', providerName: 'mock' });
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = await buildWithTemplateRepo(send, findOne);
+
+      await service.sendWeeklyDigest('rider@tarmoto.app', digestCtx);
+
+      expect(findOne).toHaveBeenCalledTimes(1);
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      expect(message.subject).toContain('Your week on Tarmoto');
+      expect(message.subject).toContain('3 rides');
+    });
+
+    it('falls back to the code template when the override lookup throws (no error propagates)', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'ov_3', providerName: 'mock' });
+      const findOne = jest.fn().mockRejectedValue(new Error('db down'));
+      const service = await buildWithTemplateRepo(send, findOne);
+
+      const result = await service.sendWeeklyDigest(
+        'rider@tarmoto.app',
+        digestCtx,
+      );
+
+      expect(result?.providerMessageId).toBe('ov_3');
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      expect(message.subject).toContain('Your week on Tarmoto');
+    });
+
+    it('never queries the override repo for a locked tag', async () => {
+      const send = jest
+        .fn()
+        .mockResolvedValue({ providerMessageId: 'ov_4', providerName: 'mock' });
+      const findOne = jest.fn().mockResolvedValue(null);
+      const service = await buildWithTemplateRepo(send, findOne);
+
+      await service.sendVerification('rider@tarmoto.app', {
+        displayName: 'Rider',
+        verifyUrl: 'https://app.tarmoto.app/verify-email?token=abc',
+        expiresInHours: 24,
+      });
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(findOne).not.toHaveBeenCalled();
     });
   });
 });
