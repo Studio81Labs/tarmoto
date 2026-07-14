@@ -231,6 +231,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       kind: "closure" | "pass";
       id: string;
     } | null>(null);
+    // Previous fetching state per list, to detect a fetch *completing*
+    // (true → false) — the point at which absence of the pinned item is
+    // authoritative rather than a pre-refetch stale read.
+    const prevFetchingRef = useRef({ closures: false, passes: false });
     const queryClient = useQueryClient();
 
     useImperativeHandle(
@@ -372,23 +376,23 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // click during map load would otherwise fetch the whole catalog (the panel
     // shows "pan the map" in that window, so the markers must too).
     const conditionsEnabled = showConditions && conditionBbox != null;
-    const { closures, loading: closuresLoading } = useClosures(
-      conditionsMonth,
-      NO_ROUTES,
-      {
-        bbox: conditionBbox ?? undefined,
-        previewDate: conditionsDate,
-        enabled: conditionsEnabled,
-      },
-    );
-    const { passes, loading: passesLoading } = usePasses(
-      conditionsMonth,
-      NO_ROUTES,
-      {
-        bbox: conditionBbox ?? undefined,
-        enabled: conditionsEnabled,
-      },
-    );
+    const {
+      closures,
+      loading: closuresLoading,
+      fetching: closuresFetching = false,
+    } = useClosures(conditionsMonth, NO_ROUTES, {
+      bbox: conditionBbox ?? undefined,
+      previewDate: conditionsDate,
+      enabled: conditionsEnabled,
+    });
+    const {
+      passes,
+      loading: passesLoading,
+      fetching: passesFetching = false,
+    } = usePasses(conditionsMonth, NO_ROUTES, {
+      bbox: conditionBbox ?? undefined,
+      enabled: conditionsEnabled,
+    });
 
     useEffect(() => {
       segmentSelectionRef.current = {
@@ -860,6 +864,48 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         return menu;
       });
     }, [ready, closures, passes, closuresLoading, passesLoading]);
+
+    // ── retire a pinned popover once a completed fetch still lacks it ──
+    // The pin bridges a row-fly over a stale destination cache, but it must not
+    // hold forever: if the row came from a stale list, or the closure/pass was
+    // deleted/expired, fresh data will settle without it. Act on the fetch's
+    // falling edge (was fetching → now idle) so this fires only on a *completed*
+    // fetch — the pre-refetch stale frame (idle + stale) can't trip it — and
+    // close the pinned card so it doesn't linger over a marker-less viewport.
+    useEffect(() => {
+      const prev = prevFetchingRef.current;
+      const closuresSettled = prev.closures && !closuresFetching;
+      const passesSettled = prev.passes && !passesFetching;
+      prevFetchingRef.current = {
+        closures: closuresFetching,
+        passes: passesFetching,
+      };
+      const pin = pinnedConditionRef.current;
+      if (!pin) return;
+      if (
+        pin.kind === "closure" &&
+        closuresSettled &&
+        !closures.some((c) => c.id === pin.id)
+      ) {
+        pinnedConditionRef.current = null;
+        setPointMenu((menu) =>
+          menu?.point.kind === "closure" && menu.point.closure.id === pin.id
+            ? null
+            : menu,
+        );
+      } else if (
+        pin.kind === "pass" &&
+        passesSettled &&
+        !passes.some((p) => p.id === pin.id)
+      ) {
+        pinnedConditionRef.current = null;
+        setPointMenu((menu) =>
+          menu?.point.kind === "pass" && menu.point.pass.id === pin.id
+            ? null
+            : menu,
+        );
+      }
+    }, [closuresFetching, passesFetching, closures, passes]);
 
     // ── close a condition popover when its own date/month input changes ──
     // The reconcile above defers while its query reloads so a viewport pan/fly
