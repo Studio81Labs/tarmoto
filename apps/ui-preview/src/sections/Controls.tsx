@@ -399,12 +399,10 @@ export function ControlsSection() {
         {/* Select */}
         <Card padded className="!p-6">
           <SubStamp>Select · closed &amp; open</SubStamp>
-          <FieldLabel htmlFor="sel-quality">Minimum road quality</FieldLabel>
           <Select
-            id="sel-quality"
+            label="Minimum road quality"
             value={quality}
             onChange={setQuality}
-            ariaLabel="Minimum road quality"
             options={[
               { value: "any", label: "Any" },
               { value: "fair", label: "Fair or better" },
@@ -431,12 +429,10 @@ export function ControlsSection() {
         {/* Combobox */}
         <Card padded className="!p-6">
           <SubStamp>Searchable select · combobox</SubStamp>
-          <FieldLabel htmlFor="cmb-region">Home region</FieldLabel>
           <Combobox
-            id="cmb-region"
+            label="Home region"
             value={homeRegion}
             onChange={setHomeRegion}
-            ariaLabel="Home region"
             placeholder="Type to filter…"
             options={[
               { value: "prague", label: "Prague" },

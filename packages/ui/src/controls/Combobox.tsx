@@ -3,6 +3,7 @@ import {
   ComboBox as AriaComboBox,
   Input,
   Button,
+  Label,
   Popover,
   ListBox,
   ListBoxItem,
@@ -15,6 +16,7 @@ export interface ComboboxProps {
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
+  label?: ReactNode;
   id?: string;
   disabled?: boolean;
   tone?: "paper" | "cream";
@@ -53,6 +55,7 @@ export function Combobox({
   value,
   onChange,
   options,
+  label,
   id,
   disabled = false,
   tone = "paper",
@@ -84,7 +87,9 @@ export function Combobox({
   return (
     <AriaComboBox
       {...(id !== undefined ? { id } : {})}
-      {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
+      {...(ariaLabel !== undefined && label === undefined
+        ? { "aria-label": ariaLabel }
+        : {})}
       isInvalid={error}
       isDisabled={disabled}
       selectedKey={value || null}
@@ -97,6 +102,11 @@ export function Combobox({
       className={cn("relative w-full", className)}
       allowsEmptyCollection
     >
+      {label !== undefined && (
+        <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.6px] text-fg-dim">
+          {label}
+        </Label>
+      )}
       <div className="relative">
         <Input
           {...(placeholder !== undefined ? { placeholder } : {})}

@@ -33,6 +33,20 @@ test("resyncs input text when controlled value changes externally", async () => 
   expect(input).toHaveValue("");
 });
 
+test("label prop associates with the combobox input via react-aria Label", () => {
+  render(
+    <Combobox
+      label="Home city"
+      value="prague"
+      onChange={() => {}}
+      options={CITIES}
+    />,
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Home city" }),
+  ).toBeInTheDocument();
+});
+
 test("filters options as the user types and selects by value", async () => {
   const onChange = vi.fn();
   render(

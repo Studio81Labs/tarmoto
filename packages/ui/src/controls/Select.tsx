@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import {
   Select as AriaSelect,
   Button,
+  Label,
   SelectValue,
   Popover,
   ListBox,
@@ -19,6 +20,7 @@ export interface SelectProps {
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
+  label?: ReactNode;
   id?: string;
   disabled?: boolean;
   tone?: "paper" | "cream";
@@ -41,6 +43,7 @@ export function Select({
   value,
   onChange,
   options,
+  label,
   id,
   disabled = false,
   tone = "paper",
@@ -51,7 +54,9 @@ export function Select({
   return (
     <AriaSelect
       {...(id !== undefined ? { id } : {})}
-      {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
+      {...(ariaLabel !== undefined && label === undefined
+        ? { "aria-label": ariaLabel }
+        : {})}
       isInvalid={error}
       isDisabled={disabled}
       selectedKey={value}
@@ -60,6 +65,11 @@ export function Select({
     >
       {({ isOpen }) => (
         <>
+          {label !== undefined && (
+            <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.6px] text-fg-dim">
+              {label}
+            </Label>
+          )}
           <Button
             className={cn(
               fieldChrome({ tone, disabled, error, hasTrailing: true }),

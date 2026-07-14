@@ -54,3 +54,15 @@ test("disabled prevents opening", async () => {
   );
   expect(screen.getByRole("button")).toBeDisabled();
 });
+
+test("label prop associates with the trigger via react-aria Label", () => {
+  render(
+    <Select
+      label="Travel month"
+      value="any"
+      onChange={() => {}}
+      options={OPTIONS}
+    />,
+  );
+  expect(screen.getByLabelText("Travel month")).toBeInTheDocument();
+});
