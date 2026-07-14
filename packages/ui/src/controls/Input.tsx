@@ -1,15 +1,13 @@
+import type { ReactNode } from "react";
 import { cn } from "../utils/cn";
+import { fieldChrome } from "./field/fieldChrome";
+import { FieldHint } from "./field/FieldHint";
 
 /**
  * Input · single-line text field. Spec: §09.
- *
- * The unified field chrome shared with `Select` / `Textarea`: rounded-lg,
- * `border-line-strong`, accent focus border. `tone` matches the field
- * surface to its container (`paper` default on the cream page, `cream`
- * inside a paper card) — `cn` is plain clsx, so a `className` background
- * can't override the default, hence a prop.
- *
- * Pass an external `<label htmlFor>` + matching `id`, or `ariaLabel`.
+ * Shares `fieldChrome` with Textarea/Select. `tone` matches the field
+ * surface to its container. Pass an external `<label htmlFor>` + matching
+ * `id`, or `ariaLabel`.
  */
 export interface InputProps {
   value: string;
@@ -22,17 +20,11 @@ export interface InputProps {
   readOnly?: boolean;
   ariaLabel?: string;
   maxLength?: number;
+  leadingIcon?: ReactNode;
+  error?: boolean;
+  hint?: ReactNode;
+  hintId?: string;
   className?: string;
-}
-
-/** Field chrome shared across the text-style controls. */
-export function fieldClasses(tone: "paper" | "cream", disabled?: boolean) {
-  return cn(
-    "w-full rounded-lg border border-line-strong px-3 py-2 font-sans text-sm text-ink placeholder:text-fg-mute transition",
-    tone === "cream" ? "bg-cream" : "bg-paper",
-    "focus:border-accent focus:outline-none",
-    disabled && "cursor-not-allowed opacity-60",
-  );
 }
 
 export function Input({
@@ -46,20 +38,54 @@ export function Input({
   readOnly = false,
   ariaLabel,
   maxLength,
+  leadingIcon,
+  error = false,
+  hint,
+  hintId,
   className,
 }: InputProps) {
+  const resolvedHintId = hint
+    ? (hintId ?? (id ? `${id}-hint` : undefined))
+    : undefined;
   return (
-    <input
-      id={id}
-      type={type}
-      value={value}
-      disabled={disabled}
-      readOnly={readOnly}
-      placeholder={placeholder}
-      aria-label={ariaLabel}
-      maxLength={maxLength}
-      onChange={(event) => onChange(event.target.value)}
-      className={cn(fieldClasses(tone, disabled), className)}
-    />
+    <div className={cn("w-full", className)}>
+      <div className="relative">
+        {leadingIcon && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
+          >
+            {leadingIcon}
+          </span>
+        )}
+        <input
+          id={id}
+          type={type}
+          value={value}
+          disabled={disabled}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          aria-label={ariaLabel}
+          aria-invalid={error || undefined}
+          aria-describedby={resolvedHintId}
+          maxLength={maxLength}
+          onChange={(event) => onChange(event.target.value)}
+          className={fieldChrome({
+            tone,
+            disabled,
+            error,
+            hasLeading: !!leadingIcon,
+          })}
+        />
+      </div>
+      {hint && (
+        <FieldHint
+          {...(resolvedHintId !== undefined ? { id: resolvedHintId } : {})}
+          tone={error ? "error" : "default"}
+        >
+          {hint}
+        </FieldHint>
+      )}
+    </div>
   );
 }

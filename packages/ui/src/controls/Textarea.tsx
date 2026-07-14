@@ -1,5 +1,5 @@
 import { cn } from "../utils/cn";
-import { fieldClasses } from "./Input";
+import { fieldChrome } from "./field/fieldChrome";
 
 /**
  * Textarea · multi-line text field. Spec: §09.
@@ -43,7 +43,7 @@ export function Textarea({
       aria-label={ariaLabel}
       maxLength={maxLength}
       onChange={(event) => onChange(event.target.value)}
-      className={cn(fieldClasses(tone, disabled), "resize-none", className)}
+      className={cn(fieldChrome({ tone, disabled }), "resize-none", className)}
     />
   );
 }
