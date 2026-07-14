@@ -74,6 +74,22 @@ function isEditableTag(tag: EmailTag): tag is EditableTag {
 }
 
 /**
+ * Strip control characters (CR, LF, other C0/C1 controls + DEL) from a subject
+ * before it reaches the provider. A legitimate subject never contains them, but
+ * every subject is interpolated raw — an admin-authored block-template var and a
+ * user-controlled value (e.g. a display name, as in the trip-invite subject)
+ * both flow in unescaped — so a CR/LF inside one of those values would, on a
+ * raw-SMTP transport, smuggle extra headers. The current Resend HTTP transport
+ * already treats the subject as inert JSON, but sanitizing at this dispatch
+ * chokepoint keeps a future provider swap from silently reopening the hole —
+ * the same "reject defensively on provider swap" rationale as the write-path
+ * subject validator, here applied to the fully-rendered value.
+ */
+function sanitizeSubject(subject: string): string {
+  return subject.replace(/\p{Cc}/gu, ' ');
+}
+
+/**
  * Public surface for every place in the backend that needs to send a
  * transactional email. Wraps:
  *
@@ -278,7 +294,7 @@ export class EmailService {
     const headers = this.bulkHeaders(template.tag);
     const message = {
       to,
-      subject: template.subject,
+      subject: sanitizeSubject(template.subject),
       html: template.html,
       text: template.text,
       headers,
