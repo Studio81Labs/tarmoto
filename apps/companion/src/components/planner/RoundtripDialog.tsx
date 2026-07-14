@@ -163,30 +163,14 @@ export function RoundtripDialog({
           ))}
         </div>
 
-        {/* sr-only select keeps `getByLabelText("Road preference")`
-            + `fireEvent.change` resolvable in tests inside the dialog. */}
-        <label htmlFor="roundtrip-preference" className="sr-only">
+        <p className="mb-1 mt-4 block text-xs text-fg-dim">
           {t("Road preference")}
-        </label>
-        <select
-          id="roundtrip-preference"
-          value={preference}
-          tabIndex={-1}
-          onChange={(event) =>
-            setPreference(event.target.value as RoadPreference)
-          }
-          className="sr-only"
-        >
-          {PREFERENCE_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {ROAD_PREFERENCE_LABELS[option]}
-            </option>
-          ))}
-        </select>
+        </p>
         <Select
           value={preference}
           onChange={(value) => setPreference(value as RoadPreference)}
           tone="cream"
+          ariaLabel={t("Road preference")}
           options={PREFERENCE_OPTIONS.map((option) => ({
             value: option,
             label: ROAD_PREFERENCE_LABELS[option],

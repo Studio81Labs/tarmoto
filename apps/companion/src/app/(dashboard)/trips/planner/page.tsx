@@ -3139,29 +3139,9 @@ export default function TripPlannerPage() {
                     {/* Owner metadata like the road character above: a member's
                         edit could never persist, only desync the control
                         from the saved value on reload. */}
-                    {/* sr-only select keeps `getByLabelText("Minimum road quality")`
-                        + `fireEvent.change` + `.toHaveValue()` resolvable in tests. */}
-                    <label
-                      htmlFor="trip-planner-min-quality"
-                      className="sr-only"
-                    >
+                    <p className="mb-2 block text-xs font-bold text-fg-dim">
                       {t("Minimum road quality")}
-                    </label>
-                    <select
-                      id="trip-planner-min-quality"
-                      value={String(minQuality)}
-                      disabled={!canEditTripMetadata}
-                      tabIndex={-1}
-                      onChange={(event) =>
-                        handleMinQualityChange(Number(event.target.value))
-                      }
-                      className="sr-only"
-                    >
-                      <option value="1">{t("Any condition")}</option>
-                      <option value="2">{t("Fair or better")}</option>
-                      <option value="3">{t("Good or better")}</option>
-                      <option value="4">{t("Excellent only")}</option>
-                    </select>
+                    </p>
                     <Select
                       value={String(minQuality)}
                       onChange={(value) =>
@@ -3169,6 +3149,7 @@ export default function TripPlannerPage() {
                       }
                       tone="cream"
                       disabled={!canEditTripMetadata}
+                      ariaLabel={t("Minimum road quality")}
                       options={[
                         { value: "1", label: t("Any condition") },
                         { value: "2", label: t("Fair or better") },
