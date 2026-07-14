@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Pill } from "@tarmoto/ui";
 import { Dialog } from "../components/Dialog.js";
 import {
@@ -40,7 +41,9 @@ function emptyBlock(type: EditorBlock["type"]): EditorBlock {
   }
 }
 function serverMessage(err: unknown, fallback: string): string {
-  return (err as { message?: string } | undefined)?.message ?? fallback;
+  const m = (err as { message?: string | string[] } | undefined)?.message;
+  if (Array.isArray(m)) return m.join("; ");
+  return m ?? fallback;
 }
 
 export function EmailTemplateEditor({
@@ -55,11 +58,23 @@ export function EmailTemplateEditor({
   const { data, isPending, error, refetch } = useEmailTemplate(tag, locale);
   const role = useAdminAuth().user?.role;
   const isSuper = role ? canAccess(role, "super_admin") : false;
+  const queryClient = useQueryClient();
 
   const saveDraft = useSaveDraft();
   const testSend = useTestSend();
   const publish = usePublish();
   const reset = useReset();
+
+  // EmailTemplatesScreen never unmounts across list <-> editor (hash route
+  // stays "email-templates"), so the list's `useEmailTemplates` query keeps
+  // its cached data unless explicitly invalidated. Save/Publish/Reset only
+  // refetch this editor's DETAIL query above; without this, the list's
+  // status pills (Default/Draft/Live) go stale after a successful mutation.
+  function invalidateList() {
+    void queryClient.invalidateQueries({
+      queryKey: ["get", "/admin/email/templates"],
+    });
+  }
 
   const [subject, setSubject] = useState("");
   const [blocks, setBlocks] = useState<EditorBlock[]>([]);
@@ -136,6 +151,7 @@ export function EmailTemplateEditor({
           setMsg({ kind: "success", text: "Draft saved." });
           setDirty(false);
           void refetch();
+          invalidateList();
         },
         onError: (err: unknown) =>
           setMsg({
@@ -177,6 +193,7 @@ export function EmailTemplateEditor({
           setConfirm(null);
           setDirty(false);
           void refetch();
+          invalidateList();
         },
         onError: (err: unknown) => {
           setMsg({
@@ -199,6 +216,7 @@ export function EmailTemplateEditor({
           });
           setConfirm(null);
           void refetch();
+          invalidateList();
         },
         onError: (err: unknown) => {
           setMsg({

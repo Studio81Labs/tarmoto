@@ -27,11 +27,15 @@ export function PreviewPane({
       { params: { path: { tag, locale } }, body: { subject, blocks } },
       {
         onSuccess: (res: PreviewResponse) => setResult(res),
-        onError: (err: unknown) =>
+        onError: (err: unknown) => {
+          const m = (err as { message?: string | string[] } | undefined)
+            ?.message;
           setError(
-            (err as { message?: string } | undefined)?.message ??
-              "Preview failed — check the fields.",
-          ),
+            Array.isArray(m)
+              ? m.join("; ")
+              : (m ?? "Preview failed — check the fields."),
+          );
+        },
       },
     );
   }

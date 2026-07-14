@@ -26,4 +26,21 @@ describe("PreviewPane", () => {
     );
     expect(screen.getByTitle(/email preview/i)).toBeInTheDocument(); // the iframe
   });
+
+  it("joins a field-level validation error array into one readable message", async () => {
+    mutate.mockImplementation((_vars, { onError }) =>
+      onError({
+        message: ["subject: required", "block 1 (button): missing label"],
+      }),
+    );
+    render(
+      <PreviewPane tag="weekly-digest" locale="en" subject="" blocks={[]} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText("subject: required; block 1 (button): missing label"),
+      ).toBeInTheDocument(),
+    );
+  });
 });

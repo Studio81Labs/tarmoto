@@ -21,6 +21,15 @@ const templateState = vi.hoisted(() => {
 });
 const saveMutate = vi.fn();
 const publishMutate = vi.fn();
+const invalidateQueriesMock = vi.fn();
+// The component calls the real `useQueryClient` (not the mocked
+// useAdminEmailTemplates data layer below) to invalidate the templates LIST
+// query on Save/Publish/Reset success. Nothing else rendered by this test
+// (BlockCard/VarChips/PreviewPane/Dialog/@tarmoto/ui) touches
+// @tanstack/react-query, so mocking just `useQueryClient` here is safe.
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+}));
 vi.mock("../data/useAdminEmailTemplates.js", () => ({
   useEmailTemplate: () => ({
     data: templateState.data,
@@ -48,6 +57,7 @@ describe("EmailTemplateEditor", () => {
   beforeEach(() => {
     saveMutate.mockReset();
     publishMutate.mockReset();
+    invalidateQueriesMock.mockReset();
     templateState.data = templateState.initial;
   });
 
@@ -92,6 +102,28 @@ describe("EmailTemplateEditor", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("invalidates the templates list query when a save succeeds, so the list's status pill refreshes", () => {
+    authState.role = "support";
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /save draft/i }));
+    expect(saveMutate).toHaveBeenCalled();
+
+    // `saveMutate` is a bare spy — it never runs the mutation lifecycle on
+    // its own, so drive the `onSuccess` callback the component passed in,
+    // the same way the real mutation would once the request resolves.
+    const options = saveMutate.mock.calls[0]?.[1] as {
+      onSuccess: () => void;
+    };
+    expect(invalidateQueriesMock).not.toHaveBeenCalled();
+    options.onSuccess();
+
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["get", "/admin/email/templates"],
+    });
   });
 
   it("does not clobber an in-progress edit when a background refetch resolves with fresh data for the same template", () => {
