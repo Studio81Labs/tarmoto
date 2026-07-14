@@ -70,17 +70,6 @@ export function useClosures(
   const listQuery = useQuery({
     queryKey: ["closures", "list", previewIso, bbox, reconnectRevision],
     enabled,
-    // Keep the prior viewport's closures while a pan/zoom refetches the new
-    // bbox, so the list never blinks through `[]` — the explorer reconciles an
-    // open closure popover against this list and would otherwise close it on
-    // that empty frame (e.g. right after tapping a row flies the map).
-    // Scoped to bbox-only changes: a closure's active/inactive status is
-    // date-specific, so we must NOT reuse the previous date's list under a
-    // newly picked preview date (`previewIso` is queryKey[2]).
-    placeholderData: (
-      previousData: PlannerClosure[] | undefined,
-      previousQuery,
-    ) => (previousQuery?.queryKey[2] === previewIso ? previousData : undefined),
     queryFn: async ({ signal }) => {
       const { data } = await closuresApi.list(
         { active_on: previewIso, ...(bbox !== undefined ? { bbox } : {}) },

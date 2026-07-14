@@ -336,15 +336,23 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // click during map load would otherwise fetch the whole catalog (the panel
     // shows "pan the map" in that window, so the markers must too).
     const conditionsEnabled = showConditions && conditionBbox != null;
-    const { closures } = useClosures(conditionsMonth, NO_ROUTES, {
-      bbox: conditionBbox ?? undefined,
-      previewDate: conditionsDate,
-      enabled: conditionsEnabled,
-    });
-    const { passes } = usePasses(conditionsMonth, NO_ROUTES, {
-      bbox: conditionBbox ?? undefined,
-      enabled: conditionsEnabled,
-    });
+    const { closures, loading: closuresLoading } = useClosures(
+      conditionsMonth,
+      NO_ROUTES,
+      {
+        bbox: conditionBbox ?? undefined,
+        previewDate: conditionsDate,
+        enabled: conditionsEnabled,
+      },
+    );
+    const { passes, loading: passesLoading } = usePasses(
+      conditionsMonth,
+      NO_ROUTES,
+      {
+        bbox: conditionBbox ?? undefined,
+        enabled: conditionsEnabled,
+      },
+    );
 
     useEffect(() => {
       segmentSelectionRef.current = {
@@ -748,6 +756,13 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       closuresRef.current = closures;
       passesRef.current = passes;
       setConditionSourceData(map, { closures, passes });
+      // Only reconcile the open popover against SETTLED data. A viewport change
+      // re-keys the closures/passes queries, so mid-fetch the hooks momentarily
+      // report empty lists; reconciling against that transient `[]` is what
+      // closed a just-opened condition popover when tapping a row flies the map.
+      // Refs + markers still track the live (incl. empty) state above, so no
+      // stale data is shown as current — we only defer the open/close decision.
+      if (closuresLoading || passesLoading) return;
       // Reconcile an open condition popover with the fresh list: refresh its
       // DTO (e.g. a new seasonal status after a month change), or drop it if the
       // condition is gone (panned away / toggled off → []) — or, for a pass,
@@ -775,7 +790,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         }
         return menu;
       });
-    }, [ready, closures, passes]);
+    }, [ready, closures, passes, closuresLoading, passesLoading]);
 
     // ── condition layer visibility ──
     useEffect(() => {

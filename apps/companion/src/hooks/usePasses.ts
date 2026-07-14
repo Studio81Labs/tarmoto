@@ -56,20 +56,6 @@ export function usePasses(
   const listQuery = useQuery({
     queryKey: ["passes", "list", forMonth ?? null, bbox, reconnectRevision],
     enabled,
-    // Keep the prior viewport's passes while a pan/zoom refetches the new bbox,
-    // so the list never blinks through `[]` — the explorer reconciles an open
-    // pass popover against this list and would otherwise close it on that empty
-    // frame (e.g. right after tapping a row flies the map). Scoped to bbox-only
-    // changes: a pass's open/closed status is month-specific, so we must NOT
-    // reuse the previous month's list under a newly picked travel month
-    // (`forMonth ?? null` is queryKey[2]).
-    placeholderData: (
-      previousData: MountainPass[] | undefined,
-      previousQuery,
-    ) =>
-      previousQuery?.queryKey[2] === (forMonth ?? null)
-        ? previousData
-        : undefined,
     queryFn: async ({ signal }) => {
       const query =
         forMonth != null || bbox
