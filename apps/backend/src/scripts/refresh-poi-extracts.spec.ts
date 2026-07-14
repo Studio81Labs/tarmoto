@@ -12,7 +12,6 @@ import { join } from 'node:path';
 import type { PoiImportRegion } from '../modules/poi/poi-import.config.js';
 import { bboxArg } from '../modules/poi/poi-refresh.config.js';
 import {
-  describeOsmiumError,
   refreshAll,
   refreshRegion,
   type RefreshDeps,
@@ -199,23 +198,6 @@ describe('refresh-poi-extracts', () => {
         'cz.osm.1.abc.part',
         'sk.osm.8.beef.refresh.part',
       ]);
-    });
-  });
-
-  describe('describeOsmiumError', () => {
-    it('flags a SIGKILL as a likely OOM (the killer case for a country PBF)', () => {
-      expect(describeOsmiumError('tags-filter', { signal: 'SIGKILL' })).toBe(
-        'osmium tags-filter killed by SIGKILL (out of memory?)',
-      );
-    });
-
-    it('reports the exit code + osmium stderr for a normal error exit', () => {
-      const msg = describeOsmiumError('extract', {
-        code: 1,
-        stderr: "Open failed for output file 'x': No space left on device",
-      });
-      expect(msg).toContain('osmium extract exit 1');
-      expect(msg).toContain('No space left on device');
     });
   });
 });

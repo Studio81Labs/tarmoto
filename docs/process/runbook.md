@@ -256,9 +256,10 @@ Behaviour:
   extract.
 
 The manual pipeline above stays the fallback (one-off refresh, a region with no
-Geofabrik slug, or before the scheduled container is provisioned). **FSQ is not
-automated** — OS Places is a token-gated DuckDB/Iceberg pull (below); refresh it
-via the manual recipe.
+Geofabrik slug, or before the scheduled container is provisioned). The **FSQ**
+source is automated the same way — a `duckdb` pull in the **same** container, on
+its own monthly schedule (see
+[Automating the FSQ refresh](#automating-the-fsq-refresh-scheduled-container-976)).
 
 **Manual uploads vs. the refresh — who owns which region.** The scheduled
 container is the **authoritative** source for the extracts of the regions it
@@ -290,15 +291,19 @@ Per region:
 **Worked example — Czech Republic (`CZ`)** — once the Portal's connect snippet (step 2) has attached the catalog, the filter/export is:
 
 ```sql
--- After the Portal's DuckDB connect snippet attaches the `places` table
--- (INSTALL iceberg; LOAD iceberg; + the Portal's ATTACH, per your token).
+-- After the Portal's DuckDB connect snippet attaches the `places` catalog:
+--   INSTALL httpfs; LOAD httpfs;
+--   CREATE SECRET iceberg_secret (TYPE ICEBERG, TOKEN '<YOUR_TOKEN>');
+--   ATTACH 'places' AS places (TYPE iceberg, SECRET iceberg_secret,
+--     ENDPOINT 'https://catalog.h3-hub.foursquare.com/iceberg');
+-- The OS Places table is then places.datasets.places_os.
 COPY (
   SELECT
     fsq_place_id, name, latitude, longitude,
     array_to_string(fsq_category_ids, ',')    AS category_ids,
     array_to_string(fsq_category_labels, ',') AS category_labels,
     tel, website, address, locality, postcode, country
-  FROM places
+  FROM places.datasets.places_os
   WHERE date_closed IS NULL
     -- `places` is GLOBAL (unlike a per-country Geofabrik file), and the CZ bbox
     -- overlaps DE/PL/SK/AT at the borders. Scope by country too, or neighbours'
@@ -321,6 +326,45 @@ COPY (
 Then import with the **manual CLI** — `pnpm fsq:import` (all configured regions from `TARMOTO_FSQ_IMPORT_DIR`, narrowed by `TARMOTO_FSQ_IMPORT_REGIONS`, default all 17) or `node dist/scripts/import-pois.js fsq CZ` (one region). It bypasses the enabled gate like `poi:import`, and needs `TARMOTO_POI_DATABASE_*` where you run it. FSQ's extract dir + region list are independent of OSM's.
 
 **Weekly FSQ cron.** The weekly BullMQ dispatch (§ above) now fans out over every enabled source, so setting `TARMOTO_FSQ_IMPORT_ENABLED=true` (plus `TARMOTO_FSQ_IMPORT_DIR`) on the worker process refreshes FSQ from the same Sunday tick as OSM — each source gated independently by its own `*_IMPORT_ENABLED`. The manual `fsq:import` CLI stays available for one-off runs.
+
+#### Automating the FSQ refresh (scheduled container, #976)
+
+The manual DuckDB recipe above runs automatically too — in the **same**
+`Dockerfile.poi-refresh` container as the OSM refresh (it carries both `osmium`
+and a pinned `duckdb`). `pnpm fsq:refresh` → `dist/scripts/refresh-fsq-extracts.js`
+runs the exact query above for every configured region and writes each
+`<code>.fsq.jsonl` **atomically** to `TARMOTO_FSQ_IMPORT_DIR`. The field list,
+category prefilter, country + bbox scoping, and the catalog/table are baked into
+`poi-refresh.config.ts` (`buildFsqExtractSql`), so the automated extract matches
+both what the importer parses and what the manual recipe produces.
+
+Operate it as a **monthly** scheduled task — OS Places refreshes monthly and the
+token expires ~monthly — independent of the weekly OSM one:
+
+- `TARMOTO_FSQ_REFRESH_ENABLED=true` — off by default (a no-op otherwise).
+- `TARMOTO_FSQ_TOKEN` — a Places Portal access token. **This is the one
+  irreducible manual step:** it's short-lived (~monthly), so an operator rotates
+  it each refresh. It lives **only in this container** and is fed to DuckDB on
+  **stdin** (never a CLI arg / process-list entry), so it never reaches the
+  backend/worker — they read only the credential-free `.fsq.jsonl` files. That
+  keeps the manual recipe's "no FSQ credential in the app runtime" boundary intact
+  under automation.
+- `TARMOTO_FSQ_IMPORT_DIR` — the shared extract volume the importer reads
+  (independent of the OSM dir); `TARMOTO_FSQ_IMPORT_REGIONS` (optional) to narrow
+  the set. Same **uid 100** ownership rule as OSM (see above).
+- **Deploy model** is identical to OSM: the image idles (`sleep infinity`); add a
+  second **Scheduled Task** that `exec`s
+  `node apps/backend/dist/scripts/refresh-fsq-extracts.js` on the monthly cron.
+- **Extensions + memory:** DuckDB `INSTALL`/`LOAD`s `httpfs` + `iceberg` at
+  runtime (cached under the container user's `$HOME/.duckdb`, which the image
+  provisions writable for uid 100), so a run needs network to DuckDB's extension
+  repo as well as to the FSQ catalog. The scan is bounded by `SET memory_limit`
+  and spills to a temp dir, so a large country doesn't OOM (the osmium lesson).
+
+Behaviour matches OSM: **atomic keep-last-good** (COPY to a `.refresh.part`
+sibling, renamed onto `<code>.fsq.jsonl` only on a clean `duckdb` exit — a failed
+run keeps the previous extract) and a **non-zero exit** if any region failed, so
+the scheduler can alert.
 
 **Prod-safe as of the attribution work (#869).** Both prior gates are met: cross-source OSM↔FSQ dedup landed (#932), and the companion now credits Foursquare **data-driven** — the map info bar (latched on once FSQ POIs appear), the stops-tab legend (a blue Foursquare dot while FSQ stops are present), and each FSQ POI's popover (`© Foursquare`). The Apache-2.0 / NOTICE.txt attribution is preserved below. FSQ stays **disabled by default** (`TARMOTO_FSQ_IMPORT_ENABLED` unset); enable it per environment when its extracts are provisioned.
 

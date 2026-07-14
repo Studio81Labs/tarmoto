@@ -124,9 +124,11 @@ export const DEFAULT_REGIONS: readonly PoiImportRegion[] = [
  * (`envName` names the source var, e.g. `TARMOTO_POI_IMPORT_REGIONS`). Unset /
  * blank → the full default list. An unknown code is a configuration error
  * (throws) rather than a silent drop — a typo would otherwise quietly skip a
- * country's import.
+ * country's import. Shared with the offline extract-refresh config
+ * (`poi-refresh.config`) so import and refresh validate their region env
+ * identically.
  */
-function parseRegions(
+export function parseRegions(
   raw: string | undefined,
   envName: string,
 ): PoiImportRegion[] {
