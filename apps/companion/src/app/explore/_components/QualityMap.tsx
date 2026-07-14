@@ -221,6 +221,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // imperative focus method resolve a feature id → full DTO.
     const closuresRef = useRef<readonly PlannerClosure[]>([]);
     const passesRef = useRef<readonly MountainPass[]>([]);
+    // The condition a row tap just flew the map to. The reconcile won't close
+    // this one even when the settled destination list lacks it — that list can
+    // be a <30s-fresh cache predating the tapped row, so `loading === false`
+    // doesn't guarantee it contains the item. Cleared on the next user-driven
+    // map move (a real pan-away), after which the normal "gone → close" applies.
+    const pinnedConditionRef = useRef<{
+      kind: "closure" | "pass";
+      id: string;
+    } | null>(null);
 
     useImperativeHandle(
       ref,
@@ -277,6 +286,13 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
                 ? rect.top + projected.y + 10
                 : (rect?.top ?? 0) + (rect?.height ?? 0) / 2,
           });
+          // Pin this condition: the fly may land on a viewport whose cached
+          // list predates it, so the reconcile must not close it until the
+          // rider actually pans away (see `pinnedConditionRef`).
+          pinnedConditionRef.current = {
+            kind: conditionRef.kind,
+            id: conditionRef.id,
+          };
           if (typeof map.flyTo === "function") {
             map.flyTo({
               center: [lng, lat],
@@ -723,6 +739,22 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
     }, [ready, pointMenuOpen]);
 
+    // ── release a flown-to condition pin once the rider drives the map ──
+    // A user-initiated move carries `originalEvent`; the row-tap `flyTo` does
+    // not. Clearing on the former means a real pan-away lets the reconcile close
+    // the popover normally, while the programmatic fly keeps it pinned.
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      const releasePin = (e: { originalEvent?: unknown }) => {
+        if (e.originalEvent) pinnedConditionRef.current = null;
+      };
+      map.on("moveend", releasePin);
+      return () => {
+        map.off("moveend", releasePin);
+      };
+    }, [ready]);
+
     // ── project raw hazards → filtered GeoJSON source ──
     useEffect(() => {
       const map = handleRef.current?.map;
@@ -769,27 +801,41 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       // tap flies the map. Gating per-kind (not on `closuresLoading ||
       // passesLoading`) so a closure card isn't held open while an unrelated
       // passes refetch is still in flight, and vice versa.
+      const pinned = pinnedConditionRef.current;
       setPointMenu((menu) => {
         if (!menu) return menu;
         const point = menu.point;
         if (point.kind === "closure") {
           if (closuresLoading) return menu;
           const fresh = closures.find((c) => c.id === point.closure.id);
-          return fresh
-            ? {
-                ...menu,
-                point: { kind: "closure", closure: fresh, affectsRoute: false },
-              }
+          if (fresh) {
+            return {
+              ...menu,
+              point: { kind: "closure", closure: fresh, affectsRoute: false },
+            };
+          }
+          // Absent from the settled list: keep it if this is the row we just
+          // flew to (its destination cache can predate it); a later pan clears
+          // the pin so it then closes.
+          return pinned?.kind === "closure" && pinned.id === point.closure.id
+            ? menu
             : null;
         }
         if (point.kind === "pass") {
           if (passesLoading) return menu;
           const fresh = passes.find((p) => p.id === point.pass.id);
-          if (!fresh || fresh.status === "open") return null;
-          return {
-            ...menu,
-            point: { kind: "pass", pass: fresh, affectsRoute: false },
-          };
+          if (fresh) {
+            // A now-`open` pass has no marker to anchor — close regardless.
+            return fresh.status === "open"
+              ? null
+              : {
+                  ...menu,
+                  point: { kind: "pass", pass: fresh, affectsRoute: false },
+                };
+          }
+          return pinned?.kind === "pass" && pinned.id === point.pass.id
+            ? menu
+            : null;
         }
         return menu;
       });
