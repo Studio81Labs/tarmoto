@@ -94,7 +94,15 @@ RUN dir="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}" \
 
 USER tarmoto
 ENTRYPOINT ["/usr/bin/tini", "--"]
-# One-shot: refresh every configured region's extract, then exit (non-zero if any
-# region failed, so the scheduler can alert). The volume mounted at
-# TARMOTO_POI_IMPORT_DIR must be writable by uid 100 (see the runbook).
-CMD ["node", "apps/backend/dist/scripts/refresh-poi-extracts.js"]
+# Idle by default. On a PaaS like Coolify the image runs as a long-lived
+# application and the weekly refresh is fired by a **Scheduled Task** that
+# `docker exec`s the command below into this running container — so the main
+# process must stay up (a one-shot CMD would exit and get restart-looped,
+# re-downloading gigabytes every cycle). Run the refresh explicitly:
+#
+#   node apps/backend/dist/scripts/refresh-poi-extracts.js
+#   (or, from the repo:  pnpm --filter @tarmoto/backend poi:refresh)
+#
+# It no-ops unless TARMOTO_POI_REFRESH_ENABLED=true, and writes to the volume
+# mounted at TARMOTO_POI_IMPORT_DIR (must be writable by uid 100 — see runbook).
+CMD ["sleep", "infinity"]

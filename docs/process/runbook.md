@@ -232,6 +232,17 @@ finish comfortably **before** the Sunday 03:00 UTC import tick (e.g. Saturday):
 - Ephemeral disk for the largest single country PBF (~4 GB for DE) plus its
   filtered copy — regions run sequentially and clean up between, so peak disk is
   one country, not all 17.
+- **Deploy model (Coolify / PaaS):** the image **idles by default**
+  (`sleep infinity`) — deploy it as a long-lived application and add a
+  **Scheduled Task** that runs `node apps/backend/dist/scripts/refresh-poi-extracts.js`
+  on the cron. A one-shot main process would exit and get restart-looped
+  (re-downloading gigabytes each cycle); a Dockerfile-based Coolify app has no
+  start-command field in the UI, so the idle CMD is baked in and the scheduled
+  task `exec`s the refresh into the running container.
+- **Memory / swap:** osmium building a country-sized index spikes RAM (~1–2 GB
+  for a country PBF). On a small or shared host ensure real headroom — and
+  **swap** especially: a **no-swap host OOM-kills osmium** the instant it tips
+  over (surfaces as `killed by SIGKILL`). A few GB of swap is the cheap fix.
 
 Behaviour:
 
