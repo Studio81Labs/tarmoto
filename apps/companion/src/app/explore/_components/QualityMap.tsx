@@ -304,16 +304,19 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             id: conditionRef.id,
           };
           // The pin keeps the card alive, but the destination list also feeds
-          // the markers. A <30s-fresh cache there can omit this row, so mark
-          // that list stale (matches the hook keys `["closures"|"passes",
-          // "list", …]`); the post-fly mount then background-refetches and the
-          // flown-to condition's marker appears instead of waiting out staleTime.
+          // the markers. A <30s-fresh cache there can omit or outdate this row,
+          // so invalidate that list (matches the hook keys `["closures"|
+          // "passes", "list", …]`). Default `refetchType: "active"` refetches
+          // the current key too — needed when the item is already centred / zoom
+          // ≥9 and the fly leaves `conditionBbox` unchanged, so nothing remounts;
+          // it's a background refetch (data stays visible), and any new key the
+          // fly lands on refetches on mount since it's now stale. Either way the
+          // completed fetch feeds the falling-edge close if the row is gone.
           void queryClient.invalidateQueries({
             queryKey: [
               conditionRef.kind === "closure" ? "closures" : "passes",
               "list",
             ],
-            refetchType: "none",
           });
           if (typeof map.flyTo === "function") {
             map.flyTo({
