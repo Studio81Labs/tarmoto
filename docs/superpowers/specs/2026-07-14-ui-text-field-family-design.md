@@ -134,11 +134,13 @@ only renders toggle/segment/slider/radio.
 
 ## Phasing (one spec, staged reviewable PRs)
 
-- **P1** — deps (`react-aria-components`, `@internationalized/date`) + field
-  primitives (`FieldLabel`/`FieldHint`/`fieldChrome`/`Field`) + Input / Textarea /
-  NumberField upgrades + their preview blocks + tests.
-- **P2** — Select rebuild + Combobox + migrate the 4 companion Select call
-  sites, plus preview blocks + tests.
+- **P1** — test harness + field primitives
+  (`FieldLabel`/`FieldHint`/`fieldChrome`/`Field`) + Input / Textarea /
+  NumberField upgrades + their preview blocks + tests. **No new runtime
+  dependency** — only dev-only test deps.
+- **P2** — add the runtime deps (`react-aria-components`,
+  `@internationalized/date`) + Select rebuild + Combobox + migrate the 4
+  companion Select call sites, plus preview blocks + tests.
 - **P3** — DatePicker / TimePicker / DateTimePicker + preview blocks + tests.
 
 ## Out of scope
