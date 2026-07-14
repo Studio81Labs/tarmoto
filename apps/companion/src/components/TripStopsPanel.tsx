@@ -317,17 +317,18 @@ export function TripStopsPanel({
         </label>
         <Select
           id="trip-stops-rating"
-          value={minStayRating ?? ""}
+          value={minStayRating != null ? String(minStayRating) : ""}
           onChange={(value) =>
             setMinStayRating(value ? Number(value) : undefined)
           }
           tone="cream"
-        >
-          <option value="">{t("Any")}</option>
-          <option value="3">{t("3 stars or better")}</option>
-          <option value="4">{t("4 stars or better")}</option>
-          <option value="5">{t("5 stars only")}</option>
-        </Select>
+          options={[
+            { value: "", label: t("Any") },
+            { value: "3", label: t("3 stars or better") },
+            { value: "4", label: t("4 stars or better") },
+            { value: "5", label: t("5 stars only") },
+          ]}
+        />
       </div>
 
       {/* §02 ALONG YOUR ROUTE — one flat route-wide list (§B), gated (§E). */}

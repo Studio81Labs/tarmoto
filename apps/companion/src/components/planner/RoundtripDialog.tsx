@@ -174,13 +174,11 @@ export function RoundtripDialog({
           value={preference}
           onChange={(value) => setPreference(value as RoadPreference)}
           tone="cream"
-        >
-          {PREFERENCE_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {ROAD_PREFERENCE_LABELS[option]}
-            </option>
-          ))}
-        </Select>
+          options={PREFERENCE_OPTIONS.map((option) => ({
+            value: option,
+            label: ROAD_PREFERENCE_LABELS[option],
+          }))}
+        />
 
         <div className="mt-5 flex gap-2">
           <Button variant="secondary" size="md" block onClick={onClose}>
