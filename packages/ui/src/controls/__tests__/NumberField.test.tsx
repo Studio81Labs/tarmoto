@@ -1,5 +1,4 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { NumberField } from "../NumberField";
 
 test("clamps and reports numeric changes", async () => {
