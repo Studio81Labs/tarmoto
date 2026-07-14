@@ -3549,6 +3549,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/email/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List editable email templates with draft/published status */
+        get: operations["AdminEmailTemplateController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the editable document (draft, else published, else empty) for a template */
+        get: operations["AdminEmailTemplateController_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save (upsert) the draft override for a template */
+        put: operations["AdminEmailTemplateController_saveDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Render a preview of the supplied document with sample data */
+        post: operations["AdminEmailTemplateController_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}/test-send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a rendered preview to your own admin address */
+        post: operations["AdminEmailTemplateController_testSend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish the draft as the live override (super admin only) */
+        post: operations["AdminEmailTemplateController_publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove the published override so the code template renders again (super admin only) */
+        delete: operations["AdminEmailTemplateController_reset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/poi/regions": {
         parameters: {
             query?: never;
@@ -6414,6 +6533,63 @@ export interface components {
             /** @description Resolved user id the resend was queued for. */
             user_id: string;
         };
+        EmailTemplateSummaryDto: {
+            tag: string;
+            label: string;
+            hasDraft: boolean;
+            hasPublished: boolean;
+            legalSensitive: boolean;
+        };
+        EmailBlockDto: {
+            /**
+             * @description Block kind.
+             * @enum {string}
+             */
+            type: "heading" | "paragraph" | "button" | "stat-row" | "divider" | "spacer";
+            /** @description heading/paragraph text; may contain whitelisted {vars}. */
+            text?: string;
+            /** @description button/stat-row label; may contain {vars}. */
+            label?: string;
+            /** @description button target — a whitelisted url var key. */
+            urlVar?: string;
+            /** @description stat-row value; may contain {vars}. */
+            value?: string;
+        };
+        EmailTemplateWhitelistDto: {
+            textVars: string[];
+            urlVars: string[];
+        };
+        EmailTemplateDetailDto: {
+            tag: string;
+            locale: string;
+            subject: string;
+            blocks: components["schemas"]["EmailBlockDto"][];
+            /** @enum {string} */
+            status: "draft" | "published" | "none";
+            version: number;
+            whitelist: components["schemas"]["EmailTemplateWhitelistDto"];
+        };
+        SaveDraftDto: {
+            /** @description Plain-text subject; may contain whitelisted {vars}. */
+            subject: string;
+            /** @description Block document body; deep shape validated by validateBlockDocument in the service. */
+            blocks: components["schemas"]["EmailBlockDto"][];
+        };
+        PreviewRequestDto: {
+            /** @description Plain-text subject; may contain whitelisted {vars}. */
+            subject: string;
+            /** @description Block document body; deep shape validated by validateBlockDocument in the service. */
+            blocks: components["schemas"]["EmailBlockDto"][];
+        };
+        PreviewResponseDto: {
+            subject: string;
+            html: string;
+            text: string;
+        };
+        TestSendResponseDto: {
+            /** @enum {string} */
+            status: "sent" | "failed";
+        };
         ExtractStatDto: {
             present: boolean;
             size_bytes: number;
@@ -6732,6 +6908,14 @@ export type SchemaAdminEmailLogListResponseDto = components['schemas']['AdminEma
 export type SchemaTestDigestResponseDto = components['schemas']['TestDigestResponseDto'];
 export type SchemaResendDigestDto = components['schemas']['ResendDigestDto'];
 export type SchemaResendDigestResponseDto = components['schemas']['ResendDigestResponseDto'];
+export type SchemaEmailTemplateSummaryDto = components['schemas']['EmailTemplateSummaryDto'];
+export type SchemaEmailBlockDto = components['schemas']['EmailBlockDto'];
+export type SchemaEmailTemplateWhitelistDto = components['schemas']['EmailTemplateWhitelistDto'];
+export type SchemaEmailTemplateDetailDto = components['schemas']['EmailTemplateDetailDto'];
+export type SchemaSaveDraftDto = components['schemas']['SaveDraftDto'];
+export type SchemaPreviewRequestDto = components['schemas']['PreviewRequestDto'];
+export type SchemaPreviewResponseDto = components['schemas']['PreviewResponseDto'];
+export type SchemaTestSendResponseDto = components['schemas']['TestSendResponseDto'];
 export type SchemaExtractStatDto = components['schemas']['ExtractStatDto'];
 export type SchemaRunDto = components['schemas']['RunDto'];
 export type SchemaRegionImportStatusDto = components['schemas']['RegionImportStatusDto'];
@@ -12939,6 +13123,167 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResendDigestResponseDto"];
                 };
+            };
+        };
+    };
+    AdminEmailTemplateController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateSummaryDto"][];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateDetailDto"];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_saveDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateDetailDto"];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewResponseDto"];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_testSend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestSendResponseDto"];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_publish: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateDetailDto"];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

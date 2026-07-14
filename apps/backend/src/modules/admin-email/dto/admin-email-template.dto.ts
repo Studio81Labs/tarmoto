@@ -98,3 +98,8 @@ export class PreviewResponseDto {
   @ApiProperty() html!: string;
   @ApiProperty() text!: string;
 }
+
+export class TestSendResponseDto {
+  @ApiProperty({ enum: ['sent', 'failed'] })
+  status!: 'sent' | 'failed';
+}
