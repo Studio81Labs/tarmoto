@@ -11,6 +11,7 @@ import {
   scoreToQualityTier,
 } from "@/lib/utils";
 import type { MonthlyStats } from "@tarmoto/shared";
+import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
   ArrowUpRight,
@@ -549,6 +550,7 @@ function TripDraftCard({
     distance_km?: number | null;
     quality_avg?: number | null;
     passes_count?: number | null;
+    overviewGeometry?: number[][][] | null | undefined;
   };
   seed: number;
 }) {
@@ -567,8 +569,18 @@ function TripDraftCard({
       href={`/trips/${trip.id}`}
       className="block overflow-hidden rounded-[14px] border border-line bg-cream transition hover:border-line-strong"
     >
-      <div className="h-[120px]">
-        <MiniRouteSvg q={tier} seed={seed} />
+      <div className="relative h-[120px] overflow-hidden">
+        {/* Real per-day route outline when the trip has geometry (same as the
+            /trips cards); the abstract seeded sketch is only a fallback for
+            drafts that haven't been routed yet. */}
+        {trip.overviewGeometry && trip.overviewGeometry.length > 0 ? (
+          <RouteOutlineSvg
+            geometry={trip.overviewGeometry}
+            className="absolute inset-0 h-full w-full"
+          />
+        ) : (
+          <MiniRouteSvg q={tier} seed={seed} className="absolute inset-0" />
+        )}
       </div>
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">

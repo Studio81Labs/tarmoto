@@ -91,9 +91,13 @@ function makeImporter(
  */
 function makeFakeRedis(over: { exists?: number } = {}) {
   return {
+    // `set` returns 'OK' on a successful `… NX` acquire; a test overrides it to
+    // `null` to simulate the lock already being held. `eval` runs the
+    // del-if-token-matches release Lua (returns 1 = released).
     set: jest.fn().mockResolvedValue('OK'),
     del: jest.fn().mockResolvedValue(1),
     exists: jest.fn().mockResolvedValue(over.exists ?? 0),
+    eval: jest.fn().mockResolvedValue(1),
   };
 }
 
@@ -1382,16 +1386,15 @@ describe('PoiImportAdminService', () => {
       expect(existsSync(target)).toBe(false);
     });
 
-    // #847 review (this fix): `triggerImport`'s `importInFlight` guard only
-    // has visibility into BullMQ jobs, so it had no server-side knowledge of
-    // an upload that's still mid-stream — a trigger fired during that window
-    // could queue a worker that reads the OLD target before this upload's
-    // rename lands. These two tests pin the upload-lock half of that fix:
-    // the lock key is SET before a single byte streams, and released
-    // (`del`) in the `finally` on BOTH the success and the failure path.
-    // (`triggerImport`'s own consumption of the lock, via `uploadInProgress`,
-    // is covered by the `triggerImport` describe block above.)
-    it('sets the upload lock before streaming and releases it after a successful write', async () => {
+    // #972: `storeExtract` no longer takes the upload lock itself — it's held
+    // UPSTREAM by `PoiUploadLockInterceptor` for the whole client→API upload
+    // (acquire before Multer drains, release after the handler). This pins that
+    // `storeExtract` doesn't SET/DEL it — re-locking the same key here would
+    // self-conflict with the interceptor's `SET NX`. The acquire/release
+    // primitives are covered below; the interceptor in
+    // `poi-upload-lock.interceptor.spec`. (`triggerImport`'s consumption of the
+    // lock via `uploadInProgress` is covered in the `triggerImport` block.)
+    it('does not touch the upload lock itself — held upstream by the interceptor (#972)', async () => {
       const importer = makeStoreImporter();
       const redis = makeFakeRedis();
       const queue = {
@@ -1404,8 +1407,6 @@ describe('PoiImportAdminService', () => {
         {} as never,
         queue as never,
       );
-      // First stat is the parent-dir mount check; second is the post-rename
-      // result stat — same two-call shape as every other happy-path test.
       statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
       statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
 
@@ -1415,49 +1416,79 @@ describe('PoiImportAdminService', () => {
         originalName: 'cz.osm',
       });
 
-      const lockKey = 'poi:import:upload-lock:osm:CZ';
-      expect(redis.set).toHaveBeenCalledWith(lockKey, '1', 'EX', 600);
-      expect(redis.del).toHaveBeenCalledWith(lockKey);
-      // Released after being set, not left held, on the success path.
-      expect(redis.set.mock.invocationCallOrder[0]).toBeLessThan(
-        redis.del.mock.invocationCallOrder[0]!,
+      expect(redis.set).not.toHaveBeenCalled();
+      expect(redis.del).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('upload lock (acquire / renew / release, #972)', () => {
+    const lockKey = 'poi:import:upload-lock:osm:CZ';
+    const makeSvc = (redis: ReturnType<typeof makeFakeRedis>) =>
+      new PoiImportAdminService(
+        [] as never,
+        {} as never,
+        {} as never,
+        { client: Promise.resolve(redis) } as never,
       );
+
+    it('acquireUploadLock takes an owned NX lock with a TTL and returns the token', async () => {
+      const redis = makeFakeRedis();
+      const token = await makeSvc(redis).acquireUploadLock('osm', 'CZ');
+
+      expect(token).toEqual(expect.any(String));
+      expect(redis.set).toHaveBeenCalledWith(lockKey, token, 'EX', 600, 'NX');
     });
 
-    it('releases the upload lock even when the write fails mid-stream', async () => {
-      const importer = makeStoreImporter();
+    it('acquireUploadLock returns null when the lock is already held (NX fails)', async () => {
       const redis = makeFakeRedis();
-      const queue = {
-        getJobs: jest.fn().mockResolvedValue([]),
-        client: Promise.resolve(redis),
-      };
-      const svc = new PoiImportAdminService(
-        [importer] as never,
-        {} as never,
-        {} as never,
-        queue as never,
+      redis.set.mockResolvedValue(null);
+
+      expect(await makeSvc(redis).acquireUploadLock('osm', 'CZ')).toBeNull();
+    });
+
+    it('releaseUploadLock uses a del-if-token-matches Lua, never a blind DEL', async () => {
+      const redis = makeFakeRedis();
+      await makeSvc(redis).releaseUploadLock('osm', 'CZ', 'tok-123');
+
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('redis.call("del", KEYS[1])'),
+        1,
+        lockKey,
+        'tok-123',
       );
-      // Parent-dir mount check must pass so the test actually reaches the
-      // streaming pipeline the erroring source exercises.
-      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
-      const erroring = new Readable({
-        read() {
-          this.push(Buffer.from('partial'));
-          process.nextTick(() => this.destroy(new Error('stream interrupted')));
-        },
-      });
+      expect(redis.del).not.toHaveBeenCalled();
+    });
+
+    it('releaseUploadLock swallows a Redis error (best-effort; TTL is the backstop)', async () => {
+      const redis = makeFakeRedis();
+      redis.eval.mockRejectedValue(new Error('redis down'));
 
       await expect(
-        svc.storeExtract('osm', 'CZ', {
-          stream: erroring,
-          size: 100,
-          originalName: 'cz.osm',
-        }),
-      ).rejects.toThrow(/stream interrupted/);
+        makeSvc(redis).releaseUploadLock('osm', 'CZ', 'tok'),
+      ).resolves.toBeUndefined();
+    });
 
-      const lockKey = 'poi:import:upload-lock:osm:CZ';
-      expect(redis.set).toHaveBeenCalledWith(lockKey, '1', 'EX', 600);
-      expect(redis.del).toHaveBeenCalledWith(lockKey);
+    it('renewUploadLock extends the TTL via a token-checked EXPIRE (keeps a slow upload from lapsing)', async () => {
+      const redis = makeFakeRedis();
+      await makeSvc(redis).renewUploadLock('osm', 'CZ', 'tok-123');
+
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('redis.call("expire", KEYS[1], ARGV[2])'),
+        1,
+        lockKey,
+        'tok-123',
+        '600',
+      );
+      expect(redis.del).not.toHaveBeenCalled();
+    });
+
+    it('renewUploadLock swallows a Redis error (best-effort)', async () => {
+      const redis = makeFakeRedis();
+      redis.eval.mockRejectedValue(new Error('redis down'));
+
+      await expect(
+        makeSvc(redis).renewUploadLock('osm', 'CZ', 'tok'),
+      ).resolves.toBeUndefined();
     });
   });
 });

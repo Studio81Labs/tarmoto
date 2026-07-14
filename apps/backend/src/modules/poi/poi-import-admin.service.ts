@@ -3,13 +3,14 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, type Stats } from 'node:fs';
 import { open, rename, stat, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -97,6 +98,47 @@ export const POI_UPLOAD_MAX_BYTES =
   Number(process.env.TARMOTO_POI_UPLOAD_MAX_BYTES) || 200 * 1024 * 1024;
 
 /**
+ * TTL (seconds) on the per-`(source, code)` upload lock (#972). NOT sized to
+ * cover a whole upload — a `POI_UPLOAD_MAX_BYTES` extract over a slow link can
+ * outlast any fixed TTL (#972 review), so `PoiUploadLockInterceptor` RENEWS it
+ * on an interval while the request is in flight. The TTL is therefore just the
+ * crash/abort grace: once renewals stop (finalize ran, or the process died) the
+ * lock frees within this long. `releaseUploadLock` is the normal release path.
+ */
+const UPLOAD_LOCK_TTL_SECONDS = 600;
+
+/**
+ * How often the interceptor renews the lock while an upload is in flight — a
+ * third of the TTL, so even a couple of missed ticks (event-loop lag) leave
+ * margin before the lock could lapse.
+ */
+export const UPLOAD_LOCK_RENEW_INTERVAL_MS =
+  (UPLOAD_LOCK_TTL_SECONDS / 3) * 1000;
+
+/**
+ * Release the upload lock ONLY if this request still owns it (stored value ==
+ * our token), so a request whose TTL lapsed mid-upload can never delete a lock
+ * a later upload has since acquired. `KEYS[1]` = lock key, `ARGV[1]` = token.
+ */
+const RELEASE_UPLOAD_LOCK_LUA = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+end
+return 0`;
+
+/**
+ * Extend the lock's TTL, but ONLY if this request still owns it (token match) —
+ * so a renewal that fires after our TTL already lapsed (and another upload took
+ * the lock) can't extend THAT upload's lock. `KEYS[1]` = key, `ARGV[1]` = token,
+ * `ARGV[2]` = new TTL seconds.
+ */
+const RENEW_UPLOAD_LOCK_LUA = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("expire", KEYS[1], ARGV[2])
+end
+return 0`;
+
+/**
  * Admin surface for the POI import system (#847). Read side —
  * per-`(source, region)` coverage/count/extract-presence/last-run/
  * live-queue-state (`listRegionStatus`), plus run history (`listRuns`).
@@ -112,6 +154,8 @@ export const POI_UPLOAD_MAX_BYTES =
  */
 @Injectable()
 export class PoiImportAdminService {
+  private readonly logger = new Logger(PoiImportAdminService.name);
+
   constructor(
     @Inject(POI_IMPORT_SOURCES)
     private readonly importers: readonly PoiImportService[],
@@ -441,13 +485,14 @@ export class PoiImportAdminService {
   }
 
   /**
-   * Redis key for the server-side per-`(source, code)` upload lock (#847
-   * review). Set by `storeExtract` for the duration of a single upload's
-   * streaming + atomic rename, and consulted by `triggerImport` (via
-   * `uploadInProgress`) so a manual trigger can't enqueue a worker while a
-   * replacement upload for the same region is still landing. Reuses the
-   * queue's own Redis connection (`this.queue.client`) rather than any new
-   * DI wiring; BullMQ prefixes its OWN keys with the queue name
+   * Redis key for the server-side per-`(source, code)` upload lock (#847,
+   * #972). Acquired by `PoiUploadLockInterceptor` BEFORE Multer drains the
+   * upload body and held across the whole client→API upload + handler
+   * (`acquireUploadLock`/`releaseUploadLock` below), and consulted by
+   * `triggerImport` (via `uploadInProgress`) so a manual trigger can't enqueue
+   * a worker while a replacement upload for the same region is still landing.
+   * Reuses the queue's own Redis connection (`this.queue.client`) rather than
+   * any new DI wiring; BullMQ prefixes its OWN keys with the queue name
    * (`bull:<queue>:*`), so this `poi:import:` namespace can never collide
    * with a BullMQ-managed key on the same connection.
    */
@@ -457,10 +502,10 @@ export class PoiImportAdminService {
 
   /**
    * True while an extract upload for `(source, code)` is mid-stream — i.e.
-   * `storeExtract` has SET but not yet released this pair's upload lock.
-   * `importInFlight` (above) only knows about BullMQ jobs, so it has no
-   * visibility into an upload that hasn't reached the queue at all; this is
-   * `triggerImport`'s other 409 guard, closing that gap.
+   * `PoiUploadLockInterceptor` has acquired but not yet released this pair's
+   * upload lock. `importInFlight` (above) only knows about BullMQ jobs, so it
+   * has no visibility into an upload that hasn't reached the queue at all; this
+   * is `triggerImport`'s other 409 guard, closing that gap.
    */
   private async uploadInProgress(
     source: string,
@@ -468,6 +513,94 @@ export class PoiImportAdminService {
   ): Promise<boolean> {
     const redis = await this.queue.client;
     return (await redis.exists(this.uploadLockKey(source, code))) > 0;
+  }
+
+  /**
+   * Acquire the exclusive per-`(source, code)` upload lock for the duration of
+   * an extract upload (#972). `SET … NX` with a per-request token: **owned**
+   * (only the holder can release it) and **exclusive** (a second overlapping
+   * upload for the same region can't also take it), TTL'd so a crashed/aborted
+   * upload self-heals. `PoiUploadLockInterceptor` calls this BEFORE Multer
+   * drains the (up to `POI_UPLOAD_MAX_BYTES`) body — closing the window the
+   * old in-`storeExtract` lock left open, where the lock wasn't held during the
+   * client→API stream so `triggerImport`'s `uploadInProgress` saw nothing.
+   * Returns the owner token to pass back to `releaseUploadLock`, or `null` if
+   * another upload already holds the lock (the interceptor maps `null` → 409).
+   */
+  async acquireUploadLock(
+    source: string,
+    code: string,
+  ): Promise<string | null> {
+    const redis = await this.queue.client;
+    const token = randomUUID();
+    const acquired = await redis.set(
+      this.uploadLockKey(source, code),
+      token,
+      'EX',
+      UPLOAD_LOCK_TTL_SECONDS,
+      'NX',
+    );
+    return acquired === 'OK' ? token : null;
+  }
+
+  /**
+   * Extend the upload lock's TTL while the upload is still in flight, ONLY if
+   * this request still owns it (token-checked `EXPIRE`) — so a slow upload that
+   * outlasts `UPLOAD_LOCK_TTL_SECONDS` keeps its lock instead of letting it
+   * lapse and reopening the stale-extract window (#972 review). Driven by
+   * `PoiUploadLockInterceptor`'s heartbeat every
+   * `UPLOAD_LOCK_RENEW_INTERVAL_MS`; best-effort, like release.
+   */
+  async renewUploadLock(
+    source: string,
+    code: string,
+    token: string,
+  ): Promise<void> {
+    try {
+      const redis = await this.queue.client;
+      await redis.eval(
+        RENEW_UPLOAD_LOCK_LUA,
+        1,
+        this.uploadLockKey(source, code),
+        token,
+        String(UPLOAD_LOCK_TTL_SECONDS),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `upload-lock renew failed for ${source}/${code}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Release the lock from `acquireUploadLock`, but ONLY if this request still
+   * owns it — a Lua **del-if-token-matches** (never a blind `DEL`), so a
+   * request whose TTL lapsed mid-upload can't delete the lock a later upload
+   * has since acquired. Best-effort: a Redis hiccup here must never fail an
+   * upload that already succeeded, and the TTL is the ultimate backstop.
+   */
+  async releaseUploadLock(
+    source: string,
+    code: string,
+    token: string,
+  ): Promise<void> {
+    try {
+      const redis = await this.queue.client;
+      await redis.eval(
+        RELEASE_UPLOAD_LOCK_LUA,
+        1,
+        this.uploadLockKey(source, code),
+        token,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `upload-lock release failed for ${source}/${code}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**
@@ -485,15 +618,15 @@ export class PoiImportAdminService {
    * a worker may be mid-read of the CURRENT extract. All of this runs before
    * a single byte is written.
    *
-   * Server-side upload lock (#847 review): right after the in-flight-import
-   * check above and still before any streaming, this call SETs a per-
-   * `(source, code)` Redis key (`uploadLockKey`, 600s TTL as a
-   * crash/abort safety net) on the queue's own Redis connection
-   * (`this.queue.client`). `triggerImport` consults the same key
-   * (`uploadInProgress`) before enqueuing, so a manual trigger fired while
-   * THIS upload is still mid-stream can't queue a worker that reads the OLD
-   * target before this upload's rename lands. The lock is released in the
-   * `finally` below on both the success and failure paths.
+   * Upload lock (#847, #972): the exclusive per-`(source, code)` upload lock
+   * is held UPSTREAM by `PoiUploadLockInterceptor` for the whole client→API
+   * upload — acquired before Multer drains the body, released after this
+   * handler returns — so `triggerImport` (via `uploadInProgress`) can't queue
+   * a worker against the OLD target while a replacement upload for the same
+   * region is still landing. This method no longer takes that lock itself: a
+   * direct, non-HTTP caller is outside the concurrent-admin race #972 scopes,
+   * and re-locking the same key here would self-conflict with the interceptor's
+   * `SET NX`.
    *
    * Atomicity: the upload streams to a SIBLING temp file
    * (`<target>.<pid>.<random-hex>.part`, same directory as `target` so the
@@ -602,22 +735,6 @@ export class PoiImportAdminService {
       );
     }
 
-    // Server-side upload lock (#847 review): `triggerImport` only guards
-    // against an in-flight BullMQ import — it has no server-side knowledge
-    // of an upload that hasn't reached the queue at all, i.e. THIS call,
-    // still mid-stream below. Without this, a trigger fired while another
-    // client is still streaming a replacement upload for this exact
-    // (source, code) could queue a worker that reads the OLD target before
-    // the new upload's atomic rename lands — a "successful" run tied to
-    // stale input. Set BEFORE a single byte streams, released in the
-    // `finally` below on both the success and failure paths. The 600s TTL
-    // is a safety net, not the primary release mechanism — it just makes
-    // sure a crashed or aborted upload (which skips the `finally`, e.g. a
-    // killed process) can never permanently block this region's imports.
-    const redis = await this.queue.client;
-    const lockKey = this.uploadLockKey(source, code);
-    await redis.set(lockKey, '1', 'EX', 600);
-
     // Unique per call (not a fixed `<target>.part`) — see the doc comment
     // above: this is what keeps two concurrent uploads for the same
     // (source, code) from interleaving writes into one shared temp path.
@@ -642,8 +759,6 @@ export class PoiImportAdminService {
     } catch (err) {
       await unlink(tmp).catch(() => undefined);
       throw err;
-    } finally {
-      await redis.del(lockKey);
     }
 
     const s = await stat(target);
