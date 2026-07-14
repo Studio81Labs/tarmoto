@@ -25,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { AdminRoles } from '../admin-auth/admin-role.decorator.js';
 import { setAdminAuditTarget } from './admin-audit-context.js';
+import { PoiUploadLockInterceptor } from './poi-upload-lock.interceptor.js';
 import type { AdminRequest } from './internal.guard.js';
 import {
   POI_UPLOAD_MAX_BYTES,
@@ -125,6 +126,11 @@ export class AdminPoiController {
   @Post('regions/:source/:code/extract')
   @AdminRoles('admin')
   @UseInterceptors(
+    // ORDER MATTERS: the lock interceptor runs BEFORE FileInterceptor so it
+    // holds the per-(source, code) upload lock before Multer drains the body,
+    // and rejects a concurrent same-region upload with 409 before a byte is
+    // read (#972). FileInterceptor only runs if the lock was acquired.
+    PoiUploadLockInterceptor,
     FileInterceptor('file', {
       // Disk (not memory) storage: an operator-provided extract can be up to
       // POI_UPLOAD_MAX_BYTES (default 200 MB), so it must never sit fully
