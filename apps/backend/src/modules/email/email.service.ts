@@ -74,6 +74,22 @@ function isEditableTag(tag: EmailTag): tag is EditableTag {
 }
 
 /**
+ * Strip control characters (CR, LF, other C0/C1 controls + DEL) from a subject
+ * before it reaches the provider. A legitimate subject never contains them, but
+ * every subject is interpolated raw — an admin-authored block-template var and a
+ * user-controlled value (e.g. a display name, as in the trip-invite subject)
+ * both flow in unescaped — so a CR/LF inside one of those values would, on a
+ * raw-SMTP transport, smuggle extra headers. The current Resend HTTP transport
+ * already treats the subject as inert JSON, but sanitizing at this dispatch
+ * chokepoint keeps a future provider swap from silently reopening the hole —
+ * the same "reject defensively on provider swap" rationale as the write-path
+ * subject validator, here applied to the fully-rendered value.
+ */
+function sanitizeSubject(subject: string): string {
+  return subject.replace(/\p{Cc}/gu, ' ');
+}
+
+/**
  * Public surface for every place in the backend that needs to send a
  * transactional email. Wraps:
  *
@@ -119,6 +135,21 @@ export class EmailService {
     private readonly emailTemplate: Repository<EmailTemplate> | null = null,
   ) {
     this.fallback = new LogEmailProvider();
+  }
+
+  /** Send an already-rendered email (used by the admin template editor's test-send). */
+  async sendRendered(
+    to: string,
+    rendered: RenderedTemplate,
+  ): Promise<EmailSendResult | null> {
+    return this.dispatch(to, rendered);
+  }
+
+  /** The notification-preferences URL used in email footers, exposed so the admin
+   *  template preview/test-send renders the same footer chrome a real send would.
+   *  Single source of truth — do NOT duplicate the URL logic in the template service. */
+  resolvePreferencesUrl(): string {
+    return this.preferencesUrl();
   }
 
   async sendVerification(
@@ -260,14 +291,22 @@ export class EmailService {
     to: string,
     template: RenderedTemplate,
   ): Promise<EmailSendResult | null> {
-    const headers = this.bulkHeaders(template.tag);
+    // Sanitize the subject once and thread the sanitized copy through the
+    // provider message, the delivery-log write, and the failure warning — so
+    // email_log and the logs match what the provider actually received, and a
+    // CR/LF in a user-controlled subject var can't forge log lines (CWE-117).
+    const safe: RenderedTemplate = {
+      ...template,
+      subject: sanitizeSubject(template.subject),
+    };
+    const headers = this.bulkHeaders(safe.tag);
     const message = {
       to,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject: safe.subject,
+      html: safe.html,
+      text: safe.text,
       headers,
-      tag: template.tag,
+      tag: safe.tag,
     };
 
     const primary = this.provider ?? this.fallback;
@@ -275,10 +314,10 @@ export class EmailService {
     try {
       const result = await primary.send(message);
       this.logger.log(
-        `Sent ${template.tag} to ${to} via ${result.providerName}` +
+        `Sent ${safe.tag} to ${to} via ${result.providerName}` +
           (result.providerMessageId ? ` (${result.providerMessageId})` : ''),
       );
-      await this.recordSend(to, template, {
+      await this.recordSend(to, safe, {
         status: 'sent',
         provider: result.providerName,
         providerMessageId: result.providerMessageId ?? null,
@@ -292,9 +331,9 @@ export class EmailService {
       // provider; this redaction only applies when a real provider
       // failed and we'd otherwise leak the token into log aggregators.
       this.logger.warn(
-        `Email NOT delivered: tag=${template.tag} to=${to} subject="${template.subject}" provider=${primary.name} error="${errMessage}". Body redacted from logs to avoid leaking one-time tokens; if the user expected this mail, ask them to retry the originating action.`,
+        `Email NOT delivered: tag=${safe.tag} to=${to} subject="${safe.subject}" provider=${primary.name} error="${errMessage}". Body redacted from logs to avoid leaking one-time tokens; if the user expected this mail, ask them to retry the originating action.`,
       );
-      await this.recordSend(to, template, {
+      await this.recordSend(to, safe, {
         status: 'failed',
         provider: primary.name,
         error: errMessage,

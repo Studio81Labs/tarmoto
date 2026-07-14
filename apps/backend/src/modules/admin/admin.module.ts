@@ -17,6 +17,7 @@ import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
 import { FeatureState } from '../../entities/feature-state.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
+import { EmailTemplate } from '../../entities/email-template.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
 import { ReviewsModule } from '../reviews/reviews.module.js';
 import { FeaturesModule } from '../features/features.module.js';
@@ -46,6 +47,8 @@ import { AdminContentController } from '../admin-content/admin-content.controlle
 import { AdminContentService } from '../admin-content/admin-content.service.js';
 import { AdminEmailController } from '../admin-email/admin-email.controller.js';
 import { AdminEmailService } from '../admin-email/admin-email.service.js';
+import { AdminEmailTemplateController } from '../admin-email/admin-email-template.controller.js';
+import { AdminEmailTemplateService } from '../admin-email/admin-email-template.service.js';
 
 @Module({
   imports: [
@@ -65,6 +68,7 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
       UserFeature,
       FeatureState,
       EmailLog,
+      EmailTemplate,
     ]),
     HazardsModule,
     ReviewsModule,
@@ -98,6 +102,7 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     AdminContentController,
     AdminAppSettingsController,
     AdminEmailController,
+    AdminEmailTemplateController,
     AdminPoiController,
   ],
   providers: [
@@ -108,6 +113,7 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     AdminFlagsService,
     AdminContentService,
     AdminEmailService,
+    AdminEmailTemplateService,
     // Method-scoped interceptor on AdminPoiController's extract-upload endpoint;
     // must be a provider so Nest can resolve its PoiImportAdminService dep (#972).
     PoiUploadLockInterceptor,

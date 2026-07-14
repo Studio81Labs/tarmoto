@@ -6758,6 +6758,247 @@
           }
         },
         {
+          "name": "List editable email templates with draft/published status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "email", "templates"]
+            }
+          }
+        },
+        {
+          "name": "Get the editable document (draft, else published, else empty) for a template",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "email", "templates", ":tag", ":locale"],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save (upsert) the draft override for a template",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/draft",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "draft"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"\",\n  \"blocks\": [\n    {\n      \"type\": \"heading\",\n      \"text\": \"\",\n      \"label\": \"\",\n      \"urlVar\": \"\",\n      \"value\": \"\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Render a preview of the supplied document with sample data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/preview",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "preview"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"\",\n  \"blocks\": [\n    {\n      \"type\": \"heading\",\n      \"text\": \"\",\n      \"label\": \"\",\n      \"urlVar\": \"\",\n      \"value\": \"\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Send a rendered preview to your own admin address",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/test-send",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "test-send"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"\",\n  \"blocks\": [\n    {\n      \"type\": \"heading\",\n      \"text\": \"\",\n      \"label\": \"\",\n      \"urlVar\": \"\",\n      \"value\": \"\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Publish the draft as the live override (super admin only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/publish",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "publish"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remove the published override so the code template renders again (super admin only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/override",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "override"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Per-(source, region) import status, across OSM + FSQ OS",
           "request": {
             "method": "GET",

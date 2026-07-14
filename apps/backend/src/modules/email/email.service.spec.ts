@@ -70,6 +70,76 @@ describe('EmailService', () => {
       );
     });
 
+    it('strips control characters from the subject before dispatch (header-injection guard)', async () => {
+      const send = jest.fn().mockResolvedValue({
+        providerMessageId: 'res_ctl',
+        providerName: 'mock',
+      });
+      const provider: EmailProvider = { name: 'mock', send };
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: provider },
+          { provide: ConfigService, useValue: buildConfigService() },
+        ],
+      }).compile();
+      const service = module.get(EmailService);
+
+      // A rendered subject can carry a raw, user-controlled value (an admin
+      // block-template `{displayName}`, or the inviter name in the trip-invite
+      // subject); a CR/LF there must never reach the provider as a header
+      // separator. String.fromCharCode keeps literal control bytes out of this
+      // source file.
+      const crlf = String.fromCharCode(13, 10);
+      await service.sendRendered('rider@tarmoto.app', {
+        subject: `Hi Bob${crlf}Bcc: evil@example.com`,
+        html: '<p>hi</p>',
+        text: 'hi',
+        tag: 'weekly-digest',
+      });
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [message] = send.mock.calls[0] as [
+        Parameters<EmailProvider['send']>[0],
+      ];
+      expect(message.subject).not.toMatch(/\p{Cc}/u);
+      expect(message.subject).toBe('Hi Bob  Bcc: evil@example.com');
+    });
+
+    it('records the sanitized subject in the delivery log, not the raw one', async () => {
+      const send = jest.fn().mockResolvedValue({
+        providerMessageId: 'res_log',
+        providerName: 'mock',
+      });
+      const insert = jest.fn().mockResolvedValue(undefined);
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          EmailService,
+          { provide: EMAIL_PROVIDER, useValue: { name: 'mock', send } },
+          { provide: ConfigService, useValue: buildConfigService() },
+          { provide: getRepositoryToken(EmailLog), useValue: { insert } },
+        ],
+      }).compile();
+      const service = module.get(EmailService);
+
+      const crlf = String.fromCharCode(13, 10);
+      await service.sendRendered('rider@tarmoto.app', {
+        subject: `Weekly digest${crlf}Bcc: evil@example.com`,
+        html: '<p>hi</p>',
+        text: 'hi',
+        tag: 'weekly-digest',
+      });
+
+      expect(insert).toHaveBeenCalledTimes(1);
+      const [row] = insert.mock.calls[0] as [{ subject: string }];
+      // email_log must match what the provider received (sanitized), not the
+      // raw CRLF subject — otherwise the admin log UI diverges from the
+      // delivered mail and the log stream is forgeable.
+      expect(row.subject).not.toMatch(/\p{Cc}/u);
+    });
+
     it('returns null and emits a metadata-only warning when the primary throws (no body re-logged)', async () => {
       const failing: EmailProvider = {
         name: 'flaky',
