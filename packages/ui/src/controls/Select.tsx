@@ -52,7 +52,7 @@ export function Select({
     <AriaSelect
       {...(id !== undefined ? { id } : {})}
       {...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {})}
-      {...(error ? { "aria-invalid": true } : {})}
+      isInvalid={error}
       isDisabled={disabled}
       selectedKey={value}
       onSelectionChange={(key) => onChange(String(key))}
@@ -89,7 +89,6 @@ export function Select({
             className={cn(
               "w-[--trigger-width] rounded-[10px] border border-line-strong bg-paper p-1",
               "shadow-[0_8px_24px_rgba(14,14,16,0.08)]",
-              "entering:animate-in exiting:animate-out",
             )}
           >
             <ListBox className="outline-none">
