@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Section, SubStamp } from "../Section";
 import {
   Card,
+  Combobox,
   FieldLabel,
   Input,
   NumberField,
   NumberGrid,
   RadioCardGroup,
   SegmentedControl,
+  Select,
   Slider,
   SwatchPicker,
   Textarea,
@@ -36,6 +38,10 @@ export function ControlsSection() {
   );
   const [tripKm, setTripKm] = useState(240);
   const [distUnit, setDistUnit] = useState<"km" | "mi">("km");
+
+  // Select / Combobox state
+  const [quality, setQuality] = useState("any");
+  const [homeRegion, setHomeRegion] = useState("brno");
 
   return (
     <Section
@@ -386,6 +392,74 @@ export function ControlsSection() {
               <CN>mono 11 px / 700</CN>
               {` · uppercase · fg-mute\n`}
               {`pair: NumberField flex-1 · SegmentedControl inline`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* Select */}
+        <Card padded className="!p-6">
+          <SubStamp>Select · closed &amp; open</SubStamp>
+          <FieldLabel htmlFor="sel-quality">Minimum road quality</FieldLabel>
+          <Select
+            id="sel-quality"
+            value={quality}
+            onChange={setQuality}
+            ariaLabel="Minimum road quality"
+            options={[
+              { value: "any", label: "Any" },
+              { value: "fair", label: "Fair or better" },
+              { value: "good", label: "Good or better" },
+              { value: "excellent", label: "Excellent only" },
+            ]}
+          />
+          <div className="mt-4">
+            <CodeBlock>
+              {`trigger: `}
+              <CN>fieldChrome()</CN>
+              {` · flex justify-between\n`}
+              {`chevron: rotates `}
+              <CN>180°</CN>
+              {` when open via render-prop\n`}
+              {`menu: paper · 10 px radius · 1 px line-strong border\n`}
+              {`selected: `}
+              <CN>ink bg · cream fg</CN>
+              {` · accent check mark`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* Combobox */}
+        <Card padded className="!p-6">
+          <SubStamp>Searchable select · combobox</SubStamp>
+          <FieldLabel htmlFor="cmb-region">Home region</FieldLabel>
+          <Combobox
+            id="cmb-region"
+            value={homeRegion}
+            onChange={setHomeRegion}
+            ariaLabel="Home region"
+            placeholder="Type to filter…"
+            options={[
+              { value: "prague", label: "Prague" },
+              { value: "prachatice", label: "Prachatice" },
+              { value: "ostrava", label: "Ostrava" },
+              { value: "brno", label: "Brno" },
+              { value: "olomouc", label: "Olomouc" },
+            ]}
+          />
+          <p className="mt-2 text-[12px] text-fg-dim">
+            Type filters the list; matched substring gets an accent-wash
+            highlight. Use for &gt; 8 options.
+          </p>
+          <div className="mt-4">
+            <CodeBlock>
+              {`input: `}
+              <CN>fieldChrome()</CN>
+              {` · chevron button absolute right-3\n`}
+              {`filter: substring match · case-insensitive\n`}
+              {`highlight: `}
+              <CN>bg-accent/14</CN>
+              {` rounded-[3px] on match\n`}
+              {`header: mono 10 px · "N matches" count`}
             </CodeBlock>
           </div>
         </Card>
