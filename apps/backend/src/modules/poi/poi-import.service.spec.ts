@@ -156,8 +156,19 @@ describe('PoiImportService', () => {
     mockExtract(); // default: empty extract
 
     upsert = jest.fn().mockResolvedValue(undefined);
-    // Default: no live rows inside the bbox → nothing to tombstone.
-    txQuery = jest.fn().mockResolvedValue([]);
+    // Default: no live rows inside the bbox → nothing to tombstone. The
+    // coverage-stamp UPDATE (RETURNING "code", #978) resolves to one row — the
+    // normal case where the region's boundary was loaded before importing — so
+    // the "no boundary row" warning stays silent unless a test forces [].
+    txQuery = jest
+      .fn()
+      .mockImplementation((sql: string) =>
+        Promise.resolve(
+          typeof sql === 'string' && sql.includes('SET "imported_at"')
+            ? [{ code: REGION.code }]
+            : [],
+        ),
+      );
     const tx = { getRepository: jest.fn(() => ({ upsert })), query: txQuery };
     const repo = {
       manager: {
@@ -212,7 +223,11 @@ describe('PoiImportService', () => {
     txQuery.mockImplementation((sql: string) =>
       sql.includes('ST_MakeEnvelope')
         ? Promise.resolve(rows)
-        : Promise.resolve(undefined),
+        : sql.includes('SET "imported_at"')
+          ? // Coverage stamp (RETURNING "code", #978) hits its boundary row —
+            // these tombstone tests assume boundaries were loaded.
+            Promise.resolve([{ code: REGION.code }])
+          : Promise.resolve(undefined),
     );
   };
 
@@ -354,6 +369,37 @@ describe('PoiImportService', () => {
         'UPDATE "poi_import_regions" SET "imported_at" = now()',
       ),
       ['CZ'],
+    );
+  });
+
+  it('warns (does not silently drop coverage) when the stamp matches no poi_import_regions row — boundaries not loaded before import (#978)', async () => {
+    // Force the coverage-stamp UPDATE to affect 0 rows: the region has no
+    // boundary polygon yet (poi:load-boundaries not run before this import).
+    txQuery.mockResolvedValue([]);
+    const warn = jest
+      .spyOn(
+        (service as unknown as { logger: { warn: (m: string) => void } })
+          .logger,
+        'warn',
+      )
+      .mockImplementation(() => undefined);
+    mockExtract(poi({ external_id: 'node/1' }));
+
+    const result = await service.importRegion(REGION);
+
+    // Still a genuine, committed import — only coverage went unstamped.
+    expect(result.skipped).toBeUndefined();
+    expect(upsert).toHaveBeenCalledTimes(1);
+    // The stamp UPDATE was issued (RETURNING variant)...
+    expect(txQuery).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'UPDATE "poi_import_regions" SET "imported_at" = now()',
+      ),
+      ['CZ'],
+    );
+    // ...and its 0-row result is surfaced, pointing at the fix.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('poi:load-boundaries'),
     );
   });
 
