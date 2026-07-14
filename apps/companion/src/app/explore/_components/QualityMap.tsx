@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   type GeoJSONSource,
   type Map as MapLibreMap,
@@ -230,6 +231,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       kind: "closure" | "pass";
       id: string;
     } | null>(null);
+    const queryClient = useQueryClient();
 
     useImperativeHandle(
       ref,
@@ -297,6 +299,18 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             kind: conditionRef.kind,
             id: conditionRef.id,
           };
+          // The pin keeps the card alive, but the destination list also feeds
+          // the markers. A <30s-fresh cache there can omit this row, so mark
+          // that list stale (matches the hook keys `["closures"|"passes",
+          // "list", …]`); the post-fly mount then background-refetches and the
+          // flown-to condition's marker appears instead of waiting out staleTime.
+          void queryClient.invalidateQueries({
+            queryKey: [
+              conditionRef.kind === "closure" ? "closures" : "passes",
+              "list",
+            ],
+            refetchType: "none",
+          });
           if (typeof map.flyTo === "function") {
             map.flyTo({
               center: [lng, lat],
@@ -307,7 +321,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           }
         },
       }),
-      [],
+      // `queryClient` is a stable singleton, so this doesn't re-create the
+      // handle; it's listed only to satisfy exhaustive-deps.
+      [queryClient],
     );
     const [ready, setReady] = useState(false);
     // POI browse layer: the open info popover, a viewport token bumped on
