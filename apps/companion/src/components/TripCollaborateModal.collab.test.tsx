@@ -873,9 +873,14 @@ describe("TripCollaborateModal — collab tabs", () => {
     fireEvent.change(await screen.findByLabelText(/invite email address/i), {
       target: { value: "rider@example.com" },
     });
-    fireEvent.change(screen.getByLabelText(/invite role/i), {
-      target: { value: "viewer" },
-    });
+    // react-aria Select: open the trigger button, then click the option.
+    fireEvent.click(screen.getByRole("button", { name: /invite role/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: /viewer/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("option", { name: /viewer/i }));
     fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
 
     await waitFor(() => {

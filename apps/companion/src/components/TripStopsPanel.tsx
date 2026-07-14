@@ -306,17 +306,15 @@ export function TripStopsPanel({
 
       {/* Minimum stay rating — accommodation categories only (§D). */}
       <div>
-        <label
-          htmlFor="trip-stops-rating"
-          className="mb-1 block text-xs text-fg-mute"
-        >
-          {t("Minimum stay rating ")}
-          <span className="text-fg-faint">
-            {t("(biker hotels & campgrounds)")}
-          </span>
-        </label>
         <Select
-          id="trip-stops-rating"
+          label={
+            <>
+              {t("Minimum stay rating ")}
+              <span className="text-fg-faint">
+                {t("(biker hotels & campgrounds)")}
+              </span>
+            </>
+          }
           value={minStayRating != null ? String(minStayRating) : ""}
           onChange={(value) =>
             setMinStayRating(value ? Number(value) : undefined)

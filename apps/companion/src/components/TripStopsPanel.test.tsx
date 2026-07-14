@@ -365,9 +365,16 @@ describe("TripStopsPanel (revision 5 - route-wide corridor)", () => {
       timeout: 2000,
     });
 
-    fireEvent.change(screen.getByLabelText(/Minimum stay rating/), {
-      target: { value: "5" },
-    });
+    // react-aria Select: open the trigger button, then click the option.
+    fireEvent.click(
+      screen.getByRole("button", { name: /minimum stay rating/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: /5 stars only/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("option", { name: /5 stars only/i }));
     // Fuel is untouched by the rating; no hotel fixture reaches 5 stars.
     expect(
       await screen.findByText("MOL Žďár nad Sázavou", undefined, {

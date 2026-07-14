@@ -206,14 +206,8 @@ function PassesPanelBody({
       </div>
 
       <div>
-        <label
-          htmlFor="passes-month"
-          className="block text-xs text-fg-mute mb-1"
-        >
-          {t("Travel month ")}
-        </label>
         <Select
-          id="passes-month"
+          label={t("Travel month ")}
           value={String(month)}
           onChange={(value) => setMonth(Number(value))}
           disabled={isReadOnlyControlled}

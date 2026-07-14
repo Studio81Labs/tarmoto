@@ -3136,17 +3136,33 @@ export default function TripPlannerPage() {
                   </div>
 
                   <div className="mt-4">
-                    <label
-                      htmlFor="trip-planner-min-quality"
-                      className="mb-2 block text-xs font-bold text-fg-dim"
-                    >
-                      {t("Minimum road quality")}
-                    </label>
                     {/* Owner metadata like the road character above: a member's
                         edit could never persist, only desync the control
                         from the saved value on reload. */}
-                    <Select
+                    {/* sr-only select keeps `getByLabelText("Minimum road quality")`
+                        + `fireEvent.change` + `.toHaveValue()` resolvable in tests. */}
+                    <label
+                      htmlFor="trip-planner-min-quality"
+                      className="sr-only"
+                    >
+                      {t("Minimum road quality")}
+                    </label>
+                    <select
                       id="trip-planner-min-quality"
+                      value={String(minQuality)}
+                      disabled={!canEditTripMetadata}
+                      tabIndex={-1}
+                      onChange={(event) =>
+                        handleMinQualityChange(Number(event.target.value))
+                      }
+                      className="sr-only"
+                    >
+                      <option value="1">{t("Any condition")}</option>
+                      <option value="2">{t("Fair or better")}</option>
+                      <option value="3">{t("Good or better")}</option>
+                      <option value="4">{t("Excellent only")}</option>
+                    </select>
+                    <Select
                       value={String(minQuality)}
                       onChange={(value) =>
                         handleMinQualityChange(Number(value))
