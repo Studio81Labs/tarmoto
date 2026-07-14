@@ -413,4 +413,57 @@ describe("ClosuresPanel on-route-only planner variant (revision 7)", () => {
       expect.objectContaining({ id: "c-route" }),
     );
   });
+
+  it("renders an inline preview-date picker and reports the noon-UTC date on change", () => {
+    vi.mocked(useClosures).mockReturnValue({
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+    const onPreviewDateChange = vi.fn();
+
+    render(
+      <ClosuresPanel
+        month={7}
+        routes={[]}
+        bbox="10,46,11,47"
+        showRouteWarnings={false}
+        onPreviewDateChange={onPreviewDateChange}
+      />,
+    );
+
+    const input = screen.getByLabelText("Preview date");
+    expect(input).toHaveValue("2026-07-15");
+
+    fireEvent.change(input, { target: { value: "2026-08-20" } });
+    // Anchored at noon UTC so any timezone parses the same calendar day.
+    expect(onPreviewDateChange).toHaveBeenCalledWith(
+      new Date(Date.UTC(2026, 7, 20, 12, 0, 0)),
+    );
+  });
+
+  it("shows the read-only preview subtext when no date handler is supplied", () => {
+    vi.mocked(useClosures).mockReturnValue({
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+
+    render(<ClosuresPanel month={7} routes={[]} showRouteWarnings={false} />);
+
+    expect(screen.queryByLabelText("Preview date")).not.toBeInTheDocument();
+    expect(screen.getByText(/Previewing/)).toBeInTheDocument();
+  });
 });

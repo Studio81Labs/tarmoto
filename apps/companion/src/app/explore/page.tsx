@@ -119,25 +119,6 @@ function overlayPillClass(active: boolean): string {
     : `${OVERLAY_PILL_BASE} border-line-strong bg-cream/80 text-fg-dim hover:bg-cream hover:text-ink`;
 }
 
-// `<input type="date">` round-trip helpers. The element wants
-// `YYYY-MM-DD` strings keyed off the browser locale's calendar day;
-// the closures API consumes ISO instants. We anchor each round-trip
-// at noon UTC so a viewer in any timezone parses the local date the
-// rider picked into the same calendar day instant.
-function toDateInputValue(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseDateInputValue(value: string): Date | null {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const [, y, m, d] = match;
-  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12, 0, 0));
-}
-
 // Today, normalised to the same noon-UTC anchor the date picker
 // produces. Using a raw `new Date()` would feed the closures API
 // the current instant — closures starting later today wouldn't
@@ -985,37 +966,21 @@ function InfoPanelContent({
 }) {
   return (
     <>
-      <div className="space-y-3">
-        <label className="block space-y-1.5">
-          <span className="text-xs uppercase tracking-wider text-ink">
-            {t("Preview closures on")}
-          </span>
-          <input
-            type="date"
-            value={toDateInputValue(conditionsDate)}
-            onChange={(e) => {
-              const next = parseDateInputValue(e.target.value);
-              if (next) setConditionsDate(next);
-            }}
-            aria-label={t("Preview closures on")}
-            className="w-full rounded-lg border border-line-strong bg-paper px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
-          />
-        </label>
-        {conditionBbox ? (
-          <ClosuresPanel
-            month={conditionsMonth}
-            previewDate={conditionsDate}
-            routes={[]}
-            bbox={conditionBbox}
-            showRouteWarnings={false}
-            onFocusClosure={onFocusClosure}
-          />
-        ) : (
-          <p className="text-xs text-fg-dim">
-            {t("Pan the map to load closures for this area.")}
-          </p>
-        )}
-      </div>
+      {conditionBbox ? (
+        <ClosuresPanel
+          month={conditionsMonth}
+          previewDate={conditionsDate}
+          onPreviewDateChange={setConditionsDate}
+          routes={[]}
+          bbox={conditionBbox}
+          showRouteWarnings={false}
+          onFocusClosure={onFocusClosure}
+        />
+      ) : (
+        <p className="text-xs text-fg-dim">
+          {t("Pan the map to load closures for this area.")}
+        </p>
+      )}
       {conditionBbox ? (
         <PassesPanel
           month={conditionsMonth}
@@ -1024,6 +989,7 @@ function InfoPanelContent({
           bbox={conditionBbox}
           showRouteWarnings={false}
           onFocusPass={onFocusPass}
+          focusOpenPasses
         />
       ) : (
         <p className="text-xs text-fg-dim">

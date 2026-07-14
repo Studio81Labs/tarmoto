@@ -19,7 +19,8 @@ export type ConditionReconcileAction =
  * - While the backing list is still loading (pending → transiently `[]`), keep
  *   the card — a pan/fly refetch shouldn't drop it on the empty frame.
  * - If the condition is in the fresh list, refresh its DTO (e.g. a new seasonal
- *   status) — except a pass that is now `open`, which has no marker to anchor.
+ *   status). The explorer markers every pass — including open — so an open pass
+ *   is refreshed like any other, not closed.
  * - If it's absent, keep it only when it's the row we just flew to (`pinned`);
  *   the destination cache can predate it. Otherwise it's genuinely gone → close.
  *
@@ -53,12 +54,10 @@ export function reconcileConditionMenu(
     if (o.passesLoading) return { type: "keep" };
     const fresh = o.passes.find((p) => p.id === point.pass.id);
     if (fresh) {
-      return fresh.status === "open"
-        ? { type: "close" }
-        : {
-            type: "refresh",
-            point: { kind: "pass", pass: fresh, affectsRoute: false },
-          };
+      return {
+        type: "refresh",
+        point: { kind: "pass", pass: fresh, affectsRoute: false },
+      };
     }
     return o.pinned?.kind === "pass" && o.pinned.id === point.pass.id
       ? { type: "keep" }
