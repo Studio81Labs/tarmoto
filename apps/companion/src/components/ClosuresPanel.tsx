@@ -28,9 +28,12 @@ const SEVERITY_LABEL: Record<PlannerClosure["severity"], string> = {
 // Dot colours mirror the severity text classes + the counts line, so the
 // legend, the count summary, and each row all read as one system (matches the
 // Seasonal-passes panel's status dots).
+// full is quality-q1 (#e05a3c, red-orange), so partial uses a clearly-yellow
+// gold rather than amber-600 (dark orange) — the two dots were too close to
+// tell apart. Red / yellow / blue now reads at a glance.
 const SEVERITY_DOT_CLASS: Record<PlannerClosure["severity"], string> = {
   full: "bg-quality-q1",
-  partial: "bg-amber-600",
+  partial: "bg-amber-400",
   advisory: "bg-sky-700",
 };
 // Compact one-word labels for the legend (the row/tooltip use the full ones).
