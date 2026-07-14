@@ -35,6 +35,7 @@ import {
 import { AdminMetricsController } from './admin-metrics.controller.js';
 import { AdminMetricsService } from './admin-metrics.service.js';
 import { AdminPoiController } from './admin-poi.controller.js';
+import { PoiUploadLockInterceptor } from './poi-upload-lock.interceptor.js';
 import { AdminUsersController } from '../admin-users/admin-users.controller.js';
 import { AdminUsersService } from '../admin-users/admin-users.service.js';
 import { AdminAdminsController } from '../admin-admins/admin-admins.controller.js';
@@ -107,6 +108,9 @@ import { AdminEmailService } from '../admin-email/admin-email.service.js';
     AdminFlagsService,
     AdminContentService,
     AdminEmailService,
+    // Method-scoped interceptor on AdminPoiController's extract-upload endpoint;
+    // must be a provider so Nest can resolve its PoiImportAdminService dep (#972).
+    PoiUploadLockInterceptor,
     InternalGuard,
     { provide: APP_GUARD, useClass: InternalGuard },
     { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },
