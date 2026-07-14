@@ -25,6 +25,38 @@ const SEVERITY_LABEL: Record<PlannerClosure["severity"], string> = {
   partial: "Partial closure",
   advisory: "Advisory",
 };
+// Dot colours mirror the severity text classes + the counts line, so the
+// legend, the count summary, and each row all read as one system (matches the
+// Seasonal-passes panel's status dots).
+const SEVERITY_DOT_CLASS: Record<PlannerClosure["severity"], string> = {
+  full: "bg-quality-q1",
+  partial: "bg-amber-600",
+  advisory: "bg-sky-700",
+};
+// Compact one-word labels for the legend (the row/tooltip use the full ones).
+const SEVERITY_SHORT_LABEL: Record<PlannerClosure["severity"], string> = {
+  full: "Full",
+  partial: "Partial",
+  advisory: "Advisory",
+};
+const SEVERITY_DISPLAY_ORDER: PlannerClosure["severity"][] = [
+  "full",
+  "partial",
+  "advisory",
+];
+
+function toDateInputValue(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function parseDateInputValue(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, y, m, d] = match;
+  return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12, 0, 0));
+}
 const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
   closure: "Closure",
   roadworks: "Roadworks",
@@ -48,6 +80,13 @@ interface ClosuresPanelProps {
    */
   previewDate?: Date | undefined;
   /**
+   * When supplied, the panel renders its own preview-date picker under the
+   * heading (matching the Seasonal-passes month select) and calls this on
+   * change. /explore passes it; the planner omits it (its closure date follows
+   * the travel month), so the picker only appears where it's editable.
+   */
+  onPreviewDateChange?: ((date: Date) => void) | undefined;
+  /**
    * Regional (non-route) closures list. The planner CONDITIONS tab
    * hides it (revision 7 — ambient awareness lives on the map now);
    * /explore keeps it as the regional discovery browser.
@@ -65,6 +104,7 @@ export function ClosuresPanel({
   showRouteWarnings = true,
   data,
   previewDate,
+  onPreviewDateChange,
   showRegionalList = true,
   onFocusClosure,
   onRerouteClosure,
@@ -76,6 +116,7 @@ export function ClosuresPanel({
         routes={routes}
         showRouteWarnings={showRouteWarnings}
         data={data}
+        onPreviewDateChange={onPreviewDateChange}
         showRegionalList={showRegionalList}
         onFocusClosure={onFocusClosure}
         onRerouteClosure={onRerouteClosure}
@@ -89,6 +130,7 @@ export function ClosuresPanel({
       bbox={bbox}
       showRouteWarnings={showRouteWarnings}
       previewDate={previewDate}
+      onPreviewDateChange={onPreviewDateChange}
       showRegionalList={showRegionalList}
       onFocusClosure={onFocusClosure}
       onRerouteClosure={onRerouteClosure}
@@ -101,6 +143,7 @@ function FetchedClosuresPanel({
   bbox,
   showRouteWarnings = true,
   previewDate,
+  onPreviewDateChange,
   showRegionalList,
   onFocusClosure,
   onRerouteClosure,
@@ -121,6 +164,7 @@ function FetchedClosuresPanel({
       routes={routes}
       showRouteWarnings={showRouteWarnings}
       data={data}
+      onPreviewDateChange={onPreviewDateChange}
       showRegionalList={showRegionalList}
       onFocusClosure={onFocusClosure}
       onRerouteClosure={onRerouteClosure}
@@ -132,6 +176,7 @@ function ClosuresPanelBody({
   routes,
   showRouteWarnings,
   data,
+  onPreviewDateChange,
   showRegionalList = true,
   onFocusClosure,
   onRerouteClosure,
@@ -140,6 +185,7 @@ function ClosuresPanelBody({
   routes: PlannerClosureRoute[];
   showRouteWarnings: boolean;
   data: ClosuresQueryResult;
+  onPreviewDateChange?: ((date: Date) => void) | undefined;
   showRegionalList?: boolean | undefined;
   onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
   onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
@@ -183,12 +229,35 @@ function ClosuresPanelBody({
         {t("Closures & roadworks ")}
       </div>
 
-      <p className="text-xs text-fg-mute">
-        {t("Previewing {month} conditions on {previewDay}.", {
-          month: monthText || "this month",
-          previewDay,
-        })}
-      </p>
+      {onPreviewDateChange ? (
+        <div>
+          <label
+            htmlFor="closures-preview-date"
+            className="block text-xs text-fg-mute mb-1"
+          >
+            {t("Preview date ")}
+          </label>
+          <input
+            id="closures-preview-date"
+            type="date"
+            value={toDateInputValue(previewDate)}
+            onChange={(e) => {
+              const next = parseDateInputValue(e.target.value);
+              if (next) onPreviewDateChange(next);
+            }}
+            className="w-full rounded-lg border border-line-strong bg-cream px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
+          />
+        </div>
+      ) : (
+        <p className="text-xs text-fg-mute">
+          {t("Previewing {month} conditions on {previewDay}.", {
+            month: monthText || "this month",
+            previewDay,
+          })}
+        </p>
+      )}
+
+      <ClosuresLegend />
 
       {showRouteWarnings && (
         <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
@@ -370,6 +439,29 @@ function OnRouteClosureCard({
   );
 }
 
+function ClosuresLegend() {
+  return (
+    <div
+      role="list"
+      aria-label={t("Closure severity legend")}
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-dim"
+    >
+      {SEVERITY_DISPLAY_ORDER.map((severity) => (
+        <span
+          key={severity}
+          role="listitem"
+          className="inline-flex items-center gap-1.5"
+        >
+          <span
+            aria-hidden
+            className={`inline-block h-2 w-2 rounded-full ${SEVERITY_DOT_CLASS[severity]}`}
+          />
+          {SEVERITY_SHORT_LABEL[severity]}
+        </span>
+      ))}
+    </div>
+  );
+}
 function ClosureRow({
   closure,
   compact = false,
@@ -385,19 +477,21 @@ function ClosureRow({
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
   const body = (
     <>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-2">
+        <span
+          aria-hidden
+          title={SEVERITY_LABEL[closure.severity]}
+          className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT_CLASS[closure.severity]}`}
+        />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">{closure.title}</p>
+          <p className="truncate text-sm font-medium text-ink">
+            {closure.title}
+          </p>
           <p className="text-xs text-fg-mute">
             {REASON_LABEL[closure.reason]}
             {closure.region ? ` · ${closure.region}` : ""}
           </p>
         </div>
-        <span
-          className={`shrink-0 text-[11px] font-medium ${SEVERITY_CLASS[closure.severity]}`}
-        >
-          {SEVERITY_LABEL[closure.severity]}
-        </span>
       </div>
 
       <p className="mt-1 text-xs text-fg-dim">{formatClosureWindow(closure)}</p>
