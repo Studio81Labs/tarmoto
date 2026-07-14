@@ -82,6 +82,16 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
 
+# Seed the extract-volume mount point owned by uid 100 (like the backend image,
+# #975/#982) so a FRESH named volume first attached to THIS container comes up
+# writable — otherwise Docker roots it and the non-root refresh fails with
+# EACCES. Only the OSM dir (the refresh writes `<code>.osm`). The PaaS injects
+# the env var as a build ARG; the default covers a local `docker build`.
+ARG TARMOTO_POI_IMPORT_DIR=/data/poi-extracts
+RUN dir="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}" \
+ && mkdir -p "$dir" \
+ && chown tarmoto:tarmoto "$dir"
+
 USER tarmoto
 ENTRYPOINT ["/usr/bin/tini", "--"]
 # One-shot: refresh every configured region's extract, then exit (non-zero if any

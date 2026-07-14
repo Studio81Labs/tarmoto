@@ -4,6 +4,7 @@ import {
   readFile,
   readdir,
   rm,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -171,16 +172,17 @@ describe('refresh-poi-extracts', () => {
       expect(await readdir(targetDir)).toEqual(['cz.osm']);
     });
 
-    it('sweeps stale refresh temp files at startup but preserves an in-progress upload .part (#976 review)', async () => {
-      await writeFile(
-        join(targetDir, 'cz.osm.9.deadbeef.refresh.part'),
-        'orphaned refresh temp',
-      );
-      // storeExtract's plain `.part` suffix — an in-progress admin upload.
-      await writeFile(
-        join(targetDir, 'cz.osm.1.abc123.part'),
-        'in-progress upload',
-      );
+    it('sweeps only STALE refresh temps — keeps a recent (possibly active) one and any upload .part (#976 review)', async () => {
+      const old = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2h ago > 1h threshold
+      // Stale orphan from a killed run → reclaimed.
+      await writeFile(join(targetDir, 'cz.osm.9.dead.refresh.part'), 'orphan');
+      await utimes(join(targetDir, 'cz.osm.9.dead.refresh.part'), old, old);
+      // Recently-written refresh temp → could be a CONCURRENT run's active
+      // output, so it must NOT be swept even though the suffix matches.
+      await writeFile(join(targetDir, 'sk.osm.8.beef.refresh.part'), 'active');
+      // An admin upload's plain `.part` — never ours, kept even when old.
+      await writeFile(join(targetDir, 'cz.osm.1.abc.part'), 'upload');
+      await utimes(join(targetDir, 'cz.osm.1.abc.part'), old, old);
       await writeFile(join(targetDir, 'cz.osm'), 'live extract');
 
       await refreshAll(
@@ -190,10 +192,11 @@ describe('refresh-poi-extracts', () => {
         () => undefined,
       );
 
-      // Our orphan swept; the upload's `.part` and the live extract untouched.
+      // Stale orphan gone; recent temp, upload `.part`, and live extract kept.
       expect((await readdir(targetDir)).sort()).toEqual([
         'cz.osm',
-        'cz.osm.1.abc123.part',
+        'cz.osm.1.abc.part',
+        'sk.osm.8.beef.refresh.part',
       ]);
     });
   });

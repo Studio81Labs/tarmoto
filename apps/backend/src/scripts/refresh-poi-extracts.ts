@@ -27,7 +27,7 @@
  */
 
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -53,6 +53,15 @@ const execFileAsync = promisify(execFile);
  * upload's temp on the same shared volume (#976 review).
  */
 const REFRESH_TMP_SUFFIX = '.refresh.part';
+
+/**
+ * A refresh temp older than this is treated as an orphan from a killed run and
+ * reclaimed; a younger one is left alone because it may be a **concurrent** run
+ * still writing it — removing that would make its `rename` fail and report the
+ * region stale even though osmium succeeded (#976 review). Runs are weekly and
+ * an extract write takes seconds–minutes, so this cleanly separates the two.
+ */
+const STALE_TEMP_AGE_MS = 60 * 60 * 1000; // 1 hour
 
 /** Injectable I/O seams so the orchestration is unit-testable without a network
  *  or a real `osmium` binary. */
@@ -146,22 +155,39 @@ export interface RefreshSummary {
 }
 
 /**
- * Remove stale refresh temp files (`*.refresh.part`) orphaned by a killed or
+ * Reclaim stale refresh temp files (`*.refresh.part`) orphaned by a killed or
  * restarted run — with a fresh random name each run they would otherwise
  * accumulate on the persistent shared volume and eventually fill it (#976
- * review). Only OUR suffix is swept, so an in-progress admin upload's plain
- * `.part` on the same volume is never removed. Best-effort per file.
+ * review). Guards on TWO things so it only ever removes a genuine orphan:
+ *  - suffix — only OUR `.refresh.part`, never an in-progress admin upload's
+ *    plain `.part` (`storeExtract`) on the same volume;
+ *  - age — only files not touched for `STALE_TEMP_AGE_MS`, so a **concurrent**
+ *    refresh's still-being-written temp is never removed out from under it.
+ * Best-effort per file (a raced-away or unstattable entry is skipped).
  */
 async function sweepStaleTempFiles(
   dir: string,
   log: (msg: string) => void,
 ): Promise<void> {
-  const stale = (await readdir(dir)).filter((name) =>
+  const now = Date.now();
+  const candidates = (await readdir(dir)).filter((name) =>
     name.endsWith(REFRESH_TMP_SUFFIX),
   );
-  if (stale.length === 0) return;
-  await Promise.all(stale.map((name) => rm(join(dir, name), { force: true })));
-  log(`POI refresh: swept ${stale.length} stale temp file(s) from ${dir}`);
+  let swept = 0;
+  for (const name of candidates) {
+    const path = join(dir, name);
+    try {
+      const info = await stat(path);
+      if (now - info.mtimeMs < STALE_TEMP_AGE_MS) continue; // recent — leave it
+      await rm(path, { force: true });
+      swept += 1;
+    } catch {
+      // Vanished (a concurrent run cleaned it) or unstattable — skip.
+    }
+  }
+  if (swept > 0) {
+    log(`POI refresh: swept ${swept} stale temp file(s) from ${dir}`);
+  }
 }
 
 /**
