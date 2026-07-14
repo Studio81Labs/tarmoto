@@ -1,11 +1,21 @@
 import { DEFAULT_REGIONS } from './poi-import.config.js';
 import {
+  FSQ_CATALOG_ENDPOINT,
+  FSQ_CATEGORY_PREFILTER,
+  FSQ_PLACES_TABLE,
   GEOFABRIK_SLUGS,
   POI_TAGS_FILTER_EXPRESSIONS,
   bboxArg,
+  buildFsqExtractSql,
   geofabrikUrl,
+  resolveFsqRefreshConfig,
   resolvePoiRefreshConfig,
 } from './poi-refresh.config.js';
+
+const CZ = {
+  code: 'CZ',
+  bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+};
 
 describe('poi-refresh.config', () => {
   it('has a Geofabrik slug for every configured region, and no stray slugs (#976 drift guard)', () => {
@@ -62,7 +72,7 @@ describe('poi-refresh.config', () => {
       });
 
       expect(cfg.enabled).toBe(true);
-      // kept in DEFAULT_REGIONS order regardless of request order/case
+      // validated, deduped, upper-cased (case-insensitive, whitespace-trimmed)
       expect(cfg.regions.map((r) => r.code)).toEqual(['CZ', 'SK', 'AT']);
     });
 
@@ -74,6 +84,109 @@ describe('poi-refresh.config', () => {
       expect(() =>
         resolvePoiRefreshConfig({ TARMOTO_POI_IMPORT_REGIONS: 'CZ,ZZ' }),
       ).toThrow(/unknown region "ZZ"/);
+    });
+  });
+
+  describe('resolveFsqRefreshConfig', () => {
+    it('is disabled with a null token/dir and all regions by default', () => {
+      const cfg = resolveFsqRefreshConfig({});
+      expect(cfg.enabled).toBe(false);
+      expect(cfg.token).toBeNull();
+      expect(cfg.targetDir).toBeNull();
+      expect(cfg.regions).toHaveLength(DEFAULT_REGIONS.length);
+    });
+
+    it('reads the token + dir and narrows to (case-insensitive) TARMOTO_FSQ_IMPORT_REGIONS', () => {
+      const cfg = resolveFsqRefreshConfig({
+        TARMOTO_FSQ_REFRESH_ENABLED: 'true',
+        TARMOTO_FSQ_TOKEN: '  tok-123  ',
+        TARMOTO_FSQ_IMPORT_DIR: '/fsq',
+        TARMOTO_FSQ_IMPORT_REGIONS: 'cz, sk',
+      });
+      expect(cfg.enabled).toBe(true);
+      expect(cfg.token).toBe('tok-123'); // trimmed
+      expect(cfg.targetDir).toBe('/fsq');
+      expect(cfg.regions.map((r) => r.code)).toEqual(['CZ', 'SK']);
+    });
+
+    it('uses the FSQ env, independent of the OSM region/dir vars', () => {
+      const cfg = resolveFsqRefreshConfig({
+        TARMOTO_POI_IMPORT_DIR: '/osm',
+        TARMOTO_POI_IMPORT_REGIONS: 'DE',
+        TARMOTO_FSQ_IMPORT_DIR: '/fsq',
+        TARMOTO_FSQ_IMPORT_REGIONS: 'CZ',
+      });
+      expect(cfg.targetDir).toBe('/fsq');
+      expect(cfg.regions.map((r) => r.code)).toEqual(['CZ']);
+    });
+
+    it('fails fast on an unknown FSQ region code', () => {
+      expect(() =>
+        resolveFsqRefreshConfig({ TARMOTO_FSQ_IMPORT_REGIONS: 'CZ,ZZ' }),
+      ).toThrow(/unknown region "ZZ"/);
+    });
+  });
+
+  describe('buildFsqExtractSql', () => {
+    const sql = buildFsqExtractSql({
+      token: 'tok-abc',
+      region: CZ,
+      outPath: '/fsq/cz.fsq.jsonl.part',
+      tempDir: '/work',
+    });
+
+    it('selects the FsqPlaceRow field list + comma-joined category arrays', () => {
+      expect(sql).toContain('fsq_place_id, name, latitude, longitude');
+      expect(sql).toContain(
+        "array_to_string(fsq_category_ids, ',')    AS category_ids",
+      );
+      expect(sql).toContain(
+        "array_to_string(fsq_category_labels, ',') AS category_labels",
+      );
+      expect(sql).toContain(
+        'tel, website, address, locality, postcode, country',
+      );
+    });
+
+    it('attaches the static catalog + queries the OS Places table', () => {
+      expect(sql).toContain(`ENDPOINT '${FSQ_CATALOG_ENDPOINT}'`);
+      expect(sql).toContain(`FROM ${FSQ_PLACES_TABLE}`);
+    });
+
+    it('scopes by ISO-2 country, bbox, open places, and the category superset', () => {
+      expect(sql).toContain("AND country = 'CZ'");
+      expect(sql).toContain('longitude BETWEEN 12.09 AND 18.86');
+      expect(sql).toContain('latitude  BETWEEN 48.55 AND 51.06');
+      expect(sql).toContain('date_closed IS NULL');
+      expect(sql).toContain(FSQ_CATEGORY_PREFILTER);
+    });
+
+    it('writes NDJSON to the given out path via COPY (FORMAT json)', () => {
+      expect(sql).toContain("TO '/fsq/cz.fsq.jsonl.part' (FORMAT json)");
+    });
+
+    it('embeds the token as a secret and sets the spill dir when given', () => {
+      expect(sql).toContain("TOKEN 'tok-abc'");
+      expect(sql).toContain("SET temp_directory='/work'");
+    });
+
+    it('omits temp_directory when no tempDir is given', () => {
+      const noTemp = buildFsqExtractSql({
+        token: 't',
+        region: CZ,
+        outPath: '/x.part',
+      });
+      expect(noTemp).not.toContain('temp_directory');
+    });
+
+    it('escapes a single quote in the token to keep it a safe literal', () => {
+      const injected = buildFsqExtractSql({
+        token: "a'b",
+        region: CZ,
+        outPath: '/x.part',
+      });
+      // Doubled inside the literal — never terminates the string early.
+      expect(injected).toContain("TOKEN 'a''b'");
     });
   });
 });
