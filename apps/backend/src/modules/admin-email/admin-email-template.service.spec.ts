@@ -12,6 +12,7 @@ function make() {
       (partial: Partial<EmailTemplate>) => partial as EmailTemplate,
     ),
     save: jest.fn((row: EmailTemplate) => Promise.resolve(row)),
+    update: jest.fn(() => Promise.resolve({ affected: 1 })),
     delete: jest.fn(),
   };
 
@@ -51,45 +52,67 @@ describe('AdminEmailTemplateService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('saveDraft upserts a valid doc as a new draft row', async () => {
+  it('saveDraft inserts a fresh draft when the scoped update matches no draft row', async () => {
     const { service, templates } = make();
-    templates.findOne.mockResolvedValue(null);
+    // No draft row matched (none existed, or it was published between calls).
+    templates.update.mockResolvedValue({ affected: 0 });
+    templates.findOne.mockResolvedValue({
+      template_tag: 'weekly-digest',
+      locale: 'en',
+      status: 'draft',
+      version: 1,
+      subject: 'Hi {displayName}',
+      blocks: [{ type: 'paragraph', text: 'You rode {distance}' }],
+    });
 
     const result = await service.saveDraft('weekly-digest', 'en', {
       subject: 'Hi {displayName}',
       blocks: [{ type: 'paragraph', text: 'You rode {distance}' }],
     });
 
+    // Scoped write targets only draft rows; nothing matched → insert a fresh
+    // draft rather than reverting any row that a concurrent publish promoted.
+    expect(templates.update).toHaveBeenCalledWith(
+      { template_tag: 'weekly-digest', locale: 'en', status: 'draft' },
+      expect.objectContaining({ subject: 'Hi {displayName}' }),
+    );
     expect(templates.save).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'draft' }),
     );
     expect(result.status).toBe('draft');
   });
 
-  it('saveDraft updates an existing draft row in place', async () => {
+  it('saveDraft updates the draft via a status-scoped write, never rewriting a published row', async () => {
     const { service, templates } = make();
-    const existing = {
-      id: 'd1',
+    templates.update.mockResolvedValue({ affected: 1 });
+    templates.findOne.mockResolvedValue({
       template_tag: 'weekly-digest',
       locale: 'en',
       status: 'draft',
       version: 1,
-      subject: 'old',
-      blocks: [],
-    };
-    templates.findOne.mockResolvedValue(existing);
+      subject: 'New {displayName}',
+      blocks: [{ type: 'heading', text: '{distance}' }],
+    });
 
     const result = await service.saveDraft('weekly-digest', 'en', {
       subject: 'New {displayName}',
       blocks: [{ type: 'heading', text: '{distance}' }],
     });
 
-    expect(existing.subject).toBe('New {displayName}');
-    expect(existing.blocks).toEqual([{ type: 'heading', text: '{distance}' }]);
-    expect(existing.status).toBe('draft');
+    // The write is a targeted UPDATE ... WHERE status = 'draft' carrying only
+    // subject/blocks — so a row a super_admin published between our read and
+    // write can never be reverted to draft (the guard for this finding).
+    expect(templates.update).toHaveBeenCalledWith(
+      { template_tag: 'weekly-digest', locale: 'en', status: 'draft' },
+      {
+        subject: 'New {displayName}',
+        blocks: [{ type: 'heading', text: '{distance}' }],
+      },
+    );
+    // Matched an existing draft → no full-entity save (which would carry the
+    // stale status) and no freshly created row.
     expect(templates.create).not.toHaveBeenCalled();
-    // Same row object mutated in place, not a freshly created one.
-    expect(templates.save).toHaveBeenCalledWith(existing);
+    expect(templates.save).not.toHaveBeenCalled();
     expect(result.status).toBe('draft');
   });
 

@@ -101,25 +101,31 @@ export class AdminEmailTemplateService {
     const result = validateBlockDocument(tag, dto);
     if (!result.ok) throw new BadRequestException(result.errors);
 
-    const existing = await this.templates.findOne({
+    // Update in place, scoped to the draft row. save()-ing a loaded entity
+    // would persist its stale `status: 'draft'`, so a super_admin who published
+    // this very row between our read and our write would see the publish
+    // silently reverted. A targeted UPDATE ... WHERE status = 'draft' only ever
+    // touches the subject/blocks of a still-draft row; if the draft was already
+    // published (or never existed) 0 rows match and we insert a fresh draft.
+    const updated = await this.templates.update(
+      { template_tag: tag, locale, status: 'draft' },
+      { subject: result.doc.subject, blocks: result.doc.blocks },
+    );
+    if (!updated.affected) {
+      await this.templates.save(
+        this.templates.create({
+          template_tag: tag,
+          locale,
+          subject: result.doc.subject,
+          blocks: result.doc.blocks,
+          status: 'draft',
+        }),
+      );
+    }
+    const row = await this.templates.findOne({
       where: { template_tag: tag, locale, status: 'draft' },
     });
-    let row: EmailTemplate;
-    if (existing) {
-      existing.subject = result.doc.subject;
-      existing.blocks = result.doc.blocks;
-      row = existing;
-    } else {
-      row = this.templates.create({
-        template_tag: tag,
-        locale,
-        subject: result.doc.subject,
-        blocks: result.doc.blocks,
-        status: 'draft',
-      });
-    }
-    const saved = await this.templates.save(row);
-    return this.toDetail(tag, locale, saved);
+    return this.toDetail(tag, locale, row);
   }
 
   /** Validates and renders the supplied doc against fixed sample data — no persistence.
