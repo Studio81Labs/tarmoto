@@ -68,3 +68,4 @@ export { UserFeature } from './user-feature.entity.js';
 export { FeatureState } from './feature-state.entity.js';
 export { AppSetting } from './app-setting.entity.js';
 export { EmailLog } from './email-log.entity.js';
+export { EmailTemplate } from './email-template.entity.js';
