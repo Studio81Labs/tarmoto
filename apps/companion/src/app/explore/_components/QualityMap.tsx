@@ -488,6 +488,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         });
       };
       const expandPoiCluster = (feature: MapGeoJSONFeature) => {
+        // Zooming into a cluster is a deliberate navigate-away (a programmatic
+        // easeTo with no originalEvent), so release any flown-to condition pin.
+        pinnedConditionRef.current = null;
         const clusterId = feature.properties?.cluster_id as number | undefined;
         const src = map.getSource(POI_SOURCE) as GeoJSONSource | undefined;
         if (clusterId == null || !src) return;
@@ -557,7 +560,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           { layers: [HAZARD_BG], handle: openHazard },
           {
             layers: [HAZARD_CLUSTERS],
-            handle: (f) => expandHazardCluster(map, f),
+            handle: (f) => {
+              // Same as the POI cluster: a programmatic zoom-in navigate-away,
+              // so drop any flown-to condition pin.
+              pinnedConditionRef.current = null;
+              expandHazardCluster(map, f);
+            },
           },
           // Route lines are below the markers, so they're listed last — a
           // marker sitting on a route still wins the click.
