@@ -237,6 +237,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         flyTo(target) {
           const map = handleRef.current?.map;
           if (!map) return;
+          // A deliberate navigate-away (e.g. address search), not a fly to the
+          // pinned condition — release the pin so its popover reconciles/closes
+          // normally at the destination instead of lingering over a new area.
+          pinnedConditionRef.current = null;
           map.flyTo({
             center: [target.lng, target.lat],
             zoom: target.zoom,
@@ -1014,7 +1018,12 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             point={pointMenu.point}
             x={pointMenu.x}
             y={pointMenu.y}
-            onClose={() => setPointMenu(null)}
+            onClose={() => {
+              // Dismissing the card also drops any condition pin, so a later
+              // settle can't treat it as still-pinned.
+              pinnedConditionRef.current = null;
+              setPointMenu(null);
+            }}
           />
         ) : null}
       </MapCanvas>
