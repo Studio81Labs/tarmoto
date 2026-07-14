@@ -97,6 +97,10 @@ import type {
 import type { MountainPass } from "@/lib/passes-summary";
 import { plannerApi } from "@/lib/planner/api";
 import type { Poi, PoiCategory } from "@/lib/planner/types";
+import {
+  pinnedConditionRetired,
+  reconcileConditionMenu,
+} from "./conditionPopoverReconcile";
 
 // Stable empty route list — the explorer never checks conditions against a
 // route, so both hooks always fetch the viewport-only (regional) list.
@@ -823,56 +827,23 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       closuresRef.current = closures;
       passesRef.current = passes;
       setConditionSourceData(map, { closures, passes });
-      // Reconcile an open condition popover with the fresh list: refresh its
-      // DTO (e.g. a new seasonal status after a month change), or drop it if the
-      // condition is gone (panned away / toggled off → []) — or, for a pass,
-      // now `open`, since open passes are filtered out of the marker layer and
-      // a popover with no marker to anchor would float over empty map.
-      //
-      // Only reconcile against SETTLED data, and only for the list that backs
-      // the open popover: a viewport change re-keys both queries, so mid-fetch
-      // each momentarily reports `[]`. Deferring against that transient empty is
-      // what kept a just-tapped condition's popover from closing when the row
-      // tap flies the map. Gating per-kind (not on `closuresLoading ||
-      // passesLoading`) so a closure card isn't held open while an unrelated
-      // passes refetch is still in flight, and vice versa.
+      // Reconcile the open condition popover against the fresh lists — refresh
+      // its DTO, keep it (still loading, or the pinned row we flew to), or close
+      // it if genuinely gone. Policy lives in `reconcileConditionMenu` so it can
+      // be unit tested without the map.
       const pinned = pinnedConditionRef.current;
       setPointMenu((menu) => {
         if (!menu) return menu;
-        const point = menu.point;
-        if (point.kind === "closure") {
-          if (closuresLoading) return menu;
-          const fresh = closures.find((c) => c.id === point.closure.id);
-          if (fresh) {
-            return {
-              ...menu,
-              point: { kind: "closure", closure: fresh, affectsRoute: false },
-            };
-          }
-          // Absent from the settled list: keep it if this is the row we just
-          // flew to (its destination cache can predate it); a later pan clears
-          // the pin so it then closes.
-          return pinned?.kind === "closure" && pinned.id === point.closure.id
-            ? menu
-            : null;
-        }
-        if (point.kind === "pass") {
-          if (passesLoading) return menu;
-          const fresh = passes.find((p) => p.id === point.pass.id);
-          if (fresh) {
-            // A now-`open` pass has no marker to anchor — close regardless.
-            return fresh.status === "open"
-              ? null
-              : {
-                  ...menu,
-                  point: { kind: "pass", pass: fresh, affectsRoute: false },
-                };
-          }
-          return pinned?.kind === "pass" && pinned.id === point.pass.id
-            ? menu
-            : null;
-        }
-        return menu;
+        const action = reconcileConditionMenu(menu.point, {
+          closures,
+          passes,
+          closuresLoading,
+          passesLoading,
+          pinned,
+        });
+        if (action.type === "keep") return menu;
+        if (action.type === "close") return null;
+        return { ...menu, point: action.point };
       });
     }, [ready, closures, passes, closuresLoading, passesLoading]);
 
@@ -894,28 +865,28 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       const pin = pinnedConditionRef.current;
       if (!pin) return;
       if (
-        pin.kind === "closure" &&
-        closuresSettled &&
-        !closures.some((c) => c.id === pin.id)
+        !pinnedConditionRetired(pin, {
+          closures,
+          passes,
+          closuresSettled,
+          passesSettled,
+        })
       ) {
-        pinnedConditionRef.current = null;
-        setPointMenu((menu) =>
-          menu?.point.kind === "closure" && menu.point.closure.id === pin.id
-            ? null
-            : menu,
-        );
-      } else if (
-        pin.kind === "pass" &&
-        passesSettled &&
-        !passes.some((p) => p.id === pin.id)
-      ) {
-        pinnedConditionRef.current = null;
-        setPointMenu((menu) =>
-          menu?.point.kind === "pass" && menu.point.pass.id === pin.id
-            ? null
-            : menu,
-        );
+        return;
       }
+      pinnedConditionRef.current = null;
+      setPointMenu((menu) => {
+        if (!menu) return menu;
+        if (pin.kind === "closure") {
+          return menu.point.kind === "closure" &&
+            menu.point.closure.id === pin.id
+            ? null
+            : menu;
+        }
+        return menu.point.kind === "pass" && menu.point.pass.id === pin.id
+          ? null
+          : menu;
+      });
     }, [closuresFetching, passesFetching, closures, passes]);
 
     // ── close a condition popover when its own date/month input changes ──
