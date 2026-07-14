@@ -82,10 +82,34 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
 }
 
+/**
+ * Turn node's opaque `execFile` rejection ("Command failed: osmium …") into a
+ * diagnosable message: a `signal` names an OOM kill (`SIGKILL`) vs osmium's own
+ * error exit, and `stderr` carries osmium's actual complaint (#976 ops).
+ */
+export function describeOsmiumError(subcommand: string, err: unknown): string {
+  const e = err as {
+    code?: number;
+    signal?: NodeJS.Signals | null;
+    stderr?: string | Buffer;
+  };
+  const how = e.signal
+    ? `killed by ${e.signal}${e.signal === 'SIGKILL' ? ' (out of memory?)' : ''}`
+    : `exit ${e.code ?? '?'}`;
+  const stderr = String(e.stderr ?? '').trim();
+  return `osmium ${subcommand} ${how}${stderr ? `: ${stderr.slice(-2000)}` : ''}`;
+}
+
 async function runOsmium(args: readonly string[]): Promise<void> {
-  // osmium writes to its `-o` file, so stdout/stderr stay small; the generous
-  // maxBuffer only guards against verbose progress on a huge input.
-  await execFileAsync('osmium', [...args], { maxBuffer: 64 * 1024 * 1024 });
+  try {
+    // osmium writes to its `-o` file, so stdout/stderr stay small; the generous
+    // maxBuffer only guards against verbose progress on a huge input.
+    await execFileAsync('osmium', [...args], { maxBuffer: 256 * 1024 * 1024 });
+  } catch (err) {
+    throw new Error(describeOsmiumError(args[0] ?? 'osmium', err), {
+      cause: err,
+    });
+  }
 }
 
 /**
