@@ -309,7 +309,7 @@ function PassesPanelBody({
             </span>
           </p>
 
-          <ul className="space-y-1.5">
+          <ul className="space-y-2">
             {STATUS_DISPLAY_ORDER.flatMap((status) =>
               groups[status].slice(0, MAX_PASSES_PER_GROUP).map((p) => (
                 <PassRow
@@ -373,15 +373,16 @@ function PassRow({
       </span>
     </>
   );
+  // Card layout matching ClosureRow so both Conditions lists read the same.
   // When a focus handler is supplied (the /explore Conditions list), the whole
   // row is a button that flies the map to the marker + opens its popover.
   return (
-    <li>
+    <li className="rounded-xl border border-line bg-paper p-3">
       {onFocus ? (
         <button
           type="button"
           onClick={() => onFocus(pass)}
-          className="flex w-full items-start gap-2 text-left text-xs"
+          className="flex w-full cursor-pointer items-start gap-2 text-left text-xs"
           title={t("Show on map")}
         >
           {body}
@@ -410,7 +411,7 @@ function OnRoutePassCard({
       <button
         type="button"
         onClick={() => onFocus?.(pass)}
-        className="block w-full text-left"
+        className="block w-full cursor-pointer text-left"
         title={t("Show on map")}
       >
         <div className="flex items-start justify-between gap-3">

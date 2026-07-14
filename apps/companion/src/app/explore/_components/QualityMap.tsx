@@ -111,6 +111,10 @@ const ACTIVE_OPACITY = 0.9;
 
 const POI_FETCH_DEBOUNCE_MS = 300;
 
+// Camera zoom a Conditions-list row tap flies to (floored — never zooms out).
+// Street-level so the flown-to closure/pass sits front-and-centre.
+const CONDITION_FOCUS_ZOOM = 13;
+
 const HAZARD_MIN_ZOOM = 9;
 const HAZARD_FETCH_DEBOUNCE_MS = 300;
 const HAZARD_MAX_RADIUS_M = 50_000;
@@ -325,7 +329,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           if (typeof map.flyTo === "function") {
             map.flyTo({
               center: [lng, lat],
-              zoom: Math.max(map.getZoom?.() ?? 0, 9),
+              // Zoom in close enough that the condition and its marker are the
+              // focus of the view — zoom 9 left it a distant speck.
+              zoom: Math.max(map.getZoom?.() ?? 0, CONDITION_FOCUS_ZOOM),
               duration: 1200,
               essential: true,
             });

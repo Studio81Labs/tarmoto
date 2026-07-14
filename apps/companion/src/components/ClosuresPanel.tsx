@@ -322,7 +322,7 @@ function OnRouteClosureCard({
       <button
         type="button"
         onClick={() => onFocus?.(closure)}
-        className="block w-full text-left"
+        className="block w-full cursor-pointer text-left"
         title={t("Show on map")}
       >
         <div className="flex items-start justify-between gap-3">
@@ -422,7 +422,7 @@ function ClosureRow({
         <button
           type="button"
           onClick={() => onFocus(closure)}
-          className="block w-full text-left"
+          className="block w-full cursor-pointer text-left"
           title={t("Show on map")}
         >
           {body}
