@@ -25,6 +25,7 @@ export interface NumberFieldProps {
   disabled?: boolean;
   ariaLabel?: string;
   className?: string;
+  unit?: string;
 }
 
 export function NumberField({
@@ -38,6 +39,7 @@ export function NumberField({
   disabled = false,
   ariaLabel,
   className,
+  unit,
 }: NumberFieldProps) {
   const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n)));
 
@@ -68,6 +70,14 @@ export function NumberField({
         onChange={(event) => commit(event.target.value)}
         className="min-w-0 flex-1 bg-transparent px-3 py-2 font-sans text-sm text-ink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
       />
+      {unit && (
+        <span
+          aria-hidden="true"
+          className="flex items-center pr-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-fg-mute"
+        >
+          {unit}
+        </span>
+      )}
       <div className="flex flex-col border-l border-line">
         <button
           type="button"

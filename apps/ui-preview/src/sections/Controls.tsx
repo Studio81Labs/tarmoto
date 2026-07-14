@@ -2,11 +2,15 @@ import { useState } from "react";
 import { Section, SubStamp } from "../Section";
 import {
   Card,
+  FieldLabel,
+  Input,
+  NumberField,
   NumberGrid,
   RadioCardGroup,
   SegmentedControl,
   Slider,
   SwatchPicker,
+  Textarea,
   Toggle,
 } from "@tarmoto/ui";
 import { CodeBlock, CN, CS } from "./_shared";
@@ -23,11 +27,21 @@ export function ControlsSection() {
   const [days, setDays] = useState(4);
   const [accent, setAccent] = useState("#FF6A1A");
 
+  // Text-field family state
+  const [inputTyping, setInputTyping] = useState("brno.rider");
+  const [inputIcon, setInputIcon] = useState("mountain pass");
+  const [inputError, setInputError] = useState("notanemail");
+  const [textareaVal, setTextareaVal] = useState(
+    "Challenging hairpins through the Jeseniky ridge — bring rain gear.",
+  );
+  const [tripKm, setTripKm] = useState(240);
+  const [distUnit, setDistUnit] = useState<"km" | "mi">("km");
+
   return (
     <Section
       id="controls"
       num="09 · Form controls"
-      title="Toggle, segment, slider, radio."
+      title="Toggle, segment, slider, radio — and the text-field family."
       tone="tinted"
       intro={
         <>
@@ -210,6 +224,170 @@ export function ControlsSection() {
           <p className="mt-3 text-[12px] text-fg-dim">
             Curated only — never a free hex picker. Selected = 2 px ink ring.
           </p>
+        </Card>
+      </div>
+
+      {/* ── Text-field family ── */}
+      <p className="mt-10 border-t border-line pt-6 text-[11px] font-semibold uppercase tracking-[0.6px] text-fg-dim">
+        Text-field family
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-6">
+        {/* Text input · states */}
+        <Card padded className="col-span-2 !p-6">
+          <SubStamp>Text input · states</SubStamp>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+            {/* rest / placeholder */}
+            <div>
+              <FieldLabel htmlFor="inp-rest">Username</FieldLabel>
+              <Input
+                id="inp-rest"
+                value=""
+                onChange={() => {}}
+                placeholder="e.g. brno.rider"
+              />
+            </div>
+
+            {/* focused-typing (live value) */}
+            <div>
+              <FieldLabel htmlFor="inp-typing">Username</FieldLabel>
+              <Input
+                id="inp-typing"
+                value={inputTyping}
+                onChange={setInputTyping}
+                placeholder="e.g. brno.rider"
+              />
+            </div>
+
+            {/* leading icon · search */}
+            <div>
+              <FieldLabel htmlFor="inp-search">Search routes</FieldLabel>
+              <Input
+                id="inp-search"
+                value={inputIcon}
+                onChange={setInputIcon}
+                placeholder="mountain pass…"
+                leadingIcon={
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                }
+              />
+            </div>
+
+            {/* disabled */}
+            <div>
+              <FieldLabel htmlFor="inp-disabled">Account email</FieldLabel>
+              <Input
+                id="inp-disabled"
+                value="adam@studio81labs.com"
+                onChange={() => {}}
+                disabled
+              />
+            </div>
+
+            {/* error + hint */}
+            <div className="col-span-2">
+              <FieldLabel htmlFor="inp-error">Email</FieldLabel>
+              <Input
+                id="inp-error"
+                value={inputError}
+                onChange={setInputError}
+                type="email"
+                error
+                hint="Enter a valid email address."
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <CodeBlock>
+              {`chrome: `}
+              <CN>fieldChrome()</CN>
+              {` — border-line-strong → accent on focus\n`}
+              {`leading icon: `}
+              <CN>absolute left-3</CN>
+              {` · pointer-events-none · fg-mute\n`}
+              {`error: `}
+              <CN>border-danger</CN>
+              {` ring · FieldHint tone="error"\n`}
+              {`disabled: `}
+              <CN>opacity-60 cursor-not-allowed</CN>
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* Textarea */}
+        <Card padded className="!p-6">
+          <SubStamp>Textarea</SubStamp>
+          <FieldLabel htmlFor="ta-notes">Trip notes</FieldLabel>
+          <Textarea
+            id="ta-notes"
+            value={textareaVal}
+            onChange={setTextareaVal}
+            rows={4}
+            placeholder="Describe the route…"
+            hint="Markdown supported. Visible to riders you share with."
+          />
+          <div className="mt-4">
+            <CodeBlock>
+              {`same chrome as Input · `}
+              <CN>resize-none</CN>
+              {` · leading-relaxed\n`}
+              {`hint: `}
+              <CN>FieldHint</CN>
+              {` tone="default" below the field`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* NumberField + unit segmented pair */}
+        <Card padded className="!p-6">
+          <SubStamp>Segmented + input pair</SubStamp>
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <FieldLabel htmlFor="nf-distance">Trip distance</FieldLabel>
+              <NumberField
+                id="nf-distance"
+                value={tripKm}
+                onChange={setTripKm}
+                min={10}
+                max={9999}
+                step={10}
+                unit="KM"
+                ariaLabel="Trip distance in kilometres"
+              />
+            </div>
+            <SegmentedControl<"km" | "mi">
+              ariaLabel="Distance unit"
+              value={distUnit}
+              onChange={setDistUnit}
+              options={[
+                { value: "km", label: "km" },
+                { value: "mi", label: "mi" },
+              ]}
+            />
+          </div>
+          <div className="mt-4">
+            <CodeBlock>
+              {`NumberField: border-line-strong · flex stepper column\n`}
+              {`unit badge: `}
+              <CN>mono 11 px / 700</CN>
+              {` · uppercase · fg-mute\n`}
+              {`pair: NumberField flex-1 · SegmentedControl inline`}
+            </CodeBlock>
+          </div>
         </Card>
       </div>
     </Section>
