@@ -1,8 +1,11 @@
 import { ConflictException } from '@nestjs/common';
 import type { CallHandler, ExecutionContext } from '@nestjs/common';
-import { firstValueFrom, of, throwError } from 'rxjs';
+import { firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { PoiUploadLockInterceptor } from './poi-upload-lock.interceptor.js';
-import type { PoiImportAdminService } from '../poi/poi-import-admin.service.js';
+import {
+  UPLOAD_LOCK_RENEW_INTERVAL_MS,
+  type PoiImportAdminService,
+} from '../poi/poi-import-admin.service.js';
 
 function contextFor(source: string, code: string): ExecutionContext {
   return {
@@ -13,15 +16,23 @@ function contextFor(source: string, code: string): ExecutionContext {
 function makeSvc(): {
   interceptor: PoiUploadLockInterceptor;
   acquire: jest.Mock;
+  renew: jest.Mock;
   release: jest.Mock;
 } {
   const acquire = jest.fn();
+  const renew = jest.fn().mockResolvedValue(undefined);
   const release = jest.fn().mockResolvedValue(undefined);
   const svc = {
     acquireUploadLock: acquire,
+    renewUploadLock: renew,
     releaseUploadLock: release,
   } as unknown as PoiImportAdminService;
-  return { interceptor: new PoiUploadLockInterceptor(svc), acquire, release };
+  return {
+    interceptor: new PoiUploadLockInterceptor(svc),
+    acquire,
+    renew,
+    release,
+  };
 }
 
 describe('PoiUploadLockInterceptor', () => {
@@ -70,5 +81,35 @@ describe('PoiUploadLockInterceptor', () => {
     ).rejects.toThrow('write failed');
 
     expect(release).toHaveBeenCalledWith('osm', 'CZ', 'tok-2');
+  });
+
+  it('renews the lock on an interval while in flight, and stops once it settles (#972 review)', async () => {
+    jest.useFakeTimers();
+    try {
+      const { interceptor, acquire, renew, release } = makeSvc();
+      acquire.mockResolvedValue('tok-3');
+      // A handler we hold open to simulate a long, still-streaming upload.
+      const handler = new Subject<unknown>();
+      const next: CallHandler = { handle: () => handler.asObservable() };
+
+      const obs = await interceptor.intercept(contextFor('osm', 'CZ'), next);
+      const sub = obs.subscribe({ error: () => undefined });
+
+      // Two renewal intervals elapse mid-upload → two token-checked renews,
+      // so the lock never lapses even though the upload outlives the TTL.
+      jest.advanceTimersByTime(UPLOAD_LOCK_RENEW_INTERVAL_MS * 2);
+      expect(renew).toHaveBeenCalledTimes(2);
+      expect(renew).toHaveBeenLastCalledWith('osm', 'CZ', 'tok-3');
+
+      // Upload finishes → heartbeat cleared, lock released, no further renews.
+      handler.complete();
+      jest.advanceTimersByTime(UPLOAD_LOCK_RENEW_INTERVAL_MS * 3);
+      expect(renew).toHaveBeenCalledTimes(2);
+      expect(release).toHaveBeenCalledWith('osm', 'CZ', 'tok-3');
+
+      sub.unsubscribe();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

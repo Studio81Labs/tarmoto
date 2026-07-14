@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { finalize } from 'rxjs';
 import type { Observable } from 'rxjs';
-import { PoiImportAdminService } from '../poi/poi-import-admin.service.js';
+import {
+  PoiImportAdminService,
+  UPLOAD_LOCK_RENEW_INTERVAL_MS,
+} from '../poi/poi-import-admin.service.js';
 import type { AdminRequest } from './internal.guard.js';
 
 /**
@@ -45,10 +48,22 @@ export class PoiUploadLockInterceptor implements NestInterceptor {
       );
     }
 
+    // Keep the owned lock alive for the whole upload: a large extract over a
+    // slow link can outlast the lock's TTL, and letting it lapse mid-upload
+    // would reopen the exact stale-extract window this closes (#972 review).
+    // Renew (token-checked) on an interval; `unref` so a hung request's timer
+    // can never keep the process alive.
+    const heartbeat = setInterval(() => {
+      void this.svc.renewUploadLock(source, code, token);
+    }, UPLOAD_LOCK_RENEW_INTERVAL_MS);
+    heartbeat.unref();
+
     return next.handle().pipe(
-      // Best-effort release on both completion and error; `releaseUploadLock`
-      // swallows its own Redis errors and the TTL is the ultimate backstop.
+      // Stop renewing, then release, on both completion and error;
+      // `releaseUploadLock` swallows its own Redis errors and the TTL is the
+      // ultimate backstop.
       finalize(() => {
+        clearInterval(heartbeat);
         void this.svc.releaseUploadLock(source, code, token);
       }),
     );

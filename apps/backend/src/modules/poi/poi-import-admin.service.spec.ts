@@ -1421,7 +1421,7 @@ describe('PoiImportAdminService', () => {
     });
   });
 
-  describe('upload lock (acquire / release, #972)', () => {
+  describe('upload lock (acquire / renew / release, #972)', () => {
     const lockKey = 'poi:import:upload-lock:osm:CZ';
     const makeSvc = (redis: ReturnType<typeof makeFakeRedis>) =>
       new PoiImportAdminService(
@@ -1465,6 +1465,29 @@ describe('PoiImportAdminService', () => {
 
       await expect(
         makeSvc(redis).releaseUploadLock('osm', 'CZ', 'tok'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('renewUploadLock extends the TTL via a token-checked EXPIRE (keeps a slow upload from lapsing)', async () => {
+      const redis = makeFakeRedis();
+      await makeSvc(redis).renewUploadLock('osm', 'CZ', 'tok-123');
+
+      expect(redis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('redis.call("expire", KEYS[1], ARGV[2])'),
+        1,
+        lockKey,
+        'tok-123',
+        '600',
+      );
+      expect(redis.del).not.toHaveBeenCalled();
+    });
+
+    it('renewUploadLock swallows a Redis error (best-effort)', async () => {
+      const redis = makeFakeRedis();
+      redis.eval.mockRejectedValue(new Error('redis down'));
+
+      await expect(
+        makeSvc(redis).renewUploadLock('osm', 'CZ', 'tok'),
       ).resolves.toBeUndefined();
     });
   });

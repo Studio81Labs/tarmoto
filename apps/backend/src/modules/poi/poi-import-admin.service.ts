@@ -98,13 +98,22 @@ export const POI_UPLOAD_MAX_BYTES =
   Number(process.env.TARMOTO_POI_UPLOAD_MAX_BYTES) || 200 * 1024 * 1024;
 
 /**
- * TTL (seconds) on the per-`(source, code)` upload lock (#972). A crash/abort
- * safety net, NOT the primary release path — `PoiUploadLockInterceptor` frees
- * it in its `finalize`. Sized to cover a full slow-client streaming upload of a
- * `POI_UPLOAD_MAX_BYTES` extract; if it ever lapses mid-upload the lock simply
- * reopens (the accepted, self-correcting race #972 scopes).
+ * TTL (seconds) on the per-`(source, code)` upload lock (#972). NOT sized to
+ * cover a whole upload — a `POI_UPLOAD_MAX_BYTES` extract over a slow link can
+ * outlast any fixed TTL (#972 review), so `PoiUploadLockInterceptor` RENEWS it
+ * on an interval while the request is in flight. The TTL is therefore just the
+ * crash/abort grace: once renewals stop (finalize ran, or the process died) the
+ * lock frees within this long. `releaseUploadLock` is the normal release path.
  */
 const UPLOAD_LOCK_TTL_SECONDS = 600;
+
+/**
+ * How often the interceptor renews the lock while an upload is in flight — a
+ * third of the TTL, so even a couple of missed ticks (event-loop lag) leave
+ * margin before the lock could lapse.
+ */
+export const UPLOAD_LOCK_RENEW_INTERVAL_MS =
+  (UPLOAD_LOCK_TTL_SECONDS / 3) * 1000;
 
 /**
  * Release the upload lock ONLY if this request still owns it (stored value ==
@@ -114,6 +123,18 @@ const UPLOAD_LOCK_TTL_SECONDS = 600;
 const RELEASE_UPLOAD_LOCK_LUA = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
   return redis.call("del", KEYS[1])
+end
+return 0`;
+
+/**
+ * Extend the lock's TTL, but ONLY if this request still owns it (token match) —
+ * so a renewal that fires after our TTL already lapsed (and another upload took
+ * the lock) can't extend THAT upload's lock. `KEYS[1]` = key, `ARGV[1]` = token,
+ * `ARGV[2]` = new TTL seconds.
+ */
+const RENEW_UPLOAD_LOCK_LUA = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("expire", KEYS[1], ARGV[2])
 end
 return 0`;
 
@@ -520,6 +541,37 @@ export class PoiImportAdminService {
       'NX',
     );
     return acquired === 'OK' ? token : null;
+  }
+
+  /**
+   * Extend the upload lock's TTL while the upload is still in flight, ONLY if
+   * this request still owns it (token-checked `EXPIRE`) — so a slow upload that
+   * outlasts `UPLOAD_LOCK_TTL_SECONDS` keeps its lock instead of letting it
+   * lapse and reopening the stale-extract window (#972 review). Driven by
+   * `PoiUploadLockInterceptor`'s heartbeat every
+   * `UPLOAD_LOCK_RENEW_INTERVAL_MS`; best-effort, like release.
+   */
+  async renewUploadLock(
+    source: string,
+    code: string,
+    token: string,
+  ): Promise<void> {
+    try {
+      const redis = await this.queue.client;
+      await redis.eval(
+        RENEW_UPLOAD_LOCK_LUA,
+        1,
+        this.uploadLockKey(source, code),
+        token,
+        String(UPLOAD_LOCK_TTL_SECONDS),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `upload-lock renew failed for ${source}/${code}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /**
