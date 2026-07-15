@@ -115,6 +115,54 @@ describe('RoadsService', () => {
       expect(results[0].confidence).toBe(80);
       expect(results[0].distance_m).toBe(235);
     });
+
+    it('maps quality_source + osm_quality_seed onto the DTO', async () => {
+      segmentRepo.query!.mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          road_name: 'X',
+          road_number: null,
+          quality_score: 3.6,
+          curviness_score: 2,
+          surface_type: 'asphalt',
+          length_m: 100,
+          confidence: 20,
+          reading_count: 1,
+          last_updated: new Date('2026-04-13T10:00:00Z'),
+          distance_m: 12,
+          quality_source: 'osm_smoothness',
+          osm_quality_seed: 4,
+        },
+      ]);
+
+      const [dto] = await service.findNearby({ lat: 0, lng: 0 });
+
+      expect(dto.quality_source).toBe('osm_smoothness');
+      expect(dto.osm_quality_seed).toBe(4);
+    });
+
+    it('defaults quality_source and osm_quality_seed to null when the row has no OSM seed', async () => {
+      segmentRepo.query!.mockResolvedValueOnce([
+        {
+          id: 'seg-rider-only',
+          road_name: null,
+          road_number: null,
+          quality_score: null,
+          curviness_score: 1.0,
+          surface_type: 'unknown',
+          length_m: 100,
+          confidence: 0,
+          reading_count: 0,
+          last_updated: new Date('2026-04-13T10:00:00Z'),
+          distance_m: 10,
+        },
+      ]);
+
+      const [dto] = await service.findNearby({ lat: 0, lng: 0 });
+
+      expect(dto.quality_source).toBeNull();
+      expect(dto.osm_quality_seed).toBeNull();
+    });
   });
 
   describe('findById', () => {
@@ -233,6 +281,60 @@ describe('RoadsService', () => {
         photos: ['https://media.tarmoto.app/r/abc.jpg'],
       });
       expect(result.riders_per_month).toBe(12);
+    });
+
+    it('maps quality_source + osm_quality_seed from the aggregated way query', async () => {
+      segmentRepo.query!.mockResolvedValueOnce([
+        {
+          id: 'seg-osm',
+          road_name: 'Test Road',
+          road_number: null,
+          quality_score: 4.0,
+          curviness_score: 2.5,
+          surface_type: 'asphalt',
+          length_m: 200,
+          confidence: 70,
+          reading_count: 7,
+          last_updated: new Date('2026-04-13T10:00:00Z'),
+          elevation_min: null,
+          elevation_max: null,
+          elevation_profile: null,
+          quality_source: 'osm_surface',
+          osm_quality_seed: 3.5,
+          geojson: { coordinates: [[16.75, 49.1]] },
+        },
+      ]);
+
+      const result = await service.findById('seg-osm');
+
+      expect(result.quality_source).toBe('osm_surface');
+      expect(result.osm_quality_seed).toBe(3.5);
+    });
+
+    it('defaults quality_source and osm_quality_seed to null when the way has no OSM seed', async () => {
+      segmentRepo.query!.mockResolvedValueOnce([
+        {
+          id: 'seg-rider-only',
+          road_name: null,
+          road_number: null,
+          quality_score: 3.0,
+          curviness_score: 1.0,
+          surface_type: 'asphalt',
+          length_m: 100,
+          confidence: 10,
+          reading_count: 2,
+          last_updated: new Date('2026-04-13T10:00:00Z'),
+          elevation_min: null,
+          elevation_max: null,
+          elevation_profile: null,
+          geojson: { coordinates: [[16.75, 49.1]] },
+        },
+      ]);
+
+      const result = await service.findById('seg-rider-only');
+
+      expect(result.quality_source).toBeNull();
+      expect(result.osm_quality_seed).toBeNull();
     });
 
     it('masks reporter and review author when their profile is private (#279 / #501)', async () => {
