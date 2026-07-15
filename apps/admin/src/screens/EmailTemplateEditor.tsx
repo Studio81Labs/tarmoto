@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Pill } from "@tarmoto/ui";
 import { Dialog } from "../components/Dialog.js";
@@ -100,7 +100,10 @@ export function EmailTemplateEditor({
   // since diverged — refs are stable across renders, so `.current` always
   // reflects the latest edit regardless of which render's closure reads it.
   const latestDoc = useRef({ subject, blocks });
-  useEffect(() => {
+  // Layout effect (not passive): sync the ref synchronously during commit, so a
+  // draft PUT resolving in the gap right after an edit can't read a stale
+  // snapshot and wrongly clear `dirty` for still-unsaved visible edits.
+  useLayoutEffect(() => {
     latestDoc.current = { subject, blocks };
   }, [subject, blocks]);
 

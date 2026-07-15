@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { components } from "@tarmoto/openapi-client";
 import { Alert, Button } from "@tarmoto/ui";
 import { usePreview } from "../../data/useAdminEmailTemplates.js";
@@ -37,7 +37,10 @@ export function PreviewPane({
   // ignored (in `run` below), and drop a shown preview the moment the doc
   // changes so the iframe never shows a payload different from what's visible.
   const latestDoc = useRef<EditorDoc>({ subject, blocks });
-  useEffect(() => {
+  // Layout effect (not passive): sync synchronously during commit so an
+  // in-flight preview resolving right after an edit compares against the
+  // current doc, and a shown preview drops the instant the doc changes.
+  useLayoutEffect(() => {
     latestDoc.current = { subject, blocks };
     setResult(null);
     setError(null);
