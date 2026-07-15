@@ -91,7 +91,12 @@ export function DatePicker({
             <path d="M16 2v4M8 2v4M3 10h18" />
           </svg>
         </span>
-        <Button className="flex-1 text-left font-mono text-sm text-ink outline-none data-[placeholder]:text-fg-mute">
+        <Button
+          className={cn(
+            "flex-1 text-left font-mono text-sm outline-none",
+            value ? "text-ink" : "text-fg-mute",
+          )}
+        >
           {value ? value : "Select date"}
         </Button>
       </Group>
