@@ -116,6 +116,18 @@ function RoadMapPageInner() {
     loading: tracksLoading,
     error: tracksError,
   } = useUserRideTracks({ startedFrom: tracksStartedFrom });
+  // Drop the ride popover when it no longer applies — switched to Coverage, or
+  // the ride fell out of the windowed track set — so a stale card can't link to
+  // a ride that isn't on the active map.
+  useEffect(() => {
+    setSelectedRideId((current) =>
+      current &&
+      mapView === "routes" &&
+      rideTracks.some((track) => track.id === current)
+        ? current
+        : null,
+    );
+  }, [mapView, rideTracks]);
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -465,7 +477,7 @@ function RoadMapPageInner() {
             onClose={() => setSelectedSegmentId(null)}
             anchor="viewport"
           />
-          {selectedRideId && (
+          {mapView === "routes" && selectedRideId && (
             <RideRoutePopover
               rideId={selectedRideId}
               unitSystem={unitSystem}
