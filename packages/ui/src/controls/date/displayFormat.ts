@@ -62,6 +62,22 @@ const DATETIME_DEFAULTS: Intl.DateTimeFormatOptions = {
 };
 
 /**
+ * `hour12: false` is the common way to ask for 24h, but Intl resolves it to the
+ * h24 cycle under an en-US locale, rendering midnight as "24:45". Translate a
+ * bare `hour12: false` into the explicit `hourCycle: "h23"` (00–23). An explicit
+ * `hourCycle` or `hour12: true` is a deliberate override and left untouched.
+ */
+function normalizeHourCycle(
+  opts: Intl.DateTimeFormatOptions | undefined,
+): Intl.DateTimeFormatOptions | undefined {
+  if (!opts || opts.hour12 !== false || opts.hourCycle !== undefined) {
+    return opts;
+  }
+  const { hour12: _hour12, ...rest } = opts;
+  return { ...rest, hourCycle: "h23" };
+}
+
+/**
  * The picker values are zoneless wall-clock parts. Anchor them in UTC and
  * format in UTC so no timezone offset shifts the day or hour. Callers can still
  * override any option (including `timeZone`) via `formatOptions`.
@@ -72,14 +88,13 @@ function run(
   locale?: string,
   formatOptions?: Intl.DateTimeFormatOptions,
 ): string {
+  const opts = normalizeHourCycle(formatOptions);
   // `dateStyle`/`timeStyle` are mutually exclusive with individual component
   // options (year/month/day/hour/minute): merging them throws. When the caller
   // opts into a style, drop those field defaults — but keep `hourCycle`, which
   // IS compatible with the styles, so the 24h contract survives (a bare
   // `timeStyle: "short"` on en-US would otherwise regress to "8:30 AM").
-  const usesStyle = Boolean(
-    formatOptions?.dateStyle || formatOptions?.timeStyle,
-  );
+  const usesStyle = Boolean(opts?.dateStyle || opts?.timeStyle);
   const base =
     usesStyle && defaults.hourCycle
       ? { hourCycle: defaults.hourCycle }
@@ -89,7 +104,7 @@ function run(
   return new Intl.DateTimeFormat(locale, {
     timeZone: "UTC",
     ...base,
-    ...formatOptions,
+    ...opts,
   }).format(date);
 }
 

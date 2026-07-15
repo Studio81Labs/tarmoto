@@ -98,6 +98,29 @@ test("style options keep 24h time (hourCycle survives the field-default drop)", 
   expect(dt).toMatch(/13/);
 });
 
+test("caller's hour12:false stays 24h (normalized to h23) on en-US", () => {
+  expect(
+    displayIsoTime("00:45", {
+      locale: "en-US",
+      formatOptions: { hour12: false },
+    }),
+  ).toBe("00:45");
+  expect(
+    displayIsoDateTime("2026-07-15T00:45", {
+      locale: "en-GB",
+      formatOptions: { hour12: false },
+    }),
+  ).toBe("15/07/2026, 00:45");
+});
+
+test("explicit hour12:true remains a deliberate 12h override", () => {
+  const out = displayIsoTime("13:30", {
+    locale: "en-US",
+    formatOptions: { hour12: true },
+  });
+  expect(out).toMatch(/[ap]m/i);
+});
+
 test("displayIsoDateTime combines the locale date with 24h time", () => {
   expect(displayIsoDateTime("2026-07-15T08:30", { locale: "en-GB" })).toBe(
     "15/07/2026, 08:30",
