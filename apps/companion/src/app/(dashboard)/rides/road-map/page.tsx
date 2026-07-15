@@ -110,8 +110,12 @@ function RoadMapPageInner() {
   // period as the coverage view + sidebar so the map doesn't contradict the
   // active pill. `truncated` flags when the ≤500 server cap hides older rides.
   const tracksStartedFrom = useMemo(() => windowStartISO(period), [period]);
-  const { tracks: rideTracks, truncated: rideTracksTruncated } =
-    useUserRideTracks({ startedFrom: tracksStartedFrom });
+  const {
+    tracks: rideTracks,
+    truncated: rideTracksTruncated,
+    loading: tracksLoading,
+    error: tracksError,
+  } = useUserRideTracks({ startedFrom: tracksStartedFrom });
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -366,9 +370,13 @@ function RoadMapPageInner() {
     );
   }
   // Routes are the primary view, so any recorded ride keeps the map — not just
-  // matched coverage segments.
+  // matched coverage segments. Only declare "empty" once tracks have actually
+  // settled: while they're loading (or if the request failed) a rider with
+  // routes but no matched segments would otherwise be wrongly told they have
+  // nothing — the exact case the Routes view exists to rescue.
   const hasAnyContent = stats.ridden_segments > 0 || rideTracks.length > 0;
-  if (!hasAnyContent) {
+  const tracksSettled = !tracksLoading && !tracksError;
+  if (!hasAnyContent && tracksSettled) {
     return (
       <RidesScaffold fill>
         <RidesEmptyState
