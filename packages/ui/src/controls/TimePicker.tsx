@@ -11,6 +11,7 @@ import {
 } from "react-aria-components";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
+import { ClearButton } from "./field/ClearButton";
 import { parseIsoTime } from "./date/isoDate";
 import { displayIsoTime, type DisplayFormatProps } from "./date/displayFormat";
 import { useHydrated } from "./date/useHydrated";
@@ -25,6 +26,8 @@ export interface TimePickerProps extends DisplayFormatProps {
   disabled?: boolean;
   tone?: "paper" | "cream";
   error?: boolean;
+  /** Show a ✕ to reset the value to "" when one is set. */
+  clearable?: boolean;
   className?: string;
 }
 
@@ -46,11 +49,13 @@ export function TimePicker({
   disabled = false,
   tone = "paper",
   error = false,
+  clearable = false,
   className,
   locale,
   formatOptions,
   formatValue,
 }: TimePickerProps) {
+  const showClear = clearable && value !== "" && !disabled;
   // Guard the public prop: 0/negative/non-integer would hang the option loop
   // (m += 0) or break the 60/step math. Fall back to the documented default.
   const minuteStep =
@@ -146,62 +151,76 @@ export function TimePicker({
           Invalid time
         </span>
       )}
-      <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-        <Button
-          {...(id !== undefined ? { id } : {})}
-          {...(label !== undefined
-            ? { "aria-labelledby": `${labelId} ${valueId}` }
-            : ariaLabel !== undefined
-              ? { "aria-label": value ? `${ariaLabel}, ${display}` : ariaLabel }
-              : {})}
-          isDisabled={disabled}
-          {...(error ? { "aria-describedby": errorId } : {})}
-          className={cn(
-            fieldChrome({ tone, disabled, error, hasLeading: true }),
-            "relative flex items-center text-left",
-          )}
-        >
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 text-fg-mute"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 7v5l3 2" />
-            </svg>
-          </span>
-          <span
-            id={valueId}
+      <div className="relative">
+        <DialogTrigger isOpen={open} onOpenChange={setOpen}>
+          <Button
+            {...(id !== undefined ? { id } : {})}
+            {...(label !== undefined
+              ? { "aria-labelledby": `${labelId} ${valueId}` }
+              : ariaLabel !== undefined
+                ? {
+                    "aria-label": value
+                      ? `${ariaLabel}, ${display}`
+                      : ariaLabel,
+                  }
+                : {})}
+            isDisabled={disabled}
+            {...(error ? { "aria-describedby": errorId } : {})}
             className={cn(
-              "font-mono text-sm",
-              value ? "text-ink" : "text-fg-mute",
+              fieldChrome({
+                tone,
+                disabled,
+                error,
+                hasLeading: true,
+                hasTrailing: showClear,
+              }),
+              "relative flex items-center text-left",
             )}
           >
-            {display || "Select time"}
-          </span>
-        </Button>
-        <Popover placement="bottom left" className={MENU}>
-          <Dialog
-            className="flex gap-1 outline-none"
-            aria-label={ariaLabel ?? "Time"}
-          >
-            {column("HR", hours, hour, (h) => commit(h, snapMinute(minute)))}
-            {/* An off-step incoming minute (e.g. 08:10 with minuteStep=15)
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 text-fg-mute"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </span>
+            <span
+              id={valueId}
+              className={cn("text-sm", value ? "text-ink" : "text-fg-mute")}
+            >
+              {display || "Select time"}
+            </span>
+          </Button>
+          <Popover placement="bottom left" className={MENU}>
+            <Dialog
+              className="flex gap-1 outline-none"
+              aria-label={ariaLabel ?? "Time"}
+            >
+              {column("HR", hours, hour, (h) => commit(h, snapMinute(minute)))}
+              {/* An off-step incoming minute (e.g. 08:10 with minuteStep=15)
                 matches no option id, so highlight the nearest available step
                 rather than leaving the column with nothing selected. */}
-            {column("MIN", minutes, snapMinute(minute), (m) => commit(hour, m))}
-          </Dialog>
-        </Popover>
-      </DialogTrigger>
+              {column("MIN", minutes, snapMinute(minute), (m) =>
+                commit(hour, m),
+              )}
+            </Dialog>
+          </Popover>
+        </DialogTrigger>
+        {showClear && (
+          <ClearButton onClear={() => onChange("")} label="Clear time" />
+        )}
+      </div>
     </div>
   );
 }
