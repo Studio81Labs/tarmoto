@@ -66,8 +66,15 @@ function blockHtml(b: EmailBlock, p: Presentation): string {
       if (url === undefined) return '';
       return `<p style="margin:24px 0;"><a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">${interp(b.label, p.textVars, true)}</a></p>`;
     }
-    case 'stat-row':
-      return `<table role="presentation" width="100%" style="margin:6px 0;"><tr><td style="color:#94a3b8;font-size:14px;">${interp(b.label, p.textVars, true)}</td><td style="color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">${interp(b.value, p.textVars, true)}</td></tr></table>`;
+    case 'stat-row': {
+      // Omit a stat row whose value resolves empty (e.g. weekly-digest
+      // `quality` when a rider has no data) — the code templates drop these
+      // rows, so a published block override matches instead of shipping a
+      // blank cell.
+      const value = interp(b.value, p.textVars, true);
+      if (value.trim() === '') return '';
+      return `<table role="presentation" width="100%" style="margin:6px 0;"><tr><td style="color:#94a3b8;font-size:14px;">${interp(b.label, p.textVars, true)}</td><td style="color:#f8fafc;font-size:16px;font-weight:600;text-align:right;">${value}</td></tr></table>`;
+    }
     case 'divider':
       return `<hr style="border:none;border-top:1px solid #334155;margin:24px 0;" />`;
     case 'spacer':
@@ -88,8 +95,11 @@ function blockText(b: EmailBlock, p: Presentation): string {
         ? ''
         : `${interp(b.label, p.textVars, false)}: ${url}\n\n`;
     }
-    case 'stat-row':
-      return `  • ${interp(b.label, p.textVars, false)}: ${interp(b.value, p.textVars, false)}\n`;
+    case 'stat-row': {
+      const value = interp(b.value, p.textVars, false);
+      if (value.trim() === '') return '';
+      return `  • ${interp(b.label, p.textVars, false)}: ${value}\n`;
+    }
     case 'divider':
       return `—\n\n`;
     case 'spacer':
