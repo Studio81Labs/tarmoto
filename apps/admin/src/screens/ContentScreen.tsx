@@ -293,12 +293,13 @@ export function ContentScreen({ currentRole }: { currentRole: AdminRole }) {
                 setPage(1);
               }
             }}
+            options={[
+              { value: "all", label: "All" },
+              { value: "visible", label: "Visible" },
+              { value: "hidden", label: "Hidden" },
+            ]}
             ariaLabel="Status filter"
-          >
-            <option value="all">All</option>
-            <option value="visible">Visible</option>
-            <option value="hidden">Hidden</option>
-          </Select>
+          />
         </div>
       </div>
 

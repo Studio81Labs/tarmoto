@@ -195,13 +195,14 @@ export function EmailScreen() {
               setPage(1);
             }
           }}
+          options={[
+            { value: "", label: "All statuses" },
+            { value: "sent", label: "Sent" },
+            { value: "failed", label: "Failed" },
+          ]}
           ariaLabel="Filter by status"
           className="w-36"
-        >
-          <option value="">All statuses</option>
-          <option value="sent">Sent</option>
-          <option value="failed">Failed</option>
-        </Select>
+        />
         <Input
           value={tag}
           onChange={(v) => {

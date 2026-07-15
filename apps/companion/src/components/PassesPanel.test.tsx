@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PassesPanel } from "./PassesPanel";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
@@ -33,14 +33,19 @@ describe("PassesPanel", () => {
     });
   });
 
-  it("delegates month changes when used as a controlled component", () => {
+  it("delegates month changes when used as a controlled component", async () => {
     const onMonthChange = vi.fn();
 
     render(<PassesPanel month={7} onMonthChange={onMonthChange} />);
 
-    fireEvent.change(screen.getByLabelText("Travel month"), {
-      target: { value: "8" },
-    });
+    // react-aria Select: open the trigger button, then click the option.
+    fireEvent.click(screen.getByRole("button", { name: /travel month/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "August" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("option", { name: "August" }));
 
     expect(onMonthChange).toHaveBeenCalledWith(8);
   });
@@ -48,7 +53,9 @@ describe("PassesPanel", () => {
   it("disables month changes when a value is forced without a change handler", () => {
     render(<PassesPanel month={7} />);
 
-    expect(screen.getByLabelText("Travel month")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /travel month/i }),
+    ).toBeDisabled();
   });
 
   it("surfaces route-level warnings for closed and unknown passes", () => {

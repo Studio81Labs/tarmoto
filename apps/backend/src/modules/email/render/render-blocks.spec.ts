@@ -47,6 +47,28 @@ describe('renderBlocks', () => {
     expect(out.text).toContain('You rode 4 rides, <b>Riku</b>.');
   });
 
+  it('omits a stat-row whose value resolves empty (parity with the code templates)', () => {
+    const out = renderBlocks(
+      {
+        subject: 'Your week',
+        blocks: [
+          { type: 'stat-row', label: 'Distance', value: '{rideSummary}' },
+          // weekly-digest `quality` is '' when a rider has no data; the code
+          // template omits the row, so the block path must too.
+          { type: 'stat-row', label: 'Best road quality', value: '{quality}' },
+        ],
+      },
+      { textVars: { rideSummary: '4 rides', quality: '' }, urlVars: {} },
+      OPTS,
+    );
+    // The row with a value renders...
+    expect(out.html).toContain('4 rides');
+    expect(out.text).toContain('• Distance: 4 rides');
+    // ...the empty-value row is dropped entirely, no blank cell.
+    expect(out.html).not.toContain('Best road quality');
+    expect(out.text).not.toContain('Best road quality');
+  });
+
   it('ignores a button whose urlVar is not in urlVars', () => {
     const out = renderBlocks(
       {

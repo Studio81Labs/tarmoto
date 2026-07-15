@@ -3,6 +3,7 @@ import type { DataSource, Repository } from 'typeorm';
 import type { EmailTemplate } from '../../entities/email-template.entity.js';
 import type { EmailService } from '../email/email.service.js';
 import { AdminEmailTemplateService } from './admin-email-template.service.js';
+import { DEFAULT_TEMPLATE_BLOCKS } from './default-template-blocks.js';
 
 function make() {
   const templates = {
@@ -322,5 +323,20 @@ describe('AdminEmailTemplateService', () => {
     await expect(service.get('verification', 'en')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('get seeds from the default doc when there is no draft or published row', async () => {
+    const { service, templates } = make();
+    templates.findOne.mockResolvedValue(null); // no draft, no published
+    const result = await service.get('weekly-digest', 'en');
+    expect(result.status).toBe('none');
+    expect(result.version).toBe(0);
+    expect(result.subject).toBe(
+      DEFAULT_TEMPLATE_BLOCKS['weekly-digest'].subject,
+    );
+    expect(result.blocks).toEqual(
+      DEFAULT_TEMPLATE_BLOCKS['weekly-digest'].blocks,
+    );
+    expect(result.whitelist.textVars).toContain('displayName');
   });
 });
