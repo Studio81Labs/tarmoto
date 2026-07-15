@@ -69,6 +69,18 @@ export class RoadSegment {
   @Column({ type: 'float', nullable: true })
   quality_score!: number | null;
 
+  /**
+   * OSM-derived quality prior [1,5] (design 2026-07-15). Refreshed from tags on
+   * every import; blended with rider data into `quality_score` by
+   * `update_road_quality_for_segment`. Never owned away by riders.
+   */
+  @Column({ type: 'float', nullable: true })
+  osm_quality_seed!: number | null;
+
+  /** Which OSM signal produced `osm_quality_seed` (provenance for labeling). */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  quality_source!: string | null;
+
   @Column({ type: 'varchar', length: 30, default: 'unknown' })
   surface_type!: string;
 

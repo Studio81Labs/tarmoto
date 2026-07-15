@@ -78,6 +78,7 @@ import { DropTripFromRouteCollections1798000000000 } from '../../migrations/1798
 import { AddEmailLog1799000000000 } from '../../migrations/1799000000000-AddEmailLog.js';
 import { AddUserLanguage1800000000000 } from '../../migrations/1800000000000-AddUserLanguage.js';
 import { AddEmailTemplate1810000000000 } from '../../migrations/1810000000000-AddEmailTemplate.js';
+import { AddRoadQualitySeed1811000000000 } from '../../migrations/1811000000000-AddRoadQualitySeed.js';
 import {
   User,
   UserContact,
@@ -307,6 +308,7 @@ const entities = [
             AddEmailLog1799000000000,
             AddUserLanguage1800000000000,
             AddEmailTemplate1810000000000,
+            AddRoadQualitySeed1811000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

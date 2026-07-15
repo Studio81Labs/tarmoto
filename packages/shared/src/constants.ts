@@ -113,6 +113,19 @@ export const PLAN_SOURCES = [
 
 export type PlanSource = (typeof PLAN_SOURCES)[number];
 
+/**
+ * Provenance of a road segment's OSM-derived quality seed (design 2026-07-15).
+ * The signal the seed was derived from, in precedence order. Never includes a
+ * "reading" value — rider contribution is conveyed by `reading_count`, not this.
+ */
+export const QUALITY_SOURCES = [
+  "osm_smoothness",
+  "osm_surface",
+  "osm_highway",
+] as const;
+
+export type QualitySource = (typeof QUALITY_SOURCES)[number];
+
 // Canonical EUR-denominated PRD pricing. Display code MUST go through
 // `formatSubscriptionPriceLabel` / `formatSubscriptionAmountLabel`
 // rather than hardcoding currency strings — keeping the field name

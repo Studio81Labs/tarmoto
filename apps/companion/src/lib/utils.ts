@@ -1,4 +1,9 @@
-import { kmToMiles, metersToFeet, type UnitSystem } from "@tarmoto/shared";
+import {
+  kmToMiles,
+  metersToFeet,
+  type UnitSystem,
+  type QualitySource,
+} from "@tarmoto/shared";
 import type { QualityTier, HazardType } from "@/lib/types";
 
 // ── Road Quality ──
@@ -60,6 +65,30 @@ export function scoreToTier(score: number): QualityTier {
 
 export function scoreToColor(score: number): string {
   return QUALITY_CONFIG[scoreToTier(score)].color;
+}
+
+/**
+ * Road-detail provenance label — "estimated" only while a segment's quality
+ * is still purely OSM-seeded (no rider reports); null once riders back the
+ * blended score with real readings (design 2026-07-15). Mirrors
+ * `apps/mobile/src/theme/index.ts`'s `qualityProvenanceLabel` — keep both in
+ * sync if the copy changes.
+ */
+export function qualityProvenanceLabel(
+  source: QualitySource | null,
+  readingCount: number,
+): string | null {
+  if (readingCount > 0 || source === null) return null;
+  switch (source) {
+    case "osm_smoothness":
+      return "Estimated from surveyed smoothness";
+    case "osm_surface":
+      return "Estimated from road surface";
+    case "osm_highway":
+      return "Estimated from road type";
+    default:
+      return null;
+  }
 }
 
 // ── Hazard Types ──

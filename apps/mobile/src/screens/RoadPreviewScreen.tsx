@@ -21,7 +21,12 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Icon } from "@/components/Icon";
 import Svg, { Path } from "react-native-svg";
-import { hazardIcons, meetsQualityThreshold, qualityLabel } from "@/theme";
+import {
+  hazardIcons,
+  meetsQualityThreshold,
+  qualityLabel,
+  qualityProvenanceLabel,
+} from "@/theme";
 import {
   ACCENT_DARK,
   brandColorsLight,
@@ -30,6 +35,7 @@ import {
   brandSpacing,
   QUALITY_COLORS,
   statusFg,
+  UNSCORED_COLOR,
 } from "@/theme/brand";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -244,7 +250,7 @@ function HeaderCard({
         />
         <MetaPill
           icon="shield-check"
-          label={`${Math.round(segment.confidence * 100)}% confidence`}
+          label={`${Math.round(segment.confidence)}% confidence`}
         />
       </View>
     </View>
@@ -280,6 +286,17 @@ function QualityCard({
             {qualityLabel(segment.quality_score)} ·{" "}
             {formatSurface(segment.surface_type)}
           </Text>
+          {qualityProvenanceLabel(
+            segment.quality_source,
+            segment.reading_count,
+          ) ? (
+            <Text style={styles.qualityEstimate}>
+              {qualityProvenanceLabel(
+                segment.quality_source,
+                segment.reading_count,
+              )}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.qualityScoreMax}>
           <Text style={styles.qualityScoreMaxText}>/ 5.0</Text>
@@ -1247,6 +1264,12 @@ const styles = StyleSheet.create({
     fontFamily: brandFonts.sans,
     fontSize: 13,
     marginTop: brandSpacing.s1,
+  },
+  qualityEstimate: {
+    fontSize: 12,
+    color: UNSCORED_COLOR,
+    marginTop: 2,
+    fontStyle: "italic",
   },
   qualityScoreMax: {
     paddingBottom: brandSpacing.s2,
