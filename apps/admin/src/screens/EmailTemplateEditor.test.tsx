@@ -25,7 +25,7 @@ const resetMutate = vi.fn();
 const invalidateQueriesMock = vi.fn();
 // Mutable within a test → hoisted so the vi.mock factory can read the current
 // value (a factory can't close over a reassigned `let`).
-const pending = vi.hoisted(() => ({ save: false }));
+const pending = vi.hoisted(() => ({ save: false, reset: false }));
 // The component calls the real `useQueryClient` (not the mocked
 // useAdminEmailTemplates data layer below) to invalidate the templates LIST
 // query on Save/Publish/Reset success. Nothing else rendered by this test
@@ -44,7 +44,7 @@ vi.mock("../data/useAdminEmailTemplates.js", () => ({
   useSaveDraft: () => ({ mutate: saveMutate, isPending: pending.save }),
   useTestSend: () => ({ mutate: vi.fn(), isPending: false }),
   usePublish: () => ({ mutate: publishMutate, isPending: false }),
-  useReset: () => ({ mutate: resetMutate, isPending: false }),
+  useReset: () => ({ mutate: resetMutate, isPending: pending.reset }),
   usePreview: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -64,6 +64,7 @@ describe("EmailTemplateEditor", () => {
     resetMutate.mockReset();
     invalidateQueriesMock.mockReset();
     pending.save = false;
+    pending.reset = false;
     templateState.data = templateState.initial;
     // Several tests below drive window.location.hash directly to exercise
     // the hashchange dirty-guard; reset it so no test starts from whatever
@@ -84,6 +85,21 @@ describe("EmailTemplateEditor", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: /^publish$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^reset$/i })).toBeDisabled();
+  });
+
+  it("disables the reset dialog Cancel while the DELETE is pending", () => {
+    authState.role = "super_admin";
+    const { rerender } = render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^reset$/i })); // open confirm
+    pending.reset = true; // DELETE now in flight
+    rerender(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+    // Cancel is disabled so the admin can't close the dialog + edit while
+    // doReset's success callback (using its pre-submit dirty) is still pending.
+    expect(screen.getByRole("button", { name: /^cancel$/i })).toBeDisabled();
   });
 
   it("hides Publish/Reset for support and shows Save draft", () => {

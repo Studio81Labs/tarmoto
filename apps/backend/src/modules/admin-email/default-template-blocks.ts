@@ -14,7 +14,9 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
     'weekly-digest': {
       subject: 'Your week — {rideSummary}',
       blocks: [
-        { type: 'heading', text: 'Hi {displayName}' },
+        // Anon-safe salutation (matches the code templates' anonymous greeting):
+        // a bare "Hi {displayName}" would render "Hi " for users with no name.
+        { type: 'heading', text: 'Hi there,' },
         { type: 'paragraph', text: "Here's your week on Tarmoto." },
         { type: 'stat-row', label: 'Rides', value: '{rideSummary}' },
         { type: 'stat-row', label: 'Distance', value: '{distance}' },
@@ -30,7 +32,9 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
     'subscription-confirmed': {
       subject: 'Your Tarmoto {planName} subscription is active',
       blocks: [
-        { type: 'heading', text: 'Hi {displayName}' },
+        // Anon-safe salutation (matches the code templates' anonymous greeting):
+        // a bare "Hi {displayName}" would render "Hi " for users with no name.
+        { type: 'heading', text: 'Hi there,' },
         { type: 'paragraph', text: "You're now on Tarmoto {planName}." },
         { type: 'stat-row', label: 'Plan', value: '{planName}' },
         { type: 'stat-row', label: 'Price', value: '{priceLabel}' },
@@ -41,7 +45,9 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
     'subscription-cancelled': {
       subject: 'Your Tarmoto {planName} subscription is cancelled',
       blocks: [
-        { type: 'heading', text: 'Hi {displayName}' },
+        // Anon-safe salutation (matches the code templates' anonymous greeting):
+        // a bare "Hi {displayName}" would render "Hi " for users with no name.
+        { type: 'heading', text: 'Hi there,' },
         {
           type: 'paragraph',
           text: 'Your {planName} subscription has been cancelled.',
@@ -53,7 +59,9 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
     'data-export-ready': {
       subject: 'Your Tarmoto data export is ready',
       blocks: [
-        { type: 'heading', text: 'Hi {displayName}' },
+        // Anon-safe salutation (matches the code templates' anonymous greeting):
+        // a bare "Hi {displayName}" would render "Hi " for users with no name.
+        { type: 'heading', text: 'Hi there,' },
         { type: 'paragraph', text: 'Your data export is ready to download.' },
         { type: 'paragraph', text: 'This link expires {expiresText}.' },
         { type: 'button', label: 'Download your data', urlVar: 'downloadUrl' },
@@ -66,7 +74,9 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
     'account-deletion-scheduled': {
       subject: 'Your Tarmoto account is scheduled for deletion',
       blocks: [
-        { type: 'heading', text: 'Hi {displayName}' },
+        // Anon-safe salutation (matches the code templates' anonymous greeting):
+        // a bare "Hi {displayName}" would render "Hi " for users with no name.
+        { type: 'heading', text: 'Hi there,' },
         {
           type: 'paragraph',
           text: 'Your Tarmoto account is scheduled for permanent deletion on {scheduledDate}.',
@@ -88,7 +98,9 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
     'account-deletion-completed': {
       subject: 'Your Tarmoto account has been deleted',
       blocks: [
-        { type: 'heading', text: 'Hi {displayName}' },
+        // Anon-safe salutation (matches the code templates' anonymous greeting):
+        // a bare "Hi {displayName}" would render "Hi " for users with no name.
+        { type: 'heading', text: 'Hi there,' },
         {
           type: 'paragraph',
           text: 'Your Tarmoto account was permanently deleted on {deletedDate}.',

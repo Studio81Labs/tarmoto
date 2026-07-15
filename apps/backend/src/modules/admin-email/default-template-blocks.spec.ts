@@ -60,4 +60,18 @@ describe('DEFAULT_TEMPLATE_BLOCKS', () => {
     expect(completed).toContain('Personal data has been erased');
     expect(completed).toContain('Anonymized road-quality contributions remain');
   });
+
+  it.each(EDITABLE_TAGS)(
+    '%s seed greeting is anon-safe (no dangling {displayName} salutation)',
+    (tag) => {
+      const body = DEFAULT_TEMPLATE_BLOCKS[tag].blocks
+        .map((b) =>
+          b.type === 'heading' || b.type === 'paragraph' ? b.text : '',
+        )
+        .join(' ');
+      // A bare "Hi {displayName}" renders "Hi " for users with no display name;
+      // the code templates branch to an anonymous greeting instead.
+      expect(body).not.toContain('Hi {displayName}');
+    },
+  );
 });

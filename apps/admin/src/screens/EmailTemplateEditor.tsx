@@ -441,6 +441,7 @@ export function EmailTemplateEditor({
             <Button
               variant="secondary"
               size="sm"
+              disabled={publish.isPending}
               onClick={() => setConfirm(null)}
             >
               Cancel
@@ -480,6 +481,7 @@ export function EmailTemplateEditor({
             <Button
               variant="secondary"
               size="sm"
+              disabled={reset.isPending}
               onClick={() => setConfirm(null)}
             >
               Cancel
