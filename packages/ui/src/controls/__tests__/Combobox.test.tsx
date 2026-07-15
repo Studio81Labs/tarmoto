@@ -70,6 +70,22 @@ test("filters options as the user types and selects by value", async () => {
   expect(onChange).toHaveBeenCalledWith("prague");
 });
 
+test("marks an empty-string sentinel option as selected", async () => {
+  const OPTS = [
+    { value: "", label: "Any" },
+    { value: "3", label: "3 stars" },
+  ];
+  render(
+    <Combobox ariaLabel="rating" value="" onChange={() => {}} options={OPTS} />,
+  );
+  await userEvent.click(screen.getByRole("button", { hidden: true }));
+  // The "" sentinel is a real selection, so react-aria marks it selected.
+  expect(screen.getByRole("option", { name: "Any" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
 test("opening with a value shows all options to browse (not just the selection)", async () => {
   render(
     <Combobox

@@ -100,7 +100,11 @@ export function Combobox({
         : {})}
       isInvalid={error}
       isDisabled={disabled}
-      selectedKey={value || null}
+      // Preserve `""` as a real key when it matches an option (the "Any"/"All"
+      // sentinel used by filters); only a value with no matching option is a
+      // truly-empty selection (`null`). `value || null` would drop the `""`
+      // selection so react-aria never marks/announces that option.
+      selectedKey={selected ? value : null}
       inputValue={query}
       onInputChange={setQuery}
       onSelectionChange={(key) => {
