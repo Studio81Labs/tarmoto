@@ -27,7 +27,7 @@ const configSrc = readFileSync(
   "utf8",
 );
 const CODES = new Set(
-  [...configSrc.matchAll(/code:\s*'([A-Z]{2})'/g)].map((m) => m[1]),
+  [...configSrc.matchAll(/code:\s*["']([A-Z]{2})["']/g)].map((m) => m[1]),
 );
 if (CODES.size < 2) throw new Error("Failed to parse DEFAULT_REGIONS codes");
 
