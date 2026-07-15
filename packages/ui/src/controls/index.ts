@@ -29,6 +29,7 @@ export {
 } from "./RadioCardGrid";
 export { NumberGrid, type NumberGridProps } from "./NumberGrid";
 export { SwatchPicker, type SwatchPickerProps } from "./SwatchPicker";
+export { DatePicker, type DatePickerProps } from "./DatePicker";
 export {
   Field,
   type FieldProps,
