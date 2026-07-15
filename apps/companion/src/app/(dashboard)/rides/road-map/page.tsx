@@ -8,7 +8,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { Crosshair, Loader2, Map as MapIcon, Share2 } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowUpRight,
+  Crosshair,
+  Loader2,
+  Map as MapIcon,
+  Share2,
+  X,
+} from "lucide-react";
 import {
   Alert,
   Button,
@@ -22,7 +30,7 @@ import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import type { UnitSystem } from "@tarmoto/shared";
-import { explorationApi } from "@/lib/api";
+import { api, ApiError, explorationApi, roadsApi } from "@/lib/api";
 import { shareRoadMap } from "@/lib/road-map-share";
 import type {
   ExplorationStats,
@@ -30,12 +38,15 @@ import type {
   UnriddenSegment,
 } from "@/lib/api";
 import {
+  formatDate,
   formatDistance,
   formatDistanceFromMeters,
+  formatDuration,
   scoreToQualityTier,
 } from "@/lib/utils";
+import type { components } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
-import { useTimeWindow } from "../_components/TimeWindowPills";
+import { useTimeWindow, windowStartISO } from "../_components/TimeWindowPills";
 import {
   buildMapShareSnapshot,
   filterRiddenByPeriod,
@@ -46,7 +57,11 @@ import {
   PersonalRoadMap,
   type PersonalRoadMapHandle,
 } from "./_components/PersonalRoadMap";
-import { RoadSegmentPopover } from "./_components/RoadSegmentPopover";
+import { useUserRideTracks } from "@/hooks/useUserRideTracks";
+import {
+  SegmentDetailSidebar,
+  type SegmentDetailPanelState,
+} from "@/components/roads/SegmentDetailSidebar";
 /**
  * Personal road map (US-50).
  *
@@ -70,6 +85,14 @@ const FALLBACK_CENTER = {
   label: "",
 };
 const INITIAL_MAP_ZOOM = 8;
+// The public share serializes a viewport centre. Round it to ~0.1° (≈11 km) so
+// a shared coverage map opens over the rider's riding region — not the neutral
+// Prague fallback, which would leave their highlighted roads off-screen — while
+// still stripping the street-level precision of a raw geolocation fix. A
+// coverage map inherently reveals the region; it must not reveal a home address.
+const SHARE_CENTER_PRECISION = 10;
+const coarsenForShare = (coord: number): number =>
+  Math.round(coord * SHARE_CENTER_PRECISION) / SHARE_CENTER_PRECISION;
 export default function RoadMapPage() {
   // `useTimeWindow` (below) reads `?window=` via useSearchParams, which needs
   // a Suspense boundary for Next.js static prerender (mirrors the All-rides
@@ -88,19 +111,64 @@ function RoadMapPageInner() {
   // union is value-identical to the `TimePeriod` keys consumed by the
   // pure exploration/road-map helpers, so it's passed straight through.
   const period = useTimeWindow();
+  // Which map view is active: the rider's finished ride routes (default) or the
+  // ridden-segment coverage / exploration overlay behind a toggle.
+  const [mapView, setMapView] = useState<"routes" | "coverage">("routes");
+  // The rider's finished ride routes (GPS tracks), windowed to the same time
+  // period as the coverage view + sidebar so the map doesn't contradict the
+  // active pill. `truncated` flags when the ≤500 server cap hides older rides.
+  const tracksStartedFrom = useMemo(() => windowStartISO(period), [period]);
+  const {
+    tracks: rideTracks,
+    truncated: rideTracksTruncated,
+    loading: tracksLoading,
+    error: tracksError,
+  } = useUserRideTracks({ startedFrom: tracksStartedFrom });
+  // Drop the ride popover when it no longer applies — switched to Coverage, or
+  // the ride fell out of the windowed track set — so a stale card can't link to
+  // a ride that isn't on the active map.
+  useEffect(() => {
+    setSelectedRideId((current) =>
+      current &&
+      mapView === "routes" &&
+      rideTracks.some((track) => track.id === current)
+        ? current
+        : null,
+    );
+  }, [mapView, rideTracks]);
+  // Likewise, drop the segment drawer + road highlight when leaving Coverage so
+  // stale coverage detail doesn't sit over the Routes map.
+  useEffect(() => {
+    if (mapView !== "coverage") setSelectedSegmentId(null);
+  }, [mapView]);
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // `center` is the live view/query centre: it tracks the rider's geolocated
+  // position (auto-center + explicit "Center on me"/"Use my location") so the
+  // map camera, the "Nearby unridden" query, and the coordinate inputs all stay
+  // pointed at the same place. The public share coarsens it (see `handleShare`).
   const [center, setCenter] = useState(FALLBACK_CENTER);
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
+  // Geolocation failure, kept separate from `nearbyError` (a coverage-only
+  // card): the "Center on me" button lives on the map in both views, so its
+  // error must be visible from Routes too.
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   // The ridden segment whose detail popover is open (clicked on the map).
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
+  // Routes view: the ride whose popover is open (clicked route line).
+  const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  // Only one map selection at a time — opening a ride closes any segment drawer.
+  const selectRide = useCallback((rideId: string) => {
+    setSelectedSegmentId(null);
+    setSelectedRideId(rideId);
+  }, []);
   // In-flight guard (a ref, not state) so the button looks identical to the
   // ride-detail / community Share — no loading/label multistate — while still
   // ignoring a double-click that would POST a second map_shares row.
@@ -153,7 +221,12 @@ function RoadMapPageInner() {
     // client's `onUnauthorized` hook and `clearSession()` would wipe
     // the just-hydrated token, leaving the whole app unauthenticated
     // for the rest of the navigation.
-    if (!authReady) return;
+    //
+    // Only the Coverage view shows the "Nearby unridden" card, so gate the
+    // fetch on it: no point running the PostGIS nearby query for hidden UI, and
+    // (privacy) it stops the auto-geolocated `center` being sent to the backend
+    // in the default Routes view before the rider opens Coverage.
+    if (!authReady || mapView !== "coverage") return;
     let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
@@ -178,20 +251,54 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, center.lat, center.lng]);
+  }, [authReady, mapView, center.lat, center.lng]);
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
   );
-  // Resolve the open popover against the period-filtered set so a segment that
-  // drops out of the active window (or hasn't loaded) closes itself.
-  const selectedSegment = useMemo(
-    () =>
-      selectedSegmentId
-        ? (filteredRidden.find((s) => s.id === selectedSegmentId) ?? null)
-        : null,
-    [selectedSegmentId, filteredRidden],
-  );
+  // Full segment detail for the drawer, fetched by id (mirrors /explore). Any
+  // road is selectable now, ridden or not, so this drives off the id, not the
+  // ridden set.
+  const [segmentDetailState, setSegmentDetailState] =
+    useState<SegmentDetailPanelState>({ status: "idle" });
+  useEffect(() => {
+    if (!selectedSegmentId) {
+      setSegmentDetailState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setSegmentDetailState({ status: "loading", segmentId: selectedSegmentId });
+    roadsApi
+      .getSegmentDetail(selectedSegmentId, { signal: controller.signal })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setSegmentDetailState({ status: "ready", segment: data });
+      })
+      .catch((err) => {
+        if ((err as { name?: string }).name === "AbortError" || cancelled)
+          return;
+        if (err instanceof ApiError && err.status === 404) {
+          setSegmentDetailState({
+            status: "not-found",
+            segmentId: selectedSegmentId,
+          });
+          return;
+        }
+        setSegmentDetailState({
+          status: "error",
+          segmentId: selectedSegmentId,
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not load road segment details.",
+        });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedSegmentId]);
   // The backend returns nearby-unridden sorted by distance today, but the UI
   // explicitly advertises "Sorted by distance" — sorting client-side makes
   // that claim resilient if the service ordering ever changes.
@@ -203,12 +310,22 @@ function RoadMapPageInner() {
   // "Center on me" so denial messaging, coordinate rounding, and the
   // 10s timeout stay in lockstep across the two entry points.
   const requestUserLocation = useCallback(
-    (onLocated: (lat: number, lng: number) => void) => {
+    (
+      onLocated: (lat: number, lng: number) => void,
+      // `silent` suppresses error surfacing — used by the auto locate on load so
+      // a rider who has denied permission isn't nagged on every visit; explicit
+      // button clicks still surface the failure.
+      options?: { silent?: boolean },
+    ) => {
+      const surface = (message: string) => {
+        if (!options?.silent) setLocationError(message);
+      };
       if (typeof navigator === "undefined" || !navigator.geolocation) {
-        setNearbyError("Geolocation is not available in this browser");
+        surface("Geolocation is not available in this browser");
         return;
       }
       setLocating(true);
+      setLocationError(null);
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           setLocating(false);
@@ -218,10 +335,10 @@ function RoadMapPageInner() {
         },
         (err) => {
           setLocating(false);
-          setNearbyError(
+          surface(
             err.code === err.PERMISSION_DENIED
-              ? "Location permission denied. Enter coordinates below."
-              : "Could not read your location. Enter coordinates below.",
+              ? "Location permission denied — enter coordinates instead."
+              : "Couldn't read your location — enter coordinates instead.",
           );
         },
         { timeout: 10000 },
@@ -229,20 +346,65 @@ function RoadMapPageInner() {
     },
     [],
   );
-  const handleUseMyLocation = useCallback(() => {
-    requestUserLocation((lat, lng) => {
-      setCenter({ lat, lng, label: "My location" });
-      // Centre the MapLibre view too — the AC's "Center on me" is the
-      // same gesture as the Explore-near locator, so a single button
-      // drives both panels.
-      mapRef.current?.flyTo({ lat, lng });
-    });
-  }, [requestUserLocation]);
-  const handleCenterOnMe = useCallback(() => {
-    requestUserLocation((lat, lng) => {
-      mapRef.current?.flyTo({ lat, lng });
-    });
-  }, [requestUserLocation]);
+  // Fly the map to a located point, or — if the map hasn't mounted yet (the page
+  // is still in its `loading` branch, so `mapRef.current` is null) — stash the
+  // target so the flush effect below can replay it once the map exists. Without
+  // this, a cached geolocation response that resolves before the map mounts is
+  // silently dropped and the map opens at the neutral fallback.
+  const pendingCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  const flyToWhenReady = useCallback((lat: number, lng: number) => {
+    if (mapRef.current) {
+      mapRef.current.flyTo({ lat, lng });
+    } else {
+      pendingCenterRef.current = { lat, lng };
+    }
+  }, []);
+  // Locate the rider and point the live view at them: write `center` (drives the
+  // "Nearby unridden" query + coordinate inputs) and fly the camera. Shared by
+  // the map's "Center on me" button, the sidebar's "Use my location", and the
+  // load-time auto-center so denial messaging, coordinate rounding, and the 10 s
+  // timeout stay in lockstep. The share coarsens `center` to a region grid
+  // (`handleShare`), so a located position never leaks at street precision.
+  const locateAndCenter = useCallback(
+    (options?: { silent?: boolean }) => {
+      requestUserLocation((lat, lng) => {
+        setCenter({ lat, lng, label: "My location" });
+        flyToWhenReady(lat, lng);
+      }, options);
+    },
+    [requestUserLocation, flyToWhenReady],
+  );
+  // Open centred on the rider so the map lands where they ride instead of the
+  // neutral fallback. Runs once; a denied prompt just leaves the fallback centre.
+  // Silent: don't nag a rider who has denied permission on every visit.
+  //
+  // Gated on the loaded, non-empty state: don't prompt for location (or read a
+  // cached precise fix) until we know the map will actually render. While the
+  // page is loading/errored, or when the rider has no content (the empty state),
+  // `<PersonalRoadMap>` never mounts — requesting geolocation there would prompt
+  // for a screen the rider can't see. `hasContent` flips true once stats show a
+  // ridden segment or the tracks fetch resolves a route; explicit "Center on me"
+  // stays available on the rendered map regardless.
+  const centeredOnLoadRef = useRef(false);
+  const hasContent = stats
+    ? stats.ridden_segments > 0 || rideTracks.length > 0
+    : false;
+  useEffect(() => {
+    if (centeredOnLoadRef.current) return;
+    if (loading || loadError || !hasContent) return;
+    centeredOnLoadRef.current = true;
+    locateAndCenter({ silent: true });
+  }, [loading, loadError, hasContent, locateAndCenter]);
+  // Replay a locate target captured before the map mounted. Runs after every
+  // render but only acts once the map exists and there's a pending target, so
+  // the auto-center survives the loading→loaded transition.
+  useEffect(() => {
+    if (loading || !stats) return;
+    const target = pendingCenterRef.current;
+    if (!target) return;
+    pendingCenterRef.current = null;
+    mapRef.current?.flyTo(target);
+  }, [loading, stats]);
   const handleShare = useCallback(async () => {
     // Ref guard (not state) ignores a quick double-click without changing the
     // button's appearance — feedback is the toast inside `shareRoadMap`, so the
@@ -250,13 +412,19 @@ function RoadMapPageInner() {
     if (!stats || sharingRef.current) return;
     sharingRef.current = true;
     try {
+      const shareViewCenter = mapRef.current?.getCenter() ?? center;
       const snapshot = buildMapShareSnapshot({
         stats,
         period,
         segments: filteredRidden,
+        // Centre the shared map on the live map camera — which reflects manual
+        // panning, unlike `center` (only moved by geolocation/coordinate entry)
+        // — coarsened to a ~11 km region grid so the highlighted roads are
+        // on-screen without leaking a street-level fix. Falls back to `center`
+        // if the map isn't ready (Share only renders with the map, so rare).
         initialCenter: {
-          lat: center.lat,
-          lng: center.lng,
+          lat: coarsenForShare(shareViewCenter.lat),
+          lng: coarsenForShare(shareViewCenter.lng),
           zoom: INITIAL_MAP_ZOOM,
         },
       });
@@ -269,7 +437,7 @@ function RoadMapPageInner() {
     } finally {
       sharingRef.current = false;
     }
-  }, [stats, period, filteredRidden, center.lat, center.lng]);
+  }, [stats, period, filteredRidden, center]);
   if (loading) {
     return (
       <RidesScaffold fill>
@@ -291,8 +459,13 @@ function RoadMapPageInner() {
       </RidesScaffold>
     );
   }
-  const hasAnyRiddenSegments = stats.ridden_segments > 0;
-  if (!hasAnyRiddenSegments) {
+  // Routes are the primary view, so any recorded ride keeps the map — not just
+  // matched coverage segments. Only declare "empty" once tracks have actually
+  // settled: while they're loading (or if the request failed) a rider with
+  // routes but no matched segments would otherwise be wrongly told they have
+  // nothing — the exact case the Routes view exists to rescue.
+  const tracksSettled = !tracksLoading && !tracksError;
+  if (!hasContent && tracksSettled) {
     return (
       <RidesScaffold fill>
         <RidesEmptyState
@@ -327,6 +500,15 @@ function RoadMapPageInner() {
             uppercase
             onClick={handleShare}
             leftIcon={<Share2 size={14} />}
+            // A shared road map is a coverage snapshot (routes aren't shared),
+            // so there's nothing to share without ridden segments — a route-only
+            // rider would otherwise publish a link that opens to an empty map.
+            disabled={filteredRidden.length === 0}
+            title={
+              filteredRidden.length === 0
+                ? t("Ride some roads to share your coverage map")
+                : undefined
+            }
           >
             {t("Share")}
           </Button>
@@ -343,19 +525,66 @@ function RoadMapPageInner() {
               zoom: INITIAL_MAP_ZOOM,
             }}
             ridden={filteredRidden}
-            onSegmentSelect={setSelectedSegmentId}
+            rideTracks={rideTracks}
+            showRoutes={mapView === "routes"}
+            showCoverage={mapView === "coverage"}
+            selectedSegmentId={
+              mapView === "coverage" ? selectedSegmentId : null
+            }
+            selectedRideId={selectedRideId}
+            onSegmentSelect={(id) => {
+              setSelectedRideId(null);
+              setSelectedSegmentId(id);
+            }}
+            onRouteSelect={selectRide}
           />
-          <MapLegend riddenCount={filteredRidden.length} />
-          {selectedSegment && (
-            <RoadSegmentPopover
-              segment={selectedSegment}
+          <MapViewToggle view={mapView} onChange={setMapView} />
+          {/* Routes need no legend — this is the Ride History section, so a
+              rider already knows the lines are their rides. */}
+          {mapView === "coverage" && (
+            <MapLegend riddenCount={filteredRidden.length} />
+          )}
+          {/* Routes failed to load: say so rather than let the empty map read
+              as "you have no rides" (Coverage stays available via the toggle). */}
+          {mapView === "routes" && tracksError && (
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-quality-q1/10 px-3 py-1.5 text-[11px] font-semibold text-red-400 backdrop-blur">
+              {t("Couldn't load your rides — try again")}
+            </div>
+          )}
+          {/* The route overlay is capped server-side; say so rather than let a
+              partial map read as the rider's whole history. */}
+          {mapView === "routes" && !tracksError && rideTracksTruncated && (
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-paper/85 px-3 py-1.5 text-[11px] font-semibold text-fg-dim backdrop-blur">
+              {t("Showing your {count} most recent rides", {
+                count: rideTracks.length,
+              })}
+            </div>
+          )}
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedSegmentId(null)}
+            anchor="viewport"
+          />
+          {mapView === "routes" && selectedRideId && (
+            <RideRoutePopover
+              rideId={selectedRideId}
               unitSystem={unitSystem}
-              onClose={() => setSelectedSegmentId(null)}
+              onClose={() => setSelectedRideId(null)}
             />
+          )}
+          {/* Geolocation failed for an explicit "Center on me" — surface it by
+              the button so it isn't hidden with the Coverage-only nearby card. */}
+          {locationError && (
+            <div
+              role="alert"
+              className="absolute bottom-16 right-4 z-10 max-w-[240px] rounded-xl border border-quality-q1/40 bg-quality-q1/10 px-3 py-2 text-[11px] font-semibold text-red-400 backdrop-blur"
+            >
+              {locationError}
+            </div>
           )}
           <button
             type="button"
-            onClick={handleCenterOnMe}
+            onClick={() => locateAndCenter()}
             className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-paper/85 border border-line backdrop-blur text-xs text-ink hover:bg-cream transition"
             title={t("Center on me")}
           >
@@ -365,21 +594,36 @@ function RoadMapPageInner() {
         </div>
 
         <aside className="space-y-3.5 overflow-y-auto">
-          {/* 1 — Segments ridden (ink hero tile, accent number + region subline).
-               Reflects the active period: the map/legend filter to the window,
-               so an all-time total here would contradict a near-empty map. */}
-          <MetricTile
-            variant="ink"
-            accentNumber
-            formatValue={format}
-            label={t("Segments ridden")}
-            value={
-              period === "all" ? stats.ridden_segments : filteredRidden.length
-            }
-            delta={t("of {total} in region", {
-              total: format(stats.total_segments),
-            })}
-          />
+          {/* 1 — Hero tile. Routes view leads with the ride count; the coverage
+               view leads with matched segments (period-aware, so an all-time
+               total wouldn't contradict a windowed map). */}
+          {mapView === "routes" ? (
+            <MetricTile
+              variant="ink"
+              accentNumber
+              formatValue={format}
+              label={t("Rides on map")}
+              value={rideTracks.length}
+              delta={
+                tracksError
+                  ? t("couldn't load — try again")
+                  : t("with a recorded route")
+              }
+            />
+          ) : (
+            <MetricTile
+              variant="ink"
+              accentNumber
+              formatValue={format}
+              label={t("Segments ridden")}
+              value={
+                period === "all" ? stats.ridden_segments : filteredRidden.length
+              }
+              delta={t("of {total} in region", {
+                total: format(stats.total_segments),
+              })}
+            />
+          )}
 
           {/* 2 — All-time (lifetime) distance ridden. */}
           <MetricTile
@@ -389,54 +633,62 @@ function RoadMapPageInner() {
             {...(distanceUnit !== undefined ? { unit: distanceUnit } : {})}
           />
 
-          {/* 3 — Region coverage. No region label backing data → no subline. */}
-          <MetricTile
-            accentNumber
-            formatValue={format}
-            label={t("Region coverage")}
-            value={stats.percent_explored}
-            unit="%"
-          />
-
-          {/* 4 — Nearby unridden roads (name · km · quality bars). */}
-          <Card padded={false} className="overflow-hidden">
-            <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
-              <Stamp>{t("Nearby unridden")}</Stamp>
-              {center.label && (
-                <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
-                  {center.label}
-                </span>
-              )}
-            </div>
-            <div className="px-[18px] py-3">
-              {nearbyLoading ? (
-                <LoaderRow label="Loading unridden roads…" />
-              ) : nearbyError ? (
-                <Alert compact intent="danger" title={nearbyError} />
-              ) : nearby.length === 0 ? (
-                <Alert compact intent="neutral" title={t("Nothing nearby")}>
-                  {t("— zoom out or pick a new centre.")}
-                </Alert>
-              ) : (
-                <ul className="space-y-3">
-                  {nearbyByDistance.slice(0, 10).map((seg) => (
-                    <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="border-t border-line px-[18px] py-3">
-              <NearbyCenterControls
-                center={center}
-                locating={locating}
-                onUseMyLocation={handleUseMyLocation}
-                onCoordinatesChanged={(lat, lng, label) => {
-                  setCenter({ lat, lng, label });
-                  mapRef.current?.flyTo({ lat, lng });
-                }}
+          {/* 3 + 4 — Coverage/exploration cards: region coverage and the
+               nearby-unridden browser. Only relevant to the coverage view. */}
+          {mapView === "coverage" && (
+            <>
+              <MetricTile
+                accentNumber
+                formatValue={format}
+                label={t("Region coverage")}
+                value={stats.percent_explored}
+                unit="%"
               />
-            </div>
-          </Card>
+
+              <Card padded={false} className="overflow-hidden">
+                <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
+                  <Stamp>{t("Nearby unridden")}</Stamp>
+                  {center.label && (
+                    <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
+                      {center.label}
+                    </span>
+                  )}
+                </div>
+                <div className="px-[18px] py-3">
+                  {nearbyLoading ? (
+                    <LoaderRow label="Loading unridden roads…" />
+                  ) : nearbyError ? (
+                    <Alert compact intent="danger" title={nearbyError} />
+                  ) : nearby.length === 0 ? (
+                    <Alert compact intent="neutral" title={t("Nothing nearby")}>
+                      {t("— zoom out or pick a new centre.")}
+                    </Alert>
+                  ) : (
+                    <ul className="space-y-3">
+                      {nearbyByDistance.slice(0, 10).map((seg) => (
+                        <NearbyRow
+                          key={seg.id}
+                          segment={seg}
+                          units={unitSystem}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="border-t border-line px-[18px] py-3">
+                  <NearbyCenterControls
+                    center={center}
+                    locating={locating}
+                    onUseMyLocation={() => locateAndCenter()}
+                    onCoordinatesChanged={(lat, lng, label) => {
+                      setCenter({ lat, lng, label });
+                      mapRef.current?.flyTo({ lat, lng });
+                    }}
+                  />
+                </div>
+              </Card>
+            </>
+          )}
         </aside>
       </div>
     </RidesScaffold>
@@ -558,12 +810,155 @@ function LoaderRow({ label }: LoaderRowProps) {
     </div>
   );
 }
+type RideDetail = components["schemas"]["RideDetailDto"];
+
+/**
+ * Popover for a clicked ride line (routes view): basic stats + a link to the
+ * full ride detail — the same `/rides/:id` the All-rides list links to. Fetches
+ * its own detail so the page doesn't carry ride state.
+ */
+function RideRoutePopover({
+  rideId,
+  unitSystem,
+  onClose,
+}: {
+  rideId: string;
+  unitSystem: UnitSystem;
+  onClose: () => void;
+}) {
+  const [ride, setRide] = useState<RideDetail | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    setStatus("loading");
+    setRide(null);
+    api
+      .GET("/api/v1/rides/{rideId}", {
+        params: { path: { rideId } },
+        signal: controller.signal,
+      })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          setStatus("error");
+          return;
+        }
+        setRide(data as RideDetail);
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [rideId]);
+  return (
+    <div className="absolute bottom-4 left-4 z-20 w-[264px] rounded-xl border border-line bg-cream p-3.5 shadow-[0_8px_24px_rgba(14,14,16,0.14)]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {status === "ready" && ride ? (
+            <>
+              <p className="truncate text-sm font-extrabold text-ink">
+                {ride.name || formatDate(ride.started_at)}
+              </p>
+              <p className="text-[11px] text-fg-dim">
+                {formatDate(ride.started_at)}
+              </p>
+            </>
+          ) : status === "error" ? (
+            <p className="text-sm font-bold text-ink">
+              {t("Couldn't load ride")}
+            </p>
+          ) : (
+            <p className="flex items-center gap-2 text-xs text-fg-dim">
+              <Loader2 size={13} aria-hidden className="animate-spin" />
+              {t("Loading ride…")}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("Close ride")}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-line-strong text-fg-dim transition hover:border-ink hover:text-ink"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {status === "ready" && ride && (
+        <>
+          <div className="mt-2 flex items-center gap-3 text-xs text-fg-dim">
+            {ride.distance_km != null && (
+              <span className="font-bold text-ink">
+                {formatDistance(ride.distance_km, unitSystem)}
+              </span>
+            )}
+            {ride.duration_min != null && (
+              <span>{formatDuration(ride.duration_min)}</span>
+            )}
+          </div>
+          <Link
+            href={`/rides/${ride.id}`}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-ink px-3 py-2 text-[12.5px] font-bold text-cream transition hover:brightness-110"
+          >
+            {t("Open ride")}
+            <ArrowUpRight size={14} strokeWidth={2.5} />
+          </Link>
+        </>
+      )}
+    </div>
+  );
+}
+
+type MapView = "routes" | "coverage";
+
+function MapViewToggle({
+  view,
+  onChange,
+}: {
+  view: MapView;
+  onChange: (view: MapView) => void;
+}) {
+  const options: { key: MapView; label: string }[] = [
+    { key: "routes", label: t("Routes") },
+    { key: "coverage", label: t("Coverage") },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label={t("Map view")}
+      className="absolute top-4 left-4 z-10 inline-flex rounded-xl border border-line bg-paper/85 p-0.5 backdrop-blur"
+    >
+      {options.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          aria-pressed={view === option.key}
+          onClick={() => onChange(option.key)}
+          className={`rounded-[9px] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.4px] transition ${
+            view === option.key
+              ? "bg-ink text-cream"
+              : "text-fg-dim hover:text-ink"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface MapLegendProps {
   riddenCount: number;
 }
 function MapLegend({ riddenCount }: MapLegendProps) {
   return (
-    <div className="absolute top-4 left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
+    <div className="absolute top-[60px] left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-accent" />
         {t("Ridden ({count} segments)", {
@@ -576,7 +971,7 @@ function MapLegend({ riddenCount }: MapLegendProps) {
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-        {t("Click a ridden road for ride details ")}
+        {t("Click a road for details ")}
       </div>
     </div>
   );
