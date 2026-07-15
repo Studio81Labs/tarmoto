@@ -34,4 +34,30 @@ describe('DEFAULT_TEMPLATE_BLOCKS', () => {
       'displayName',
     );
   });
+
+  // The account-deletion seeds are legal-sensitive: they must carry the same
+  // GDPR disclosures the code templates render, so a small admin edit can't
+  // silently publish a weaker notice (missing the support-only restore or the
+  // "personal data erased / anonymized contributions remain" wording).
+  it('account-deletion seeds retain the GDPR legal disclosures', () => {
+    const bodyOf = (
+      tag: 'account-deletion-scheduled' | 'account-deletion-completed',
+    ): string =>
+      DEFAULT_TEMPLATE_BLOCKS[tag].blocks
+        .map((b) =>
+          b.type === 'heading' || b.type === 'paragraph' ? b.text : '',
+        )
+        .join(' ');
+
+    const scheduled = bodyOf('account-deletion-scheduled');
+    expect(scheduled).toContain(
+      "Self-service restore from the app isn't possible",
+    );
+    expect(scheduled).toContain('personal data will be permanently erased');
+    expect(scheduled).toContain('Anonymized road-quality contributions');
+
+    const completed = bodyOf('account-deletion-completed');
+    expect(completed).toContain('Personal data has been erased');
+    expect(completed).toContain('Anonymized road-quality contributions remain');
+  });
 });

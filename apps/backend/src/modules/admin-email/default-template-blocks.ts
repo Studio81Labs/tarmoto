@@ -59,17 +59,29 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
         { type: 'button', label: 'Download your data', urlVar: 'downloadUrl' },
       ],
     },
+    // Legal-sensitive: the seed mirrors the code template's GDPR wording (the
+    // support-only restore, and the "personal data erased / anonymized
+    // road-quality contributions remain" disclosure) so a small admin edit
+    // can't accidentally publish a notice that drops those disclosures.
     'account-deletion-scheduled': {
       subject: 'Your Tarmoto account is scheduled for deletion',
       blocks: [
         { type: 'heading', text: 'Hi {displayName}' },
         {
           type: 'paragraph',
-          text: 'Your account is scheduled for deletion on {scheduledDate}.',
+          text: 'Your Tarmoto account is scheduled for permanent deletion on {scheduledDate}.',
         },
         {
           type: 'paragraph',
-          text: 'Changed your mind during the grace window? Contact {supportEmail} and we can stop it.',
+          text: 'Changed your mind? Email {supportEmail} before that date and our team will restore your account.',
+        },
+        {
+          type: 'paragraph',
+          text: "Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.",
+        },
+        {
+          type: 'paragraph',
+          text: 'After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.',
         },
       ],
     },
@@ -79,9 +91,16 @@ export const DEFAULT_TEMPLATE_BLOCKS: Record<EditableTag, EmailBlockDocument> =
         { type: 'heading', text: 'Hi {displayName}' },
         {
           type: 'paragraph',
-          text: 'Your account and data were deleted on {deletedDate}.',
+          text: 'Your Tarmoto account was permanently deleted on {deletedDate}.',
         },
-        { type: 'paragraph', text: 'Questions? Reach us at {supportEmail}.' },
+        {
+          type: 'paragraph',
+          text: 'Personal data has been erased. Anonymized road-quality contributions remain in the community dataset, as outlined in our deletion notice.',
+        },
+        {
+          type: 'paragraph',
+          text: "If this wasn't you or you have questions, contact {supportEmail}.",
+        },
       ],
     },
   };
