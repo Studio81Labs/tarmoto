@@ -179,7 +179,10 @@ export function TimePicker({
             aria-label={ariaLabel ?? "Time"}
           >
             {column("HR", hours, hour, (h) => commit(h, snapMinute(minute)))}
-            {column("MIN", minutes, minute, (m) => commit(hour, m))}
+            {/* An off-step incoming minute (e.g. 08:10 with minuteStep=15)
+                matches no option id, so highlight the nearest available step
+                rather than leaving the column with nothing selected. */}
+            {column("MIN", minutes, snapMinute(minute), (m) => commit(hour, m))}
           </Dialog>
         </Popover>
       </DialogTrigger>

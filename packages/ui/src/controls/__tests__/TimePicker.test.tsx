@@ -205,3 +205,20 @@ test("clicking the label opens the picker", async () => {
   await userEvent.click(screen.getByText("Start time"));
   expect(screen.getByRole("listbox", { name: "HR" })).toBeInTheDocument();
 });
+
+test("highlights the nearest step when the incoming minute is off-step", async () => {
+  render(
+    <TimePicker
+      ariaLabel="Start time"
+      value="08:10"
+      minuteStep={15}
+      onChange={() => {}}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /start time/i }));
+  // 08:10 matches no 15-minute option; the MIN column snaps to the nearest (15)
+  // instead of leaving nothing selected.
+  const min = screen.getByRole("listbox", { name: "MIN" });
+  const selected = within(min).getByRole("option", { selected: true });
+  expect(selected).toHaveTextContent("15");
+});
