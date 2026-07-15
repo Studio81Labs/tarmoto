@@ -21,6 +21,7 @@ const templateState = vi.hoisted(() => {
 });
 const saveMutate = vi.fn();
 const publishMutate = vi.fn();
+const resetMutate = vi.fn();
 const invalidateQueriesMock = vi.fn();
 // The component calls the real `useQueryClient` (not the mocked
 // useAdminEmailTemplates data layer below) to invalidate the templates LIST
@@ -40,7 +41,7 @@ vi.mock("../data/useAdminEmailTemplates.js", () => ({
   useSaveDraft: () => ({ mutate: saveMutate, isPending: false }),
   useTestSend: () => ({ mutate: vi.fn(), isPending: false }),
   usePublish: () => ({ mutate: publishMutate, isPending: false }),
-  useReset: () => ({ mutate: vi.fn(), isPending: false }),
+  useReset: () => ({ mutate: resetMutate, isPending: false }),
   usePreview: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -57,6 +58,7 @@ describe("EmailTemplateEditor", () => {
   beforeEach(() => {
     saveMutate.mockReset();
     publishMutate.mockReset();
+    resetMutate.mockReset();
     invalidateQueriesMock.mockReset();
     templateState.data = templateState.initial;
   });
@@ -156,5 +158,83 @@ describe("EmailTemplateEditor", () => {
     expect(screen.getByLabelText(/subject/i)).toHaveValue(
       "Edited while a refetch is in flight",
     );
+  });
+
+  it("re-seeds the editor from the default doc after Reset succeeds, instead of keeping the deleted override body", async () => {
+    authState.role = "super_admin";
+    const { rerender } = render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^reset$/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /remove override/i }),
+    );
+    expect(resetMutate).toHaveBeenCalledTimes(1);
+
+    // `resetMutate` is a bare spy — drive the `onSuccess` the component
+    // passed in, the same way the real mutation would once the DELETE
+    // resolves.
+    const options = resetMutate.mock.calls[0]?.[1] as {
+      onSuccess: () => void;
+    };
+    options.onSuccess();
+
+    // The override is gone server-side; the background refetch
+    // (`void refetch()`) would resolve with the DEFAULT doc for this
+    // (tag, locale) — a new `data` identity. Simulate that resolving.
+    templateState.data = {
+      ...templateState.initial,
+      subject: "Default subject from code",
+      blocks: [{ type: "paragraph", text: "default body" }],
+      status: "none",
+      version: 0,
+    };
+    rerender(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    // Seed-once must not suppress this re-seed: Reset clears `seededKey`
+    // specifically so the deleted override body doesn't linger in the editor.
+    expect(screen.getByLabelText(/subject/i)).toHaveValue(
+      "Default subject from code",
+    );
+  });
+
+  it("keeps the dirty guard if the admin edits again before an in-flight save resolves", () => {
+    authState.role = "support";
+    const onBack = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={onBack} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "First edit" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save draft/i }));
+    expect(saveMutate).toHaveBeenCalledTimes(1);
+
+    // `saveMutate` is a bare spy — capture the `onSuccess` the component
+    // passed in for THIS (now-stale) submission.
+    const options = saveMutate.mock.calls[0]?.[1] as {
+      onSuccess: () => void;
+    };
+
+    // The admin keeps typing before the in-flight PUT resolves.
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "Second edit, made while the save was in flight" },
+    });
+
+    // The save now resolves for the FIRST snapshot — it must not clear
+    // dirty, because local state has since diverged from what was saved.
+    options.onSuccess();
+
+    fireEvent.click(screen.getByRole("button", { name: /templates/i }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
   });
 });

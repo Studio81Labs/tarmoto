@@ -45,6 +45,15 @@ function serverMessage(err: unknown, fallback: string): string {
   if (Array.isArray(m)) return m.join("; ");
   return m ?? fallback;
 }
+function sameDoc(
+  a: { subject: string; blocks: EditorBlock[] },
+  b: { subject: string; blocks: EditorBlock[] },
+): boolean {
+  return (
+    a.subject === b.subject &&
+    JSON.stringify(a.blocks) === JSON.stringify(b.blocks)
+  );
+}
 
 export function EmailTemplateEditor({
   tag,
@@ -85,6 +94,15 @@ export function EmailTemplateEditor({
   } | null>(null);
   const [confirm, setConfirm] = useState<null | "publish" | "reset">(null);
   const [addOpen, setAddOpen] = useState(false);
+
+  // Mirrors subject/blocks so an in-flight mutation's onSuccess (which
+  // closes over the doc it submitted) can tell whether local state has
+  // since diverged — refs are stable across renders, so `.current` always
+  // reflects the latest edit regardless of which render's closure reads it.
+  const latestDoc = useRef({ subject, blocks });
+  useEffect(() => {
+    latestDoc.current = { subject, blocks };
+  }, [subject, blocks]);
 
   // Seed the editor once per (tag, locale). A later background refetch — e.g.
   // after Save/Publish, to refresh the status pill + version — must NOT overwrite
@@ -144,12 +162,14 @@ export function EmailTemplateEditor({
   }
 
   function handleSave() {
+    const snapshot = { subject, blocks };
     saveDraft.mutate(
-      { params, body: { subject, blocks } },
+      { params, body: snapshot },
       {
         onSuccess: () => {
           setMsg({ kind: "success", text: "Draft saved." });
-          setDirty(false);
+          // Don't clear dirty if the admin kept editing while the save was in flight.
+          if (sameDoc(latestDoc.current, snapshot)) setDirty(false);
           void refetch();
           invalidateList();
         },
@@ -191,7 +211,6 @@ export function EmailTemplateEditor({
             text: "Published. This override is now live.",
           });
           setConfirm(null);
-          setDirty(false);
           void refetch();
           invalidateList();
         },
@@ -215,6 +234,10 @@ export function EmailTemplateEditor({
             text: "Override removed — the code email renders again.",
           });
           setConfirm(null);
+          // The override is gone — let the default-seed refetch repopulate the editor
+          // (seed-once would otherwise keep showing the deleted override body).
+          seededKey.current = null;
+          setDirty(false);
           void refetch();
           invalidateList();
         },
