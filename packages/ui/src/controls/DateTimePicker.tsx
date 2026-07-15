@@ -77,7 +77,7 @@ export function DateTimePicker({
       newDate.month,
       newDate.day,
       hour,
-      minute,
+      snapMinute(minute),
     );
     onChange(isoDateTime(merged));
   }

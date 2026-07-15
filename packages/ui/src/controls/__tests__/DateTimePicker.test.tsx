@@ -152,3 +152,18 @@ test("trigger accessible name includes the value when label is set", () => {
   expect(btn).toBeInTheDocument();
   expect(btn).toHaveAccessibleName(expect.stringContaining("08:30"));
 });
+
+test("snaps an off-step minute to the step when the date changes", async () => {
+  const onChange = vi.fn();
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value="2026-05-17T08:20"
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /ride start/i }));
+  await userEvent.click(screen.getByRole("button", { name: /May 18, 2026/ }));
+  // minute 20 (off the step-15 grid) snaps to 15 on a date edit
+  expect(onChange).toHaveBeenLastCalledWith("2026-05-18T08:15");
+});
