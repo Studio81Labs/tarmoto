@@ -79,8 +79,10 @@ test("opening with a value shows all options to browse (not just the selection)"
       options={CITIES}
     />,
   );
-  // Open via the disclosure button without typing.
-  await userEvent.click(screen.getByRole("button"));
+  // Open via the disclosure arrow without typing. It's intentionally
+  // `aria-hidden` (decorative — the input is the real combobox), so query it
+  // explicitly with `hidden: true`.
+  await userEvent.click(screen.getByRole("button", { hidden: true }));
   // The whole list is browsable, not filtered down to the selected label.
   expect(
     screen.getByRole("option", { name: "Prague, CZ" }),
