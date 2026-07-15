@@ -205,6 +205,43 @@ describe("EmailTemplateEditor", () => {
     );
   });
 
+  it("keeps unsaved edits (does not re-seed) when Reset removes an override", async () => {
+    authState.role = "super_admin";
+    const { rerender } = render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    // Unsaved edit → the editor is dirty.
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "My unsaved subject" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^reset$/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /remove override/i }),
+    );
+    const options = resetMutate.mock.calls[0]?.[1] as {
+      onSuccess: () => void;
+    };
+    options.onSuccess();
+
+    // The DELETE resolved; a background refetch would return the DEFAULT doc.
+    templateState.data = {
+      ...templateState.initial,
+      subject: "Default subject from code",
+      blocks: [{ type: "paragraph", text: "default body" }],
+      status: "none",
+      version: 0,
+    };
+    rerender(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    // With unsaved edits, Reset must NOT re-seed — the admin's in-progress work
+    // is preserved rather than silently replaced by the default.
+    expect(screen.getByLabelText(/subject/i)).toHaveValue("My unsaved subject");
+  });
+
   it("keeps the dirty guard if the admin edits again before an in-flight save resolves", () => {
     authState.role = "support";
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);

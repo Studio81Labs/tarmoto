@@ -257,10 +257,12 @@ export function EmailTemplateEditor({
             text: "Override removed — the code email renders again.",
           });
           setConfirm(null);
-          // The override is gone — let the default-seed refetch repopulate the editor
-          // (seed-once would otherwise keep showing the deleted override body).
-          seededKey.current = null;
-          setDirty(false);
+          // Re-seed to the fresh default ONLY when there are no unsaved edits —
+          // that's the case round-1 targeted (local == the just-deleted
+          // override). With edits present, keep them and stay dirty rather than
+          // silently dropping the admin's in-progress work: seed-once then
+          // leaves local state untouched and the dirty guard stays active.
+          if (!dirty) seededKey.current = null;
           void refetch();
           invalidateList();
         },
