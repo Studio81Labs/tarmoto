@@ -16,6 +16,7 @@ import {
 import { renderBlocks } from '../email/render/render-blocks.js';
 import { SAMPLE_PRESENTATION } from '../email/render/sample-presentation.js';
 import { validateBlockDocument } from '../email/render/validate-block-document.js';
+import { DEFAULT_TEMPLATE_BLOCKS } from './default-template-blocks.js';
 import type {
   EmailTemplateDetailDto,
   EmailTemplateSummaryDto,
@@ -74,7 +75,8 @@ export class AdminEmailTemplateService {
     }));
   }
 
-  /** The draft row if one exists, else the published row, else an empty starter. */
+  /** The draft row if one exists, else the published row, else the tag's
+   *  default block document seeded in as a starting point. */
   async get(
     tag: string,
     locale: SupportedLocale,
@@ -88,7 +90,20 @@ export class AdminEmailTemplateService {
       (await this.templates.findOne({
         where: { template_tag: tag, locale, status: 'published' },
       }));
-    return this.toDetail(tag, locale, row);
+    if (row) return this.toDetail(tag, locale, row);
+    // No override yet — seed the editor from the tag's default block document
+    // instead of a blank starter. Still status:'none'/version:0: nothing is
+    // published, the code template keeps rendering until the admin publishes.
+    const seed = DEFAULT_TEMPLATE_BLOCKS[tag];
+    return {
+      tag,
+      locale,
+      subject: seed.subject,
+      blocks: seed.blocks,
+      status: 'none',
+      version: 0,
+      whitelist: TEMPLATE_WHITELIST[tag],
+    };
   }
 
   /** Validates then upserts the single draft row for (tag, locale). */
