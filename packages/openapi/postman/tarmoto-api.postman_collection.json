@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "698403d2-17d5-4cc3-abec-e3d92f929985",
+    "_postman_id": "5d23548b-b023-4786-a8ce-9c29643bead4",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -6802,6 +6802,40 @@
           }
         },
         {
+          "name": "List published + archived versions of a template (newest first)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/history",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "history"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Save (upsert) the draft override for a template",
           "request": {
             "method": "PUT",
@@ -6958,6 +6992,46 @@
                 },
                 {
                   "key": "locale",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revert to a prior version, re-publishing it as a new version (super admin only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/email/templates/:tag/:locale/history/:version/revert",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "email",
+                "templates",
+                ":tag",
+                ":locale",
+                "history",
+                ":version",
+                "revert"
+              ],
+              "variable": [
+                {
+                  "key": "tag",
+                  "value": ""
+                },
+                {
+                  "key": "locale",
+                  "value": ""
+                },
+                {
+                  "key": "version",
                   "value": ""
                 }
               ]
