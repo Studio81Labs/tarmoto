@@ -181,3 +181,37 @@ test("guards an invalid minuteStep (0) without hanging", () => {
     screen.getByRole("button", { name: /ride start/i }),
   ).toBeInTheDocument();
 });
+
+test("decrementing an off-step minute moves to the previous available option", async () => {
+  const onChange = vi.fn();
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value="2026-05-18T08:20"
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /ride start/i }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Decrease minute" }),
+  );
+  // 20 → previous available step is 15 (not 0)
+  expect(onChange).toHaveBeenLastCalledWith("2026-05-18T08:15");
+});
+
+test("incrementing an off-step minute moves to the next available option", async () => {
+  const onChange = vi.fn();
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value="2026-05-18T08:10"
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /ride start/i }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Increase minute" }),
+  );
+  // 10 → next available step is 15 (not 30)
+  expect(onChange).toHaveBeenLastCalledWith("2026-05-18T08:15");
+});

@@ -116,10 +116,17 @@ export function DateTimePicker({
 
   function handleMinuteChange(delta: number) {
     const base = baseDateTime();
-    const steps = Math.ceil(60 / minuteStep);
-    const currentStep = Math.min(Math.floor(minute / minuteStep), steps - 1);
-    const newStep = (((currentStep + delta) % steps) + steps) % steps;
-    const newMinute = newStep * minuteStep;
+    // Step to the adjacent AVAILABLE option relative to the current minute, so
+    // an off-step value (e.g. 08:20 with step 15) moves to the nearest option in
+    // the requested direction (down → 08:15, up → 08:30) rather than flooring
+    // to a wrong step. Wraps at the ends.
+    const options: number[] = [];
+    for (let m = 0; m < 60; m += minuteStep) options.push(m);
+    const newMinute =
+      delta > 0
+        ? (options.find((o) => o > minute) ?? options[0]!)
+        : ([...options].reverse().find((o) => o < minute) ??
+          options[options.length - 1]!);
     onChange(
       isoDateTime(
         new CalendarDateTime(base.year, base.month, base.day, hour, newMinute),
