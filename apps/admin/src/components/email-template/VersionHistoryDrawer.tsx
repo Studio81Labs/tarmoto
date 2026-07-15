@@ -7,14 +7,9 @@ import {
   useTemplateHistory,
   useRevertVersion,
 } from "../../data/useAdminEmailTemplates.js";
+import { serverMessage } from "../../lib/serverMessage.js";
 
 type Version = components["schemas"]["EmailTemplateVersionDto"];
-
-function serverMessage(err: unknown, fallback: string): string {
-  const m = (err as { message?: string | string[] } | undefined)?.message;
-  if (Array.isArray(m)) return m.join("; ");
-  return m ?? fallback;
-}
 
 /**
  * Right-side slide-over listing a template's published + archived versions.
