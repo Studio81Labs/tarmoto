@@ -141,6 +141,10 @@ function RoadMapPageInner() {
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
+  // Geolocation failure, kept separate from `nearbyError` (a coverage-only
+  // card): the "Center on me" button lives on the map in both views, so its
+  // error must be visible from Routes too.
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   // The ridden segment whose detail popover is open (clicked on the map).
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
@@ -294,12 +298,22 @@ function RoadMapPageInner() {
   // "Center on me" so denial messaging, coordinate rounding, and the
   // 10s timeout stay in lockstep across the two entry points.
   const requestUserLocation = useCallback(
-    (onLocated: (lat: number, lng: number) => void) => {
+    (
+      onLocated: (lat: number, lng: number) => void,
+      // `silent` suppresses error surfacing — used by the auto locate on load so
+      // a rider who has denied permission isn't nagged on every visit; explicit
+      // button clicks still surface the failure.
+      options?: { silent?: boolean },
+    ) => {
+      const surface = (message: string) => {
+        if (!options?.silent) setLocationError(message);
+      };
       if (typeof navigator === "undefined" || !navigator.geolocation) {
-        setNearbyError("Geolocation is not available in this browser");
+        surface("Geolocation is not available in this browser");
         return;
       }
       setLocating(true);
+      setLocationError(null);
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           setLocating(false);
@@ -309,10 +323,10 @@ function RoadMapPageInner() {
         },
         (err) => {
           setLocating(false);
-          setNearbyError(
+          surface(
             err.code === err.PERMISSION_DENIED
-              ? "Location permission denied. Enter coordinates below."
-              : "Could not read your location. Enter coordinates below.",
+              ? "Location permission denied — enter coordinates instead."
+              : "Couldn't read your location — enter coordinates instead.",
           );
         },
         { timeout: 10000 },
@@ -346,8 +360,12 @@ function RoadMapPageInner() {
   useEffect(() => {
     if (centeredOnLoadRef.current) return;
     centeredOnLoadRef.current = true;
-    handleCenterOnMe();
-  }, [handleCenterOnMe]);
+    // Fly-only + silent: don't write `center` (share privacy) and don't nag a
+    // rider who denied permission.
+    requestUserLocation((lat, lng) => mapRef.current?.flyTo({ lat, lng }), {
+      silent: true,
+    });
+  }, [requestUserLocation]);
   const handleShare = useCallback(async () => {
     // Ref guard (not state) ignores a quick double-click without changing the
     // button's appearance — feedback is the toast inside `shareRoadMap`, so the
@@ -509,6 +527,16 @@ function RoadMapPageInner() {
               unitSystem={unitSystem}
               onClose={() => setSelectedRideId(null)}
             />
+          )}
+          {/* Geolocation failed for an explicit "Center on me" — surface it by
+              the button so it isn't hidden with the Coverage-only nearby card. */}
+          {locationError && (
+            <div
+              role="alert"
+              className="absolute bottom-16 right-4 z-10 max-w-[240px] rounded-xl border border-quality-q1/40 bg-quality-q1/10 px-3 py-2 text-[11px] font-semibold text-red-400 backdrop-blur"
+            >
+              {locationError}
+            </div>
           )}
           <button
             type="button"
