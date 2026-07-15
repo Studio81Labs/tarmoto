@@ -205,7 +205,12 @@ function RoadMapPageInner() {
     // client's `onUnauthorized` hook and `clearSession()` would wipe
     // the just-hydrated token, leaving the whole app unauthenticated
     // for the rest of the navigation.
-    if (!authReady) return;
+    //
+    // Only the Coverage view shows the "Nearby unridden" card, so gate the
+    // fetch on it: no point running the PostGIS nearby query for hidden UI, and
+    // (privacy) it stops the auto-geolocated `center` being sent to the backend
+    // in the default Routes view before the rider opens Coverage.
+    if (!authReady || mapView !== "coverage") return;
     let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
@@ -230,7 +235,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, center.lat, center.lng]);
+  }, [authReady, mapView, center.lat, center.lng]);
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
