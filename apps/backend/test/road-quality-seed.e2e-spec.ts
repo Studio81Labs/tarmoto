@@ -4,11 +4,27 @@ import { AppDataSource } from '../src/data-source.js';
 // Manual pre-release gate (real PostgreSQL). Run: pnpm --filter @tarmoto/backend test:e2e -- road-quality-seed
 describe('road-quality seed blend (real PG)', () => {
   let ds: DataSource;
+  let segmentIds: string[] = [];
   beforeAll(async () => {
     ds = await AppDataSource.initialize();
   });
   afterAll(async () => {
     await ds.destroy();
+  });
+  // Delete the rows each test inserted so a re-run against the shared test DB
+  // never accumulates scored segments at (0,0) that could skew later spatial /
+  // clustering reads (mirrors road-quality-outlier-filter.e2e-spec).
+  afterEach(async () => {
+    if (segmentIds.length > 0) {
+      await ds.query(
+        `DELETE FROM surface_readings WHERE road_segment_id = ANY($1::uuid[])`,
+        [segmentIds],
+      );
+      await ds.query(`DELETE FROM road_segments WHERE id = ANY($1::uuid[])`, [
+        segmentIds,
+      ]);
+      segmentIds = [];
+    }
   });
 
   async function makeSegment(seed: number | null): Promise<string> {
@@ -18,6 +34,7 @@ describe('road-quality seed blend (real PG)', () => {
        RETURNING id`,
       [seed],
     );
+    segmentIds.push(rows[0].id);
     return rows[0].id;
   }
   async function addReading(
