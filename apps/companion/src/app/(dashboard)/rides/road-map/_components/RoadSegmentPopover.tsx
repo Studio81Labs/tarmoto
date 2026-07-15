@@ -10,6 +10,7 @@ import {
   QUALITY_CONFIG,
   formatDistanceFromMeters,
   formatShortDate,
+  qualityProvenanceLabel,
   scoreToTier,
 } from "@/lib/utils";
 import type { UnitSystem } from "@tarmoto/shared";
@@ -67,6 +68,14 @@ export function RoadSegmentPopover({
   const score = segment.last_quality_score;
   const tier = score != null ? scoreToTier(score) : null;
   const tierInfo = tier ? QUALITY_CONFIG[tier] : null;
+  // Non-null only while the segment's quality is still purely OSM-seeded
+  // (no rider reports yet) — see `qualityProvenanceLabel`.
+  const provenance = detail
+    ? qualityProvenanceLabel(
+        detail.quality_source ?? null,
+        detail.reading_count ?? 0,
+      )
+    : null;
 
   const name = detail
     ? (detail.road_name ?? detail.road_number ?? t("Road segment"))
@@ -115,6 +124,11 @@ export function RoadSegmentPopover({
                 ? t("{label} surface", { label: tierInfo.label })
                 : t("Surface unrated")}
             </div>
+            {provenance ? (
+              <div className="mt-0.5 text-[11px] italic text-fg-mute">
+                {t(provenance)}
+              </div>
+            ) : null}
           </div>
         </div>
 
