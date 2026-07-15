@@ -337,12 +337,17 @@ function RoadMapPageInner() {
   // Open centred on the rider (same gesture as "Center on me") so the map lands
   // where they ride instead of the neutral fallback. Runs once; a denied prompt
   // just leaves the fallback centre + its inline message.
+  //
+  // Use the fly-only path (`handleCenterOnMe`), NOT `handleUseMyLocation`: this
+  // must move the camera without writing the rider's coordinates into `center`,
+  // which `handleShare` serializes as the public snapshot's initial viewport —
+  // otherwise opening the page + Share would publish their precise location.
   const centeredOnLoadRef = useRef(false);
   useEffect(() => {
     if (centeredOnLoadRef.current) return;
     centeredOnLoadRef.current = true;
-    handleUseMyLocation();
-  }, [handleUseMyLocation]);
+    handleCenterOnMe();
+  }, [handleCenterOnMe]);
   const handleShare = useCallback(async () => {
     // Ref guard (not state) ignores a quick double-click without changing the
     // button's appearance — feedback is the toast inside `shareRoadMap`, so the
@@ -433,6 +438,15 @@ function RoadMapPageInner() {
             uppercase
             onClick={handleShare}
             leftIcon={<Share2 size={14} />}
+            // A shared road map is a coverage snapshot (routes aren't shared),
+            // so there's nothing to share without ridden segments — a route-only
+            // rider would otherwise publish a link that opens to an empty map.
+            disabled={filteredRidden.length === 0}
+            title={
+              filteredRidden.length === 0
+                ? t("Ride some roads to share your coverage map")
+                : undefined
+            }
           >
             {t("Share")}
           </Button>
