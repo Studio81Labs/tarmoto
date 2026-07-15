@@ -165,7 +165,7 @@ Per country:
 
 1. **Download** the Geofabrik per-country `<country>-latest.osm.pbf`.
 2. **`osmium tags-filter`** down to the §7 POI tag set (fuel, food incl. `fast_food`, accommodation, viewpoints, rest areas, ice cream) — a small fraction of the country file.
-3. **`osmium extract -b`** to the region's **authoritative bbox** from `DEFAULT_REGIONS` (`../../apps/backend/src/modules/poi/poi-import.config.ts`), writing `.osm` XML.
+3. **`osmium extract -b`** to the region's **authoritative bbox** from `DEFAULT_REGIONS` (`../../packages/ingest/src/poi/regions.ts`), writing `.osm` XML.
 4. **Place** the result in `TARMOTO_POI_IMPORT_DIR` as `<code>.osm`.
 
 The clip bbox MUST equal the region's `DEFAULT_REGIONS` bbox, because that same bbox bounds **stale-by-absence tombstoning**: a re-import soft-deactivates (`deactivated_at`, an UPDATE never a DELETE) rows _inside_ the region bbox that are absent from the new extract (closed venues), and never touches rows outside it. An extract clipped to less than its region bbox would wrongly tombstone the in-bbox rows it failed to cover. `osmium extract -b` keeps every complete object crossing the box (it doesn't cut geometries); the importer constrains generated rows to the same bbox, so edge overhang reconciles only where it belongs — the extract just has to COVER the region. (Coordinate order: `osmium extract -b` takes `minLng,minLat,maxLng,maxLat`, the reverse of Overpass's `south,west,north,east`.)
@@ -211,7 +211,7 @@ multi-GB PBF handling don't belong in the app runtime — but reuses the backend
 build, so the clip bbox comes straight from `DEFAULT_REGIONS` and can't drift.
 Region set + target dir are the **same** env as the importer
 (`TARMOTO_POI_IMPORT_REGIONS` / `TARMOTO_POI_IMPORT_DIR`); the Geofabrik country
-slugs live in `poi-refresh.config.ts` (a spec asserts every region has one).
+slugs live in `packages/ingest/src/poi/refresh-config.ts` (a spec asserts every region has one).
 
 Operate it as a **scheduled task** (Coolify scheduled task / cron), timed to
 finish comfortably **before** the Sunday 03:00 UTC import tick (e.g. Saturday):
@@ -335,7 +335,7 @@ and a pinned `duckdb`). `pnpm fsq:refresh` → `dist/scripts/refresh-fsq-extract
 runs the exact query above for every configured region and writes each
 `<code>.fsq.jsonl` **atomically** to `TARMOTO_FSQ_IMPORT_DIR`. The field list,
 category prefilter, country + bbox scoping, and the catalog/table are baked into
-`poi-refresh.config.ts` (`buildFsqExtractSql`), so the automated extract matches
+`packages/ingest/src/poi/refresh-config.ts` (`buildFsqExtractSql`), so the automated extract matches
 both what the importer parses and what the manual recipe produces.
 
 Operate it as a **monthly** scheduled task — OS Places refreshes monthly and the
