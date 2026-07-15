@@ -80,16 +80,14 @@ export function DateTimePicker({
     onChange(isoDateTime(merged));
   }
 
+  function baseDateTime(): CalendarDateTime {
+    if (dt) return dt;
+    const t = today(getLocalTimeZone());
+    return new CalendarDateTime(t.year, t.month, t.day, 0, 0);
+  }
+
   function handleHourChange(delta: number) {
-    const base =
-      dt ??
-      new CalendarDateTime(
-        today(getLocalTimeZone()).year,
-        today(getLocalTimeZone()).month,
-        today(getLocalTimeZone()).day,
-        0,
-        0,
-      );
+    const base = baseDateTime();
     const newHour = (((hour + delta) % 24) + 24) % 24;
     onChange(
       isoDateTime(
@@ -99,17 +97,9 @@ export function DateTimePicker({
   }
 
   function handleMinuteChange(delta: number) {
-    const base =
-      dt ??
-      new CalendarDateTime(
-        today(getLocalTimeZone()).year,
-        today(getLocalTimeZone()).month,
-        today(getLocalTimeZone()).day,
-        0,
-        0,
-      );
+    const base = baseDateTime();
     const steps = Math.floor(60 / minuteStep);
-    const currentStep = Math.round(minute / minuteStep);
+    const currentStep = Math.min(Math.floor(minute / minuteStep), steps - 1);
     const newStep = (((currentStep + delta) % steps) + steps) % steps;
     const newMinute = newStep * minuteStep;
     onChange(
