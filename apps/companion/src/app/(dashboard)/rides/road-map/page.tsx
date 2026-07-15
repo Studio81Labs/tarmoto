@@ -334,20 +334,33 @@ function RoadMapPageInner() {
     },
     [],
   );
+  // Fly the map to a located point, or — if the map hasn't mounted yet (the page
+  // is still in its `loading` branch, so `mapRef.current` is null) — stash the
+  // target so the flush effect below can replay it once the map exists. Without
+  // this, a cached geolocation response that resolves before the map mounts is
+  // silently dropped and the map opens at the neutral fallback.
+  const pendingCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  const flyToWhenReady = useCallback((lat: number, lng: number) => {
+    if (mapRef.current) {
+      mapRef.current.flyTo({ lat, lng });
+    } else {
+      pendingCenterRef.current = { lat, lng };
+    }
+  }, []);
   const handleUseMyLocation = useCallback(() => {
     requestUserLocation((lat, lng) => {
       setCenter({ lat, lng, label: "My location" });
       // Centre the MapLibre view too — the AC's "Center on me" is the
       // same gesture as the Explore-near locator, so a single button
       // drives both panels.
-      mapRef.current?.flyTo({ lat, lng });
+      flyToWhenReady(lat, lng);
     });
-  }, [requestUserLocation]);
+  }, [requestUserLocation, flyToWhenReady]);
   const handleCenterOnMe = useCallback(() => {
     requestUserLocation((lat, lng) => {
-      mapRef.current?.flyTo({ lat, lng });
+      flyToWhenReady(lat, lng);
     });
-  }, [requestUserLocation]);
+  }, [requestUserLocation, flyToWhenReady]);
   // Open centred on the rider (same gesture as "Center on me") so the map lands
   // where they ride instead of the neutral fallback. Runs once; a denied prompt
   // just leaves the fallback centre + its inline message.
@@ -361,11 +374,22 @@ function RoadMapPageInner() {
     if (centeredOnLoadRef.current) return;
     centeredOnLoadRef.current = true;
     // Fly-only + silent: don't write `center` (share privacy) and don't nag a
-    // rider who denied permission.
-    requestUserLocation((lat, lng) => mapRef.current?.flyTo({ lat, lng }), {
+    // rider who denied permission. `flyToWhenReady` queues the target if the
+    // map hasn't mounted yet (page still loading).
+    requestUserLocation((lat, lng) => flyToWhenReady(lat, lng), {
       silent: true,
     });
-  }, [requestUserLocation]);
+  }, [requestUserLocation, flyToWhenReady]);
+  // Replay a locate target captured before the map mounted. Runs after every
+  // render but only acts once the map exists and there's a pending target, so
+  // the auto-center survives the loading→loaded transition.
+  useEffect(() => {
+    if (loading || !stats) return;
+    const target = pendingCenterRef.current;
+    if (!target) return;
+    pendingCenterRef.current = null;
+    mapRef.current?.flyTo(target);
+  }, [loading, stats]);
   const handleShare = useCallback(async () => {
     // Ref guard (not state) ignores a quick double-click without changing the
     // button's appearance — feedback is the toast inside `shareRoadMap`, so the

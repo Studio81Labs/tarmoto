@@ -292,6 +292,15 @@ test.describe("rides extras", () => {
     await expect(
       page.getByRole("button", { name: /^coverage$/i }),
     ).toBeVisible();
+    // Assert the seeded route track actually loaded, not just that the toggle
+    // rendered (it also shows while tracks are loading or errored). The Routes
+    // hero tile counts tracks with a recorded route, so it reads `1` only once
+    // `/api/v1/rides/tracks` resolves the seeded ride — a hung/errored request
+    // would leave it at `0` and fail here.
+    const ridesOnMap = page.getByText("Rides on map", { exact: true });
+    await expect(
+      ridesOnMap.locator("..").getByText("1", { exact: true }),
+    ).toBeVisible();
   });
 
   // T34 — Compare rides: `/rides/compare` exposes two <select>
