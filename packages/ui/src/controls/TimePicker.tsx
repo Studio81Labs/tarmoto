@@ -177,7 +177,7 @@ export function TimePicker({
             {value || "Select time"}
           </span>
         </Button>
-        <Popover className={MENU}>
+        <Popover placement="bottom left" className={MENU}>
           <Dialog
             className="flex gap-1 outline-none"
             aria-label={ariaLabel ?? "Time"}

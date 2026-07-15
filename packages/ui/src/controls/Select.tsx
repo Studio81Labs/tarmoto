@@ -74,7 +74,11 @@ export function Select({
           )}
           <Button
             className={cn(
-              fieldChrome({ tone, disabled, error, hasTrailing: true }),
+              // No `hasTrailing`: the chevron is a flex child positioned by
+              // `justify-between`, so the base px-3 lands it flush at right-3
+              // (matching Combobox). `hasTrailing`'s pr-9 is for absolutely
+              // positioned adornments and would push the chevron inward.
+              fieldChrome({ tone, disabled, error }),
               "flex items-center justify-between text-left",
               !disabled && "cursor-pointer hover:border-ink/40",
             )}
