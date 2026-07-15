@@ -1,9 +1,20 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { components } from "@tarmoto/openapi-client";
 import { Alert, Button } from "@tarmoto/ui";
 import { usePreview } from "../../data/useAdminEmailTemplates.js";
 
 type PreviewResponse = components["schemas"]["PreviewResponseDto"];
+type EditorDoc = {
+  subject: string;
+  blocks: components["schemas"]["EmailBlockDto"][];
+};
+
+function sameDoc(a: EditorDoc, b: EditorDoc): boolean {
+  return (
+    a.subject === b.subject &&
+    JSON.stringify(a.blocks) === JSON.stringify(b.blocks)
+  );
+}
 
 export function PreviewPane({
   tag,
@@ -21,13 +32,29 @@ export function PreviewPane({
   const [tab, setTab] = useState<"html" | "text">("html");
   const [error, setError] = useState<string | null>(null);
 
+  // A rendered preview must match what's currently in the editor. Track the
+  // latest doc so an in-flight preview that resolves after further edits is
+  // ignored (in `run` below), and drop a shown preview the moment the doc
+  // changes so the iframe never shows a payload different from what's visible.
+  const latestDoc = useRef<EditorDoc>({ subject, blocks });
+  useEffect(() => {
+    latestDoc.current = { subject, blocks };
+    setResult(null);
+    setError(null);
+  }, [subject, blocks]);
+
   function run() {
     setError(null);
+    const snapshot: EditorDoc = { subject, blocks };
     preview.mutate(
-      { params: { path: { tag, locale } }, body: { subject, blocks } },
+      { params: { path: { tag, locale } }, body: snapshot },
       {
-        onSuccess: (res: PreviewResponse) => setResult(res),
+        onSuccess: (res: PreviewResponse) => {
+          // Ignore a response that resolved after the admin edited the doc.
+          if (sameDoc(latestDoc.current, snapshot)) setResult(res);
+        },
         onError: (err: unknown) => {
+          if (!sameDoc(latestDoc.current, snapshot)) return;
           const m = (err as { message?: string | string[] } | undefined)
             ?.message;
           setError(
