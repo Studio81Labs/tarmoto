@@ -113,6 +113,17 @@ test("caller's hour12:false stays 24h (normalized to h23) on en-US", () => {
   ).toBe("15/07/2026, 00:45");
 });
 
+test("explicit hourCycle wins even when hour12:false is also supplied", () => {
+  // A shared 24h Intl options object may carry both; hour12 must not override
+  // the intended h23 (en-US would otherwise resolve to h24 → 24:45).
+  expect(
+    displayIsoTime("00:45", {
+      locale: "en-US",
+      formatOptions: { hour12: false, hourCycle: "h23" },
+    }),
+  ).toBe("00:45");
+});
+
 test("explicit hour12:true remains a deliberate 12h override", () => {
   const out = displayIsoTime("13:30", {
     locale: "en-US",

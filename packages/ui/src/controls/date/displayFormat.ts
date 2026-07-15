@@ -62,19 +62,28 @@ const DATETIME_DEFAULTS: Intl.DateTimeFormatOptions = {
 };
 
 /**
- * `hour12: false` is the common way to ask for 24h, but Intl resolves it to the
- * h24 cycle under an en-US locale, rendering midnight as "24:45". Translate a
- * bare `hour12: false` into the explicit `hourCycle: "h23"` (00–23). An explicit
- * `hourCycle` or `hour12: true` is a deliberate override and left untouched.
+ * Reconcile `hour12` and `hourCycle`, which Intl resolves ambiguously: `hour12`
+ * takes precedence, and `hour12: false` resolves to the h24 cycle under en-US
+ * (rendering midnight as "24:45"). So:
+ *
+ * - an explicit `hourCycle` should win → drop any `hour12` (it would override it);
+ * - a bare `hour12: false` → the explicit `hourCycle: "h23"` (00–23);
+ * - a bare `hour12: true` is a deliberate 12h override → left untouched.
  */
 function normalizeHourCycle(
   opts: Intl.DateTimeFormatOptions | undefined,
 ): Intl.DateTimeFormatOptions | undefined {
-  if (!opts || opts.hour12 !== false || opts.hourCycle !== undefined) {
-    return opts;
+  if (!opts) return opts;
+  if (opts.hourCycle !== undefined) {
+    if (opts.hour12 === undefined) return opts;
+    const { hour12: _hour12, ...rest } = opts;
+    return rest;
   }
-  const { hour12: _hour12, ...rest } = opts;
-  return { ...rest, hourCycle: "h23" };
+  if (opts.hour12 === false) {
+    const { hour12: _hour12, ...rest } = opts;
+    return { ...rest, hourCycle: "h23" };
+  }
+  return opts;
 }
 
 /**
