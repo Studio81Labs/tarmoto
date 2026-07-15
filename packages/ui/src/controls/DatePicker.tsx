@@ -8,6 +8,9 @@ import {
   Dialog,
   Calendar,
   CalendarGrid,
+  CalendarGridHeader,
+  CalendarHeaderCell,
+  CalendarGridBody,
   CalendarCell,
   Heading,
 } from "react-aria-components";
@@ -115,6 +118,7 @@ export function DatePicker({
         <Popover className={MENU}>
           <Dialog className="outline-none" aria-label={ariaLabel ?? "Date"}>
             <Calendar
+              firstDayOfWeek="mon"
               value={parseIsoDate(value)}
               onChange={(d) => {
                 onChange(isoDate(d));
@@ -139,7 +143,16 @@ export function DatePicker({
                 </Button>
               </header>
               <CalendarGrid className="border-separate border-spacing-0.5">
-                {(date) => <CalendarCell date={date} className={CELL} />}
+                <CalendarGridHeader>
+                  {(day) => (
+                    <CalendarHeaderCell className="pb-1 font-mono text-[10px] font-normal text-fg-mute">
+                      {day}
+                    </CalendarHeaderCell>
+                  )}
+                </CalendarGridHeader>
+                <CalendarGridBody>
+                  {(date) => <CalendarCell date={date} className={CELL} />}
+                </CalendarGridBody>
               </CalendarGrid>
             </Calendar>
           </Dialog>

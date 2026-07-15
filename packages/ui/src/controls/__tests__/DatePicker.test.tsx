@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DatePicker } from "../DatePicker";
 
@@ -70,4 +70,16 @@ test("closes the popover after a day is selected", async () => {
   expect(
     screen.queryByRole("button", { name: /May 18, 2026/ }),
   ).not.toBeInTheDocument();
+});
+
+test("weeks start on Monday regardless of locale", async () => {
+  render(
+    <DatePicker ariaLabel="Departure" value="2026-05-01" onChange={() => {}} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /departure/i }));
+  // §09 mandates M T W T F S S. The grid's first day cell is a Monday;
+  // a Sunday-first (locale-default) calendar would start on a Sunday.
+  const grid = screen.getByRole("grid");
+  const dayCells = within(grid).getAllByRole("button");
+  expect(dayCells[0]).toHaveAccessibleName(/^Monday,/);
 });

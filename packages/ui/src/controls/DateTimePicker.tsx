@@ -8,6 +8,9 @@ import {
   Dialog,
   Calendar,
   CalendarGrid,
+  CalendarGridHeader,
+  CalendarHeaderCell,
+  CalendarGridBody,
   CalendarCell,
   Heading,
 } from "react-aria-components";
@@ -194,7 +197,11 @@ export function DateTimePicker({
             className="flex flex-col gap-3 outline-none"
             aria-label={ariaLabel ?? "Date and time"}
           >
-            <Calendar value={calendarValue} onChange={handleDateChange}>
+            <Calendar
+              firstDayOfWeek="mon"
+              value={calendarValue}
+              onChange={handleDateChange}
+            >
               <header className="mb-2 flex items-center justify-between">
                 <Button
                   slot="previous"
@@ -211,7 +218,16 @@ export function DateTimePicker({
                 </Button>
               </header>
               <CalendarGrid className="border-separate border-spacing-0.5">
-                {(date) => <CalendarCell date={date} className={CELL} />}
+                <CalendarGridHeader>
+                  {(day) => (
+                    <CalendarHeaderCell className="pb-1 font-mono text-[10px] font-normal text-fg-mute">
+                      {day}
+                    </CalendarHeaderCell>
+                  )}
+                </CalendarGridHeader>
+                <CalendarGridBody>
+                  {(date) => <CalendarCell date={date} className={CELL} />}
+                </CalendarGridBody>
               </CalendarGrid>
             </Calendar>
             {/* Divider */}
