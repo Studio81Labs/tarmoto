@@ -78,6 +78,13 @@ test("minute options reflect minuteStep", async () => {
   ).not.toBeInTheDocument();
 });
 
+test("trigger button has accessible name from label prop", () => {
+  render(<TimePicker label="Start time" value="" onChange={() => {}} />);
+  expect(
+    screen.getByRole("button", { name: "Start time" }),
+  ).toBeInTheDocument();
+});
+
 test("renders empty state without throwing and does not call onChange", () => {
   const onChange = vi.fn();
   render(<TimePicker ariaLabel="Start time" value="" onChange={onChange} />);

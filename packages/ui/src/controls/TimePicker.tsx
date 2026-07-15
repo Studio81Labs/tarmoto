@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   DialogTrigger,
   Button,
@@ -8,7 +8,6 @@ import {
   Dialog,
   ListBox,
   ListBoxItem,
-  Label,
 } from "react-aria-components";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
@@ -52,6 +51,7 @@ export function TimePicker({
   error = false,
   className,
 }: TimePickerProps) {
+  const labelId = useId();
   const current = parse(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
@@ -80,7 +80,8 @@ export function TimePicker({
           selectionMode="single"
           selectedKeys={[String(selected)]}
           onSelectionChange={(keys) => {
-            const k = [...(keys as Set<string>)][0];
+            if (keys === "all") return;
+            const k = [...keys][0];
             if (k != null) onPick(Number(k));
           }}
           className="max-h-40 w-14 overflow-auto outline-none"
@@ -107,16 +108,18 @@ export function TimePicker({
   return (
     <div className={cn("w-full", className)}>
       {label !== undefined && (
-        <Label className={FIELD_LABEL} elementType="span">
+        <span id={labelId} className={FIELD_LABEL}>
           {label}
-        </Label>
+        </span>
       )}
       <DialogTrigger>
         <Button
           {...(id !== undefined ? { id } : {})}
-          {...(ariaLabel !== undefined && label === undefined
-            ? { "aria-label": ariaLabel }
-            : {})}
+          {...(label !== undefined
+            ? { "aria-labelledby": labelId }
+            : ariaLabel !== undefined
+              ? { "aria-label": ariaLabel }
+              : {})}
           isDisabled={disabled}
           className={cn(
             fieldChrome({ tone, disabled, error, hasLeading: true }),
