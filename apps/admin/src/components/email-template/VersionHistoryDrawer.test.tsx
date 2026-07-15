@@ -66,14 +66,25 @@ describe("VersionHistoryDrawer", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("does not offer Revert on the live version", () => {
+    render(<VersionHistoryDrawer {...base} isSuper={true} />);
+    // Fixture: v3 is Live (published), v2 is Archived. Reverting the live
+    // version is a no-op the backend rejects, so only the archived row is
+    // revertable — exactly one Revert button.
+    expect(screen.getAllByRole("button", { name: /^revert$/i })).toHaveLength(
+      1,
+    );
+  });
+
   it("revert asks for confirmation, then calls the mutation with the version", () => {
     render(<VersionHistoryDrawer {...base} isSuper={true} />);
-    fireEvent.click(screen.getAllByRole("button", { name: /revert/i })[0]!);
+    // v3 is Live (no Revert button); the only revertable row is the archived v2.
+    fireEvent.click(screen.getAllByRole("button", { name: /^revert$/i })[0]!);
     // Confirm dialog now open — click its confirm button.
     fireEvent.click(screen.getByRole("button", { name: /revert now/i }));
     expect(revertMutate).toHaveBeenCalledTimes(1);
     expect(revertMutate.mock.calls[0]![0]).toEqual({
-      params: { path: { tag: "weekly-digest", locale: "en", version: 3 } },
+      params: { path: { tag: "weekly-digest", locale: "en", version: 2 } },
     });
   });
 

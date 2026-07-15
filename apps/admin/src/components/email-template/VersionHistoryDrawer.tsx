@@ -160,7 +160,9 @@ export function VersionHistoryDrawer({
                   >
                     {previewVersion === v.version ? "Hide preview" : "Preview"}
                   </Button>
-                  {isSuper ? (
+                  {/* No Revert on the live version — reverting to what's
+                      already published is a no-op the backend rejects. */}
+                  {isSuper && v.status !== "published" ? (
                     <Button
                       variant="primary"
                       size="sm"

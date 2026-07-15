@@ -449,6 +449,29 @@ describe('AdminEmailTemplateService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('revert 400s and mutates nothing when the target version is already live', async () => {
+    const { service, manager } = make();
+    const live = {
+      template_tag: 'weekly-digest',
+      locale: 'en',
+      status: 'published',
+      version: 4,
+      subject: 'live',
+      blocks: [],
+    };
+    manager.findOne.mockImplementation(
+      (_entity: unknown, opts: { where: { version?: number } }) =>
+        Promise.resolve(opts.where.version === 4 ? live : null),
+    );
+    // Reverting to the currently-published version is a no-op — reject it
+    // rather than archive + re-publish identical content as a spurious version.
+    await expect(
+      service.revert('weekly-digest', 'en', 4, 'admin-9'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(manager.update).not.toHaveBeenCalled();
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
   it('revert 400s and mutates nothing when the target content fails current validation', async () => {
     const { service, manager } = make();
     const badTarget = {

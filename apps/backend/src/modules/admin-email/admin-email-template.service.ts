@@ -374,6 +374,15 @@ export class AdminEmailTemplateService {
           `No version ${version} for ${tag}/${locale}`,
         );
       }
+      // Reverting to the version that is already live is a no-op: it would
+      // archive the live row and re-publish identical content as a new version,
+      // polluting the audit history with a spurious entry. Reject it (the admin
+      // drawer also hides Revert on the live row, so this guards direct calls).
+      if (target.status === 'published') {
+        throw new BadRequestException(
+          `Version ${version} is already the live version — nothing to revert.`,
+        );
+      }
       const check = validateBlockDocument(tag, {
         subject: target.subject,
         blocks: target.blocks,
