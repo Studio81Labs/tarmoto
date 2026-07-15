@@ -85,6 +85,14 @@ const FALLBACK_CENTER = {
   label: "",
 };
 const INITIAL_MAP_ZOOM = 8;
+// The public share serializes a viewport centre. Round it to ~0.1° (≈11 km) so
+// a shared coverage map opens over the rider's riding region — not the neutral
+// Prague fallback, which would leave their highlighted roads off-screen — while
+// still stripping the street-level precision of a raw geolocation fix. A
+// coverage map inherently reveals the region; it must not reveal a home address.
+const SHARE_CENTER_PRECISION = 10;
+const coarsenForShare = (coord: number): number =>
+  Math.round(coord * SHARE_CENTER_PRECISION) / SHARE_CENTER_PRECISION;
 export default function RoadMapPage() {
   // `useTimeWindow` (below) reads `?window=` via useSearchParams, which needs
   // a Suspense boundary for Next.js static prerender (mirrors the All-rides
@@ -140,13 +148,8 @@ function RoadMapPageInner() {
   // `center` is the live view/query centre: it tracks the rider's geolocated
   // position (auto-center + explicit "Center on me"/"Use my location") so the
   // map camera, the "Nearby unridden" query, and the coordinate inputs all stay
-  // pointed at the same place.
+  // pointed at the same place. The public share coarsens it (see `handleShare`).
   const [center, setCenter] = useState(FALLBACK_CENTER);
-  // `shareCenter` is the *share-safe* centre serialized into the public map
-  // snapshot. Geolocation never writes it — only coordinates the rider types in
-  // do — so opening the page (or clicking locate) can't leak a precise device
-  // location into a shared link. Defaults to the neutral regional fallback.
-  const [shareCenter, setShareCenter] = useState(FALLBACK_CENTER);
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
@@ -360,8 +363,8 @@ function RoadMapPageInner() {
   // "Nearby unridden" query + coordinate inputs) and fly the camera. Shared by
   // the map's "Center on me" button, the sidebar's "Use my location", and the
   // load-time auto-center so denial messaging, coordinate rounding, and the 10 s
-  // timeout stay in lockstep. Deliberately never touches `shareCenter`, so a
-  // located position can't leak into a shared link.
+  // timeout stay in lockstep. The share coarsens `center` to a region grid
+  // (`handleShare`), so a located position never leaks at street precision.
   const locateAndCenter = useCallback(
     (options?: { silent?: boolean }) => {
       requestUserLocation((lat, lng) => {
@@ -374,12 +377,24 @@ function RoadMapPageInner() {
   // Open centred on the rider so the map lands where they ride instead of the
   // neutral fallback. Runs once; a denied prompt just leaves the fallback centre.
   // Silent: don't nag a rider who has denied permission on every visit.
+  //
+  // Gated on the loaded, non-empty state: don't prompt for location (or read a
+  // cached precise fix) until we know the map will actually render. While the
+  // page is loading/errored, or when the rider has no content (the empty state),
+  // `<PersonalRoadMap>` never mounts — requesting geolocation there would prompt
+  // for a screen the rider can't see. `hasContent` flips true once stats show a
+  // ridden segment or the tracks fetch resolves a route; explicit "Center on me"
+  // stays available on the rendered map regardless.
   const centeredOnLoadRef = useRef(false);
+  const hasContent = stats
+    ? stats.ridden_segments > 0 || rideTracks.length > 0
+    : false;
   useEffect(() => {
     if (centeredOnLoadRef.current) return;
+    if (loading || loadError || !hasContent) return;
     centeredOnLoadRef.current = true;
     locateAndCenter({ silent: true });
-  }, [locateAndCenter]);
+  }, [loading, loadError, hasContent, locateAndCenter]);
   // Replay a locate target captured before the map mounted. Runs after every
   // render but only acts once the map exists and there's a pending target, so
   // the auto-center survives the loading→loaded transition.
@@ -401,11 +416,12 @@ function RoadMapPageInner() {
         stats,
         period,
         segments: filteredRidden,
-        // `shareCenter`, not `center`: the live view centre tracks the rider's
-        // geolocated position, which must never be published in a share.
+        // Centre the shared map on the rider's current view (coarsened to a
+        // ~11 km region grid) so the highlighted roads are on-screen, rather
+        // than serializing a raw geolocation fix or the Prague fallback.
         initialCenter: {
-          lat: shareCenter.lat,
-          lng: shareCenter.lng,
+          lat: coarsenForShare(center.lat),
+          lng: coarsenForShare(center.lng),
           zoom: INITIAL_MAP_ZOOM,
         },
       });
@@ -418,7 +434,7 @@ function RoadMapPageInner() {
     } finally {
       sharingRef.current = false;
     }
-  }, [stats, period, filteredRidden, shareCenter.lat, shareCenter.lng]);
+  }, [stats, period, filteredRidden, center.lat, center.lng]);
   if (loading) {
     return (
       <RidesScaffold fill>
@@ -445,9 +461,8 @@ function RoadMapPageInner() {
   // settled: while they're loading (or if the request failed) a rider with
   // routes but no matched segments would otherwise be wrongly told they have
   // nothing — the exact case the Routes view exists to rescue.
-  const hasAnyContent = stats.ridden_segments > 0 || rideTracks.length > 0;
   const tracksSettled = !tracksLoading && !tracksError;
-  if (!hasAnyContent && tracksSettled) {
+  if (!hasContent && tracksSettled) {
     return (
       <RidesScaffold fill>
         <RidesEmptyState
@@ -663,10 +678,7 @@ function RoadMapPageInner() {
                     locating={locating}
                     onUseMyLocation={() => locateAndCenter()}
                     onCoordinatesChanged={(lat, lng, label) => {
-                      // Typed coordinates are rider-chosen, so they're safe to
-                      // publish — update both the live view and the share centre.
                       setCenter({ lat, lng, label });
-                      setShareCenter({ lat, lng, label });
                       mapRef.current?.flyTo({ lat, lng });
                     }}
                   />
