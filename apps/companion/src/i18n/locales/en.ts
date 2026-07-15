@@ -275,6 +275,9 @@ export const en = {
   "Embed widget ": "Embed widget ",
   "Enter your email and we'll send a reset link":
     "Enter your email and we'll send a reset link",
+  "Estimated from road surface": "Estimated from road surface",
+  "Estimated from road type": "Estimated from road type",
+  "Estimated from surveyed smoothness": "Estimated from surveyed smoothness",
   "Every road you've ridden ": "Every road you've ridden ",
   "Excellent only": "Excellent only",
   "Explore near": "Explore near",

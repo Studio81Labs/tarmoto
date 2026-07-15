@@ -11,6 +11,7 @@
  */
 
 import type { IconName } from "@/components/Icon";
+import type { QualitySource } from "@tarmoto/shared";
 
 /**
  * Map quality score to label
@@ -22,6 +23,29 @@ export function qualityLabel(score: number | null): string {
   if (score >= 2.5) return "Fair";
   if (score >= 1.5) return "Poor";
   return "Very Poor";
+}
+
+/**
+ * Label a quality score's provenance for road-detail UI. Returns an "estimated"
+ * string ONLY when the score is still purely OSM-seeded (no rider reports);
+ * once riders contribute (`readingCount > 0`) the blended score is rider-backed,
+ * so no estimate caveat is shown (design 2026-07-15).
+ */
+export function qualityProvenanceLabel(
+  source: QualitySource | null,
+  readingCount: number,
+): string | null {
+  if (readingCount > 0 || source === null) return null;
+  switch (source) {
+    case "osm_smoothness":
+      return "Estimated from surveyed smoothness";
+    case "osm_surface":
+      return "Estimated from road surface";
+    case "osm_highway":
+      return "Estimated from road type";
+    default:
+      return null;
+  }
 }
 
 /**

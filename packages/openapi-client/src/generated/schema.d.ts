@@ -4206,6 +4206,13 @@ export interface components {
             curviness_score: number;
             /** @enum {string} */
             surface_type: "asphalt" | "concrete" | "cobblestone" | "gravel" | "dirt" | "unknown";
+            /**
+             * @description Which OSM signal seeded quality (osm_smoothness|osm_surface|osm_highway); null when rider-only or unseeded.
+             * @enum {string|null}
+             */
+            quality_source: "osm_smoothness" | "osm_surface" | "osm_highway" | null;
+            /** @description OSM-derived quality estimate [1,5] shown alongside the blended quality_score. */
+            osm_quality_seed: number | null;
             length_m: number;
             /** @description 0-100, based on number of readings */
             confidence: number;
@@ -4403,6 +4410,13 @@ export interface components {
             curviness_score: number;
             /** @enum {string} */
             surface_type: "asphalt" | "concrete" | "cobblestone" | "gravel" | "dirt" | "unknown";
+            /**
+             * @description Which OSM signal seeded quality (osm_smoothness|osm_surface|osm_highway); null when rider-only or unseeded.
+             * @enum {string|null}
+             */
+            quality_source: "osm_smoothness" | "osm_surface" | "osm_highway" | null;
+            /** @description OSM-derived quality estimate [1,5] shown alongside the blended quality_score. */
+            osm_quality_seed: number | null;
             length_m: number;
             /** @description 0-100, based on number of readings */
             confidence: number;

@@ -196,6 +196,8 @@ function segmentDetail(
     quality_score: 4.6,
     curviness_score: 82,
     surface_type: "asphalt",
+    quality_source: null,
+    osm_quality_seed: null,
     length_m: 1240,
     segment_length_m: 1240,
     confidence: 91,

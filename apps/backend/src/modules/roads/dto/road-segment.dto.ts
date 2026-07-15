@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { SURFACE_TYPES, type SurfaceType } from '@tarmoto/shared';
+import {
+  SURFACE_TYPES,
+  QUALITY_SOURCES,
+  type SurfaceType,
+  type QualitySource,
+} from '@tarmoto/shared';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 import { HazardResponseDto } from '../../hazards/dto/hazard-response.dto.js';
 import { ReviewResponseDto } from '../../reviews/dto/review.dto.js';
@@ -23,6 +28,21 @@ export class RoadSegmentDto {
 
   @ApiProperty({ enum: SURFACE_TYPES })
   surface_type!: SurfaceType;
+
+  @ApiProperty({
+    enum: QUALITY_SOURCES,
+    nullable: true,
+    description:
+      'Which OSM signal seeded quality (osm_smoothness|osm_surface|osm_highway); null when rider-only or unseeded.',
+  })
+  quality_source!: QualitySource | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'OSM-derived quality estimate [1,5] shown alongside the blended quality_score.',
+  })
+  osm_quality_seed!: number | null;
 
   @ApiProperty()
   length_m!: number;

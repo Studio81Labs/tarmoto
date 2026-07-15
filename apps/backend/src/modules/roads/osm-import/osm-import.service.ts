@@ -29,10 +29,9 @@ const CONFLICT_COLUMNS = ['osm_way_id', 'segment_index'];
 
 /**
  * OSM-owned columns refreshed verbatim from the incoming snapshot on every
- * conflict. Excludes the crowdsourced/identity columns (`quality_score`,
- * `confidence`, `reading_count`, `id`) — the importer never carries them in its
- * rows, so they are untouched on update and defaulted on insert (the #751
- * stable-identity guarantee). `surface_type` is handled separately below.
+ * conflict. Excludes the rider-derived columns (`confidence`, `reading_count`)
+ * and the blended `quality_score` (gated separately below). `surface_type` and
+ * `quality_score` are handled with CASE gates further down.
  */
 const OSM_REFRESH_COLUMNS = [
   'geom',
@@ -40,6 +39,8 @@ const OSM_REFRESH_COLUMNS = [
   'curviness_score',
   'road_name',
   'road_number',
+  'osm_quality_seed',
+  'quality_source',
 ];
 
 /** Geometry columns derived from `geom`, nulled when the geometry changes so a
@@ -68,6 +69,11 @@ const GEOM_CHANGED = `NOT ST_OrderingEquals("${TABLE}"."geom", EXCLUDED."geom")`
  */
 const OSM_OWNS_SURFACE = `NOT "${TABLE}"."surface_from_reading"`;
 
+/** True iff no rider has contributed to this segment, so the OSM seed is still
+ *  the effective quality and may be (re)seeded. The blend (migration
+ *  1811000000000) owns quality_score once readings exist. */
+const OSM_OWNS_QUALITY = `"${TABLE}"."reading_count" = 0`;
+
 /**
  * The raw `ON CONFLICT … DO UPDATE …` clause. Built once.
  *
@@ -76,6 +82,10 @@ const OSM_OWNS_SURFACE = `NOT "${TABLE}"."surface_from_reading"`;
  * value is authoritative and preserved. The OSM seed is still INSERTed for new
  * segments.
  *
+ * `quality_score`: seeded/refreshed from `osm_quality_seed` only while no rider
+ * has contributed a reading ({@link OSM_OWNS_QUALITY}); once `reading_count > 0`
+ * the blend (migration 1811000000000) owns it and the importer leaves it alone.
+ *
  * `elevation_*`: nulled whenever the geometry changes, since they were computed
  * from the previous geometry and would otherwise be served stale by
  * `RoadsService.findById` / fun-zone detail and skew elevation math.
@@ -83,13 +93,16 @@ const OSM_OWNS_SURFACE = `NOT "${TABLE}"."surface_from_reading"`;
  * `WHERE …`: skips no-op rows. A weekly snapshot re-sends mostly-identical rows;
  * without this every conflict emits an unconditional `DO UPDATE`, churning row
  * locks + WAL on a national import. The row updates only if the geometry, an OSM
- * attribute, or an un-classified segment's surface seed actually changed.
+ * attribute, an un-classified segment's surface seed, or a rider-less segment's
+ * quality seed actually changed.
  */
 function buildOnConflictClause(): string {
   const set = [
     ...OSM_REFRESH_COLUMNS.map((c) => `"${c}" = EXCLUDED."${c}"`),
     `"surface_type" = CASE WHEN ${OSM_OWNS_SURFACE} ` +
       `THEN EXCLUDED."surface_type" ELSE "${TABLE}"."surface_type" END`,
+    `"quality_score" = CASE WHEN ${OSM_OWNS_QUALITY} ` +
+      `THEN EXCLUDED."osm_quality_seed" ELSE "${TABLE}"."quality_score" END`,
     ...GEOM_DERIVED_COLUMNS.map(
       (c) =>
         `"${c}" = CASE WHEN ${GEOM_CHANGED} THEN NULL ELSE "${TABLE}"."${c}" END`,
@@ -102,6 +115,8 @@ function buildOnConflictClause(): string {
     ),
     `(${OSM_OWNS_SURFACE} AND ` +
       `"${TABLE}"."surface_type" IS DISTINCT FROM EXCLUDED."surface_type")`,
+    `(${OSM_OWNS_QUALITY} AND ` +
+      `"${TABLE}"."quality_score" IS DISTINCT FROM EXCLUDED."osm_quality_seed")`,
   ];
   const target = CONFLICT_COLUMNS.map((c) => `"${c}"`).join(', ');
   // The identity index is partial on live rows (#835), so the arbiter must carry
@@ -119,12 +134,13 @@ export const ROAD_SEGMENT_ON_CONFLICT = buildOnConflictClause();
  * Carry-over UPDATE (ADR-0006 / #835): re-point an EXISTING row — keeping its
  * `id` and every FK/crowdsourced column — onto an incoming segment that inherited
  * it across a split/merge. Mirrors the conflict clause: refresh the OSM-owned
- * columns, refresh the `surface_type` seed only while the segment isn't
- * rider-classified, and NULL the geometry-derived `elevation_*` (a carry-over is a
+ * columns (including the quality seed + source), refresh the `surface_type` seed
+ * only while the segment isn't rider-classified and `quality_score` only while
+ * it's rider-less, and NULL the geometry-derived `elevation_*` (a carry-over is a
  * reshape by definition, so they'd be stale). Also clears `deactivated_at` so a
  * road that returns is revived rather than left tombstoned. Params: $1 osm_way_id,
  * $2 segment_index, $3 geojson, $4 length_m, $5 curviness_score, $6 road_name,
- * $7 road_number, $8 surface_type, $9 id.
+ * $7 road_number, $8 surface_type, $9 id, $10 osm_quality_seed, $11 quality_source.
  */
 const CARRY_OVER_UPDATE = `
   UPDATE ${TABLE} SET
@@ -137,6 +153,10 @@ const CARRY_OVER_UPDATE = `
     road_number = $7,
     surface_type = CASE WHEN ${OSM_OWNS_SURFACE}
       THEN $8 ELSE "${TABLE}"."surface_type" END,
+    osm_quality_seed = $10,
+    quality_source = $11,
+    quality_score = CASE WHEN ${OSM_OWNS_QUALITY}
+      THEN $10 ELSE "${TABLE}"."quality_score" END,
     elevation_min = NULL,
     elevation_max = NULL,
     elevation_profile = NULL,
@@ -201,11 +221,13 @@ export interface OsmImportResult {
  * transform and bulk-upserts them ON CONFLICT `(osm_way_id, segment_index)`.
  *
  * The conflict clause (see {@link ROAD_SEGMENT_ON_CONFLICT}) refreshes only the
- * OSM-owned columns, leaves the crowdsourced `quality_score` / `confidence` /
- * `reading_count` and the `id` untouched (the #751 stable-identity guarantee),
- * refreshes the `surface_type` seed only until a rider classifies the surface
- * (the durable `surface_from_reading` flag, #796), nulls the geometry-derived
- * `elevation_*` columns when the geometry changes, and skips unchanged rows.
+ * OSM-owned columns, leaves the rider-derived `confidence` / `reading_count` and
+ * the `id` untouched (the #751 stable-identity guarantee), refreshes the
+ * `surface_type` seed only until a rider classifies the surface (the durable
+ * `surface_from_reading` flag, #796), reseeds `quality_score` from the OSM prior
+ * only while the segment stays rider-less (`reading_count = 0` — the blend owns
+ * it once readings exist), nulls the geometry-derived `elevation_*` columns when
+ * the geometry changes, and skips unchanged rows.
  *
  * Split/merge reconciliation (#835, ADR-0006): the whole regional snapshot is
  * buffered and matched against the existing rows in its bbox, so a way that was
@@ -426,6 +448,8 @@ export class OsmImportService {
           row.road_number,
           row.surface_type,
           c.existingId,
+          row.osm_quality_seed,
+          row.quality_source,
         ]);
       }
       // 4. Upsert unchanged + fresh inserts — the keys they need are free now.
