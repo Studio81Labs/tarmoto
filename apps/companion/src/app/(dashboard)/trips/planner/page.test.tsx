@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import TripPlannerPage from "./page";
 import { ToastHost } from "@/components/ToastHost";
 import { useToastStore } from "@/stores/toast";
@@ -689,7 +690,7 @@ describe("TripPlannerPage", () => {
     );
   });
 
-  it("dispatches moveWaypoint with the matching day index and live planner params when a marker is dropped on the map", () => {
+  it("dispatches moveWaypoint with the matching day index and live planner params when a marker is dropped on the map", async () => {
     render(<TripPlannerPage />);
 
     // Change controls so the test can assert the *live* sidebar values
@@ -702,9 +703,12 @@ describe("TripPlannerPage", () => {
     fireEvent.change(screen.getByLabelText("Road preference"), {
       target: { value: "scenic" },
     });
-    fireEvent.change(screen.getByLabelText("Minimum road quality"), {
-      target: { value: "4" },
-    });
+    // Minimum road quality is a react-aria Select — its label points to the
+    // trigger button directly; click to open, then pick the option.
+    await userEvent.click(screen.getByLabelText("Minimum road quality"));
+    await userEvent.click(
+      screen.getByRole("option", { name: "Excellent only" }),
+    );
 
     const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
       | {
@@ -1072,9 +1076,12 @@ describe("TripPlannerPage", () => {
     render(<TripPlannerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
     const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
-    fireEvent.change(within(dialog).getByLabelText("Road preference"), {
-      target: { value: "maximum_twisty" },
-    });
+    // Road preference is a react-aria Select — its label points to the trigger
+    // button directly; click to open, then pick the option.
+    await userEvent.click(within(dialog).getByLabelText("Road preference"));
+    await userEvent.click(
+      screen.getByRole("option", { name: "Maximum twisty" }),
+    );
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Draft roundtrip" }),
     );
@@ -1150,9 +1157,12 @@ describe("TripPlannerPage", () => {
     // Confirm a roundtrip with a DIFFERENT preference…
     fireEvent.click(screen.getByRole("button", { name: "Draft roundtrip" }));
     const dialog = screen.getByRole("dialog", { name: "Roundtrip options" });
-    fireEvent.change(within(dialog).getByLabelText("Road preference"), {
-      target: { value: "maximum_twisty" },
-    });
+    // Road preference is a react-aria Select — its label points to the trigger
+    // button directly; click to open, then pick the option.
+    await userEvent.click(within(dialog).getByLabelText("Road preference"));
+    await userEvent.click(
+      screen.getByRole("option", { name: "Maximum twisty" }),
+    );
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Draft roundtrip" }),
     );
@@ -1404,7 +1414,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Number of days")).toHaveValue(7);
     expect(screen.getByLabelText("Daily km target")).toHaveValue(320);
     expect(screen.getByLabelText("Road preference")).toHaveValue("scenic");
-    expect(screen.getByLabelText("Minimum road quality")).toHaveValue("4");
+    // Minimum road quality is a react-aria Select — assert the selected label.
+    expect(screen.getByLabelText("Minimum road quality")).toHaveTextContent(
+      "Excellent only",
+    );
     expect(screen.getByLabelText("Asphalt")).toBeChecked();
     expect(screen.getByLabelText("Gravel")).toBeChecked();
     expect(screen.getByLabelText("Concrete")).not.toBeChecked();
@@ -1426,7 +1439,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
     // Invalid road value falls back to the revision 3 default: direct.
     expect(screen.getByLabelText("Road preference")).toHaveValue("direct");
-    expect(screen.getByLabelText("Minimum road quality")).toHaveValue("1");
+    // Minimum road quality is a react-aria Select — assert the selected label.
+    expect(screen.getByLabelText("Minimum road quality")).toHaveTextContent(
+      "Any condition",
+    );
     expect(screen.getByLabelText("Asphalt")).toBeChecked();
     expect(screen.getByLabelText("Gravel")).not.toBeChecked();
   });
