@@ -70,6 +70,30 @@ test("filters options as the user types and selects by value", async () => {
   expect(onChange).toHaveBeenCalledWith("prague");
 });
 
+test("populates the input once options resolve the selected key after mount", () => {
+  const { rerender } = render(
+    <Combobox
+      ariaLabel="region"
+      value="prague"
+      onChange={() => {}}
+      options={[]}
+    />,
+  );
+  const input = screen.getByRole("combobox", { name: "region" });
+  // Options haven't loaded — nothing to display yet.
+  expect(input).toHaveValue("");
+  // Options arrive and now resolve the selected key.
+  rerender(
+    <Combobox
+      ariaLabel="region"
+      value="prague"
+      onChange={() => {}}
+      options={CITIES}
+    />,
+  );
+  expect(input).toHaveValue("Prague, CZ");
+});
+
 test("marks an empty-string sentinel option as selected", async () => {
   const OPTS = [
     { value: "", label: "Any" },

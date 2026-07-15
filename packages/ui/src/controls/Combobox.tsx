@@ -67,21 +67,22 @@ export function Combobox({
   className,
 }: ComboboxProps) {
   const selected = options.find((o) => o.value === value);
-  const [query, setQuery] = useState(labelText(selected?.label ?? "", ""));
+  const selectedLabel = labelText(selected?.label ?? "", "");
+  const [query, setQuery] = useState(selectedLabel);
 
+  // Resync the input to the selected option's label whenever that label
+  // changes — the selection moving, options arriving after mount (the selected
+  // key becomes resolvable), or a locale-driven label refresh. Keyed on the
+  // label STRING, not the options array identity, so a caller passing an inline
+  // options array (new identity each render) doesn't reset the query while the
+  // user is typing (typing changes `query`, not `selectedLabel`).
   useEffect(() => {
-    const sel = options.find((o) => o.value === value);
-    setQuery(labelText(sel?.label, ""));
-    // Intentionally keyed on `value` only. Including `options` would reset the
-    // query on every render for callers that pass an inline options array (new
-    // identity each render), breaking typing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+    setQuery(selectedLabel);
+  }, [selectedLabel]);
 
   // The input shows the selected option's label at rest. Treat that as "not a
   // search" so opening the menu with a value still shows every option (browse
   // like a select); only text the user actually edits in becomes a filter.
-  const selectedLabel = labelText(selected?.label ?? "", "");
   const activeFilter = query === selectedLabel ? "" : query.trim();
 
   const matches = useMemo(() => {
