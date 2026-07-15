@@ -18,6 +18,7 @@ import { AdminEmailTemplateService } from './admin-email-template.service.js';
 import {
   EmailTemplateDetailDto,
   EmailTemplateSummaryDto,
+  EmailTemplateVersionDto,
   PreviewRequestDto,
   PreviewResponseDto,
   SaveDraftDto,
@@ -53,6 +54,19 @@ export class AdminEmailTemplateController {
     return this.service.get(tag, this.locale(locale));
   }
 
+  @Get(':tag/:locale/history')
+  @AdminRoles('support')
+  @ApiOperation({
+    summary: 'List published + archived versions of a template (newest first)',
+  })
+  @ApiResponse({ status: 200, type: [EmailTemplateVersionDto] })
+  history(
+    @Param('tag') tag: string,
+    @Param('locale') locale: string,
+  ): Promise<EmailTemplateVersionDto[]> {
+    return this.service.history(tag, this.locale(locale));
+  }
+
   @Put(':tag/:locale/draft')
   @AdminRoles('support')
   @ApiOperation({ summary: 'Save (upsert) the draft override for a template' })
@@ -68,7 +82,7 @@ export class AdminEmailTemplateController {
       target_type: 'email',
       target_id: `${tag}/${loc}`,
     });
-    return this.service.saveDraft(tag, loc, dto);
+    return this.service.saveDraft(tag, loc, dto, req.adminUser?.id ?? null);
   }
 
   @Post(':tag/:locale/preview')
@@ -125,7 +139,32 @@ export class AdminEmailTemplateController {
       target_type: 'email',
       target_id: `${tag}/${loc}`,
     });
-    return this.service.publish(tag, loc);
+    return this.service.publish(tag, loc, req.adminUser?.id ?? null);
+  }
+
+  @Post(':tag/:locale/history/:version/revert')
+  @AdminRoles('super_admin')
+  @ApiOperation({
+    summary:
+      'Revert to a prior version, re-publishing it as a new version (super admin only)',
+  })
+  @ApiResponse({ status: 201, type: EmailTemplateDetailDto })
+  revert(
+    @Req() req: AdminRequest,
+    @Param('tag') tag: string,
+    @Param('locale') locale: string,
+    @Param('version') version: string,
+  ): Promise<EmailTemplateDetailDto> {
+    const loc = this.locale(locale);
+    const v = Number(version);
+    if (!Number.isInteger(v) || v < 1) {
+      throw new BadRequestException(`Invalid version: ${version}`);
+    }
+    setAdminAuditTarget(req, {
+      target_type: 'email',
+      target_id: `${tag}/${loc}`,
+    });
+    return this.service.revert(tag, loc, v, req.adminUser?.id ?? null);
   }
 
   @Delete(':tag/:locale/override')

@@ -61,6 +61,35 @@ export class EmailTemplateDetailDto {
   whitelist!: EmailTemplateWhitelistDto;
 }
 
+export class EmailTemplateVersionDto {
+  @ApiProperty() version!: number;
+
+  @ApiProperty({ enum: ['published', 'archived'] })
+  status!: 'published' | 'archived';
+
+  // Always present in the response; value may be null (system/seed rows) →
+  // ApiProperty + nullable so the generated client types it `string | null`,
+  // not an optional `string | null | undefined`.
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Publisher email; null = system/seed.',
+  })
+  author!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'ISO timestamp the version went live; null if never.',
+  })
+  publishedAt!: string | null;
+
+  @ApiProperty() subject!: string;
+
+  @ApiProperty({ type: [EmailBlockDto] })
+  blocks!: EmailBlockDto[];
+}
+
 export class SaveDraftDto {
   @ApiProperty({
     description: 'Plain-text subject; may contain whitelisted {vars}.',

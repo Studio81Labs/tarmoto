@@ -44,3 +44,23 @@ export function useReset() {
     "/admin/email/templates/{tag}/{locale}/override",
   );
 }
+
+export function useTemplateHistory(
+  tag: string,
+  locale: string,
+  enabled: boolean,
+) {
+  return $api.useQuery(
+    "get",
+    "/admin/email/templates/{tag}/{locale}/history",
+    { params: { path: { tag, locale } } },
+    { enabled: enabled && tag.length > 0 },
+  );
+}
+
+export function useRevertVersion() {
+  return $api.useMutation(
+    "post",
+    "/admin/email/templates/{tag}/{locale}/history/{version}/revert",
+  );
+}
