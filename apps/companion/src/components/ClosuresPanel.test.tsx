@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ClosuresPanel } from "./ClosuresPanel";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import type { PlannerClosure } from "@/lib/closures-summary";
@@ -414,7 +415,7 @@ describe("ClosuresPanel on-route-only planner variant (revision 7)", () => {
     );
   });
 
-  it("renders an inline preview-date picker and reports the noon-UTC date on change", () => {
+  it("renders an inline preview-date picker and reports the noon-UTC date on change", async () => {
     vi.mocked(useClosures).mockReturnValue({
       closures: [],
       routeClosures: [],
@@ -438,13 +439,16 @@ describe("ClosuresPanel on-route-only planner variant (revision 7)", () => {
       />,
     );
 
-    const input = screen.getByLabelText("Preview date");
-    expect(input).toHaveValue("2026-07-15");
-
-    fireEvent.change(input, { target: { value: "2026-08-20" } });
+    // The @tarmoto/ui DatePicker trigger carries the label + formatted value
+    // in its accessible name.
+    const trigger = screen.getByRole("button", { name: /preview date/i });
+    await userEvent.click(trigger);
+    await userEvent.click(
+      screen.getByRole("button", { name: /July 20, 2026/ }),
+    );
     // Anchored at noon UTC so any timezone parses the same calendar day.
     expect(onPreviewDateChange).toHaveBeenCalledWith(
-      new Date(Date.UTC(2026, 7, 20, 12, 0, 0)),
+      new Date(Date.UTC(2026, 6, 20, 12, 0, 0)),
     );
   });
 

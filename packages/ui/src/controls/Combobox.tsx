@@ -166,11 +166,13 @@ export function Combobox({
           {(opt) => (
             <ListBoxItem
               id={opt.value}
+              isDisabled={opt.disabled ?? false}
               textValue={labelText(opt.label, opt.value)}
               className={cn(
                 "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink outline-none",
                 "data-[hovered]:bg-paper-2 data-[focused]:bg-paper-2",
                 "data-[selected]:bg-ink data-[selected]:text-cream",
+                "data-[disabled]:cursor-default data-[disabled]:text-fg-mute",
               )}
             >
               {({ isSelected }) => (
