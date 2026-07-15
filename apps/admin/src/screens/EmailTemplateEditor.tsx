@@ -129,6 +129,29 @@ export function EmailTemplateEditor({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
+  // `beforeunload` only covers full page unloads. This screen is a hash
+  // sub-route (#/email-templates/:tag/:locale) — a sidebar route click or
+  // the browser Back button changes window.location.hash directly and
+  // unmounts this editor with no prompt. useHashRoute (app/routes.ts)
+  // derives active/params fresh from window.location.hash on every render
+  // and only uses a state setter to force a re-render on `hashchange`; React
+  // batches that re-render until after this synchronous handler returns. So
+  // on cancel we can revert the hash before React re-renders, and the
+  // editor stays mounted with local edits intact — the revert itself fires
+  // another `hashchange`, which the `=== editorHash` check below no-ops.
+  useEffect(() => {
+    if (!dirty) return;
+    const editorHash = window.location.hash;
+    const onHashChange = () => {
+      if (window.location.hash === editorHash) return; // our own revert, or no move
+      if (window.confirm("You have unsaved changes. Leave without saving?"))
+        return; // allow the navigation
+      window.location.hash = editorHash; // cancel: stay on this editor
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [dirty]);
+
   const whitelist = data?.whitelist ?? { textVars: [], urlVars: [] };
   const status = data?.status ?? "none";
   const params = { path: { tag, locale } };
@@ -251,12 +274,11 @@ export function EmailTemplateEditor({
       },
     );
   }
+  // onBack navigates by changing window.location.hash, which the hashchange
+  // guard effect above intercepts uniformly — for this button, sidebar
+  // routes, and browser Back — so this stays a plain passthrough and admins
+  // don't see a double confirm.
   function handleBack() {
-    if (
-      dirty &&
-      !window.confirm("You have unsaved changes. Leave without saving?")
-    )
-      return;
     onBack();
   }
 

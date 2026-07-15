@@ -61,6 +61,10 @@ describe("EmailTemplateEditor", () => {
     resetMutate.mockReset();
     invalidateQueriesMock.mockReset();
     templateState.data = templateState.initial;
+    // Several tests below drive window.location.hash directly to exercise
+    // the hashchange dirty-guard; reset it so no test starts from whatever
+    // a previous one left behind.
+    window.location.hash = "";
   });
 
   it("hides Publish/Reset for support and shows Save draft", () => {
@@ -203,11 +207,11 @@ describe("EmailTemplateEditor", () => {
 
   it("keeps the dirty guard if the admin edits again before an in-flight save resolves", () => {
     authState.role = "support";
-    const onBack = vi.fn();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    window.location.hash = "#/email-templates/weekly-digest/en";
 
     render(
-      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={onBack} />,
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
     );
 
     fireEvent.change(screen.getByLabelText(/subject/i), {
@@ -231,9 +235,83 @@ describe("EmailTemplateEditor", () => {
     // dirty, because local state has since diverged from what was saved.
     options.onSuccess();
 
+    // Prove `dirty` is still true via the hashchange guard — the confirm
+    // that used to live in handleBack moved here (see the tests below), and
+    // it only ever prompts while dirty.
+    window.location.hash = "#/users";
+    window.dispatchEvent(new Event("hashchange"));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe("#/email-templates/weekly-digest/en");
+
+    confirmSpy.mockRestore();
+  });
+
+  it("handleBack calls onBack directly without confirming — the hashchange guard owns the prompt now", () => {
+    authState.role = "support";
+    const onBack = vi.fn();
+    // Should never be invoked by this path; mocked defensively so a jsdom
+    // "not implemented" error can't masquerade as an assertion failure.
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={onBack} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "Edited" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /templates/i }));
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(onBack).not.toHaveBeenCalled();
+
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+  });
+
+  it("hashchange guard prompts and reverts the hash when the admin cancels leaving while dirty", () => {
+    authState.role = "support";
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    window.location.hash = "#/email-templates/weekly-digest/en";
+
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "Edited" },
+    });
+    const editorHash = window.location.hash;
+
+    // A sidebar route click or the browser Back button changes the hash
+    // directly — simulate that with a manual hashchange dispatch, the same
+    // way `routes.test.ts` drives window.location.hash for useHashRoute.
+    window.location.hash = "#/users";
+    window.dispatchEvent(new Event("hashchange"));
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe(editorHash);
+
+    confirmSpy.mockRestore();
+  });
+
+  it("hashchange guard allows the navigation when the admin confirms leaving while dirty", () => {
+    authState.role = "support";
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    window.location.hash = "#/email-templates/weekly-digest/en";
+
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/subject/i), {
+      target: { value: "Edited" },
+    });
+
+    window.location.hash = "#/users";
+    window.dispatchEvent(new Event("hashchange"));
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe("#/users");
 
     confirmSpy.mockRestore();
   });
