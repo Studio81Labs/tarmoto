@@ -42,7 +42,7 @@ function parse(value: string): { hour: number; minute: number } | null {
 export function TimePicker({
   value,
   onChange,
-  minuteStep = 15,
+  minuteStep: minuteStepProp = 15,
   label,
   ariaLabel,
   id,
@@ -51,6 +51,12 @@ export function TimePicker({
   error = false,
   className,
 }: TimePickerProps) {
+  // Guard the public prop: 0/negative/non-integer would hang the option loop
+  // (m += 0) or break the 60/step math. Fall back to the documented default.
+  const minuteStep =
+    Number.isInteger(minuteStepProp) && minuteStepProp >= 1
+      ? minuteStepProp
+      : 15;
   const labelId = useId();
   const valueId = useId();
   const errorId = useId();

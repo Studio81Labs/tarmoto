@@ -52,7 +52,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export function DateTimePicker({
   value,
   onChange,
-  minuteStep = 15,
+  minuteStep: minuteStepProp = 15,
   label,
   ariaLabel,
   id,
@@ -61,6 +61,12 @@ export function DateTimePicker({
   error = false,
   className,
 }: DateTimePickerProps) {
+  // Guard the public prop: 0/negative/non-integer would break the 60/step math.
+  // Fall back to the documented default.
+  const minuteStep =
+    Number.isInteger(minuteStepProp) && minuteStepProp >= 1
+      ? minuteStepProp
+      : 15;
   const labelId = useId();
   const valueId = useId();
   const errorId = useId();

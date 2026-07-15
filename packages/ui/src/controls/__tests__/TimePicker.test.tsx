@@ -172,3 +172,18 @@ test("trigger accessible name includes the value when label is set", () => {
   expect(btn).toBeInTheDocument();
   expect(btn).toHaveAccessibleName(expect.stringContaining("08:30"));
 });
+
+test("guards an invalid minuteStep (0) without hanging", () => {
+  render(
+    <TimePicker
+      ariaLabel="Start time"
+      value=""
+      minuteStep={0}
+      onChange={() => {}}
+    />,
+  );
+  // Falls back to the default step; renders (an infinite loop would time out).
+  expect(
+    screen.getByRole("button", { name: /start time/i }),
+  ).toBeInTheDocument();
+});

@@ -167,3 +167,17 @@ test("snaps an off-step minute to the step when the date changes", async () => {
   // minute 20 (off the step-15 grid) snaps to 15 on a date edit
   expect(onChange).toHaveBeenLastCalledWith("2026-05-18T08:15");
 });
+
+test("guards an invalid minuteStep (0) without hanging", () => {
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value=""
+      minuteStep={0}
+      onChange={() => {}}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: /ride start/i }),
+  ).toBeInTheDocument();
+});
