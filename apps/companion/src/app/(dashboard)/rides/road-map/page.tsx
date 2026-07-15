@@ -444,9 +444,16 @@ function RoadMapPageInner() {
           {mapView === "coverage" && (
             <MapLegend riddenCount={filteredRidden.length} />
           )}
+          {/* Routes failed to load: say so rather than let the empty map read
+              as "you have no rides" (Coverage stays available via the toggle). */}
+          {mapView === "routes" && tracksError && (
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-quality-q1/10 px-3 py-1.5 text-[11px] font-semibold text-red-400 backdrop-blur">
+              {t("Couldn't load your rides — try again")}
+            </div>
+          )}
           {/* The route overlay is capped server-side; say so rather than let a
               partial map read as the rider's whole history. */}
-          {mapView === "routes" && rideTracksTruncated && (
+          {mapView === "routes" && !tracksError && rideTracksTruncated && (
             <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-paper/85 px-3 py-1.5 text-[11px] font-semibold text-fg-dim backdrop-blur">
               {t("Showing your {count} most recent rides", {
                 count: rideTracks.length,
@@ -487,7 +494,11 @@ function RoadMapPageInner() {
               formatValue={format}
               label={t("Rides on map")}
               value={rideTracks.length}
-              delta={t("with a recorded route")}
+              delta={
+                tracksError
+                  ? t("couldn't load — try again")
+                  : t("with a recorded route")
+              }
             />
           ) : (
             <MetricTile
