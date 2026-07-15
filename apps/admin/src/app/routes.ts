@@ -15,23 +15,31 @@ export const routes: AdminRoute[] = [
   { key: "feature-flags", label: "Feature Flags", minRole: "admin" },
   { key: "content", label: "Content", minRole: "support" },
   { key: "email", label: "Email Log", minRole: "support" },
+  { key: "email-templates", label: "Email Templates", minRole: "support" },
   { key: "poi-imports", label: "POI Imports", minRole: "support" },
 ];
 
+function currentSegments(): string[] {
+  return window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+}
+
 function currentKey(): string {
-  const key = window.location.hash.replace(/^#\/?/, "");
+  const key = currentSegments()[0] ?? "";
   return routes.some((r) => r.key === key) ? key : "overview";
 }
 
 export function useHashRoute() {
-  const [active, setActive] = useState(currentKey());
+  const [, setHash] = useState(window.location.hash);
   useEffect(() => {
-    const onChange = () => setActive(currentKey());
+    const onChange = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  const navigate = useCallback((key: string) => {
-    window.location.hash = `#/${key}`;
+  const segments = currentSegments();
+  const active = currentKey();
+  const params = segments.slice(1);
+  const navigate = useCallback((path: string) => {
+    window.location.hash = `#/${path}`;
   }, []);
-  return { active, navigate };
+  return { active, params, navigate };
 }
