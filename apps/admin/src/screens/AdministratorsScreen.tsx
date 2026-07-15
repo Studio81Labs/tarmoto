@@ -175,16 +175,14 @@ export function AdministratorsScreen({
                   },
                 );
               }}
+              options={assignableRoles(currentRole).map((role) => ({
+                value: role,
+                label: ROLE_LABEL[role],
+              }))}
               ariaLabel={`Role for ${row.email}`}
               className="w-32"
               tone="cream"
-            >
-              {assignableRoles(currentRole).map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABEL[role]}
-                </option>
-              ))}
-            </Select>
+            />
             <Button
               variant={isActive ? "danger" : "secondary"}
               size="sm"
@@ -351,22 +349,21 @@ export function AdministratorsScreen({
           <Select
             value={newRole}
             onChange={(v) => setNewRole(v as AdminRoleType)}
+            options={assignableRoles(currentRole).map((role) => ({
+              value: role,
+              label: ROLE_LABEL[role],
+            }))}
             ariaLabel="Role"
-          >
-            {assignableRoles(currentRole).map((role) => (
-              <option key={role} value={role}>
-                {ROLE_LABEL[role]}
-              </option>
-            ))}
-          </Select>
+          />
           <Select
             value={newMode}
             onChange={(v) => setNewMode(v as AdminMode)}
+            options={[
+              { value: "sso-only", label: "SSO only" },
+              { value: "password", label: "Password" },
+            ]}
             ariaLabel="Authentication mode"
-          >
-            <option value="sso-only">SSO only</option>
-            <option value="password">Password</option>
-          </Select>
+          />
           {newMode === "password" ? (
             <input
               type="password"

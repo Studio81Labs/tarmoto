@@ -3136,29 +3136,27 @@ export default function TripPlannerPage() {
                   </div>
 
                   <div className="mt-4">
-                    <label
-                      htmlFor="trip-planner-min-quality"
-                      className="mb-2 block text-xs font-bold text-fg-dim"
-                    >
-                      {t("Minimum road quality")}
-                    </label>
                     {/* Owner metadata like the road character above: a member's
                         edit could never persist, only desync the control
                         from the saved value on reload. */}
+                    <p className="mb-2 block text-xs font-bold text-fg-dim">
+                      {t("Minimum road quality")}
+                    </p>
                     <Select
-                      id="trip-planner-min-quality"
-                      value={minQuality}
+                      value={String(minQuality)}
                       onChange={(value) =>
                         handleMinQualityChange(Number(value))
                       }
                       tone="cream"
                       disabled={!canEditTripMetadata}
-                    >
-                      <option value="1">{t("Any condition")}</option>
-                      <option value="2">{t("Fair or better")}</option>
-                      <option value="3">{t("Good or better")}</option>
-                      <option value="4">{t("Excellent only")}</option>
-                    </Select>
+                      ariaLabel={t("Minimum road quality")}
+                      options={[
+                        { value: "1", label: t("Any condition") },
+                        { value: "2", label: t("Fair or better") },
+                        { value: "3", label: t("Good or better") },
+                        { value: "4", label: t("Excellent only") },
+                      ]}
+                    />
                   </div>
 
                   <div className="mt-4">

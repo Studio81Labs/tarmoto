@@ -684,10 +684,11 @@ function PeopleTab({
               onChange={(value) => setRole(value as AssignableTripRole)}
               ariaLabel={t("Invite role")}
               className="w-auto shrink-0"
-            >
-              <option value="editor">{t("Editor")}</option>
-              <option value="viewer">{t("Viewer")}</option>
-            </Select>
+              options={[
+                { value: "editor", label: t("Editor") },
+                { value: "viewer", label: t("Viewer") },
+              ]}
+            />
             <Button
               variant="accent"
               size="md"
