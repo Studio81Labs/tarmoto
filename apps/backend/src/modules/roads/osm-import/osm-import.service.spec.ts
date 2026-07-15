@@ -101,8 +101,8 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
 
   it('never writes the crowdsourced / identity / provenance columns', () => {
     // surface_from_reading is aggregation-owned; the importer only reads it.
+    // quality_score is CASE-gated (see test above); surface_type is similarly gated.
     for (const col of [
-      'quality_score',
       'confidence',
       'reading_count',
       'id',
