@@ -95,6 +95,36 @@ test("renders empty state without throwing and does not call onChange", () => {
   expect(onChange).not.toHaveBeenCalled();
 });
 
+test("changing the hour snaps an off-step minute to the nearest step", async () => {
+  // minuteStep=15; initial value "08:20" — 20 is not a multiple of 15.
+  // snapMinute(20) = Math.min(Math.round(20/15), 3) * 15 = Math.min(1, 3) * 15 = 15
+  const expectedMinute = 15;
+  const onChange = vi.fn();
+  function Wrapper() {
+    const [v, setV] = useState("08:20");
+    return (
+      <TimePicker
+        ariaLabel="Start time"
+        value={v}
+        minuteStep={15}
+        onChange={(nv) => {
+          onChange(nv);
+          setV(nv);
+        }}
+      />
+    );
+  }
+  render(<Wrapper />);
+  await userEvent.click(
+    screen.getByRole("button", { name: /start time|08:20|time/i }),
+  );
+  // Pick hour 09 — should snap the minute from 20 → 15
+  await userEvent.click(screen.getByRole("option", { name: "09" }));
+  expect(onChange).toHaveBeenLastCalledWith(
+    `09:${String(expectedMinute).padStart(2, "0")}`,
+  );
+});
+
 test("error exposes an invalid description to assistive tech", () => {
   render(
     <TimePicker ariaLabel="Start time" value="" onChange={() => {}} error />,

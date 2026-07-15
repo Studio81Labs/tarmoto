@@ -63,6 +63,33 @@ test("stepping the time keeps the date and emits merged ISO", async () => {
   expect(onChange).toHaveBeenLastCalledWith("2026-05-18T09:45");
 });
 
+test("changing the hour snaps an off-step minute to the nearest step", async () => {
+  // minuteStep=15 (default); initial value "2026-05-18T08:20" — 20 is not a multiple of 15.
+  // snapMinute(20) = Math.min(Math.round(20/15), 3) * 15 = Math.min(1, 3) * 15 = 15
+  const expectedMinute = 15;
+  const onChange = vi.fn();
+  function Wrapper() {
+    const [v, setV] = useState("2026-05-18T08:20");
+    return (
+      <DateTimePicker
+        ariaLabel="Ride start"
+        value={v}
+        onChange={(nv) => {
+          onChange(nv);
+          setV(nv);
+        }}
+      />
+    );
+  }
+  render(<Wrapper />);
+  await userEvent.click(screen.getByRole("button", { name: /ride start/i }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Increase hour" }),
+  );
+  const expected = `2026-05-18T09:${String(expectedMinute).padStart(2, "0")}`;
+  expect(onChange).toHaveBeenLastCalledWith(expected);
+});
+
 test("error exposes an invalid description to assistive tech", () => {
   render(
     <DateTimePicker

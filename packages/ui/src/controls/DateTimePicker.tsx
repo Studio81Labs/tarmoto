@@ -87,12 +87,22 @@ export function DateTimePicker({
     return new CalendarDateTime(t.year, t.month, t.day, 0, 0);
   }
 
+  const snapMinute = (m: number) =>
+    Math.min(Math.round(m / minuteStep), Math.floor(60 / minuteStep) - 1) *
+    minuteStep;
+
   function handleHourChange(delta: number) {
     const base = baseDateTime();
     const newHour = (((hour + delta) % 24) + 24) % 24;
     onChange(
       isoDateTime(
-        new CalendarDateTime(base.year, base.month, base.day, newHour, minute),
+        new CalendarDateTime(
+          base.year,
+          base.month,
+          base.day,
+          newHour,
+          snapMinute(minute),
+        ),
       ),
     );
   }

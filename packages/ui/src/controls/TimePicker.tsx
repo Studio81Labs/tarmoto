@@ -65,6 +65,10 @@ export function TimePicker({
 
   const commit = (h: number, m: number) => onChange(`${pad(h)}:${pad(m)}`);
 
+  const snapMinute = (m: number) =>
+    Math.min(Math.round(m / minuteStep), Math.floor(60 / minuteStep) - 1) *
+    minuteStep;
+
   function column(
     head: string,
     items: number[],
@@ -165,7 +169,7 @@ export function TimePicker({
             className="flex gap-1 outline-none"
             aria-label={ariaLabel ?? "Time"}
           >
-            {column("HR", hours, hour, (h) => commit(h, minute))}
+            {column("HR", hours, hour, (h) => commit(h, snapMinute(minute)))}
             {column("MIN", minutes, minute, (m) => commit(hour, m))}
           </Dialog>
         </Popover>

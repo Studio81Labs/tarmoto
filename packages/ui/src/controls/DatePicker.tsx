@@ -1,10 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
-  DatePicker as AriaDatePicker,
-  Label,
-  Group,
+  DialogTrigger,
   Button,
   Popover,
   Dialog,
@@ -53,77 +51,92 @@ export function DatePicker({
   error = false,
   className,
 }: DatePickerProps) {
+  const labelId = useId();
+  const errorId = useId();
+
   return (
-    <AriaDatePicker
-      {...(id !== undefined ? { id } : {})}
-      {...(ariaLabel !== undefined && label === undefined
-        ? { "aria-label": ariaLabel }
-        : {})}
-      isDisabled={disabled}
-      isInvalid={error}
-      value={parseIsoDate(value)}
-      onChange={(d) => onChange(isoDate(d))}
-      className={cn("w-full", className)}
-    >
-      {label !== undefined && <Label className={FIELD_LABEL}>{label}</Label>}
-      <Group
-        className={cn(
-          fieldChrome({ tone, disabled, error, hasLeading: true }),
-          "relative flex items-center",
-        )}
-      >
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute left-3 text-fg-mute"
-        >
-          {/* inline calendar svg */}
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <path d="M16 2v4M8 2v4M3 10h18" />
-          </svg>
+    <div className={cn("w-full", className)}>
+      {label !== undefined && (
+        <span id={labelId} className={FIELD_LABEL}>
+          {label}
         </span>
+      )}
+      {error && (
+        <span id={errorId} className="sr-only">
+          Invalid date
+        </span>
+      )}
+      <DialogTrigger>
         <Button
+          {...(id !== undefined ? { id } : {})}
+          {...(label !== undefined
+            ? { "aria-labelledby": labelId }
+            : ariaLabel !== undefined
+              ? { "aria-label": ariaLabel }
+              : {})}
+          isDisabled={disabled}
+          {...(error ? { "aria-describedby": errorId } : {})}
           className={cn(
-            "flex-1 text-left font-mono text-sm outline-none",
-            value ? "text-ink" : "text-fg-mute",
+            fieldChrome({ tone, disabled, error, hasLeading: true }),
+            "relative flex items-center text-left",
           )}
         >
-          {value ? value : "Select date"}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 text-fg-mute"
+          >
+            {/* inline calendar svg */}
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+          </span>
+          <span
+            className={cn(
+              "font-mono text-sm",
+              value ? "text-ink" : "text-fg-mute",
+            )}
+          >
+            {value ? value : "Select date"}
+          </span>
         </Button>
-      </Group>
-      <Popover className={MENU}>
-        <Dialog className="outline-none">
-          <Calendar>
-            <header className="mb-2 flex items-center justify-between">
-              <Button
-                slot="previous"
-                className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
-              >
-                ‹
-              </Button>
-              <Heading className="font-mono text-[13px] font-semibold text-ink" />
-              <Button
-                slot="next"
-                className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
-              >
-                ›
-              </Button>
-            </header>
-            <CalendarGrid className="border-separate border-spacing-0.5">
-              {(date) => <CalendarCell date={date} className={CELL} />}
-            </CalendarGrid>
-          </Calendar>
-        </Dialog>
-      </Popover>
-    </AriaDatePicker>
+        <Popover className={MENU}>
+          <Dialog className="outline-none" aria-label={ariaLabel ?? "Date"}>
+            <Calendar
+              value={parseIsoDate(value)}
+              onChange={(d) => onChange(isoDate(d))}
+            >
+              <header className="mb-2 flex items-center justify-between">
+                <Button
+                  slot="previous"
+                  className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
+                >
+                  ‹
+                </Button>
+                <Heading className="font-mono text-[13px] font-semibold text-ink" />
+                <Button
+                  slot="next"
+                  className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
+                >
+                  ›
+                </Button>
+              </header>
+              <CalendarGrid className="border-separate border-spacing-0.5">
+                {(date) => <CalendarCell date={date} className={CELL} />}
+              </CalendarGrid>
+            </Calendar>
+          </Dialog>
+        </Popover>
+      </DialogTrigger>
+    </div>
   );
 }

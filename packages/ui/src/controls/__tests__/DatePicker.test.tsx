@@ -7,22 +7,34 @@ test("opens the calendar and reports the picked date as an ISO string", async ()
   render(
     <DatePicker ariaLabel="Departure" value="2026-05-01" onChange={onChange} />,
   );
-  // The calendar-open button's accessible name is "Calendar" (react-aria override)
-  await userEvent.click(screen.getByRole("button", { name: /calendar/i }));
+  // The trigger button is now named by the field (ariaLabel), not "Calendar"
+  await userEvent.click(screen.getByRole("button", { name: /departure/i }));
   // Day cells are <div role="button"> with full date name, e.g. "Monday, May 18, 2026"
   await userEvent.click(screen.getByRole("button", { name: /May 18, 2026/ }));
   expect(onChange).toHaveBeenCalledWith("2026-05-18");
 });
 
-test("label associates via react-aria Label", () => {
+test("label gives the trigger button its accessible name", () => {
   render(<DatePicker label="Departure" value="" onChange={() => {}} />);
-  expect(screen.getByText("Departure")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Departure" })).toBeInTheDocument();
 });
 
 test("renders the empty/unset state without error", () => {
   const onChange = vi.fn();
   render(<DatePicker ariaLabel="Departure" value="" onChange={onChange} />);
-  // the field trigger renders (react-aria names the open button "Calendar")
-  expect(screen.getByRole("button", { name: /calendar/i })).toBeInTheDocument();
+  // The trigger is now named by ariaLabel, not "Calendar"
+  expect(
+    screen.getByRole("button", { name: /departure/i }),
+  ).toBeInTheDocument();
   expect(onChange).not.toHaveBeenCalled();
+});
+
+test("error exposes an invalid description to assistive tech", () => {
+  render(
+    <DatePicker ariaLabel="Departure" value="" onChange={() => {}} error />,
+  );
+  const trigger = screen.getByRole("button", { name: "Departure" });
+  const desc = screen.getByText("Invalid date");
+  expect(desc).toHaveClass("sr-only");
+  expect(trigger).toHaveAttribute("aria-describedby", desc.id);
 });
