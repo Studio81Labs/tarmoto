@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   DialogTrigger,
   Button,
@@ -54,6 +54,7 @@ export function DatePicker({
   const labelId = useId();
   const valueId = useId();
   const errorId = useId();
+  const [open, setOpen] = useState(false);
 
   return (
     <div className={cn("w-full", className)}>
@@ -67,7 +68,7 @@ export function DatePicker({
           Invalid date
         </span>
       )}
-      <DialogTrigger>
+      <DialogTrigger isOpen={open} onOpenChange={setOpen}>
         <Button
           {...(id !== undefined ? { id } : {})}
           {...(label !== undefined
@@ -115,7 +116,12 @@ export function DatePicker({
           <Dialog className="outline-none" aria-label={ariaLabel ?? "Date"}>
             <Calendar
               value={parseIsoDate(value)}
-              onChange={(d) => onChange(isoDate(d))}
+              onChange={(d) => {
+                onChange(isoDate(d));
+                // Single date: committing a day dismisses the popover (react-aria's
+                // own DatePicker did this; the generic DialogTrigger does not).
+                setOpen(false);
+              }}
             >
               <header className="mb-2 flex items-center justify-between">
                 <Button

@@ -58,3 +58,16 @@ test("trigger accessible name includes the value when label is set", () => {
   expect(btn).toBeInTheDocument();
   expect(btn).toHaveAccessibleName(expect.stringContaining("2026-05-18"));
 });
+
+test("closes the popover after a day is selected", async () => {
+  render(
+    <DatePicker ariaLabel="Departure" value="2026-05-01" onChange={() => {}} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /departure/i }));
+  // calendar open
+  await userEvent.click(screen.getByRole("button", { name: /May 18, 2026/ }));
+  // committing the day dismisses the popover — day cells are gone
+  expect(
+    screen.queryByRole("button", { name: /May 18, 2026/ }),
+  ).not.toBeInTheDocument();
+});
