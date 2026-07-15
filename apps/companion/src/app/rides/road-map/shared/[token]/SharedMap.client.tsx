@@ -33,6 +33,11 @@ export function SharedMap({ initialCenter, segments }: Props) {
         ref={mapRef}
         initialCenter={initialCenter}
         ridden={segments}
+        // A shared map is a coverage snapshot (ridden segments only, no live
+        // ride tracks), so show coverage and hide the routes view.
+        showCoverage
+        showRoutes={false}
+        selectedSegmentId={selectedSegmentId}
         // The public share page is always cream — pin the basemap to light and
         // paint unridden roads in a light tan that reads against it.
         forceColorScheme="light"

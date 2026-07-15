@@ -19,7 +19,15 @@ const EMPTY: RideTrack[] = [];
  * rider when older routes are hidden by the cap (rather than silently showing
  * an incomplete overlay).
  */
-export function useUserRideTracks(options?: { enabled?: boolean }): {
+export function useUserRideTracks(options?: {
+  enabled?: boolean;
+  /**
+   * Only rides started on/after this ISO instant (passed to the endpoint's
+   * `started_from`). Lets a time-windowed view (e.g. the road map's period
+   * pills) show routes for the same window as the rest of the page.
+   */
+  startedFrom?: string | null;
+}): {
   tracks: RideTrack[];
   truncated: boolean;
   loading: boolean;
@@ -27,12 +35,16 @@ export function useUserRideTracks(options?: { enabled?: boolean }): {
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const enabled = userId != null && (options?.enabled ?? true);
+  const startedFrom = options?.startedFrom ?? null;
 
   const query = useQuery({
-    queryKey: ["user-ride-tracks", userId],
+    queryKey: ["user-ride-tracks", userId, startedFrom],
     enabled,
     queryFn: async ({ signal }) => {
       const { data, error } = await api.GET("/api/v1/rides/tracks", {
+        ...(startedFrom
+          ? { params: { query: { started_from: startedFrom } } }
+          : {}),
         signal,
       });
       if (error || !data) throw new Error("ride tracks fetch failed");

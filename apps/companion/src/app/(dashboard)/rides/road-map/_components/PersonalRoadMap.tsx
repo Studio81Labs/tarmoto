@@ -149,15 +149,35 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       viewRef.current = { showRoutes, showCoverage };
     }, [showRoutes, showCoverage]);
 
-    useImperativeHandle(ref, () => ({
-      flyTo: ({ lat, lng, zoom }) => {
-        const map = mapRef.current;
-        if (!map) return;
+    // A flyTo requested before the map is ready (e.g. a cached geolocation
+    // resolving during mount) is queued and replayed on ready — otherwise it'd
+    // no-op and the map would stay at the initial fallback centre.
+    const pendingFlyToRef = useRef<{
+      lat: number;
+      lng: number;
+      zoom?: number;
+    } | null>(null);
+    const flyToTarget = useCallback(
+      (
+        map: MapLibreMap,
+        target: { lat: number; lng: number; zoom?: number },
+      ) => {
         map.flyTo({
-          center: [lng, lat],
-          zoom: zoom ?? Math.max(map.getZoom(), 9),
+          center: [target.lng, target.lat],
+          zoom: target.zoom ?? Math.max(map.getZoom(), 9),
           essential: true,
         });
+      },
+      [],
+    );
+    useImperativeHandle(ref, () => ({
+      flyTo: (target) => {
+        const map = mapRef.current;
+        if (!map) {
+          pendingFlyToRef.current = target;
+          return;
+        }
+        flyToTarget(map, target);
       },
     }));
 
@@ -317,11 +337,18 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         map.on("click", handleMapClick);
 
         setReady(true);
+
+        // Replay a fly-to that arrived before the map was ready (queued above).
+        if (pendingFlyToRef.current) {
+          const target = pendingFlyToRef.current;
+          pendingFlyToRef.current = null;
+          flyToTarget(map, target);
+        }
         // `dimColor` / `showCoverage` are read when the layers are added on map
         // load; stable per mount (the effects handle later changes), but listed
         // so the linter is satisfied.
       },
-      [dimColor, showCoverage],
+      [dimColor, showCoverage, flyToTarget],
     );
 
     // Apply `feature-state.ridden = true` for every segment in the current

@@ -46,7 +46,7 @@ import {
 } from "@/lib/utils";
 import type { components } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
-import { useTimeWindow } from "../_components/TimeWindowPills";
+import { useTimeWindow, windowStartISO } from "../_components/TimeWindowPills";
 import {
   buildMapShareSnapshot,
   filterRiddenByPeriod,
@@ -106,9 +106,12 @@ function RoadMapPageInner() {
   // Which map view is active: the rider's finished ride routes (default) or the
   // ridden-segment coverage / exploration overlay behind a toggle.
   const [mapView, setMapView] = useState<"routes" | "coverage">("routes");
-  // The rider's finished ride routes (GPS tracks). Drawn as the primary layer;
-  // the ≤500 server cap is plenty for a personal history.
-  const { tracks: rideTracks } = useUserRideTracks();
+  // The rider's finished ride routes (GPS tracks), windowed to the same time
+  // period as the coverage view + sidebar so the map doesn't contradict the
+  // active pill. `truncated` flags when the ≤500 server cap hides older rides.
+  const tracksStartedFrom = useMemo(() => windowStartISO(period), [period]);
+  const { tracks: rideTracks, truncated: rideTracksTruncated } =
+    useUserRideTracks({ startedFrom: tracksStartedFrom });
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -432,6 +435,15 @@ function RoadMapPageInner() {
               rider already knows the lines are their rides. */}
           {mapView === "coverage" && (
             <MapLegend riddenCount={filteredRidden.length} />
+          )}
+          {/* The route overlay is capped server-side; say so rather than let a
+              partial map read as the rider's whole history. */}
+          {mapView === "routes" && rideTracksTruncated && (
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-paper/85 px-3 py-1.5 text-[11px] font-semibold text-fg-dim backdrop-blur">
+              {t("Showing your {count} most recent rides", {
+                count: rideTracks.length,
+              })}
+            </div>
           )}
           <SegmentDetailSidebar
             state={segmentDetailState}
