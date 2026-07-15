@@ -8,7 +8,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { Crosshair, Loader2, Map as MapIcon, Share2 } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowUpRight,
+  Crosshair,
+  Loader2,
+  Map as MapIcon,
+  Share2,
+  X,
+} from "lucide-react";
 import {
   Alert,
   Button,
@@ -22,7 +30,7 @@ import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import type { UnitSystem } from "@tarmoto/shared";
-import { ApiError, explorationApi, roadsApi } from "@/lib/api";
+import { api, ApiError, explorationApi, roadsApi } from "@/lib/api";
 import { shareRoadMap } from "@/lib/road-map-share";
 import type {
   ExplorationStats,
@@ -30,10 +38,13 @@ import type {
   UnriddenSegment,
 } from "@/lib/api";
 import {
+  formatDate,
   formatDistance,
   formatDistanceFromMeters,
+  formatDuration,
   scoreToQualityTier,
 } from "@/lib/utils";
+import type { components } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
 import { useTimeWindow } from "../_components/TimeWindowPills";
 import {
@@ -111,6 +122,13 @@ function RoadMapPageInner() {
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
+  // Routes view: the ride whose popover is open (clicked route line).
+  const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
+  // Only one map selection at a time — opening a ride closes any segment drawer.
+  const selectRide = useCallback((rideId: string) => {
+    setSelectedSegmentId(null);
+    setSelectedRideId(rideId);
+  }, []);
   // In-flight guard (a ref, not state) so the button looks identical to the
   // ride-detail / community Share — no loading/label multistate — while still
   // ignoring a double-click that would POST a second map_shares row.
@@ -402,7 +420,12 @@ function RoadMapPageInner() {
             showRoutes={mapView === "routes"}
             showCoverage={mapView === "coverage"}
             selectedSegmentId={selectedSegmentId}
-            onSegmentSelect={setSelectedSegmentId}
+            selectedRideId={selectedRideId}
+            onSegmentSelect={(id) => {
+              setSelectedRideId(null);
+              setSelectedSegmentId(id);
+            }}
+            onRouteSelect={selectRide}
           />
           <MapViewToggle view={mapView} onChange={setMapView} />
           {/* Routes need no legend — this is the Ride History section, so a
@@ -415,6 +438,13 @@ function RoadMapPageInner() {
             onClose={() => setSelectedSegmentId(null)}
             anchor="viewport"
           />
+          {selectedRideId && (
+            <RideRoutePopover
+              rideId={selectedRideId}
+              unitSystem={unitSystem}
+              onClose={() => setSelectedRideId(null)}
+            />
+          )}
           <button
             type="button"
             onClick={handleCenterOnMe}
@@ -639,6 +669,111 @@ function LoaderRow({ label }: LoaderRowProps) {
     </div>
   );
 }
+type RideDetail = components["schemas"]["RideDetailDto"];
+
+/**
+ * Popover for a clicked ride line (routes view): basic stats + a link to the
+ * full ride detail — the same `/rides/:id` the All-rides list links to. Fetches
+ * its own detail so the page doesn't carry ride state.
+ */
+function RideRoutePopover({
+  rideId,
+  unitSystem,
+  onClose,
+}: {
+  rideId: string;
+  unitSystem: UnitSystem;
+  onClose: () => void;
+}) {
+  const [ride, setRide] = useState<RideDetail | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    setStatus("loading");
+    setRide(null);
+    api
+      .GET("/api/v1/rides/{rideId}", {
+        params: { path: { rideId } },
+        signal: controller.signal,
+      })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          setStatus("error");
+          return;
+        }
+        setRide(data as RideDetail);
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [rideId]);
+  return (
+    <div className="absolute bottom-4 left-4 z-20 w-[264px] rounded-xl border border-line bg-cream p-3.5 shadow-[0_8px_24px_rgba(14,14,16,0.14)]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {status === "ready" && ride ? (
+            <>
+              <p className="truncate text-sm font-extrabold text-ink">
+                {ride.name || formatDate(ride.started_at)}
+              </p>
+              <p className="text-[11px] text-fg-dim">
+                {formatDate(ride.started_at)}
+              </p>
+            </>
+          ) : status === "error" ? (
+            <p className="text-sm font-bold text-ink">
+              {t("Couldn't load ride")}
+            </p>
+          ) : (
+            <p className="flex items-center gap-2 text-xs text-fg-dim">
+              <Loader2 size={13} aria-hidden className="animate-spin" />
+              {t("Loading ride…")}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("Close ride")}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-line-strong text-fg-dim transition hover:border-ink hover:text-ink"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      {status === "ready" && ride && (
+        <>
+          <div className="mt-2 flex items-center gap-3 text-xs text-fg-dim">
+            {ride.distance_km != null && (
+              <span className="font-bold text-ink">
+                {formatDistance(ride.distance_km, unitSystem)}
+              </span>
+            )}
+            {ride.duration_min != null && (
+              <span>{formatDuration(ride.duration_min)}</span>
+            )}
+          </div>
+          <Link
+            href={`/rides/${ride.id}`}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-ink px-3 py-2 text-[12.5px] font-bold text-cream transition hover:brightness-110"
+          >
+            {t("Open ride")}
+            <ArrowUpRight size={14} strokeWidth={2.5} />
+          </Link>
+        </>
+      )}
+    </div>
+  );
+}
+
 type MapView = "routes" | "coverage";
 
 function MapViewToggle({

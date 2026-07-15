@@ -26,6 +26,8 @@ import {
   setRideRouteLayersVisible,
   setRideRouteSourceData,
   RIDE_ROUTE_LAYER,
+  RIDE_ROUTE_SOURCE,
+  RIDE_ROUTE_COLOR,
   type RideTrack,
 } from "@/components/map/RideRouteLayer";
 import {
@@ -37,6 +39,10 @@ import {
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
 const NO_TRACKS: readonly RideTrack[] = [];
+// Wider, opaque overlay of the clicked ride's line so it reads as "selected"
+// while its popover is open. A rideId no real ride uses hides it.
+const RIDE_ROUTE_HIGHLIGHT_LAYER = "road-map-ride-route-highlight";
+const NO_RIDE_MATCH = "__none__";
 
 export interface PersonalRoadMapHandle {
   flyTo: (coords: { lat: number; lng: number; zoom?: number }) => void;
@@ -91,6 +97,8 @@ interface Props {
    * over this feature on the shared road source.
    */
   selectedSegmentId?: string | null;
+  /** Ride whose popover is open — its route line is drawn wider/opaque. */
+  selectedRideId?: string | null;
 }
 
 /**
@@ -116,6 +124,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       onSegmentSelect,
       onRouteSelect,
       selectedSegmentId,
+      selectedRideId,
     },
     ref,
   ) {
@@ -219,6 +228,33 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         // initial flag here is just a placeholder.
         ensureRideRouteLayers(map, { visible: true });
 
+        // Selected-ride highlight: a wider, opaque overlay on the same source,
+        // filtered to the open ride by the effect below.
+        if (!map.getLayer(RIDE_ROUTE_HIGHLIGHT_LAYER)) {
+          map.addLayer({
+            id: RIDE_ROUTE_HIGHLIGHT_LAYER,
+            type: "line",
+            source: RIDE_ROUTE_SOURCE,
+            filter: ["==", ["get", "rideId"], NO_RIDE_MATCH],
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: {
+              "line-color": RIDE_ROUTE_COLOR,
+              "line-width": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                8,
+                6,
+                12,
+                9,
+                16,
+                12,
+              ] as ExpressionSpecification,
+              "line-opacity": 1,
+            },
+          });
+        }
+
         // Hit-testing binds to the cyan layer, which paints every quality
         // feature (unridden ones at opacity 0 via feature-state) so MapLibre
         // still hit-tests their geometry; the `meta` lookup distinguishes
@@ -318,6 +354,22 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       if (!map || !ready) return;
       setRideRouteLayersVisible(map, showRoutes);
     }, [ready, showRoutes]);
+
+    // Highlight the open ride's line (routes view only).
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready || !map.getLayer(RIDE_ROUTE_HIGHLIGHT_LAYER)) return;
+      map.setLayoutProperty(
+        RIDE_ROUTE_HIGHLIGHT_LAYER,
+        "visibility",
+        showRoutes ? "visible" : "none",
+      );
+      map.setFilter(RIDE_ROUTE_HIGHLIGHT_LAYER, [
+        "==",
+        ["get", "rideId"],
+        showRoutes && selectedRideId ? selectedRideId : NO_RIDE_MATCH,
+      ]);
+    }, [ready, showRoutes, selectedRideId]);
 
     // Coverage overlay visibility (the ridden-segment exploration view). Hiding
     // it also drops its hit-testing, so segment clicks only fire in that view.
