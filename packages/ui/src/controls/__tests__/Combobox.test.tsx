@@ -69,3 +69,23 @@ test("filters options as the user types and selects by value", async () => {
   await userEvent.click(screen.getByRole("option", { name: "Prague, CZ" }));
   expect(onChange).toHaveBeenCalledWith("prague");
 });
+
+test("opening with a value shows all options to browse (not just the selection)", async () => {
+  render(
+    <Combobox
+      ariaLabel="region"
+      value="prague"
+      onChange={() => {}}
+      options={CITIES}
+    />,
+  );
+  // Open via the disclosure button without typing.
+  await userEvent.click(screen.getByRole("button"));
+  // The whole list is browsable, not filtered down to the selected label.
+  expect(
+    screen.getByRole("option", { name: "Prague, CZ" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("option", { name: "Ostrava, CZ" }),
+  ).toBeInTheDocument();
+});

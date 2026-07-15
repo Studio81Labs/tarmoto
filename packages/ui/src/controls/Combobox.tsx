@@ -76,13 +76,19 @@ export function Combobox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
+  // The input shows the selected option's label at rest. Treat that as "not a
+  // search" so opening the menu with a value still shows every option (browse
+  // like a select); only text the user actually edits in becomes a filter.
+  const selectedLabel = labelText(selected?.label ?? "", "");
+  const activeFilter = query === selectedLabel ? "" : query.trim();
+
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = activeFilter.toLowerCase();
     if (!q) return options;
     return options.filter((o) =>
       labelText(o.label, o.value).toLowerCase().includes(q),
     );
-  }, [options, query]);
+  }, [options, activeFilter]);
 
   return (
     <AriaComboBox
@@ -150,7 +156,7 @@ export function Combobox({
               {({ isSelected }) => (
                 <>
                   <span className="truncate">
-                    {highlight(labelText(opt.label, opt.value), query.trim())}
+                    {highlight(labelText(opt.label, opt.value), activeFilter)}
                   </span>
                   {isSelected && (
                     <svg
