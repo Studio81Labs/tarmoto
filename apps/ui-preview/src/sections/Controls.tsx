@@ -3,6 +3,8 @@ import { Section, SubStamp } from "../Section";
 import {
   Card,
   Combobox,
+  DatePicker,
+  DateTimePicker,
   FieldLabel,
   Input,
   NumberField,
@@ -13,6 +15,7 @@ import {
   Slider,
   SwatchPicker,
   Textarea,
+  TimePicker,
   Toggle,
 } from "@tarmoto/ui";
 import { CodeBlock, CN, CS } from "./_shared";
@@ -42,6 +45,11 @@ export function ControlsSection() {
   // Select / Combobox state
   const [quality, setQuality] = useState("any");
   const [homeRegion, setHomeRegion] = useState("brno");
+
+  // Date / time picker state
+  const [departureDate, setDepartureDate] = useState("2026-05-18");
+  const [startTime, setStartTime] = useState("08:30");
+  const [rideStart, setRideStart] = useState("2026-05-18T08:30");
 
   return (
     <Section
@@ -456,6 +464,70 @@ export function ControlsSection() {
               <CN>bg-accent/14</CN>
               {` rounded-[3px] on match\n`}
               {`header: mono 10 px · "N matches" count`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* Date picker */}
+        <Card padded className="!p-6">
+          <SubStamp>Date picker</SubStamp>
+          <DatePicker
+            label="Departure"
+            value={departureDate}
+            onChange={setDepartureDate}
+          />
+          <div className="mt-4">
+            <CodeBlock>
+              {`value: ISO `}
+              <CN>"YYYY-MM-DD"</CN>
+              {`\n`}
+              {`label prop renders its own `}
+              <CN>FieldLabel</CN>
+              {`\n`}
+              {`same fieldChrome() chrome as Input`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* Time picker */}
+        <Card padded className="!p-6">
+          <SubStamp>Time picker · 24h</SubStamp>
+          <TimePicker
+            label="Start time"
+            value={startTime}
+            onChange={setStartTime}
+            minuteStep={15}
+          />
+          <div className="mt-4">
+            <CodeBlock>
+              {`value: ISO `}
+              <CN>"HH:MM"</CN>
+              {` (24h)\n`}
+              {`minuteStep: `}
+              <CN>15</CN>
+              {` · default 15\n`}
+              {`same fieldChrome() chrome as Input`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* Date-time picker */}
+        <Card padded className="!p-6">
+          <SubStamp>Date-time picker</SubStamp>
+          <DateTimePicker
+            label="Ride start"
+            value={rideStart}
+            onChange={setRideStart}
+          />
+          <div className="mt-4">
+            <CodeBlock>
+              {`value: ISO `}
+              <CN>"YYYY-MM-DDTHH:MM"</CN>
+              {`\n`}
+              {`combines DatePicker + TimePicker chrome\n`}
+              {`minuteStep: `}
+              <CN>15</CN>
+              {` default`}
             </CodeBlock>
           </div>
         </Card>
