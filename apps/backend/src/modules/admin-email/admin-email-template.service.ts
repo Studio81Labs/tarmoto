@@ -341,6 +341,61 @@ export class AdminEmailTemplateService {
     }));
   }
 
+  /** Rolls back to a prior version by re-publishing its content as a NEW
+   *  version (audited to the acting admin). The target content is re-read from
+   *  the DB and re-validated — never trusted from the client — and the current
+   *  published row is archived first (partial unique index). The original
+   *  target row stays as history; an existing draft is left untouched. */
+  async revert(
+    tag: string,
+    locale: SupportedLocale,
+    version: number,
+    actorId: string | null = null,
+  ): Promise<EmailTemplateDetailDto> {
+    this.assertEditable(tag);
+    const saved = await this.dataSource.transaction(async (m) => {
+      await this.lockTemplate(m, tag, locale);
+      const target = await m.findOne(EmailTemplate, {
+        where: {
+          template_tag: tag,
+          locale,
+          version,
+          status: In(['published', 'archived']),
+        },
+      });
+      if (!target) {
+        throw new NotFoundException(
+          `No version ${version} for ${tag}/${locale}`,
+        );
+      }
+      const check = validateBlockDocument(tag, {
+        subject: target.subject,
+        blocks: target.blocks,
+      });
+      if (!check.ok) {
+        throw new BadRequestException(check.errors);
+      }
+      const next = await this.nextVersion(m, tag, locale);
+      await m.update(
+        EmailTemplate,
+        { template_tag: tag, locale, status: 'published' },
+        { status: 'archived' },
+      );
+      const row = m.create(EmailTemplate, {
+        template_tag: tag,
+        locale,
+        subject: target.subject,
+        blocks: target.blocks,
+        status: 'published',
+        version: next,
+        created_by: actorId,
+        published_at: new Date(),
+      });
+      return m.save(row);
+    });
+    return this.toDetail(tag, locale, saved);
+  }
+
   /** Rejects any tag outside the 6 editable ones — locked tags 404 everywhere, per spec. */
   private assertEditable(tag: string): asserts tag is EditableTag {
     if (!(EDITABLE_TAGS as readonly string[]).includes(tag)) {

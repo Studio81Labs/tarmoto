@@ -142,6 +142,31 @@ export class AdminEmailTemplateController {
     return this.service.publish(tag, loc, req.adminUser?.id ?? null);
   }
 
+  @Post(':tag/:locale/history/:version/revert')
+  @AdminRoles('super_admin')
+  @ApiOperation({
+    summary:
+      'Revert to a prior version, re-publishing it as a new version (super admin only)',
+  })
+  @ApiResponse({ status: 201, type: EmailTemplateDetailDto })
+  revert(
+    @Req() req: AdminRequest,
+    @Param('tag') tag: string,
+    @Param('locale') locale: string,
+    @Param('version') version: string,
+  ): Promise<EmailTemplateDetailDto> {
+    const loc = this.locale(locale);
+    const v = Number(version);
+    if (!Number.isInteger(v) || v < 1) {
+      throw new BadRequestException(`Invalid version: ${version}`);
+    }
+    setAdminAuditTarget(req, {
+      target_type: 'email',
+      target_id: `${tag}/${loc}`,
+    });
+    return this.service.revert(tag, loc, v, req.adminUser?.id ?? null);
+  }
+
   @Delete(':tag/:locale/override')
   @AdminRoles('super_admin')
   @ApiOperation({

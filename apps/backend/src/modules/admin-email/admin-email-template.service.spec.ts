@@ -347,6 +347,99 @@ describe('AdminEmailTemplateService', () => {
     });
   });
 
+  it('reset deletes only the published row, preserving archived history', async () => {
+    const { service, manager } = make();
+    await service.reset('weekly-digest', 'en');
+    // Deletes the published row only — archived rows are untouched, so a
+    // revert remains possible after a reset.
+    expect(manager.delete).toHaveBeenCalledWith(expect.anything(), {
+      template_tag: 'weekly-digest',
+      locale: 'en',
+      status: 'published',
+    });
+    expect(manager.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('revert re-publishes the target version content as a new version, archiving the current live one', async () => {
+    const { service, manager } = make();
+    const target = {
+      template_tag: 'weekly-digest',
+      locale: 'en',
+      status: 'archived',
+      version: 2,
+      subject: 'old-good',
+      blocks: [{ type: 'paragraph', text: 'restore me' }],
+    };
+    manager.findOne.mockImplementation(
+      (
+        _entity: unknown,
+        opts: { where: { version?: number }; order?: { version?: string } },
+      ) => {
+        if (opts.where.version === 2) return Promise.resolve(target); // target lookup
+        if (opts.order?.version === 'DESC')
+          return Promise.resolve({ version: 4 }); // highest existing
+        return Promise.resolve(null);
+      },
+    );
+
+    const result = await service.revert('weekly-digest', 'en', 2, 'admin-9');
+
+    // Serialized under the advisory lock.
+    expect(manager.query).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      ['email_template:weekly-digest:en'],
+    );
+    // Archive current published before inserting the new one.
+    expect(manager.update).toHaveBeenCalledWith(
+      expect.anything(),
+      { template_tag: 'weekly-digest', locale: 'en', status: 'published' },
+      { status: 'archived' },
+    );
+    expect(manager.update.mock.invocationCallOrder[0]!).toBeLessThan(
+      manager.save.mock.invocationCallOrder[0]!,
+    );
+    // New published version = MAX+1, target's content, acting admin as author.
+    expect(manager.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'published',
+        version: 5,
+        subject: 'old-good',
+        created_by: 'admin-9',
+      }),
+    );
+    expect(result.status).toBe('published');
+    expect(result.version).toBe(5);
+  });
+
+  it('revert 404s for an unknown version', async () => {
+    const { service, manager } = make();
+    manager.findOne.mockResolvedValue(null);
+    await expect(
+      service.revert('weekly-digest', 'en', 99, 'admin-9'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('revert 400s and mutates nothing when the target content fails current validation', async () => {
+    const { service, manager } = make();
+    const badTarget = {
+      template_tag: 'weekly-digest',
+      locale: 'en',
+      status: 'archived',
+      version: 2,
+      subject: 'Weekly\r\nBcc: evil@example.com',
+      blocks: [],
+    };
+    manager.findOne.mockImplementation(
+      (_entity: unknown, opts: { where: { version?: number } }) =>
+        Promise.resolve(opts.where.version === 2 ? badTarget : null),
+    );
+    await expect(
+      service.revert('weekly-digest', 'en', 2, 'admin-9'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(manager.update).not.toHaveBeenCalled();
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
   it('404s for a non-editable (locked) tag', async () => {
     const { service } = make();
     await expect(service.get('verification', 'en')).rejects.toBeInstanceOf(

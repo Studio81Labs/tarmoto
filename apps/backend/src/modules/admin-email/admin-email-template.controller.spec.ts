@@ -17,6 +17,7 @@ describe('AdminEmailTemplateController', () => {
     publish: jest.fn().mockResolvedValue({ tag: 'weekly-digest' }),
     reset: jest.fn().mockResolvedValue(undefined),
     history: jest.fn().mockResolvedValue([]),
+    revert: jest.fn().mockResolvedValue({ tag: 'weekly-digest' }),
   } as unknown as jest.Mocked<AdminEmailTemplateService>;
   const controller = new AdminEmailTemplateController(service);
   const adminReq = () =>
@@ -50,6 +51,16 @@ describe('AdminEmailTemplateController', () => {
           ADMIN_ROLES_KEY,
           // eslint-disable-next-line @typescript-eslint/unbound-method -- read for its metadata, never called unbound.
           AdminEmailTemplateController.prototype.reset,
+        ),
+      ).toEqual(['super_admin']);
+    });
+
+    it('requires super_admin on revert', () => {
+      expect(
+        Reflect.getMetadata(
+          ADMIN_ROLES_KEY,
+          // eslint-disable-next-line @typescript-eslint/unbound-method -- read for its metadata, never called unbound.
+          AdminEmailTemplateController.prototype.revert,
         ),
       ).toEqual(['super_admin']);
     });
@@ -125,6 +136,27 @@ describe('AdminEmailTemplateController', () => {
       await controller.history('weekly-digest', 'en');
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(service.history).toHaveBeenCalledWith('weekly-digest', 'en');
+    });
+
+    it('revert parses the version and forwards (tag, locale, version, actorId)', async () => {
+      const req = adminReq();
+      await controller.revert(req, 'weekly-digest', 'en', '3');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.revert).toHaveBeenCalledWith(
+        'weekly-digest',
+        'en',
+        3,
+        'admin-1',
+      );
+    });
+
+    it('revert rejects a non-numeric version without calling the service', () => {
+      const req = adminReq();
+      expect(() =>
+        controller.revert(req, 'weekly-digest', 'en', 'abc'),
+      ).toThrow(BadRequestException);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.revert).not.toHaveBeenCalled();
     });
   });
 });
