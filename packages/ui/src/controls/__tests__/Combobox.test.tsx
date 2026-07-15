@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Combobox } from "../Combobox";
@@ -130,4 +130,36 @@ test("opening with a value shows all options to browse (not just the selection)"
   expect(
     screen.getByRole("option", { name: "Ostrava, CZ" }),
   ).toBeInTheDocument();
+});
+
+test("keeps the search highlight readable on the selected (ink) row", async () => {
+  const { rerender } = render(
+    <Combobox
+      ariaLabel="region"
+      value="prague"
+      onChange={() => {}}
+      options={CITIES}
+    />,
+  );
+  const input = screen.getByRole("combobox", { name: "region" });
+  await userEvent.clear(input);
+  await userEvent.type(input, "Pra");
+  // react-aria caches item content by option identity; pass a fresh identity so
+  // the highlight re-renders with the active filter (mirrors a caller that
+  // rebuilds options as the query changes).
+  rerender(
+    <Combobox
+      ariaLabel="region"
+      value="prague"
+      onChange={() => {}}
+      options={CITIES.map((c) => ({ ...c }))}
+    />,
+  );
+  // Prague stays the selected key, so its row is ink-filled. The matched "Pra"
+  // highlight must use cream — the default ink text would be invisible
+  // dark-on-dark.
+  const selectedOption = screen.getByRole("option", { selected: true });
+  const mark = within(selectedOption).getByText("Pra");
+  expect(mark).toHaveClass("text-cream");
+  expect(mark).not.toHaveClass("text-ink");
 });

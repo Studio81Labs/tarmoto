@@ -268,13 +268,12 @@ test.describe("rides extras", () => {
     await expect(page.getByText(/average road quality/i)).toBeVisible();
   });
 
-  // T33 — Personal road map: `/rides/road-map` overlays the rider's
-  // ridden *segments* on a map. The mock's exploration endpoints report
-  // zero ridden segments (seeded rides don't synthesise exploration
-  // coverage), so the page correctly settles into its empty state. The
-  // assertions prove the route mounts inside the Rides chrome and the
-  // exploration fetch resolved into the empty view rather than the error
-  // branch or a white screen — catching deletion-style regressions.
+  // T33 — Personal road map: `/rides/road-map` now leads with the rider's
+  // finished ride *routes* (the coverage segments live behind a toggle). The
+  // seeded ride has a route track, so the map view renders — the Routes /
+  // Coverage toggle proves the route mounts inside the Rides chrome and the
+  // data fetch resolved into the map view rather than the error branch, the
+  // empty state, or a white screen — catching deletion-style regressions.
   test("T33: /rides/road-map renders the personal road-map shell", async ({
     authedPage: page,
     mockApi,
@@ -288,10 +287,19 @@ test.describe("rides extras", () => {
     await expect(
       page.getByRole("heading", { level: 1, name: /^ride history$/i }),
     ).toBeVisible({ timeout: 10_000 });
-    // Road-map empty state proves the exploration fetch resolved.
-    await expect(page.getByText(/your road map is empty/i)).toBeVisible();
+    // The map view (not the empty state): the Routes/Coverage toggle renders.
+    await expect(page.getByRole("button", { name: /^routes$/i })).toBeVisible();
     await expect(
-      page.getByText(/every road you ride gets layered/i),
+      page.getByRole("button", { name: /^coverage$/i }),
+    ).toBeVisible();
+    // Assert the seeded route track actually loaded, not just that the toggle
+    // rendered (it also shows while tracks are loading or errored). The Routes
+    // hero tile counts tracks with a recorded route, so it reads `1` only once
+    // `/api/v1/rides/tracks` resolves the seeded ride — a hung/errored request
+    // would leave it at `0` and fail here.
+    const ridesOnMap = page.getByText("Rides on map", { exact: true });
+    await expect(
+      ridesOnMap.locator("..").getByText("1", { exact: true }),
     ).toBeVisible();
   });
 

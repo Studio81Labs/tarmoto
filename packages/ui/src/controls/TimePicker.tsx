@@ -91,7 +91,11 @@ export function TimePicker({
           onSelectionChange={(keys) => {
             if (keys === "all") return;
             const k = [...keys][0];
-            if (k != null) onPick(Number(k));
+            // Clicking the already-highlighted option toggles single-selection
+            // to an empty set. Treat that as re-picking the highlighted value
+            // so an off-step value (highlighted at its nearest step) can still
+            // be normalized by clicking it.
+            onPick(k != null ? Number(k) : selected);
           }}
           className="max-h-40 w-14 overflow-auto outline-none"
         >
@@ -173,13 +177,16 @@ export function TimePicker({
             {value || "Select time"}
           </span>
         </Button>
-        <Popover className={MENU}>
+        <Popover placement="bottom left" className={MENU}>
           <Dialog
             className="flex gap-1 outline-none"
             aria-label={ariaLabel ?? "Time"}
           >
             {column("HR", hours, hour, (h) => commit(h, snapMinute(minute)))}
-            {column("MIN", minutes, minute, (m) => commit(hour, m))}
+            {/* An off-step incoming minute (e.g. 08:10 with minuteStep=15)
+                matches no option id, so highlight the nearest available step
+                rather than leaving the column with nothing selected. */}
+            {column("MIN", minutes, snapMinute(minute), (m) => commit(hour, m))}
           </Dialog>
         </Popover>
       </DialogTrigger>

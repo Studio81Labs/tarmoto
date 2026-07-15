@@ -24,3 +24,18 @@ test("leading and trailing add padding hooks", () => {
 test("disabled marks the not-allowed affordance", () => {
   expect(fieldChrome({ disabled: true })).toContain("cursor-not-allowed");
 });
+
+test("mirrors the focus ring on data-focused for react-aria triggers", () => {
+  // react-aria Button triggers surface focus via data-focused, not :focus, so
+  // the accent ring must be duplicated onto that variant or it never fires.
+  const cls = fieldChrome();
+  expect(cls).toContain("data-[focused]:border-accent");
+  expect(cls).toContain("data-[focused]:ring-[3px]");
+  expect(cls).toContain("data-[focused]:ring-accent/[0.18]");
+});
+
+test("error state mirrors the Q1 ring on data-focused too", () => {
+  const cls = fieldChrome({ error: true });
+  expect(cls).toContain("data-[focused]:border-quality-q1");
+  expect(cls).toContain("data-[focused]:ring-quality-q1/[0.18]");
+});
