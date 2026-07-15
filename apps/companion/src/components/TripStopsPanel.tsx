@@ -306,28 +306,27 @@ export function TripStopsPanel({
 
       {/* Minimum stay rating — accommodation categories only (§D). */}
       <div>
-        <label
-          htmlFor="trip-stops-rating"
-          className="mb-1 block text-xs text-fg-mute"
-        >
-          {t("Minimum stay rating ")}
-          <span className="text-fg-faint">
-            {t("(biker hotels & campgrounds)")}
-          </span>
-        </label>
         <Select
-          id="trip-stops-rating"
-          value={minStayRating ?? ""}
+          label={
+            <>
+              {t("Minimum stay rating ")}
+              <span className="text-fg-faint">
+                {t("(biker hotels & campgrounds)")}
+              </span>
+            </>
+          }
+          value={minStayRating != null ? String(minStayRating) : ""}
           onChange={(value) =>
             setMinStayRating(value ? Number(value) : undefined)
           }
           tone="cream"
-        >
-          <option value="">{t("Any")}</option>
-          <option value="3">{t("3 stars or better")}</option>
-          <option value="4">{t("4 stars or better")}</option>
-          <option value="5">{t("5 stars only")}</option>
-        </Select>
+          options={[
+            { value: "", label: t("Any") },
+            { value: "3", label: t("3 stars or better") },
+            { value: "4", label: t("4 stars or better") },
+            { value: "5", label: t("5 stars only") },
+          ]}
+        />
       </div>
 
       {/* §02 ALONG YOUR ROUTE — one flat route-wide list (§B), gated (§E). */}

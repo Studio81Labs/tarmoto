@@ -206,25 +206,17 @@ function PassesPanelBody({
       </div>
 
       <div>
-        <label
-          htmlFor="passes-month"
-          className="block text-xs text-fg-mute mb-1"
-        >
-          {t("Travel month ")}
-        </label>
         <Select
-          id="passes-month"
-          value={month}
+          label={t("Travel month ")}
+          value={String(month)}
           onChange={(value) => setMonth(Number(value))}
           disabled={isReadOnlyControlled}
           tone="cream"
-        >
-          {MONTH_NAMES.map((name, idx) => (
-            <option key={name} value={idx + 1}>
-              {name}
-            </option>
-          ))}
-        </Select>
+          options={MONTH_NAMES.map((name, idx) => ({
+            value: String(idx + 1),
+            label: name,
+          }))}
+        />
       </div>
 
       <Legend />
