@@ -9,8 +9,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PoiImportRegion } from '../modules/poi/poi-import.config.js';
-import { bboxArg } from '../modules/poi/poi-refresh.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
+import { bboxArg } from '@tarmoto/ingest';
 import {
   refreshAll,
   refreshRegion,

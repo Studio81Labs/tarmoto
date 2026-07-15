@@ -5,7 +5,7 @@ import type {
   PoiImportResult,
   PoiImportService,
 } from '../../poi/poi-import.service.js';
-import type { PoiImportRegion } from '../../poi/poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import type { PoiImportRunRecorder } from '../../poi/poi-import-run.recorder.js';
 import type { JobsProducer } from '../jobs.producer.js';
 

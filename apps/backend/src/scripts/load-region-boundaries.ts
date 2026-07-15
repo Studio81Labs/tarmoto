@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { bootstrapScriptContext } from './bootstrap-script-context.js';
-import { DEFAULT_REGIONS } from '../modules/poi/poi-import.config.js';
+import { DEFAULT_REGIONS } from '@tarmoto/ingest';
 
 interface RegionFeature {
   code: string;

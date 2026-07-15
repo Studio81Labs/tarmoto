@@ -35,14 +35,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { PoiImportRegion } from '../modules/poi/poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import {
   bboxArg,
   geofabrikUrl,
   POI_TAGS_FILTER_EXPRESSIONS,
   resolvePoiRefreshConfig,
   type PoiRefreshConfig,
-} from '../modules/poi/poi-refresh.config.js';
+} from '@tarmoto/ingest';
 import {
   describeExecError,
   refreshTmpPath,

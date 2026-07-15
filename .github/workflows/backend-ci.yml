@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/backend/**"
       - "packages/shared/**"
+      - "packages/ingest/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
       - ".github/workflows/backend-ci.yml"
@@ -14,6 +15,7 @@ on:
     paths:
       - "apps/backend/**"
       - "packages/shared/**"
+      - "packages/ingest/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
       - ".github/workflows/backend-ci.yml"

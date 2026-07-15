@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
-import type { PoiImportRegion } from './poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import type { StoredPoiFields } from './poi-provider.interface.js';
 import { parsePoiExtract } from './poi-extract-source.js';
 import { fsqRowToImportRow, type FsqPlaceRow } from './fsq-poi-categories.js';

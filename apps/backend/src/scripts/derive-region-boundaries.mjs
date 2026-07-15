@@ -12,11 +12,22 @@ const NE_URL =
 // Derive the target codes straight from the config so the asset can't drift from
 // DEFAULT_REGIONS (a plain regex over the source avoids importing TS from .mjs).
 const configSrc = readFileSync(
-  join(here, "..", "modules", "poi", "poi-import.config.ts"),
+  join(
+    here,
+    "..",
+    "..",
+    "..",
+    "..",
+    "packages",
+    "ingest",
+    "src",
+    "poi",
+    "regions.ts",
+  ),
   "utf8",
 );
 const CODES = new Set(
-  [...configSrc.matchAll(/code:\s*'([A-Z]{2})'/g)].map((m) => m[1]),
+  [...configSrc.matchAll(/code:\s*["']([A-Z]{2})["']/g)].map((m) => m[1]),
 );
 if (CODES.size < 2) throw new Error("Failed to parse DEFAULT_REGIONS codes");
 

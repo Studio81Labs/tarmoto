@@ -40,7 +40,7 @@ interface GroupedRegion {
  *
  * Insertion order (not alphabetical) is kept deliberately: `listRegionStatus`
  * returns rows in registry order (OSM first, then FSQ; within a source, the
- * operator-curated region order from `poi-import.config.ts`), which reads as
+ * operator-curated region order from `packages/ingest/src/poi/regions.ts`), which reads as
  * a meaningful rollout priority — alphabetizing would scramble that.
  */
 function groupByCode(rows: readonly RegionStatus[]): GroupedRegion[] {

@@ -29,6 +29,7 @@ on:
     paths:
       - "apps/backend/**"
       - "packages/shared/**"
+      - "packages/ingest/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
       - "docs/database/**"

@@ -24,7 +24,8 @@ import { Readable } from 'node:stream';
 import { PoiImportService, WIPE_GUARD_WARNING } from './poi-import.service.js';
 import { parsePoiExtract } from './poi-extract-source.js';
 import { FsqPoiImportSource } from './poi-import-source.js';
-import type { PoiImportConfig, PoiImportRegion } from './poi-import.config.js';
+import type { PoiImportConfig } from './poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import type {
   AccommodationPoi,
   ImportedPoi,

@@ -52,6 +52,9 @@ jobs:
       - name: Build shared package
         run: pnpm shared:build
 
+      - name: Build ingest package
+        run: pnpm ingest:build
+
       - name: Export OpenAPI spec
         run: pnpm --filter @tarmoto/backend openapi:export
 
