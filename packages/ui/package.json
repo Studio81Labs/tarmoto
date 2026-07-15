@@ -29,6 +29,7 @@
     "react-dom": ">=18.0.0"
   },
   "dependencies": {
+    "@internationalized/date": "^3.12.2",
     "clsx": "^2.1.0",
     "react-aria-components": "^1.19.0",
     "tailwind-merge": "^3.6.0"
