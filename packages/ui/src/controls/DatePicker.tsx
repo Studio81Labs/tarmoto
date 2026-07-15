@@ -17,8 +17,9 @@ import {
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { parseIsoDate, isoDate } from "./date/isoDate";
+import { displayIsoDate, type DisplayFormatProps } from "./date/displayFormat";
 
-export interface DatePickerProps {
+export interface DatePickerProps extends DisplayFormatProps {
   value: string;
   onChange: (value: string) => void;
   label?: ReactNode;
@@ -53,11 +54,15 @@ export function DatePicker({
   tone = "paper",
   error = false,
   className,
+  locale,
+  formatOptions,
+  formatValue,
 }: DatePickerProps) {
   const labelId = useId();
   const valueId = useId();
   const errorId = useId();
   const [open, setOpen] = useState(false);
+  const display = displayIsoDate(value, { locale, formatOptions, formatValue });
 
   return (
     <div className={cn("w-full", className)}>
@@ -81,7 +86,7 @@ export function DatePicker({
           {...(label !== undefined
             ? { "aria-labelledby": `${labelId} ${valueId}` }
             : ariaLabel !== undefined
-              ? { "aria-label": value ? `${ariaLabel}, ${value}` : ariaLabel }
+              ? { "aria-label": value ? `${ariaLabel}, ${display}` : ariaLabel }
               : {})}
           isDisabled={disabled}
           {...(error ? { "aria-describedby": errorId } : {})}
@@ -116,7 +121,7 @@ export function DatePicker({
               value ? "text-ink" : "text-fg-mute",
             )}
           >
-            {value ? value : "Select date"}
+            {display || "Select date"}
           </span>
         </Button>
         <Popover placement="bottom left" className={MENU}>

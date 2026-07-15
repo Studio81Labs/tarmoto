@@ -228,3 +228,23 @@ test("clicking the label opens the picker", async () => {
   await userEvent.click(screen.getByText("Ride start"));
   expect(screen.getByRole("grid")).toBeInTheDocument();
 });
+
+test("locale formats the trigger display while the value stays ISO", async () => {
+  const onChange = vi.fn();
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value="2026-05-18T08:30"
+      locale="en-GB"
+      onChange={onChange}
+    />,
+  );
+  // Display is localized...
+  expect(screen.getByText("18/05/2026, 08:30")).toBeInTheDocument();
+  // ...but the emitted value stays ISO.
+  await userEvent.click(screen.getByRole("button", { name: /ride start/i }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Increase hour" }),
+  );
+  expect(onChange).toHaveBeenLastCalledWith("2026-05-18T09:30");
+});

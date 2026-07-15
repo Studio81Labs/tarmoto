@@ -475,16 +475,22 @@ export function ControlsSection() {
             label="Departure"
             value={departureDate}
             onChange={setDepartureDate}
+            locale="en-GB"
           />
           <div className="mt-4">
             <CodeBlock>
               {`value: ISO `}
               <CN>"YYYY-MM-DD"</CN>
+              {` (in/out)\n`}
+              {`display: `}
+              <CN>locale</CN>
+              {` + `}
+              <CN>formatOptions</CN>
               {`\n`}
-              {`label prop renders its own `}
-              <CN>FieldLabel</CN>
-              {`\n`}
-              {`same fieldChrome() chrome as Input`}
+              {`or `}
+              <CN>formatValue</CN>
+              {` escape hatch\n`}
+              {`default: runtime locale`}
             </CodeBlock>
           </div>
         </Card>
@@ -506,7 +512,10 @@ export function ControlsSection() {
               {`minuteStep: `}
               <CN>15</CN>
               {` · default 15\n`}
-              {`same fieldChrome() chrome as Input`}
+              {`display: `}
+              <CN>locale</CN>
+              {`/`}
+              <CN>formatValue</CN>
             </CodeBlock>
           </div>
         </Card>
@@ -518,13 +527,20 @@ export function ControlsSection() {
             label="Ride start"
             value={rideStart}
             onChange={setRideStart}
+            locale="en-GB"
           />
           <div className="mt-4">
             <CodeBlock>
               {`value: ISO `}
               <CN>"YYYY-MM-DDTHH:MM"</CN>
               {`\n`}
-              {`combines DatePicker + TimePicker chrome\n`}
+              {`display: `}
+              <CN>locale</CN>
+              {`/`}
+              <CN>formatOptions</CN>
+              {`/`}
+              <CN>formatValue</CN>
+              {`\n`}
               {`minuteStep: `}
               <CN>15</CN>
               {` default`}

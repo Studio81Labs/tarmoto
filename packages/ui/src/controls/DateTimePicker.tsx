@@ -23,8 +23,12 @@ import {
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { parseIsoDateTime, isoDateTime } from "./date/isoDate";
+import {
+  displayIsoDateTime,
+  type DisplayFormatProps,
+} from "./date/displayFormat";
 
-export interface DateTimePickerProps {
+export interface DateTimePickerProps extends DisplayFormatProps {
   value: string;
   onChange: (value: string) => void;
   minuteStep?: number;
@@ -63,8 +67,16 @@ export function DateTimePicker({
   tone = "paper",
   error = false,
   className,
+  locale,
+  formatOptions,
+  formatValue,
 }: DateTimePickerProps) {
   const [open, setOpen] = useState(false);
+  const display = displayIsoDateTime(value, {
+    locale,
+    formatOptions,
+    formatValue,
+  });
   // Guard the public prop: 0/negative/non-integer would break the 60/step math.
   // Fall back to the documented default.
   const minuteStep =
@@ -160,7 +172,7 @@ export function DateTimePicker({
           {...(label !== undefined
             ? { "aria-labelledby": `${labelId} ${valueId}` }
             : ariaLabel !== undefined
-              ? { "aria-label": value ? `${ariaLabel}, ${value}` : ariaLabel }
+              ? { "aria-label": value ? `${ariaLabel}, ${display}` : ariaLabel }
               : {})}
           isDisabled={disabled}
           {...(error ? { "aria-describedby": errorId } : {})}
@@ -194,7 +206,7 @@ export function DateTimePicker({
               value ? "text-ink" : "text-fg-mute",
             )}
           >
-            {value || "Select date & time"}
+            {display || "Select date & time"}
           </span>
         </Button>
         <Popover placement="bottom left" className={MENU}>
