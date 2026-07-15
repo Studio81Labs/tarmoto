@@ -83,3 +83,12 @@ test("weeks start on Monday regardless of locale", async () => {
   const dayCells = within(grid).getAllByRole("button");
   expect(dayCells[0]).toHaveAccessibleName(/^Monday,/);
 });
+
+test("clicking the label opens the picker", async () => {
+  render(
+    <DatePicker label="Departure" value="2026-05-01" onChange={() => {}} />,
+  );
+  expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText("Departure"));
+  expect(screen.getByRole("grid")).toBeInTheDocument();
+});

@@ -215,3 +215,16 @@ test("incrementing an off-step minute moves to the next available option", async
   // 10 → next available step is 15 (not 30)
   expect(onChange).toHaveBeenLastCalledWith("2026-05-18T08:15");
 });
+
+test("clicking the label opens the picker", async () => {
+  render(
+    <DateTimePicker
+      label="Ride start"
+      value="2026-05-18T08:30"
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.queryByRole("grid")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText("Ride start"));
+  expect(screen.getByRole("grid")).toBeInTheDocument();
+});

@@ -198,3 +198,10 @@ test("rejects an out-of-range value instead of emitting a non-ISO time", async (
   // "25:30" is out of range → hour defaults to 0, so the emit stays valid ISO
   expect(onChange).toHaveBeenLastCalledWith("00:45");
 });
+
+test("clicking the label opens the picker", async () => {
+  render(<TimePicker label="Start time" value="08:30" onChange={() => {}} />);
+  expect(screen.queryByRole("listbox", { name: "HR" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText("Start time"));
+  expect(screen.getByRole("listbox", { name: "HR" })).toBeInTheDocument();
+});

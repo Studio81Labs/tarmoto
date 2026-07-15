@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   DialogTrigger,
   Button,
@@ -58,6 +58,7 @@ export function TimePicker({
   // Route through @internationalized/date so out-of-range values (e.g. 25:30)
   // are rejected (→ null → defaults), consistent with the other pickers,
   // rather than carrying an invalid hour/minute into an emitted value.
+  const [open, setOpen] = useState(false);
   const current = parseIsoTime(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
@@ -116,7 +117,11 @@ export function TimePicker({
   return (
     <div className={cn("w-full", className)}>
       {label !== undefined && (
-        <span id={labelId} className={FIELD_LABEL}>
+        <span
+          id={labelId}
+          onClick={() => !disabled && setOpen(true)}
+          className={cn(FIELD_LABEL, !disabled && "cursor-pointer")}
+        >
           {label}
         </span>
       )}
@@ -125,7 +130,7 @@ export function TimePicker({
           Invalid time
         </span>
       )}
-      <DialogTrigger>
+      <DialogTrigger isOpen={open} onOpenChange={setOpen}>
         <Button
           {...(id !== undefined ? { id } : {})}
           {...(label !== undefined

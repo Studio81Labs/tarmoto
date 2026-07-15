@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   DialogTrigger,
   Button,
@@ -64,6 +64,7 @@ export function DateTimePicker({
   error = false,
   className,
 }: DateTimePickerProps) {
+  const [open, setOpen] = useState(false);
   // Guard the public prop: 0/negative/non-integer would break the 60/step math.
   // Fall back to the documented default.
   const minuteStep =
@@ -140,7 +141,11 @@ export function DateTimePicker({
   return (
     <div className={cn("w-full", className)}>
       {label !== undefined && (
-        <span id={labelId} className={FIELD_LABEL}>
+        <span
+          id={labelId}
+          onClick={() => !disabled && setOpen(true)}
+          className={cn(FIELD_LABEL, !disabled && "cursor-pointer")}
+        >
           {label}
         </span>
       )}
@@ -149,7 +154,7 @@ export function DateTimePicker({
           Invalid date-time
         </span>
       )}
-      <DialogTrigger>
+      <DialogTrigger isOpen={open} onOpenChange={setOpen}>
         <Button
           {...(id !== undefined ? { id } : {})}
           {...(label !== undefined

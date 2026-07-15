@@ -62,7 +62,11 @@ export function DatePicker({
   return (
     <div className={cn("w-full", className)}>
       {label !== undefined && (
-        <span id={labelId} className={FIELD_LABEL}>
+        <span
+          id={labelId}
+          onClick={() => !disabled && setOpen(true)}
+          className={cn(FIELD_LABEL, !disabled && "cursor-pointer")}
+        >
           {label}
         </span>
       )}
