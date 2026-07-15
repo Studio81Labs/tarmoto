@@ -46,6 +46,12 @@ const NO_RIDE_MATCH = "__none__";
 
 export interface PersonalRoadMapHandle {
   flyTo: (coords: { lat: number; lng: number; zoom?: number }) => void;
+  /**
+   * Current map camera centre, or `null` before the map is ready. Reflects
+   * manual panning (which never touches the page's `center` state), so the
+   * share snapshot can frame on whatever the rider is actually looking at.
+   */
+  getCenter: () => { lat: number; lng: number } | null;
 }
 
 interface Props {
@@ -178,6 +184,12 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
           return;
         }
         flyToTarget(map, target);
+      },
+      getCenter: () => {
+        const map = mapRef.current;
+        if (!map) return null;
+        const c = map.getCenter();
+        return { lat: c.lat, lng: c.lng };
       },
     }));
 

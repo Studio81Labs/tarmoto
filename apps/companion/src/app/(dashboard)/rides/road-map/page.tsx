@@ -412,16 +412,19 @@ function RoadMapPageInner() {
     if (!stats || sharingRef.current) return;
     sharingRef.current = true;
     try {
+      const shareViewCenter = mapRef.current?.getCenter() ?? center;
       const snapshot = buildMapShareSnapshot({
         stats,
         period,
         segments: filteredRidden,
-        // Centre the shared map on the rider's current view (coarsened to a
-        // ~11 km region grid) so the highlighted roads are on-screen, rather
-        // than serializing a raw geolocation fix or the Prague fallback.
+        // Centre the shared map on the live map camera — which reflects manual
+        // panning, unlike `center` (only moved by geolocation/coordinate entry)
+        // — coarsened to a ~11 km region grid so the highlighted roads are
+        // on-screen without leaking a street-level fix. Falls back to `center`
+        // if the map isn't ready (Share only renders with the map, so rare).
         initialCenter: {
-          lat: coarsenForShare(center.lat),
-          lng: coarsenForShare(center.lng),
+          lat: coarsenForShare(shareViewCenter.lat),
+          lng: coarsenForShare(shareViewCenter.lng),
           zoom: INITIAL_MAP_ZOOM,
         },
       });
@@ -434,7 +437,7 @@ function RoadMapPageInner() {
     } finally {
       sharingRef.current = false;
     }
-  }, [stats, period, filteredRidden, center.lat, center.lng]);
+  }, [stats, period, filteredRidden, center]);
   if (loading) {
     return (
       <RidesScaffold fill>
