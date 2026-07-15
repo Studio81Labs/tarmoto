@@ -92,6 +92,27 @@ describe('qualitySeedFromTags', () => {
     });
   });
 
+  it('does not leak Object.prototype members for adversarial OSM tag values', () => {
+    expect(qualitySeedFromTags({ smoothness: 'constructor' })).toEqual({
+      score: null,
+      source: null,
+    });
+    expect(qualitySeedFromTags({ surface: '__proto__' })).toEqual({
+      score: null,
+      source: null,
+    });
+    // A prototype-member smoothness value falls through to a real surface.
+    expect(
+      qualitySeedFromTags({ smoothness: 'toString', surface: 'asphalt' }),
+    ).toEqual({ score: 4, source: 'osm_surface' });
+  });
+
+  it('an unrecognised surface falls through to the highway class', () => {
+    expect(
+      qualitySeedFromTags({ surface: 'weird', highway: 'residential' }),
+    ).toEqual({ score: 3, source: 'osm_highway' });
+  });
+
   it('exports the prior weight k=4 matching the SQL literal', () => {
     expect(QUALITY_SEED_PRIOR_WEIGHT).toBe(4);
   });

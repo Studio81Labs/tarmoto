@@ -5,7 +5,7 @@ import type { OsmTags } from './osm-tags.js';
  * Prior weight `k` for the OSM-seed ↔ rider-data confidence blend
  * (design 2026-07-15): `effective = (rider_mean·n + seed·k)/(n+k)`. ~4 rider
  * reports reach a 50/50 blend. SOURCE OF TRUTH is the SQL literal in
- * `update_road_quality_for_segment` (migration 1795000000000); this mirror
+ * `update_road_quality_for_segment` (migration 1811000000000); this mirror
  * exists for the TS blend reference + tests and MUST stay in sync with it.
  */
 export const QUALITY_SEED_PRIOR_WEIGHT = 4;
@@ -54,6 +54,18 @@ const SURFACE_SEED: Readonly<Record<string, number>> = {
   clay: 1,
 };
 
+/** Own-property lookup — OSM tag values are untrusted, so a key that matches an
+ *  Object.prototype member (constructor, __proto__, toString, …) must miss, not
+ *  return the inherited member. */
+function ownSeed(
+  table: Readonly<Record<string, number>>,
+  key: string | undefined,
+): number | undefined {
+  return key !== undefined && Object.hasOwn(table, key)
+    ? table[key]
+    : undefined;
+}
+
 /** OSM `highway` class → [1,5] (weak proxy; `_link` normalised to its base). */
 function highwaySeed(highway: string | undefined): number | null {
   if (!highway) return null;
@@ -85,10 +97,10 @@ function highwaySeed(highway: string | undefined): number | null {
  * rider data (design 2026-07-15).
  */
 export function qualitySeedFromTags(tags: OsmTags): QualitySeed {
-  const sm = tags.smoothness ? SMOOTHNESS_SEED[tags.smoothness] : undefined;
+  const sm = ownSeed(SMOOTHNESS_SEED, tags.smoothness);
   if (sm !== undefined) return { score: sm, source: 'osm_smoothness' };
 
-  const su = tags.surface ? SURFACE_SEED[tags.surface] : undefined;
+  const su = ownSeed(SURFACE_SEED, tags.surface);
   if (su !== undefined) return { score: su, source: 'osm_surface' };
 
   const hw = highwaySeed(tags.highway);
