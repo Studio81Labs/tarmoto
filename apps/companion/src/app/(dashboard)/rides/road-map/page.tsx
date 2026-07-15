@@ -128,6 +128,11 @@ function RoadMapPageInner() {
         : null,
     );
   }, [mapView, rideTracks]);
+  // Likewise, drop the segment drawer + road highlight when leaving Coverage so
+  // stale coverage detail doesn't sit over the Routes map.
+  useEffect(() => {
+    if (mapView !== "coverage") setSelectedSegmentId(null);
+  }, [mapView]);
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -442,7 +447,9 @@ function RoadMapPageInner() {
             rideTracks={rideTracks}
             showRoutes={mapView === "routes"}
             showCoverage={mapView === "coverage"}
-            selectedSegmentId={selectedSegmentId}
+            selectedSegmentId={
+              mapView === "coverage" ? selectedSegmentId : null
+            }
             selectedRideId={selectedRideId}
             onSegmentSelect={(id) => {
               setSelectedRideId(null);
