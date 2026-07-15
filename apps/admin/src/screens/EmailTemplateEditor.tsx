@@ -73,6 +73,14 @@ export function EmailTemplateEditor({
   const testSend = useTestSend();
   const publish = usePublish();
   const reset = useReset();
+  // One action at a time: any in-flight mutation disables the others so, e.g.,
+  // Publish can't promote the stored draft while a Save is still persisting the
+  // edited body (which would otherwise land as a fresh, unpublished draft).
+  const busy =
+    saveDraft.isPending ||
+    testSend.isPending ||
+    publish.isPending ||
+    reset.isPending;
 
   // EmailTemplatesScreen never unmounts across list <-> editor (hash route
   // stays "email-templates"), so the list's `useEmailTemplates` query keeps
@@ -385,6 +393,7 @@ export function EmailTemplateEditor({
               variant="primary"
               size="sm"
               loading={saveDraft.isPending}
+              disabled={busy}
               onClick={handleSave}
             >
               Save draft
@@ -393,6 +402,7 @@ export function EmailTemplateEditor({
               variant="secondary"
               size="sm"
               loading={testSend.isPending}
+              disabled={busy}
               onClick={handleTestSend}
             >
               Send test to me
@@ -402,6 +412,7 @@ export function EmailTemplateEditor({
                 <Button
                   variant="primary"
                   size="sm"
+                  disabled={busy}
                   onClick={() => setConfirm("publish")}
                 >
                   Publish
@@ -409,6 +420,7 @@ export function EmailTemplateEditor({
                 <Button
                   variant="secondary"
                   size="sm"
+                  disabled={busy}
                   onClick={() => setConfirm("reset")}
                 >
                   Reset

@@ -23,6 +23,9 @@ const saveMutate = vi.fn();
 const publishMutate = vi.fn();
 const resetMutate = vi.fn();
 const invalidateQueriesMock = vi.fn();
+// Mutable within a test → hoisted so the vi.mock factory can read the current
+// value (a factory can't close over a reassigned `let`).
+const pending = vi.hoisted(() => ({ save: false }));
 // The component calls the real `useQueryClient` (not the mocked
 // useAdminEmailTemplates data layer below) to invalidate the templates LIST
 // query on Save/Publish/Reset success. Nothing else rendered by this test
@@ -38,7 +41,7 @@ vi.mock("../data/useAdminEmailTemplates.js", () => ({
     error: null,
     refetch: vi.fn(),
   }),
-  useSaveDraft: () => ({ mutate: saveMutate, isPending: false }),
+  useSaveDraft: () => ({ mutate: saveMutate, isPending: pending.save }),
   useTestSend: () => ({ mutate: vi.fn(), isPending: false }),
   usePublish: () => ({ mutate: publishMutate, isPending: false }),
   useReset: () => ({ mutate: resetMutate, isPending: false }),
@@ -60,11 +63,27 @@ describe("EmailTemplateEditor", () => {
     publishMutate.mockReset();
     resetMutate.mockReset();
     invalidateQueriesMock.mockReset();
+    pending.save = false;
     templateState.data = templateState.initial;
     // Several tests below drive window.location.hash directly to exercise
     // the hashchange dirty-guard; reset it so no test starts from whatever
     // a previous one left behind.
     window.location.hash = "";
+  });
+
+  it("disables the actions (incl. Publish) while a draft save is in flight", () => {
+    authState.role = "super_admin";
+    pending.save = true;
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+    // One op at a time: Publish can't fire while a Save is still persisting.
+    expect(screen.getByRole("button", { name: /save draft/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /send test to me/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^publish$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^reset$/i })).toBeDisabled();
   });
 
   it("hides Publish/Reset for support and shows Save draft", () => {
