@@ -22,7 +22,7 @@ import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
 import type { UnitSystem } from "@tarmoto/shared";
-import { explorationApi } from "@/lib/api";
+import { ApiError, explorationApi, roadsApi } from "@/lib/api";
 import { shareRoadMap } from "@/lib/road-map-share";
 import type {
   ExplorationStats,
@@ -47,7 +47,10 @@ import {
   type PersonalRoadMapHandle,
 } from "./_components/PersonalRoadMap";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
-import { RoadSegmentPopover } from "./_components/RoadSegmentPopover";
+import {
+  SegmentDetailSidebar,
+  type SegmentDetailPanelState,
+} from "@/components/roads/SegmentDetailSidebar";
 /**
  * Personal road map (US-50).
  *
@@ -190,15 +193,49 @@ function RoadMapPageInner() {
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
   );
-  // Resolve the open popover against the period-filtered set so a segment that
-  // drops out of the active window (or hasn't loaded) closes itself.
-  const selectedSegment = useMemo(
-    () =>
-      selectedSegmentId
-        ? (filteredRidden.find((s) => s.id === selectedSegmentId) ?? null)
-        : null,
-    [selectedSegmentId, filteredRidden],
-  );
+  // Full segment detail for the drawer, fetched by id (mirrors /explore). Any
+  // road is selectable now, ridden or not, so this drives off the id, not the
+  // ridden set.
+  const [segmentDetailState, setSegmentDetailState] =
+    useState<SegmentDetailPanelState>({ status: "idle" });
+  useEffect(() => {
+    if (!selectedSegmentId) {
+      setSegmentDetailState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setSegmentDetailState({ status: "loading", segmentId: selectedSegmentId });
+    roadsApi
+      .getSegmentDetail(selectedSegmentId, { signal: controller.signal })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setSegmentDetailState({ status: "ready", segment: data });
+      })
+      .catch((err) => {
+        if ((err as { name?: string }).name === "AbortError" || cancelled)
+          return;
+        if (err instanceof ApiError && err.status === 404) {
+          setSegmentDetailState({
+            status: "not-found",
+            segmentId: selectedSegmentId,
+          });
+          return;
+        }
+        setSegmentDetailState({
+          status: "error",
+          segmentId: selectedSegmentId,
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not load road segment details.",
+        });
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedSegmentId]);
   // The backend returns nearby-unridden sorted by distance today, but the UI
   // explicitly advertises "Sorted by distance" — sorting client-side makes
   // that claim resilient if the service ordering ever changes.
@@ -364,6 +401,7 @@ function RoadMapPageInner() {
             rideTracks={rideTracks}
             showRoutes={mapView === "routes"}
             showCoverage={mapView === "coverage"}
+            selectedSegmentId={selectedSegmentId}
             onSegmentSelect={setSelectedSegmentId}
           />
           <MapViewToggle view={mapView} onChange={setMapView} />
@@ -372,13 +410,11 @@ function RoadMapPageInner() {
           {mapView === "coverage" && (
             <MapLegend riddenCount={filteredRidden.length} />
           )}
-          {selectedSegment && (
-            <RoadSegmentPopover
-              segment={selectedSegment}
-              unitSystem={unitSystem}
-              onClose={() => setSelectedSegmentId(null)}
-            />
-          )}
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedSegmentId(null)}
+            anchor="viewport"
+          />
           <button
             type="button"
             onClick={handleCenterOnMe}

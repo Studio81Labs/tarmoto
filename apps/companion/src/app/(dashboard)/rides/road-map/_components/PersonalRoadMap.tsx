@@ -5,14 +5,10 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import maplibregl, {
-  type Map as MapLibreMap,
-  type MapMouseEvent,
-} from "maplibre-gl";
+import { type Map as MapLibreMap, type MapMouseEvent } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
 import type { MapColorScheme } from "@/lib/map-style";
@@ -23,15 +19,20 @@ import {
   ROAD_MAP_LAYER_LINE_WIDTH,
   ROAD_MAP_RIDDEN_LAYER_ID,
   ROAD_MAP_RIDDEN_LINE_WIDTH,
-  indexRiddenSegments,
   type RiddenSegment,
 } from "@/lib/road-map-layer";
 import {
   ensureRideRouteLayers,
   setRideRouteLayersVisible,
   setRideRouteSourceData,
+  RIDE_ROUTE_LAYER,
   type RideTrack,
 } from "@/components/map/RideRouteLayer";
+import {
+  pickNearestLineFeature,
+  readSegmentId,
+  SEGMENT_HIT_PADDING_PX,
+} from "@/lib/map-segment-hit";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
@@ -75,11 +76,21 @@ interface Props {
    */
   dimColor?: string;
   /**
-   * Called when the rider clicks a ridden segment (with its id) or clicks
-   * empty map / an unridden road (with `null`). Drives the detail popover the
-   * page renders in the map corner. Omit on the read-only share page.
+   * Coverage view: called when the rider clicks any road (ridden or not) with
+   * its segment id, or empty map with `null`. Drives the segment detail drawer.
+   * Omit on the read-only share page.
    */
   onSegmentSelect?: (segmentId: string | null) => void;
+  /**
+   * Routes view: called with a ride id when the rider clicks one of their route
+   * lines. Drives the ride popover.
+   */
+  onRouteSelect?: (rideId: string) => void;
+  /**
+   * Segment whose detail drawer is open — MapCanvas paints its highlight glow
+   * over this feature on the shared road source.
+   */
+  selectedSegmentId?: string | null;
 }
 
 /**
@@ -103,6 +114,8 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       forceColorScheme,
       dimColor,
       onSegmentSelect,
+      onRouteSelect,
+      selectedSegmentId,
     },
     ref,
   ) {
@@ -110,17 +123,22 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
     const mapRef = useRef<MapLibreMap | null>(null);
     const [ready, setReady] = useState(false);
 
-    const indexedRidden = useMemo(() => indexRiddenSegments(ridden), [ridden]);
-    const indexedRiddenRef = useRef(indexedRidden);
-    useEffect(() => {
-      indexedRiddenRef.current = indexedRidden;
-    }, [indexedRidden]);
     // Read the latest callback from a ref so the click handler (bound once on
     // map load) doesn't need re-binding when the prop identity changes.
     const onSegmentSelectRef = useRef(onSegmentSelect);
     useEffect(() => {
       onSegmentSelectRef.current = onSegmentSelect;
     }, [onSegmentSelect]);
+    const onRouteSelectRef = useRef(onRouteSelect);
+    useEffect(() => {
+      onRouteSelectRef.current = onRouteSelect;
+    }, [onRouteSelect]);
+    // The click handler binds once on map load; read the live view mode from a
+    // ref so a toggle doesn't need a rebind.
+    const viewRef = useRef({ showRoutes, showCoverage });
+    useEffect(() => {
+      viewRef.current = { showRoutes, showCoverage };
+    }, [showRoutes, showCoverage]);
 
     useImperativeHandle(ref, () => ({
       flyTo: ({ lat, lng, zoom }) => {
@@ -208,38 +226,56 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         //
         // Hover: only a *ridden* segment shows the pointer cursor — clicking
         // it opens the detail popover the page renders in the map corner.
-        const handlePointerMove = (
-          ev: MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] },
-        ) => {
-          const id = ev.features?.[0]?.id;
-          const isRidden =
-            typeof id === "string" && indexedRiddenRef.current.has(id);
-          map.getCanvas().style.cursor = isRidden ? "pointer" : "";
+        const setPointer = () => {
+          map.getCanvas().style.cursor = "pointer";
         };
-
-        const handlePointerLeave = () => {
+        const clearPointer = () => {
           map.getCanvas().style.cursor = "";
         };
+        // Coverage view: any road is clickable, so the whole dim base is a
+        // hover target. Routes view: only the ride lines are.
+        const onRoadHover = () => {
+          if (viewRef.current.showCoverage) setPointer();
+        };
+        const onRouteHover = () => {
+          if (viewRef.current.showRoutes) setPointer();
+        };
+        map.on("mousemove", ROAD_MAP_DIM_LAYER_ID, onRoadHover);
+        map.on("mouseleave", ROAD_MAP_DIM_LAYER_ID, clearPointer);
+        map.on("mousemove", RIDE_ROUTE_LAYER, onRouteHover);
+        map.on("mouseleave", RIDE_ROUTE_LAYER, clearPointer);
 
-        map.on("mousemove", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerMove);
-        map.on("mouseleave", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerLeave);
-
-        // Click anywhere: select the first ridden segment under the point, or
-        // deselect (close the popover) when the click misses every ridden road.
         const handleMapClick = (ev: MapMouseEvent) => {
-          const select = onSegmentSelectRef.current;
-          if (!select) return;
-          const hits = map.queryRenderedFeatures(ev.point, {
-            layers: [ROAD_MAP_RIDDEN_LAYER_ID],
-          });
-          for (const feature of hits) {
-            const id = feature.id;
-            if (typeof id === "string" && indexedRiddenRef.current.has(id)) {
-              select(id);
+          const { showRoutes: routesOn, showCoverage: coverageOn } =
+            viewRef.current;
+
+          // Routes view: a click on one of the ride lines opens its popover.
+          if (routesOn && map.getLayer(RIDE_ROUTE_LAYER)) {
+            const routeHits = map.queryRenderedFeatures(ev.point, {
+              layers: [RIDE_ROUTE_LAYER],
+            });
+            const rideId = routeHits[0]?.properties?.rideId;
+            if (typeof rideId === "string") {
+              onRouteSelectRef.current?.(rideId);
               return;
             }
           }
-          select(null);
+
+          // Coverage view: select the nearest road under a padded box — any
+          // road, ridden or not (matching the explorer), so the whole network
+          // is browsable — or deselect on a miss. The dim base layer paints
+          // every segment, so it's the hit target regardless of ridden state.
+          if (coverageOn) {
+            const select = onSegmentSelectRef.current;
+            if (!select) return;
+            const feature = pickNearestLineFeature(
+              map,
+              ev.point,
+              [ROAD_MAP_DIM_LAYER_ID],
+              SEGMENT_HIT_PADDING_PX,
+            );
+            select(readSegmentId(feature) ?? null);
+          }
         };
 
         map.on("click", handleMapClick);
@@ -303,6 +339,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         zoom={initialCenter.zoom}
         showQuality={false}
         showSurface={false}
+        selectedSegmentId={selectedSegmentId ?? null}
         {...(forceColorScheme !== undefined ? { forceColorScheme } : {})}
         onReady={handleReady}
       />
