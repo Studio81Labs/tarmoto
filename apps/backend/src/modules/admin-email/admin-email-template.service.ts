@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, In, Repository } from 'typeorm';
 import type { SupportedLocale } from '@tarmoto/shared';
+import { AdminUser } from '../../entities/admin-user.entity.js';
 import { EmailTemplate } from '../../entities/email-template.entity.js';
 import { EmailService } from '../email/email.service.js';
 import {
@@ -20,6 +21,7 @@ import { DEFAULT_TEMPLATE_BLOCKS } from './default-template-blocks.js';
 import type {
   EmailTemplateDetailDto,
   EmailTemplateSummaryDto,
+  EmailTemplateVersionDto,
   PreviewRequestDto,
   PreviewResponseDto,
   SaveDraftDto,
@@ -298,6 +300,45 @@ export class AdminEmailTemplateService {
         status: 'published',
       });
     });
+  }
+
+  /** Published + archived versions for (tag, locale), newest first, with each
+   *  version's publisher resolved to an email in one batched admin_users
+   *  lookup (no N+1). Content is included so the admin can preview any version. */
+  async history(
+    tag: string,
+    locale: SupportedLocale,
+  ): Promise<EmailTemplateVersionDto[]> {
+    this.assertEditable(tag);
+    const rows = await this.templates.find({
+      where: {
+        template_tag: tag,
+        locale,
+        status: In(['published', 'archived']),
+      },
+      order: { version: 'DESC' },
+    });
+    const ids = [
+      ...new Set(
+        rows.map((r) => r.created_by).filter((id): id is string => id != null),
+      ),
+    ];
+    const emailById = new Map<string, string>();
+    if (ids.length > 0) {
+      const admins = await this.templates.manager.find(AdminUser, {
+        where: { id: In(ids) },
+        select: { id: true, email: true },
+      });
+      for (const a of admins) emailById.set(a.id, a.email);
+    }
+    return rows.map((r) => ({
+      version: r.version,
+      status: r.status as 'published' | 'archived',
+      author: r.created_by ? (emailById.get(r.created_by) ?? null) : null,
+      publishedAt: r.published_at ? r.published_at.toISOString() : null,
+      subject: r.subject,
+      blocks: r.blocks,
+    }));
   }
 
   /** Rejects any tag outside the 6 editable ones — locked tags 404 everywhere, per spec. */

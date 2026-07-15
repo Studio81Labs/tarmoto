@@ -15,6 +15,7 @@ function make() {
     save: jest.fn((row: EmailTemplate) => Promise.resolve(row)),
     update: jest.fn(() => Promise.resolve({ affected: 1 })),
     delete: jest.fn(),
+    manager: { find: jest.fn() },
   };
 
   const manager = {
@@ -366,5 +367,76 @@ describe('AdminEmailTemplateService', () => {
       DEFAULT_TEMPLATE_BLOCKS['weekly-digest'].blocks,
     );
     expect(result.whitelist.textVars).toContain('displayName');
+  });
+
+  it('history returns published+archived versions newest-first with authors resolved to email', async () => {
+    const { service, templates } = make();
+    templates.find.mockResolvedValue([
+      {
+        version: 3,
+        status: 'published',
+        created_by: 'admin-1',
+        published_at: new Date('2026-07-10T00:00:00.000Z'),
+        subject: 's3',
+        blocks: [{ type: 'paragraph', text: 'v3' }],
+      },
+      {
+        version: 2,
+        status: 'archived',
+        created_by: null, // seed/system
+        published_at: new Date('2026-07-01T00:00:00.000Z'),
+        subject: 's2',
+        blocks: [],
+      },
+    ]);
+    templates.manager.find.mockResolvedValue([
+      { id: 'admin-1', email: 'jane@tarmoto.app' },
+    ]);
+
+    const result = await service.history('weekly-digest', 'en');
+
+    // Read scoped to published+archived, ordered version DESC.
+    expect(templates.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.objectContaining() returns any; asymmetric matcher is intentional
+        where: expect.objectContaining({
+          template_tag: 'weekly-digest',
+          locale: 'en',
+        }),
+        order: { version: 'DESC' },
+      }),
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      version: 3,
+      status: 'published',
+      author: 'jane@tarmoto.app',
+      publishedAt: '2026-07-10T00:00:00.000Z',
+      subject: 's3',
+      blocks: [{ type: 'paragraph', text: 'v3' }],
+    });
+    // Null author → null (UI renders "System"); one batched admin_users lookup.
+    expect(result[1]!.author).toBeNull();
+    expect(templates.manager.find).toHaveBeenCalledTimes(1);
+  });
+
+  it('history skips the admin_users lookup when no version has an author', async () => {
+    const { service, templates } = make();
+    templates.find.mockResolvedValue([
+      {
+        version: 1,
+        status: 'published',
+        created_by: null,
+        published_at: null,
+        subject: 's1',
+        blocks: [],
+      },
+    ]);
+
+    const result = await service.history('weekly-digest', 'en');
+
+    expect(result[0]!.author).toBeNull();
+    expect(result[0]!.publishedAt).toBeNull();
+    expect(templates.manager.find).not.toHaveBeenCalled();
   });
 });

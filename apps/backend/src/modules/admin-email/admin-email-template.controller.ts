@@ -18,6 +18,7 @@ import { AdminEmailTemplateService } from './admin-email-template.service.js';
 import {
   EmailTemplateDetailDto,
   EmailTemplateSummaryDto,
+  EmailTemplateVersionDto,
   PreviewRequestDto,
   PreviewResponseDto,
   SaveDraftDto,
@@ -51,6 +52,19 @@ export class AdminEmailTemplateController {
     @Param('locale') locale: string,
   ): Promise<EmailTemplateDetailDto> {
     return this.service.get(tag, this.locale(locale));
+  }
+
+  @Get(':tag/:locale/history')
+  @AdminRoles('support')
+  @ApiOperation({
+    summary: 'List published + archived versions of a template (newest first)',
+  })
+  @ApiResponse({ status: 200, type: [EmailTemplateVersionDto] })
+  history(
+    @Param('tag') tag: string,
+    @Param('locale') locale: string,
+  ): Promise<EmailTemplateVersionDto[]> {
+    return this.service.history(tag, this.locale(locale));
   }
 
   @Put(':tag/:locale/draft')

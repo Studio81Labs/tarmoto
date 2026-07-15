@@ -16,6 +16,7 @@ describe('AdminEmailTemplateController', () => {
     testSend: jest.fn().mockResolvedValue({ status: 'sent' }),
     publish: jest.fn().mockResolvedValue({ tag: 'weekly-digest' }),
     reset: jest.fn().mockResolvedValue(undefined),
+    history: jest.fn().mockResolvedValue([]),
   } as unknown as jest.Mocked<AdminEmailTemplateService>;
   const controller = new AdminEmailTemplateController(service);
   const adminReq = () =>
@@ -53,17 +54,21 @@ describe('AdminEmailTemplateController', () => {
       ).toEqual(['super_admin']);
     });
 
-    it.each(['list', 'get', 'saveDraft', 'preview', 'testSend'] as const)(
-      'requires support on %s',
-      (method) => {
-        expect(
-          Reflect.getMetadata(
-            ADMIN_ROLES_KEY,
-            AdminEmailTemplateController.prototype[method],
-          ),
-        ).toEqual(['support']);
-      },
-    );
+    it.each([
+      'list',
+      'get',
+      'saveDraft',
+      'preview',
+      'testSend',
+      'history',
+    ] as const)('requires support on %s', (method) => {
+      expect(
+        Reflect.getMetadata(
+          ADMIN_ROLES_KEY,
+          AdminEmailTemplateController.prototype[method],
+        ),
+      ).toEqual(['support']);
+    });
   });
 
   describe('behavior', () => {
@@ -114,6 +119,12 @@ describe('AdminEmailTemplateController', () => {
         'en',
         'admin-1',
       );
+    });
+
+    it('history forwards the narrowed locale to the service', async () => {
+      await controller.history('weekly-digest', 'en');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.history).toHaveBeenCalledWith('weekly-digest', 'en');
     });
   });
 });
