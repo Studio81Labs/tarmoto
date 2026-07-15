@@ -22,6 +22,7 @@ import {
 } from "@internationalized/date";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
+import { ClearButton } from "./field/ClearButton";
 import { parseIsoDateTime, isoDateTime } from "./date/isoDate";
 import {
   displayIsoDateTime,
@@ -39,6 +40,8 @@ export interface DateTimePickerProps extends DisplayFormatProps {
   disabled?: boolean;
   tone?: "paper" | "cream";
   error?: boolean;
+  /** Show a ✕ to reset the value to "" when one is set. */
+  clearable?: boolean;
   className?: string;
 }
 
@@ -67,12 +70,14 @@ export function DateTimePicker({
   disabled = false,
   tone = "paper",
   error = false,
+  clearable = false,
   className,
   locale,
   formatOptions,
   formatValue,
 }: DateTimePickerProps) {
   const [open, setOpen] = useState(false);
+  const showClear = clearable && value !== "" && !disabled;
   const hydrated = useHydrated();
   const display = displayIsoDateTime(value, {
     locale,
@@ -169,138 +174,150 @@ export function DateTimePicker({
           Invalid date-time
         </span>
       )}
-      <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-        <Button
-          {...(id !== undefined ? { id } : {})}
-          {...(label !== undefined
-            ? { "aria-labelledby": `${labelId} ${valueId}` }
-            : ariaLabel !== undefined
-              ? { "aria-label": value ? `${ariaLabel}, ${display}` : ariaLabel }
-              : {})}
-          isDisabled={disabled}
-          {...(error ? { "aria-describedby": errorId } : {})}
-          className={cn(
-            fieldChrome({ tone, disabled, error, hasLeading: true }),
-            "relative flex items-center text-left",
-          )}
-        >
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 text-fg-mute"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="4" width="18" height="18" rx="2" />
-              <path d="M16 2v4M8 2v4M3 10h18" />
-            </svg>
-          </span>
-          <span
-            id={valueId}
+      <div className="relative">
+        <DialogTrigger isOpen={open} onOpenChange={setOpen}>
+          <Button
+            {...(id !== undefined ? { id } : {})}
+            {...(label !== undefined
+              ? { "aria-labelledby": `${labelId} ${valueId}` }
+              : ariaLabel !== undefined
+                ? {
+                    "aria-label": value
+                      ? `${ariaLabel}, ${display}`
+                      : ariaLabel,
+                  }
+                : {})}
+            isDisabled={disabled}
+            {...(error ? { "aria-describedby": errorId } : {})}
             className={cn(
-              "font-mono text-sm",
-              value ? "text-ink" : "text-fg-mute",
+              fieldChrome({
+                tone,
+                disabled,
+                error,
+                hasLeading: true,
+                hasTrailing: showClear,
+              }),
+              "relative flex items-center text-left",
             )}
           >
-            {display || "Select date & time"}
-          </span>
-        </Button>
-        <Popover placement="bottom left" className={MENU}>
-          <Dialog
-            className="flex flex-col gap-3 outline-none"
-            aria-label={ariaLabel ?? "Date and time"}
-          >
-            <Calendar
-              firstDayOfWeek="mon"
-              value={calendarValue}
-              onChange={handleDateChange}
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 text-fg-mute"
             >
-              <header className="mb-2 flex items-center justify-between">
-                <Button
-                  slot="previous"
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
-                >
-                  ‹
-                </Button>
-                <Heading className="font-mono text-[13px] font-semibold text-ink" />
-                <Button
-                  slot="next"
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
-                >
-                  ›
-                </Button>
-              </header>
-              <CalendarGrid className="border-separate border-spacing-0.5">
-                <CalendarGridHeader>
-                  {(day) => (
-                    <CalendarHeaderCell className="pb-1 font-mono text-[10px] font-normal text-fg-mute">
-                      {day}
-                    </CalendarHeaderCell>
-                  )}
-                </CalendarGridHeader>
-                <CalendarGridBody>
-                  {(date) => <CalendarCell date={date} className={CELL} />}
-                </CalendarGridBody>
-              </CalendarGrid>
-            </Calendar>
-            {/* Divider */}
-            <div className="border-t border-line" />
-            {/* Inline HH : MM time steppers */}
-            <div className="flex items-center justify-center gap-2">
-              <div className="flex flex-col items-center">
-                <button
-                  type="button"
-                  aria-label="Increase hour"
-                  onClick={() => handleHourChange(1)}
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
-                >
-                  ▲
-                </button>
-                <span className="w-8 text-center font-mono text-sm text-ink">
-                  {pad(hour)}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Decrease hour"
-                  onClick={() => handleHourChange(-1)}
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
-                >
-                  ▼
-                </button>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <path d="M16 2v4M8 2v4M3 10h18" />
+              </svg>
+            </span>
+            <span
+              id={valueId}
+              className={cn("text-sm", value ? "text-ink" : "text-fg-mute")}
+            >
+              {display || "Select date & time"}
+            </span>
+          </Button>
+          <Popover placement="bottom left" className={MENU}>
+            <Dialog
+              className="flex flex-col gap-3 outline-none"
+              aria-label={ariaLabel ?? "Date and time"}
+            >
+              <Calendar
+                firstDayOfWeek="mon"
+                value={calendarValue}
+                onChange={handleDateChange}
+              >
+                <header className="mb-2 flex items-center justify-between">
+                  <Button
+                    slot="previous"
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
+                  >
+                    ‹
+                  </Button>
+                  <Heading className="font-mono text-[13px] font-semibold text-ink" />
+                  <Button
+                    slot="next"
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
+                  >
+                    ›
+                  </Button>
+                </header>
+                <CalendarGrid className="border-separate border-spacing-0.5">
+                  <CalendarGridHeader>
+                    {(day) => (
+                      <CalendarHeaderCell className="pb-1 font-mono text-[10px] font-normal text-fg-mute">
+                        {day}
+                      </CalendarHeaderCell>
+                    )}
+                  </CalendarGridHeader>
+                  <CalendarGridBody>
+                    {(date) => <CalendarCell date={date} className={CELL} />}
+                  </CalendarGridBody>
+                </CalendarGrid>
+              </Calendar>
+              {/* Divider */}
+              <div className="border-t border-line" />
+              {/* Inline HH : MM time steppers */}
+              <div className="flex items-center justify-center gap-2">
+                <div className="flex flex-col items-center">
+                  <button
+                    type="button"
+                    aria-label="Increase hour"
+                    onClick={() => handleHourChange(1)}
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
+                  >
+                    ▲
+                  </button>
+                  <span className="w-8 text-center font-mono text-sm text-ink">
+                    {pad(hour)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Decrease hour"
+                    onClick={() => handleHourChange(-1)}
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
+                  >
+                    ▼
+                  </button>
+                </div>
+                <span className="font-mono text-sm text-ink">:</span>
+                <div className="flex flex-col items-center">
+                  <button
+                    type="button"
+                    aria-label="Increase minute"
+                    onClick={() => handleMinuteChange(1)}
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
+                  >
+                    ▲
+                  </button>
+                  <span className="w-8 text-center font-mono text-sm text-ink">
+                    {pad(minute)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Decrease minute"
+                    onClick={() => handleMinuteChange(-1)}
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
+                  >
+                    ▼
+                  </button>
+                </div>
               </div>
-              <span className="font-mono text-sm text-ink">:</span>
-              <div className="flex flex-col items-center">
-                <button
-                  type="button"
-                  aria-label="Increase minute"
-                  onClick={() => handleMinuteChange(1)}
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
-                >
-                  ▲
-                </button>
-                <span className="w-8 text-center font-mono text-sm text-ink">
-                  {pad(minute)}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Decrease minute"
-                  onClick={() => handleMinuteChange(-1)}
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none hover:bg-paper-2"
-                >
-                  ▼
-                </button>
-              </div>
-            </div>
-          </Dialog>
-        </Popover>
-      </DialogTrigger>
+            </Dialog>
+          </Popover>
+        </DialogTrigger>
+        {showClear && (
+          <ClearButton onClear={() => onChange("")} label="Clear date & time" />
+        )}
+      </div>
     </div>
   );
 }
