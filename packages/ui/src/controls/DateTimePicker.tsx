@@ -62,6 +62,7 @@ export function DateTimePicker({
   className,
 }: DateTimePickerProps) {
   const labelId = useId();
+  const valueId = useId();
   const errorId = useId();
   const dt = parseIsoDateTime(value);
 
@@ -87,9 +88,9 @@ export function DateTimePicker({
     return new CalendarDateTime(t.year, t.month, t.day, 0, 0);
   }
 
+  const minuteCount = Math.ceil(60 / minuteStep);
   const snapMinute = (m: number) =>
-    Math.min(Math.round(m / minuteStep), Math.floor(60 / minuteStep) - 1) *
-    minuteStep;
+    Math.min(Math.round(m / minuteStep), minuteCount - 1) * minuteStep;
 
   function handleHourChange(delta: number) {
     const base = baseDateTime();
@@ -109,7 +110,7 @@ export function DateTimePicker({
 
   function handleMinuteChange(delta: number) {
     const base = baseDateTime();
-    const steps = Math.floor(60 / minuteStep);
+    const steps = Math.ceil(60 / minuteStep);
     const currentStep = Math.min(Math.floor(minute / minuteStep), steps - 1);
     const newStep = (((currentStep + delta) % steps) + steps) % steps;
     const newMinute = newStep * minuteStep;
@@ -136,9 +137,9 @@ export function DateTimePicker({
         <Button
           {...(id !== undefined ? { id } : {})}
           {...(label !== undefined
-            ? { "aria-labelledby": labelId }
+            ? { "aria-labelledby": `${labelId} ${valueId}` }
             : ariaLabel !== undefined
-              ? { "aria-label": ariaLabel }
+              ? { "aria-label": value ? `${ariaLabel}, ${value}` : ariaLabel }
               : {})}
           isDisabled={disabled}
           {...(error ? { "aria-describedby": errorId } : {})}
@@ -166,6 +167,7 @@ export function DateTimePicker({
             </svg>
           </span>
           <span
+            id={valueId}
             className={cn(
               "font-mono text-sm",
               value ? "text-ink" : "text-fg-mute",

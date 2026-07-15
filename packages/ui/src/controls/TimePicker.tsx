@@ -52,22 +52,21 @@ export function TimePicker({
   className,
 }: TimePickerProps) {
   const labelId = useId();
+  const valueId = useId();
   const errorId = useId();
   const current = parse(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
-  const minutes = Array.from(
-    { length: Math.floor(60 / minuteStep) },
-    (_, i) => i * minuteStep,
-  );
+  const minutes: number[] = [];
+  for (let m = 0; m < 60; m += minuteStep) minutes.push(m);
 
   const commit = (h: number, m: number) => onChange(`${pad(h)}:${pad(m)}`);
 
+  const minuteCount = Math.ceil(60 / minuteStep);
   const snapMinute = (m: number) =>
-    Math.min(Math.round(m / minuteStep), Math.floor(60 / minuteStep) - 1) *
-    minuteStep;
+    Math.min(Math.round(m / minuteStep), minuteCount - 1) * minuteStep;
 
   function column(
     head: string,
@@ -126,9 +125,9 @@ export function TimePicker({
         <Button
           {...(id !== undefined ? { id } : {})}
           {...(label !== undefined
-            ? { "aria-labelledby": labelId }
+            ? { "aria-labelledby": `${labelId} ${valueId}` }
             : ariaLabel !== undefined
-              ? { "aria-label": ariaLabel }
+              ? { "aria-label": value ? `${ariaLabel}, ${value}` : ariaLabel }
               : {})}
           isDisabled={disabled}
           {...(error ? { "aria-describedby": errorId } : {})}
@@ -156,6 +155,7 @@ export function TimePicker({
             </svg>
           </span>
           <span
+            id={valueId}
             className={cn(
               "font-mono text-sm",
               value ? "text-ink" : "text-fg-mute",

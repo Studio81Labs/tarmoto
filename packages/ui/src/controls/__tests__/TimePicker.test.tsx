@@ -81,7 +81,7 @@ test("minute options reflect minuteStep", async () => {
 test("trigger button has accessible name from label prop", () => {
   render(<TimePicker label="Start time" value="" onChange={() => {}} />);
   expect(
-    screen.getByRole("button", { name: "Start time" }),
+    screen.getByRole("button", { name: /start time/i }),
   ).toBeInTheDocument();
 });
 
@@ -133,4 +133,42 @@ test("error exposes an invalid description to assistive tech", () => {
   const desc = screen.getByText("Invalid time");
   expect(desc).toHaveClass("sr-only");
   expect(trigger).toHaveAttribute("aria-describedby", desc.id);
+});
+
+test("non-dividing minuteStep=45 exposes the 45 option in the MIN listbox", async () => {
+  render(
+    <TimePicker
+      ariaLabel="t"
+      value="00:00"
+      minuteStep={45}
+      onChange={() => {}}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /t|00:00|time/i }));
+  const minList = screen.getByRole("listbox", { name: "MIN" });
+  expect(
+    within(minList).getByRole("option", { name: "00" }),
+  ).toBeInTheDocument();
+  expect(
+    within(minList).getByRole("option", { name: "45" }),
+  ).toBeInTheDocument();
+  // Only two options: 0 and 45
+  expect(within(minList).getAllByRole("option")).toHaveLength(2);
+});
+
+test("trigger accessible name includes the value when ariaLabel is set", () => {
+  render(
+    <TimePicker ariaLabel="Start time" value="08:30" onChange={() => {}} />,
+  );
+  expect(screen.getByRole("button", { name: /08:30/ })).toBeInTheDocument();
+});
+
+test("trigger accessible name includes the value when label is set", () => {
+  render(
+    <TimePicker label="Departure time" value="08:30" onChange={() => {}} />,
+  );
+  // Name comes from aria-labelledby = label + value span; should contain both
+  const btn = screen.getByRole("button", { name: /departure time/i });
+  expect(btn).toBeInTheDocument();
+  expect(btn).toHaveAccessibleName(expect.stringContaining("08:30"));
 });

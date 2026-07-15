@@ -52,6 +52,7 @@ export function DatePicker({
   className,
 }: DatePickerProps) {
   const labelId = useId();
+  const valueId = useId();
   const errorId = useId();
 
   return (
@@ -70,9 +71,9 @@ export function DatePicker({
         <Button
           {...(id !== undefined ? { id } : {})}
           {...(label !== undefined
-            ? { "aria-labelledby": labelId }
+            ? { "aria-labelledby": `${labelId} ${valueId}` }
             : ariaLabel !== undefined
-              ? { "aria-label": ariaLabel }
+              ? { "aria-label": value ? `${ariaLabel}, ${value}` : ariaLabel }
               : {})}
           isDisabled={disabled}
           {...(error ? { "aria-describedby": errorId } : {})}
@@ -101,6 +102,7 @@ export function DatePicker({
             </svg>
           </span>
           <span
+            id={valueId}
             className={cn(
               "font-mono text-sm",
               value ? "text-ink" : "text-fg-mute",

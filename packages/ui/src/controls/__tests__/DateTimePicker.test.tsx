@@ -20,7 +20,7 @@ test("picks a day and keeps the time, emitting ISO datetime", async () => {
 test("label-only trigger has an accessible name", () => {
   render(<DateTimePicker label="Ride start" value="" onChange={() => {}} />);
   expect(
-    screen.getByRole("button", { name: "Ride start" }),
+    screen.getByRole("button", { name: /ride start/i }),
   ).toBeInTheDocument();
 });
 
@@ -103,4 +103,52 @@ test("error exposes an invalid description to assistive tech", () => {
   const desc = screen.getByText("Invalid date-time");
   expect(desc).toHaveClass("sr-only");
   expect(trigger).toHaveAttribute("aria-describedby", desc.id);
+});
+
+test("minute stepper can reach minute 45 with minuteStep=45", async () => {
+  const onChange = vi.fn();
+  function Wrapper() {
+    const [v, setV] = useState("2026-05-18T08:00");
+    return (
+      <DateTimePicker
+        ariaLabel="Ride start"
+        value={v}
+        minuteStep={45}
+        onChange={(nv) => {
+          onChange(nv);
+          setV(nv);
+        }}
+      />
+    );
+  }
+  render(<Wrapper />);
+  await userEvent.click(screen.getByRole("button", { name: /ride start/i }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Increase minute" }),
+  );
+  expect(onChange).toHaveBeenLastCalledWith("2026-05-18T08:45");
+});
+
+test("trigger accessible name includes the value when ariaLabel is set", () => {
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value="2026-05-18T08:30"
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.getByRole("button", { name: /08:30/ })).toBeInTheDocument();
+});
+
+test("trigger accessible name includes the value when label is set", () => {
+  render(
+    <DateTimePicker
+      label="Ride start"
+      value="2026-05-18T08:30"
+      onChange={() => {}}
+    />,
+  );
+  const btn = screen.getByRole("button", { name: /ride start/i });
+  expect(btn).toBeInTheDocument();
+  expect(btn).toHaveAccessibleName(expect.stringContaining("08:30"));
 });

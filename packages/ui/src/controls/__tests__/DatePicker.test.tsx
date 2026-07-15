@@ -16,7 +16,9 @@ test("opens the calendar and reports the picked date as an ISO string", async ()
 
 test("label gives the trigger button its accessible name", () => {
   render(<DatePicker label="Departure" value="" onChange={() => {}} />);
-  expect(screen.getByRole("button", { name: "Departure" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /departure/i }),
+  ).toBeInTheDocument();
 });
 
 test("renders the empty/unset state without error", () => {
@@ -37,4 +39,22 @@ test("error exposes an invalid description to assistive tech", () => {
   const desc = screen.getByText("Invalid date");
   expect(desc).toHaveClass("sr-only");
   expect(trigger).toHaveAttribute("aria-describedby", desc.id);
+});
+
+test("trigger accessible name includes the value when ariaLabel is set", () => {
+  render(
+    <DatePicker ariaLabel="Departure" value="2026-05-18" onChange={() => {}} />,
+  );
+  expect(
+    screen.getByRole("button", { name: /2026-05-18/ }),
+  ).toBeInTheDocument();
+});
+
+test("trigger accessible name includes the value when label is set", () => {
+  render(
+    <DatePicker label="Departure" value="2026-05-18" onChange={() => {}} />,
+  );
+  const btn = screen.getByRole("button", { name: /departure/i });
+  expect(btn).toBeInTheDocument();
+  expect(btn).toHaveAccessibleName(expect.stringContaining("2026-05-18"));
 });
