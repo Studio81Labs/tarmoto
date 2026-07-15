@@ -222,3 +222,21 @@ test("highlights the nearest step when the incoming minute is off-step", async (
   const selected = within(min).getByRole("option", { selected: true });
   expect(selected).toHaveTextContent("15");
 });
+
+test("clicking the highlighted snapped option normalizes an off-step value", async () => {
+  const onChange = vi.fn();
+  render(
+    <TimePicker
+      ariaLabel="Start time"
+      value="08:10"
+      minuteStep={15}
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /start time/i }));
+  // 08:10 highlights 15 (nearest step). Clicking that highlighted option
+  // toggles single-selection empty; it must still commit 08:15, not no-op.
+  const min = screen.getByRole("listbox", { name: "MIN" });
+  await userEvent.click(within(min).getByRole("option", { name: "15" }));
+  expect(onChange).toHaveBeenLastCalledWith("08:15");
+});

@@ -91,7 +91,11 @@ export function TimePicker({
           onSelectionChange={(keys) => {
             if (keys === "all") return;
             const k = [...keys][0];
-            if (k != null) onPick(Number(k));
+            // Clicking the already-highlighted option toggles single-selection
+            // to an empty set. Treat that as re-picking the highlighted value
+            // so an off-step value (highlighted at its nearest step) can still
+            // be normalized by clicking it.
+            onPick(k != null ? Number(k) : selected);
           }}
           className="max-h-40 w-14 overflow-auto outline-none"
         >
