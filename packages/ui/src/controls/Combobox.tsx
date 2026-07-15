@@ -137,7 +137,7 @@ export function Combobox({
       </div>
       <Popover
         className={cn(
-          "w-[--trigger-width] rounded-[10px] border border-line-strong bg-paper p-1",
+          "w-[var(--trigger-width)] rounded-[10px] border border-line-strong bg-paper p-1",
           "shadow-[0_8px_24px_rgba(14,14,16,0.08)]",
         )}
       >
