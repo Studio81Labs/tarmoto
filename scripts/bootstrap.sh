@@ -79,6 +79,8 @@ echo ""
 echo "Building shared + backend..."
 pnpm shared:build
 ok "shared built"
+pnpm ingest:build
+ok "ingest built"
 pnpm backend:build
 ok "backend built"
 

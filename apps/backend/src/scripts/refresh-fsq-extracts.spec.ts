@@ -8,7 +8,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PoiImportRegion } from '../modules/poi/poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import {
   refreshAll,
   refreshRegion,

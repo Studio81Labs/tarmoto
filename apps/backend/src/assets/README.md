@@ -21,7 +21,7 @@ running backend never fetches this over the network.
 
 ## Filtering + code mapping
 
-Filtered to the codes in `DEFAULT_REGIONS` (`apps/backend/src/modules/poi/poi-import.config.ts`),
+Filtered to the codes in `DEFAULT_REGIONS` (`packages/ingest/src/poi/regions.ts`),
 matched against each Natural Earth feature's `ISO_A2` property, **falling back
 to `ISO_A2_EH`** (the "de-facto" / on-the-ground ISO code variant Natural Earth
 ships for disputed territories) when `ISO_A2 === '-99'` (Natural Earth's sentinel
@@ -43,7 +43,7 @@ node apps/backend/src/scripts/derive-region-boundaries.mjs
 ```
 
 The generator (`derive-region-boundaries.mjs`) re-derives the target codes from
-`poi-import.config.ts` via a regex over the source text (rather than importing
+`regions.ts` via a regex over the source text (rather than importing
 the TS module from a `.mjs` script), so the asset can never silently drift from
 `DEFAULT_REGIONS` — add or remove a region there and regenerating picks it up
 automatically. It asserts every derived code resolves to a Natural Earth

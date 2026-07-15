@@ -1,8 +1,5 @@
-import {
-  DEFAULT_REGIONS,
-  fsqImportConfig,
-  poiImportConfig,
-} from './poi-import.config.js';
+import { fsqImportConfig, poiImportConfig } from './poi-import.config.js';
+import { DEFAULT_REGIONS } from '@tarmoto/ingest';
 
 describe('poiImportConfig', () => {
   const ENABLED = 'TARMOTO_POI_IMPORT_ENABLED';
@@ -62,14 +59,6 @@ describe('poiImportConfig', () => {
     expect(() => poiImportConfig()).toThrow(
       /Invalid TARMOTO_POI_IMPORT_REGIONS: unknown region "ZZ"/,
     );
-  });
-
-  it('every default region carries a non-degenerate bbox with a valid code', () => {
-    for (const { code, bbox } of DEFAULT_REGIONS) {
-      expect(code).toMatch(/^[A-Z]{2}$/);
-      expect(bbox.maxLng - bbox.minLng).toBeGreaterThan(0);
-      expect(bbox.maxLat - bbox.minLat).toBeGreaterThan(0);
-    }
   });
 });
 
