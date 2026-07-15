@@ -163,3 +163,33 @@ test("keeps the search highlight readable on the selected (ink) row", async () =
   expect(mark).toHaveClass("text-cream");
   expect(mark).not.toHaveClass("text-ink");
 });
+
+test("opens the options list on click/focus without typing", async () => {
+  render(
+    <Combobox
+      ariaLabel="region"
+      value=""
+      onChange={() => {}}
+      options={CITIES}
+    />,
+  );
+  const input = screen.getByRole("combobox", { name: "region" });
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  await userEvent.click(input);
+  expect(screen.getByRole("listbox")).toBeInTheDocument();
+});
+
+test("the options list is scrollable (height-capped with overflow)", async () => {
+  render(
+    <Combobox
+      ariaLabel="region"
+      value=""
+      onChange={() => {}}
+      options={CITIES}
+    />,
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "region" }));
+  const list = screen.getByRole("listbox");
+  expect(list.className).toMatch(/overflow-auto/);
+  expect(list.className).toMatch(/max-h-/);
+});
