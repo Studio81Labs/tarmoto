@@ -105,4 +105,34 @@ describe("VersionHistoryDrawer", () => {
     expect(screen.queryByText("Revert to this version?")).toBeNull();
     expect(base.onClose).not.toHaveBeenCalled();
   });
+
+  it("backdrop-clicking the revert confirm dismisses it without cascade-closing the drawer", () => {
+    render(<VersionHistoryDrawer {...base} isSuper={true} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /^revert$/i })[0]!);
+    expect(screen.getByText("Revert to this version?")).toBeInTheDocument();
+
+    // Clicking the confirm dialog's own backdrop dismisses it; the event also
+    // bubbles to the drawer's overlay onClick, which must NOT cascade-close.
+    fireEvent.click(
+      screen.getByRole("dialog", { name: "Revert to this version?" }),
+    );
+
+    expect(screen.queryByText("Revert to this version?")).toBeNull();
+    expect(base.onClose).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an error alert when the revert mutation fails", () => {
+    revertMutate.mockImplementation(
+      (_args: unknown, opts: { onError: (e: unknown) => void }) =>
+        opts.onError({ message: "Version 2 is already the live version." }),
+    );
+    render(<VersionHistoryDrawer {...base} isSuper={true} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /^revert$/i })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /revert now/i }));
+
+    expect(screen.getByText(/already the live version/i)).toBeInTheDocument();
+    // On failure the confirm is dismissed and no success callback fires.
+    expect(screen.queryByText("Revert to this version?")).toBeNull();
+    expect(base.onReverted).not.toHaveBeenCalled();
+  });
 });

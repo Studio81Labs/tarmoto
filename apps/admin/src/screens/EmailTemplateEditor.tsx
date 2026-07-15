@@ -11,6 +11,7 @@ import { PreviewPane } from "../components/email-template/PreviewPane.js";
 import { VersionHistoryDrawer } from "../components/email-template/VersionHistoryDrawer.js";
 import { useAdminAuth } from "../auth/useAdminAuth.js";
 import { canAccess } from "../lib/roleRank.js";
+import { serverMessage } from "../lib/serverMessage.js";
 import {
   useEmailTemplate,
   useSaveDraft,
@@ -40,11 +41,6 @@ function emptyBlock(type: EditorBlock["type"]): EditorBlock {
     default:
       return { type };
   }
-}
-function serverMessage(err: unknown, fallback: string): string {
-  const m = (err as { message?: string | string[] } | undefined)?.message;
-  if (Array.isArray(m)) return m.join("; ");
-  return m ?? fallback;
 }
 function sameDoc(
   a: { subject: string; blocks: EditorBlock[] },

@@ -132,6 +132,19 @@ describe('AdminEmailTemplateController', () => {
       );
     });
 
+    it('saveDraft forwards (tag, locale, dto, actorId) to the service', async () => {
+      const req = adminReq();
+      const dto = { subject: 's', blocks: [] };
+      await controller.saveDraft(req, 'weekly-digest', 'en', dto);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.saveDraft).toHaveBeenCalledWith(
+        'weekly-digest',
+        'en',
+        dto,
+        'admin-1',
+      );
+    });
+
     it('history forwards the narrowed locale to the service', async () => {
       await controller.history('weekly-digest', 'en');
       // eslint-disable-next-line @typescript-eslint/unbound-method
