@@ -18,3 +18,11 @@ test("label associates via react-aria Label", () => {
   render(<DatePicker label="Departure" value="" onChange={() => {}} />);
   expect(screen.getByText("Departure")).toBeInTheDocument();
 });
+
+test("renders the empty/unset state without error", () => {
+  const onChange = vi.fn();
+  render(<DatePicker ariaLabel="Departure" value="" onChange={onChange} />);
+  // the field trigger renders (react-aria names the open button "Calendar")
+  expect(screen.getByRole("button", { name: /calendar/i })).toBeInTheDocument();
+  expect(onChange).not.toHaveBeenCalled();
+});
