@@ -137,7 +137,16 @@ function RoadMapPageInner() {
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // `center` is the live view/query centre: it tracks the rider's geolocated
+  // position (auto-center + explicit "Center on me"/"Use my location") so the
+  // map camera, the "Nearby unridden" query, and the coordinate inputs all stay
+  // pointed at the same place.
   const [center, setCenter] = useState(FALLBACK_CENTER);
+  // `shareCenter` is the *share-safe* centre serialized into the public map
+  // snapshot. Geolocation never writes it — only coordinates the rider types in
+  // do — so opening the page (or clicking locate) can't leak a precise device
+  // location into a shared link. Defaults to the neutral regional fallback.
+  const [shareCenter, setShareCenter] = useState(FALLBACK_CENTER);
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
@@ -347,39 +356,30 @@ function RoadMapPageInner() {
       pendingCenterRef.current = { lat, lng };
     }
   }, []);
-  const handleUseMyLocation = useCallback(() => {
-    requestUserLocation((lat, lng) => {
-      setCenter({ lat, lng, label: "My location" });
-      // Centre the MapLibre view too — the AC's "Center on me" is the
-      // same gesture as the Explore-near locator, so a single button
-      // drives both panels.
-      flyToWhenReady(lat, lng);
-    });
-  }, [requestUserLocation, flyToWhenReady]);
-  const handleCenterOnMe = useCallback(() => {
-    requestUserLocation((lat, lng) => {
-      flyToWhenReady(lat, lng);
-    });
-  }, [requestUserLocation, flyToWhenReady]);
-  // Open centred on the rider (same gesture as "Center on me") so the map lands
-  // where they ride instead of the neutral fallback. Runs once; a denied prompt
-  // just leaves the fallback centre + its inline message.
-  //
-  // Use the fly-only path (`handleCenterOnMe`), NOT `handleUseMyLocation`: this
-  // must move the camera without writing the rider's coordinates into `center`,
-  // which `handleShare` serializes as the public snapshot's initial viewport —
-  // otherwise opening the page + Share would publish their precise location.
+  // Locate the rider and point the live view at them: write `center` (drives the
+  // "Nearby unridden" query + coordinate inputs) and fly the camera. Shared by
+  // the map's "Center on me" button, the sidebar's "Use my location", and the
+  // load-time auto-center so denial messaging, coordinate rounding, and the 10 s
+  // timeout stay in lockstep. Deliberately never touches `shareCenter`, so a
+  // located position can't leak into a shared link.
+  const locateAndCenter = useCallback(
+    (options?: { silent?: boolean }) => {
+      requestUserLocation((lat, lng) => {
+        setCenter({ lat, lng, label: "My location" });
+        flyToWhenReady(lat, lng);
+      }, options);
+    },
+    [requestUserLocation, flyToWhenReady],
+  );
+  // Open centred on the rider so the map lands where they ride instead of the
+  // neutral fallback. Runs once; a denied prompt just leaves the fallback centre.
+  // Silent: don't nag a rider who has denied permission on every visit.
   const centeredOnLoadRef = useRef(false);
   useEffect(() => {
     if (centeredOnLoadRef.current) return;
     centeredOnLoadRef.current = true;
-    // Fly-only + silent: don't write `center` (share privacy) and don't nag a
-    // rider who denied permission. `flyToWhenReady` queues the target if the
-    // map hasn't mounted yet (page still loading).
-    requestUserLocation((lat, lng) => flyToWhenReady(lat, lng), {
-      silent: true,
-    });
-  }, [requestUserLocation, flyToWhenReady]);
+    locateAndCenter({ silent: true });
+  }, [locateAndCenter]);
   // Replay a locate target captured before the map mounted. Runs after every
   // render but only acts once the map exists and there's a pending target, so
   // the auto-center survives the loading→loaded transition.
@@ -401,9 +401,11 @@ function RoadMapPageInner() {
         stats,
         period,
         segments: filteredRidden,
+        // `shareCenter`, not `center`: the live view centre tracks the rider's
+        // geolocated position, which must never be published in a share.
         initialCenter: {
-          lat: center.lat,
-          lng: center.lng,
+          lat: shareCenter.lat,
+          lng: shareCenter.lng,
           zoom: INITIAL_MAP_ZOOM,
         },
       });
@@ -416,7 +418,7 @@ function RoadMapPageInner() {
     } finally {
       sharingRef.current = false;
     }
-  }, [stats, period, filteredRidden, center.lat, center.lng]);
+  }, [stats, period, filteredRidden, shareCenter.lat, shareCenter.lng]);
   if (loading) {
     return (
       <RidesScaffold fill>
@@ -564,7 +566,7 @@ function RoadMapPageInner() {
           )}
           <button
             type="button"
-            onClick={handleCenterOnMe}
+            onClick={() => locateAndCenter()}
             className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-paper/85 border border-line backdrop-blur text-xs text-ink hover:bg-cream transition"
             title={t("Center on me")}
           >
@@ -659,9 +661,12 @@ function RoadMapPageInner() {
                   <NearbyCenterControls
                     center={center}
                     locating={locating}
-                    onUseMyLocation={handleUseMyLocation}
+                    onUseMyLocation={() => locateAndCenter()}
                     onCoordinatesChanged={(lat, lng, label) => {
+                      // Typed coordinates are rider-chosen, so they're safe to
+                      // publish — update both the live view and the share centre.
                       setCenter({ lat, lng, label });
+                      setShareCenter({ lat, lng, label });
                       mapRef.current?.flyTo({ lat, lng });
                     }}
                   />
