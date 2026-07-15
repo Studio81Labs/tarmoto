@@ -62,3 +62,18 @@ test("stepping the time keeps the date and emits merged ISO", async () => {
   );
   expect(onChange).toHaveBeenLastCalledWith("2026-05-18T09:45");
 });
+
+test("error exposes an invalid description to assistive tech", () => {
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value=""
+      onChange={() => {}}
+      error
+    />,
+  );
+  const trigger = screen.getByRole("button", { name: "Ride start" });
+  const desc = screen.getByText("Invalid date-time");
+  expect(desc).toHaveClass("sr-only");
+  expect(trigger).toHaveAttribute("aria-describedby", desc.id);
+});

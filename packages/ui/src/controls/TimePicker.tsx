@@ -52,6 +52,7 @@ export function TimePicker({
   className,
 }: TimePickerProps) {
   const labelId = useId();
+  const errorId = useId();
   const current = parse(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
@@ -112,6 +113,11 @@ export function TimePicker({
           {label}
         </span>
       )}
+      {error && (
+        <span id={errorId} className="sr-only">
+          Invalid time
+        </span>
+      )}
       <DialogTrigger>
         <Button
           {...(id !== undefined ? { id } : {})}
@@ -121,6 +127,7 @@ export function TimePicker({
               ? { "aria-label": ariaLabel }
               : {})}
           isDisabled={disabled}
+          {...(error ? { "aria-describedby": errorId } : {})}
           className={cn(
             fieldChrome({ tone, disabled, error, hasLeading: true }),
             "relative flex items-center text-left",

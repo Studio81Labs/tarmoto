@@ -69,7 +69,7 @@ export function DatePicker({
       <Group
         className={cn(
           fieldChrome({ tone, disabled, error, hasLeading: true }),
-          "flex items-center",
+          "relative flex items-center",
         )}
       >
         <span

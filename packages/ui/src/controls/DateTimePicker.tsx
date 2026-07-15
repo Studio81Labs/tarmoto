@@ -62,6 +62,7 @@ export function DateTimePicker({
   className,
 }: DateTimePickerProps) {
   const labelId = useId();
+  const errorId = useId();
   const dt = parseIsoDateTime(value);
 
   const calendarValue = dt ? new CalendarDate(dt.year, dt.month, dt.day) : null;
@@ -116,6 +117,11 @@ export function DateTimePicker({
           {label}
         </span>
       )}
+      {error && (
+        <span id={errorId} className="sr-only">
+          Invalid date-time
+        </span>
+      )}
       <DialogTrigger>
         <Button
           {...(id !== undefined ? { id } : {})}
@@ -125,6 +131,7 @@ export function DateTimePicker({
               ? { "aria-label": ariaLabel }
               : {})}
           isDisabled={disabled}
+          {...(error ? { "aria-describedby": errorId } : {})}
           className={cn(
             fieldChrome({ tone, disabled, error, hasLeading: true }),
             "relative flex items-center text-left",

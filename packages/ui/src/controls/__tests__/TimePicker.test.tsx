@@ -94,3 +94,13 @@ test("renders empty state without throwing and does not call onChange", () => {
   ).toBeInTheDocument();
   expect(onChange).not.toHaveBeenCalled();
 });
+
+test("error exposes an invalid description to assistive tech", () => {
+  render(
+    <TimePicker ariaLabel="Start time" value="" onChange={() => {}} error />,
+  );
+  const trigger = screen.getByRole("button", { name: "Start time" });
+  const desc = screen.getByText("Invalid time");
+  expect(desc).toHaveClass("sr-only");
+  expect(trigger).toHaveAttribute("aria-describedby", desc.id);
+});
