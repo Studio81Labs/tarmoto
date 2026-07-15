@@ -330,7 +330,7 @@ describe('AdminEmailTemplateService', () => {
     expect(manager.save).not.toHaveBeenCalled();
   });
 
-  it('reset deletes the published row under the advisory lock', async () => {
+  it('reset archives the live published row (keeps it in history), never deletes', async () => {
     const { service, manager } = make();
     await service.reset('weekly-digest', 'en');
     // Runs inside the transaction and takes the same (tag, locale) advisory
@@ -340,24 +340,54 @@ describe('AdminEmailTemplateService', () => {
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
       ['email_template:weekly-digest:en'],
     );
-    expect(manager.delete).toHaveBeenCalledWith(expect.anything(), {
-      template_tag: 'weekly-digest',
-      locale: 'en',
-      status: 'published',
-    });
+    expect(manager.update).toHaveBeenCalledWith(
+      expect.anything(),
+      { template_tag: 'weekly-digest', locale: 'en', status: 'published' },
+      { status: 'archived' },
+    );
+    expect(manager.delete).not.toHaveBeenCalled();
   });
 
-  it('reset deletes only the published row, preserving archived history', async () => {
+  it('publish after a reset continues numbering from the archived versions (no reuse)', async () => {
     const { service, manager } = make();
-    await service.reset('weekly-digest', 'en');
-    // Deletes the published row only — archived rows are untouched, so a
-    // revert remains possible after a reset.
-    expect(manager.delete).toHaveBeenCalledWith(expect.anything(), {
+    const draftRow = {
       template_tag: 'weekly-digest',
       locale: 'en',
-      status: 'published',
-    });
-    expect(manager.delete).toHaveBeenCalledTimes(1);
+      status: 'draft',
+      version: 1,
+      subject: 'x',
+      blocks: [],
+    };
+    manager.findOne.mockImplementation(
+      (
+        _entity: unknown,
+        opts: { where: { status: unknown }; order?: { version?: string } },
+      ) => {
+        if (opts.where.status === 'draft') return Promise.resolve(draftRow);
+        // Post-reset: no published row; the highest published/archived is an archived v3.
+        if (opts.order?.version === 'DESC')
+          return Promise.resolve({ version: 3, status: 'archived' });
+        return Promise.resolve(null);
+      },
+    );
+
+    const result = await service.publish('weekly-digest', 'en', 'admin-1');
+
+    // nextVersion = MAX(published+archived) + 1 = 4 — the archived v3 is counted, not skipped/reused.
+    expect(result.version).toBe(4);
+
+    // Confirm the lookup itself widens status to In(['published','archived'])
+    // via TypeORM's public `.type`/`.value` FindOperator getters, not just the
+    // resulting number — call[1] is the nextVersion lookup (call[0] is the draft read).
+    const [, nextVersionOpts] = manager.findOne.mock.calls[1] as [
+      unknown,
+      { where: { status: { type: string; value: unknown } } },
+    ];
+    expect(nextVersionOpts.where.status.type).toBe('in');
+    expect(nextVersionOpts.where.status.value).toEqual([
+      'published',
+      'archived',
+    ]);
   });
 
   it('revert re-publishes the target version content as a new version, archiving the current live one', async () => {
@@ -531,5 +561,22 @@ describe('AdminEmailTemplateService', () => {
     expect(result[0]!.author).toBeNull();
     expect(result[0]!.publishedAt).toBeNull();
     expect(templates.manager.find).not.toHaveBeenCalled();
+  });
+
+  it('history renders author null when the created_by admin no longer exists', async () => {
+    const { service, templates } = make();
+    templates.find.mockResolvedValue([
+      {
+        version: 1,
+        status: 'published',
+        created_by: 'ghost-admin',
+        published_at: new Date('2026-07-01T00:00:00.000Z'),
+        subject: 's1',
+        blocks: [],
+      },
+    ]);
+    templates.manager.find.mockResolvedValue([]); // admin row not found (deleted)
+    const result = await service.history('weekly-digest', 'en');
+    expect(result[0]!.author).toBeNull();
   });
 });

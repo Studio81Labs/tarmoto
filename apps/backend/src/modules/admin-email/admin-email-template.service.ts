@@ -207,8 +207,8 @@ export class AdminEmailTemplateService {
 
   /** Monotonic next version for (tag, locale): one past the highest existing
    *  published-or-archived version. Collision-free even after a reset (which
-   *  deletes only the published row), because archived rows keep their
-   *  numbers. First-ever publish → 1. */
+   *  archives, not deletes, the published row), because the archived row
+   *  keeps its number and is counted here too. First-ever publish → 1. */
   private async nextVersion(
     m: EntityManager,
     tag: string,
@@ -284,21 +284,27 @@ export class AdminEmailTemplateService {
     return this.toDetail(tag, locale, saved);
   }
 
-  /** Deletes the published override for (tag, locale) — the code template renders again. Idempotent. */
+  /** Archives the published override for (tag, locale) instead of deleting it:
+   *  the code template renders again once there is no published row, but the
+   *  version stays in history and stays revertable, and its number is never
+   *  reused by a later publish. Idempotent. */
   async reset(tag: string, locale: SupportedLocale): Promise<void> {
     this.assertEditable(tag);
-    // Serialize with publish under the same advisory lock. Otherwise a reset
-    // overlapping a publish runs its DELETE against a snapshot where the
-    // promote is still uncommitted, returns 200, and leaves the just-published
-    // override live. Under the lock, reset waits for the publish to commit and
-    // then deletes the row it created.
     await this.dataSource.transaction(async (m) => {
+      // Serialize with publish under the same advisory lock. Otherwise a reset
+      // overlapping a publish runs its archive UPDATE against a snapshot where
+      // the promote is still uncommitted, returns 200, and leaves the
+      // just-published override live. Under the lock, reset waits for the
+      // publish to commit and then archives the row it created.
       await this.lockTemplate(m, tag, locale);
-      await m.delete(EmailTemplate, {
-        template_tag: tag,
-        locale,
-        status: 'published',
-      });
+      // Archive the live override instead of deleting it: the code template
+      // renders again (no published row), but the version stays in history and
+      // remains revertable, and its number is never reused by a later publish.
+      await m.update(
+        EmailTemplate,
+        { template_tag: tag, locale, status: 'published' },
+        { status: 'archived' },
+      );
     });
   }
 
