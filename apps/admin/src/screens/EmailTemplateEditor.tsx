@@ -8,6 +8,7 @@ import {
 } from "../components/email-template/BlockCard.js";
 import { VarChips } from "../components/email-template/VarChips.js";
 import { PreviewPane } from "../components/email-template/PreviewPane.js";
+import { VersionHistoryDrawer } from "../components/email-template/VersionHistoryDrawer.js";
 import { useAdminAuth } from "../auth/useAdminAuth.js";
 import { canAccess } from "../lib/roleRank.js";
 import {
@@ -102,6 +103,7 @@ export function EmailTemplateEditor({
   } | null>(null);
   const [confirm, setConfirm] = useState<null | "publish" | "reset">(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Mirrors subject/blocks so an in-flight mutation's onSuccess (which
   // closes over the doc it submitted) can tell whether local state has
@@ -316,6 +318,14 @@ export function EmailTemplateEditor({
         {data ? (
           <span className="text-xs text-fg-dim">v{data.version}</span>
         ) : null}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="ml-auto"
+          onClick={() => setHistoryOpen(true)}
+        >
+          History
+        </Button>
       </div>
 
       {msg ? (
@@ -502,6 +512,22 @@ export function EmailTemplateEditor({
           draft (if any) is kept.
         </p>
       </Dialog>
+
+      <VersionHistoryDrawer
+        open={historyOpen}
+        tag={tag}
+        locale={locale}
+        isSuper={isSuper}
+        onClose={() => setHistoryOpen(false)}
+        onReverted={() => {
+          setMsg({
+            kind: "success",
+            text: "Reverted — this version is now live.",
+          });
+          void refetch();
+          invalidateList();
+        }}
+      />
     </section>
   );
 }
