@@ -41,22 +41,32 @@ test("error exposes an invalid description to assistive tech", () => {
   expect(trigger).toHaveAttribute("aria-describedby", desc.id);
 });
 
-test("trigger accessible name includes the value when ariaLabel is set", () => {
+test("trigger accessible name includes the formatted value when ariaLabel is set", () => {
   render(
-    <DatePicker ariaLabel="Departure" value="2026-05-18" onChange={() => {}} />,
+    <DatePicker
+      ariaLabel="Departure"
+      value="2026-05-18"
+      locale="en-GB"
+      onChange={() => {}}
+    />,
   );
   expect(
-    screen.getByRole("button", { name: /2026-05-18/ }),
+    screen.getByRole("button", { name: /18\/05\/2026/ }),
   ).toBeInTheDocument();
 });
 
-test("trigger accessible name includes the value when label is set", () => {
+test("trigger accessible name includes the formatted value when label is set", () => {
   render(
-    <DatePicker label="Departure" value="2026-05-18" onChange={() => {}} />,
+    <DatePicker
+      label="Departure"
+      value="2026-05-18"
+      locale="en-GB"
+      onChange={() => {}}
+    />,
   );
   const btn = screen.getByRole("button", { name: /departure/i });
   expect(btn).toBeInTheDocument();
-  expect(btn).toHaveAccessibleName(expect.stringContaining("2026-05-18"));
+  expect(btn).toHaveAccessibleName(expect.stringContaining("18/05/2026"));
 });
 
 test("closes the popover after a day is selected", async () => {
@@ -91,4 +101,28 @@ test("clicking the label opens the picker", async () => {
   expect(screen.queryByRole("grid")).not.toBeInTheDocument();
   await userEvent.click(screen.getByText("Departure"));
   expect(screen.getByRole("grid")).toBeInTheDocument();
+});
+
+test("formatValue controls the trigger display text", () => {
+  render(
+    <DatePicker
+      ariaLabel="Departure"
+      value="2026-05-18"
+      formatValue={(iso) => `on ${iso.split("-").reverse().join(".")}`}
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.getByText("on 18.05.2026")).toBeInTheDocument();
+});
+
+test("locale drives the trigger display text", () => {
+  render(
+    <DatePicker
+      ariaLabel="Departure"
+      value="2026-05-18"
+      locale="de-DE"
+      onChange={() => {}}
+    />,
+  );
+  expect(screen.getByText("18.05.2026")).toBeInTheDocument();
 });

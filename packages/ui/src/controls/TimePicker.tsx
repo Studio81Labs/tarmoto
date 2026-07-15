@@ -12,8 +12,10 @@ import {
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { parseIsoTime } from "./date/isoDate";
+import { displayIsoTime, type DisplayFormatProps } from "./date/displayFormat";
+import { useHydrated } from "./date/useHydrated";
 
-export interface TimePickerProps {
+export interface TimePickerProps extends DisplayFormatProps {
   value: string;
   onChange: (value: string) => void;
   minuteStep?: number;
@@ -45,6 +47,9 @@ export function TimePicker({
   tone = "paper",
   error = false,
   className,
+  locale,
+  formatOptions,
+  formatValue,
 }: TimePickerProps) {
   // Guard the public prop: 0/negative/non-integer would hang the option loop
   // (m += 0) or break the 60/step math. Fall back to the documented default.
@@ -62,6 +67,13 @@ export function TimePicker({
   const current = parseIsoTime(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
+  const hydrated = useHydrated();
+  const display = displayIsoTime(value, {
+    locale,
+    formatOptions,
+    formatValue,
+    hydrated,
+  });
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes: number[] = [];
@@ -140,7 +152,7 @@ export function TimePicker({
           {...(label !== undefined
             ? { "aria-labelledby": `${labelId} ${valueId}` }
             : ariaLabel !== undefined
-              ? { "aria-label": value ? `${ariaLabel}, ${value}` : ariaLabel }
+              ? { "aria-label": value ? `${ariaLabel}, ${display}` : ariaLabel }
               : {})}
           isDisabled={disabled}
           {...(error ? { "aria-describedby": errorId } : {})}
@@ -174,7 +186,7 @@ export function TimePicker({
               value ? "text-ink" : "text-fg-mute",
             )}
           >
-            {value || "Select time"}
+            {display || "Select time"}
           </span>
         </Button>
         <Popover placement="bottom left" className={MENU}>
