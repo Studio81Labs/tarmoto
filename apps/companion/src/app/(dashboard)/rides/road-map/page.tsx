@@ -46,6 +46,8 @@ import {
   PersonalRoadMap,
   type PersonalRoadMapHandle,
 } from "./_components/PersonalRoadMap";
+import { useUserRideTracks } from "@/hooks/useUserRideTracks";
+import { RIDE_ROUTE_COLOR } from "@/components/map/RideRouteLayer";
 import { RoadSegmentPopover } from "./_components/RoadSegmentPopover";
 /**
  * Personal road map (US-50).
@@ -88,6 +90,12 @@ function RoadMapPageInner() {
   // union is value-identical to the `TimePeriod` keys consumed by the
   // pure exploration/road-map helpers, so it's passed straight through.
   const period = useTimeWindow();
+  // Which map view is active: the rider's finished ride routes (default) or the
+  // ridden-segment coverage / exploration overlay behind a toggle.
+  const [mapView, setMapView] = useState<"routes" | "coverage">("routes");
+  // The rider's finished ride routes (GPS tracks). Drawn as the primary layer;
+  // the ≤500 server cap is plenty for a personal history.
+  const { tracks: rideTracks } = useUserRideTracks();
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
@@ -291,8 +299,10 @@ function RoadMapPageInner() {
       </RidesScaffold>
     );
   }
-  const hasAnyRiddenSegments = stats.ridden_segments > 0;
-  if (!hasAnyRiddenSegments) {
+  // Routes are the primary view, so any recorded ride keeps the map — not just
+  // matched coverage segments.
+  const hasAnyContent = stats.ridden_segments > 0 || rideTracks.length > 0;
+  if (!hasAnyContent) {
     return (
       <RidesScaffold fill>
         <RidesEmptyState
@@ -343,9 +353,17 @@ function RoadMapPageInner() {
               zoom: INITIAL_MAP_ZOOM,
             }}
             ridden={filteredRidden}
+            rideTracks={rideTracks}
+            showRoutes={mapView === "routes"}
+            showCoverage={mapView === "coverage"}
             onSegmentSelect={setSelectedSegmentId}
           />
-          <MapLegend riddenCount={filteredRidden.length} />
+          <MapViewToggle view={mapView} onChange={setMapView} />
+          <MapLegend
+            view={mapView}
+            rideCount={rideTracks.length}
+            riddenCount={filteredRidden.length}
+          />
           {selectedSegment && (
             <RoadSegmentPopover
               segment={selectedSegment}
@@ -365,21 +383,32 @@ function RoadMapPageInner() {
         </div>
 
         <aside className="space-y-3.5 overflow-y-auto">
-          {/* 1 — Segments ridden (ink hero tile, accent number + region subline).
-               Reflects the active period: the map/legend filter to the window,
-               so an all-time total here would contradict a near-empty map. */}
-          <MetricTile
-            variant="ink"
-            accentNumber
-            formatValue={format}
-            label={t("Segments ridden")}
-            value={
-              period === "all" ? stats.ridden_segments : filteredRidden.length
-            }
-            delta={t("of {total} in region", {
-              total: format(stats.total_segments),
-            })}
-          />
+          {/* 1 — Hero tile. Routes view leads with the ride count; the coverage
+               view leads with matched segments (period-aware, so an all-time
+               total wouldn't contradict a windowed map). */}
+          {mapView === "routes" ? (
+            <MetricTile
+              variant="ink"
+              accentNumber
+              formatValue={format}
+              label={t("Rides on map")}
+              value={rideTracks.length}
+              delta={t("with a recorded route")}
+            />
+          ) : (
+            <MetricTile
+              variant="ink"
+              accentNumber
+              formatValue={format}
+              label={t("Segments ridden")}
+              value={
+                period === "all" ? stats.ridden_segments : filteredRidden.length
+              }
+              delta={t("of {total} in region", {
+                total: format(stats.total_segments),
+              })}
+            />
+          )}
 
           {/* 2 — All-time (lifetime) distance ridden. */}
           <MetricTile
@@ -389,54 +418,62 @@ function RoadMapPageInner() {
             {...(distanceUnit !== undefined ? { unit: distanceUnit } : {})}
           />
 
-          {/* 3 — Region coverage. No region label backing data → no subline. */}
-          <MetricTile
-            accentNumber
-            formatValue={format}
-            label={t("Region coverage")}
-            value={stats.percent_explored}
-            unit="%"
-          />
-
-          {/* 4 — Nearby unridden roads (name · km · quality bars). */}
-          <Card padded={false} className="overflow-hidden">
-            <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
-              <Stamp>{t("Nearby unridden")}</Stamp>
-              {center.label && (
-                <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
-                  {center.label}
-                </span>
-              )}
-            </div>
-            <div className="px-[18px] py-3">
-              {nearbyLoading ? (
-                <LoaderRow label="Loading unridden roads…" />
-              ) : nearbyError ? (
-                <Alert compact intent="danger" title={nearbyError} />
-              ) : nearby.length === 0 ? (
-                <Alert compact intent="neutral" title={t("Nothing nearby")}>
-                  {t("— zoom out or pick a new centre.")}
-                </Alert>
-              ) : (
-                <ul className="space-y-3">
-                  {nearbyByDistance.slice(0, 10).map((seg) => (
-                    <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="border-t border-line px-[18px] py-3">
-              <NearbyCenterControls
-                center={center}
-                locating={locating}
-                onUseMyLocation={handleUseMyLocation}
-                onCoordinatesChanged={(lat, lng, label) => {
-                  setCenter({ lat, lng, label });
-                  mapRef.current?.flyTo({ lat, lng });
-                }}
+          {/* 3 + 4 — Coverage/exploration cards: region coverage and the
+               nearby-unridden browser. Only relevant to the coverage view. */}
+          {mapView === "coverage" && (
+            <>
+              <MetricTile
+                accentNumber
+                formatValue={format}
+                label={t("Region coverage")}
+                value={stats.percent_explored}
+                unit="%"
               />
-            </div>
-          </Card>
+
+              <Card padded={false} className="overflow-hidden">
+                <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
+                  <Stamp>{t("Nearby unridden")}</Stamp>
+                  {center.label && (
+                    <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-fg-mute">
+                      {center.label}
+                    </span>
+                  )}
+                </div>
+                <div className="px-[18px] py-3">
+                  {nearbyLoading ? (
+                    <LoaderRow label="Loading unridden roads…" />
+                  ) : nearbyError ? (
+                    <Alert compact intent="danger" title={nearbyError} />
+                  ) : nearby.length === 0 ? (
+                    <Alert compact intent="neutral" title={t("Nothing nearby")}>
+                      {t("— zoom out or pick a new centre.")}
+                    </Alert>
+                  ) : (
+                    <ul className="space-y-3">
+                      {nearbyByDistance.slice(0, 10).map((seg) => (
+                        <NearbyRow
+                          key={seg.id}
+                          segment={seg}
+                          units={unitSystem}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="border-t border-line px-[18px] py-3">
+                  <NearbyCenterControls
+                    center={center}
+                    locating={locating}
+                    onUseMyLocation={handleUseMyLocation}
+                    onCoordinatesChanged={(lat, lng, label) => {
+                      setCenter({ lat, lng, label });
+                      mapRef.current?.flyTo({ lat, lng });
+                    }}
+                  />
+                </div>
+              </Card>
+            </>
+          )}
         </aside>
       </div>
     </RidesScaffold>
@@ -558,26 +595,85 @@ function LoaderRow({ label }: LoaderRowProps) {
     </div>
   );
 }
+type MapView = "routes" | "coverage";
+
+function MapViewToggle({
+  view,
+  onChange,
+}: {
+  view: MapView;
+  onChange: (view: MapView) => void;
+}) {
+  const options: { key: MapView; label: string }[] = [
+    { key: "routes", label: t("Routes") },
+    { key: "coverage", label: t("Coverage") },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label={t("Map view")}
+      className="absolute top-4 left-4 z-10 inline-flex rounded-xl border border-line bg-paper/85 p-0.5 backdrop-blur"
+    >
+      {options.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          aria-pressed={view === option.key}
+          onClick={() => onChange(option.key)}
+          className={`rounded-[9px] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.4px] transition ${
+            view === option.key
+              ? "bg-ink text-cream"
+              : "text-fg-dim hover:text-ink"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface MapLegendProps {
+  view: MapView;
+  rideCount: number;
   riddenCount: number;
 }
-function MapLegend({ riddenCount }: MapLegendProps) {
+function MapLegend({ view, rideCount, riddenCount }: MapLegendProps) {
   return (
-    <div className="absolute top-4 left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
-      <div className="flex items-center gap-2">
-        <span className="h-1 w-6 rounded-full bg-accent" />
-        {t("Ridden ({count} segments)", {
-          count: riddenCount.toLocaleString(),
-        })}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="h-1 w-6 rounded-full bg-fg-mute" />
-        {t("Unridden ")}
-      </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-        {t("Click a ridden road for ride details ")}
-      </div>
+    <div className="absolute top-[60px] left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
+      {view === "routes" ? (
+        <>
+          <div className="flex items-center gap-2">
+            <span
+              className="h-1 w-6 rounded-full"
+              style={{ backgroundColor: RIDE_ROUTE_COLOR }}
+            />
+            {t("Your rides ({count})", {
+              count: rideCount.toLocaleString(),
+            })}
+          </div>
+          <div className="text-[11px] text-fg-dim">
+            {t("Every route you've recorded, drawn on the map. ")}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="h-1 w-6 rounded-full bg-accent" />
+            {t("Ridden ({count} segments)", {
+              count: riddenCount.toLocaleString(),
+            })}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="h-1 w-6 rounded-full bg-fg-mute" />
+            {t("Unridden ")}
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            {t("Click a ridden road for ride details ")}
+          </div>
+        </>
+      )}
     </div>
   );
 }

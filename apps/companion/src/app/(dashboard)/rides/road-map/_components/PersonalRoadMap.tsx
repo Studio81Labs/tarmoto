@@ -26,9 +26,16 @@ import {
   indexRiddenSegments,
   type RiddenSegment,
 } from "@/lib/road-map-layer";
+import {
+  ensureRideRouteLayers,
+  setRideRouteLayersVisible,
+  setRideRouteSourceData,
+  type RideTrack,
+} from "@/components/map/RideRouteLayer";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
+const NO_TRACKS: readonly RideTrack[] = [];
 
 export interface PersonalRoadMapHandle {
   flyTo: (coords: { lat: number; lng: number; zoom?: number }) => void;
@@ -46,6 +53,16 @@ interface Props {
    * features in this list; everything else falls through to the dim base.
    */
   ridden: readonly RiddenSegment[];
+  /**
+   * The rider's finished ride routes (GPS tracks). Drawn as indigo lines — the
+   * primary "these are my rides" view, distinct from the ridden-segment
+   * coverage. Empty/omitted draws no routes.
+   */
+  rideTracks?: readonly RideTrack[];
+  /** Draw the ride-route lines (default view). */
+  showRoutes?: boolean;
+  /** Draw the ridden-segment coverage overlay (the exploration view). */
+  showCoverage?: boolean;
   /**
    * Pin the basemap theme instead of following the viewer preference — the
    * public share page always renders on cream.
@@ -77,7 +94,16 @@ interface Props {
  */
 export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
   function PersonalRoadMap(
-    { initialCenter, ridden, forceColorScheme, dimColor, onSegmentSelect },
+    {
+      initialCenter,
+      ridden,
+      rideTracks = NO_TRACKS,
+      showRoutes = true,
+      showCoverage = false,
+      forceColorScheme,
+      dimColor,
+      onSegmentSelect,
+    },
     ref,
   ) {
     const canvasRef = useRef<MapCanvasHandle>(null);
@@ -144,7 +170,13 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
             type: "line",
             source: SOURCE_ID,
             "source-layer": QUALITY_LAYER,
-            layout: { "line-cap": "round", "line-join": "round" },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+              // Start in the correct view (routes default → hidden) so the
+              // coverage overlay doesn't flash before the effect runs.
+              visibility: showCoverage ? "visible" : "none",
+            },
             paint: {
               "line-color": RIDDEN_LINE_COLOR,
               "line-width":
@@ -162,6 +194,12 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
           },
           beforeId,
         );
+
+        // Ride-route lines sit ON TOP of the coverage layers — they're the
+        // primary "my finished rides" view. Source data + visibility are driven
+        // by the effects below (which run as soon as `ready` flips), so the
+        // initial flag here is just a placeholder.
+        ensureRideRouteLayers(map, { visible: true });
 
         // Hit-testing binds to the cyan layer, which paints every quality
         // feature (unridden ones at opacity 0 via feature-state) so MapLibre
@@ -207,10 +245,11 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         map.on("click", handleMapClick);
 
         setReady(true);
-        // `dimColor` is read when the dim layer is added on map load; it's a
-        // stable prop per mount, but list it so the linter is satisfied.
+        // `dimColor` / `showCoverage` are read when the layers are added on map
+        // load; stable per mount (the effects handle later changes), but listed
+        // so the linter is satisfied.
       },
-      [dimColor],
+      [dimColor, showCoverage],
     );
 
     // Apply `feature-state.ridden = true` for every segment in the current
@@ -229,6 +268,33 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         );
       }
     }, [ready, ridden]);
+
+    // Keep the ride-route source in sync with the fetched tracks.
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready) return;
+      setRideRouteSourceData(map, rideTracks);
+    }, [ready, rideTracks]);
+
+    // Routes layer visibility (the default "my rides" view).
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready) return;
+      setRideRouteLayersVisible(map, showRoutes);
+    }, [ready, showRoutes]);
+
+    // Coverage overlay visibility (the ridden-segment exploration view). Hiding
+    // it also drops its hit-testing, so segment clicks only fire in that view.
+    // The dim base stays on in both views to give the routes road context.
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready || !map.getLayer(ROAD_MAP_RIDDEN_LAYER_ID)) return;
+      map.setLayoutProperty(
+        ROAD_MAP_RIDDEN_LAYER_ID,
+        "visibility",
+        showCoverage ? "visible" : "none",
+      );
+    }, [ready, showCoverage]);
 
     return (
       <MapCanvas
