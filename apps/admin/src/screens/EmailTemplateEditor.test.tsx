@@ -46,6 +46,8 @@ vi.mock("../data/useAdminEmailTemplates.js", () => ({
   usePublish: () => ({ mutate: publishMutate, isPending: false }),
   useReset: () => ({ mutate: resetMutate, isPending: pending.reset }),
   usePreview: () => ({ mutate: vi.fn(), isPending: false }),
+  useTemplateHistory: () => ({ data: [], isPending: false, refetch: vi.fn() }),
+  useRevertVersion: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // Vitest rejects a `vi.mock` factory that closes over an out-of-scope `let` —
@@ -386,5 +388,14 @@ describe("EmailTemplateEditor", () => {
     expect(window.location.hash).toBe("#/users");
 
     confirmSpy.mockRestore();
+  });
+
+  it("opens the version history drawer from the History button", () => {
+    render(
+      <EmailTemplateEditor tag="weekly-digest" locale="en" onBack={vi.fn()} />,
+    );
+    expect(screen.queryByText("Version history")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    expect(screen.getByText("Version history")).toBeInTheDocument();
   });
 });

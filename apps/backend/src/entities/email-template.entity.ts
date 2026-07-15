@@ -42,7 +42,7 @@ export class EmailTemplate {
   blocks!: EmailBlock[];
 
   @Column({ type: 'varchar', length: 16, default: 'draft' })
-  status!: 'draft' | 'published';
+  status!: 'draft' | 'published' | 'archived';
 
   /** Monotonic per (template_tag, locale). */
   @Column({ type: 'int', default: 1 })
