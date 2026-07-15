@@ -5,14 +5,10 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import maplibregl, {
-  type Map as MapLibreMap,
-  type MapMouseEvent,
-} from "maplibre-gl";
+import { type Map as MapLibreMap, type MapMouseEvent } from "maplibre-gl";
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
 import type { MapColorScheme } from "@/lib/map-style";
@@ -23,15 +19,39 @@ import {
   ROAD_MAP_LAYER_LINE_WIDTH,
   ROAD_MAP_RIDDEN_LAYER_ID,
   ROAD_MAP_RIDDEN_LINE_WIDTH,
-  indexRiddenSegments,
   type RiddenSegment,
 } from "@/lib/road-map-layer";
+import {
+  ensureRideRouteLayers,
+  setRideRouteLayersVisible,
+  setRideRouteSourceData,
+  RIDE_ROUTE_LAYER,
+  RIDE_ROUTE_SOURCE,
+  RIDE_ROUTE_COLOR,
+  type RideTrack,
+} from "@/components/map/RideRouteLayer";
+import {
+  pickNearestLineFeature,
+  readSegmentId,
+  SEGMENT_HIT_PADDING_PX,
+} from "@/lib/map-segment-hit";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "quality";
+const NO_TRACKS: readonly RideTrack[] = [];
+// Wider, opaque overlay of the clicked ride's line so it reads as "selected"
+// while its popover is open. A rideId no real ride uses hides it.
+const RIDE_ROUTE_HIGHLIGHT_LAYER = "road-map-ride-route-highlight";
+const NO_RIDE_MATCH = "__none__";
 
 export interface PersonalRoadMapHandle {
   flyTo: (coords: { lat: number; lng: number; zoom?: number }) => void;
+  /**
+   * Current map camera centre, or `null` before the map is ready. Reflects
+   * manual panning (which never touches the page's `center` state), so the
+   * share snapshot can frame on whatever the rider is actually looking at.
+   */
+  getCenter: () => { lat: number; lng: number } | null;
 }
 
 interface Props {
@@ -47,6 +67,16 @@ interface Props {
    */
   ridden: readonly RiddenSegment[];
   /**
+   * The rider's finished ride routes (GPS tracks). Drawn as indigo lines — the
+   * primary "these are my rides" view, distinct from the ridden-segment
+   * coverage. Empty/omitted draws no routes.
+   */
+  rideTracks?: readonly RideTrack[];
+  /** Draw the ride-route lines (default view). */
+  showRoutes?: boolean;
+  /** Draw the ridden-segment coverage overlay (the exploration view). */
+  showCoverage?: boolean;
+  /**
    * Pin the basemap theme instead of following the viewer preference — the
    * public share page always renders on cream.
    */
@@ -58,11 +88,23 @@ interface Props {
    */
   dimColor?: string;
   /**
-   * Called when the rider clicks a ridden segment (with its id) or clicks
-   * empty map / an unridden road (with `null`). Drives the detail popover the
-   * page renders in the map corner. Omit on the read-only share page.
+   * Coverage view: called when the rider clicks any road (ridden or not) with
+   * its segment id, or empty map with `null`. Drives the segment detail drawer.
+   * Omit on the read-only share page.
    */
   onSegmentSelect?: (segmentId: string | null) => void;
+  /**
+   * Routes view: called with a ride id when the rider clicks one of their route
+   * lines. Drives the ride popover.
+   */
+  onRouteSelect?: (rideId: string) => void;
+  /**
+   * Segment whose detail drawer is open — MapCanvas paints its highlight glow
+   * over this feature on the shared road source.
+   */
+  selectedSegmentId?: string | null;
+  /** Ride whose popover is open — its route line is drawn wider/opaque. */
+  selectedRideId?: string | null;
 }
 
 /**
@@ -77,34 +119,77 @@ interface Props {
  */
 export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
   function PersonalRoadMap(
-    { initialCenter, ridden, forceColorScheme, dimColor, onSegmentSelect },
+    {
+      initialCenter,
+      ridden,
+      rideTracks = NO_TRACKS,
+      showRoutes = true,
+      showCoverage = false,
+      forceColorScheme,
+      dimColor,
+      onSegmentSelect,
+      onRouteSelect,
+      selectedSegmentId,
+      selectedRideId,
+    },
     ref,
   ) {
     const canvasRef = useRef<MapCanvasHandle>(null);
     const mapRef = useRef<MapLibreMap | null>(null);
     const [ready, setReady] = useState(false);
 
-    const indexedRidden = useMemo(() => indexRiddenSegments(ridden), [ridden]);
-    const indexedRiddenRef = useRef(indexedRidden);
-    useEffect(() => {
-      indexedRiddenRef.current = indexedRidden;
-    }, [indexedRidden]);
     // Read the latest callback from a ref so the click handler (bound once on
     // map load) doesn't need re-binding when the prop identity changes.
     const onSegmentSelectRef = useRef(onSegmentSelect);
     useEffect(() => {
       onSegmentSelectRef.current = onSegmentSelect;
     }, [onSegmentSelect]);
+    const onRouteSelectRef = useRef(onRouteSelect);
+    useEffect(() => {
+      onRouteSelectRef.current = onRouteSelect;
+    }, [onRouteSelect]);
+    // The click handler binds once on map load; read the live view mode from a
+    // ref so a toggle doesn't need a rebind.
+    const viewRef = useRef({ showRoutes, showCoverage });
+    useEffect(() => {
+      viewRef.current = { showRoutes, showCoverage };
+    }, [showRoutes, showCoverage]);
 
-    useImperativeHandle(ref, () => ({
-      flyTo: ({ lat, lng, zoom }) => {
-        const map = mapRef.current;
-        if (!map) return;
+    // A flyTo requested before the map is ready (e.g. a cached geolocation
+    // resolving during mount) is queued and replayed on ready — otherwise it'd
+    // no-op and the map would stay at the initial fallback centre.
+    const pendingFlyToRef = useRef<{
+      lat: number;
+      lng: number;
+      zoom?: number;
+    } | null>(null);
+    const flyToTarget = useCallback(
+      (
+        map: MapLibreMap,
+        target: { lat: number; lng: number; zoom?: number },
+      ) => {
         map.flyTo({
-          center: [lng, lat],
-          zoom: zoom ?? Math.max(map.getZoom(), 9),
+          center: [target.lng, target.lat],
+          zoom: target.zoom ?? Math.max(map.getZoom(), 9),
           essential: true,
         });
+      },
+      [],
+    );
+    useImperativeHandle(ref, () => ({
+      flyTo: (target) => {
+        const map = mapRef.current;
+        if (!map) {
+          pendingFlyToRef.current = target;
+          return;
+        }
+        flyToTarget(map, target);
+      },
+      getCenter: () => {
+        const map = mapRef.current;
+        if (!map) return null;
+        const c = map.getCenter();
+        return { lat: c.lat, lng: c.lng };
       },
     }));
 
@@ -144,7 +229,13 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
             type: "line",
             source: SOURCE_ID,
             "source-layer": QUALITY_LAYER,
-            layout: { "line-cap": "round", "line-join": "round" },
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+              // Start in the correct view (routes default → hidden) so the
+              // coverage overlay doesn't flash before the effect runs.
+              visibility: showCoverage ? "visible" : "none",
+            },
             paint: {
               "line-color": RIDDEN_LINE_COLOR,
               "line-width":
@@ -163,6 +254,39 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
           beforeId,
         );
 
+        // Ride-route lines sit ON TOP of the coverage layers — they're the
+        // primary "my finished rides" view. Source data + visibility are driven
+        // by the effects below (which run as soon as `ready` flips), so the
+        // initial flag here is just a placeholder.
+        ensureRideRouteLayers(map, { visible: true });
+
+        // Selected-ride highlight: a wider, opaque overlay on the same source,
+        // filtered to the open ride by the effect below.
+        if (!map.getLayer(RIDE_ROUTE_HIGHLIGHT_LAYER)) {
+          map.addLayer({
+            id: RIDE_ROUTE_HIGHLIGHT_LAYER,
+            type: "line",
+            source: RIDE_ROUTE_SOURCE,
+            filter: ["==", ["get", "rideId"], NO_RIDE_MATCH],
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: {
+              "line-color": RIDE_ROUTE_COLOR,
+              "line-width": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                8,
+                6,
+                12,
+                9,
+                16,
+                12,
+              ] as ExpressionSpecification,
+              "line-opacity": 1,
+            },
+          });
+        }
+
         // Hit-testing binds to the cyan layer, which paints every quality
         // feature (unridden ones at opacity 0 via feature-state) so MapLibre
         // still hit-tests their geometry; the `meta` lookup distinguishes
@@ -170,47 +294,73 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         //
         // Hover: only a *ridden* segment shows the pointer cursor — clicking
         // it opens the detail popover the page renders in the map corner.
-        const handlePointerMove = (
-          ev: MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] },
-        ) => {
-          const id = ev.features?.[0]?.id;
-          const isRidden =
-            typeof id === "string" && indexedRiddenRef.current.has(id);
-          map.getCanvas().style.cursor = isRidden ? "pointer" : "";
+        const setPointer = () => {
+          map.getCanvas().style.cursor = "pointer";
         };
-
-        const handlePointerLeave = () => {
+        const clearPointer = () => {
           map.getCanvas().style.cursor = "";
         };
+        // Coverage view: any road is clickable, so the whole dim base is a
+        // hover target. Routes view: only the ride lines are.
+        const onRoadHover = () => {
+          if (viewRef.current.showCoverage) setPointer();
+        };
+        const onRouteHover = () => {
+          if (viewRef.current.showRoutes) setPointer();
+        };
+        map.on("mousemove", ROAD_MAP_DIM_LAYER_ID, onRoadHover);
+        map.on("mouseleave", ROAD_MAP_DIM_LAYER_ID, clearPointer);
+        map.on("mousemove", RIDE_ROUTE_LAYER, onRouteHover);
+        map.on("mouseleave", RIDE_ROUTE_LAYER, clearPointer);
 
-        map.on("mousemove", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerMove);
-        map.on("mouseleave", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerLeave);
-
-        // Click anywhere: select the first ridden segment under the point, or
-        // deselect (close the popover) when the click misses every ridden road.
         const handleMapClick = (ev: MapMouseEvent) => {
-          const select = onSegmentSelectRef.current;
-          if (!select) return;
-          const hits = map.queryRenderedFeatures(ev.point, {
-            layers: [ROAD_MAP_RIDDEN_LAYER_ID],
-          });
-          for (const feature of hits) {
-            const id = feature.id;
-            if (typeof id === "string" && indexedRiddenRef.current.has(id)) {
-              select(id);
+          const { showRoutes: routesOn, showCoverage: coverageOn } =
+            viewRef.current;
+
+          // Routes view: a click on one of the ride lines opens its popover.
+          if (routesOn && map.getLayer(RIDE_ROUTE_LAYER)) {
+            const routeHits = map.queryRenderedFeatures(ev.point, {
+              layers: [RIDE_ROUTE_LAYER],
+            });
+            const rideId = routeHits[0]?.properties?.rideId;
+            if (typeof rideId === "string") {
+              onRouteSelectRef.current?.(rideId);
               return;
             }
           }
-          select(null);
+
+          // Coverage view: select the nearest road under a padded box — any
+          // road, ridden or not (matching the explorer), so the whole network
+          // is browsable — or deselect on a miss. The dim base layer paints
+          // every segment, so it's the hit target regardless of ridden state.
+          if (coverageOn) {
+            const select = onSegmentSelectRef.current;
+            if (!select) return;
+            const feature = pickNearestLineFeature(
+              map,
+              ev.point,
+              [ROAD_MAP_DIM_LAYER_ID],
+              SEGMENT_HIT_PADDING_PX,
+            );
+            select(readSegmentId(feature) ?? null);
+          }
         };
 
         map.on("click", handleMapClick);
 
         setReady(true);
-        // `dimColor` is read when the dim layer is added on map load; it's a
-        // stable prop per mount, but list it so the linter is satisfied.
+
+        // Replay a fly-to that arrived before the map was ready (queued above).
+        if (pendingFlyToRef.current) {
+          const target = pendingFlyToRef.current;
+          pendingFlyToRef.current = null;
+          flyToTarget(map, target);
+        }
+        // `dimColor` / `showCoverage` are read when the layers are added on map
+        // load; stable per mount (the effects handle later changes), but listed
+        // so the linter is satisfied.
       },
-      [dimColor],
+      [dimColor, showCoverage, flyToTarget],
     );
 
     // Apply `feature-state.ridden = true` for every segment in the current
@@ -230,6 +380,49 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       }
     }, [ready, ridden]);
 
+    // Keep the ride-route source in sync with the fetched tracks.
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready) return;
+      setRideRouteSourceData(map, rideTracks);
+    }, [ready, rideTracks]);
+
+    // Routes layer visibility (the default "my rides" view).
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready) return;
+      setRideRouteLayersVisible(map, showRoutes);
+    }, [ready, showRoutes]);
+
+    // Highlight the open ride's line (routes view only).
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready || !map.getLayer(RIDE_ROUTE_HIGHLIGHT_LAYER)) return;
+      map.setLayoutProperty(
+        RIDE_ROUTE_HIGHLIGHT_LAYER,
+        "visibility",
+        showRoutes ? "visible" : "none",
+      );
+      map.setFilter(RIDE_ROUTE_HIGHLIGHT_LAYER, [
+        "==",
+        ["get", "rideId"],
+        showRoutes && selectedRideId ? selectedRideId : NO_RIDE_MATCH,
+      ]);
+    }, [ready, showRoutes, selectedRideId]);
+
+    // Coverage overlay visibility (the ridden-segment exploration view). Hiding
+    // it also drops its hit-testing, so segment clicks only fire in that view.
+    // The dim base stays on in both views to give the routes road context.
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready || !map.getLayer(ROAD_MAP_RIDDEN_LAYER_ID)) return;
+      map.setLayoutProperty(
+        ROAD_MAP_RIDDEN_LAYER_ID,
+        "visibility",
+        showCoverage ? "visible" : "none",
+      );
+    }, [ready, showCoverage]);
+
     return (
       <MapCanvas
         ref={canvasRef}
@@ -237,6 +430,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         zoom={initialCenter.zoom}
         showQuality={false}
         showSurface={false}
+        selectedSegmentId={selectedSegmentId ?? null}
         {...(forceColorScheme !== undefined ? { forceColorScheme } : {})}
         onReady={handleReady}
       />
