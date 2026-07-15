@@ -116,14 +116,12 @@ export function BlockCard({
             value={block.urlVar ?? ""}
             onChange={(v) => patch({ urlVar: v })}
             ariaLabel="Button link"
-          >
-            <option value="" disabled>
-              Choose a link…
-            </option>
-            {urlVars.map((u) => (
-              <option key={u} value={u}>{`{${u}}`}</option>
-            ))}
-          </Select>
+            options={[
+              { value: "", label: "Choose a link…" },
+              // Whitelist-only: the admin can only pick a vetted url var.
+              ...urlVars.map((u) => ({ value: u, label: `{${u}}` })),
+            ]}
+          />
         </div>
       )}
 
