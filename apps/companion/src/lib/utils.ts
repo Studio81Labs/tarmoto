@@ -86,6 +86,8 @@ export function qualityProvenanceLabel(
       return "Estimated from road surface";
     case "osm_highway":
       return "Estimated from road type";
+    default:
+      return null;
   }
 }
 

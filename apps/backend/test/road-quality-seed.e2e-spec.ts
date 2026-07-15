@@ -46,7 +46,7 @@ describe('road-quality seed blend (real PG)', () => {
     expect(Number(rows[0].quality_score)).toBeCloseTo(4, 5);
   });
 
-  it('blends toward the rider mean by count (seed=4, k=4, one very_poor reading → 3.6)', async () => {
+  it('blends toward the rider mean by count (seed=4, k=4, one poor reading → 3.6)', async () => {
     const id = await makeSegment(4);
     await addReading(id, 'poor'); // 2.0
     await ds.query(`SELECT update_road_quality_for_segment($1)`, [id]);
