@@ -109,37 +109,44 @@ export class AdminEmailTemplateService {
     };
   }
 
-  /** Validates then upserts the single draft row for (tag, locale). */
+  /** Validates then upserts the single draft row for (tag, locale), serialized
+   *  under the (tag, locale) advisory lock so two concurrent first-saves can't
+   *  both insert a draft (there is no unique index on draft rows). `actorId` is
+   *  recorded on a freshly inserted draft. */
   async saveDraft(
     tag: string,
     locale: SupportedLocale,
     dto: SaveDraftDto,
+    actorId: string | null = null,
   ): Promise<EmailTemplateDetailDto> {
     this.assertEditable(tag);
     const result = validateBlockDocument(tag, dto);
     if (!result.ok) throw new BadRequestException(result.errors);
 
-    // Update in place, scoped to the draft row. save()-ing a loaded entity
-    // would persist its stale `status: 'draft'`, so a super_admin who published
-    // this very row between our read and our write would see the publish
-    // silently reverted. A targeted UPDATE ... WHERE status = 'draft' only ever
-    // touches the subject/blocks of a still-draft row; if the draft was already
-    // published (or never existed) 0 rows match and we insert a fresh draft.
-    const updated = await this.templates.update(
-      { template_tag: tag, locale, status: 'draft' },
-      { subject: result.doc.subject, blocks: result.doc.blocks },
-    );
-    if (!updated.affected) {
-      await this.templates.save(
-        this.templates.create({
-          template_tag: tag,
-          locale,
-          subject: result.doc.subject,
-          blocks: result.doc.blocks,
-          status: 'draft',
-        }),
+    await this.dataSource.transaction(async (m) => {
+      await this.lockTemplate(m, tag, locale);
+      // Targeted UPDATE ... WHERE status='draft' carrying only subject/blocks,
+      // so a row a super_admin published between our read and write is never
+      // reverted to draft; if nothing matched, insert a fresh draft.
+      const updated = await m.update(
+        EmailTemplate,
+        { template_tag: tag, locale, status: 'draft' },
+        { subject: result.doc.subject, blocks: result.doc.blocks },
       );
-    }
+      if (!updated.affected) {
+        await m.save(
+          m.create(EmailTemplate, {
+            template_tag: tag,
+            locale,
+            subject: result.doc.subject,
+            blocks: result.doc.blocks,
+            status: 'draft',
+            created_by: actorId,
+          }),
+        );
+      }
+    });
+
     const row = await this.templates.findOne({
       where: { template_tag: tag, locale, status: 'draft' },
     });

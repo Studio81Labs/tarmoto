@@ -68,7 +68,7 @@ export class AdminEmailTemplateController {
       target_type: 'email',
       target_id: `${tag}/${loc}`,
     });
-    return this.service.saveDraft(tag, loc, dto);
+    return this.service.saveDraft(tag, loc, dto, req.adminUser?.id ?? null);
   }
 
   @Post(':tag/:locale/preview')

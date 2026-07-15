@@ -59,10 +59,9 @@ describe('AdminEmailTemplateService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('saveDraft inserts a fresh draft when the scoped update matches no draft row', async () => {
-    const { service, templates } = make();
-    // No draft row matched (none existed, or it was published between calls).
-    templates.update.mockResolvedValue({ affected: 0 });
+  it('saveDraft inserts a fresh draft under the lock when no draft row matches', async () => {
+    const { service, templates, manager } = make();
+    manager.update.mockResolvedValue({ affected: 0 });
     templates.findOne.mockResolvedValue({
       template_tag: 'weekly-digest',
       locale: 'en',
@@ -72,26 +71,36 @@ describe('AdminEmailTemplateService', () => {
       blocks: [{ type: 'paragraph', text: 'You rode {distance}' }],
     });
 
-    const result = await service.saveDraft('weekly-digest', 'en', {
-      subject: 'Hi {displayName}',
-      blocks: [{ type: 'paragraph', text: 'You rode {distance}' }],
-    });
+    const result = await service.saveDraft(
+      'weekly-digest',
+      'en',
+      {
+        subject: 'Hi {displayName}',
+        blocks: [{ type: 'paragraph', text: 'You rode {distance}' }],
+      },
+      'admin-1',
+    );
 
-    // Scoped write targets only draft rows; nothing matched → insert a fresh
-    // draft rather than reverting any row that a concurrent publish promoted.
-    expect(templates.update).toHaveBeenCalledWith(
+    // Serialized under the (tag, locale) advisory lock so two concurrent
+    // first-saves can't both insert.
+    expect(manager.query).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+      ['email_template:weekly-digest:en'],
+    );
+    expect(manager.update).toHaveBeenCalledWith(
+      expect.anything(),
       { template_tag: 'weekly-digest', locale: 'en', status: 'draft' },
       expect.objectContaining({ subject: 'Hi {displayName}' }),
     );
-    expect(templates.save).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'draft' }),
+    expect(manager.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'draft', created_by: 'admin-1' }),
     );
     expect(result.status).toBe('draft');
   });
 
   it('saveDraft updates the draft via a status-scoped write, never rewriting a published row', async () => {
-    const { service, templates } = make();
-    templates.update.mockResolvedValue({ affected: 1 });
+    const { service, templates, manager } = make();
+    manager.update.mockResolvedValue({ affected: 1 });
     templates.findOne.mockResolvedValue({
       template_tag: 'weekly-digest',
       locale: 'en',
@@ -101,25 +110,27 @@ describe('AdminEmailTemplateService', () => {
       blocks: [{ type: 'heading', text: '{distance}' }],
     });
 
-    const result = await service.saveDraft('weekly-digest', 'en', {
-      subject: 'New {displayName}',
-      blocks: [{ type: 'heading', text: '{distance}' }],
-    });
+    const result = await service.saveDraft(
+      'weekly-digest',
+      'en',
+      {
+        subject: 'New {displayName}',
+        blocks: [{ type: 'heading', text: '{distance}' }],
+      },
+      'admin-1',
+    );
 
-    // The write is a targeted UPDATE ... WHERE status = 'draft' carrying only
-    // subject/blocks — so a row a super_admin published between our read and
-    // write can never be reverted to draft (the guard for this finding).
-    expect(templates.update).toHaveBeenCalledWith(
+    expect(manager.update).toHaveBeenCalledWith(
+      expect.anything(),
       { template_tag: 'weekly-digest', locale: 'en', status: 'draft' },
       {
         subject: 'New {displayName}',
         blocks: [{ type: 'heading', text: '{distance}' }],
       },
     );
-    // Matched an existing draft → no full-entity save (which would carry the
-    // stale status) and no freshly created row.
-    expect(templates.create).not.toHaveBeenCalled();
-    expect(templates.save).not.toHaveBeenCalled();
+    // Matched a draft → no insert.
+    expect(manager.create).not.toHaveBeenCalled();
+    expect(manager.save).not.toHaveBeenCalled();
     expect(result.status).toBe('draft');
   });
 
