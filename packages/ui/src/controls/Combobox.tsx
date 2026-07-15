@@ -32,15 +32,25 @@ function labelText(label: ReactNode, fallback: string): string {
   return typeof label === "string" ? label : fallback;
 }
 
-/** Highlights the matched substring with an accent wash. */
-function highlight(text: string, query: string): ReactNode {
+/**
+ * Highlights the matched substring with an accent wash. On the selected row
+ * (ink fill + cream text) the light accent-on-ink wash is invisible and the
+ * forced ink text is dark-on-dark, so switch to a cream wash that keeps the
+ * cream text readable.
+ */
+function highlight(text: string, query: string, selected: boolean): ReactNode {
   if (!query) return text;
   const i = text.toLowerCase().indexOf(query.toLowerCase());
   if (i < 0) return text;
   return (
     <>
       {text.slice(0, i)}
-      <span className="rounded-[3px] bg-accent/[0.14] text-ink">
+      <span
+        className={cn(
+          "rounded-[3px]",
+          selected ? "bg-cream/25 text-cream" : "bg-accent/[0.14] text-ink",
+        )}
+      >
         {text.slice(i, i + query.length)}
       </span>
       {text.slice(i + query.length)}
@@ -163,7 +173,11 @@ export function Combobox({
               {({ isSelected }) => (
                 <>
                   <span className="truncate">
-                    {highlight(labelText(opt.label, opt.value), activeFilter)}
+                    {highlight(
+                      labelText(opt.label, opt.value),
+                      activeFilter,
+                      isSelected,
+                    )}
                   </span>
                   {isSelected && (
                     <svg

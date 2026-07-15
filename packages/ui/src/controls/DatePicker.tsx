@@ -119,7 +119,7 @@ export function DatePicker({
             {value ? value : "Select date"}
           </span>
         </Button>
-        <Popover className={MENU}>
+        <Popover placement="bottom left" className={MENU}>
           <Dialog className="outline-none" aria-label={ariaLabel ?? "Date"}>
             <Calendar
               firstDayOfWeek="mon"

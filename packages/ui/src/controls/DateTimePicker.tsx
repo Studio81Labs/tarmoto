@@ -197,7 +197,7 @@ export function DateTimePicker({
             {value || "Select date & time"}
           </span>
         </Button>
-        <Popover className={MENU}>
+        <Popover placement="bottom left" className={MENU}>
           <Dialog
             className="flex flex-col gap-3 outline-none"
             aria-label={ariaLabel ?? "Date and time"}
