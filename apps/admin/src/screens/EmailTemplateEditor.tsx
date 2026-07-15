@@ -524,6 +524,10 @@ export function EmailTemplateEditor({
             kind: "success",
             text: "Reverted — this version is now live.",
           });
+          // Revert changes what get() returns (the new published row) when there
+          // is no draft; clear the seed guard so the refetch re-seeds the editor
+          // body to the newly-live version instead of leaving stale content shown.
+          if (!dirty) seededKey.current = null;
           void refetch();
           invalidateList();
         }}
