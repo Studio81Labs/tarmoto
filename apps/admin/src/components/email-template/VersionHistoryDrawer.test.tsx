@@ -83,4 +83,15 @@ describe("VersionHistoryDrawer", () => {
     );
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("Escape dismisses the revert confirm without cascade-closing the drawer", () => {
+    render(<VersionHistoryDrawer {...base} isSuper={true} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /revert/i })[0]!);
+    expect(screen.getByText("Revert to this version?")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.queryByText("Revert to this version?")).toBeNull();
+    expect(base.onClose).not.toHaveBeenCalled();
+  });
 });

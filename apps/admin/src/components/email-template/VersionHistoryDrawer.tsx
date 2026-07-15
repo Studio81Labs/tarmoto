@@ -47,11 +47,12 @@ export function VersionHistoryDrawer({
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !revert.isPending) onClose();
+      if (e.key === "Escape" && !revert.isPending && confirmVersion === null)
+        onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, revert.isPending, onClose]);
+  }, [open, revert.isPending, confirmVersion, onClose]);
 
   if (!open) return null;
 
@@ -96,7 +97,7 @@ export function VersionHistoryDrawer({
       aria-modal="true"
       aria-label="Version history"
       className="fixed inset-0 z-40 flex justify-end bg-ink/40 backdrop-blur-sm"
-      onClick={() => !revert.isPending && onClose()}
+      onClick={() => !revert.isPending && confirmVersion === null && onClose()}
     >
       <div
         className="flex h-full w-full max-w-xl flex-col overflow-y-auto border-l border-line bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.2)]"
