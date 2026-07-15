@@ -47,7 +47,6 @@ import {
   type PersonalRoadMapHandle,
 } from "./_components/PersonalRoadMap";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
-import { RIDE_ROUTE_COLOR } from "@/components/map/RideRouteLayer";
 import { RoadSegmentPopover } from "./_components/RoadSegmentPopover";
 /**
  * Personal road map (US-50).
@@ -251,6 +250,15 @@ function RoadMapPageInner() {
       mapRef.current?.flyTo({ lat, lng });
     });
   }, [requestUserLocation]);
+  // Open centred on the rider (same gesture as "Center on me") so the map lands
+  // where they ride instead of the neutral fallback. Runs once; a denied prompt
+  // just leaves the fallback centre + its inline message.
+  const centeredOnLoadRef = useRef(false);
+  useEffect(() => {
+    if (centeredOnLoadRef.current) return;
+    centeredOnLoadRef.current = true;
+    handleUseMyLocation();
+  }, [handleUseMyLocation]);
   const handleShare = useCallback(async () => {
     // Ref guard (not state) ignores a quick double-click without changing the
     // button's appearance — feedback is the toast inside `shareRoadMap`, so the
@@ -359,11 +367,11 @@ function RoadMapPageInner() {
             onSegmentSelect={setSelectedSegmentId}
           />
           <MapViewToggle view={mapView} onChange={setMapView} />
-          <MapLegend
-            view={mapView}
-            rideCount={rideTracks.length}
-            riddenCount={filteredRidden.length}
-          />
+          {/* Routes need no legend — this is the Ride History section, so a
+              rider already knows the lines are their rides. */}
+          {mapView === "coverage" && (
+            <MapLegend riddenCount={filteredRidden.length} />
+          )}
           {selectedSegment && (
             <RoadSegmentPopover
               segment={selectedSegment}
@@ -634,46 +642,25 @@ function MapViewToggle({
 }
 
 interface MapLegendProps {
-  view: MapView;
-  rideCount: number;
   riddenCount: number;
 }
-function MapLegend({ view, rideCount, riddenCount }: MapLegendProps) {
+function MapLegend({ riddenCount }: MapLegendProps) {
   return (
     <div className="absolute top-[60px] left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
-      {view === "routes" ? (
-        <>
-          <div className="flex items-center gap-2">
-            <span
-              className="h-1 w-6 rounded-full"
-              style={{ backgroundColor: RIDE_ROUTE_COLOR }}
-            />
-            {t("Your rides ({count})", {
-              count: rideCount.toLocaleString(),
-            })}
-          </div>
-          <div className="text-[11px] text-fg-dim">
-            {t("Every route you've recorded, drawn on the map. ")}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="flex items-center gap-2">
-            <span className="h-1 w-6 rounded-full bg-accent" />
-            {t("Ridden ({count} segments)", {
-              count: riddenCount.toLocaleString(),
-            })}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="h-1 w-6 rounded-full bg-fg-mute" />
-            {t("Unridden ")}
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            {t("Click a ridden road for ride details ")}
-          </div>
-        </>
-      )}
+      <div className="flex items-center gap-2">
+        <span className="h-1 w-6 rounded-full bg-accent" />
+        {t("Ridden ({count} segments)", {
+          count: riddenCount.toLocaleString(),
+        })}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="h-1 w-6 rounded-full bg-fg-mute" />
+        {t("Unridden ")}
+      </div>
+      <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+        {t("Click a road for details ")}
+      </div>
     </div>
   );
 }
