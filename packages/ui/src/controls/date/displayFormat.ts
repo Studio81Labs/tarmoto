@@ -74,13 +74,21 @@ function run(
 ): string {
   // `dateStyle`/`timeStyle` are mutually exclusive with individual component
   // options (year/month/day/hour/minute): merging them throws. When the caller
-  // opts into a style, drop the component defaults and let the style win.
+  // opts into a style, drop those field defaults — but keep `hourCycle`, which
+  // IS compatible with the styles, so the 24h contract survives (a bare
+  // `timeStyle: "short"` on en-US would otherwise regress to "8:30 AM").
   const usesStyle = Boolean(
     formatOptions?.dateStyle || formatOptions?.timeStyle,
   );
+  const base =
+    usesStyle && defaults.hourCycle
+      ? { hourCycle: defaults.hourCycle }
+      : usesStyle
+        ? {}
+        : defaults;
   return new Intl.DateTimeFormat(locale, {
     timeZone: "UTC",
-    ...(usesStyle ? {} : defaults),
+    ...base,
     ...formatOptions,
   }).format(date);
 }

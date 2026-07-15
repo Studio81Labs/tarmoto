@@ -73,6 +73,31 @@ test("defers runtime-locale formatting until hydration (SSR-safe default)", () =
   ).toBe("15/07/2026");
 });
 
+test("style options keep 24h time (hourCycle survives the field-default drop)", () => {
+  // timeStyle drops the y/m/d/h/m field defaults but must retain h23, or en-US
+  // regresses to 12h.
+  const t = displayIsoTime("13:30", {
+    locale: "en-US",
+    formatOptions: { timeStyle: "short" },
+  });
+  expect(t).not.toMatch(/[ap]m/i);
+  expect(t).toMatch(/13/);
+
+  const midnight = displayIsoTime("00:45", {
+    locale: "en-US",
+    formatOptions: { timeStyle: "short" },
+  });
+  expect(midnight).not.toMatch(/[ap]m/i);
+  expect(midnight).toMatch(/^00?[:.]45/);
+
+  const dt = displayIsoDateTime("2026-07-15T13:30", {
+    locale: "en-US",
+    formatOptions: { dateStyle: "short", timeStyle: "short" },
+  });
+  expect(dt).not.toMatch(/[ap]m/i);
+  expect(dt).toMatch(/13/);
+});
+
 test("displayIsoDateTime combines the locale date with 24h time", () => {
   expect(displayIsoDateTime("2026-07-15T08:30", { locale: "en-GB" })).toBe(
     "15/07/2026, 08:30",
