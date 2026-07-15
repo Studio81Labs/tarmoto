@@ -125,7 +125,7 @@ export class AdminEmailTemplateController {
       target_type: 'email',
       target_id: `${tag}/${loc}`,
     });
-    return this.service.publish(tag, loc);
+    return this.service.publish(tag, loc, req.adminUser?.id ?? null);
   }
 
   @Delete(':tag/:locale/override')

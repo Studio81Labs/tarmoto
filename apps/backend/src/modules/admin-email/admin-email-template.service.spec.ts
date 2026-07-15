@@ -20,6 +20,11 @@ function make() {
   const manager = {
     findOne: jest.fn(),
     delete: jest.fn(),
+    update: jest.fn(() => Promise.resolve({ affected: 1 })),
+    create: jest.fn(
+      (_entity: unknown, partial: Partial<EmailTemplate>) =>
+        partial as EmailTemplate,
+    ),
     save: jest.fn((row: EmailTemplate) => Promise.resolve(row)),
     query: jest.fn(),
   };
@@ -197,7 +202,7 @@ describe('AdminEmailTemplateService', () => {
     );
   });
 
-  it('publish deletes the prior published row before promoting the draft', async () => {
+  it('publish archives the prior published row before promoting the draft, and records the publisher', async () => {
     const { service, manager } = make();
     const draftRow = {
       template_tag: 'weekly-digest',
@@ -207,40 +212,55 @@ describe('AdminEmailTemplateService', () => {
       subject: 'x',
       blocks: [],
     };
-    // publish() now reads twice: once for the draft, once for the prior
-    // published row (to continue its version) — query-aware by `where.status`.
+    // findOne is called for: the draft (status 'draft'), and the top
+    // published/archived row for nextVersion (order.version 'DESC').
     manager.findOne.mockImplementation(
-      (_entity: unknown, opts: { where: { status: string } }) =>
-        Promise.resolve(opts.where.status === 'draft' ? draftRow : null),
+      (
+        _entity: unknown,
+        opts: { where: { status: unknown }; order?: { version?: string } },
+      ) => {
+        if (opts.where.status === 'draft') return Promise.resolve(draftRow);
+        if (opts.order?.version === 'DESC') return Promise.resolve(null); // first publish
+        return Promise.resolve(null);
+      },
     );
 
-    const result = await service.publish('weekly-digest', 'en');
+    const result = await service.publish('weekly-digest', 'en', 'admin-1');
 
-    // Delete-old-published must happen before promote-draft is saved, or the
-    // partial unique index (≤1 published row per tag/locale) would reject it.
-    expect(manager.delete.mock.invocationCallOrder[0]!).toBeLessThan(
+    // Archive-old must run before promote-save, or the partial unique index
+    // (<=1 published per tag/locale) rejects the promote.
+    expect(manager.update).toHaveBeenCalledWith(
+      expect.anything(),
+      { template_tag: 'weekly-digest', locale: 'en', status: 'published' },
+      { status: 'archived' },
+    );
+    expect(manager.update.mock.invocationCallOrder[0]!).toBeLessThan(
       manager.save.mock.invocationCallOrder[0]!,
     );
+    // First-ever publish (no published/archived) → version 1.
     expect(manager.save).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'published', version: 2 }),
+      expect.objectContaining({
+        status: 'published',
+        version: 1,
+        created_by: 'admin-1',
+      }),
     );
     expect(result.status).toBe('published');
-    expect(result.version).toBe(2);
-    // The draft is read FOR UPDATE so a concurrent saveDraft can't slip newer
-    // edits in between this read and the promote (they would be lost).
+    expect(result.version).toBe(1);
+    // Draft read FOR UPDATE + the (tag, locale) advisory lock still hold.
     expect(manager.findOne).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
     );
-    // ...and the promote runs under the (tag, locale) advisory lock reset also
-    // takes, serializing publish/reset for the same template.
     expect(manager.query).toHaveBeenCalledWith(
       'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
       ['email_template:weekly-digest:en'],
     );
+    // Never deletes — the prior version is retained as history.
+    expect(manager.delete).not.toHaveBeenCalled();
   });
 
-  it('publish continues the version from the prior published row, not the draft default', async () => {
+  it('publish numbers the new version at MAX(published+archived)+1', async () => {
     const { service, manager } = make();
     const draftRow = {
       template_tag: 'weekly-digest',
@@ -250,27 +270,23 @@ describe('AdminEmailTemplateService', () => {
       subject: 'x',
       blocks: [],
     };
-    const priorPublished = {
-      template_tag: 'weekly-digest',
-      locale: 'en',
-      status: 'published',
-      version: 5,
-      subject: 'old-published',
-      blocks: [],
-    };
     manager.findOne.mockImplementation(
-      (_entity: unknown, opts: { where: { status: string } }) =>
-        Promise.resolve(
-          opts.where.status === 'draft' ? draftRow : priorPublished,
-        ),
+      (
+        _entity: unknown,
+        opts: { where: { status: unknown }; order?: { version?: string } },
+      ) => {
+        if (opts.where.status === 'draft') return Promise.resolve(draftRow);
+        if (opts.order?.version === 'DESC')
+          return Promise.resolve({ version: 5 }); // highest existing
+        return Promise.resolve(null);
+      },
     );
 
-    const result = await service.publish('weekly-digest', 'en');
+    const result = await service.publish('weekly-digest', 'en', 'admin-1');
 
     expect(manager.save).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'published', version: 6 }),
     );
-    expect(result.status).toBe('published');
     expect(result.version).toBe(6);
   });
 
@@ -298,6 +314,7 @@ describe('AdminEmailTemplateService', () => {
     );
     // Rejected before mutating anything — the live published row is untouched.
     expect(manager.delete).not.toHaveBeenCalled();
+    expect(manager.update).not.toHaveBeenCalled();
     expect(manager.save).not.toHaveBeenCalled();
   });
 

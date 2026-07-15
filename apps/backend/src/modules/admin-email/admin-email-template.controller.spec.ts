@@ -19,7 +19,9 @@ describe('AdminEmailTemplateController', () => {
   } as unknown as jest.Mocked<AdminEmailTemplateService>;
   const controller = new AdminEmailTemplateController(service);
   const adminReq = () =>
-    ({ adminUser: { email: 'admin@tarmoto.app' } }) as unknown as AdminRequest;
+    ({
+      adminUser: { id: 'admin-1', email: 'admin@tarmoto.app' },
+    }) as unknown as AdminRequest;
 
   // Call counts must not leak across tests that share this `service` mock —
   // e.g. the "unsupported locale" test asserts `service.get` was NOT called,
@@ -103,11 +105,15 @@ describe('AdminEmailTemplateController', () => {
       ).toThrow(BadRequestException);
     });
 
-    it('publish forwards (tag, locale) to the service', async () => {
+    it('publish forwards (tag, locale, actorId) to the service', async () => {
       const req = adminReq();
       await controller.publish(req, 'weekly-digest', 'en');
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(service.publish).toHaveBeenCalledWith('weekly-digest', 'en');
+      expect(service.publish).toHaveBeenCalledWith(
+        'weekly-digest',
+        'en',
+        'admin-1',
+      );
     });
   });
 });

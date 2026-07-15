@@ -58,7 +58,10 @@ export class AdminEmailTemplateService {
   async list(): Promise<EmailTemplateSummaryDto[]> {
     const rows = await this.templates.find({
       select: { template_tag: true, status: true },
-      where: { template_tag: In([...EDITABLE_TAGS]) },
+      where: {
+        template_tag: In([...EDITABLE_TAGS]),
+        status: In(['draft', 'published']),
+      },
     });
     const drafts = new Set(
       rows.filter((r) => r.status === 'draft').map((r) => r.template_tag),
@@ -193,15 +196,38 @@ export class AdminEmailTemplateService {
     ]);
   }
 
+  /** Monotonic next version for (tag, locale): one past the highest existing
+   *  published-or-archived version. Collision-free even after a reset (which
+   *  deletes only the published row), because archived rows keep their
+   *  numbers. First-ever publish → 1. */
+  private async nextVersion(
+    m: EntityManager,
+    tag: string,
+    locale: SupportedLocale,
+  ): Promise<number> {
+    const top = await m.findOne(EmailTemplate, {
+      where: {
+        template_tag: tag,
+        locale,
+        status: In(['published', 'archived']),
+      },
+      order: { version: 'DESC' },
+    });
+    return (top?.version ?? 0) + 1;
+  }
+
   /**
-   * Promotes the draft row to published, atomically. The delete-old-published
-   * + promote-draft MUST run in one transaction, or the partial unique index
-   * (at most one `published` row per (tag, locale)) rejects the promote when
-   * a reader would otherwise briefly see two published rows.
+   * Promotes the draft to published, atomically, keeping the prior published
+   * row as history. The archive-old + promote-draft MUST run in one
+   * transaction, and the archive MUST precede the promote, or the partial
+   * unique index (<=1 published per (tag, locale)) rejects two momentary
+   * published rows. `actorId` (the publishing admin) is recorded as the
+   * version's author.
    */
   async publish(
     tag: string,
     locale: SupportedLocale,
+    actorId: string | null = null,
   ): Promise<EmailTemplateDetailDto> {
     this.assertEditable(tag);
     const saved = await this.dataSource.transaction(async (m) => {
@@ -233,19 +259,16 @@ export class AdminEmailTemplateService {
       if (!check.ok) {
         throw new BadRequestException(check.errors);
       }
-      const priorPublished = await m.findOne(EmailTemplate, {
-        where: { template_tag: tag, locale, status: 'published' },
-      });
-      await m.delete(EmailTemplate, {
-        template_tag: tag,
-        locale,
-        status: 'published',
-      });
+      const version = await this.nextVersion(m, tag, locale);
+      // Archive the current published row (if any) BEFORE promoting the draft.
+      await m.update(
+        EmailTemplate,
+        { template_tag: tag, locale, status: 'published' },
+        { status: 'archived' },
+      );
       draft.status = 'published';
-      // Monotonic per (tag, locale): continue from the prior published version, not
-      // the fresh draft's default. First publish (no prior) → 2; each later publish
-      // increments the last published version.
-      draft.version = (priorPublished?.version ?? draft.version) + 1;
+      draft.version = version;
+      draft.created_by = actorId;
       draft.published_at = new Date();
       return m.save(draft);
     });
@@ -303,7 +326,10 @@ export class AdminEmailTemplateService {
       locale,
       subject: row.subject,
       blocks: row.blocks,
-      status: row.status,
+      // toDetail only ever receives a draft or published row (publish/revert
+      // return the promoted row; get/saveDraft read draft-or-published), never
+      // an archived one — narrow the widened column type to the DTO's set.
+      status: row.status as 'draft' | 'published',
       version: row.version,
       whitelist,
     };
