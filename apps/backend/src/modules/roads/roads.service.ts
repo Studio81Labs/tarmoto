@@ -18,6 +18,7 @@ import {
   findRegion,
   haversineMeters,
   type SurfaceType,
+  type QualitySource,
   type HazardType,
   type HazardSeverity,
 } from '@tarmoto/shared';
@@ -305,7 +306,7 @@ export class RoadsService {
       SELECT
         rs.id, rs.road_name, rs.road_number, rs.quality_score,
         rs.curviness_score, rs.surface_type, rs.length_m,
-        rs.confidence, rs.reading_count, rs.last_updated,
+        rs.confidence, rs.reading_count, rs.quality_source, rs.osm_quality_seed, rs.last_updated,
         ST_Distance(
           rs.geom::geography,
           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
@@ -344,6 +345,8 @@ export class RoadsService {
       length_m: row.length_m as number,
       confidence: row.confidence as number,
       reading_count: row.reading_count as number,
+      quality_source: (row.quality_source as QualitySource) ?? null,
+      osm_quality_seed: (row.osm_quality_seed as number) ?? null,
       last_updated: (row.last_updated as Date).toISOString(),
       distance_m: Math.round(row.distance_m as number),
     }));
@@ -379,6 +382,9 @@ export class RoadsService {
           0
         ) AS confidence,
         (ARRAY_AGG(rs.surface_type ORDER BY rs.length_m DESC, rs.id))[1] AS surface_type,
+        (ARRAY_AGG(rs.quality_source ORDER BY rs.length_m DESC, rs.id))[1] AS quality_source,
+        SUM(rs.osm_quality_seed * rs.length_m) FILTER (WHERE rs.osm_quality_seed IS NOT NULL)
+          / NULLIF(SUM(rs.length_m) FILTER (WHERE rs.osm_quality_seed IS NOT NULL), 0) AS osm_quality_seed,
         SUM(rs.length_m) AS length_m,
         -- The specific requested segment's own length, for per-segment consumers.
         MAX(rs.length_m) FILTER (WHERE rs.id = target.requested_id) AS segment_length_m,
@@ -610,6 +616,8 @@ export class RoadsService {
       quality_score: (row.quality_score as number) ?? null,
       curviness_score: row.curviness_score as number,
       surface_type: row.surface_type as SurfaceType,
+      quality_source: (row.quality_source as QualitySource) ?? null,
+      osm_quality_seed: (row.osm_quality_seed as number) ?? null,
       length_m: row.length_m as number,
       segment_length_m: row.segment_length_m as number,
       confidence: row.confidence as number,

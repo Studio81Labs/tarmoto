@@ -45,6 +45,8 @@ CREATE TABLE road_segments (
     road_number     VARCHAR(50),
     curviness_score FLOAT DEFAULT 0,         -- 0-5, computed from geometry
     quality_score   FLOAT,                   -- 1-5, aggregated from readings
+    osm_quality_seed FLOAT,                  -- 1-5, OSM-derived prior blended into quality_score
+    quality_source  VARCHAR(20),             -- osm_smoothness, osm_surface, or osm_highway
     surface_type    VARCHAR(30) DEFAULT 'unknown',  -- asphalt, concrete, cobblestone, gravel, dirt
     surface_from_reading BOOLEAN NOT NULL DEFAULT false, -- #796: true once a rider classifies the surface; durable (survives location_retention sweep) so the OSM importer refreshes the seed only while false
     reading_count   INT DEFAULT 0,           -- number of rider passes (post-filter)
@@ -532,7 +534,16 @@ BEGIN
     )
     UPDATE road_segments rs
     SET
-        quality_score = agg.quality_score,
+        -- Blend the rider mean with the OSM seed by rider count (k = 4).
+        -- No valid readings → pure seed; no seed → pure rider mean.
+        quality_score = CASE
+            WHEN agg.reading_count = 0 OR agg.quality_score IS NULL
+                THEN rs.osm_quality_seed
+            WHEN rs.osm_quality_seed IS NULL
+                THEN agg.quality_score
+            ELSE (agg.quality_score * agg.reading_count + rs.osm_quality_seed * 4)
+                 / (agg.reading_count + 4)
+        END,
         reading_count = agg.reading_count,
         confidence = CASE
             WHEN agg.reading_count >= 20 AND agg.unique_rider_count >= 5 THEN 100

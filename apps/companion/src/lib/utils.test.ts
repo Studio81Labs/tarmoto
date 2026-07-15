@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ridesWithinDays } from "./utils";
+import { qualityProvenanceLabel, ridesWithinDays } from "./utils";
 
 describe("ridesWithinDays", () => {
   // Fixed "now" so the window boundary is deterministic.
@@ -41,5 +41,21 @@ describe("ridesWithinDays", () => {
 
   it("returns empty for an empty input", () => {
     expect(ridesWithinDays([], 30, now)).toEqual([]);
+  });
+});
+
+describe("qualityProvenanceLabel", () => {
+  it("describes an OSM estimate only before riders report", () => {
+    expect(qualityProvenanceLabel("osm_surface", 0)).toBe(
+      "Estimated from road surface",
+    );
+    expect(qualityProvenanceLabel("osm_smoothness", 0)).toBe(
+      "Estimated from surveyed smoothness",
+    );
+    expect(qualityProvenanceLabel("osm_highway", 0)).toBe(
+      "Estimated from road type",
+    );
+    expect(qualityProvenanceLabel("osm_surface", 2)).toBeNull();
+    expect(qualityProvenanceLabel(null, 0)).toBeNull();
   });
 });

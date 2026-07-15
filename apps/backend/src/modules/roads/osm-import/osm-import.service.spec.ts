@@ -56,9 +56,27 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
       '"surface_type" = CASE WHEN NOT "road_segments"."surface_from_reading" ' +
         'THEN EXCLUDED."surface_type" ELSE "road_segments"."surface_type" END',
     );
-    // Ownership is never inferred from raw readings.
+    // Surface ownership is never inferred from the raw surface_readings table
+    // (reading_count legitimately appears below, as the quality_score gate).
     expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('surface_readings');
-    expect(ROAD_SEGMENT_ON_CONFLICT).not.toContain('reading_count');
+  });
+
+  it('refreshes the OSM quality seed + source every import, and seeds quality_score only for rider-less segments', () => {
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"osm_quality_seed" = EXCLUDED."osm_quality_seed"',
+    );
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"quality_source" = EXCLUDED."quality_source"',
+    );
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '"quality_score" = CASE WHEN "road_segments"."reading_count" = 0 ' +
+        'THEN EXCLUDED."osm_quality_seed" ELSE "road_segments"."quality_score" END',
+    );
+    // A changed seed on a rider-less segment must trigger the update.
+    expect(ROAD_SEGMENT_ON_CONFLICT).toContain(
+      '("road_segments"."reading_count" = 0 AND ' +
+        '"road_segments"."quality_score" IS DISTINCT FROM EXCLUDED."osm_quality_seed")',
+    );
   });
 
   it('nulls the geometry-derived elevation columns when geometry changes', () => {
@@ -83,8 +101,8 @@ describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
 
   it('never writes the crowdsourced / identity / provenance columns', () => {
     // surface_from_reading is aggregation-owned; the importer only reads it.
+    // quality_score is CASE-gated (see test above); surface_type is similarly gated.
     for (const col of [
-      'quality_score',
       'confidence',
       'reading_count',
       'id',
@@ -190,18 +208,21 @@ describe('OsmImportService', () => {
     });
   });
 
-  it('never carries the crowdsourced columns in the inserted rows', async () => {
+  it('never carries the rider-derived columns in the inserted rows', async () => {
     await service.importFrom([straightWay(1)]);
 
     for (const row of valuesOnCall(0)) {
       // Absent from the row → defaulted on insert, untouched on update.
       expect(row).not.toHaveProperty('id');
-      expect(row).not.toHaveProperty('quality_score');
       expect(row).not.toHaveProperty('confidence');
       expect(row).not.toHaveProperty('reading_count');
     }
-    // …but the OSM surface seed IS present (inserted for new segments).
+    // …but the OSM surface + quality seed ARE present (inserted for new
+    // segments; refreshed every import while the segment stays rider-less).
     expect(valuesOnCall(0)[0]).toHaveProperty('surface_type');
+    expect(valuesOnCall(0)[0]).toHaveProperty('osm_quality_seed');
+    expect(valuesOnCall(0)[0]).toHaveProperty('quality_source');
+    expect(valuesOnCall(0)[0]).toHaveProperty('quality_score');
   });
 
   it('skips non-drivable ways (no statement for them)', async () => {

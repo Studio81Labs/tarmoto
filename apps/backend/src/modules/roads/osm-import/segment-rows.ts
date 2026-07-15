@@ -1,11 +1,12 @@
 import * as GeoJSON from 'geojson';
-import type { SurfaceType } from '@tarmoto/shared';
+import type { SurfaceType, QualitySource } from '@tarmoto/shared';
 import { type LatLng, segmentWay } from './segmentation.js';
 import {
   type OsmTags,
   isDrivableHighway,
   roadFieldsFromTags,
 } from './osm-tags.js';
+import { qualitySeedFromTags } from './quality-seed.js';
 
 /**
  * The way → `road_segments` rows transform (#781): the slice between the OSM
@@ -42,6 +43,13 @@ export interface RoadSegmentRow {
   road_name: string | null;
   road_number: string | null;
   surface_type: SurfaceType;
+  /** OSM-derived quality prior [1,5], refreshed every import (design 2026-07-15). */
+  osm_quality_seed: number | null;
+  /** Which OSM signal produced `osm_quality_seed`. */
+  quality_source: QualitySource | null;
+  /** Effective quality — seeded to `osm_quality_seed` on INSERT so a rider-less
+   *  segment shows quality immediately; the DB blend + upsert gate own it after. */
+  quality_score: number | null;
 }
 
 /** Build the `road_segments` rows for one OSM way (empty for non-drivable or
@@ -49,6 +57,7 @@ export interface RoadSegmentRow {
 export function waySegmentRows(way: OsmWay): RoadSegmentRow[] {
   if (!isDrivableHighway(way.tags)) return [];
   const fields = roadFieldsFromTags(way.tags);
+  const seed = qualitySeedFromTags(way.tags);
   const osm_way_id = String(way.id);
   return (
     segmentWay(way.coords)
@@ -60,12 +69,15 @@ export function waySegmentRows(way: OsmWay): RoadSegmentRow[] {
         osm_way_id,
         segment_index: index, // 0-based ordinal within the way (#751)
         geom: {
-          type: 'LineString',
+          type: 'LineString' as const,
           coordinates: seg.coords.map((p) => [p.lng, p.lat]), // GeoJSON [lng, lat]
         },
         length_m: seg.length_m,
         curviness_score: seg.curviness_score,
         ...fields,
+        osm_quality_seed: seed.score,
+        quality_source: seed.source,
+        quality_score: seed.score,
       }))
   );
 }

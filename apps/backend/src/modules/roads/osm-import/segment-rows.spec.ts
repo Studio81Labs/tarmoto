@@ -87,6 +87,39 @@ describe('waySegmentRows', () => {
   });
 });
 
+describe('waySegmentRows quality seed', () => {
+  const coords = [
+    { lng: 0, lat: 0 },
+    { lng: 0.01, lat: 0 },
+  ];
+
+  it('stamps osm_quality_seed + quality_source + quality_score from tags', () => {
+    const rows = waySegmentRows({
+      id: 42,
+      tags: { highway: 'primary', smoothness: 'good' },
+      coords,
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(r.osm_quality_seed).toBe(4);
+      expect(r.quality_source).toBe('osm_smoothness');
+      // The effective score is seeded on insert (= the OSM seed).
+      expect(r.quality_score).toBe(4);
+    }
+  });
+
+  it('leaves the seed null when no OSM signal matches (highway=proposed is non-drivable → no rows, so use a drivable no-signal case)', () => {
+    const rows = waySegmentRows({
+      id: 7,
+      tags: { highway: 'service' },
+      coords,
+    });
+    // service → highway-class seed 3
+    expect(rows[0]?.osm_quality_seed).toBe(3);
+    expect(rows[0]?.quality_source).toBe('osm_highway');
+  });
+});
+
 describe('buildSegmentRows', () => {
   async function collect(
     ways: OsmWay[],

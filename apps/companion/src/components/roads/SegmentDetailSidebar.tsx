@@ -23,6 +23,7 @@ import {
   formatDate,
   formatDistanceFromMeters,
   formatRelativeTime,
+  qualityProvenanceLabel,
   scoreToTier,
 } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -163,6 +164,12 @@ function SegmentDetailContent({
   const score = segment.quality_score ?? 0;
   const currentTier: QualityTier | null = score > 0 ? scoreToTier(score) : null;
   const tier = currentTier ? QUALITY_CONFIG[currentTier] : null;
+  // Non-null only while quality is still purely OSM-seeded (no rider reports yet);
+  // coheres with the backend `quality_score` shown alongside it.
+  const provenance = qualityProvenanceLabel(
+    segment.quality_source ?? null,
+    segment.reading_count ?? 0,
+  );
   const passLabel = segment.reading_count === 1 ? t("pass") : t("passes");
   const qualityHistory = trendPoints(segment.quality_history);
   const regionalHistory = trendPoints(segment.regional_quality_history);
@@ -199,6 +206,11 @@ function SegmentDetailContent({
             <Pill>{tier?.label ?? t("Unrated")}</Pill>
             <Pill>{formatSurface(segment.surface_type)}</Pill>
           </div>
+          {provenance ? (
+            <div className="mt-2 text-[11px] italic text-fg-mute">
+              {t(provenance)}
+            </div>
+          ) : null}
         </div>
       </div>
 
