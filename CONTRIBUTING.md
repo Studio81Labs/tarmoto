@@ -34,7 +34,7 @@ Conventional commits. One logical change per commit.
 ```
 
 - **Types:** `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`, `perf`, `ci`, `build`, `revert`
-- **Scopes:** `backend`, `mobile`, `companion`, `admin`, `poc-sensor`, `shared`, `openapi`, `ci`, `infra`, `docs`, `deps`, `cross`, `marketing`
+- **Scopes:** `backend`, `mobile`, `companion`, `admin`, `poc-sensor`, `shared`, `openapi`, `ci`, `infra`, `docs`, `deps`, `cross`, `marketing`, `ingest`
 - Scope is required on local commit messages and PR titles. `commitlint` enforces this on every commit via the husky `commit-msg` hook, and `lint-pr.yml` enforces it again on PR titles.
 - Use `cross` for genuinely cross-cutting changes instead of omitting the scope.
 - Subject must start **lowercase** (enforced by `lint-pr.yml`).

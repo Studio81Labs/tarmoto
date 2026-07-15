@@ -55,6 +55,7 @@ module.exports = {
         "deps",
         "cross",
         "marketing",
+        "ingest",
       ],
     ],
     "scope-empty": [2, "never"],
