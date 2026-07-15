@@ -22,19 +22,19 @@
  *    country's PBF + its filtered copy, not all 17 at once.
  *  - **Env-gated:** a no-op unless `TARMOTO_POI_REFRESH_ENABLED=true`.
  *
- * FSQ (OS Places) is out of scope — a token-gated DuckDB/Iceberg pull, tracked
- * separately.
+ * FSQ (OS Places) has a sibling script — `refresh-fsq-extracts` (a token-gated
+ * DuckDB/Iceberg pull) — that shares this script's atomic-write/sweep/error
+ * machinery via `refresh-common`.
  */
 
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { randomBytes } from 'node:crypto';
 import type { PoiImportRegion } from '../modules/poi/poi-import.config.js';
 import {
   bboxArg,
@@ -43,25 +43,14 @@ import {
   resolvePoiRefreshConfig,
   type PoiRefreshConfig,
 } from '../modules/poi/poi-refresh.config.js';
+import {
+  describeExecError,
+  refreshTmpPath,
+  sweepStaleTempFiles,
+  type RefreshSummary,
+} from './refresh-common.js';
 
 const execFileAsync = promisify(execFile);
-
-/**
- * Suffix for the refresh's atomic temp files — **distinct** from the admin
- * upload's plain `.part` (`storeExtract`) so the startup sweep can remove OUR
- * orphans (from a killed/restarted run) without ever touching an in-progress
- * upload's temp on the same shared volume (#976 review).
- */
-const REFRESH_TMP_SUFFIX = '.refresh.part';
-
-/**
- * A refresh temp older than this is treated as an orphan from a killed run and
- * reclaimed; a younger one is left alone because it may be a **concurrent** run
- * still writing it — removing that would make its `rename` fail and report the
- * region stale even though osmium succeeded (#976 review). Runs are weekly and
- * an extract write takes seconds–minutes, so this cleanly separates the two.
- */
-const STALE_TEMP_AGE_MS = 60 * 60 * 1000; // 1 hour
 
 /** Injectable I/O seams so the orchestration is unit-testable without a network
  *  or a real `osmium` binary. */
@@ -82,31 +71,13 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
 }
 
-/**
- * Turn node's opaque `execFile` rejection ("Command failed: osmium …") into a
- * diagnosable message: a `signal` names an OOM kill (`SIGKILL`) vs osmium's own
- * error exit, and `stderr` carries osmium's actual complaint (#976 ops).
- */
-export function describeOsmiumError(subcommand: string, err: unknown): string {
-  const e = err as {
-    code?: number;
-    signal?: NodeJS.Signals | null;
-    stderr?: string | Buffer;
-  };
-  const how = e.signal
-    ? `killed by ${e.signal}${e.signal === 'SIGKILL' ? ' (out of memory?)' : ''}`
-    : `exit ${e.code ?? '?'}`;
-  const stderr = String(e.stderr ?? '').trim();
-  return `osmium ${subcommand} ${how}${stderr ? `: ${stderr.slice(-2000)}` : ''}`;
-}
-
 async function runOsmium(args: readonly string[]): Promise<void> {
   try {
     // osmium writes to its `-o` file, so stdout/stderr stay small; the generous
     // maxBuffer only guards against verbose progress on a huge input.
     await execFileAsync('osmium', [...args], { maxBuffer: 256 * 1024 * 1024 });
   } catch (err) {
-    throw new Error(describeOsmiumError(args[0] ?? 'osmium', err), {
+    throw new Error(describeExecError(`osmium ${args[0] ?? ''}`.trim(), err), {
       cause: err,
     });
   }
@@ -131,11 +102,7 @@ export async function refreshRegion(
   const pbf = join(workDir, `${region.code}-latest.osm.pbf`);
   const filtered = join(workDir, `${region.code}-poi.osm.pbf`);
   const finalOut = join(targetDir, `${region.code.toLowerCase()}.osm`);
-  // Unique per run so a re-run (or a crashed prior run) can't collide, and the
-  // live `<code>.osm` is only ever touched by the final atomic rename. The
-  // `.refresh.part` marker lets `sweepStaleTempFiles` reclaim an orphan from a
-  // killed run without touching an admin upload's plain `.part`.
-  const tmpOut = `${finalOut}.${process.pid}.${randomBytes(6).toString('hex')}${REFRESH_TMP_SUFFIX}`;
+  const tmpOut = refreshTmpPath(finalOut);
 
   try {
     await deps.download(url, pbf);
@@ -170,47 +137,6 @@ export async function refreshRegion(
       // Present only if we threw before the rename above.
       rm(tmpOut, { force: true }),
     ]);
-  }
-}
-
-export interface RefreshSummary {
-  ok: string[];
-  failed: { code: string; error: string }[];
-}
-
-/**
- * Reclaim stale refresh temp files (`*.refresh.part`) orphaned by a killed or
- * restarted run — with a fresh random name each run they would otherwise
- * accumulate on the persistent shared volume and eventually fill it (#976
- * review). Guards on TWO things so it only ever removes a genuine orphan:
- *  - suffix — only OUR `.refresh.part`, never an in-progress admin upload's
- *    plain `.part` (`storeExtract`) on the same volume;
- *  - age — only files not touched for `STALE_TEMP_AGE_MS`, so a **concurrent**
- *    refresh's still-being-written temp is never removed out from under it.
- * Best-effort per file (a raced-away or unstattable entry is skipped).
- */
-async function sweepStaleTempFiles(
-  dir: string,
-  log: (msg: string) => void,
-): Promise<void> {
-  const now = Date.now();
-  const candidates = (await readdir(dir)).filter((name) =>
-    name.endsWith(REFRESH_TMP_SUFFIX),
-  );
-  let swept = 0;
-  for (const name of candidates) {
-    const path = join(dir, name);
-    try {
-      const info = await stat(path);
-      if (now - info.mtimeMs < STALE_TEMP_AGE_MS) continue; // recent — leave it
-      await rm(path, { force: true });
-      swept += 1;
-    } catch {
-      // Vanished (a concurrent run cleaned it) or unstattable — skip.
-    }
-  }
-  if (swept > 0) {
-    log(`POI refresh: swept ${swept} stale temp file(s) from ${dir}`);
   }
 }
 

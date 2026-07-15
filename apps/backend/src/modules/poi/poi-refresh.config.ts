@@ -1,22 +1,24 @@
-import { DEFAULT_REGIONS, type PoiImportRegion } from './poi-import.config.js';
+import { parseRegions, type PoiImportRegion } from './poi-import.config.js';
 
 /**
- * Config for the automated OSM extract refresh (#976) — the "fetch" half of the
- * offline POI pipeline. A scheduled osmium+node container (see
- * `apps/backend/Dockerfile.poi-refresh`) downloads the per-country Geofabrik
- * PBF, filters it to the POI tag set, clips it to each region's bbox, and writes
- * fresh `<code>.osm` files to the shared import volume BEFORE the weekly import
- * cron (Sunday 03:00 UTC) reads them — so the store mirrors CURRENT data instead
- * of re-importing a static file.
+ * Config for the automated extract refresh (#976) — the "fetch" half of the
+ * offline POI pipeline, for BOTH bulk sources. A scheduled container (see
+ * `apps/backend/Dockerfile.poi-refresh`) writes fresh per-region extracts to the
+ * shared import volume BEFORE the import cron reads them, so the store mirrors
+ * CURRENT data instead of re-importing a static file:
+ *  - **OSM** (weekly): download the per-country Geofabrik PBF, `osmium`-filter to
+ *    the POI tag set, clip to each region's bbox → `<code>.osm`.
+ *  - **FSQ** (monthly): a token-gated DuckDB pull from the Foursquare OS Places
+ *    Iceberg catalog, filtered to each region's country + bbox + POI categories
+ *    → `<code>.fsq.jsonl`.
  *
  * Region set + target dir are shared with the importer (same
- * `TARMOTO_POI_IMPORT_REGIONS` / `TARMOTO_POI_IMPORT_DIR`), and bboxes come
- * straight from `DEFAULT_REGIONS`, so the clip box can never drift from the one
- * the importer's stale-by-absence tombstoning is bounded by (#850).
- *
- * FSQ is intentionally NOT covered here: OS Places is a token-gated
- * DuckDB/Iceberg pull with a wholly different shape (see the runbook), tracked
- * as its own follow-up.
+ * `TARMOTO_{POI,FSQ}_IMPORT_REGIONS` / `_DIR`), and bboxes come straight from
+ * `DEFAULT_REGIONS`, so the clip box can never drift from the one the importer's
+ * stale-by-absence tombstoning is bounded by (#850). The FSQ token is the only
+ * environment-derived value in the DuckDB SQL and is confined to this container
+ * (it never reaches the backend/worker, which read only the credential-free
+ * extract files).
  */
 
 /** Geofabrik hosts all 17 coverage countries under its `europe/` tree. */
@@ -99,39 +101,175 @@ export interface PoiRefreshConfig {
 }
 
 /**
- * Resolve the refresh config from the environment — standalone (no Nest DI), so
- * the refresh container needn't boot the app.
+ * Resolve the OSM refresh config from the environment — standalone (no Nest DI),
+ * so the refresh container needn't boot the app. Region validation is shared
+ * with the importer (`parseRegions`): an unknown `TARMOTO_POI_IMPORT_REGIONS`
+ * code fails fast rather than being silently dropped (#976 review) — otherwise
+ * the scheduled task would exit green having refreshed nothing while the import
+ * keeps reusing stale files.
  */
 export function resolvePoiRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): PoiRefreshConfig {
-  const known = new Set(DEFAULT_REGIONS.map((r) => r.code));
-  const requested = env.TARMOTO_POI_IMPORT_REGIONS?.trim();
-  const codes = requested
-    ? requested
-        .split(',')
-        .map((c) => c.trim().toUpperCase())
-        .filter(Boolean)
-    : [];
-  // Fail fast on a typo/unsupported code, matching the importer's `parseRegions`
-  // (#976 review): silently dropping it would let the scheduled task exit green
-  // having refreshed nothing, while the import keeps reusing stale files.
-  for (const code of codes) {
-    if (!known.has(code)) {
-      throw new Error(
-        `Invalid TARMOTO_POI_IMPORT_REGIONS: unknown region "${code}". ` +
-          `Known regions: ${DEFAULT_REGIONS.map((r) => r.code).join(', ')}`,
-      );
-    }
-  }
-  const wanted = codes.length > 0 ? new Set(codes) : null; // null = all
-  const regions = DEFAULT_REGIONS.filter(
-    (r) => wanted === null || wanted.has(r.code),
-  );
   const dir = env.TARMOTO_POI_IMPORT_DIR?.trim();
   return {
     enabled: boolEnv(env.TARMOTO_POI_REFRESH_ENABLED),
     targetDir: dir ? dir : null,
-    regions,
+    regions: parseRegions(
+      env.TARMOTO_POI_IMPORT_REGIONS,
+      'TARMOTO_POI_IMPORT_REGIONS',
+    ),
   };
+}
+
+// ---------------------------------------------------------------------------
+// FSQ (Foursquare OS Places) automated refresh (#976) — the DuckDB half.
+// ---------------------------------------------------------------------------
+
+/**
+ * FSQ OS Places Iceberg REST catalog endpoint. STATIC — the Portal's connect
+ * recipe is fixed and only the access token rotates (~monthly), so this and the
+ * table name are hardcoded and just the token comes from the environment.
+ */
+export const FSQ_CATALOG_ENDPOINT =
+  'https://catalog.h3-hub.foursquare.com/iceberg';
+
+/** Fully-qualified OS Places table inside the attached `places` catalog. */
+export const FSQ_PLACES_TABLE = 'places.datasets.places_os';
+
+/**
+ * Coarse category prefilter pushed into the DuckDB scan (a case-insensitive
+ * regex over the joined `fsq_category_labels`). It MUST stay a SUPERSET of the
+ * labels the backend classifier (`fsq-poi-categories.ts`) matches: loose is fine
+ * (the classifier drops false positives downstream), but a MISS would drop rows
+ * the importer would keep — and later tombstone them as absent. Kept verbatim in
+ * lockstep with the runbook's worked example and the classifier's label set.
+ */
+export const FSQ_CATEGORY_PREFILTER =
+  'restaurant|caf|coffee|tea room|tea house|food|ice cream|gas|petrol|fuel|' +
+  'charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|' +
+  'b&b|breakfast|apartment|camp|rv park|caravan|resort|cottage|chalet|cabin|' +
+  'vacation|holiday|rental';
+
+/**
+ * DuckDB memory ceiling for a per-country FSQ scan — bounds RAM so a large
+ * region spills to `temp_directory` instead of getting OOM-killed (the osmium
+ * OOM lesson, #976 ops).
+ */
+export const FSQ_DUCKDB_MEMORY_LIMIT = '2GB';
+
+export interface FsqRefreshConfig {
+  /** Gate — off unless `TARMOTO_FSQ_REFRESH_ENABLED=true`. */
+  enabled: boolean;
+  /**
+   * FSQ Places Portal access token (`TARMOTO_FSQ_TOKEN`). Confined to THIS
+   * extractor container — it never reaches the backend/worker, which read only
+   * the credential-free `.fsq.jsonl` files. `null` when unset (the script fails
+   * fast). Short-lived (~monthly), so an operator rotates it each refresh.
+   */
+  token: string | null;
+  /**
+   * Directory the fresh `<code>.fsq.jsonl` files are written to — the SAME
+   * `TARMOTO_FSQ_IMPORT_DIR` the importer reads. `null` when unset (the script
+   * fails fast: nowhere to write). Independent of the OSM dir.
+   */
+  targetDir: string | null;
+  /**
+   * Regions to refresh: `DEFAULT_REGIONS` narrowed by
+   * `TARMOTO_FSQ_IMPORT_REGIONS` (default all); an unknown code fails fast, like
+   * the importer. Independent of the OSM region list.
+   */
+  regions: readonly PoiImportRegion[];
+}
+
+/**
+ * Resolve the FSQ refresh config from the environment — standalone (no Nest DI).
+ * Mirrors {@link resolvePoiRefreshConfig} but for the FSQ source's own env
+ * (`TARMOTO_FSQ_*`) plus the token.
+ */
+export function resolveFsqRefreshConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): FsqRefreshConfig {
+  const token = env.TARMOTO_FSQ_TOKEN?.trim();
+  const dir = env.TARMOTO_FSQ_IMPORT_DIR?.trim();
+  return {
+    enabled: boolEnv(env.TARMOTO_FSQ_REFRESH_ENABLED),
+    token: token ? token : null,
+    targetDir: dir ? dir : null,
+    regions: parseRegions(
+      env.TARMOTO_FSQ_IMPORT_REGIONS,
+      'TARMOTO_FSQ_IMPORT_REGIONS',
+    ),
+  };
+}
+
+/**
+ * Single-quote a value as a DuckDB SQL string literal (doubling embedded
+ * quotes). The token is the only environment-derived value interpolated into the
+ * SQL; escaping keeps a stray quote from breaking — or injecting into — the
+ * script. The `outPath` is escaped the same way for good measure (it derives
+ * from `TARMOTO_FSQ_IMPORT_DIR`).
+ */
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+export interface FsqExtractSqlParams {
+  /** FSQ Places Portal token — embedded in `CREATE SECRET` (via STDIN, never argv). */
+  token: string;
+  /** Region to pull — supplies the ISO-2 country filter + the bbox clip. */
+  region: PoiImportRegion;
+  /** Destination path for the NDJSON (the COPY `TO` target — our atomic temp). */
+  outPath: string;
+  /** DuckDB spill dir (`temp_directory`) so a big scan spills instead of OOMing. */
+  tempDir?: string;
+}
+
+/**
+ * Build the full DuckDB script for one region's FSQ extract: load the
+ * httpfs/iceberg extensions, create the token secret, attach the OS Places
+ * Iceberg catalog, and COPY the filtered, category-prefiltered rows to `outPath`
+ * as NDJSON. Fed to `duckdb` on STDIN so the token never lands in the process
+ * arg list. The SELECT's field list + aliases match `FsqPlaceRow`
+ * (`fsq-poi-categories.ts`), so the importer parses the output unchanged;
+ * `(FORMAT json)` writes newline-delimited JSON (one row per line).
+ */
+export function buildFsqExtractSql(params: FsqExtractSqlParams): string {
+  const { token, region, outPath, tempDir } = params;
+  const { minLng, minLat, maxLng, maxLat } = region.bbox;
+  const pragmas = [
+    'INSTALL httpfs;',
+    'LOAD httpfs;',
+    'INSTALL iceberg;',
+    'LOAD iceberg;',
+    `SET memory_limit=${sqlLiteral(FSQ_DUCKDB_MEMORY_LIMIT)};`,
+  ];
+  if (tempDir) pragmas.push(`SET temp_directory=${sqlLiteral(tempDir)};`);
+  return `${pragmas.join('\n')}
+CREATE SECRET iceberg_secret (TYPE ICEBERG, TOKEN ${sqlLiteral(token)});
+ATTACH 'places' AS places (
+  TYPE iceberg,
+  SECRET iceberg_secret,
+  ENDPOINT ${sqlLiteral(FSQ_CATALOG_ENDPOINT)}
+);
+COPY (
+  SELECT
+    fsq_place_id, name, latitude, longitude,
+    array_to_string(fsq_category_ids, ',')    AS category_ids,
+    array_to_string(fsq_category_labels, ',') AS category_labels,
+    tel, website, address, locality, postcode, country
+  FROM ${FSQ_PLACES_TABLE}
+  WHERE date_closed IS NULL
+    -- places_os is GLOBAL, and a bbox overlaps neighbours at the borders;
+    -- scope by ISO-2 country too or their POIs import mis-owned (wrong
+    -- import_region + tombstone scope). Region code == its DEFAULT_REGIONS /
+    -- ISO-2 code.
+    AND country = ${sqlLiteral(region.code)}
+    AND longitude BETWEEN ${minLng} AND ${maxLng}
+    AND latitude  BETWEEN ${minLat} AND ${maxLat}
+    -- Coarse superset of the classifier's labels — a miss would drop kept rows.
+    AND len(list_filter(fsq_category_labels,
+        x -> regexp_matches(lower(x), ${sqlLiteral(FSQ_CATEGORY_PREFILTER)}))) > 0
+) TO ${sqlLiteral(outPath)} (FORMAT json);
+`;
 }
