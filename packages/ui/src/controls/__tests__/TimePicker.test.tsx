@@ -187,3 +187,14 @@ test("guards an invalid minuteStep (0) without hanging", () => {
     screen.getByRole("button", { name: /start time/i }),
   ).toBeInTheDocument();
 });
+
+test("rejects an out-of-range value instead of emitting a non-ISO time", async () => {
+  const onChange = vi.fn();
+  render(
+    <TimePicker ariaLabel="Start time" value="25:30" onChange={onChange} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /start time/i }));
+  await userEvent.click(screen.getByRole("option", { name: "45" }));
+  // "25:30" is out of range → hour defaults to 0, so the emit stays valid ISO
+  expect(onChange).toHaveBeenLastCalledWith("00:45");
+});

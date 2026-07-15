@@ -11,6 +11,7 @@ import {
 } from "react-aria-components";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
+import { parseIsoTime } from "./date/isoDate";
 
 export interface TimePickerProps {
   value: string;
@@ -31,12 +32,6 @@ const MENU =
   "rounded-[10px] border border-line-strong bg-paper p-2 shadow-[0_8px_24px_rgba(14,14,16,0.08)]";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-
-function parse(value: string): { hour: number; minute: number } | null {
-  const m = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!m) return null;
-  return { hour: Number(m[1]), minute: Number(m[2]) };
-}
 
 /** TimePicker · 24 h two-column scroll (§09). Value is an ISO time string "HH:MM". */
 export function TimePicker({
@@ -60,7 +55,10 @@ export function TimePicker({
   const labelId = useId();
   const valueId = useId();
   const errorId = useId();
-  const current = parse(value);
+  // Route through @internationalized/date so out-of-range values (e.g. 25:30)
+  // are rejected (→ null → defaults), consistent with the other pickers,
+  // rather than carrying an invalid hour/minute into an emitted value.
+  const current = parseIsoTime(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
 
