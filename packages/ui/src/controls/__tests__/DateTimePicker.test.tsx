@@ -248,3 +248,33 @@ test("locale formats the trigger display while the value stays ISO", async () =>
   );
   expect(onChange).toHaveBeenLastCalledWith("2026-05-18T09:30");
 });
+
+test("clearable shows a clear button that resets the value", async () => {
+  const onChange = vi.fn();
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value="2026-05-18T08:30"
+      clearable
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Clear date & time" }),
+  );
+  expect(onChange).toHaveBeenCalledWith("");
+});
+
+test("no clear button without a value", () => {
+  render(
+    <DateTimePicker
+      ariaLabel="Ride start"
+      value=""
+      clearable
+      onChange={() => {}}
+    />,
+  );
+  expect(
+    screen.queryByRole("button", { name: "Clear date & time" }),
+  ).not.toBeInTheDocument();
+});

@@ -126,3 +126,32 @@ test("locale drives the trigger display text", () => {
   );
   expect(screen.getByText("18.05.2026")).toBeInTheDocument();
 });
+
+test("clearable shows a clear button that resets the value", async () => {
+  const onChange = vi.fn();
+  render(
+    <DatePicker
+      ariaLabel="Departure"
+      value="2026-05-18"
+      clearable
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Clear date" }));
+  expect(onChange).toHaveBeenCalledWith("");
+});
+
+test("no clear button without a value or when not clearable", () => {
+  const { rerender } = render(
+    <DatePicker ariaLabel="Departure" value="" clearable onChange={() => {}} />,
+  );
+  expect(
+    screen.queryByRole("button", { name: "Clear date" }),
+  ).not.toBeInTheDocument();
+  rerender(
+    <DatePicker ariaLabel="Departure" value="2026-05-18" onChange={() => {}} />,
+  );
+  expect(
+    screen.queryByRole("button", { name: "Clear date" }),
+  ).not.toBeInTheDocument();
+});
