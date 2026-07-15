@@ -23,7 +23,7 @@ import {
   POI_IMPORT_SOURCES,
   type PoiImportService,
 } from './poi-import.service.js';
-import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import { PoiImportRun } from '@tarmoto/poi-db';
 import { isPoiConnectionError } from './poi-repo.js';
 
 /** One `poi_import_runs` row, serialized for the admin API (#847). */

@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #850 — tombstone + region-discriminator columns for the continent-scale bulk
@@ -19,7 +19,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Both additive + nullable → a non-blocking change on the existing table.
  */
 export class AddPoiDeactivatedAt1798000000000 implements MigrationInterface {
-  name = 'AddPoiDeactivatedAt1798000000000';
+  name = "AddPoiDeactivatedAt1798000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

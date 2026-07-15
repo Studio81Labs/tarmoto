@@ -55,6 +55,9 @@ jobs:
       - name: Build ingest package
         run: pnpm ingest:build
 
+      - name: Build poi-db package
+        run: pnpm poi-db:build
+
       - name: Export OpenAPI spec
         run: pnpm --filter @tarmoto/backend openapi:export
 

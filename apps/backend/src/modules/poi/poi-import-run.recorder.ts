@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  PoiImportRun,
-  type PoiImportTrigger,
-} from '../../entities/poi-import-run.entity.js';
+import { PoiImportRun, type PoiImportTrigger } from '@tarmoto/poi-db';
 import type { PoiImportResult } from './poi-import.service.js';
 
 const ERROR_MAX = 2000;

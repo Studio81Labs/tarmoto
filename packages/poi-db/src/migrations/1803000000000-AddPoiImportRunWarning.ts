@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #847 review — advisory channel for a `poi_import_runs` row that completed
@@ -21,7 +21,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * AddPoisSourceRegionIndex` migrations.
  */
 export class AddPoiImportRunWarning1803000000000 implements MigrationInterface {
-  name = 'AddPoiImportRunWarning1803000000000';
+  name = "AddPoiImportRunWarning1803000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

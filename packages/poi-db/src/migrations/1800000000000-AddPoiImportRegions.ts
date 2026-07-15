@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #944 — schema for region-polygon POI import coverage.
@@ -16,7 +16,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `ST_Covers` membership queries this unlocks.
  */
 export class AddPoiImportRegions1800000000000 implements MigrationInterface {
-  name = 'AddPoiImportRegions1800000000000';
+  name = "AddPoiImportRegions1800000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

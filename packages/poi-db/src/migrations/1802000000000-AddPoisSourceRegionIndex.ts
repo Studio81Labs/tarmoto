@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #847 — supporting index for the POI import admin status read
@@ -24,7 +24,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Postgres-atomic multi-statement query.
  */
 export class AddPoisSourceRegionIndex1802000000000 implements MigrationInterface {
-  name = 'AddPoisSourceRegionIndex1802000000000';
+  name = "AddPoisSourceRegionIndex1802000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

@@ -1,27 +1,12 @@
 import { Module, Logger } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource, type DataSourceOptions } from 'typeorm';
-import { Poi } from '../../entities/poi.entity.js';
-import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
-import { poiDatabaseConfig } from '../../config/poi-database.config.js';
-import { AddPois1787000000000 } from '../../migrations-poi/1787000000000-AddPois.js';
-import { AddPoiDecisionSupportFields1793000000000 } from '../../migrations-poi/1793000000000-AddPoiDecisionSupportFields.js';
-import { AddPoiDeactivatedAt1798000000000 } from '../../migrations-poi/1798000000000-AddPoiDeactivatedAt.js';
-import { AddPoiGeographyIndex1799000000000 } from '../../migrations-poi/1799000000000-AddPoiGeographyIndex.js';
-import { AddPoiImportRegions1800000000000 } from '../../migrations-poi/1800000000000-AddPoiImportRegions.js';
-import { AddPoiImportRuns1801000000000 } from '../../migrations-poi/1801000000000-AddPoiImportRuns.js';
-import { AddPoisSourceRegionIndex1802000000000 } from '../../migrations-poi/1802000000000-AddPoisSourceRegionIndex.js';
-import { AddPoiImportRunWarning1803000000000 } from '../../migrations-poi/1803000000000-AddPoiImportRunWarning.js';
+import { buildPoiTypeOrmOptions, poiDatabaseConfig } from '@tarmoto/poi-db';
 import { isPoiConnectionError } from './poi-repo.js';
 
 const logger = new Logger('PoiDatabase');
 const RETRY_MS = 10_000;
-// Bound the runtime connect attempt (below) so a reachable-but-unresponsive
-// POI host (e.g. a dropped SYN) can't block boot for the OS TCP timeout
-// (~1-2 min). A failed/hung connect gives up fast instead, gets swallowed by
-// createPoiDataSource, and retries in the background.
-const CONNECT_TIMEOUT_MS = 5_000;
 
 // Build + attempt to connect the POI DataSource. A CONNECTION failure (the
 // POI DB is unreachable) never throws (ADR 0007's tolerate-down): the app
@@ -74,83 +59,15 @@ export async function createPoiDataSource(
   return ds;
 }
 
-// Exported (rather than inlined into `useFactory` below) so
-// poi-database.module.spec.ts can assert the `migrationsRun` gating without
-// booting the whole module.
-export function buildPoiTypeOrmOptions(
-  config: ConfigService,
-): TypeOrmModuleOptions {
-  // Mirrors DatabaseModule's gating in database.module.ts: OPENAPI_EXPORT is
-  // set by scripts/export-openapi.ts, which builds the app purely from
-  // Nest/Swagger metadata and needs no real DB. Without this gate,
-  // `migrationsRun: true` would run POI migrations (a write) against the POI
-  // DB every time the OpenAPI spec is generated.
-  const isOpenApiExport = process.env['OPENAPI_EXPORT'] === 'true';
-  const host = config.get<string>('poiDatabase.host');
-  const port = config.get<number>('poiDatabase.port');
-  const database = config.get<string>('poiDatabase.database');
-  const username = config.get<string>('poiDatabase.username');
-  const password = config.get<string>('poiDatabase.password');
-  return {
-    type: 'postgres',
-    name: 'poi',
-    ...(host !== undefined ? { host } : {}),
-    ...(port !== undefined ? { port } : {}),
-    ...(database !== undefined ? { database } : {}),
-    ...(username !== undefined ? { username } : {}),
-    ...(password !== undefined ? { password } : {}),
-    entities: [Poi, PoiImportRun],
-    migrations: [
-      AddPois1787000000000,
-      AddPoiDecisionSupportFields1793000000000,
-      AddPoiDeactivatedAt1798000000000,
-      AddPoiGeographyIndex1799000000000,
-      AddPoiImportRegions1800000000000,
-      AddPoiImportRuns1801000000000,
-      AddPoisSourceRegionIndex1802000000000,
-      AddPoiImportRunWarning1803000000000,
-    ],
-    migrationsRun: !isOpenApiExport,
-    // `AddPoiGeographyIndex` builds its GiST index `CONCURRENTLY` (so a
-    // large-table boot doesn't hold a write lock), which can't run inside a
-    // transaction. Every POI migration is a single Postgres-atomic
-    // multi-statement query, so dropping TypeORM's own wrapping loses nothing.
-    migrationsTransactionMode: 'none',
-    synchronize: false,
-    // We own retries in createPoiDataSource; don't let TypeORM's own
-    // retry loop throw at boot.
-    retryAttempts: 0,
-    // `@nestjs/typeorm`'s createDataSourceFactory re-initializes
-    // whatever DataSource dataSourceFactory returns unless this is
-    // set: `!dataSource.isInitialized && !options.manualInitialization
-    // ? dataSource.initialize() : dataSource`. Without it, a POI DB
-    // that's down at boot means NestJS re-runs initialize() on the
-    // very DataSource createPoiDataSource just swallowed the failure
-    // for — that second initialize() call rejects, retryAttempts: 0
-    // makes handleRetry re-throw immediately, and
-    // NestFactory.create(AppModule) crashes the whole process. With
-    // manualInitialization, NestJS returns createPoiDataSource's
-    // result as-is (an uninitialized DataSource on failure), so boot
-    // survives and the store services 503 instead (ADR 0007).
-    manualInitialization: true,
-    // See CONNECT_TIMEOUT_MS above. Both fields matter: connectTimeoutMS
-    // is TypeORM's own Postgres option; extra.connectionTimeoutMillis
-    // sets it directly on the pg Pool. Belt-and-suspenders — TypeORM's
-    // PostgresDriver#createPool merges `options.extra` over the
-    // connectTimeoutMS-derived default, so either alone would apply,
-    // but pinning both keeps this resilient to that merge order.
-    connectTimeoutMS: CONNECT_TIMEOUT_MS,
-    extra: { connectionTimeoutMillis: CONNECT_TIMEOUT_MS },
-  };
-}
-
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
       name: 'poi',
       imports: [ConfigModule.forFeature(poiDatabaseConfig)],
       inject: [ConfigService],
-      useFactory: buildPoiTypeOrmOptions,
+      // Backend still migrates the POI DB in this phase; T5 flips this to false.
+      useFactory: (config: ConfigService) =>
+        buildPoiTypeOrmOptions(config, { migrationsRun: true }),
       dataSourceFactory: (options) => createPoiDataSource(options!),
     }),
   ],

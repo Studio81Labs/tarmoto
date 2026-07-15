@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #745 — store POIs in PostGIS for offline use.
@@ -15,7 +15,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * category filters.
  */
 export class AddPois1787000000000 implements MigrationInterface {
-  name = 'AddPois1787000000000';
+  name = "AddPois1787000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

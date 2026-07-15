@@ -30,6 +30,7 @@ on:
       - "apps/backend/**"
       - "packages/shared/**"
       - "packages/ingest/**"
+      - "packages/poi-db/**"
       - "packages/openapi/**"
       - "tsconfig.base.json"
       - "docs/database/**"

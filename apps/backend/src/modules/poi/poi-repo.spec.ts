@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
-import { Poi } from '../../entities/poi.entity.js';
+import { Poi } from '@tarmoto/poi-db';
 import { isPoiConnectionError, withPoiRepo } from './poi-repo.js';
 
 function connErr(code: string, message = 'boom'): Error {

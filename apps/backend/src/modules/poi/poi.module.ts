@@ -17,7 +17,7 @@ import { PoiImportAdminService } from './poi-import-admin.service.js';
 import { FsqPoiImportSource } from './poi-import-source.js';
 import { fsqImportConfig, poiImportConfig } from './poi-import.config.js';
 import { PoiDatabaseModule } from './poi-database.module.js';
-import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import { PoiImportRun } from '@tarmoto/poi-db';
 import { PoiImportRunRecorder } from './poi-import-run.recorder.js';
 import { QUEUE_NAMES } from '../jobs/jobs.constants.js';
 

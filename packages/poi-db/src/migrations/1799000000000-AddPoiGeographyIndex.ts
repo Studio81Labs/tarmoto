@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #849 — index the geography cast used by the store-first radius + corridor
@@ -22,7 +22,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * single Postgres-atomic multi-statement query.
  */
 export class AddPoiGeographyIndex1799000000000 implements MigrationInterface {
-  name = 'AddPoiGeographyIndex1799000000000';
+  name = "AddPoiGeographyIndex1799000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

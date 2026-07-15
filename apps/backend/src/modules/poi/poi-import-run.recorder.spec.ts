@@ -1,6 +1,6 @@
 import { PoiImportRunRecorder } from './poi-import-run.recorder.js';
 import { WIPE_GUARD_WARNING } from './poi-import.service.js';
-import { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import { PoiImportRun } from '@tarmoto/poi-db';
 
 function mockRepo() {
   const saved: Partial<PoiImportRun>[] = [];

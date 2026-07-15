@@ -50,7 +50,7 @@ import {
   POI_UPLOAD_MAX_BYTES,
   PoiImportAdminService,
 } from './poi-import-admin.service.js';
-import type { PoiImportRun } from '../../entities/poi-import-run.entity.js';
+import type { PoiImportRun } from '@tarmoto/poi-db';
 
 const statMock = jest.mocked(stat);
 const openMock = jest.mocked(open);

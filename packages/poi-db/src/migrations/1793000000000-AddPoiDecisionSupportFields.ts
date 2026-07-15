@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #848 — widen `pois` with decision-support fields captured from OSM.
@@ -16,7 +16,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * filtering; `(address_country, kind)` supports country + category browse (#849).
  */
 export class AddPoiDecisionSupportFields1793000000000 implements MigrationInterface {
-  name = 'AddPoiDecisionSupportFields1793000000000';
+  name = "AddPoiDecisionSupportFields1793000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

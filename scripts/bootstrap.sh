@@ -81,6 +81,8 @@ pnpm shared:build
 ok "shared built"
 pnpm ingest:build
 ok "ingest built"
+pnpm poi-db:build
+ok "poi-db built"
 pnpm backend:build
 ok "backend built"
 

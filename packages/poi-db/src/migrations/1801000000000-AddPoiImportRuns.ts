@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 /**
  * #847 — durable run-history store for POI import admin management.
@@ -14,7 +14,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * two separate statements/queries rather than one multi-statement query.
  */
 export class AddPoiImportRuns1801000000000 implements MigrationInterface {
-  name = 'AddPoiImportRuns1801000000000';
+  name = "AddPoiImportRuns1801000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
