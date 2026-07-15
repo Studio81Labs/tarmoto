@@ -18,6 +18,7 @@ import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { parseIsoDate, isoDate } from "./date/isoDate";
 import { displayIsoDate, type DisplayFormatProps } from "./date/displayFormat";
+import { useHydrated } from "./date/useHydrated";
 
 export interface DatePickerProps extends DisplayFormatProps {
   value: string;
@@ -62,7 +63,13 @@ export function DatePicker({
   const valueId = useId();
   const errorId = useId();
   const [open, setOpen] = useState(false);
-  const display = displayIsoDate(value, { locale, formatOptions, formatValue });
+  const hydrated = useHydrated();
+  const display = displayIsoDate(value, {
+    locale,
+    formatOptions,
+    formatValue,
+    hydrated,
+  });
 
   return (
     <div className={cn("w-full", className)}>

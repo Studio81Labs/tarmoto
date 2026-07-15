@@ -27,6 +27,7 @@ import {
   displayIsoDateTime,
   type DisplayFormatProps,
 } from "./date/displayFormat";
+import { useHydrated } from "./date/useHydrated";
 
 export interface DateTimePickerProps extends DisplayFormatProps {
   value: string;
@@ -72,10 +73,12 @@ export function DateTimePicker({
   formatValue,
 }: DateTimePickerProps) {
   const [open, setOpen] = useState(false);
+  const hydrated = useHydrated();
   const display = displayIsoDateTime(value, {
     locale,
     formatOptions,
     formatValue,
+    hydrated,
   });
   // Guard the public prop: 0/negative/non-integer would break the 60/step math.
   // Fall back to the documented default.

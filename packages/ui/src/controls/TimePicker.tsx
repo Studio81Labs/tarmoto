@@ -13,6 +13,7 @@ import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
 import { parseIsoTime } from "./date/isoDate";
 import { displayIsoTime, type DisplayFormatProps } from "./date/displayFormat";
+import { useHydrated } from "./date/useHydrated";
 
 export interface TimePickerProps extends DisplayFormatProps {
   value: string;
@@ -66,7 +67,13 @@ export function TimePicker({
   const current = parseIsoTime(value);
   const hour = current?.hour ?? 0;
   const minute = current?.minute ?? 0;
-  const display = displayIsoTime(value, { locale, formatOptions, formatValue });
+  const hydrated = useHydrated();
+  const display = displayIsoTime(value, {
+    locale,
+    formatOptions,
+    formatValue,
+    hydrated,
+  });
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes: number[] = [];

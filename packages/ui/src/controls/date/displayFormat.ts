@@ -18,6 +18,30 @@ export interface DisplayFormatProps {
   formatValue?: ((value: string) => string) | undefined;
 }
 
+interface DisplayOptions extends DisplayFormatProps {
+  /**
+   * Internal, set by the pickers: `false` during SSR and the first client
+   * render, `true` once mounted. When the caller gives no explicit `locale`
+   * (or `formatValue`), runtime-locale formatting differs between the server
+   * and the browser, so before hydration we render the raw ISO string to keep
+   * server output and first client paint identical. Explicit `locale`/
+   * `formatValue` are deterministic and always applied. Defaults to `true` for
+   * non-component callers (tests, plain usage).
+   */
+  hydrated?: boolean | undefined;
+}
+
+/** Runtime-locale formatting is non-deterministic across server/client. */
+function shouldDeferForHydration({
+  locale,
+  formatValue,
+  hydrated,
+}: DisplayOptions): boolean {
+  return (
+    hydrated === false && locale === undefined && formatValue === undefined
+  );
+}
+
 const DATE_DEFAULTS: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "2-digit",
@@ -27,7 +51,9 @@ const DATE_DEFAULTS: Intl.DateTimeFormatOptions = {
 const TIME_DEFAULTS: Intl.DateTimeFormatOptions = {
   hour: "2-digit",
   minute: "2-digit",
-  hour12: false,
+  // h23 (00–23), not just hour12:false — the latter resolves to h24 under an
+  // en-US runtime, rendering midnight as "24:45" instead of "00:45".
+  hourCycle: "h23",
 };
 
 const DATETIME_DEFAULTS: Intl.DateTimeFormatOptions = {
@@ -61,10 +87,12 @@ function run(
 
 export function displayIsoDate(
   value: string,
-  { locale, formatOptions, formatValue }: DisplayFormatProps = {},
+  options: DisplayOptions = {},
 ): string {
   if (!value) return "";
+  const { locale, formatOptions, formatValue } = options;
   if (formatValue) return formatValue(value);
+  if (shouldDeferForHydration(options)) return value;
   const d = parseIsoDate(value);
   if (!d) return value; // invalid but non-empty: show it rather than hide it
   return run(
@@ -77,10 +105,12 @@ export function displayIsoDate(
 
 export function displayIsoTime(
   value: string,
-  { locale, formatOptions, formatValue }: DisplayFormatProps = {},
+  options: DisplayOptions = {},
 ): string {
   if (!value) return "";
+  const { locale, formatOptions, formatValue } = options;
   if (formatValue) return formatValue(value);
+  if (shouldDeferForHydration(options)) return value;
   const t = parseIsoTime(value);
   if (!t) return value;
   return run(
@@ -93,10 +123,12 @@ export function displayIsoTime(
 
 export function displayIsoDateTime(
   value: string,
-  { locale, formatOptions, formatValue }: DisplayFormatProps = {},
+  options: DisplayOptions = {},
 ): string {
   if (!value) return "";
+  const { locale, formatOptions, formatValue } = options;
   if (formatValue) return formatValue(value);
+  if (shouldDeferForHydration(options)) return value;
   const dt = parseIsoDateTime(value);
   if (!dt) return value;
   return run(

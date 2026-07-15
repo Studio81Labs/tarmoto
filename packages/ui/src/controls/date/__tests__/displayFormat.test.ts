@@ -43,9 +43,34 @@ test("formatOptions can switch to a named-month style without throwing", () => {
 });
 
 test("displayIsoTime shows 24h HH:MM regardless of locale default", () => {
-  // en-US defaults to 12h; the helper forces hour12:false.
+  // en-US defaults to 12h; the helper forces the h23 cycle.
   expect(displayIsoTime("08:30", { locale: "en-US" })).toBe("08:30");
   expect(displayIsoTime("00:45", { locale: "en-GB" })).toBe("00:45");
+  // Midnight must be 00:xx, not 24:xx (h24 is what hour12:false yields on en-US).
+  expect(displayIsoTime("00:45", { locale: "en-US" })).toBe("00:45");
+  expect(displayIsoTime("00:00", { locale: "en-US" })).toBe("00:00");
+});
+
+test("defers runtime-locale formatting until hydration (SSR-safe default)", () => {
+  // No explicit locale + not hydrated → raw ISO, so server and first client
+  // paint agree.
+  expect(displayIsoDate("2026-07-15", { hydrated: false })).toBe("2026-07-15");
+  expect(displayIsoTime("08:30", { hydrated: false })).toBe("08:30");
+  expect(displayIsoDateTime("2026-07-15T08:30", { hydrated: false })).toBe(
+    "2026-07-15T08:30",
+  );
+  // Explicit locale is deterministic → formats even before hydration.
+  expect(
+    displayIsoDate("2026-07-15", { locale: "en-GB", hydrated: false }),
+  ).toBe("15/07/2026");
+  // formatValue is deterministic too.
+  expect(
+    displayIsoDate("2026-07-15", { hydrated: false, formatValue: () => "x" }),
+  ).toBe("x");
+  // Once hydrated, the runtime-locale path formats.
+  expect(
+    displayIsoDate("2026-07-15", { locale: "en-GB", hydrated: true }),
+  ).toBe("15/07/2026");
 });
 
 test("displayIsoDateTime combines the locale date with 24h time", () => {
