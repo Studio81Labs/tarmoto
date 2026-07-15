@@ -93,12 +93,12 @@ Next published version = `COALESCE(MAX(version) among published+archived rows
 for (tag, locale), 0) + 1`.
 
 This replaces the current `(priorPublished?.version ?? draft.version) + 1`,
-which has a latent collision bug: after a `reset` deletes the published row,
-`priorPublished` is null, so the next publish recomputes from the fresh
-draft's default (`1`) and can **reuse a version number that an archived row
-already holds**. Taking `MAX` over all published+archived rows is collision-
-free and monotonic regardless of reset history. First-ever publish → version
-`1`.
+which has a latent collision bug: whenever no `published` row exists (e.g.
+after a `reset`), `priorPublished` is null, so the next publish recomputes from
+the fresh draft's default (`1`) and can **reuse a version number that an
+archived row already holds**. Taking `MAX` over all published+archived rows is
+collision-free and monotonic regardless of reset history. First-ever publish →
+version `1`.
 
 ## Backend Changes
 
@@ -131,10 +131,12 @@ inserting a duplicate. Set `created_by = actorId` on the insert branch. The
 existing "targeted UPDATE ... WHERE status='draft', else INSERT" logic is
 retained verbatim inside the lock.
 
-**`reset(tag, locale)`** (behavior unchanged, semantics clarified):
-Still deletes only the live `published` row under the lock. Archived history
-is **preserved** — so a super_admin can still revert to a prior version after
-a reset. Add a test asserting archived rows survive a reset.
+**`reset(tag, locale)`** (modified — archives, not deletes):
+Under the lock, set the live `published` row to `status='archived'` rather than
+deleting it. The user-facing result is unchanged — with no `published` row the
+code template renders again — but the reset-time version stays in history, is
+revertable, and its version number is never reused by a later publish. Add a
+test asserting reset archives the live row (and never deletes).
 
 **`history(tag, locale): EmailTemplateVersionDto[]`** (new):
 Query rows where `status IN ('published','archived')` for `(tag, locale)`,
@@ -277,7 +279,8 @@ Backend (`admin-email-template.service.spec.ts`,
   current published, is atomic under the lock, and re-validates (rejects
   invalid stored content).
 - `revert` unknown version → 404.
-- `reset` preserves archived history.
+- `reset` archives the live version (kept in history, revertable) and never
+  deletes.
 - saveDraft race: two concurrent first-saves → exactly one draft row.
 - role gating: history=support 200, revert=support 403 / super_admin 200.
 
