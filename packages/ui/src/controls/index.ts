@@ -31,6 +31,7 @@ export { NumberGrid, type NumberGridProps } from "./NumberGrid";
 export { SwatchPicker, type SwatchPickerProps } from "./SwatchPicker";
 export { DatePicker, type DatePickerProps } from "./DatePicker";
 export { TimePicker, type TimePickerProps } from "./TimePicker";
+export { DateTimePicker, type DateTimePickerProps } from "./DateTimePicker";
 export {
   Field,
   type FieldProps,
