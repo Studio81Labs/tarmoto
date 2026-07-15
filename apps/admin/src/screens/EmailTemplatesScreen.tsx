@@ -12,15 +12,6 @@ import { EmailTemplateEditor } from "./EmailTemplateEditor.js";
 
 type TemplateRow = components["schemas"]["EmailTemplateSummaryDto"];
 
-function statusOf(row: TemplateRow): {
-  label: string;
-  variant: "accent" | "ghost";
-} {
-  if (row.hasPublished) return { label: "Live", variant: "accent" };
-  if (row.hasDraft) return { label: "Draft", variant: "ghost" };
-  return { label: "Default", variant: "ghost" };
-}
-
 export function EmailTemplatesScreen() {
   // Both hooks called unconditionally (rules of hooks) before branching.
   const { params, navigate } = useHashRoute();
@@ -45,11 +36,18 @@ export function EmailTemplatesScreen() {
     {
       key: "status",
       label: "Status",
-      size: "140px",
-      render: (row) => {
-        const s = statusOf(row);
-        return <Pill variant={s.variant}>{s.label}</Pill>;
-      },
+      size: "160px",
+      // A template can be BOTH live and have a pending draft (published, then a
+      // new draft saved) — show both so the draft isn't hidden behind "Live".
+      render: (row) => (
+        <div className="flex flex-wrap gap-1">
+          {row.hasPublished ? <Pill variant="accent">Live</Pill> : null}
+          {row.hasDraft ? <Pill variant="ghost">Draft</Pill> : null}
+          {!row.hasPublished && !row.hasDraft ? (
+            <Pill variant="ghost">Default</Pill>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "legalSensitive",
