@@ -27,12 +27,12 @@ import { mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import type { PoiImportRegion } from '../modules/poi/poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import {
   buildFsqExtractSql,
   resolveFsqRefreshConfig,
   type FsqRefreshConfig,
-} from '../modules/poi/poi-refresh.config.js';
+} from '@tarmoto/ingest';
 import {
   describeExecError,
   refreshTmpPath,

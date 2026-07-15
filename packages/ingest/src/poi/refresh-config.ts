@@ -1,4 +1,4 @@
-import { parseRegions, type PoiImportRegion } from './poi-import.config.js';
+import { parseRegions, type PoiImportRegion } from "./regions.js";
 
 /**
  * Config for the automated extract refresh (#976) — the "fetch" half of the
@@ -22,7 +22,7 @@ import { parseRegions, type PoiImportRegion } from './poi-import.config.js';
  */
 
 /** Geofabrik hosts all 17 coverage countries under its `europe/` tree. */
-export const GEOFABRIK_BASE_URL = 'https://download.geofabrik.de/europe';
+export const GEOFABRIK_BASE_URL = "https://download.geofabrik.de/europe";
 
 /**
  * `DEFAULT_REGIONS` code → Geofabrik country slug. Geofabrik-specific naming
@@ -32,23 +32,23 @@ export const GEOFABRIK_BASE_URL = 'https://download.geofabrik.de/europe';
  * `poi-refresh.config.spec`.
  */
 export const GEOFABRIK_SLUGS: Readonly<Record<string, string>> = {
-  CZ: 'czech-republic',
-  SK: 'slovakia',
-  PL: 'poland',
-  DE: 'germany',
-  AT: 'austria',
-  IT: 'italy',
-  SI: 'slovenia',
-  HR: 'croatia',
-  BA: 'bosnia-herzegovina',
-  RS: 'serbia',
-  ME: 'montenegro',
-  MK: 'macedonia',
-  AL: 'albania',
-  XK: 'kosovo',
-  BG: 'bulgaria',
-  RO: 'romania',
-  GR: 'greece',
+  CZ: "czech-republic",
+  SK: "slovakia",
+  PL: "poland",
+  DE: "germany",
+  AT: "austria",
+  IT: "italy",
+  SI: "slovenia",
+  HR: "croatia",
+  BA: "bosnia-herzegovina",
+  RS: "serbia",
+  ME: "montenegro",
+  MK: "macedonia",
+  AL: "albania",
+  XK: "kosovo",
+  BG: "bulgaria",
+  RO: "romania",
+  GR: "greece",
 };
 
 /**
@@ -60,10 +60,10 @@ export const GEOFABRIK_SLUGS: Readonly<Record<string, string>> = {
  * (hotels / campsites / rest areas are often mapped as areas, not just points).
  */
 export const POI_TAGS_FILTER_EXPRESSIONS: readonly string[] = [
-  'nwr/amenity=fuel,restaurant,cafe,fast_food,ice_cream',
-  'nwr/tourism=hotel,guest_house,motel,hostel,chalet,apartment,camp_site,viewpoint',
-  'nwr/highway=rest_area,services',
-  'nwr/shop=ice_cream',
+  "nwr/amenity=fuel,restaurant,cafe,fast_food,ice_cream",
+  "nwr/tourism=hotel,guest_house,motel,hostel,chalet,apartment,camp_site,viewpoint",
+  "nwr/highway=rest_area,services",
+  "nwr/shop=ice_cream",
 ];
 
 /** Geofabrik download URL for a region's country PBF (null if no slug). */
@@ -73,12 +73,12 @@ export function geofabrikUrl(code: string): string | null {
 }
 
 /** `osmium extract -b` bbox arg: `minLng,minLat,maxLng,maxLat`. */
-export function bboxArg(bbox: PoiImportRegion['bbox']): string {
+export function bboxArg(bbox: PoiImportRegion["bbox"]): string {
   return `${bbox.minLng},${bbox.minLat},${bbox.maxLng},${bbox.maxLat}`;
 }
 
 function boolEnv(value: string | undefined): boolean {
-  return (value ?? 'false').trim().toLowerCase() === 'true';
+  return (value ?? "false").trim().toLowerCase() === "true";
 }
 
 export interface PoiRefreshConfig {
@@ -117,7 +117,7 @@ export function resolvePoiRefreshConfig(
     targetDir: dir ? dir : null,
     regions: parseRegions(
       env.TARMOTO_POI_IMPORT_REGIONS,
-      'TARMOTO_POI_IMPORT_REGIONS',
+      "TARMOTO_POI_IMPORT_REGIONS",
     ),
   };
 }
@@ -132,10 +132,10 @@ export function resolvePoiRefreshConfig(
  * table name are hardcoded and just the token comes from the environment.
  */
 export const FSQ_CATALOG_ENDPOINT =
-  'https://catalog.h3-hub.foursquare.com/iceberg';
+  "https://catalog.h3-hub.foursquare.com/iceberg";
 
 /** Fully-qualified OS Places table inside the attached `places` catalog. */
-export const FSQ_PLACES_TABLE = 'places.datasets.places_os';
+export const FSQ_PLACES_TABLE = "places.datasets.places_os";
 
 /**
  * Coarse category prefilter pushed into the DuckDB scan (a case-insensitive
@@ -146,17 +146,17 @@ export const FSQ_PLACES_TABLE = 'places.datasets.places_os';
  * lockstep with the runbook's worked example and the classifier's label set.
  */
 export const FSQ_CATEGORY_PREFILTER =
-  'restaurant|caf|coffee|tea room|tea house|food|ice cream|gas|petrol|fuel|' +
-  'charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|' +
-  'b&b|breakfast|apartment|camp|rv park|caravan|resort|cottage|chalet|cabin|' +
-  'vacation|holiday|rental';
+  "restaurant|caf|coffee|tea room|tea house|food|ice cream|gas|petrol|fuel|" +
+  "charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|" +
+  "b&b|breakfast|apartment|camp|rv park|caravan|resort|cottage|chalet|cabin|" +
+  "vacation|holiday|rental";
 
 /**
  * DuckDB memory ceiling for a per-country FSQ scan — bounds RAM so a large
  * region spills to `temp_directory` instead of getting OOM-killed (the osmium
  * OOM lesson, #976 ops).
  */
-export const FSQ_DUCKDB_MEMORY_LIMIT = '2GB';
+export const FSQ_DUCKDB_MEMORY_LIMIT = "2GB";
 
 export interface FsqRefreshConfig {
   /** Gate — off unless `TARMOTO_FSQ_REFRESH_ENABLED=true`. */
@@ -198,7 +198,7 @@ export function resolveFsqRefreshConfig(
     targetDir: dir ? dir : null,
     regions: parseRegions(
       env.TARMOTO_FSQ_IMPORT_REGIONS,
-      'TARMOTO_FSQ_IMPORT_REGIONS',
+      "TARMOTO_FSQ_IMPORT_REGIONS",
     ),
   };
 }
@@ -238,14 +238,14 @@ export function buildFsqExtractSql(params: FsqExtractSqlParams): string {
   const { token, region, outPath, tempDir } = params;
   const { minLng, minLat, maxLng, maxLat } = region.bbox;
   const pragmas = [
-    'INSTALL httpfs;',
-    'LOAD httpfs;',
-    'INSTALL iceberg;',
-    'LOAD iceberg;',
+    "INSTALL httpfs;",
+    "LOAD httpfs;",
+    "INSTALL iceberg;",
+    "LOAD iceberg;",
     `SET memory_limit=${sqlLiteral(FSQ_DUCKDB_MEMORY_LIMIT)};`,
   ];
   if (tempDir) pragmas.push(`SET temp_directory=${sqlLiteral(tempDir)};`);
-  return `${pragmas.join('\n')}
+  return `${pragmas.join("\n")}
 CREATE SECRET iceberg_secret (TYPE ICEBERG, TOKEN ${sqlLiteral(token)});
 ATTACH 'places' AS places (
   TYPE iceberg,

@@ -4,7 +4,7 @@ import {
   OsmPoiImportSource,
   type StorableImportRow,
 } from './poi-import-source.js';
-import type { PoiImportRegion } from './poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 
 const CZ: PoiImportRegion = {
   code: 'CZ',

@@ -12,7 +12,8 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '../../entities/poi.entity.js';
-import { poiImportConfig, type PoiImportRegion } from './poi-import.config.js';
+import { poiImportConfig } from './poi-import.config.js';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import {
   OsmPoiImportSource,
   POI_IMPORT_SOURCE,
