@@ -582,7 +582,14 @@ export default function ProfilePage() {
                 name="unit-system"
                 value={value}
                 checked={unitSystem === value}
-                onChange={() => setUnitSystem(value)}
+                onChange={() => {
+                  setUnitSystem(value);
+                  void usersApi
+                    .updateMe({ preferences: { units: value } })
+                    .catch((error) =>
+                      console.error("Failed to save unit preference", error),
+                    );
+                }}
                 className="sr-only"
                 aria-label={
                   value === "metric"

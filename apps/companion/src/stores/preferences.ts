@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import type { UnitSystem } from "@tarmoto/shared";
+import { UNITS_COOKIE, FORMAT_PREFS_COOKIE_MAX_AGE_SECONDS } from "@/format";
 
 /**
  * User-level display preferences. Backend stores everything in metric per
- * AGENTS.md, so every display formatter reads this store to decide whether to
- * convert. Persisted locally (no server round-trip today); once the account
- * endpoint gains a preferences field we can swap `loadUnitSystem`/`save` for
- * an API call without touching consumers.
+ * AGENTS.md, so every display formatter reads this store to decide whether
+ * to convert. Persisted to localStorage AND mirrored into the
+ * `tarmoto-units` cookie (so SSR renders the right units), and reconciled
+ * with the account's `preferences.units` by PreferencesSync — the account
+ * is the cross-device source of truth.
  */
 
 const STORAGE_KEY = "tarmoto:preferences:unit-system";
@@ -19,13 +21,18 @@ function isUnitSystem(value: unknown): value is UnitSystem {
   );
 }
 
-function loadUnitSystem(): UnitSystem {
-  if (typeof window === "undefined") return "metric";
+/**
+ * The EXPLICIT stored preference, or null when the rider never chose one.
+ * The null/default distinction matters: only an explicit value may be
+ * backfilled to the account (PreferencesSync) or stamped into the cookie.
+ */
+export function getStoredUnitSystem(): UnitSystem | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return isUnitSystem(raw) ? raw : "metric";
+    return isUnitSystem(raw) ? raw : null;
   } catch {
-    return "metric";
+    return null;
   }
 }
 
@@ -37,6 +44,12 @@ function saveUnitSystem(units: UnitSystem): void {
     // Quota or private-mode failures are non-fatal — the in-memory state
     // still works for this session.
   }
+  saveUnitsCookie(units);
+}
+
+function saveUnitsCookie(units: UnitSystem): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${UNITS_COOKIE}=${units}; path=/; max-age=${FORMAT_PREFS_COOKIE_MAX_AGE_SECONDS}; samesite=lax`;
 }
 
 interface PreferencesState {
@@ -56,6 +69,11 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
     set({ unitSystem: units });
   },
   hydrate: () => {
-    set({ unitSystem: loadUnitSystem(), hydrated: true });
+    const stored = getStoredUnitSystem();
+    // Refresh the SSR cookie for riders whose explicit choice predates the
+    // cookie's existence — without this their next request still SSRs the
+    // default.
+    if (stored) saveUnitsCookie(stored);
+    set({ unitSystem: stored ?? "metric", hydrated: true });
   },
 }));
