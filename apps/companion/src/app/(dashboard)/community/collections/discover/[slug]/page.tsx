@@ -151,6 +151,10 @@ export default function DiscoverCollectionPage() {
   const ownerName = detail!.owner_name || "";
   const author = ownerName || (detail!.viewer_is_owner ? t("You") : "");
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
+  // Value + unit from the SAME split call — pairing a unit-preference-aware
+  // value with a hardcoded "KM" label would mislabel a miles figure for an
+  // imperial viewer.
+  const totalDistance = format.splitDistanceKm(totalKm);
 
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
@@ -250,7 +254,7 @@ export default function DiscoverCollectionPage() {
         <Stamp>{t("Routes")}</Stamp>
         {routes.length > 0 && (
           <Mono className="text-[11px] text-fg-mute">
-            {format.splitDistanceKm(totalKm).value} {t("KM")}
+            {totalDistance.value} {totalDistance.unit.toUpperCase()}
           </Mono>
         )}
       </div>

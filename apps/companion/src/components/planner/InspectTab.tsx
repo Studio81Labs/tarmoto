@@ -128,11 +128,20 @@ export function InspectTab({
   const startLabel = spine[0]?.name ?? "Start";
   const finishLabel = spine[spine.length - 1]?.name ?? "Finish";
 
+  // Distance keeps its value and unit paired from the SAME `splitDistanceKm`
+  // call — an imperial viewer must see "mi", never a converted mile figure
+  // mislabelled "km". Falls back to the current unit system (not a
+  // hardcoded "km") when there's no distance to show, so the empty-state
+  // sublabel is still honest.
+  const scopedDistanceKm = plan ? plan.distanceKm : day.distanceKm;
+  const distanceSplit = scopedDistanceKm
+    ? format.splitDistanceKm(scopedDistanceKm)
+    : null;
+  const distanceUnit =
+    distanceSplit?.unit ?? (format.units === "imperial" ? "mi" : "km");
   const metrics = plan
     ? {
-        distance: plan.distanceKm
-          ? format.splitDistanceKm(plan.distanceKm).value
-          : "—",
+        distance: distanceSplit?.value ?? "—",
         time: plan.timeMin ? format.duration(plan.timeMin) : "—",
         score:
           plan.quality.score !== null
@@ -140,9 +149,7 @@ export function InspectTab({
             : "—",
       }
     : {
-        distance: day.distanceKm
-          ? format.splitDistanceKm(day.distanceKm).value
-          : "—",
+        distance: distanceSplit?.value ?? "—",
         time: day.durationMinutes ? format.duration(day.durationMinutes) : "—",
         score: day.avgQuality ? format.decimal(day.avgQuality, 1) : "—",
       };
@@ -196,7 +203,7 @@ export function InspectTab({
               {
                 key: "DISTANCE",
                 value: metrics.distance,
-                unit: "km",
+                unit: distanceUnit,
                 accent: false,
               },
               { key: "TIME", value: metrics.time, unit: "", accent: false },
