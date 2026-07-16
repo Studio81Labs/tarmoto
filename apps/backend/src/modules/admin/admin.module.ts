@@ -84,8 +84,8 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
     EmailModule,
     // Exposes PoiImportAdminService so admin-poi can read region/run status
     // and drive uploads/manual triggers. No forwardRef needed: PoiModule
-    // (and everything it imports — PoiDatabaseModule, its own
-    // BullModule.registerQueue) has no dependency back on AdminModule.
+    // (and everything it imports — PoiDatabaseModule, the upload-lock Redis
+    // client) has no dependency back on AdminModule.
     PoiModule,
     // Register the digest queue TOKEN so admin-email can enqueue a resend. The
     // connection + workers come from JobsModule.forRoot() (imported once in

@@ -1,9 +1,3 @@
-import {
-  POI_IMPORT_QUEUE,
-  POI_IMPORT_JOB,
-  POI_IMPORT_WEEKLY_CRON,
-} from '@tarmoto/ingest';
-
 /**
  * Canonical queue names for the BullMQ-based background job system.
  *
@@ -116,15 +110,6 @@ export const QUEUE_NAMES = {
   NAP_CLOSURE_POLL: 'nap.closure-poll',
 
   /**
-   * Recurring (weekly dispatcher, #850). Each tick the `dispatch` job fans
-   * out one staggered `import-region` child per configured region, so a
-   * continent-scale run spreads its per-country `.osm` imports across hours
-   * instead of one giant job. Mirrors POIs into the `pois` table for offline
-   * use (#745). Dormant until `TARMOTO_POI_IMPORT_ENABLED=true`.
-   */
-  POI_IMPORT: POI_IMPORT_QUEUE,
-
-  /**
    * Recurring (weekly). Imports the configured OSM `.osm` extract into
    * `road_segments` (#781). Dormant until `TARMOTO_OSM_IMPORT_ENABLED=true`.
    * Runs before the POI import and the fun-zone recompute so the road graph is
@@ -167,10 +152,6 @@ export const JOB_NAMES = {
   MODEL_EVAL_RECONCILE_RUN: 'run',
   MODEL_EVAL_AGREEMENT_RUN: 'run',
   NAP_CLOSURE_POLL_RUN: 'run',
-  /** Weekly dispatcher: fans out one `import-region` job per configured region. */
-  POI_IMPORT_DISPATCH: POI_IMPORT_JOB.DISPATCH,
-  /** Per-region child job (staggered): imports one country's `.osm` extract. */
-  POI_IMPORT_REGION: POI_IMPORT_JOB.REGION,
   OSM_IMPORT_RUN: 'run',
   QUALITY_CONFLATION_RUN: 'run',
 } as const;
@@ -196,8 +177,6 @@ export const RECURRING_PATTERNS = {
   WEEKLY_MON_0400: '0 4 * * 1',
   /** Weekly Monday at 05:00 — model-eval cross-device/bike agreement. */
   WEEKLY_MON_0500: '0 5 * * 1',
-  /** Weekly Sunday at 03:00 — offline POI import. */
-  WEEKLY_SUN_0300: POI_IMPORT_WEEKLY_CRON,
   /** Weekly Sunday at 01:00 — OSM road-graph import (before POI + fun-zones). */
   WEEKLY_SUN_0100: '0 1 * * 0',
 } as const;
