@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "@tarmoto/openapi-client";
+import { createFormatters } from "@tarmoto/shared";
 import type { RiderStats } from "../types";
 import {
   activeChallenges,
@@ -30,6 +31,10 @@ import {
 } from "../gamification";
 
 const NOW = new Date("2026-04-18T00:00:00Z");
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
 
 function stats(overrides: Partial<RiderStats> = {}): RiderStats {
   return {
@@ -218,12 +223,12 @@ describe("formatMilestoneLabel", () => {
 
   it("shows current / next with the metric unit", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 12_345 }));
-    expect(formatMilestoneLabel(progress)).toBe("12,345 / 25,000 km");
+    expect(formatMilestoneLabel(progress, format)).toBe("12,345 / 25,000 km");
   });
 
   it("labels maxed milestones", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 30_000 }));
-    expect(formatMilestoneLabel(progress)).toBe("Maxed at 30,000 km");
+    expect(formatMilestoneLabel(progress, format)).toBe("Maxed at 30,000 km");
   });
 });
 

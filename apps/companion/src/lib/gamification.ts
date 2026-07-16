@@ -15,6 +15,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters } from "@tarmoto/shared";
 import type { Badge, RiderStats } from "@/lib/types";
 
 type MeProfileDto = components["schemas"]["MeProfileDto"];
@@ -240,12 +241,15 @@ export function pickNextMilestone(
   return actionable.sort((a, b) => b.fraction - a.fraction)[0] ?? null;
 }
 
-export function formatMilestoneLabel(progress: MilestoneProgress): string {
+export function formatMilestoneLabel(
+  progress: MilestoneProgress,
+  format: Formatters,
+): string {
   const unit = MILESTONE_UNITS[progress.milestone.metric];
   if (progress.nextThreshold === null) {
-    return `Maxed at ${formatNumber(progress.current)} ${unit}`;
+    return `Maxed at ${format.integer(progress.current)} ${unit}`;
   }
-  return `${formatNumber(progress.current)} / ${formatNumber(progress.nextThreshold)} ${unit}`;
+  return `${format.integer(progress.current)} / ${format.integer(progress.nextThreshold)} ${unit}`;
 }
 
 export function formatDaysRemaining(
@@ -282,10 +286,6 @@ const MILESTONE_UNITS: Record<LeaderboardMetric, string> = {
 function clamp01(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return value > 1 ? 1 : value;
-}
-
-function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString();
 }
 
 // ── Demo data ──
