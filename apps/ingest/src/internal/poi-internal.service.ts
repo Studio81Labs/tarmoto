@@ -54,14 +54,24 @@ export class PoiInternalService {
 
   async listRegionStatus(): Promise<RegionImportStatus[]> {
     // ADAPTATION (a): the enablement view. Only ENABLED sources contribute
-    // rows (a disabled source drops all 17 — "fewer rows when disabled"), each
-    // × DEFAULT_REGIONS, with `configured` = that source's OWN regions list.
+    // rows (a disabled source drops all 17 — "fewer rows when disabled"), and
+    // each contributes ONLY the codes it is itself CONFIGURED for — its own
+    // `regions` list (e.g. FSQ narrowed to CZ via
+    // `TARMOTO_FSQ_IMPORT_REGIONS`) — not the full `DEFAULT_REGIONS` list
+    // (#1011 review, FIX 1). An out-of-scope pair is simply ABSENT from the
+    // response rather than a `configured:false` row: the admin table
+    // (`PoiImportsScreen`) only renders its "Not configured" state for an
+    // ABSENT cell — a PRESENT row with `configured:false` still shows as a
+    // real, clickable cell, so Upload/Import for it can reach the backend
+    // and 400 there instead of being disabled up front.
     const enabled = this.importers.filter((imp) => imp.enabled);
     const pairs = enabled.flatMap((importer) =>
-      DEFAULT_REGIONS.map((region) => ({
+      importer.regions.map((region) => ({
         importer,
         code: region.code,
-        configured: importer.regions.some((r) => r.code === region.code),
+        // Always true — `pairs` is now built FROM the importer's own
+        // `regions`, so every row here is by construction configured.
+        configured: true,
       })),
     );
 
@@ -165,6 +175,13 @@ export class PoiInternalService {
     // strategy. Only stat when this source has a dir AND owns this code —
     // `getExtractPath` throws for a code outside its `regions`. Same
     // ENOENT→null / non-regular→throw / other→throw rules as the backend.
+    // `configured` is always `true` by the time it gets here (FIX 1 above
+    // only ever builds a pair from the importer's OWN `regions`) — the `&&`
+    // is kept anyway as harmless defence: if `listRegionStatus` ever again
+    // grows a path that calls `statusFor` with an out-of-scope code (a
+    // future regression), this still stops `getExtractPath`'s throw from
+    // reaching here instead of silently reintroducing a 500 on the whole
+    // coverage endpoint.
     let extract: RegionImportStatus["extract"] = null;
     if (configured && importer.extractDirConfigured) {
       try {

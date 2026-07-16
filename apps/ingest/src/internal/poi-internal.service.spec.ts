@@ -41,7 +41,7 @@ function fakeImporter(over: {
 
 describe("PoiInternalService", () => {
   describe("listRegionStatus", () => {
-    it("emits DEFAULT_REGIONS rows only for ENABLED sources, with configured reflecting the regions list", async () => {
+    it("emits rows only for ENABLED sources, scoped to each source's OWN configured regions (#1011 review, FIX 1)", async () => {
       const dataSource = {
         isInitialized: true,
         query: jest.fn((sql: string) => {
@@ -68,9 +68,10 @@ describe("PoiInternalService", () => {
 
       const rows = await svc.listRegionStatus();
 
-      // fsq is disabled → zero fsq rows; osm enabled → one row per
-      // DEFAULT_REGIONS code.
+      // fsq is disabled → zero fsq rows; osm enabled → EXACTLY its own
+      // configured regions (CZ, SK) — not the full DEFAULT_REGIONS list.
       expect(rows.every((r) => r.source === "osm")).toBe(true);
+      expect(rows.map((r) => r.code).sort()).toEqual(["CZ", "SK"]);
       const osmCz = rows.find((r) => r.code === "CZ");
       expect(osmCz).toMatchObject({
         source: "osm",
@@ -80,21 +81,32 @@ describe("PoiInternalService", () => {
         imported_at: "2026-07-10T00:00:00.000Z",
         live_state: "idle",
       });
-      // A code NOT in the source's regions list is configured:false.
-      const osmDe = rows.find((r) => r.code === "DE");
-      expect(osmDe?.configured).toBe(false);
+      // A code NOT in the source's regions list (DE is outside osm's
+      // ['CZ','SK']) must be ABSENT from the response entirely — NOT a
+      // `configured:false` row. The admin table (`PoiImportsScreen`) only
+      // renders its "Not configured" state for an ABSENT cell; a PRESENT row
+      // with `configured:false` still shows as a real, clickable cell, which
+      // is exactly the bug FIX 1 closes.
+      expect(rows.find((r) => r.code === "DE")).toBeUndefined();
     });
 
-    // Review gap: every `fakeImporter(...)` above omits `extractDirConfigured`
-    // (defaults false), so `statusFor`'s `if (configured &&
-    // importer.extractDirConfigured)` block was never exercised. That guard is
-    // safety-critical: the real `getExtractPath` THROWS for a code outside the
-    // importer's `regions`, and `configured &&` is the only thing stopping
-    // that throw from rejecting the whole `Promise.all` in `listRegionStatus`
-    // (a 500 on the entire admin coverage endpoint). "Enabled source, extract
-    // dir configured, code not in its regions" is the everyday production
-    // shape (e.g. FSQ is CZ-only), so it must be covered.
-    describe("extract-path guard (statusFor's configured && extractDirConfigured branch)", () => {
+    // #1011 review (FIX 1): BEFORE this fix, `pairs` was built from every
+    // enabled source × the full `DEFAULT_REGIONS` list, so "enabled source,
+    // extract dir configured, code NOT in its regions" was a real, everyday
+    // production shape (e.g. FSQ is CZ-only) that reached `statusFor` with
+    // `configured: false` — and the `configured &&` guard below was the only
+    // thing stopping the real `getExtractPath` (which THROWS for an
+    // out-of-scope code) from rejecting the whole `Promise.all` in
+    // `listRegionStatus` (a 500 on the entire admin coverage endpoint).
+    //
+    // FIX 1 changed `pairs` to come from each importer's OWN `regions`, so an
+    // out-of-scope code is now simply ABSENT from `pairs` — `statusFor` is
+    // never invoked with `configured: false` in production anymore, and the
+    // `&&` guard is kept purely as defence against a future regression
+    // reopening that path (see `listRegionStatus`'s own comment). The tests
+    // below now cover the ordinary present-file / ENOENT branches for a
+    // genuinely CONFIGURED code.
+    describe("extract stat (present-file / ENOENT) via statusFor's extractDirConfigured guard", () => {
       beforeEach(() => {
         statMock.mockReset();
       });
@@ -113,9 +125,16 @@ describe("PoiInternalService", () => {
         );
       }
 
-      it("stats a configured region's extract, and short-circuits (never calls getExtractPath) for an out-of-scope region on the SAME importer", async () => {
+      it("stats a configured region's extract (present file)", async () => {
         // Mirrors the real getExtractPath: throws for any code outside
-        // `regions` — a jest.fn so we can assert it's never invoked for DE.
+        // `regions`. Under FIX 1 this importer's ONLY row is CZ (its own
+        // `regions` list), so an out-of-scope code (e.g. DE) never reaches
+        // `listRegionStatus`'s `pairs` at all anymore — there is no longer a
+        // reachable `listRegionStatus` path that calls `getExtractPath` for a
+        // code outside `regions` to short-circuit around (that scenario was
+        // dropped here; see the describe-level comment above). `getExtractPath`
+        // stays a jest.fn so the assertions below can still pin exactly how
+        // many times, and with what argument, it's invoked.
         const getExtractPath = jest.fn((code: string) => {
           if (code !== "CZ") {
             throw new Error(`Unknown POI import region code: ${code}`);
@@ -140,7 +159,9 @@ describe("PoiInternalService", () => {
 
         const rows = await svc.listRegionStatus();
 
-        // CZ: configured AND dir configured → the present-file branch runs.
+        // CZ is the ONLY row (fsq's own `regions`, FIX 1) — configured AND
+        // dir configured → the present-file branch runs.
+        expect(rows).toHaveLength(1);
         const cz = rows.find((r) => r.code === "CZ");
         expect(cz?.configured).toBe(true);
         expect(cz?.extract).toEqual({
@@ -148,16 +169,6 @@ describe("PoiInternalService", () => {
           size_bytes: 2048,
           modified_at: new Date(mtimeMs).toISOString(),
         });
-
-        // DE: NOT in this importer's regions → configured:false. Proving the
-        // short-circuit (not a swallowed throw) requires showing
-        // getExtractPath was never called for it.
-        const de = rows.find((r) => r.code === "DE");
-        expect(de?.configured).toBe(false);
-        expect(de?.extract).toBeNull();
-        expect(getExtractPath).not.toHaveBeenCalledWith("DE");
-        // Stronger: called exactly once, for CZ only — proves every other
-        // DEFAULT_REGIONS code short-circuited before reaching it.
         expect(getExtractPath).toHaveBeenCalledTimes(1);
         expect(getExtractPath).toHaveBeenCalledWith("CZ");
       });
@@ -179,6 +190,7 @@ describe("PoiInternalService", () => {
 
         const rows = await svc.listRegionStatus();
 
+        expect(rows).toHaveLength(1);
         const cz = rows.find((r) => r.code === "CZ");
         expect(cz?.configured).toBe(true);
         expect(cz?.extract).toBeNull();
