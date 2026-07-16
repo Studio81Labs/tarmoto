@@ -147,7 +147,10 @@ export interface Formatters {
 // Intl constructor calls are expensive and list renders format thousands of
 // values, so instances are memoized per (locale, options). Keys come from
 // static option literals below plus the rare ad-hoc `number()` options —
-// bounded in practice.
+// bounded in practice. Locales are still client-controlled (cookies,
+// Accept-Language), so each cache is capped; clearing it wholesale past the
+// cap is simpler than LRU bookkeeping and reconstruction is cheap.
+const FORMAT_CACHE_MAX = 256;
 const numberFormats = new Map<string, Intl.NumberFormat>();
 const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
 const relativeTimeFormats = new Map<string, Intl.RelativeTimeFormat>();
@@ -159,6 +162,7 @@ function getNumberFormat(
   const key = `${locale}|${JSON.stringify(options)}`;
   let format = numberFormats.get(key);
   if (!format) {
+    if (numberFormats.size >= FORMAT_CACHE_MAX) numberFormats.clear();
     format = new Intl.NumberFormat(locale, options);
     numberFormats.set(key, format);
   }
@@ -172,6 +176,7 @@ function getDateTimeFormat(
   const key = `${locale}|${JSON.stringify(options)}`;
   let format = dateTimeFormats.get(key);
   if (!format) {
+    if (dateTimeFormats.size >= FORMAT_CACHE_MAX) dateTimeFormats.clear();
     format = new Intl.DateTimeFormat(locale, options);
     dateTimeFormats.set(key, format);
   }
@@ -185,6 +190,9 @@ function getRelativeTimeFormat(
   const key = `${locale}|${JSON.stringify(options)}`;
   let format = relativeTimeFormats.get(key);
   if (!format) {
+    if (relativeTimeFormats.size >= FORMAT_CACHE_MAX) {
+      relativeTimeFormats.clear();
+    }
     format = new Intl.RelativeTimeFormat(locale, options);
     relativeTimeFormats.set(key, format);
   }

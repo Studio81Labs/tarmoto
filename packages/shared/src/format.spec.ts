@@ -244,3 +244,31 @@ describe("createFormatters — unit-aware measurements", () => {
     });
   });
 });
+
+describe("createFormatters — Intl memo cache cap", () => {
+  it("keeps formatting correctly after growing past the cache cap", () => {
+    // Private-use BCP-47 tags (`en-x-p0`, `en-x-p1`, ...) canonicalize to
+    // themselves with no CLDR aliasing, so 300 of them reliably produce
+    // 300 distinct (locale, options) cache keys — comfortably past the
+    // module's FORMAT_CACHE_MAX (256) — without depending on real-world
+    // locale/region data that could collide. Each cache (number,
+    // dateTime, relativeTime) should clear itself wholesale past the cap
+    // rather than growing unboundedly or throwing.
+    const locales = Array.from({ length: 300 }, (_, i) => `en-x-p${i}`);
+    for (const locale of locales) {
+      const f = createFormatters({ locale, units: "metric" });
+      f.integer(1234);
+      f.date(INSTANT);
+      f.relativeTime("2025-04-18T11:55:00Z", new Date("2025-04-18T12:00:00Z"));
+    }
+
+    // Re-requesting an early (now-evicted) key and a fresh locale both
+    // still format correctly post-churn — the cap must not corrupt or
+    // wedge the cache.
+    const first = createFormatters({ locale: locales[0]!, units: "metric" });
+    expect(first.integer(12345)).toBe("12,345");
+    const en = createFormatters({ locale: "en-US", units: "metric" });
+    expect(en.integer(12345)).toBe("12,345");
+    expect(en.date(INSTANT)).toBe("Apr 18, 2025");
+  });
+});
