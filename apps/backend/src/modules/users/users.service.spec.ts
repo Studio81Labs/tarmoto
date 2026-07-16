@@ -758,6 +758,7 @@ describe('UsersService', () => {
 
       expect(preferencesAtSaveTime).toBeUndefined();
       expect(preferencesQb.set).toHaveBeenCalledWith({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- expect.any() returns any; asymmetric matcher is intentional
         preferences: expect.any(Function),
       });
       expect(preferencesQb.setParameter).toHaveBeenCalledWith(
