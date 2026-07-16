@@ -1,8 +1,11 @@
 /**
- * The `poi.import` queue contract shared by BOTH apps: the backend enqueues into
- * it (producer) and apps/ingest processes it (worker/scheduler). Kept here in the
- * pure lib so neither app owns the strings. `as const` preserves literal types so
- * the backend's `QUEUE_NAMES` / `JOB_NAMES` objects stay literally typed.
+ * The `poi.import` queue contract, owned end-to-end by apps/ingest — since
+ * Phase 3 it is the sole producer AND consumer. The backend enqueues nothing
+ * directly: it triggers imports over apps/ingest's HTTP internal API, which
+ * performs the actual enqueue. Kept here in the framework-free lib so the
+ * strings stay a shared constant rather than being buried in the Nest app.
+ * `as const` preserves literal types so apps/ingest's `QUEUE_NAMES` /
+ * `JOB_NAMES` objects stay literally typed.
  */
 export const POI_IMPORT_QUEUE = "poi.import" as const;
 export const POI_IMPORT_JOB = {
@@ -16,11 +19,11 @@ export const POI_IMPORT_WEEKLY_CRON = "0 3 * * 0" as const;
 
 /**
  * Child-job payload for a single region's offline POI import (#850) — the
- * `import-region` job's wire shape. Shared by every producer (the backend
- * admin front-door's manual trigger, apps/ingest's own weekly-dispatch
- * fan-out) and apps/ingest's `PoiImportProcessor` (the sole consumer since
- * Task 5 moved the worker out of the backend) — kept in the pure lib so no
- * one app privately owns this cross-app contract.
+ * `import-region` job's wire shape. Produced within apps/ingest by both the
+ * internal-API trigger handler (invoked over HTTP by the backend admin
+ * front-door) and the weekly-dispatch fan-out, and consumed by its
+ * `PoiImportProcessor`. Kept in the framework-free lib so the wire shape
+ * stays a shared constant.
  */
 export interface PoiImportRegionJobData {
   /** Upper-case ISO 3166-1 alpha-2 code of the region to import. */
