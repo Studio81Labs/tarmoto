@@ -8,6 +8,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Button,
   Card,
+  CopyField,
+  Input,
   MetricTile,
   Mono,
   QualityBars,
@@ -601,13 +603,7 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
         onCancel={() => setFallbackOpen(false)}
         onConfirm={() => setFallbackOpen(false)}
       >
-        <input
-          readOnly
-          value={url}
-          aria-label={t("Share link")}
-          onFocus={(event) => event.target.select()}
-          className="w-full rounded-[8px] border border-line-strong bg-paper px-3 py-2 font-mono text-[12px] text-ink outline-none"
-        />
+        <CopyField value={url} ariaLabel={t("Share link")} />
       </ConfirmDialog>
       <Tooltip
         content={
@@ -939,18 +935,14 @@ function RoutePickerModal({
         </div>
 
         <div className="flex flex-col gap-3 px-[22px] pb-3.5 pt-4">
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-mute">
-              <Search size={14} aria-hidden="true" />
-            </span>
-            <input
-              type="text"
-              placeholder="Search your rides…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-[10px] border border-line bg-cream py-2.5 pl-10 pr-3.5 text-sm text-ink placeholder:text-fg-mute focus:border-accent focus:outline-none"
-            />
-          </div>
+          <Input
+            value={search}
+            onChange={setSearch}
+            ariaLabel={t("Search your rides")}
+            placeholder={t("Search your rides…")}
+            tone="cream"
+            leadingIcon={<Search size={14} />}
+          />
         </div>
 
         <div className="min-h-[120px] flex-1 overflow-y-auto px-[22px]">

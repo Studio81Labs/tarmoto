@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { Button } from "@tarmoto/ui";
+import { Button, FieldLabel, Input } from "@tarmoto/ui";
 import { useI18n } from "@/i18n/I18nProvider";
 import { forgotPassword } from "@/lib/api";
 export default function ForgotPasswordPage() {
@@ -56,14 +56,13 @@ export default function ForgotPasswordPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
-            {t("Email")}
-          </label>
-          <input
+          <FieldLabel htmlFor="forgot-email">{t("Email")}</FieldLabel>
+          <Input
+            id="forgot-email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
+            onChange={setEmail}
+            tone="cream"
             placeholder={t("rider@example.com")}
             required
           />
