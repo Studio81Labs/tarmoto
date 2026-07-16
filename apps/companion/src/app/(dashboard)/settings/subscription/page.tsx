@@ -32,6 +32,7 @@ import {
   type SubscriptionStatus,
   type SubscriptionTier,
 } from "@/lib/subscription";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 type LoadState =
   | { kind: "loading" }
   | { kind: "loaded"; snapshot: SubscriptionSnapshot }
@@ -684,6 +685,10 @@ function RetentionDialog({
   );
 }
 function LoadingState() {
+  // Mounted only while loading, so the flag is constant `true` — the hook
+  // still debounces the spinner so fast loads never flash it.
+  const showLoader = useDelayedLoading(true);
+  if (!showLoader) return null;
   return (
     <Card padded={false} className="p-8">
       <div className="inline-flex items-center gap-2 text-[14px] text-fg-dim">
