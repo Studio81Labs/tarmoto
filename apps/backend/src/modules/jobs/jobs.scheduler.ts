@@ -69,7 +69,7 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly modelEvalAgreement: Queue,
     @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
     private readonly napClosurePoll: Queue,
-    @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
+    @InjectQueue(QUEUE_NAMES.ROAD_IMPORT)
     private readonly osmImport: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
@@ -196,7 +196,7 @@ export class JobsScheduler implements OnApplicationBootstrap {
       },
       {
         queue: this.osmImport,
-        name: JOB_NAMES.OSM_IMPORT_RUN,
+        name: JOB_NAMES.ROAD_IMPORT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
         description: 'weekly OSM road-graph import → road_segments (#781)',
       },

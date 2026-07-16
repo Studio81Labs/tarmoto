@@ -13,7 +13,7 @@ import { registerAs } from '@nestjs/config';
  * enabled; the import throws a clear error rather than silently importing nothing.
  *
  * `bbox` is the extract's authoritative boundary `[minLng, minLat, maxLng, maxLat]`
- * (TARMOTO_OSM_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"). It gates
+ * (TARMOTO_OSM_ROAD_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"). It gates
  * **stale-by-absence** tombstoning (#835): a data-derived bbox (the extent of the
  * incoming roads) would wrongly tombstone existing rows that fall in the rectangle
  * but outside the extract, and miss removed roads beyond the current roads'
@@ -30,7 +30,7 @@ import { registerAs } from '@nestjs/config';
  * from the file, and stale detection would wrongly tombstone them. See the module
  * README.
  */
-export interface OsmImportConfig {
+export interface RoadImportConfig {
   enabled: boolean;
   filePath: string | null;
   bbox: [number, number, number, number] | null;
@@ -43,7 +43,7 @@ function parseBbox(
   const parts = raw.split(',').map((p) => Number(p.trim()));
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
     throw new Error(
-      `TARMOTO_OSM_IMPORT_BBOX must be "minLng,minLat,maxLng,maxLat", got "${raw}"`,
+      `TARMOTO_OSM_ROAD_IMPORT_BBOX must be "minLng,minLat,maxLng,maxLat", got "${raw}"`,
     );
   }
   const [minLng, minLat, maxLng, maxLat] = parts as [
@@ -54,20 +54,23 @@ function parseBbox(
   ];
   if (minLng > maxLng || minLat > maxLat) {
     throw new Error(
-      `TARMOTO_OSM_IMPORT_BBOX min must not exceed max, got "${raw}"`,
+      `TARMOTO_OSM_ROAD_IMPORT_BBOX min must not exceed max, got "${raw}"`,
     );
   }
   return [minLng, minLat, maxLng, maxLat];
 }
 
-export const osmImportConfig = registerAs('osmImport', (): OsmImportConfig => {
-  const filePath = process.env.TARMOTO_OSM_IMPORT_FILE?.trim();
-  return {
-    enabled:
-      (process.env.TARMOTO_OSM_IMPORT_ENABLED ?? 'false')
-        .trim()
-        .toLowerCase() === 'true',
-    filePath: filePath ? filePath : null,
-    bbox: parseBbox(process.env.TARMOTO_OSM_IMPORT_BBOX),
-  };
-});
+export const osmRoadImportConfig = registerAs(
+  'osmRoadImport',
+  (): RoadImportConfig => {
+    const filePath = process.env.TARMOTO_OSM_ROAD_IMPORT_FILE?.trim();
+    return {
+      enabled:
+        (process.env.TARMOTO_OSM_ROAD_IMPORT_ENABLED ?? 'false')
+          .trim()
+          .toLowerCase() === 'true',
+      filePath: filePath ? filePath : null,
+      bbox: parseBbox(process.env.TARMOTO_OSM_ROAD_IMPORT_BBOX),
+    };
+  },
+);

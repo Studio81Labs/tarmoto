@@ -109,9 +109,9 @@ describe('JobsScheduler', () => {
       expect.any(Object),
     );
     expect(
-      queues[QUEUE_NAMES.OSM_IMPORT].upsertJobScheduler,
+      queues[QUEUE_NAMES.ROAD_IMPORT].upsertJobScheduler,
     ).toHaveBeenCalledWith(
-      'osm.import.run',
+      'road.import.run',
       { pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100 },
       expect.any(Object),
     );
