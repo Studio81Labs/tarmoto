@@ -1,12 +1,31 @@
 import { describe, expect, it } from "vitest";
+import { createFormatters } from "@tarmoto/shared";
 import {
   buildTripClosureRoutes,
   countClosuresBySeverity,
   detourLengthKm,
+  formatClosureWindow,
   previewDateForMonth,
   type PlannerClosure,
 } from "../closures-summary";
 import type { Trip } from "../types";
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
+// A non-UTC context: proves the closure window is UTC-pinned regardless of
+// the formatter's configured viewer timezone, not just when it happens to
+// match UTC.
+const nonUtcFormat = createFormatters({
+  locale: "en",
+  units: "metric",
+  timeZone: "Pacific/Kiritimati", // UTC+14 — the furthest-ahead real zone.
+});
+const negativeOffsetFormat = createFormatters({
+  locale: "en",
+  units: "metric",
+  timeZone: "Etc/GMT+12", // UTC-12 — the furthest-behind real zone.
+});
 
 function closure(
   overrides: Partial<PlannerClosure> & { id: string },
@@ -93,6 +112,62 @@ describe("detourLengthKm", () => {
     expect(detourLengthKm(closure({ id: "no-detour", detour: null }))).toBe(
       null,
     );
+  });
+});
+
+describe("formatClosureWindow", () => {
+  it("renders a bounded window as a compact UTC calendar-date range", () => {
+    // Intl's formatRange wraps the en dash in thin spaces (U+2009), not
+    // regular spaces — spelled out explicitly rather than pasted as an
+    // invisible literal.
+    expect(
+      formatClosureWindow(
+        closure({
+          id: "bounded",
+          starts_at: "2026-07-01T00:00:00Z",
+          ends_at: "2026-07-18T00:00:00Z",
+        }),
+        format,
+      ),
+    ).toBe("Jul 1 – 18");
+  });
+
+  it("renders an open-ended window as a calendar date + 'onward'", () => {
+    expect(
+      formatClosureWindow(
+        closure({
+          id: "open-ended",
+          starts_at: "2026-07-01T00:00:00Z",
+          ends_at: null,
+        }),
+        format,
+      ),
+    ).toBe("Jul 1, 2026 onward");
+  });
+
+  it("keeps the start day stable across a month boundary regardless of the formatter's timezone context", () => {
+    // 22:30Z on the last day of June. `calendarDate`/`calendarDateRange` are
+    // UTC-pinned by construction (unlike the instant-based `date()`), so the
+    // rendered calendar day must NOT shift even when the Formatters context
+    // is built for a viewer far ahead of or behind UTC — an instant-based
+    // formatter WOULD roll this into July (ahead) or stay June 30 (behind)
+    // inconsistently, which is exactly the bug this guards against.
+    const lateJuneClosure = closure({
+      id: "day-shift",
+      starts_at: "2026-06-30T22:30:00Z",
+      ends_at: null,
+    });
+
+    const utc = formatClosureWindow(lateJuneClosure, format);
+    const aheadOfUtc = formatClosureWindow(lateJuneClosure, nonUtcFormat);
+    const behindUtc = formatClosureWindow(
+      lateJuneClosure,
+      negativeOffsetFormat,
+    );
+
+    expect(utc).toBe("Jun 30, 2026 onward");
+    expect(aheadOfUtc).toBe(utc);
+    expect(behindUtc).toBe(utc);
   });
 });
 

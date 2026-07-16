@@ -4,7 +4,7 @@ import { ExternalLink, MapPin, Plus, TriangleAlert, X } from "lucide-react";
 import type { BasemapPlace } from "@/lib/basemap-poi";
 import { poiCategoryMeta } from "@/components/planner/MapToolbar";
 import { PoiDetails } from "@/components/planner/PoiDetails";
-import { HAZARD_CONFIG, formatRelativeTime } from "@/lib/utils";
+import { HAZARD_CONFIG } from "@/lib/utils";
 import {
   detourLengthKm,
   formatClosureWindow,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/conditions-visual";
 import type { Poi } from "@/lib/planner/types";
 import type { HazardType } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
 
 /** Hazard fields the popover renders (a subset of the hazard DTO). */
 export interface HazardPoint {
@@ -345,6 +346,7 @@ function HazardBody({
   hazard: HazardPoint;
   onClose: () => void;
 }) {
+  const format = useFormat();
   const cfg = HAZARD_CONFIG[hazard.hazard_type] ?? HAZARD_CONFIG.other;
   return (
     <>
@@ -383,7 +385,7 @@ function HazardBody({
         <div className="flex items-center justify-between gap-2 text-[11px] text-fg-dim">
           <span className="truncate">
             {hazard.reporter ?? t("Unknown rider")} ·{" "}
-            {formatRelativeTime(hazard.created_at)}
+            {format.relativeTime(hazard.created_at)}
           </span>
           <span className="shrink-0">✓ {hazard.confirmations}</span>
         </div>
@@ -402,6 +404,7 @@ function ConditionBody({
   onClose: () => void;
   onReroute?: () => void;
 }) {
+  const format = useFormat();
   const isClosure = point.kind === "closure";
   const kind = isClosure ? closureConditionKind(point.closure) : "pass";
   const color = CONDITION_COLORS[kind];
@@ -439,20 +442,21 @@ function ConditionBody({
         {isClosure ? (
           <>
             <p className="font-mono text-[10px] uppercase tracking-[0.4px] text-fg-mute">
-              {formatClosureWindow(point.closure)}
+              {formatClosureWindow(point.closure, format)}
             </p>
             {point.closure.notes ? (
               <p className="mt-1">{point.closure.notes}</p>
             ) : null}
             {detourKm != null ? (
               <p className="mt-1.5 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
-                {t("Detour ~{km} km", { km: Math.round(detourKm * 10) / 10 })}
+                {t("Detour ~")}
+                {format.distanceKm(detourKm)}
               </p>
             ) : null}
           </>
         ) : (
           <p>
-            {`${point.pass.elevation_m.toLocaleString()} m`}
+            {format.elevation(point.pass.elevation_m)}
             {point.pass.region ? ` · ${point.pass.region}` : ""}
           </p>
         )}

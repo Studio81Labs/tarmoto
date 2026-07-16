@@ -3,11 +3,7 @@ import { t } from "@/i18n";
 import { useId, useMemo } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import type { RoutePreviewSegment } from "@/lib/types";
-import {
-  QUALITY_CONFIG,
-  formatDistance,
-  formatRelativeTime,
-} from "@/lib/utils";
+import { QUALITY_CONFIG } from "@/lib/utils";
 import {
   buildSparklinePath,
   curvinessLabel,
@@ -17,6 +13,7 @@ import {
 import { HAZARD_CONFIG } from "@/lib/utils";
 import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
+import { useFormat } from "@/format/FormatProvider";
 import { MiniRouteSvg, QualityBars } from "@tarmoto/ui";
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
   none: "text-fg-mute",
@@ -52,6 +49,7 @@ export function RoadPreviewCard({
   onHoverEnd,
   onToggleExpand,
 }: RoadPreviewCardProps) {
+  const format = useFormat();
   const tier = QUALITY_CONFIG[segment.qualityTier];
   const severity = segmentHazardSeverity(segment);
   const elevationPath = useMemo(
@@ -97,7 +95,7 @@ export function RoadPreviewCard({
             {segment.name ?? `Segment ${segment.orderInDay + 1}`}
           </span>
           <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.3px] text-fg-mute">
-            {formatDistance(segment.distanceKm)} · {segment.surfaceType} ·{" "}
+            {format.distanceKm(segment.distanceKm)} · {segment.surfaceType} ·{" "}
             {curvinessLabel(segment.curvinessScore)}
           </span>
         </span>
@@ -114,7 +112,7 @@ export function RoadPreviewCard({
           q={tierOf(segment.qualityScore)}
           size={4}
           className="shrink-0"
-          ariaLabel={`Quality score ${segment.qualityScore.toFixed(1)} of 5`}
+          ariaLabel={`Quality score ${format.decimal(segment.qualityScore, 1)} of 5`}
         />
       </button>
 
@@ -142,7 +140,7 @@ export function RoadPreviewCard({
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <Stat
               label="Quality score"
-              value={`${segment.qualityScore.toFixed(1)} · ${tier.label}`}
+              value={`${format.decimal(segment.qualityScore, 1)} · ${tier.label}`}
               valueClass={tier.color}
             />
             <Stat
@@ -155,7 +153,10 @@ export function RoadPreviewCard({
               label="Curviness"
               value={`${segment.curvinessScore} · ${curvinessLabel(segment.curvinessScore)}`}
             />
-            <Stat label="Distance" value={formatDistance(segment.distanceKm)} />
+            <Stat
+              label="Distance"
+              value={format.distanceKm(segment.distanceKm)}
+            />
           </div>
 
           <div>
@@ -225,7 +226,7 @@ export function RoadPreviewCard({
                         )}
                         <p className="mt-0.5 text-[10px] text-fg-mute">
                           {hazard.reporterName} ·{" "}
-                          {formatRelativeTime(hazard.createdAt)} ·{" "}
+                          {format.relativeTime(hazard.createdAt)} ·{" "}
                           {hazard.confirmations}
                           {t("confirmations ")}
                         </p>
@@ -249,7 +250,7 @@ export function RoadPreviewCard({
                   <div
                     key={photo.id}
                     className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md border border-line bg-paper p-1 text-center text-[10px] text-fg-mute"
-                    title={`${photo.riderName} · ${formatRelativeTime(photo.createdAt)}`}
+                    title={`${photo.riderName} · ${format.relativeTime(photo.createdAt)}`}
                   >
                     {photo.riderName}
                   </div>

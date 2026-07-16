@@ -1,15 +1,17 @@
+import type { Formatters } from "@tarmoto/shared";
 import type { BestRoad } from "@/lib/bestRoads";
 
 type RoadLabelInput = Pick<BestRoad, "id" | "road_name" | "road_number">;
 
-export function formatRoadLength(lengthM: number): string {
-  return lengthM >= 1000
-    ? `${(lengthM / 1000).toFixed(1)} km`
-    : `${Math.round(lengthM)} m`;
+export function formatRoadLength(lengthM: number, format: Formatters): string {
+  return format.distanceM(lengthM);
 }
 
-export function formatRoadQuality(qualityScore: number | null): string {
-  return qualityScore == null ? "—" : qualityScore.toFixed(1);
+export function formatRoadQuality(
+  qualityScore: number | null,
+  format: Formatters,
+): string {
+  return qualityScore == null ? "—" : format.decimal(qualityScore, 1);
 }
 
 export function formatRoadQualityColor(qualityScore: number | null): string {

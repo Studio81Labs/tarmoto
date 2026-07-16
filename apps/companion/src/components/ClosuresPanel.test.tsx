@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { ClosuresPanel } from "./ClosuresPanel";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import type { PlannerClosure } from "@/lib/closures-summary";
+import { FormatProvider } from "@/format/FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
 
 vi.mock("@/hooks/useClosures", () => ({
@@ -180,6 +181,11 @@ describe("ClosuresPanel", () => {
   });
 
   it("uses the rider's imperial unit preference for detour distance", () => {
+    // `useFormat()` only reflects the store's `unitSystem` inside a
+    // `FormatProvider` — the panel's own `hydratePreferences()` mount
+    // effect still reads localStorage into the (global) preferences
+    // store, and the provider here relays that into the format seam,
+    // mirroring the real app shell.
     window.localStorage.setItem("tarmoto:preferences:unit-system", "imperial");
     useClosuresMock.mockReturnValue({
       closures: [
@@ -203,7 +209,11 @@ describe("ClosuresPanel", () => {
       previewDate: new Date("2026-07-15T12:00:00Z"),
     });
 
-    render(<ClosuresPanel month={7} routes={[]} />);
+    render(
+      <FormatProvider formatLocale="en" timeZone="UTC" units="metric">
+        <ClosuresPanel month={7} routes={[]} />
+      </FormatProvider>,
+    );
 
     expect(
       screen.getByText("Detour available · approx. 1.4 mi"),

@@ -6,12 +6,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, MapPin, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { TripDetail } from "@/lib/types";
-import {
-  formatDistance,
-  formatDuration,
-  splitFormattedElevation,
-} from "@/lib/utils";
-import { usePreferencesStore } from "@/stores/preferences";
+import { useFormat } from "@/format/FormatProvider";
 
 export type TripDetailPanelState =
   | { status: "idle" }
@@ -126,7 +121,7 @@ export function TripDetailSidebar({
 }
 
 function TripBody({ trip }: { trip: TripDetail }) {
-  const units = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   const distanceKm =
     trip.distance_km ??
     trip.days.reduce((sum, day) => sum + (day.distanceKm ?? 0), 0);
@@ -139,18 +134,18 @@ function TripBody({ trip }: { trip: TripDetail }) {
     0,
   );
   const waypoints = trip.days.flatMap((day) => day.waypoints);
-  const elevation = splitFormattedElevation(elevationM, units);
+  const elevation = format.splitElevation(elevationM);
 
   const tiles: MetricTileProps[] = [
     {
       label: t("Distance"),
-      value: distanceKm > 0 ? formatDistance(distanceKm, units) : "—",
+      value: distanceKm > 0 ? format.distanceKm(distanceKm) : "—",
       variant: "ink",
       accentNumber: true,
     },
     {
       label: t("Ride time"),
-      value: durationMin > 0 ? formatDuration(durationMin) : "—",
+      value: durationMin > 0 ? format.duration(durationMin) : "—",
     },
     { label: t("Days"), value: String(trip.days.length || trip.num_days) },
     {
