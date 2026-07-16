@@ -135,13 +135,13 @@ This design allows POI data maintenance (migrations, backups, maintenance window
 
 The POI store starts empty; store read endpoints return an empty result (not an error) for regions that have not been imported yet. The store is filled from **per-country Geofabrik `.osm` extracts** (produced with `osmium tags-filter` — see [Producing per-country POI extracts](#producing-per-country-poi-extracts)), **not** a live Overpass bbox: bulk extracts scale to the full 17-country coverage list without hitting the Overpass public-API limits. Overpass stays the live read-path fallback (`poi.service`, backend), never the bulk importer. **The extract + import + migration write path lives entirely in `apps/ingest`** (`@tarmoto/ingest-service`) — the backend is a POI reader plus a thin admin front-door that proxies coverage/runs/trigger calls to `apps/ingest`'s internal API and still receives extract uploads onto the shared volume. Two ways to fill the store:
 
-- **On demand:** `pnpm poi:import` builds and runs `@tarmoto/ingest-service`'s CLI (`apps/ingest/dist/scripts/import-pois.js`), importing once over the configured regions (`TARMOTO_POI_IMPORT_REGIONS`, default all 17) from the extracts in `TARMOTO_POI_IMPORT_DIR`. It writes to the POI database and bypasses the `TARMOTO_POI_IMPORT_ENABLED` gate, so a one-off run doesn't need the flag flipped.
-- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor, `poi.import` queue, Sunday 03:00 UTC) runs in **`apps/ingest`'s own always-on worker** — a separate deployable from the backend, not a worker-mode instance of it. The weekly dispatch fans out over **every enabled source** (#869): it enqueues one staggered per-region job for each source whose `TARMOTO_<SOURCE>_IMPORT_ENABLED` is set, so OSM and FSQ refresh from the same weekly tick. Set `TARMOTO_POI_IMPORT_ENABLED=true`, `TARMOTO_POI_IMPORT_DIR`, and (optionally) `TARMOTO_POI_IMPORT_REGIONS` **on `apps/ingest`** for OSM (and the `TARMOTO_FSQ_IMPORT_*` trio for FSQ); setting them only on the backend has no effect. `apps/ingest` also needs `TARMOTO_POI_DATABASE_*` (it writes to the POI DB and owns its migrations). Leave every `*_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a continent-scale import.
+- **On demand:** `pnpm poi:import` builds and runs `@tarmoto/ingest-service`'s CLI (`apps/ingest/dist/scripts/import-pois.js`), importing once over the configured regions (`TARMOTO_OSM_POI_IMPORT_REGIONS`, default all 17) from the extracts in `TARMOTO_OSM_POI_IMPORT_DIR`. It writes to the POI database and bypasses the `TARMOTO_OSM_POI_IMPORT_ENABLED` gate, so a one-off run doesn't need the flag flipped.
+- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor, `poi.import` queue, Sunday 03:00 UTC) runs in **`apps/ingest`'s own always-on worker** — a separate deployable from the backend, not a worker-mode instance of it. The weekly dispatch fans out over **every enabled source** (#869): it enqueues one staggered per-region job for each source whose `TARMOTO_<SOURCE>_POI_IMPORT_ENABLED` is set, so OSM and FSQ refresh from the same weekly tick. Set `TARMOTO_OSM_POI_IMPORT_ENABLED=true`, `TARMOTO_OSM_POI_IMPORT_DIR`, and (optionally) `TARMOTO_OSM_POI_IMPORT_REGIONS` **on `apps/ingest`** for OSM (and the `TARMOTO_FSQ_POI_IMPORT_*` trio for FSQ); setting them only on the backend has no effect. `apps/ingest` also needs `TARMOTO_POI_DATABASE_*` (it writes to the POI DB and owns its migrations). Leave every `*_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a continent-scale import.
 - **Admin UI (#847):** operators can upload an extract + trigger a per-region import from the admin app (`/admin/poi`) instead of placing files + running the CLI. The backend proxies this trigger to `apps/ingest`'s token-guarded internal API (`POST /internal/poi/import`, `x-internal-token` vs `TARMOTO_INTERNAL_API_TOKEN`) instead of enqueueing it directly — the Phase 3 cutover dropped the backend's own `poi.import` queue entirely. `apps/ingest` validates the `(source, code)` pair (**400s** a disabled/unconfigured one — the enablement view, data-sources-and-storage.md §8.3) and enqueues onto its own `poi.import` queue; **its worker is what actually runs the import.** **Critical for this split:** the upload writes the extract to `TARMOTO_*_IMPORT_DIR` on the **backend**, but the import job runs in **`apps/ingest`** — so that directory MUST be **shared storage mounted in both the backend and `apps/ingest` containers** (a shared volume). Without it the admin page shows the extract "present" (read from the backend's filesystem) while `apps/ingest`'s import can't see the file and records a **skipped** run. That skip is visible in the admin run history (so it isn't silent), but a shared mount is required for the admin upload→import flow to work at all. If the extract dir isn't configured on the backend, the upload returns a clear 503. **Volume ownership:** both the backend's and `apps/ingest`'s images create each configured `TARMOTO_*_IMPORT_DIR` (OSM **and** FSQ — independent paths) owned by the same non-root `tarmoto` user (uid 100 in both images), so a **fresh** named volume mounted there comes up writable regardless of which container mounts it first. A volume that already exists **root-owned** (provisioned before this) must be `chown tarmoto:tarmoto`'d once (or recreated), or uploads fail with `EACCES`; if OSM and FSQ use **separate** volumes, each needs it. _(Follow-up: move extracts to `apps/ingest`-visible object storage to drop the shared-mount requirement.)_
 
 Both paths read the per-region `.osm` files an operator prepares out-of-band; produce them first.
 
-A **second bulk source**, Foursquare OS Places (#869, `source='fsq'`), imports the same way from per-region `.fsq.jsonl` extracts — see [Producing per-country POI extracts (Foursquare OS Places)](#producing-per-country-poi-extracts-foursquare-os-places). It has its own env vars (`TARMOTO_FSQ_IMPORT_ENABLED/DIR/REGIONS`) and CLI (`pnpm fsq:import`), coexists with OSM in `pois` via the `(source, external_id)` key, and is now included in the weekly cron (above) when `TARMOTO_FSQ_IMPORT_ENABLED=true`. Cross-source de-dup has landed (#932), so an imported FSQ row no longer double-pins an OSM venue. **Still not prod-safe:** store reads filter by `kind`, not `source`, so an imported FSQ row is served immediately, and Apache-2.0 requires visible Foursquare attribution — which isn't wired into the companion yet. Until attribution lands, only import FSQ on dev/staging.
+A **second bulk source**, Foursquare OS Places (#869, `source='fsq'`), imports the same way from per-region `.fsq.jsonl` extracts — see [Producing per-country POI extracts (Foursquare OS Places)](#producing-per-country-poi-extracts-foursquare-os-places). It has its own env vars (`TARMOTO_FSQ_POI_IMPORT_ENABLED/DIR/REGIONS`) and CLI (`pnpm fsq:import`), coexists with OSM in `pois` via the `(source, external_id)` key, and is now included in the weekly cron (above) when `TARMOTO_FSQ_POI_IMPORT_ENABLED=true`. Cross-source de-dup has landed (#932), so an imported FSQ row no longer double-pins an OSM venue. **Still not prod-safe:** store reads filter by `kind`, not `source`, so an imported FSQ row is served immediately, and Apache-2.0 requires visible Foursquare attribution — which isn't wired into the companion yet. Until attribution lands, only import FSQ on dev/staging.
 
 ### Region-coverage boundaries (#944)
 
@@ -181,14 +181,14 @@ on `imported_at IS NOT NULL`.
 
 ### Producing per-country POI extracts
 
-The bulk POI import reads one `.osm` XML file per active region from `TARMOTO_POI_IMPORT_DIR`, named `<code>.osm` (lower-case ISO 3166-1 alpha-2, e.g. `cz.osm`). An operator prepares each file once per refresh from the country's Geofabrik download, mirroring the roads OSM importer's prep (`../../apps/backend/src/modules/roads/osm-import/README.md`). The importer reads `.osm` XML, not `.osm.pbf` directly — the maintained JS PBF parsers are stale; osmium decodes PBF far better.
+The bulk POI import reads one `.osm` XML file per active region from `TARMOTO_OSM_POI_IMPORT_DIR`, named `<code>.osm` (lower-case ISO 3166-1 alpha-2, e.g. `cz.osm`). An operator prepares each file once per refresh from the country's Geofabrik download, mirroring the roads OSM importer's prep (`../../apps/backend/src/modules/roads/osm-import/README.md`). The importer reads `.osm` XML, not `.osm.pbf` directly — the maintained JS PBF parsers are stale; osmium decodes PBF far better.
 
 Per country:
 
 1. **Download** the Geofabrik per-country `<country>-latest.osm.pbf`.
 2. **`osmium tags-filter`** down to the §7 POI tag set (fuel, food incl. `fast_food`, accommodation, viewpoints, rest areas, ice cream) — a small fraction of the country file.
 3. **`osmium extract -b`** to the region's **authoritative bbox** from `DEFAULT_REGIONS` (`../../packages/ingest/src/poi/regions.ts`), writing `.osm` XML.
-4. **Place** the result in `TARMOTO_POI_IMPORT_DIR` as `<code>.osm`.
+4. **Place** the result in `TARMOTO_OSM_POI_IMPORT_DIR` as `<code>.osm`.
 
 The clip bbox MUST equal the region's `DEFAULT_REGIONS` bbox, because that same bbox bounds **stale-by-absence tombstoning**: a re-import soft-deactivates (`deactivated_at`, an UPDATE never a DELETE) rows _inside_ the region bbox that are absent from the new extract (closed venues), and never touches rows outside it. An extract clipped to less than its region bbox would wrongly tombstone the in-bbox rows it failed to cover. `osmium extract -b` keeps every complete object crossing the box (it doesn't cut geometries); the importer constrains generated rows to the same bbox, so edge overhang reconciles only where it belongs — the extract just has to COVER the region. (Coordinate order: `osmium extract -b` takes `minLng,minLat,maxLng,maxLat`, the reverse of Overpass's `south,west,north,east`.)
 
@@ -211,10 +211,10 @@ osmium tags-filter cz-latest.osm.pbf \
 # 3. Clip to CZ's authoritative bbox from DEFAULT_REGIONS
 #    (minLng,minLat,maxLng,maxLat = 12.09,48.55,18.86,51.06) and write .osm XML
 osmium extract -b 12.09,48.55,18.86,51.06 cz-poi.osm.pbf \
-  -o "$TARMOTO_POI_IMPORT_DIR/cz.osm"
+  -o "$TARMOTO_OSM_POI_IMPORT_DIR/cz.osm"
 ```
 
-Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` bbox. Then enable the import on **`apps/ingest`**: `TARMOTO_POI_IMPORT_ENABLED=true`, point `TARMOTO_POI_IMPORT_DIR` at the folder of `.osm` files, and narrow coverage with `TARMOTO_POI_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17.
+Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` bbox. Then enable the import on **`apps/ingest`**: `TARMOTO_OSM_POI_IMPORT_ENABLED=true`, point `TARMOTO_OSM_POI_IMPORT_DIR` at the folder of `.osm` files, and narrow coverage with `TARMOTO_OSM_POI_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17.
 
 **Validate volume + runtime before enabling all regions in production (#850 acceptance criterion).** Region-wide the filtered set is low millions of rows; `pois` is GiST-indexed on `geom` and GIN-indexed on `tags` (plus the `(source, external_id)` unique and `(address_country, kind)` browse index), so store reads stay bounded — but the import's fetch/upsert cost and the worker's memory/runtime scale with coverage. Bring regions online **incrementally**: validate per-country row counts and a full-run wall-clock on staging before flipping all 17 on in production at once.
 
@@ -227,7 +227,7 @@ runs the `poi.import` BullMQ worker/scheduler and owns the POI-DB migrations —
 also carries the `osmium`/`duckdb` tooling for this. Its `pnpm poi:refresh` →
 `apps/ingest/dist/scripts/refresh-poi-extracts.js` runs exactly that per-country
 pipeline for every configured region, writing each `<code>.osm` **atomically**
-to `TARMOTO_POI_IMPORT_DIR`. (The standalone `apps/backend/Dockerfile.poi-refresh`
+to `TARMOTO_OSM_POI_IMPORT_DIR`. (The standalone `apps/backend/Dockerfile.poi-refresh`
 one-shot container this used to run in is **retired** — its osmium/duckdb role
 folded into `apps/ingest`'s image.)
 
@@ -235,16 +235,16 @@ folded into `apps/ingest`'s image.)
 and multi-GB PBF handling don't belong in the app runtime — and its build
 pulls in `packages/ingest`, so the clip bbox comes straight from
 `DEFAULT_REGIONS` and can't drift. Region set + target dir are the **same** env
-as the importer (`TARMOTO_POI_IMPORT_REGIONS` / `TARMOTO_POI_IMPORT_DIR`); the
+as the importer (`TARMOTO_OSM_POI_IMPORT_REGIONS` / `TARMOTO_OSM_POI_IMPORT_DIR`); the
 Geofabrik country slugs live in `packages/ingest/src/poi/refresh-config.ts` (a spec asserts every region has one).
 
 Operate the refresh as a **scheduled task** (Coolify scheduled task / cron),
 timed to finish comfortably **before** the Sunday 03:00 UTC import tick (e.g.
 Saturday):
 
-- `TARMOTO_POI_REFRESH_ENABLED=true` — off by default; the script no-ops
+- `TARMOTO_OSM_POI_REFRESH_ENABLED=true` — off by default; the script no-ops
   otherwise.
-- Mount the **same shared extract volume** at `TARMOTO_POI_IMPORT_DIR` that the
+- Mount the **same shared extract volume** at `TARMOTO_OSM_POI_IMPORT_DIR` that the
   backend (admin uploads) and `apps/ingest` (the importer) read. One
   `apps/ingest` deployment can feed **both staging and prod** from a single
   shared volume — the `<code>.osm` files are environment-agnostic (filtered
@@ -255,7 +255,7 @@ Saturday):
   of them. (A corollary of one shared volume: an admin upload on one
   environment lands the same file every environment then imports — intended
   here, but worth knowing.)
-- (optional) `TARMOTO_POI_IMPORT_REGIONS` to refresh a subset.
+- (optional) `TARMOTO_OSM_POI_IMPORT_REGIONS` to refresh a subset.
 - Ephemeral disk for the largest single country PBF (~4 GB for DE) plus its
   filtered copy — regions run sequentially and clean up between, so peak disk is
   one country, not all 17.
@@ -292,7 +292,7 @@ container, on its own monthly schedule (see
 
 **Manual uploads vs. the refresh — who owns which region.** The scheduled
 container is the **authoritative** source for the extracts of the regions it
-refreshes (`TARMOTO_POI_IMPORT_REGIONS`). Do **not** hand-upload those regions
+refreshes (`TARMOTO_OSM_POI_IMPORT_REGIONS`). Do **not** hand-upload those regions
 via the admin UI: the next refresh re-overwrites the file, so a manual override
 won't survive the following run (the atomic rename means it's never _corrupt_,
 just replaced). Reserve the admin upload for regions the container does **not**
@@ -306,7 +306,7 @@ was deferred as disproportionate.)
 
 ### Producing per-country POI extracts (Foursquare OS Places)
 
-The FSQ bulk import (#869) reads one **newline-delimited JSON** file per active region from `TARMOTO_FSQ_IMPORT_DIR`, named `<code>.fsq.jsonl` (lower-case ISO code, e.g. `cz.fsq.jsonl`). It's a second `source` (`'fsq'`) stored alongside OSM in `pois`; it uses [FSQ OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) — the free, Apache-2.0, monthly-refreshed open dataset — **not** the Places API (the API's ToS forbids bulk-storing its data; OS Places is built for it).
+The FSQ bulk import (#869) reads one **newline-delimited JSON** file per active region from `TARMOTO_FSQ_POI_IMPORT_DIR`, named `<code>.fsq.jsonl` (lower-case ISO code, e.g. `cz.fsq.jsonl`). It's a second `source` (`'fsq'`) stored alongside OSM in `pois`; it uses [FSQ OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places) — the free, Apache-2.0, monthly-refreshed open dataset — **not** the Places API (the API's ToS forbids bulk-storing its data; OS Places is built for it).
 
 OS Places is delivered through the **Foursquare Places Portal** as a token-gated **Iceberg catalog** (the legacy public S3 Parquet bucket is deprecated). We keep the query + filter **offline** (like the osmium step above), so the backend only ever streams a small per-region extract and no FSQ credential reaches production. An operator runs a DuckDB recipe once per refresh:
 
@@ -315,7 +315,7 @@ Per region:
 1. **Get a token.** Create a free [FSQ Places Portal](https://places.foursquare.com/) account and generate an access token — it's **short-lived (~1 month)**, so regenerate each refresh (which lines up with the dataset's monthly cadence).
 2. **Connect DuckDB to the Iceberg catalog** with the connection snippet the Portal generates for your token (it attaches the catalog exposing the `places` table; needs DuckDB's `iceberg` extension). Those details are token/catalog-specific — copy them from the Portal, don't hardcode them here.
 3. **Filter** to the region's **ISO-2 country** + its `DEFAULT_REGIONS` bbox + `date_closed IS NULL` + a coarse category prefilter, joining the FSQ category arrays to comma strings, and write NDJSON. The country predicate is essential — `places` is a global table, so bbox alone pulls in cross-border neighbours (the importer would then mis-own them). The backend classifier (`fsq-poi-categories.ts`) does the precise category → `kind` mapping, so the SQL category prefilter only needs to be a loose superset.
-4. **Place** the result in `TARMOTO_FSQ_IMPORT_DIR` as `<code>.fsq.jsonl`.
+4. **Place** the result in `TARMOTO_FSQ_POI_IMPORT_DIR` as `<code>.fsq.jsonl`.
 
 **Worked example — Czech Republic (`CZ`)** — once the Portal's connect snippet (step 2) has attached the catalog, the filter/export is:
 
@@ -349,12 +349,12 @@ COPY (
     -- tombstone them as absent. Mirror this when the classifier gains a label.
     AND len(list_filter(fsq_category_labels, x -> regexp_matches(lower(x),
         'restaurant|caf|coffee|tea room|tea house|food|ice cream|gas|petrol|fuel|charging|lookout|viewpoint|overlook|rest area|hotel|motel|hostel|inn|guest|b&b|breakfast|apartment|camp|rv park|caravan|resort|cottage|chalet|cabin|vacation|holiday|rental'))) > 0
-) TO '<TARMOTO_FSQ_IMPORT_DIR>/cz.fsq.jsonl' (FORMAT json);
+) TO '<TARMOTO_FSQ_POI_IMPORT_DIR>/cz.fsq.jsonl' (FORMAT json);
 ```
 
-Then import with the **manual CLI** — `pnpm fsq:import` (builds and runs via `@tarmoto/ingest-service`; all configured regions from `TARMOTO_FSQ_IMPORT_DIR`, narrowed by `TARMOTO_FSQ_IMPORT_REGIONS`, default all 17) or `node apps/ingest/dist/scripts/import-pois.js fsq CZ` (one region). It bypasses the enabled gate like `poi:import`, and needs `TARMOTO_POI_DATABASE_*` where you run it. FSQ's extract dir + region list are independent of OSM's.
+Then import with the **manual CLI** — `pnpm fsq:import` (builds and runs via `@tarmoto/ingest-service`; all configured regions from `TARMOTO_FSQ_POI_IMPORT_DIR`, narrowed by `TARMOTO_FSQ_POI_IMPORT_REGIONS`, default all 17) or `node apps/ingest/dist/scripts/import-pois.js fsq CZ` (one region). It bypasses the enabled gate like `poi:import`, and needs `TARMOTO_POI_DATABASE_*` where you run it. FSQ's extract dir + region list are independent of OSM's.
 
-**Weekly FSQ cron.** The weekly BullMQ dispatch (§ above) now fans out over every enabled source, so setting `TARMOTO_FSQ_IMPORT_ENABLED=true` (plus `TARMOTO_FSQ_IMPORT_DIR`) on **`apps/ingest`** refreshes FSQ from the same Sunday tick as OSM — each source gated independently by its own `*_IMPORT_ENABLED`. The manual `fsq:import` CLI stays available for one-off runs.
+**Weekly FSQ cron.** The weekly BullMQ dispatch (§ above) now fans out over every enabled source, so setting `TARMOTO_FSQ_POI_IMPORT_ENABLED=true` (plus `TARMOTO_FSQ_POI_IMPORT_DIR`) on **`apps/ingest`** refreshes FSQ from the same Sunday tick as OSM — each source gated independently by its own `*_IMPORT_ENABLED`. The manual `fsq:import` CLI stays available for one-off runs.
 
 #### Automating the FSQ refresh (scheduled container, #976)
 
@@ -362,7 +362,7 @@ The manual DuckDB recipe above runs automatically too — in the **same**
 **`apps/ingest`** container as the OSM refresh (it carries both `osmium`
 and a pinned `duckdb`). `pnpm fsq:refresh` → `apps/ingest/dist/scripts/refresh-fsq-extracts.js`
 runs the exact query above for every configured region and writes each
-`<code>.fsq.jsonl` **atomically** to `TARMOTO_FSQ_IMPORT_DIR`. The field list,
+`<code>.fsq.jsonl` **atomically** to `TARMOTO_FSQ_POI_IMPORT_DIR`. The field list,
 category prefilter, country + bbox scoping, and the catalog/table are baked into
 `packages/ingest/src/poi/refresh-config.ts` (`buildFsqExtractSql`), so the automated extract matches
 both what the importer parses and what the manual recipe produces.
@@ -370,8 +370,8 @@ both what the importer parses and what the manual recipe produces.
 Operate it as a **monthly** scheduled task — OS Places refreshes monthly and the
 token expires ~monthly — independent of the weekly OSM one:
 
-- `TARMOTO_FSQ_REFRESH_ENABLED=true` — off by default (a no-op otherwise).
-- `TARMOTO_FSQ_TOKEN` — a Places Portal access token. **This is the one
+- `TARMOTO_FSQ_POI_REFRESH_ENABLED=true` — off by default (a no-op otherwise).
+- `TARMOTO_FSQ_POI_TOKEN` — a Places Portal access token. **This is the one
   irreducible manual step:** it's short-lived (~monthly), so an operator rotates
   it each refresh. It lives **only in the refresh step** (inside `apps/ingest`,
   fed to DuckDB on **stdin** — never a CLI arg / process-list entry) and never
@@ -379,8 +379,8 @@ token expires ~monthly — independent of the weekly OSM one:
   own import worker ever see the token; both only ever read the credential-free
   `.fsq.jsonl` files. That keeps the manual recipe's "no FSQ credential in the
   app runtime" boundary intact under automation.
-- `TARMOTO_FSQ_IMPORT_DIR` — the shared extract volume the importer reads
-  (independent of the OSM dir); `TARMOTO_FSQ_IMPORT_REGIONS` (optional) to narrow
+- `TARMOTO_FSQ_POI_IMPORT_DIR` — the shared extract volume the importer reads
+  (independent of the OSM dir); `TARMOTO_FSQ_POI_IMPORT_REGIONS` (optional) to narrow
   the set. Same **uid 100** ownership rule as OSM (see above).
 - **Deploy model** is identical to OSM: `apps/ingest` is always-on, not idling;
   add a second **Scheduled Task** that `docker exec`s
@@ -397,7 +397,7 @@ sibling, renamed onto `<code>.fsq.jsonl` only on a clean `duckdb` exit — a fai
 run keeps the previous extract) and a **non-zero exit** if any region failed, so
 the scheduler can alert.
 
-**Prod-safe as of the attribution work (#869).** Both prior gates are met: cross-source OSM↔FSQ dedup landed (#932), and the companion now credits Foursquare **data-driven** — the map info bar (latched on once FSQ POIs appear), the stops-tab legend (a blue Foursquare dot while FSQ stops are present), and each FSQ POI's popover (`© Foursquare`). The Apache-2.0 / NOTICE.txt attribution is preserved below. FSQ stays **disabled by default** (`TARMOTO_FSQ_IMPORT_ENABLED` unset); enable it per environment when its extracts are provisioned.
+**Prod-safe as of the attribution work (#869).** Both prior gates are met: cross-source OSM↔FSQ dedup landed (#932), and the companion now credits Foursquare **data-driven** — the map info bar (latched on once FSQ POIs appear), the stops-tab legend (a blue Foursquare dot while FSQ stops are present), and each FSQ POI's popover (`© Foursquare`). The Apache-2.0 / NOTICE.txt attribution is preserved below. FSQ stays **disabled by default** (`TARMOTO_FSQ_POI_IMPORT_ENABLED` unset); enable it per environment when its extracts are provisioned.
 
 #### Foursquare OS Places NOTICE
 

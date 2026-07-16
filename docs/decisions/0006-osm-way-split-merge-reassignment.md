@@ -33,6 +33,8 @@ real snapshots.
 
 ## Decision
 
+> Note (2026-07-16): these env vars were renamed to `{source}_{domain}` — see `docs/superpowers/specs/2026-07-16-import-source-domain-naming-design.md`.
+
 Reassign identity by **geometry overlap** for the changed ranges, so history
 follows the road, not the way id.
 
