@@ -24,6 +24,8 @@ import {
   type PoiImportRegion,
   type PoiImportRegionJobData,
   type PoiImportSource,
+  type RegionImportStatus,
+  type RunSummary,
 } from '@tarmoto/ingest';
 import { PoiImportRun } from '@tarmoto/poi-db';
 import { isPoiConnectionError } from './poi-repo.js';
@@ -59,55 +61,6 @@ function regionFor(code: string): PoiImportRegion {
     throw new Error(`unknown POI import region: ${code}`);
   }
   return region;
-}
-
-/** One `poi_import_runs` row, serialized for the admin API (#847). */
-export interface RunSummary {
-  id: string;
-  source: string;
-  region_code: string;
-  status: string;
-  trigger: string;
-  fetched: number | null;
-  upserted: number | null;
-  tombstoned: number | null;
-  skip_reason: string | null;
-  /** Set when a `success` run withheld part of its normal work (e.g. the
-   *  tombstone wipe-guard's partial-accept path) — null on every clean
-   *  success, both skip reasons, and any `running`/`failed` row. */
-  warning: string | null;
-  error: string | null;
-  started_at: string;
-  finished_at: string | null;
-}
-
-/**
- * Per-`(source, region)` admin status row (#847) — everything the POI
- * Imports admin page needs to render one row of the coverage table without a
- * second round-trip.
- */
-export interface RegionImportStatus {
-  source: string;
-  code: string;
-  /** Always `true` today — every row comes from an importer's OWN configured
-   *  `regions` list, so `listRegionStatus` never asks about an out-of-scope
-   *  code. Kept on the wire shape for a future "known but unconfigured" row. */
-  configured: boolean;
-  /** Coverage stamp — OSM-only. `poi_import_regions` (the table this comes
-   *  from) has no `source` column and is only ever stamped by the OSM
-   *  import path (`PoiImportService.importRegionBody`, gated on `source ===
-   *  'osm'`), so a non-OSM row (e.g. `fsq`) always reports `null` here
-   *  instead of reusing OSM's own stamp for the same region code (design
-   *  spec §11 — "coverage: OSM-only" rather than a misleading badge). */
-  imported_at: string | null;
-  poi_count: number;
-  extract: {
-    present: boolean;
-    size_bytes: number;
-    modified_at: string;
-  } | null;
-  last_run: RunSummary | null;
-  live_state: 'idle' | 'queued' | 'running';
 }
 
 /**
