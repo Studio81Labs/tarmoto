@@ -1009,6 +1009,9 @@ function PickerRow({
             : "border-line bg-cream hover:border-line-strong"
         }`}
       >
+        {/* eslint-disable-next-line no-restricted-syntax -- sr-only checkbox
+            inside a rich ride-picker row (thumbnail + stats); the ui Checkbox
+            can't host the card layout, semantics stay native. */}
         <input
           type="checkbox"
           checked={checked}

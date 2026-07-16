@@ -1020,6 +1020,9 @@ function FilterCheckbox({
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-ink">
+      {/* eslint-disable-next-line no-restricted-syntax -- sr-only checkbox
+          carrying native keyboard/AT semantics; the visible spec-styled
+          square is the sibling span. */}
       <input
         type="checkbox"
         checked={checked}

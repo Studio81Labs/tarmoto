@@ -321,6 +321,9 @@ export default function RideDetailPage() {
 
               {renaming ? (
                 <div className="mt-2 flex items-center gap-2">
+                  {/* eslint-disable-next-line no-restricted-syntax -- inline
+                      rename of the H1 styled as the heading itself (2xl
+                      extrabold); boxed field chrome would break the layout. */}
                   <input
                     autoFocus
                     value={renameDraft}

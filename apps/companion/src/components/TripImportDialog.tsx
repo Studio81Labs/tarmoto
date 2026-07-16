@@ -155,6 +155,9 @@ export function TripImportDialog({
             />
           )}
 
+          {/* eslint-disable-next-line no-restricted-syntax -- hidden file
+              picker (GPX/KML import); the ui library has no file control,
+              the visible affordance is a Button. */}
           <input
             ref={fileInputRef}
             type="file"
