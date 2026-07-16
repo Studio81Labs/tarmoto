@@ -70,7 +70,7 @@ export class JobsScheduler implements OnApplicationBootstrap {
     @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
     private readonly napClosurePoll: Queue,
     @InjectQueue(QUEUE_NAMES.ROAD_IMPORT)
-    private readonly osmImport: Queue,
+    private readonly roadImport: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -195,7 +195,7 @@ export class JobsScheduler implements OnApplicationBootstrap {
         description: 'NAP (NDIC) closure poll → road_closures (#743)',
       },
       {
-        queue: this.osmImport,
+        queue: this.roadImport,
         name: JOB_NAMES.ROAD_IMPORT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
         description: 'weekly OSM road-graph import → road_segments (#781)',
