@@ -240,3 +240,31 @@ test("clicking the highlighted snapped option normalizes an off-step value", asy
   await userEvent.click(within(min).getByRole("option", { name: "15" }));
   expect(onChange).toHaveBeenLastCalledWith("08:15");
 });
+
+test("clearable shows a clear button that resets the value", async () => {
+  const onChange = vi.fn();
+  render(
+    <TimePicker
+      ariaLabel="Start time"
+      value="08:30"
+      clearable
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Clear time" }));
+  expect(onChange).toHaveBeenCalledWith("");
+});
+
+test("no clear button without a value", () => {
+  render(
+    <TimePicker
+      ariaLabel="Start time"
+      value=""
+      clearable
+      onChange={() => {}}
+    />,
+  );
+  expect(
+    screen.queryByRole("button", { name: "Clear time" }),
+  ).not.toBeInTheDocument();
+});

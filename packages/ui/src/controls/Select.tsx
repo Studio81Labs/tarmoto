@@ -16,6 +16,9 @@ import { fieldChrome } from "./field/fieldChrome";
 export interface SelectOption {
   value: string;
   label: ReactNode;
+  /** Render the option but make it unselectable (kept visible so the
+   *  rider can see it exists — e.g. "Nearest" before a place is set). */
+  disabled?: boolean;
 }
 
 export interface SelectProps {
@@ -112,6 +115,7 @@ export function Select({
                 <ListBoxItem
                   key={opt.value}
                   id={opt.value}
+                  isDisabled={opt.disabled ?? false}
                   textValue={
                     typeof opt.label === "string" ? opt.label : opt.value
                   }
@@ -119,6 +123,7 @@ export function Select({
                     "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink outline-none",
                     "data-[hovered]:bg-paper-2 data-[focused]:bg-paper-2",
                     "data-[selected]:bg-ink data-[selected]:text-cream",
+                    "data-[disabled]:cursor-default data-[disabled]:text-fg-mute",
                   )}
                 >
                   {({ isSelected }) => (

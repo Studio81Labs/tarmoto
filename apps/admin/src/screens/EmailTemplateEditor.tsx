@@ -8,8 +8,10 @@ import {
 } from "../components/email-template/BlockCard.js";
 import { VarChips } from "../components/email-template/VarChips.js";
 import { PreviewPane } from "../components/email-template/PreviewPane.js";
+import { VersionHistoryDrawer } from "../components/email-template/VersionHistoryDrawer.js";
 import { useAdminAuth } from "../auth/useAdminAuth.js";
 import { canAccess } from "../lib/roleRank.js";
+import { serverMessage } from "../lib/serverMessage.js";
 import {
   useEmailTemplate,
   useSaveDraft,
@@ -39,11 +41,6 @@ function emptyBlock(type: EditorBlock["type"]): EditorBlock {
     default:
       return { type };
   }
-}
-function serverMessage(err: unknown, fallback: string): string {
-  const m = (err as { message?: string | string[] } | undefined)?.message;
-  if (Array.isArray(m)) return m.join("; ");
-  return m ?? fallback;
 }
 function sameDoc(
   a: { subject: string; blocks: EditorBlock[] },
@@ -102,6 +99,7 @@ export function EmailTemplateEditor({
   } | null>(null);
   const [confirm, setConfirm] = useState<null | "publish" | "reset">(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Mirrors subject/blocks so an in-flight mutation's onSuccess (which
   // closes over the doc it submitted) can tell whether local state has
@@ -316,6 +314,14 @@ export function EmailTemplateEditor({
         {data ? (
           <span className="text-xs text-fg-dim">v{data.version}</span>
         ) : null}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="ml-auto"
+          onClick={() => setHistoryOpen(true)}
+        >
+          History
+        </Button>
       </div>
 
       {msg ? (
@@ -502,6 +508,26 @@ export function EmailTemplateEditor({
           draft (if any) is kept.
         </p>
       </Dialog>
+
+      <VersionHistoryDrawer
+        open={historyOpen}
+        tag={tag}
+        locale={locale}
+        isSuper={isSuper}
+        onClose={() => setHistoryOpen(false)}
+        onReverted={() => {
+          setMsg({
+            kind: "success",
+            text: "Reverted — this version is now live.",
+          });
+          // Revert changes what get() returns (the new published row) when there
+          // is no draft; clear the seed guard so the refetch re-seeds the editor
+          // body to the newly-live version instead of leaving stale content shown.
+          if (!dirty) seededKey.current = null;
+          void refetch();
+          invalidateList();
+        }}
+      />
     </section>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
-import { MapPin, X } from "lucide-react";
-import { SegmentedControl } from "@tarmoto/ui";
+import { MapPin } from "lucide-react";
+import { ClearButton, SegmentedControl, fieldChrome } from "@tarmoto/ui";
 import { api } from "@/lib/api";
 export interface PlaceValue {
   label: string;
@@ -142,10 +142,12 @@ export function PlaceSearch({
       <div ref={containerRef} className="relative">
         <MapPin
           size={14}
-          className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-mute pointer-events-none"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute pointer-events-none"
         />
+        {/* type="text", not "search": the field renders its own ClearButton,
+            and WebKit's native search-cancel ✕ would sit right next to it. */}
         <input
-          type="search"
+          type="text"
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -153,27 +155,20 @@ export function PlaceSearch({
           }}
           onFocus={() => setOpen(true)}
           placeholder={placeholder}
-          className="w-full bg-paper border border-line rounded-lg pl-7 pr-8 py-1.5 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:border-ink transition"
+          className={fieldChrome({ hasLeading: true, hasTrailing: true })}
         />
         {(draft || value) && (
-          <button
-            type="button"
-            aria-label={t("Clear place filter")}
-            onClick={clear}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-fg-mute hover:text-ink transition"
-          >
-            <X size={14} />
-          </button>
+          <ClearButton label={t("Clear place filter")} onClear={clear} />
         )}
         {open && draft.trim().length >= GEOCODE_MIN_CHARS && (
-          <div className="absolute z-10 mt-1 w-full rounded-lg bg-cream border border-line shadow-[0_12px_32px_rgba(14,14,16,0.14)] overflow-hidden">
+          <div className="absolute z-10 mt-1 w-full rounded-[10px] border border-line-strong bg-paper p-1 shadow-[0_8px_24px_rgba(14,14,16,0.08)]">
             {loading && (
-              <div className="px-3 py-2 text-xs text-fg-dim">
+              <div className="px-2.5 py-1.5 text-xs text-fg-dim">
                 {t("Searching\u2026")}
               </div>
             )}
             {!loading && matches.length === 0 && (
-              <div className="px-3 py-2 text-xs text-fg-mute">
+              <div className="px-2.5 py-1.5 text-xs text-fg-mute">
                 {t("No matches")}
               </div>
             )}
@@ -189,7 +184,7 @@ export function PlaceSearch({
                   key={`${m.lat},${m.lng}|${m.label}|${i}`}
                   type="button"
                   onClick={() => pick(m)}
-                  className="block w-full text-left px-3 py-1.5 text-sm text-ink hover:bg-paper truncate transition"
+                  className="block w-full rounded-md text-left px-2.5 py-1.5 text-sm text-ink hover:bg-paper-2 truncate transition"
                   title={m.label}
                 >
                   {m.label}

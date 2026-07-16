@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2, Scale } from "lucide-react";
 import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
-import { Card, Mono, QualityBars, Stamp } from "@tarmoto/ui";
+import { Card, Combobox, Mono, QualityBars, Stamp } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useAuthStore } from "@/stores/auth";
@@ -222,22 +222,18 @@ function ABCard({
           <span className="text-fg-mute">—</span>
         )}
       </div>
-      <select
+      <Combobox
+        ariaLabel={`${SLOT_LABEL[slot]} selector`}
         value={value ?? ""}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
+        options={options.map((opt) => ({
+          value: opt.id,
+          label: formatPickerOption(opt),
+        }))}
         disabled={optionsLoading || options.length === 0}
-        aria-label={`${SLOT_LABEL[slot]} selector`}
-        className="mb-3 w-full rounded-lg border border-line-strong bg-paper px-3 py-2 text-sm text-ink focus:border-ink focus:outline-none disabled:opacity-50"
-      >
-        <option value="" disabled>
-          {optionsLoading ? "Loading rides…" : "Select a ride"}
-        </option>
-        {options.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {formatPickerOption(opt)}
-          </option>
-        ))}
-      </select>
+        placeholder={optionsLoading ? t("Loading rides…") : t("Select a ride")}
+        className="mb-3"
+      />
       {hasGeometry ? (
         <RideRouteMap
           geometry={geometry}

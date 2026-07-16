@@ -16,10 +16,14 @@ describe('AdminEmailTemplateController', () => {
     testSend: jest.fn().mockResolvedValue({ status: 'sent' }),
     publish: jest.fn().mockResolvedValue({ tag: 'weekly-digest' }),
     reset: jest.fn().mockResolvedValue(undefined),
+    history: jest.fn().mockResolvedValue([]),
+    revert: jest.fn().mockResolvedValue({ tag: 'weekly-digest' }),
   } as unknown as jest.Mocked<AdminEmailTemplateService>;
   const controller = new AdminEmailTemplateController(service);
   const adminReq = () =>
-    ({ adminUser: { email: 'admin@tarmoto.app' } }) as unknown as AdminRequest;
+    ({
+      adminUser: { id: 'admin-1', email: 'admin@tarmoto.app' },
+    }) as unknown as AdminRequest;
 
   // Call counts must not leak across tests that share this `service` mock —
   // e.g. the "unsupported locale" test asserts `service.get` was NOT called,
@@ -51,17 +55,31 @@ describe('AdminEmailTemplateController', () => {
       ).toEqual(['super_admin']);
     });
 
-    it.each(['list', 'get', 'saveDraft', 'preview', 'testSend'] as const)(
-      'requires support on %s',
-      (method) => {
-        expect(
-          Reflect.getMetadata(
-            ADMIN_ROLES_KEY,
-            AdminEmailTemplateController.prototype[method],
-          ),
-        ).toEqual(['support']);
-      },
-    );
+    it('requires super_admin on revert', () => {
+      expect(
+        Reflect.getMetadata(
+          ADMIN_ROLES_KEY,
+          // eslint-disable-next-line @typescript-eslint/unbound-method -- read for its metadata, never called unbound.
+          AdminEmailTemplateController.prototype.revert,
+        ),
+      ).toEqual(['super_admin']);
+    });
+
+    it.each([
+      'list',
+      'get',
+      'saveDraft',
+      'preview',
+      'testSend',
+      'history',
+    ] as const)('requires support on %s', (method) => {
+      expect(
+        Reflect.getMetadata(
+          ADMIN_ROLES_KEY,
+          AdminEmailTemplateController.prototype[method],
+        ),
+      ).toEqual(['support']);
+    });
   });
 
   describe('behavior', () => {
@@ -103,11 +121,55 @@ describe('AdminEmailTemplateController', () => {
       ).toThrow(BadRequestException);
     });
 
-    it('publish forwards (tag, locale) to the service', async () => {
+    it('publish forwards (tag, locale, actorId) to the service', async () => {
       const req = adminReq();
       await controller.publish(req, 'weekly-digest', 'en');
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(service.publish).toHaveBeenCalledWith('weekly-digest', 'en');
+      expect(service.publish).toHaveBeenCalledWith(
+        'weekly-digest',
+        'en',
+        'admin-1',
+      );
+    });
+
+    it('saveDraft forwards (tag, locale, dto, actorId) to the service', async () => {
+      const req = adminReq();
+      const dto = { subject: 's', blocks: [] };
+      await controller.saveDraft(req, 'weekly-digest', 'en', dto);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.saveDraft).toHaveBeenCalledWith(
+        'weekly-digest',
+        'en',
+        dto,
+        'admin-1',
+      );
+    });
+
+    it('history forwards the narrowed locale to the service', async () => {
+      await controller.history('weekly-digest', 'en');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.history).toHaveBeenCalledWith('weekly-digest', 'en');
+    });
+
+    it('revert parses the version and forwards (tag, locale, version, actorId)', async () => {
+      const req = adminReq();
+      await controller.revert(req, 'weekly-digest', 'en', '3');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.revert).toHaveBeenCalledWith(
+        'weekly-digest',
+        'en',
+        3,
+        'admin-1',
+      );
+    });
+
+    it('revert rejects a non-numeric version without calling the service', () => {
+      const req = adminReq();
+      expect(() =>
+        controller.revert(req, 'weekly-digest', 'en', 'abc'),
+      ).toThrow(BadRequestException);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(service.revert).not.toHaveBeenCalled();
     });
   });
 });

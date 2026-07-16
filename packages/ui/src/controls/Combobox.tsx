@@ -124,6 +124,9 @@ export function Combobox({
       items={matches}
       className={cn("relative w-full", className)}
       allowsEmptyCollection
+      // Open the list on focus/click, not only when the user starts typing —
+      // a click should browse like a select.
+      menuTrigger="focus"
     >
       {label !== undefined && (
         <Label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.6px] text-fg-dim">
@@ -159,15 +162,17 @@ export function Combobox({
         <div className="px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-fg-mute">
           {matches.length} {matches.length === 1 ? "match" : "matches"}
         </div>
-        <ListBox<SelectOption> className="outline-none">
+        <ListBox<SelectOption> className="max-h-64 overflow-auto outline-none">
           {(opt) => (
             <ListBoxItem
               id={opt.value}
+              isDisabled={opt.disabled ?? false}
               textValue={labelText(opt.label, opt.value)}
               className={cn(
                 "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink outline-none",
                 "data-[hovered]:bg-paper-2 data-[focused]:bg-paper-2",
                 "data-[selected]:bg-ink data-[selected]:text-cream",
+                "data-[disabled]:cursor-default data-[disabled]:text-fg-mute",
               )}
             >
               {({ isSelected }) => (

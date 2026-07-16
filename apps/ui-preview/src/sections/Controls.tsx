@@ -476,6 +476,7 @@ export function ControlsSection() {
             value={departureDate}
             onChange={setDepartureDate}
             locale="en-GB"
+            clearable
           />
           <div className="mt-4">
             <CodeBlock>
@@ -490,7 +491,9 @@ export function ControlsSection() {
               {`or `}
               <CN>formatValue</CN>
               {` escape hatch\n`}
-              {`default: runtime locale`}
+              {`clearable: `}
+              <CN>✕</CN>
+              {` resets to ""`}
             </CodeBlock>
           </div>
         </Card>

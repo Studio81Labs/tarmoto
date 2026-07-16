@@ -55,6 +55,26 @@ test("disabled prevents opening", async () => {
   expect(screen.getByRole("button")).toBeDisabled();
 });
 
+test("a disabled option stays visible but cannot be selected", async () => {
+  const onChange = vi.fn();
+  render(
+    <Select
+      ariaLabel="quality"
+      value="any"
+      onChange={onChange}
+      options={[
+        ...OPTIONS,
+        { value: "nearest", label: "Nearest", disabled: true },
+      ]}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button"));
+  const disabledOption = screen.getByRole("option", { name: "Nearest" });
+  expect(disabledOption).toHaveAttribute("aria-disabled", "true");
+  await userEvent.click(disabledOption);
+  expect(onChange).not.toHaveBeenCalled();
+});
+
 test("label prop associates with the trigger via react-aria Label", () => {
   render(
     <Select

@@ -19,7 +19,7 @@ import {
   type RideTypeFilter,
 } from "@/lib/community-feed";
 import { useAuthStore } from "@/stores/auth";
-import { Card, Mono } from "@tarmoto/ui";
+import { Card, FieldLabel, Input, Mono, Select } from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
 const PAGE_SIZE = 9;
@@ -130,24 +130,27 @@ export default function CommunityFeedPage() {
         padded={false}
         className="mb-6 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3"
       >
-        <FilterSelect
-          id="sort-feed"
+        <Select
           label="Sort feed"
           value={sort}
           onChange={(value) => {
             setSort(value as CommunityRideSort);
             setOffset(0);
           }}
-          options={SORT_OPTIONS}
-          disabledOptions={location ? [] : ["nearest"]}
+          // "Nearest" needs a reference point — keep it visible but
+          // unselectable until a place is picked below.
+          options={SORT_OPTIONS.map((option) =>
+            option.value === "nearest" && !location
+              ? { ...option, disabled: true }
+              : option,
+          )}
         />
 
-        <FilterSelect
-          id="ride-type"
+        <Select
           label="Ride type"
           value={rideType}
           onChange={(value) => {
-            // FilterSelect emits a bare string; the options are exactly
+            // Select emits a bare string; the options are exactly
             // "all" + RIDE_TYPES, so the value is always a RideTypeFilter.
             setRideType(value as RideTypeFilter);
             setOffset(0);
@@ -161,8 +164,7 @@ export default function CommunityFeedPage() {
           ]}
         />
 
-        <FilterSelect
-          id="min-quality"
+        <Select
           label="Minimum quality"
           value={minQuality}
           onChange={(value) => {
@@ -176,8 +178,7 @@ export default function CommunityFeedPage() {
           ]}
         />
 
-        <FilterSelect
-          id="min-popularity"
+        <Select
           label="Minimum popularity"
           value={minPopularity}
           onChange={(value) => {
@@ -192,8 +193,7 @@ export default function CommunityFeedPage() {
           ]}
         />
 
-        <FilterSelect
-          id="min-curviness"
+        <Select
           label="Minimum curviness"
           value={minCurviness}
           onChange={(value) => {
@@ -207,55 +207,39 @@ export default function CommunityFeedPage() {
           ]}
         />
 
-        <label className="block">
-          <span className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
+        <div>
+          <FieldLabel htmlFor="min-distance-km">
             {t("Minimum distance ")}
-          </span>
-          <div className="relative">
-            <Route
-              size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
-            />
-            <input
-              aria-label={t("Minimum distance")}
-              type="number"
-              min={0}
-              step={10}
-              value={minDistanceKm}
-              onChange={(event) => {
-                setMinDistanceKm(event.target.value);
-                setOffset(0);
-              }}
-              placeholder={t("Any")}
-              className="w-full rounded-lg border border-line bg-paper py-2 pl-8 pr-3 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
-            />
-          </div>
-        </label>
+          </FieldLabel>
+          <Input
+            id="min-distance-km"
+            ariaLabel={t("Minimum distance")}
+            value={minDistanceKm}
+            onChange={(next) => {
+              setMinDistanceKm(next.replace(/[^\d.]/g, ""));
+              setOffset(0);
+            }}
+            placeholder={t("Any")}
+            leadingIcon={<Route size={14} />}
+          />
+        </div>
 
-        <label className="block">
-          <span className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
+        <div>
+          <FieldLabel htmlFor="max-distance-km">
             {t("Maximum distance ")}
-          </span>
-          <div className="relative">
-            <Route
-              size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
-            />
-            <input
-              aria-label={t("Maximum distance")}
-              type="number"
-              min={0}
-              step={10}
-              value={maxDistanceKm}
-              onChange={(event) => {
-                setMaxDistanceKm(event.target.value);
-                setOffset(0);
-              }}
-              placeholder={t("Any")}
-              className="w-full rounded-lg border border-line bg-paper py-2 pl-8 pr-3 text-sm text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
-            />
-          </div>
-        </label>
+          </FieldLabel>
+          <Input
+            id="max-distance-km"
+            ariaLabel={t("Maximum distance")}
+            value={maxDistanceKm}
+            onChange={(next) => {
+              setMaxDistanceKm(next.replace(/[^\d.]/g, ""));
+              setOffset(0);
+            }}
+            placeholder={t("Any")}
+            leadingIcon={<Route size={14} />}
+          />
+        </div>
 
         <PlaceSearch
           value={location}
@@ -364,51 +348,5 @@ export default function CommunityFeedPage() {
         {!error && <CommunitySidebar />}
       </div>
     </CommunityScaffold>
-  );
-}
-function FilterSelect({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-  disabledOptions = [],
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{
-    value: string;
-    label: string;
-  }>;
-  disabledOptions?: string[];
-}) {
-  return (
-    <div>
-      <label
-        htmlFor={id}
-        className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-      >
-        {label}
-      </label>
-      <select
-        id={id}
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink transition focus:border-ink focus:outline-none"
-      >
-        {options.map((option) => (
-          <option
-            key={option.value}
-            value={option.value}
-            disabled={disabledOptions.includes(option.value)}
-          >
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
   );
 }

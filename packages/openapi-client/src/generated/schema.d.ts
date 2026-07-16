@@ -3583,6 +3583,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/email/templates/{tag}/{locale}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List published + archived versions of a template (newest first) */
+        get: operations["AdminEmailTemplateController_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/email/templates/{tag}/{locale}/draft": {
         parameters: {
             query?: never;
@@ -3645,6 +3662,23 @@ export interface paths {
         put?: never;
         /** Publish the draft as the live override (super admin only) */
         post: operations["AdminEmailTemplateController_publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/email/templates/{tag}/{locale}/history/{version}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revert to a prior version, re-publishing it as a new version (super admin only) */
+        post: operations["AdminEmailTemplateController_revert"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6583,6 +6617,17 @@ export interface components {
             version: number;
             whitelist: components["schemas"]["EmailTemplateWhitelistDto"];
         };
+        EmailTemplateVersionDto: {
+            version: number;
+            /** @enum {string} */
+            status: "published" | "archived";
+            /** @description Publisher email; null = system/seed. */
+            author: string | null;
+            /** @description ISO timestamp the version went live; null if never. */
+            publishedAt: string | null;
+            subject: string;
+            blocks: components["schemas"]["EmailBlockDto"][];
+        };
         SaveDraftDto: {
             /** @description Plain-text subject; may contain whitelisted {vars}. */
             subject: string;
@@ -6926,6 +6971,7 @@ export type SchemaEmailTemplateSummaryDto = components['schemas']['EmailTemplate
 export type SchemaEmailBlockDto = components['schemas']['EmailBlockDto'];
 export type SchemaEmailTemplateWhitelistDto = components['schemas']['EmailTemplateWhitelistDto'];
 export type SchemaEmailTemplateDetailDto = components['schemas']['EmailTemplateDetailDto'];
+export type SchemaEmailTemplateVersionDto = components['schemas']['EmailTemplateVersionDto'];
 export type SchemaSaveDraftDto = components['schemas']['SaveDraftDto'];
 export type SchemaPreviewRequestDto = components['schemas']['PreviewRequestDto'];
 export type SchemaPreviewResponseDto = components['schemas']['PreviewResponseDto'];
@@ -13181,6 +13227,28 @@ export interface operations {
             };
         };
     };
+    AdminEmailTemplateController_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateVersionDto"][];
+                };
+            };
+        };
+    };
     AdminEmailTemplateController_saveDraft: {
         parameters: {
             query?: never;
@@ -13266,6 +13334,29 @@ export interface operations {
             path: {
                 tag: string;
                 locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateDetailDto"];
+                };
+            };
+        };
+    };
+    AdminEmailTemplateController_revert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tag: string;
+                locale: string;
+                version: string;
             };
             cookie?: never;
         };

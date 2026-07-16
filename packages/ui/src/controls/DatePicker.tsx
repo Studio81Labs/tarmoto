@@ -16,6 +16,7 @@ import {
 } from "react-aria-components";
 import { cn } from "../utils/cn";
 import { fieldChrome } from "./field/fieldChrome";
+import { ClearButton } from "./field/ClearButton";
 import { parseIsoDate, isoDate } from "./date/isoDate";
 import { displayIsoDate, type DisplayFormatProps } from "./date/displayFormat";
 import { useHydrated } from "./date/useHydrated";
@@ -29,6 +30,8 @@ export interface DatePickerProps extends DisplayFormatProps {
   disabled?: boolean;
   tone?: "paper" | "cream";
   error?: boolean;
+  /** Show a ✕ to reset the value to "" when one is set. */
+  clearable?: boolean;
   className?: string;
 }
 
@@ -54,11 +57,13 @@ export function DatePicker({
   disabled = false,
   tone = "paper",
   error = false,
+  clearable = false,
   className,
   locale,
   formatOptions,
   formatValue,
 }: DatePickerProps) {
+  const showClear = clearable && value !== "" && !disabled;
   const labelId = useId();
   const valueId = useId();
   const errorId = useId();
@@ -87,93 +92,105 @@ export function DatePicker({
           Invalid date
         </span>
       )}
-      <DialogTrigger isOpen={open} onOpenChange={setOpen}>
-        <Button
-          {...(id !== undefined ? { id } : {})}
-          {...(label !== undefined
-            ? { "aria-labelledby": `${labelId} ${valueId}` }
-            : ariaLabel !== undefined
-              ? { "aria-label": value ? `${ariaLabel}, ${display}` : ariaLabel }
-              : {})}
-          isDisabled={disabled}
-          {...(error ? { "aria-describedby": errorId } : {})}
-          className={cn(
-            fieldChrome({ tone, disabled, error, hasLeading: true }),
-            "relative flex items-center text-left",
-          )}
-        >
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 text-fg-mute"
-          >
-            {/* inline calendar svg */}
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="4" width="18" height="18" rx="2" />
-              <path d="M16 2v4M8 2v4M3 10h18" />
-            </svg>
-          </span>
-          <span
-            id={valueId}
+      <div className="relative">
+        <DialogTrigger isOpen={open} onOpenChange={setOpen}>
+          <Button
+            {...(id !== undefined ? { id } : {})}
+            {...(label !== undefined
+              ? { "aria-labelledby": `${labelId} ${valueId}` }
+              : ariaLabel !== undefined
+                ? {
+                    "aria-label": value
+                      ? `${ariaLabel}, ${display}`
+                      : ariaLabel,
+                  }
+                : {})}
+            isDisabled={disabled}
+            {...(error ? { "aria-describedby": errorId } : {})}
             className={cn(
-              "font-mono text-sm",
-              value ? "text-ink" : "text-fg-mute",
+              fieldChrome({
+                tone,
+                disabled,
+                error,
+                hasLeading: true,
+                hasTrailing: showClear,
+              }),
+              "relative flex items-center text-left",
             )}
           >
-            {display || "Select date"}
-          </span>
-        </Button>
-        <Popover placement="bottom left" className={MENU}>
-          <Dialog className="outline-none" aria-label={ariaLabel ?? "Date"}>
-            <Calendar
-              firstDayOfWeek="mon"
-              value={parseIsoDate(value)}
-              onChange={(d) => {
-                onChange(isoDate(d));
-                // Single date: committing a day dismisses the popover (react-aria's
-                // own DatePicker did this; the generic DialogTrigger does not).
-                setOpen(false);
-              }}
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 text-fg-mute"
             >
-              <header className="mb-2 flex items-center justify-between">
-                <Button
-                  slot="previous"
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
-                >
-                  ‹
-                </Button>
-                <Heading className="font-mono text-[13px] font-semibold text-ink" />
-                <Button
-                  slot="next"
-                  className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
-                >
-                  ›
-                </Button>
-              </header>
-              <CalendarGrid className="border-separate border-spacing-0.5">
-                <CalendarGridHeader>
-                  {(day) => (
-                    <CalendarHeaderCell className="pb-1 font-mono text-[10px] font-normal text-fg-mute">
-                      {day}
-                    </CalendarHeaderCell>
-                  )}
-                </CalendarGridHeader>
-                <CalendarGridBody>
-                  {(date) => <CalendarCell date={date} className={CELL} />}
-                </CalendarGridBody>
-              </CalendarGrid>
-            </Calendar>
-          </Dialog>
-        </Popover>
-      </DialogTrigger>
+              {/* inline calendar svg */}
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <path d="M16 2v4M8 2v4M3 10h18" />
+              </svg>
+            </span>
+            <span
+              id={valueId}
+              className={cn("text-sm", value ? "text-ink" : "text-fg-mute")}
+            >
+              {display || "Select date"}
+            </span>
+          </Button>
+          <Popover placement="bottom left" className={MENU}>
+            <Dialog className="outline-none" aria-label={ariaLabel ?? "Date"}>
+              <Calendar
+                firstDayOfWeek="mon"
+                value={parseIsoDate(value)}
+                onChange={(d) => {
+                  onChange(isoDate(d));
+                  // Single date: committing a day dismisses the popover (react-aria's
+                  // own DatePicker did this; the generic DialogTrigger does not).
+                  setOpen(false);
+                }}
+              >
+                <header className="mb-2 flex items-center justify-between">
+                  <Button
+                    slot="previous"
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
+                  >
+                    ‹
+                  </Button>
+                  <Heading className="font-mono text-[13px] font-semibold text-ink" />
+                  <Button
+                    slot="next"
+                    className="grid size-6 place-items-center rounded text-fg-mute outline-none data-[hovered]:bg-paper-2"
+                  >
+                    ›
+                  </Button>
+                </header>
+                <CalendarGrid className="border-separate border-spacing-0.5">
+                  <CalendarGridHeader>
+                    {(day) => (
+                      <CalendarHeaderCell className="pb-1 font-mono text-[10px] font-normal text-fg-mute">
+                        {day}
+                      </CalendarHeaderCell>
+                    )}
+                  </CalendarGridHeader>
+                  <CalendarGridBody>
+                    {(date) => <CalendarCell date={date} className={CELL} />}
+                  </CalendarGridBody>
+                </CalendarGrid>
+              </Calendar>
+            </Dialog>
+          </Popover>
+        </DialogTrigger>
+        {showClear && (
+          <ClearButton onClear={() => onChange("")} label="Clear date" />
+        )}
+      </div>
     </div>
   );
 }
