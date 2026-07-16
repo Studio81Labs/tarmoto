@@ -1,5 +1,5 @@
-import { registerAs } from '@nestjs/config';
-import { parseRegions, type PoiImportRegion } from '@tarmoto/ingest';
+import { registerAs } from "@nestjs/config";
+import { parseRegions, type PoiImportRegion } from "@tarmoto/ingest";
 
 /**
  * Config for the offline POI import (#745, continent-scaled in #850).
@@ -35,17 +35,17 @@ export interface PoiImportConfig {
 }
 
 function boolEnv(value: string | undefined): boolean {
-  return (value ?? 'false').trim().toLowerCase() === 'true';
+  return (value ?? "false").trim().toLowerCase() === "true";
 }
 
-export const poiImportConfig = registerAs('poiImport', (): PoiImportConfig => {
+export const poiImportConfig = registerAs("poiImport", (): PoiImportConfig => {
   const extractDir = process.env.TARMOTO_POI_IMPORT_DIR?.trim();
   return {
     enabled: boolEnv(process.env.TARMOTO_POI_IMPORT_ENABLED),
     extractDir: extractDir ? extractDir : null,
     regions: parseRegions(
       process.env.TARMOTO_POI_IMPORT_REGIONS,
-      'TARMOTO_POI_IMPORT_REGIONS',
+      "TARMOTO_POI_IMPORT_REGIONS",
     ),
   };
 });
@@ -58,14 +58,14 @@ export const poiImportConfig = registerAs('poiImport', (): PoiImportConfig => {
  * the coverage list defaults to the same {@link DEFAULT_REGIONS}, narrowed via
  * `TARMOTO_FSQ_IMPORT_REGIONS` (CZ-first at launch).
  */
-export const fsqImportConfig = registerAs('fsqImport', (): PoiImportConfig => {
+export const fsqImportConfig = registerAs("fsqImport", (): PoiImportConfig => {
   const extractDir = process.env.TARMOTO_FSQ_IMPORT_DIR?.trim();
   return {
     enabled: boolEnv(process.env.TARMOTO_FSQ_IMPORT_ENABLED),
     extractDir: extractDir ? extractDir : null,
     regions: parseRegions(
       process.env.TARMOTO_FSQ_IMPORT_REGIONS,
-      'TARMOTO_FSQ_IMPORT_REGIONS',
+      "TARMOTO_FSQ_IMPORT_REGIONS",
     ),
   };
 });

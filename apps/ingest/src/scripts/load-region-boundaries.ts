@@ -1,10 +1,10 @@
-import 'reflect-metadata';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { getDataSourceToken } from '@nestjs/typeorm';
-import type { DataSource } from 'typeorm';
-import { bootstrapScriptContext } from './bootstrap-script-context.js';
-import { DEFAULT_REGIONS } from '@tarmoto/ingest';
+import "reflect-metadata";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { getDataSourceToken } from "@nestjs/typeorm";
+import type { DataSource } from "typeorm";
+import { bootstrapScriptContext } from "./bootstrap-script-context.js";
+import { DEFAULT_REGIONS } from "@tarmoto/ingest";
 
 interface RegionFeature {
   code: string;
@@ -39,11 +39,11 @@ function readAsset(): RegionFeature[] {
   // asset is copied to dist/assets at build (Step 6), mirroring the src layout.
   const path = join(
     __dirname,
-    '..',
-    'assets',
-    'import-region-boundaries.geojson',
+    "..",
+    "assets",
+    "import-region-boundaries.geojson",
   );
-  const fc = JSON.parse(readFileSync(path, 'utf8')) as {
+  const fc = JSON.parse(readFileSync(path, "utf8")) as {
     features: { properties: { code: string }; geometry: unknown }[];
   };
   return fc.features.map((f) => ({
@@ -59,12 +59,12 @@ async function main(): Promise<void> {
   const missing = [...targets].filter((c) => !present.has(c));
   if (missing.length) {
     throw new Error(
-      `Boundary asset missing target regions: ${missing.join(', ')}`,
+      `Boundary asset missing target regions: ${missing.join(", ")}`,
     );
   }
   const app = await bootstrapScriptContext();
   try {
-    const ds = app.get<DataSource>(getDataSourceToken('poi'));
+    const ds = app.get<DataSource>(getDataSourceToken("poi"));
     const n = await loadRegionBoundaries(ds, features);
     console.log(`Loaded ${n} region boundary polygons.`);
   } finally {
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
 }
 
 // Run as a CLI only (not when imported by the spec).
-if (process.argv[1] && process.argv[1].endsWith('load-region-boundaries.js')) {
+if (process.argv[1] && process.argv[1].endsWith("load-region-boundaries.js")) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

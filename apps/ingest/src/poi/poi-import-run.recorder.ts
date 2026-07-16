@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { PoiImportRun, type PoiImportTrigger } from '@tarmoto/poi-db';
-import type { PoiImportResult } from './poi-import.service.js';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { PoiImportRun, type PoiImportTrigger } from "@tarmoto/poi-db";
+import type { PoiImportResult } from "./poi-import.service.js";
 
 const ERROR_MAX = 2000;
 
@@ -10,7 +10,7 @@ const ERROR_MAX = 2000;
 @Injectable()
 export class PoiImportRunRecorder {
   constructor(
-    @InjectRepository(PoiImportRun, 'poi')
+    @InjectRepository(PoiImportRun, "poi")
     private readonly repo: Repository<PoiImportRun>,
   ) {}
 
@@ -24,7 +24,7 @@ export class PoiImportRunRecorder {
       this.repo.create({
         source: input.source,
         region_code: input.regionCode,
-        status: 'running',
+        status: "running",
         trigger: input.trigger,
         job_id: input.jobId,
         started_at: new Date(),
@@ -35,7 +35,7 @@ export class PoiImportRunRecorder {
 
   async finish(id: string, result: PoiImportResult): Promise<void> {
     await this.repo.update(id, {
-      status: result.skipped ? 'skipped' : 'success',
+      status: result.skipped ? "skipped" : "success",
       fetched: result.fetched,
       upserted: result.upserted,
       tombstoned: result.tombstoned,
@@ -59,7 +59,7 @@ export class PoiImportRunRecorder {
   async fail(id: string, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     await this.repo.update(id, {
-      status: 'failed',
+      status: "failed",
       error: message.slice(0, ERROR_MAX),
       finished_at: new Date(),
     });

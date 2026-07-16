@@ -1,21 +1,21 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
-import { JOB_NAMES, QUEUE_NAMES } from '../jobs.constants.js';
+import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { Inject, Logger } from "@nestjs/common";
+import { Job } from "bullmq";
+import { POI_IMPORT_JOB, POI_IMPORT_QUEUE } from "@tarmoto/ingest";
 import {
   POI_IMPORT_SOURCES,
   PoiImportService,
   type PoiImportResult,
-} from '../../poi/poi-import.service.js';
-import { PoiImportRunRecorder } from '../../poi/poi-import-run.recorder.js';
-import { JobsProducer } from '../jobs.producer.js';
+} from "./poi-import.service.js";
+import { PoiImportRunRecorder } from "./poi-import-run.recorder.js";
+import { PoiImportProducer } from "./poi-import.producer.js";
 
 /**
  * The source a region job defaults to when its `source` field is absent — a job
  * enqueued before the multi-source registry (#869) existed. OSM was the only
  * source then, so it's the correct fallback for an in-flight legacy job.
  */
-const LEGACY_REGION_SOURCE = 'osm';
+const LEGACY_REGION_SOURCE = "osm";
 
 export interface PoiImportDispatchResult {
   regions_enqueued: number;
@@ -27,7 +27,7 @@ export interface PoiImportDispatchResult {
  * already queued before that — or a scheduler not yet reconciled — must not
  * crash the worker, so it's tolerated here as a `dispatch` alias.
  */
-const LEGACY_POI_IMPORT_RUN = 'run';
+const LEGACY_POI_IMPORT_RUN = "run";
 
 /**
  * Two-stage offline POI import (#850), continent-scaled from the single-bbox
@@ -48,14 +48,14 @@ const LEGACY_POI_IMPORT_RUN = 'run';
  * dispatcher enqueued it while enabled, and manual/on-demand imports go through
  * the CLI, not this queue.
  */
-@Processor(QUEUE_NAMES.POI_IMPORT)
+@Processor(POI_IMPORT_QUEUE)
 export class PoiImportProcessor extends WorkerHost {
   private readonly logger = new Logger(PoiImportProcessor.name);
 
   constructor(
     @Inject(POI_IMPORT_SOURCES)
     private readonly importers: readonly PoiImportService[],
-    private readonly producer: JobsProducer,
+    private readonly producer: PoiImportProducer,
     private readonly recorder: PoiImportRunRecorder,
   ) {
     super();
@@ -65,12 +65,12 @@ export class PoiImportProcessor extends WorkerHost {
     job: Job,
   ): Promise<{ skipped: true } | PoiImportDispatchResult | PoiImportResult> {
     if (
-      job.name === JOB_NAMES.POI_IMPORT_DISPATCH ||
+      job.name === POI_IMPORT_JOB.DISPATCH ||
       job.name === LEGACY_POI_IMPORT_RUN
     ) {
       return this.dispatch(job);
     }
-    if (job.name === JOB_NAMES.POI_IMPORT_REGION) {
+    if (job.name === POI_IMPORT_JOB.REGION) {
       return this.importRegion(job);
     }
     throw new Error(`Unknown poi.import job name: ${job.name}`);
@@ -82,7 +82,7 @@ export class PoiImportProcessor extends WorkerHost {
     const enabled = this.importers.filter((importer) => importer.enabled);
     if (enabled.length === 0) {
       this.logger.debug(
-        'POI import skipped: no source has TARMOTO_*_IMPORT_ENABLED=true',
+        "POI import skipped: no source has TARMOTO_*_IMPORT_ENABLED=true",
       );
       return { skipped: true };
     }
@@ -105,8 +105,8 @@ export class PoiImportProcessor extends WorkerHost {
       }
     }
     this.logger.log(
-      `[${job.id ?? 'no-id'}] dispatched POI import for ${enqueued} region(s) ` +
-        `across source(s): ${enabled.map((i) => i.source).join(', ')}`,
+      `[${job.id ?? "no-id"}] dispatched POI import for ${enqueued} region(s) ` +
+        `across source(s): ${enabled.map((i) => i.source).join(", ")}`,
     );
     return { regions_enqueued: enqueued };
   }
@@ -115,10 +115,10 @@ export class PoiImportProcessor extends WorkerHost {
     const data = job.data as {
       code?: string;
       source?: string;
-      trigger?: 'manual' | 'cron';
+      trigger?: "manual" | "cron";
     };
     if (!data.code) {
-      throw new Error('poi-import region job missing code');
+      throw new Error("poi-import region job missing code");
     }
     const source = data.source ?? LEGACY_REGION_SOURCE;
     const importer = this.importers.find((i) => i.source === source);
@@ -143,7 +143,7 @@ export class PoiImportProcessor extends WorkerHost {
     const runId = await this.recorder.start({
       source,
       regionCode: region.code,
-      trigger: data.trigger ?? 'cron',
+      trigger: data.trigger ?? "cron",
       jobId: job.id ?? null,
     });
     try {
@@ -158,14 +158,14 @@ export class PoiImportProcessor extends WorkerHost {
         await this.recorder.finish(runId, result);
       } catch (recErr) {
         this.logger.warn(
-          `[${job.id ?? 'no-id'}] failed to record poi import run ${runId}: ` +
+          `[${job.id ?? "no-id"}] failed to record poi import run ${runId}: ` +
             `${recErr instanceof Error ? recErr.message : String(recErr)}`,
         );
       }
       this.logger.log(
-        `[${job.id ?? 'no-id'}] POI import (${source}/${result.region}): ` +
+        `[${job.id ?? "no-id"}] POI import (${source}/${result.region}): ` +
           `fetched=${result.fetched} upserted=${result.upserted} ` +
-          `tombstoned=${result.tombstoned}${result.skipped ? ' (skipped)' : ''}`,
+          `tombstoned=${result.tombstoned}${result.skipped ? " (skipped)" : ""}`,
       );
       return result;
     } catch (err) {
@@ -176,7 +176,7 @@ export class PoiImportProcessor extends WorkerHost {
         await this.recorder.fail(runId, err);
       } catch (recordingErr) {
         this.logger.warn(
-          `[${job.id ?? 'no-id'}] failed to record poi_import_runs failure ` +
+          `[${job.id ?? "no-id"}] failed to record poi_import_runs failure ` +
             `for run ${runId}: ${String(recordingErr)}`,
         );
       }

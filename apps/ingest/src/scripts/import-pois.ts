@@ -20,15 +20,15 @@
  * yet is skipped, so re-running is safe; a parse failure aborts before any write.
  */
 
-import 'reflect-metadata';
+import "reflect-metadata";
 import {
   FSQ_POI_IMPORT,
   PoiImportService,
   type PoiImportResult,
-} from '../modules/poi/poi-import.service.js';
-import { bootstrapScriptContext } from './bootstrap-script-context.js';
+} from "../poi/poi-import.service.js";
+import { bootstrapScriptContext } from "./bootstrap-script-context.js";
 
-const SOURCES = ['osm', 'fsq'] as const;
+const SOURCES = ["osm", "fsq"] as const;
 type Source = (typeof SOURCES)[number];
 
 function isSource(value: string): value is Source {
@@ -41,7 +41,7 @@ function logResult(source: Source, result: PoiImportResult): void {
   console.log(`  upserted  : ${result.upserted}`);
   console.log(`  tombstoned: ${result.tombstoned}`);
   if (result.skipped) {
-    console.log('  skipped   : no extract file yet (region not provisioned)');
+    console.log("  skipped   : no extract file yet (region not provisioned)");
   }
 }
 
@@ -57,25 +57,25 @@ async function main(): Promise<void> {
     const source: Source =
       args[0] && isSource(args[0].toLowerCase())
         ? (args[0].toLowerCase() as Source)
-        : 'osm';
+        : "osm";
     const regionArg = (
-      isSource((args[0] ?? '').toLowerCase()) ? args[1] : args[0]
+      isSource((args[0] ?? "").toLowerCase()) ? args[1] : args[0]
     )
       ?.trim()
       .toUpperCase();
 
     const service =
-      source === 'fsq'
+      source === "fsq"
         ? app.get<PoiImportService>(FSQ_POI_IMPORT)
         : app.get(PoiImportService);
 
     if (regionArg) {
       const region = service.regions.find((r) => r.code === regionArg);
       if (!region) {
-        const known = service.regions.map((r) => r.code).join(', ');
+        const known = service.regions.map((r) => r.code).join(", ");
         throw new Error(
           `Unknown region code "${regionArg}". ` +
-            `Configured ${source} regions: ${known || '(none)'}`,
+            `Configured ${source} regions: ${known || "(none)"}`,
         );
       }
       console.log(
@@ -98,6 +98,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((err: unknown) => {
-  console.error('import-pois failed:', err);
+  console.error("import-pois failed:", err);
   process.exit(1);
 });

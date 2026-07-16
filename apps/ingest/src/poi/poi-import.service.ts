@@ -1,18 +1,18 @@
-import { createReadStream, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { createReadStream, existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   Inject,
   Injectable,
   Logger,
   Optional,
   ServiceUnavailableException,
-} from '@nestjs/common';
-import type { ConfigType } from '@nestjs/config';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
-import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
-import { Poi } from '@tarmoto/poi-db';
-import { poiImportConfig } from './poi-import.config.js';
+} from "@nestjs/common";
+import type { ConfigType } from "@nestjs/config";
+import { InjectDataSource } from "@nestjs/typeorm";
+import { DataSource } from "typeorm";
+import type { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity.js";
+import { Poi } from "@tarmoto/poi-db";
+import { poiImportConfig } from "./poi-import.config.js";
 import {
   OsmPoiImportSource,
   POI_IMPORT_SOURCE,
@@ -20,8 +20,8 @@ import {
   type PoiImportRegion,
   type PoiImportSource,
   type StorableImportRow,
-} from '@tarmoto/ingest';
-import { withPoiRepo } from './poi-repo.js';
+} from "@tarmoto/ingest";
+import { withPoiRepo } from "./poi-repo.js";
 
 /**
  * DI token for the Foursquare `PoiImportService` instance (#869) — a second
@@ -29,7 +29,7 @@ import { withPoiRepo } from './poi-repo.js';
  * via a factory in `PoiModule`. The default class provider stays OSM, so
  * `app.get(PoiImportService)` / the OSM cron are unchanged.
  */
-export const FSQ_POI_IMPORT = Symbol('FSQ_POI_IMPORT');
+export const FSQ_POI_IMPORT = Symbol("FSQ_POI_IMPORT");
 
 /**
  * DI token for the ordered registry of bulk import sources (#869) — every
@@ -39,7 +39,7 @@ export const FSQ_POI_IMPORT = Symbol('FSQ_POI_IMPORT');
  * Each instance self-identifies via `source` and gates on its own `enabled`, so
  * the fan-out runs exactly the sources whose `TARMOTO_*_IMPORT_ENABLED` is set.
  */
-export const POI_IMPORT_SOURCES = Symbol('POI_IMPORT_SOURCES');
+export const POI_IMPORT_SOURCES = Symbol("POI_IMPORT_SOURCES");
 
 /** Rows per bulk upsert — keeps each statement under PG's param limit. */
 const UPSERT_CHUNK = 500;
@@ -64,7 +64,7 @@ const MIN_REGION_FOR_TOMBSTONE_GUARD = 50;
  * silently drift from it.
  */
 export const WIPE_GUARD_WARNING =
-  'extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract';
+  "extract looks incomplete — tombstone + coverage stamp withheld (wipe-guard); rebuild the extract";
 
 /**
  * Fixed namespace for the per-(source, region) advisory lock (#847) that
@@ -176,7 +176,7 @@ export class PoiImportService {
   private readonly logger = new Logger(PoiImportService.name);
 
   constructor(
-    @InjectDataSource('poi')
+    @InjectDataSource("poi")
     private readonly poiDataSource: DataSource,
     @Inject(poiImportConfig.KEY)
     private readonly config: ConfigType<typeof poiImportConfig>,
@@ -239,7 +239,7 @@ export class PoiImportService {
   private extractPath(region: PoiImportRegion): string {
     if (!this.config.extractDir) {
       throw new Error(
-        'POI import is enabled but TARMOTO_POI_IMPORT_DIR is not set',
+        "POI import is enabled but TARMOTO_POI_IMPORT_DIR is not set",
       );
     }
     return join(
@@ -258,12 +258,12 @@ export class PoiImportService {
   private async assertStoreReachable(): Promise<void> {
     try {
       if (!this.poiDataSource.isInitialized) {
-        throw new Error('poi store not initialized');
+        throw new Error("poi store not initialized");
       }
-      await this.poiDataSource.query('SELECT 1');
+      await this.poiDataSource.query("SELECT 1");
     } catch {
       throw new ServiceUnavailableException(
-        'POI store is temporarily unavailable',
+        "POI store is temporarily unavailable",
       );
     }
   }
@@ -302,7 +302,7 @@ export class PoiImportService {
       // overload in this TypeORM version — it always returns `Promise<any>` —
       // so the shape is asserted on the result instead.
       const got = (await runner.query(
-        'SELECT pg_try_advisory_lock($1, $2) AS locked',
+        "SELECT pg_try_advisory_lock($1, $2) AS locked",
         [LOCK_NAMESPACE, key],
       )) as { locked: boolean }[];
       if (!got?.[0]?.locked) {
@@ -313,7 +313,7 @@ export class PoiImportService {
       try {
         return await this.importRegionBody(region);
       } finally {
-        await runner.query('SELECT pg_advisory_unlock($1, $2)', [
+        await runner.query("SELECT pg_advisory_unlock($1, $2)", [
           LOCK_NAMESPACE,
           key,
         ]);
@@ -390,7 +390,7 @@ export class PoiImportService {
         brand: clamp(p.brand ?? null, COLUMN_LIMITS.brand),
         stars: p.stars ?? null,
         tags: p.tags ?? null,
-        geom: { type: 'Point', coordinates: [p.lng, p.lat] },
+        geom: { type: "Point", coordinates: [p.lng, p.lat] },
         last_imported_at: batchTime,
         // Revive: a re-import of a previously-tombstoned (reopened) venue
         // clears the tombstone via this upsert.
@@ -520,7 +520,7 @@ export class PoiImportService {
         for (const part of chunk(rows, UPSERT_CHUNK)) {
           if (part.length) {
             await tx.getRepository(Poi).upsert(part, {
-              conflictPaths: ['source', 'external_id'],
+              conflictPaths: ["source", "external_id"],
             });
           }
         }
@@ -560,7 +560,7 @@ export class PoiImportService {
         // OSM-only: the coverage query this feeds gates the OSM Overpass fallback
         // (`source = 'osm'`, `PoiStoreService`), so an FSQ run must never stamp —
         // it would wrongly suppress the OSM fallback for a region OSM never loaded.
-        if (this.importSource.source === 'osm' && !wouldWipeTooMuch) {
+        if (this.importSource.source === "osm" && !wouldWipeTooMuch) {
           // `RETURNING` surfaces the silent no-op (#978): this is an
           // existing-row-only UPDATE, so a region whose boundary polygon was
           // never loaded (`poi:load-boundaries` not run before the import)
@@ -581,7 +581,7 @@ export class PoiImportService {
                 `despite the upsert.`,
             );
           }
-        } else if (this.importSource.source === 'osm') {
+        } else if (this.importSource.source === "osm") {
           this.logger.warn(
             `POI import (${region.code}): extract looks incomplete ` +
               `(wipe guard tripped) — NOT stamping coverage; the region keeps ` +

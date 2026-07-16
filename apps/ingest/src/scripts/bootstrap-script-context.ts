@@ -1,5 +1,5 @@
-import type { INestApplicationContext } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
+import type { INestApplicationContext } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
 
 /**
  * Boot a standalone Nest DI context for a one-off CLI script, with the BullMQ
@@ -17,12 +17,12 @@ import { NestFactory } from '@nestjs/core';
  * `.close()` it when done (typically in a `finally`).
  */
 export async function bootstrapScriptContext(): Promise<INestApplicationContext> {
-  process.env.TARMOTO_QUEUE_WORKER_ENABLED = 'false';
+  process.env.TARMOTO_QUEUE_WORKER_ENABLED = "false";
   // Dynamic import: `AppModule` (and thus `JobsModule.forRoot()`) must not be
   // evaluated until after the gate above is set. A static top-level import
   // would be hoisted and run first, defeating the toggle.
-  const { AppModule } = await import('../app.module.js');
+  const { AppModule } = await import("../app.module.js");
   return NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn', 'log'],
+    logger: ["error", "warn", "log"],
   });
 }

@@ -11,7 +11,13 @@
     "dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "test": "jest"
+    "test": "jest",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "poi:import": "node dist/scripts/import-pois.js",
+    "fsq:import": "node dist/scripts/import-pois.js fsq",
+    "poi:load-boundaries": "node dist/scripts/load-region-boundaries.js",
+    "db:migrate:poi": "typeorm migration:run -d node_modules/@tarmoto/poi-db/dist/data-source.js",
+    "db:revert:poi": "typeorm migration:revert -d node_modules/@tarmoto/poi-db/dist/data-source.js"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",
@@ -25,9 +31,12 @@
     "@tarmoto/poi-db": "workspace:*",
     "@tarmoto/shared": "workspace:*",
     "bullmq": "^5.76.4",
+    "dotenv": "^17.4.2",
+    "fast-xml-parser": "^5.5.12",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sax": "^1.6.0",
     "typeorm": "^0.3.28"
   },
   "devDependencies": {
@@ -36,6 +45,7 @@
     "@nestjs/testing": "^11.0.1",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/sax": "^1.2.7",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
     "ts-jest": "^29.2.5",
