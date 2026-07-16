@@ -19,6 +19,7 @@ import {
   DEFAULT_REGIONS,
   FsqPoiImportSource,
   OsmPoiImportSource,
+  type ImportStatusResponse,
   type PoiImportRegion,
   type PoiImportSource,
   type RegionImportStatus,
@@ -132,6 +133,10 @@ return 0`;
  * service keeps only what the backend itself must own: the validated atomic
  * extract upload (`storeExtract`, admin -> backend -> shared volume) and the
  * per-`(source, code)` upload lock that coordinates it with a manual trigger.
+ * `storeExtract` also best-effort-asks apps/ingest (`importInFlight`,
+ * #1011 review FIX 2) whether an import for the same pair is currently
+ * running, restoring the upload-vs-import guard that lost its local queue
+ * when Phase 3 relocated it.
  */
 @Injectable()
 export class PoiImportAdminService {
@@ -228,6 +233,40 @@ export class PoiImportAdminService {
       method: 'POST',
       body: JSON.stringify({ source, code, trigger: 'manual' }),
     });
+  }
+
+  /**
+   * Best-effort proxy → GET /internal/poi/import-status (#1011 review, FIX
+   * 2). Restores, across the app boundary, the upload-vs-import guard
+   * `storeExtract` lost when Phase 3 moved the `poi.import` queue entirely
+   * into apps/ingest (see the comment at its one call site below).
+   *
+   * BEST-EFFORT: any failure to get a real answer from ingest — network
+   * error, non-2xx, `TARMOTO_INGEST_INTERNAL_URL` unset — resolves to
+   * `false` (not in flight) rather than throwing, so `storeExtract` still
+   * PROCEEDS. This is deliberately safe, not merely permissive: apps/ingest
+   * is the ONLY process that holds the `poi.import` queue/worker (Phase 3),
+   * so "ingest unreachable" and "no worker can possibly be importing" are
+   * the same fact — there is nothing left that could be racing this upload.
+   * Swallowing the error here (rather than letting `storeExtract` 503) also
+   * preserves the existing "upload works even if ingest is down" property
+   * the rest of this service already relies on.
+   */
+  private async importInFlight(source: string, code: string): Promise<boolean> {
+    const params = new URLSearchParams({ source, code });
+    try {
+      const res = await this.ingestFetch<ImportStatusResponse>(
+        `/internal/poi/import-status?${params.toString()}`,
+      );
+      return res.in_flight;
+    } catch (err) {
+      this.logger.warn(
+        `import-status check unreachable for ${source}/${code} (treating as not in flight, upload proceeds): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
+    }
   }
 
   /**
@@ -521,12 +560,20 @@ export class PoiImportAdminService {
       );
     }
 
-    // NOTE (Phase 3): the queue-based in-flight guard that used to sit here is
-    // gone — the backend no longer holds the `poi.import` queue. Upload safety
-    // now rests on the per-(source, code) upload lock (which still serializes
-    // concurrent uploads) plus the import's own atomic read + PG advisory lock
-    // in apps/ingest; the queue-in-flight 409 moved to the internal API's
-    // POST /internal/poi/import.
+    // Defense-in-depth against a replacement upload racing a LIVE import for
+    // this exact (source, code): a worker may be mid-read of the CURRENT
+    // extract file while an operator's new upload is about to atomically
+    // replace it out from under it. Phase 3 moved the `poi.import` queue
+    // entirely into apps/ingest, so the backend can no longer answer this
+    // itself — `importInFlight` above asks apps/ingest instead
+    // (best-effort: see its doc comment for why "ingest unreachable" is safe
+    // to treat as "not in flight" rather than merely convenient) (#1011
+    // review, FIX 2).
+    if (await this.importInFlight(source, code)) {
+      throw new ConflictException(
+        `an import is in progress for ${source}/${code}; wait before replacing the extract`,
+      );
+    }
 
     // Unique per call (not a fixed `<target>.part`) — see the doc comment
     // above: this is what keeps two concurrent uploads for the same

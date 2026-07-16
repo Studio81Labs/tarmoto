@@ -286,4 +286,64 @@ describe("PoiInternalService", () => {
       expect(queue.add).not.toHaveBeenCalled();
     });
   });
+
+  // Backs `GET /internal/poi/import-status` (#1011 review, FIX 2) — the
+  // backend's `storeExtract` best-effort-calls this to restore the
+  // upload-vs-import guard Phase 3 dropped. A thin wrapper over the SAME
+  // `importInFlight` scan `triggerImport`'s own 409 test above exercises, so
+  // these tests pin the wrapper's `{ in_flight }` shape and the scoping
+  // (same source AND code — not source-only or code-only) rather than
+  // re-deriving the underlying queue-scan behavior from scratch.
+  describe("importStatus", () => {
+    it("reports in_flight: true when a job for the same (source, code) is queued/active", async () => {
+      const queue = {
+        getJobs: jest
+          .fn()
+          .mockResolvedValue([{ data: { code: "CZ", source: "osm" } }]),
+      };
+      const svc = new PoiInternalService(
+        {} as never,
+        {} as never,
+        queue as never,
+        [] as never,
+      );
+
+      await expect(svc.importStatus("osm", "CZ")).resolves.toEqual({
+        in_flight: true,
+      });
+    });
+
+    it("reports in_flight: false when no job is queued/active at all", async () => {
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
+      const svc = new PoiInternalService(
+        {} as never,
+        {} as never,
+        queue as never,
+        [] as never,
+      );
+
+      await expect(svc.importStatus("osm", "CZ")).resolves.toEqual({
+        in_flight: false,
+      });
+    });
+
+    it("reports in_flight: false when the only queued jobs are for a DIFFERENT region or source (scoped match)", async () => {
+      const queue = {
+        getJobs: jest.fn().mockResolvedValue([
+          { data: { code: "SK", source: "osm" } }, // same source, different code
+          { data: { code: "CZ", source: "fsq" } }, // same code, different source
+        ]),
+      };
+      const svc = new PoiInternalService(
+        {} as never,
+        {} as never,
+        queue as never,
+        [] as never,
+      );
+
+      await expect(svc.importStatus("osm", "CZ")).resolves.toEqual({
+        in_flight: false,
+      });
+    });
+  });
 });

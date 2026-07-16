@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type {
+  ImportStatusResponse,
   RegionImportStatus,
   RunSummary,
   TriggerImportResponse,
@@ -43,6 +44,20 @@ export class PoiInternalController {
       ...(code !== undefined ? { code } : {}),
       limit,
     });
+  }
+
+  /**
+   * Cheap in-flight check (#1011 review, FIX 2) — the backend's
+   * `storeExtract` calls this best-effort before writing a replacement
+   * extract, restoring the upload-vs-import guard Phase 3 dropped when the
+   * `poi.import` queue moved entirely into this app.
+   */
+  @Get("import-status")
+  importStatus(
+    @Query("source") source: string,
+    @Query("code") code: string,
+  ): Promise<ImportStatusResponse> {
+    return this.svc.importStatus(source, code);
   }
 
   @Post("import")

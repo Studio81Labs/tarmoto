@@ -14,6 +14,7 @@ import {
   DEFAULT_REGIONS,
   POI_IMPORT_JOB,
   POI_IMPORT_QUEUE,
+  type ImportStatusResponse,
   type PoiImportRegionJobData,
   type RegionImportStatus,
   type RunSummary,
@@ -277,6 +278,22 @@ export class PoiInternalService {
     return inFlight.some(
       (j) => j?.data?.code === code && (j?.data?.source ?? "osm") === source,
     );
+  }
+
+  /**
+   * Backs `GET /internal/poi/import-status` (#1011 review, FIX 2) — a thin
+   * wrapper over the SAME `importInFlight` scan `triggerImport`'s own 409
+   * uses (one cheap `queue.getJobs` call), so the backend's `storeExtract`
+   * can best-effort-restore the upload-vs-import guard Phase 3 dropped when
+   * the queue moved entirely into this app. Deliberately NOT
+   * `listRegionStatus` — that runs 34 `findOne` queries plus two bulk scans,
+   * far too heavy to call on every extract upload.
+   */
+  async importStatus(
+    source: string,
+    code: string,
+  ): Promise<ImportStatusResponse> {
+    return { in_flight: await this.importInFlight(source, code) };
   }
 
   async triggerImport(

@@ -95,8 +95,31 @@ describe('PoiImportAdminService', () => {
     Record<(typeof EXTRACT_DIR_ENV_KEYS)[number], string>
   > = {};
 
+  // Hoisted so BOTH the ingest-proxy tests and the storeExtract tests share
+  // one spy (#1011 review, FIX 2 — storeExtract now also calls `fetch` via
+  // `importInFlight`). Reset + given a safe default — `in_flight: false` —
+  // in the top-level `beforeEach` below so every storeExtract test (which
+  // doesn't care about the in-flight guard) keeps behaving exactly as
+  // before, deterministically, without relying on the ingest-proxy describe
+  // block happening to run first. The proxy tests below still override this
+  // default per-test with their own `mockResolvedValue`/`mockRejectedValue`.
+  const fetchMock = jest.spyOn(global, 'fetch');
+
   beforeEach(() => {
     statMock.mockReset();
+    fetchMock.mockReset();
+    // A fresh `Response` PER CALL (not one shared instance via
+    // `mockResolvedValue`) — a `Response` body can only be read once, and a
+    // test that calls `storeExtract` more than once (e.g. the re-upload
+    // test) would otherwise have its SECOND `importInFlight` call fail to
+    // parse a body already consumed by the first, tripping the best-effort
+    // catch for the wrong reason (masking a real 200 as an unreachable-ingest
+    // fallback).
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ in_flight: false }), { status: 200 }),
+      ),
+    );
     for (const key of EXTRACT_DIR_ENV_KEYS) {
       savedExtractDirEnv[key] = process.env[key];
       delete process.env[key];
@@ -112,9 +135,9 @@ describe('PoiImportAdminService', () => {
   });
 
   describe('PoiImportAdminService (ingest proxy)', () => {
-    const fetchMock = jest.spyOn(global, 'fetch');
-    afterEach(() => fetchMock.mockReset());
-
+    // Uses the hoisted `fetchMock` above (shared with storeExtract, #1011
+    // review FIX 2) — reset + given a default in the top-level `beforeEach`;
+    // every test below overrides it with its own specific response anyway.
     const svc = () =>
       new PoiImportAdminService(fakeConfig(), makeLockRedis() as never);
 
@@ -640,6 +663,66 @@ describe('PoiImportAdminService', () => {
 
       expect(redis.set).not.toHaveBeenCalled();
       expect(redis.del).not.toHaveBeenCalled();
+    });
+
+    // #1011 review (FIX 2): restores, via a best-effort cross-boundary check
+    // to apps/ingest, the upload-vs-import guard that used to live here as a
+    // local queue scan before Phase 3 moved the `poi.import` queue entirely
+    // into apps/ingest (the two tests Task 2 deleted covered that queue scan
+    // directly — these are the API-shaped equivalent).
+    it('returns 409 (and writes nothing) when apps/ingest reports an import already in flight for the pair', async () => {
+      const svc = new PoiImportAdminService(
+        fakeConfig(),
+        makeLockRedis() as never,
+      );
+      const target = extractPath('osm', 'CZ');
+      // Parent-dir mount check must pass so the test actually reaches the
+      // new in-flight guard.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ in_flight: true }), { status: 200 }),
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      // Queried the exact pair being uploaded — not a stand-in for scoping
+      // logic (that lives in apps/ingest's own `importInFlight` scan; see
+      // poi-internal.service.spec.ts), just proof this call targets the
+      // right (source, code).
+      const [url] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(
+        'http://ingest:3005/internal/poi/import-status?source=osm&code=CZ',
+      );
+      expect(leftoverPartFiles()).toEqual([]);
+      expect(existsSync(target)).toBe(false);
+    });
+
+    it('proceeds with the upload (best-effort) when apps/ingest is unreachable for the in-flight check', async () => {
+      const target = extractPath('osm', 'CZ');
+      const svc = new PoiImportAdminService(
+        fakeConfig(),
+        makeLockRedis() as never,
+      );
+      // Parent-dir check, then the post-rename result stat.
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
+      fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      const result = await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('hello')),
+        size: 5,
+        originalName: 'cz.osm',
+      });
+
+      expect(result.present).toBe(true);
+      expect(readFileSync(target, 'utf8')).toBe('hello');
+      expect(leftoverPartFiles()).toEqual([]);
     });
   });
 

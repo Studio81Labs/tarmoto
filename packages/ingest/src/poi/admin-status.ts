@@ -61,3 +61,16 @@ export interface RegionImportStatus {
 export interface TriggerImportResponse {
   job_id: string;
 }
+
+/**
+ * Response body of `GET /internal/poi/import-status` (#1011 review, FIX 2) —
+ * a cheap "is an import currently running/queued for this (source, code)"
+ * check. Restores, across the app boundary, the upload-vs-import guard that
+ * `PoiImportAdminService.storeExtract` lost when Phase 3 moved the
+ * `poi.import` queue entirely into apps/ingest: the backend's `storeExtract`
+ * calls this (best-effort) before writing a replacement extract, so it
+ * doesn't race a worker that's still reading the CURRENT one.
+ */
+export interface ImportStatusResponse {
+  in_flight: boolean;
+}
