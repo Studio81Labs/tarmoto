@@ -1,6 +1,8 @@
 import { Section, SubStamp } from "../Section";
 import {
+  Button,
   Card,
+  ErrorState,
   LayoutShell,
   Mono,
   QualityBars,
@@ -346,5 +348,92 @@ function BigRule({
         <div className="text-[13px] leading-[1.55] text-fg-dim">{body}</div>
       </div>
     </div>
+  );
+}
+
+/* -------- 27 · SYSTEM STATES -------- */
+
+export function SystemStatesSection() {
+  return (
+    <Section
+      id="system-states"
+      num="27 · System states"
+      title="One layout for every dead end — 404, 403, 500, offline, maintenance."
+      intro={
+        <>
+          A faded topographic map under a centred icon tile, mono{" "}
+          <CN>CODE • LABEL</CN> stamp, headline, and recovery actions. The{" "}
+          <CN>kind</CN> picks the glyph; copy and buttons come from the caller
+          so every surface stays i18n-able.
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 gap-6">
+        <Card padded={false} className="overflow-hidden !p-0">
+          <div className="h-[440px]">
+            <ErrorState
+              className="h-full"
+              kind="not-found"
+              code="404"
+              label="Not found"
+              title="This road isn't on the map"
+              body="The route or page you're after has moved, ended, or never existed. Let's get you back on tarmac."
+              actions={
+                <>
+                  <Button variant="accent" uppercase>
+                    Back to home
+                  </Button>
+                  <Button variant="secondary" uppercase>
+                    Open Road Explorer
+                  </Button>
+                </>
+              }
+            />
+          </div>
+        </Card>
+
+        <Card padded={false} className="overflow-hidden !p-0">
+          <div className="h-[440px]">
+            <ErrorState
+              className="h-full"
+              kind="offline"
+              code="OFF"
+              label="No connection"
+              title="You're offline"
+              body="We can't reach Tarmoto right now. Cached trips and maps still work; changes sync automatically when you reconnect."
+              actions={
+                <Button variant="accent" uppercase>
+                  Retry connection
+                </Button>
+              }
+              footnote="Last synced 2 min ago · 3 changes queued"
+            />
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-3 gap-6">
+          {(
+            [
+              ["forbidden", "403", "Access denied", "This ride is private"],
+              ["server", "500", "Server error", "Something skidded out"],
+              ["maintenance", "503", "Maintenance", "Resurfacing in progress"],
+            ] as const
+          ).map(([kind, code, label, title]) => (
+            <Card key={kind} padded={false} className="overflow-hidden !p-0">
+              <div className="h-[320px]">
+                <ErrorState
+                  className="h-full"
+                  kind={kind}
+                  code={code}
+                  label={label}
+                  title={title}
+                  body="Variant preview — copy comes from the app."
+                />
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </Section>
   );
 }

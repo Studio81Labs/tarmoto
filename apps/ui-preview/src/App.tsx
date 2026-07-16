@@ -38,6 +38,7 @@ import {
   DensitySection,
   DoDontSection,
   LayoutsSection,
+  SystemStatesSection,
 } from "./sections/Patterns";
 
 export function App() {
@@ -80,10 +81,11 @@ export function App() {
         <MapModesSection />
         <MapOverlaysSection />
 
-        {/* Patterns · 24–26 */}
+        {/* Patterns · 24–27 */}
         <LayoutsSection />
         <DensitySection />
         <DoDontSection />
+        <SystemStatesSection />
 
         <DesignMapFooter />
       </main>
