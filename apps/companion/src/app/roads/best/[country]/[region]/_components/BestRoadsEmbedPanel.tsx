@@ -122,6 +122,8 @@ export function BestRoadsEmbedPanel({
         >
           {t("Embed code ")}
         </label>
+        {/* eslint-disable-next-line no-restricted-syntax -- read-only embed
+            code on the dark-slate embed page; fieldChrome is cream-only. */}
         <textarea
           id="best-roads-embed-code"
           aria-label={t("Embed code")}

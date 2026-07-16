@@ -1,6 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
-import { Poi } from '../../entities/poi.entity.js';
+import { Poi } from '@tarmoto/poi-db';
 
 const POI_UNAVAILABLE = 'POI store is temporarily unavailable';
 

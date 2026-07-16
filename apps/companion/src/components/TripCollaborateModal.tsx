@@ -11,7 +11,6 @@ import {
   Check,
   ChevronDown,
   Copy,
-  Link as LinkIcon,
   Power,
   Star,
   ThumbsDown,
@@ -34,7 +33,14 @@ import {
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
 import { tripSnapshotForSharing } from "@/lib/trip-snapshot";
-import { Button, Input, Select, Textarea, Toggle } from "@tarmoto/ui";
+import {
+  Button,
+  CopyField,
+  Input,
+  Select,
+  Textarea,
+  Toggle,
+} from "@tarmoto/ui";
 import { UserAvatar } from "@/components/UserAvatar";
 type Tab = "invite" | "people" | "suggestions" | "activity";
 // Progressive disclosure page sizes: both lists render newest-first and
@@ -494,16 +500,13 @@ function InviteTab({
             {t("Invite link ")}
           </span>
           <div className="flex gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[10px] border border-line-strong bg-paper px-[13px]">
-              <LinkIcon size={14} className="shrink-0 text-fg-mute" />
-              <input
-                readOnly
-                value={inviteUrl ?? ""}
-                aria-label={t("Shareable invite URL")}
-                className="w-full min-w-0 bg-transparent py-[11px] font-mono text-xs text-fg-dim outline-none"
-                onFocus={(event) => event.currentTarget.select()}
-              />
-            </div>
+            <CopyField
+              value={inviteUrl ?? ""}
+              ariaLabel={t("Shareable invite URL")}
+              copyLabel={t("Copy invite link")}
+              onCopied={onCopy}
+              className="min-w-0 flex-1"
+            />
             <Button
               variant="accent"
               size="md"

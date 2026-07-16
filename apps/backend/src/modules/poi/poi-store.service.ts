@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, IsNull } from 'typeorm';
-import { Poi } from '../../entities/poi.entity.js';
+import { Poi } from '@tarmoto/poi-db';
 import type { AccommodationKind, PoiKind } from '@tarmoto/shared';
 import type {
   AccommodationPoi,

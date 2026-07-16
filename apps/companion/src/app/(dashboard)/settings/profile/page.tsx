@@ -8,7 +8,15 @@ import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi, type UpdateProfileInput } from "@/lib/api";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
-import { Button, Card, Stamp } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  FieldLabel,
+  Input,
+  SegmentedControl,
+  Stamp,
+  Textarea,
+} from "@tarmoto/ui";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Copy, Smartphone, User } from "lucide-react";
@@ -319,6 +327,9 @@ export default function ProfilePage() {
               {joinedLabel ? ` · ${t("Joined")} ${joinedLabel}` : ""}
             </p>
           </div>
+          {/* eslint-disable-next-line no-restricted-syntax -- hidden file
+              picker (avatar upload); the ui library has no file control,
+              the visible affordance is a Button. */}
           <input
             ref={avatarFileInputRef}
             id="settings-avatar-file"
@@ -361,65 +372,52 @@ export default function ProfilePage() {
         )}
 
         <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="settings-display-name"
-              className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-            >
+          <div>
+            <FieldLabel htmlFor="settings-display-name">
               {t("Display name")}
-            </label>
-            <input
+            </FieldLabel>
+            <Input
               id="settings-display-name"
-              type="text"
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              onChange={setDisplayName}
+              tone="cream"
               maxLength={100}
-              className="rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] font-semibold text-ink transition focus:border-ink focus:outline-none"
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="settings-home-region"
-              className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-            >
+          <div>
+            <FieldLabel htmlFor="settings-home-region">
               {t("Home region")}
-            </label>
-            <input
+            </FieldLabel>
+            <Input
               id="settings-home-region"
-              type="text"
               value={homeRegion}
-              onChange={(e) => {
+              onChange={(next) => {
                 homeRegionDirtyRef.current = true;
-                setHomeRegion(e.target.value);
+                setHomeRegion(next);
               }}
+              tone="cream"
               maxLength={120}
               placeholder={t("e.g., Beskydy, Czech Republic")}
-              className="rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] font-semibold text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
             />
           </div>
         </div>
 
         <div>
-          <label
-            htmlFor="settings-bio"
-            className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-          >
-            {t("Bio")}
-          </label>
-          <textarea
+          <FieldLabel htmlFor="settings-bio">{t("Bio")}</FieldLabel>
+          <Textarea
             id="settings-bio"
             value={bio}
-            onChange={(e) => {
+            onChange={(next) => {
               bioDirtyRef.current = true;
-              setBio(e.target.value);
+              setBio(next);
             }}
+            tone="cream"
             maxLength={500}
             rows={3}
             placeholder={t(
               "A short blurb about your riding — shown on your public profile.",
             )}
-            className="w-full resize-none rounded-lg border border-line bg-cream px-3 py-2.5 text-[13px] text-ink placeholder:text-fg-mute transition focus:border-ink focus:outline-none"
           />
           <p className="mt-1 font-mono text-xs text-fg-mute tabular-nums">
             {bio.length}/500
@@ -557,50 +555,26 @@ export default function ProfilePage() {
             "Choose how distances and speeds are shown across the dashboard. ",
           )}
         </p>
-        {/*
-          Native radio inputs (visually hidden) carry browser-native keyboard
-          semantics — arrow keys move selection, only the checked input is in
-          the tab order — which a custom button-based radiogroup would need to
-          re-implement manually. The visible labels provide the styling.
-        */}
-        <div
-          role="radiogroup"
-          aria-label={t("Display units")}
-          className="inline-flex rounded-lg bg-paper p-1"
-        >
-          {(["metric", "imperial"] as UnitSystem[]).map((value) => (
-            <label
-              key={value}
-              className={`relative cursor-pointer rounded-md px-4 py-1.5 text-sm transition ${
-                unitSystem === value
-                  ? "bg-ink font-semibold text-cream"
-                  : "text-fg-dim hover:text-ink"
-              }`}
-            >
-              <input
-                type="radio"
-                name="unit-system"
-                value={value}
-                checked={unitSystem === value}
-                onChange={() => {
-                  setUnitSystem(value);
-                  void usersApi
-                    .updateMe({ preferences: { units: value } })
-                    .catch((error) =>
-                      console.error("Failed to save unit preference", error),
-                    );
-                }}
-                className="sr-only"
-                aria-label={
-                  value === "metric"
-                    ? t("Use metric units (kilometres)")
-                    : t("Use imperial units (miles)")
-                }
-              />
-              {value === "metric" ? t("Metric (km)") : t("Imperial (mi)")}
-            </label>
-          ))}
-        </div>
+        {/* SegmentedControl carries the WAI-ARIA radio-group keyboard
+            contract (arrow keys, roving tabindex) the old hand-rolled
+            sr-only radios provided. */}
+        <SegmentedControl
+          ariaLabel={t("Display units")}
+          value={unitSystem}
+          onChange={(next) => {
+            const units = next as UnitSystem;
+            setUnitSystem(units);
+            void usersApi
+              .updateMe({ preferences: { units } })
+              .catch((error) =>
+                console.error("Failed to save unit preference", error),
+              );
+          }}
+          options={[
+            { value: "metric", label: t("Metric (km)") },
+            { value: "imperial", label: t("Imperial (mi)") },
+          ]}
+        />
       </Card>
 
       <Card padded={false} className="mt-4 p-[22px]">

@@ -3,13 +3,16 @@ import { Section, SubStamp } from "../Section";
 import {
   Card,
   Combobox,
+  CopyField,
   DatePicker,
   DateTimePicker,
   FieldLabel,
   Input,
   NumberField,
   NumberGrid,
+  PasswordInput,
   RadioCardGroup,
+  SearchCombobox,
   SegmentedControl,
   Select,
   Slider,
@@ -38,6 +41,16 @@ export function ControlsSection() {
   const [inputError, setInputError] = useState("notanemail");
   const [textareaVal, setTextareaVal] = useState(
     "Challenging hairpins through the Jeseniky ridge — bring rain gear.",
+  );
+  const [password, setPassword] = useState("Str0ng-pass");
+  const [placeQuery, setPlaceQuery] = useState("");
+  const PLACES = [
+    { value: "brno", label: "Brno, South Moravia, Czechia" },
+    { value: "tatra", label: "Tatra Mountains, Slovakia" },
+    { value: "stelvio", label: "Stelvio Pass, Lombardy, Italy" },
+  ];
+  const placeMatches = PLACES.filter((p) =>
+    p.label.toLowerCase().includes(placeQuery.trim().toLowerCase()),
   );
   const [tripKm, setTripKm] = useState(240);
   const [distUnit, setDistUnit] = useState<"km" | "mi">("km");
@@ -362,6 +375,75 @@ export function ControlsSection() {
               {`hint: `}
               <CN>FieldHint</CN>
               {` tone="default" below the field`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* PasswordInput + CopyField */}
+        <Card padded className="!p-6">
+          <SubStamp>Password &amp; copy fields</SubStamp>
+          <FieldLabel htmlFor="pw-signup">Password</FieldLabel>
+          <PasswordInput
+            id="pw-signup"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            showStrength
+          />
+          <div className="mt-3">
+            <FieldLabel htmlFor="copy-invite">Invite link</FieldLabel>
+            <CopyField
+              id="copy-invite"
+              value="https://tarmoto.app/trips/join/9f2c81"
+              ariaLabel="Invite link"
+            />
+          </div>
+          <div className="mt-4">
+            <CodeBlock>
+              {`toggle: `}
+              <CN>aria-pressed</CN>
+              {` eye · type password↔text\n`}
+              {`strength: `}
+              <CN>passwordStrength()</CN>
+              {` 0–4 → quality ramp (UI hint only)\n`}
+              {`copy: `}
+              <CN>readOnly</CN>
+              {` mono · select-on-focus · clipboard + ✓ flash`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* SearchCombobox — async lookup shell */}
+        <Card padded className="!p-6">
+          <SubStamp>Search combobox (async lookup)</SubStamp>
+          <FieldLabel htmlFor="place-search">Passes near place</FieldLabel>
+          <SearchCombobox
+            id="place-search"
+            ariaLabel="Passes near place"
+            query={placeQuery}
+            onQueryChange={setPlaceQuery}
+            items={placeMatches}
+            onSelect={(value) =>
+              setPlaceQuery(PLACES.find((p) => p.value === value)?.label ?? "")
+            }
+            onClear={() => setPlaceQuery("")}
+            placeholder="Tatra Mountains…"
+            trailing={
+              <span className="rounded-md border border-line-strong px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-fg-dim">
+                25 km
+              </span>
+            }
+          />
+          <div className="mt-4">
+            <CodeBlock>
+              {`caller owns data: `}
+              <CN>items</CN>
+              {` from your fetch keyed on `}
+              <CN>query</CN>
+              {` · `}
+              <CN>loading</CN>
+              {` row\n`}
+              {`shell owns: chrome · ↑/↓/Enter listbox nav · trailing slot + clear`}
             </CodeBlock>
           </div>
         </Card>

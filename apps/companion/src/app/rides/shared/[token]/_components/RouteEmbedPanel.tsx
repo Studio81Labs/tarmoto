@@ -130,6 +130,8 @@ export function RouteEmbedPanel({
       <Stamp as="div" className="mb-2 mt-5">
         {t("Embed code")}
       </Stamp>
+      {/* eslint-disable-next-line no-restricted-syntax -- read-only embed
+          code on an ink surface; fieldChrome is cream-palette only. */}
       <textarea
         id="ride-embed-code"
         aria-label={t("Embed code")}

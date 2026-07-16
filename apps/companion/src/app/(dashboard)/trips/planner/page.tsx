@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   Button,
   Checkbox,
+  Input,
   NumberField,
   Select,
   Toggle,
@@ -3113,6 +3114,8 @@ export default function TripPlannerPage() {
                     ) : null}
                     {/* sr-only select keeps `getByLabelText("Road preference")`
                       + `fireEvent.change` resolvable. */}
+                    {/* eslint-disable-next-line no-restricted-syntax -- sr-only
+                        AT/test bridge; the visible control is the RadioCardGrid. */}
                     <select
                       id="trip-planner-road-preference"
                       value={toTripRoadPreference(roadPreference)}
@@ -3225,6 +3228,8 @@ export default function TripPlannerPage() {
                 <label htmlFor="trip-planner-days" className="sr-only">
                   {t("Number of days")}
                 </label>
+                {/* eslint-disable-next-line no-restricted-syntax -- sr-only
+                    AT/test bridge; drafting proposes a single day visually. */}
                 <input
                   id="trip-planner-days"
                   type="number"
@@ -3632,17 +3637,21 @@ export default function TripPlannerPage() {
         onCancel={() => setRenameOpen(false)}
         onConfirm={confirmRename}
       >
-        <input
-          type="text"
-          value={nameDraft}
-          autoFocus
-          aria-label={t("Trip name")}
-          onChange={(event) => setNameDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") confirmRename();
+        {/* Implicit form submission keeps the old Enter-to-save behaviour
+            without a bespoke onKeyDown on the shared Input. */}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            confirmRename();
           }}
-          className="w-full rounded-[10px] border border-line-strong bg-paper px-3 py-2 text-[13px] font-semibold text-ink outline-none focus:border-accent"
-        />
+        >
+          <Input
+            value={nameDraft}
+            autoFocus
+            ariaLabel={t("Trip name")}
+            onChange={setNameDraft}
+          />
+        </form>
       </ConfirmDialog>
       <ConfirmDialog
         open={pendingConfirm !== null}

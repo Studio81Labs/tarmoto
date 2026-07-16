@@ -125,6 +125,9 @@ export function GeocodeSearchField({
             <Search size={11} className="shrink-0 text-fg-mute" />
           )
         ) : null}
+        {/* eslint-disable-next-line no-restricted-syntax -- chromeless inline
+            search embedded in the planner spine; boxed field chrome doesn't
+            apply here. */}
         <input
           ref={inputRef}
           type="text"

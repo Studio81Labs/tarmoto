@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
-import { Button } from "@tarmoto/ui";
+import { Button, FieldLabel, Input } from "@tarmoto/ui";
 import {
   EMPTY_BIKE_FORM,
   type BikeFormErrors,
@@ -199,39 +199,20 @@ function Field({
   maxLength,
   autoFocus,
 }: FieldProps) {
-  const errorId = `${id}-error`;
   return (
     <div>
-      <label
-        htmlFor={id}
-        className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-      >
-        {label}
-      </label>
-      <input
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input
         id={id}
-        type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        inputMode={inputMode}
-        maxLength={maxLength}
-        autoFocus={autoFocus}
-        aria-invalid={!!error}
-        aria-describedby={error ? errorId : undefined}
-        className={`w-full px-4 py-2.5 rounded-lg bg-paper border text-ink text-sm placeholder:text-fg-mute focus:outline-none transition ${
-          error
-            ? "border-quality-q1/60 focus:border-quality-q1"
-            : "border-line focus:border-ink"
-        }`}
+        onChange={onChange}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        {...(inputMode !== undefined ? { inputMode } : {})}
+        {...(maxLength !== undefined ? { maxLength } : {})}
+        {...(autoFocus !== undefined ? { autoFocus } : {})}
+        error={!!error}
+        hint={error ?? helpText}
       />
-      {error ? (
-        <p id={errorId} className="mt-1 text-xs text-red-400">
-          {error}
-        </p>
-      ) : helpText ? (
-        <p className="mt-1 text-xs text-fg-dim">{helpText}</p>
-      ) : null}
     </div>
   );
 }

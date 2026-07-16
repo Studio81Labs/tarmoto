@@ -1828,6 +1828,8 @@ describe("TripPlannerMap", () => {
   it("does not clear the drawn region when Delete fires from a text field", () => {
     render(
       <div>
+        {/* eslint-disable-next-line no-restricted-syntax -- bare fixture
+            input standing in for "any focused text field". */}
         <input data-testid="trip-name" />
         <TripPlannerMap trip={trip()} month={7} />
       </div>,

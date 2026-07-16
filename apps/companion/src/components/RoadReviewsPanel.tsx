@@ -779,6 +779,9 @@ function ReviewEditor({
       {/* Comment */}
       <label className="mt-3 block">
         <FieldLabel className={tc.label}>{t("Comment")}</FieldLabel>
+        {/* eslint-disable-next-line no-restricted-syntax -- road-detail pages
+            are still the raw dark-slate theme (`tc.*` classes); cream-only
+            fieldChrome doesn't apply until the road pages move to v2. */}
         <textarea
           value={draft.comment}
           onChange={(event) => onCommentChange(event.target.value)}
@@ -797,6 +800,8 @@ function ReviewEditor({
       {/* Bike model */}
       <label className="mt-3 block">
         <FieldLabel className={tc.label}>{t("Bike model")}</FieldLabel>
+        {/* eslint-disable-next-line no-restricted-syntax -- dark-theme road
+            page, see the comment on the textarea above. */}
         <input
           type="text"
           value={draft.bikeModel}
@@ -812,6 +817,8 @@ function ReviewEditor({
       {/* Photos */}
       <div className="mt-3">
         <FieldLabel className={tc.label}>{t("Photos")}</FieldLabel>
+        {/* eslint-disable-next-line no-restricted-syntax -- hidden file picker
+            (review photos); the ui library has no file control. */}
         <input
           ref={fileInputRef}
           type="file"

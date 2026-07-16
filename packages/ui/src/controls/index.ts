@@ -8,7 +8,19 @@ export { Toggle, type ToggleProps } from "./Toggle";
 export { Checkbox, type CheckboxProps } from "./Checkbox";
 export { Select, type SelectProps, type SelectOption } from "./Select";
 export { Combobox, type ComboboxProps } from "./Combobox";
+export {
+  SearchCombobox,
+  type SearchComboboxProps,
+  type SearchComboboxItem,
+} from "./SearchCombobox";
 export { Input, type InputProps } from "./Input";
+export {
+  PasswordInput,
+  type PasswordInputProps,
+  passwordStrength,
+  type PasswordStrength,
+} from "./PasswordInput";
+export { CopyField, type CopyFieldProps } from "./CopyField";
 export { Textarea, type TextareaProps } from "./Textarea";
 export { NumberField, type NumberFieldProps } from "./NumberField";
 export {

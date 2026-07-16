@@ -10,8 +10,13 @@
     "dev": "tsc --watch",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@tarmoto/shared": "workspace:*",
+    "sax": "^1.6.0"
+  },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/sax": "^1.2.7",
     "typescript": "^5.9.2",
     "vitest": "^4.1.5"
   }
