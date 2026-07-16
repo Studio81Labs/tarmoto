@@ -764,29 +764,35 @@ describe('PoiImportAdminService', () => {
       expect(readFileSync(target, 'utf8')).toBe('hello');
     });
 
-    // #1011 review FIX A: `TARMOTO_INGEST_INTERNAL_URL` unset means the
-    // ingest integration isn't wired up at all, so there's no worker process
-    // that could possibly be racing this upload — the guard is skipped
-    // (proceed) WITHOUT ever calling ingest, preserving the documented
-    // degraded mode where local uploads still work without the integration.
-    it('proceeds with the upload (no ingest call) when TARMOTO_INGEST_INTERNAL_URL is unset', async () => {
+    // #1011 review FIX A, hardened per follow-up review: an earlier version
+    // skipped this guard (proceeded) when `TARMOTO_INGEST_INTERNAL_URL` was
+    // unset, reasoning "unconfigured" meant no ingest worker could possibly
+    // be racing the upload. That carve-out was unsafe — apps/ingest runs its
+    // own always-on worker and weekly/monthly refresh independently of
+    // whether THIS BACKEND has the URL configured (see the runbook), so an
+    // unset URL never proves no import is running, only that this backend
+    // can't check. This test inverts the prior "unset → proceeds" behavior
+    // (see git history for the version it replaces): unset must now ALSO
+    // fail closed with 503, exactly like any other unverifiable state.
+    it('fails closed with 503 (and writes nothing) when TARMOTO_INGEST_INTERNAL_URL is unset', async () => {
       const target = extractPath('osm', 'CZ');
       const svc = new PoiImportAdminService(
         fakeConfig({ TARMOTO_INGEST_INTERNAL_URL: undefined }),
         makeLockRedis() as never,
       );
       statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
-      statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
 
-      const result = await svc.storeExtract('osm', 'CZ', {
-        stream: Readable.from(Buffer.from('hello')),
-        size: 5,
-        originalName: 'cz.osm',
-      });
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
 
-      expect(result.present).toBe(true);
-      expect(readFileSync(target, 'utf8')).toBe('hello');
       expect(fetchMock).not.toHaveBeenCalled();
+      expect(leftoverPartFiles()).toEqual([]);
+      expect(existsSync(target)).toBe(false);
     });
 
     // #1011 review FIX A: once the integration IS configured, a network
