@@ -47,7 +47,9 @@ ENV NODE_ENV=production \
     PATH=/pnpm:$PATH
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 # osmium-tool (OSM CLI) + a pinned duckdb 1.4.0 (FSQ Iceberg pull, >=1.4.0 for the
-# REST catalog) + tini. curl/unzip removed after use; ca-certificates kept for TLS.
+# REST catalog) + tini. curl is kept (not purged) because the HEALTHCHECK below
+# needs it, same as apps/backend/Dockerfile; unzip removed after use; ca-certificates
+# kept for TLS.
 # Runtime user pinned uid 100 / gid 101 to MATCH the shared extract volume owner.
 # HOME points at the user's dir so DuckDB's ~/.duckdb extension cache is writable.
 RUN arch="$(dpkg --print-architecture)" \
@@ -59,7 +61,7 @@ RUN arch="$(dpkg --print-architecture)" \
  && unzip -o /tmp/duckdb.zip -d /usr/local/bin \
  && rm /tmp/duckdb.zip \
  && chmod +x /usr/local/bin/duckdb \
- && apt-get purge -y curl unzip \
+ && apt-get purge -y unzip \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/* \
  && duckdb --version \
