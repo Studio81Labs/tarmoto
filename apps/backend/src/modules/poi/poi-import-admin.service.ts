@@ -207,7 +207,17 @@ export class PoiImportAdminService {
       );
     }
     if (!res.ok) {
-      const detail = await res.text();
+      // Best-effort read of the error detail. The body stream itself can
+      // abort/stall (the deadline covers the whole exchange, not just the
+      // headers), but we already know the status — fall back to `statusText`
+      // so we still throw the CORRECT upstream status class below rather than
+      // letting a body-read rejection escape as a 500.
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {
+        detail = '';
+      }
       // Propagate most ingest statuses verbatim so the admin UI sees the
       // same error class: 400 (unknown/disabled pair), 409 (in-flight), 503
       // (store down). 401/403 are remapped to 502 instead: those mean
@@ -221,7 +231,21 @@ export class PoiImportAdminService {
         res.status === 401 || res.status === 403 ? 502 : res.status;
       throw new HttpException(detail || res.statusText, status);
     }
-    return (await res.json()) as T;
+    // #1011 review FIX (5th pass): the success-body read must live inside the
+    // error-translation path too. Headers can arrive (so `fetch` already
+    // resolved) and the body then stall until the `AbortSignal.timeout` fires,
+    // rejecting `res.json()` here — or the body can be non-JSON/malformed.
+    // Outside a try this escapes as an unhandled 500; translate it to the same
+    // 503 fail-closed result as an unreachable ingest.
+    try {
+      return (await res.json()) as T;
+    } catch (err) {
+      throw new ServiceUnavailableException(
+        `ingest internal API response unreadable: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   /** Proxy → GET /internal/poi/regions (the full coverage table). */

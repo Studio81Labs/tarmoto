@@ -278,6 +278,26 @@ describe('PoiImportAdminService', () => {
         status: 503,
       });
     });
+
+    it('translates a response-body read failure (headers received, then the body stalls/aborts) to 503, not 500', async () => {
+      // Headers arrive so `fetch` RESOLVES (ok:true), then the body read
+      // rejects — e.g. the AbortSignal.timeout fires mid-stream, or the body
+      // is non-JSON. That happens after `ingestFetch`'s fetch-level catch, so
+      // without wrapping the success-body read it would escape as a 500. It
+      // must collapse to the same 503 as any other unverifiable ingest reply.
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.reject(
+            new DOMException('The operation was aborted', 'AbortError'),
+          ),
+      } as never);
+
+      await expect(svc().listRegionStatus()).rejects.toMatchObject({
+        status: 503,
+      });
+    });
   });
 
   describe('storeExtract', () => {
