@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthSync } from "@/components/AuthSync";
 import { RealtimeProvider } from "@/components/RealtimeProvider";
 import { PreferencesSync } from "@/components/PreferencesSync";
+import { FormatPrefsSync } from "@/components/FormatPrefsSync";
 
 export function AuthenticatedAppProviders({
   children,
@@ -42,6 +43,7 @@ export function AuthenticatedAppProviders({
         <AuthSync />
         <RealtimeProvider />
         <PreferencesSync />
+        <FormatPrefsSync />
         {children}
       </QueryClientProvider>
     </SessionProvider>

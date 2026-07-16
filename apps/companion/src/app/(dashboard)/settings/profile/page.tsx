@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi, type UpdateProfileInput } from "@/lib/api";
+import { persistUnitPreference } from "@/lib/unit-preference";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
 import {
@@ -561,7 +562,13 @@ export default function ProfilePage() {
         <SegmentedControl
           ariaLabel={t("Display units")}
           value={unitSystem}
-          onChange={(next) => setUnitSystem(next as UnitSystem)}
+          onChange={(next) => {
+            const units = next as UnitSystem;
+            setUnitSystem(units);
+            // Serialized latest-wins persistence — rapid toggles must not
+            // race each other into a stale-last account write.
+            persistUnitPreference(units);
+          }}
           options={[
             { value: "metric", label: t("Metric (km)") },
             { value: "imperial", label: t("Imperial (mi)") },

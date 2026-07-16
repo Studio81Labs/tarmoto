@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
 import { readLocale } from "@/i18n/server";
+import { readFormatPrefs } from "@/format/server";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -34,13 +35,16 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const locale = await readLocale();
+  const formatPrefs = await readFormatPrefs();
   return (
     <html
       lang={locale}
       className={`${spaceGrotesk.variable} ${jetbrains.variable} ${fraunces.variable}`}
     >
       <body className="bg-cream text-ink font-sans antialiased">
-        <AppProviders locale={locale}>{children}</AppProviders>
+        <AppProviders locale={locale} formatPrefs={formatPrefs}>
+          {children}
+        </AppProviders>
       </body>
     </html>
   );

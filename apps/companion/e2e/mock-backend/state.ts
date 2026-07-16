@@ -16,6 +16,13 @@ export interface MockUser {
   avatar_url: string | null;
   bio: string | null;
   home_region: string | null;
+  /**
+   * Display/account preferences (`UpdateProfileDto.preferences` on the
+   * real backend) — units, format_locale, timezone, etc. Defaults to `{}`
+   * on `createUser` so FormatPrefsSync / PreferencesSync's PATCHes have
+   * somewhere real to land instead of vanishing into a stubbed response.
+   */
+  preferences: Record<string, unknown>;
   created_at: string;
 }
 
@@ -416,6 +423,7 @@ export class MockState {
       avatar_url: null,
       bio: null,
       home_region: null,
+      preferences: {},
       created_at: new Date().toISOString(),
     };
     this.users.set(id, user);

@@ -3819,6 +3819,10 @@ export interface components {
         UserPreferencesResponse: {
             /** @enum {string} */
             units?: "metric" | "imperial";
+            /** @description BCP-47 regional-format locale (e.g. cs-CZ) driving number/date display. Auto-captured from the rider's browser; user-editable later. */
+            format_locale?: string;
+            /** @description IANA display timezone (e.g. Europe/Prague). Auto-synced to mirror the rider's current device (companion FormatPrefsSync). */
+            timezone?: string;
             daily_km?: number;
             min_quality?: number;
             road_types?: string[];
@@ -4602,7 +4606,17 @@ export interface components {
             min_quality: "any" | "fair_or_better" | "good_or_better" | "excellent_only";
         };
         UserPreferencesDto: {
-            units?: string;
+            /** @enum {string} */
+            units?: "metric" | "imperial";
+            /**
+             * @description BCP-47 regional-format tag (e.g. "cs-CZ") driving number/date display.
+             *     Canonicalized on write ("CS-cz" → "cs-CZ"); when canonicalization fails
+             *     the raw value is kept so @IsFormatLocale rejects it with a 400 instead
+             *     of a silent null landing in the JSONB.
+             */
+            format_locale?: string;
+            /** @description IANA display timezone (e.g. "Europe/Prague"); mirrors the rider's device. */
+            timezone?: string;
             daily_km?: number;
             min_quality?: number;
             road_types?: string[];

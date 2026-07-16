@@ -25,4 +25,5 @@ export * from "./units";
 export * from "./regions";
 export * from "./feature-flags";
 export * from "./i18n";
+export * from "./format";
 export * from "./email-blocks";
