@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { canonicalizeFormatLocale, isValidTimeZone } from "@tarmoto/shared";
 import { getStoredUnitSystem, usePreferencesStore } from "@/stores/preferences";
@@ -28,13 +28,20 @@ export function PreferencesSync() {
   const { status } = useSession();
   const hydrate = usePreferencesStore((s) => s.hydrate);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+  // Guards the reconciliation effect below against React strict-mode
+  // double-invoke and repeat "authenticated" passes (session refresh
+  // re-renders) firing a second /me GET+PATCH cycle. Must NOT latch on a
+  // pre-auth pass — only set once the effect actually runs the
+  // reconciliation, so an eventual authenticated pass still fires.
+  const ran = useRef(false);
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
 
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (status !== "authenticated" || ran.current) return;
+    ran.current = true;
     let cancelled = false;
     void (async () => {
       try {

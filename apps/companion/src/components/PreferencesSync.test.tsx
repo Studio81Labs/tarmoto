@@ -120,4 +120,25 @@ describe("PreferencesSync", () => {
     );
     expect(getMe).not.toHaveBeenCalled();
   });
+
+  it("does not re-run the reconciliation on a later authenticated status flip", async () => {
+    // Regression: strict-mode double-invoke and repeat "authenticated"
+    // passes (e.g. a background session-refresh re-render) each re-ran
+    // the full /me GET+PATCH cycle. Simulate a status flip away from and
+    // back to "authenticated" on an already-mounted instance and confirm
+    // the reconciliation only ever fires once.
+    getMe.mockResolvedValueOnce(meWithPreferences(convergedPreferences()));
+    window.localStorage.setItem("tarmoto:preferences:unit-system", "metric");
+
+    const { rerender } = render(<PreferencesSync />);
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
+
+    sessionStatus = "loading";
+    rerender(<PreferencesSync />);
+    sessionStatus = "authenticated";
+    rerender(<PreferencesSync />);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getMe).toHaveBeenCalledTimes(1);
+  });
 });
