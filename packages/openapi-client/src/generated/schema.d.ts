@@ -878,146 +878,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/poi/accommodations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find accommodations near a point (US-10, US-36)
-         * @description Returns nearby hotels, guest houses, camp sites, etc. sourced from the configured POI provider. Used by the mobile trip planner to suggest overnight stops near each day-end waypoint. Optional `kinds` narrows by tourism type (e.g. hotels only) and optional `min_stars` narrows by provider-reported star rating.
-         */
-        get: operations["PoiController_findAccommodations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/poi/nearby": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find along-route POIs near a point (US-10)
-         * @description Returns nearby restaurants, viewpoints, and cafés sourced from the configured POI provider. Used by the mobile trip planner to suggest pit stops along each day of a trip. Omit `kinds` to request all supported kinds in one call.
-         */
-        get: operations["PoiController_findPointsOfInterest"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/poi/in-bbox": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List stored POIs within a bounding box (#849)
-         * @description Reads the offline `pois` store (populated by the weekly import) rather than hitting Overpass live — this is the read path a pannable POI map layer and the companion category bar use. Returns an empty list for a region that has not been imported yet.
-         */
-        get: operations["PoiController_findInBbox"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/poi/in-corridor": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Stored POIs within a buffer of a route polyline (#849)
-         * @description The offline-store corridor query behind the companion STOPS tab — the store counterpart to POST /poi/along-route. Each POI carries its distance along the route and its shortest distance to the route line. Returns an empty list for a region that has not been imported yet.
-         */
-        post: operations["PoiController_findInCorridor"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/poi/along-route": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Find POIs within a buffer of a route polyline (US-36)
-         * @description Given a route polyline, returns POIs (fuel stations, restaurants, viewpoints, cafés) within `buffer_km` of any route vertex. Each POI is annotated with its distance along the route (in km from start) and its shortest distance to the route, so clients can order them on a day timeline and judge reachability. Used by the mobile fuel-range warning to surface live fuel stations inside legs that exceed the rider’s declared range.
-         */
-        post: operations["PoiController_findPointsOfInterestAlongRoute"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/poi/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * POI store readiness (ADR 0007)
-         * @description Reports whether the separate POI database is connected. Always 200 — a "down" POI DB is a degraded, non-fatal state; the store read endpoints return 503 while it is down.
-         */
-        get: operations["PoiController_health"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/poi/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Fetch a single stored POI by id (#849)
-         * @description Returns one row from the offline `pois` store — the map popup / detail view fetch. 400 when `id` is not a valid UUID; 404 when it is unknown.
-         */
-        get: operations["PoiController_findById"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/users/me": {
         parameters: {
             query?: never;
@@ -3044,6 +2904,146 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/poi/accommodations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find accommodations near a point (US-10, US-36)
+         * @description Returns nearby hotels, guest houses, camp sites, etc. sourced from the configured POI provider. Used by the mobile trip planner to suggest overnight stops near each day-end waypoint. Optional `kinds` narrows by tourism type (e.g. hotels only) and optional `min_stars` narrows by provider-reported star rating.
+         */
+        get: operations["PoiController_findAccommodations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/nearby": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find along-route POIs near a point (US-10)
+         * @description Returns nearby restaurants, viewpoints, and cafés sourced from the configured POI provider. Used by the mobile trip planner to suggest pit stops along each day of a trip. Omit `kinds` to request all supported kinds in one call.
+         */
+        get: operations["PoiController_findPointsOfInterest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/in-bbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List stored POIs within a bounding box (#849)
+         * @description Reads the offline `pois` store (populated by the weekly import) rather than hitting Overpass live — this is the read path a pannable POI map layer and the companion category bar use. Returns an empty list for a region that has not been imported yet.
+         */
+        get: operations["PoiController_findInBbox"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/in-corridor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stored POIs within a buffer of a route polyline (#849)
+         * @description The offline-store corridor query behind the companion STOPS tab — the store counterpart to POST /poi/along-route. Each POI carries its distance along the route and its shortest distance to the route line. Returns an empty list for a region that has not been imported yet.
+         */
+        post: operations["PoiController_findInCorridor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/along-route": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find POIs within a buffer of a route polyline (US-36)
+         * @description Given a route polyline, returns POIs (fuel stations, restaurants, viewpoints, cafés) within `buffer_km` of any route vertex. Each POI is annotated with its distance along the route (in km from start) and its shortest distance to the route, so clients can order them on a day timeline and judge reachability. Used by the mobile fuel-range warning to surface live fuel stations inside legs that exceed the rider’s declared range.
+         */
+        post: operations["PoiController_findPointsOfInterestAlongRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * POI store readiness (ADR 0007)
+         * @description Reports whether the separate POI database is connected. Always 200 — a "down" POI DB is a degraded, non-fatal state; the store read endpoints return 503 while it is down.
+         */
+        get: operations["PoiController_health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/poi/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch a single stored POI by id (#849)
+         * @description Returns one row from the offline `pois` store — the map popup / detail view fetch. 400 when `id` is not a valid UUID; 404 when it is unknown.
+         */
+        get: operations["PoiController_findById"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/geocode": {
         parameters: {
             query?: never;
@@ -4557,223 +4557,6 @@ export interface components {
             cross_device_agreement: components["schemas"]["ModelEvalAgreementSnapshotDto"];
             cross_bike_agreement: components["schemas"]["ModelEvalAgreementSnapshotDto"];
         };
-        AccommodationDto: {
-            external_id: string;
-            name: string | null;
-            /** @enum {string} */
-            kind: "hotel" | "motel" | "hostel" | "guest_house" | "apartment" | "chalet" | "camp_site";
-            lat: number;
-            lng: number;
-            /** @description Distance from the anchor point, km. */
-            distance_km: number;
-            website: string | null;
-            phone: string | null;
-            /** @description Hotel star rating 1..5 when the provider reports one. */
-            stars: number | null;
-            /** @description Raw OSM `opening_hours` (reception hours) when tagged. */
-            opening_hours: string | null;
-            /** @description Street line (street + number). */
-            address_street: string | null;
-            address_city: string | null;
-            address_postcode: string | null;
-            /** @description ISO 3166-1 alpha-2 country code. */
-            address_country: string | null;
-            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
-            osm_url: string | null;
-            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
-            maps_url: string;
-        };
-        AccommodationListDto: {
-            accommodations: components["schemas"]["AccommodationDto"][];
-            /** @description Radius actually used for the lookup, km. */
-            radius_km: number;
-            /** @description Kinds that were actually queried for this response. */
-            kinds: ("hotel" | "motel" | "hostel" | "guest_house" | "apartment" | "chalet" | "camp_site")[];
-        };
-        PoiDto: {
-            external_id: string;
-            name: string | null;
-            /** @enum {string} */
-            kind: "restaurant" | "viewpoint" | "cafe" | "fuel_station";
-            lat: number;
-            lng: number;
-            /** @description Distance from the anchor point, km. */
-            distance_km: number;
-            website: string | null;
-            phone: string | null;
-            /** @description Cuisine or description hint. For restaurants/cafés this is the `cuisine` OSM tag; for viewpoints it is the `description` tag; for fuel stations it is the `brand` tag (falling back to the `operator` tag). */
-            hint: string | null;
-            /** @description Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
-            opening_hours: string | null;
-            /** @description Street line (street + number). */
-            address_street: string | null;
-            address_city: string | null;
-            address_postcode: string | null;
-            /** @description ISO 3166-1 alpha-2 country code. */
-            address_country: string | null;
-            /** @description Normalized cuisine for restaurants / cafés. */
-            cuisine: string | null;
-            /** @description Brand, falling back to operator (fuel chains, franchises). */
-            brand: string | null;
-            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
-            osm_url: string | null;
-            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
-            maps_url: string;
-        };
-        PoiListDto: {
-            pois: components["schemas"]["PoiDto"][];
-            /** @description Radius actually used for the lookup, km. */
-            radius_km: number;
-            /** @description Kinds that were actually queried for this response. */
-            kinds: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
-        };
-        StoredPoiDto: {
-            id: string;
-            /** @description Provider layer, e.g. `osm`. */
-            source: string;
-            external_id: string;
-            name: string | null;
-            /** @description OSM import kind (superset of the live enum). */
-            kind: string;
-            lat: number;
-            lng: number;
-            website: string | null;
-            phone: string | null;
-            opening_hours: string | null;
-            address_street: string | null;
-            address_city: string | null;
-            address_postcode: string | null;
-            address_country: string | null;
-            cuisine: string | null;
-            brand: string | null;
-            stars: number | null;
-            /** @description OSM detail / attribution URL. */
-            osm_url: string | null;
-            /** @description Google Maps deep link (photos / reviews); no API key or call. */
-            maps_url: string;
-            /** @description When the import last wrote this row (ISO 8601). */
-            last_imported_at: string;
-        };
-        StoredPoiListDto: {
-            pois: components["schemas"]["StoredPoiDto"][];
-            /** @description Number of rows returned. */
-            count: number;
-        };
-        CorridorRoutePointDto: {
-            lat: number;
-            lng: number;
-        };
-        CorridorBodyDto: {
-            route: components["schemas"]["CorridorRoutePointDto"][];
-            /**
-             * @description Corridor half-width in km (default 2, capped at 20).
-             * @default 2
-             */
-            buffer_km: number;
-            /** @description Store kinds to include (free-form OSM import superset). Omit for all. */
-            kinds?: string[];
-        };
-        StoredCorridorPoiDto: {
-            id: string;
-            /** @description Provider layer, e.g. `osm`. */
-            source: string;
-            external_id: string;
-            name: string | null;
-            /** @description OSM import kind (superset of the live enum). */
-            kind: string;
-            lat: number;
-            lng: number;
-            website: string | null;
-            phone: string | null;
-            opening_hours: string | null;
-            address_street: string | null;
-            address_city: string | null;
-            address_postcode: string | null;
-            address_country: string | null;
-            cuisine: string | null;
-            brand: string | null;
-            stars: number | null;
-            /** @description OSM detail / attribution URL. */
-            osm_url: string | null;
-            /** @description Google Maps deep link (photos / reviews); no API key or call. */
-            maps_url: string;
-            /** @description When the import last wrote this row (ISO 8601). */
-            last_imported_at: string;
-            /** @description Distance from the route start to the POI, km. */
-            distance_along_route_km: number;
-            /** @description Shortest distance from the POI to the route line, km. */
-            distance_from_route_km: number;
-        };
-        StoredCorridorListDto: {
-            pois: components["schemas"]["StoredCorridorPoiDto"][];
-            /** @description Buffer actually used for the lookup, km. */
-            buffer_km: number;
-            /** @description Number of rows returned. */
-            count: number;
-        };
-        RoutePointDto: {
-            lat: number;
-            lng: number;
-        };
-        AlongRoutePoiQueryDto: {
-            route: components["schemas"]["RoutePointDto"][];
-            /**
-             * @description Buffer in km around the route to consider a POI "on it". Defaults to 2 km, capped at 20 km. Values below the provider precision (0.5 km) silently fall back to the default rather than failing — matches `radius_km` on the point endpoints, which lenient-handles 0 / negative the same way.
-             * @default 2
-             */
-            buffer_km: number;
-            /** @description Kinds to include. Omit to return all kinds. Accepts either a JSON array (`["fuel_station", "cafe"]`) or a comma-separated string (`"fuel_station,cafe"`). */
-            kinds?: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
-        };
-        AlongRoutePoiDto: {
-            external_id: string;
-            name: string | null;
-            /** @enum {string} */
-            kind: "restaurant" | "viewpoint" | "cafe" | "fuel_station";
-            lat: number;
-            lng: number;
-            /** @description Distance from the route start to the POI (measured along the polyline up to the point where the POI projects onto its nearest segment), km. */
-            distance_along_route_km: number;
-            /** @description Perpendicular distance between the POI and its nearest point on the route polyline, km. */
-            distance_from_route_km: number;
-            website: string | null;
-            phone: string | null;
-            /** @description Cuisine or description hint. For restaurants/cafés this is the `cuisine` OSM tag; for viewpoints it is the `description` tag; for fuel stations it is the `brand` tag (falling back to the `operator` tag). */
-            hint: string | null;
-            /** @description Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
-            opening_hours: string | null;
-            /** @description Street line (street + number). */
-            address_street: string | null;
-            address_city: string | null;
-            address_postcode: string | null;
-            /** @description ISO 3166-1 alpha-2 country code. */
-            address_country: string | null;
-            /** @description Normalized cuisine for restaurants / cafés. */
-            cuisine: string | null;
-            /** @description Brand, falling back to operator (fuel chains, franchises). */
-            brand: string | null;
-            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
-            osm_url: string | null;
-            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
-            maps_url: string;
-        };
-        AlongRoutePoiListDto: {
-            pois: components["schemas"]["AlongRoutePoiDto"][];
-            /** @description Buffer actually used for the lookup, km. */
-            buffer_km: number;
-            /** @description Kinds that were actually queried for this response. */
-            kinds: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
-            /** @description Total length of the supplied route polyline, km. */
-            route_length_km: number;
-        };
-        PoiHealthDto: {
-            /**
-             * @description Whether the separate POI database is currently reachable.
-             * @example up
-             * @enum {string}
-             */
-            poiDb: "up" | "down";
-        };
         UserRoutePrefsDto: {
             /** @enum {string} */
             road_preference: "direct" | "balanced" | "scenic_balance" | "maximum_twisty" | "efficient_loop";
@@ -6282,6 +6065,10 @@ export interface components {
             notes: string | null;
             last_updated: string;
         };
+        RoutePointDto: {
+            lat: number;
+            lng: number;
+        };
         CheckRouteDto: {
             route: components["schemas"]["RoutePointDto"][];
             /**
@@ -6298,6 +6085,219 @@ export interface components {
             closed_count: number;
             /** @description Count of passes whose status is unknown. */
             unknown_count: number;
+        };
+        AccommodationDto: {
+            external_id: string;
+            name: string | null;
+            /** @enum {string} */
+            kind: "hotel" | "motel" | "hostel" | "guest_house" | "apartment" | "chalet" | "camp_site";
+            lat: number;
+            lng: number;
+            /** @description Distance from the anchor point, km. */
+            distance_km: number;
+            website: string | null;
+            phone: string | null;
+            /** @description Hotel star rating 1..5 when the provider reports one. */
+            stars: number | null;
+            /** @description Raw OSM `opening_hours` (reception hours) when tagged. */
+            opening_hours: string | null;
+            /** @description Street line (street + number). */
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            /** @description ISO 3166-1 alpha-2 country code. */
+            address_country: string | null;
+            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
+            osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
+            maps_url: string;
+        };
+        AccommodationListDto: {
+            accommodations: components["schemas"]["AccommodationDto"][];
+            /** @description Radius actually used for the lookup, km. */
+            radius_km: number;
+            /** @description Kinds that were actually queried for this response. */
+            kinds: ("hotel" | "motel" | "hostel" | "guest_house" | "apartment" | "chalet" | "camp_site")[];
+        };
+        PoiDto: {
+            external_id: string;
+            name: string | null;
+            /** @enum {string} */
+            kind: "restaurant" | "viewpoint" | "cafe" | "fuel_station";
+            lat: number;
+            lng: number;
+            /** @description Distance from the anchor point, km. */
+            distance_km: number;
+            website: string | null;
+            phone: string | null;
+            /** @description Cuisine or description hint. For restaurants/cafés this is the `cuisine` OSM tag; for viewpoints it is the `description` tag; for fuel stations it is the `brand` tag (falling back to the `operator` tag). */
+            hint: string | null;
+            /** @description Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
+            opening_hours: string | null;
+            /** @description Street line (street + number). */
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            /** @description ISO 3166-1 alpha-2 country code. */
+            address_country: string | null;
+            /** @description Normalized cuisine for restaurants / cafés. */
+            cuisine: string | null;
+            /** @description Brand, falling back to operator (fuel chains, franchises). */
+            brand: string | null;
+            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
+            osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
+            maps_url: string;
+        };
+        PoiListDto: {
+            pois: components["schemas"]["PoiDto"][];
+            /** @description Radius actually used for the lookup, km. */
+            radius_km: number;
+            /** @description Kinds that were actually queried for this response. */
+            kinds: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
+        };
+        StoredPoiDto: {
+            id: string;
+            /** @description Provider layer, e.g. `osm`. */
+            source: string;
+            external_id: string;
+            name: string | null;
+            /** @description OSM import kind (superset of the live enum). */
+            kind: string;
+            lat: number;
+            lng: number;
+            website: string | null;
+            phone: string | null;
+            opening_hours: string | null;
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            address_country: string | null;
+            cuisine: string | null;
+            brand: string | null;
+            stars: number | null;
+            /** @description OSM detail / attribution URL. */
+            osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews); no API key or call. */
+            maps_url: string;
+            /** @description When the import last wrote this row (ISO 8601). */
+            last_imported_at: string;
+        };
+        StoredPoiListDto: {
+            pois: components["schemas"]["StoredPoiDto"][];
+            /** @description Number of rows returned. */
+            count: number;
+        };
+        CorridorRoutePointDto: {
+            lat: number;
+            lng: number;
+        };
+        CorridorBodyDto: {
+            route: components["schemas"]["CorridorRoutePointDto"][];
+            /**
+             * @description Corridor half-width in km (default 2, capped at 20).
+             * @default 2
+             */
+            buffer_km: number;
+            /** @description Store kinds to include (free-form OSM import superset). Omit for all. */
+            kinds?: string[];
+        };
+        StoredCorridorPoiDto: {
+            id: string;
+            /** @description Provider layer, e.g. `osm`. */
+            source: string;
+            external_id: string;
+            name: string | null;
+            /** @description OSM import kind (superset of the live enum). */
+            kind: string;
+            lat: number;
+            lng: number;
+            website: string | null;
+            phone: string | null;
+            opening_hours: string | null;
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            address_country: string | null;
+            cuisine: string | null;
+            brand: string | null;
+            stars: number | null;
+            /** @description OSM detail / attribution URL. */
+            osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews); no API key or call. */
+            maps_url: string;
+            /** @description When the import last wrote this row (ISO 8601). */
+            last_imported_at: string;
+            /** @description Distance from the route start to the POI, km. */
+            distance_along_route_km: number;
+            /** @description Shortest distance from the POI to the route line, km. */
+            distance_from_route_km: number;
+        };
+        StoredCorridorListDto: {
+            pois: components["schemas"]["StoredCorridorPoiDto"][];
+            /** @description Buffer actually used for the lookup, km. */
+            buffer_km: number;
+            /** @description Number of rows returned. */
+            count: number;
+        };
+        AlongRoutePoiQueryDto: {
+            route: components["schemas"]["RoutePointDto"][];
+            /**
+             * @description Buffer in km around the route to consider a POI "on it". Defaults to 2 km, capped at 20 km. Values below the provider precision (0.5 km) silently fall back to the default rather than failing — matches `radius_km` on the point endpoints, which lenient-handles 0 / negative the same way.
+             * @default 2
+             */
+            buffer_km: number;
+            /** @description Kinds to include. Omit to return all kinds. Accepts either a JSON array (`["fuel_station", "cafe"]`) or a comma-separated string (`"fuel_station,cafe"`). */
+            kinds?: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
+        };
+        AlongRoutePoiDto: {
+            external_id: string;
+            name: string | null;
+            /** @enum {string} */
+            kind: "restaurant" | "viewpoint" | "cafe" | "fuel_station";
+            lat: number;
+            lng: number;
+            /** @description Distance from the route start to the POI (measured along the polyline up to the point where the POI projects onto its nearest segment), km. */
+            distance_along_route_km: number;
+            /** @description Perpendicular distance between the POI and its nearest point on the route polyline, km. */
+            distance_from_route_km: number;
+            website: string | null;
+            phone: string | null;
+            /** @description Cuisine or description hint. For restaurants/cafés this is the `cuisine` OSM tag; for viewpoints it is the `description` tag; for fuel stations it is the `brand` tag (falling back to the `operator` tag). */
+            hint: string | null;
+            /** @description Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
+            opening_hours: string | null;
+            /** @description Street line (street + number). */
+            address_street: string | null;
+            address_city: string | null;
+            address_postcode: string | null;
+            /** @description ISO 3166-1 alpha-2 country code. */
+            address_country: string | null;
+            /** @description Normalized cuisine for restaurants / cafés. */
+            cuisine: string | null;
+            /** @description Brand, falling back to operator (fuel chains, franchises). */
+            brand: string | null;
+            /** @description Canonical OpenStreetMap detail URL — the "view source" link and ODbL attribution target. */
+            osm_url: string | null;
+            /** @description Google Maps deep link (photos / reviews), built from name + coords — no API key or call. */
+            maps_url: string;
+        };
+        AlongRoutePoiListDto: {
+            pois: components["schemas"]["AlongRoutePoiDto"][];
+            /** @description Buffer actually used for the lookup, km. */
+            buffer_km: number;
+            /** @description Kinds that were actually queried for this response. */
+            kinds: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
+            /** @description Total length of the supplied route polyline, km. */
+            route_length_km: number;
+        };
+        PoiHealthDto: {
+            /**
+             * @description Whether the separate POI database is currently reachable.
+             * @example up
+             * @enum {string}
+             */
+            poiDb: "up" | "down";
         };
         GeocodeResultDto: {
             /** @description Human-readable place label, suitable for a dropdown row. */
@@ -6725,21 +6725,6 @@ export type SchemaRouteWeatherResponseDto = components['schemas']['RouteWeatherR
 export type SchemaModelEvalAgreementSnapshotDto = components['schemas']['ModelEvalAgreementSnapshotDto'];
 export type SchemaModelEvalVersionMetricsDto = components['schemas']['ModelEvalVersionMetricsDto'];
 export type SchemaModelEvalMetricsResponseDto = components['schemas']['ModelEvalMetricsResponseDto'];
-export type SchemaAccommodationDto = components['schemas']['AccommodationDto'];
-export type SchemaAccommodationListDto = components['schemas']['AccommodationListDto'];
-export type SchemaPoiDto = components['schemas']['PoiDto'];
-export type SchemaPoiListDto = components['schemas']['PoiListDto'];
-export type SchemaStoredPoiDto = components['schemas']['StoredPoiDto'];
-export type SchemaStoredPoiListDto = components['schemas']['StoredPoiListDto'];
-export type SchemaCorridorRoutePointDto = components['schemas']['CorridorRoutePointDto'];
-export type SchemaCorridorBodyDto = components['schemas']['CorridorBodyDto'];
-export type SchemaStoredCorridorPoiDto = components['schemas']['StoredCorridorPoiDto'];
-export type SchemaStoredCorridorListDto = components['schemas']['StoredCorridorListDto'];
-export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
-export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
-export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
-export type SchemaAlongRoutePoiListDto = components['schemas']['AlongRoutePoiListDto'];
-export type SchemaPoiHealthDto = components['schemas']['PoiHealthDto'];
 export type SchemaUserRoutePrefsDto = components['schemas']['UserRoutePrefsDto'];
 export type SchemaUserPreferencesDto = components['schemas']['UserPreferencesDto'];
 export type SchemaUpdateProfileDto = components['schemas']['UpdateProfileDto'];
@@ -6885,8 +6870,23 @@ export type SchemaRiddenSegmentIdsDto = components['schemas']['RiddenSegmentIdsD
 export type SchemaRiddenSegmentDto = components['schemas']['RiddenSegmentDto'];
 export type SchemaRiddenSegmentsListDto = components['schemas']['RiddenSegmentsListDto'];
 export type SchemaMountainPassDto = components['schemas']['MountainPassDto'];
+export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
 export type SchemaCheckRouteDto = components['schemas']['CheckRouteDto'];
 export type SchemaCheckRouteResponseDto = components['schemas']['CheckRouteResponseDto'];
+export type SchemaAccommodationDto = components['schemas']['AccommodationDto'];
+export type SchemaAccommodationListDto = components['schemas']['AccommodationListDto'];
+export type SchemaPoiDto = components['schemas']['PoiDto'];
+export type SchemaPoiListDto = components['schemas']['PoiListDto'];
+export type SchemaStoredPoiDto = components['schemas']['StoredPoiDto'];
+export type SchemaStoredPoiListDto = components['schemas']['StoredPoiListDto'];
+export type SchemaCorridorRoutePointDto = components['schemas']['CorridorRoutePointDto'];
+export type SchemaCorridorBodyDto = components['schemas']['CorridorBodyDto'];
+export type SchemaStoredCorridorPoiDto = components['schemas']['StoredCorridorPoiDto'];
+export type SchemaStoredCorridorListDto = components['schemas']['StoredCorridorListDto'];
+export type SchemaAlongRoutePoiQueryDto = components['schemas']['AlongRoutePoiQueryDto'];
+export type SchemaAlongRoutePoiDto = components['schemas']['AlongRoutePoiDto'];
+export type SchemaAlongRoutePoiListDto = components['schemas']['AlongRoutePoiListDto'];
+export type SchemaPoiHealthDto = components['schemas']['PoiHealthDto'];
 export type SchemaGeocodeResultDto = components['schemas']['GeocodeResultDto'];
 export type SchemaGeocodeListDto = components['schemas']['GeocodeListDto'];
 export type SchemaReverseGeocodeResultDto = components['schemas']['ReverseGeocodeResultDto'];
@@ -8285,174 +8285,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    PoiController_findAccommodations: {
-        parameters: {
-            query: {
-                lat: number;
-                lng: number;
-                /** @description Search radius in km (defaulted to 5, capped at 25 by the service). */
-                radius_km?: number;
-                /** @description Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`). */
-                kinds?: ("hotel" | "motel" | "hostel" | "guest_house" | "apartment" | "chalet" | "camp_site")[];
-                /** @description Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes "no rating" in with ratings the rider explicitly asked for. */
-                min_stars?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccommodationListDto"];
-                };
-            };
-        };
-    };
-    PoiController_findPointsOfInterest: {
-        parameters: {
-            query: {
-                lat: number;
-                lng: number;
-                /** @description Search radius in km (defaulted to 5, capped at 25 by the service). */
-                radius_km?: number;
-                /** @description Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`). */
-                kinds?: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PoiListDto"];
-                };
-            };
-        };
-    };
-    PoiController_findInBbox: {
-        parameters: {
-            query: {
-                min_lng: number;
-                min_lat: number;
-                max_lng: number;
-                max_lat: number;
-                /** @description Store kinds to include (e.g. `fuel_station,restaurant`). Free-form — the store `kind` is the OSM import superset, not the live enum. Omit to return every kind in the box. */
-                kinds?: string[];
-                /** @description Max rows to return (default 200, capped at 500). */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoredPoiListDto"];
-                };
-            };
-        };
-    };
-    PoiController_findInCorridor: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CorridorBodyDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoredCorridorListDto"];
-                };
-            };
-        };
-    };
-    PoiController_findPointsOfInterestAlongRoute: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AlongRoutePoiQueryDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AlongRoutePoiListDto"];
-                };
-            };
-        };
-    };
-    PoiController_health: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PoiHealthDto"];
-                };
-            };
-        };
-    };
-    PoiController_findById: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoredPoiDto"];
-                };
             };
         };
     };
@@ -12368,6 +12200,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CheckRouteResponseDto"];
+                };
+            };
+        };
+    };
+    PoiController_findAccommodations: {
+        parameters: {
+            query: {
+                lat: number;
+                lng: number;
+                /** @description Search radius in km (defaulted to 5, capped at 25 by the service). */
+                radius_km?: number;
+                /** @description Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`). */
+                kinds?: ("hotel" | "motel" | "hostel" | "guest_house" | "apartment" | "chalet" | "camp_site")[];
+                /** @description Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes "no rating" in with ratings the rider explicitly asked for. */
+                min_stars?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccommodationListDto"];
+                };
+            };
+        };
+    };
+    PoiController_findPointsOfInterest: {
+        parameters: {
+            query: {
+                lat: number;
+                lng: number;
+                /** @description Search radius in km (defaulted to 5, capped at 25 by the service). */
+                radius_km?: number;
+                /** @description Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`). */
+                kinds?: ("restaurant" | "viewpoint" | "cafe" | "fuel_station")[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoiListDto"];
+                };
+            };
+        };
+    };
+    PoiController_findInBbox: {
+        parameters: {
+            query: {
+                min_lng: number;
+                min_lat: number;
+                max_lng: number;
+                max_lat: number;
+                /** @description Store kinds to include (e.g. `fuel_station,restaurant`). Free-form — the store `kind` is the OSM import superset, not the live enum. Omit to return every kind in the box. */
+                kinds?: string[];
+                /** @description Max rows to return (default 200, capped at 500). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredPoiListDto"];
+                };
+            };
+        };
+    };
+    PoiController_findInCorridor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorridorBodyDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredCorridorListDto"];
+                };
+            };
+        };
+    };
+    PoiController_findPointsOfInterestAlongRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlongRoutePoiQueryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlongRoutePoiListDto"];
+                };
+            };
+        };
+    };
+    PoiController_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoiHealthDto"];
+                };
+            };
+        };
+    };
+    PoiController_findById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredPoiDto"];
                 };
             };
         };

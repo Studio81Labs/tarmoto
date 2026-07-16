@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -13,18 +12,54 @@ import { DataSource, Repository } from 'typeorm';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createWriteStream, type Stats } from 'node:fs';
 import { open, rename, stat, unlink } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { JOB_NAMES, QUEUE_NAMES } from '../jobs/jobs.constants.js';
 import { DEFAULT_JOB_OPTIONS } from '../jobs/jobs.config.js';
-import type { PoiImportRegionJobData } from '../jobs/jobs.producer.js';
 import {
-  POI_IMPORT_SOURCES,
-  type PoiImportService,
-} from './poi-import.service.js';
+  DEFAULT_REGIONS,
+  FsqPoiImportSource,
+  OsmPoiImportSource,
+  type PoiImportRegion,
+  type PoiImportRegionJobData,
+  type PoiImportSource,
+} from '@tarmoto/ingest';
 import { PoiImportRun } from '@tarmoto/poi-db';
 import { isPoiConnectionError } from './poi-repo.js';
+
+/**
+ * The canonical coverage list (`DEFAULT_REGIONS`) + the per-source extract
+ * filename convention (`OsmPoiImportSource`/`FsqPoiImportSource`, plain
+ * classes with no DB/queue dependencies of their own), keyed by the wire
+ * `source` string this service already uses everywhere. Task 5
+ * (POI-ingestion extraction) moved the actual import engine —
+ * `PoiImportService` and the injected `POI_IMPORT_SOURCES` registry it used
+ * to read this same metadata from — into `apps/ingest`. This admin
+ * front-door only ever READ metadata off that registry (recon-B's key
+ * finding: every public method here is already enqueue/status/upload, never
+ * import logic), so it's replaced with this local, ingest-free descriptor
+ * instead of reaching across app boundaries for it.
+ */
+const SOURCE_STRATEGIES: Record<string, PoiImportSource> = {
+  osm: new OsmPoiImportSource(),
+  fsq: new FsqPoiImportSource(),
+};
+
+/**
+ * Look up a region's canonical bbox by ISO code. Every code this service
+ * calls this with has already passed a `DEFAULT_REGIONS` membership check
+ * (`importerFor`, or `listRegionStatus`'s own pairs, which are DERIVED from
+ * `DEFAULT_REGIONS` in the first place) — an unresolved code here means an
+ * internal caller bypassed that validation, not a bad request from outside.
+ */
+function regionFor(code: string): PoiImportRegion {
+  const region = DEFAULT_REGIONS.find((r) => r.code === code);
+  if (!region) {
+    throw new Error(`unknown POI import region: ${code}`);
+  }
+  return region;
+}
 
 /** One `poi_import_runs` row, serialized for the admin API (#847). */
 export interface RunSummary {
@@ -157,8 +192,6 @@ export class PoiImportAdminService {
   private readonly logger = new Logger(PoiImportAdminService.name);
 
   constructor(
-    @Inject(POI_IMPORT_SOURCES)
-    private readonly importers: readonly PoiImportService[],
     @InjectDataSource('poi') private readonly poi: DataSource,
     @InjectRepository(PoiImportRun, 'poi')
     private readonly runs: Repository<PoiImportRun>,
@@ -171,8 +204,8 @@ export class PoiImportAdminService {
    * code)`. `triggerImport` (below) enqueues the region job with this id, so
    * BullMQ's duplicate-jobId dedup keeps a second admin click from
    * double-running an import that's already queued or in flight. `:` is
-   * BullMQ's Redis-key delimiter (mirrors
-   * `JobsProducer.enqueuePoiImportRegion`'s identical convention for the
+   * BullMQ's Redis-key delimiter (mirrors apps/ingest's
+   * `PoiImportProducer.enqueuePoiImportRegion`'s identical convention for the
    * cron-dispatched sibling jobId), so it's stripped after building the
    * readable id. The literal `manual` segment (rather than a dispatch/run id)
    * is what keeps this permanently distinct from any cron-dispatched
@@ -187,8 +220,9 @@ export class PoiImportAdminService {
   }
 
   /**
-   * One row per `(source, region)` across every registered importer, in
-   * registry order (OSM first, then FSQ — see `POI_IMPORT_SOURCES`).
+   * One row per `(source, region)` across every configured source, in
+   * `SOURCE_STRATEGIES` order (OSM first, then FSQ) × `DEFAULT_REGIONS` (the
+   * canonical coverage list, #850) — 34 rows today (2 sources × 17 regions).
    *
    * Two bulk queries up front (#847 review) replace what used to be two
    * queries PER `(source, region)` pair — at continent scale (~34 pairs)
@@ -208,8 +242,8 @@ export class PoiImportAdminService {
    * previous sequential `for` loop.
    */
   async listRegionStatus(): Promise<RegionImportStatus[]> {
-    const pairs = this.importers.flatMap((importer) =>
-      importer.regions.map((region) => ({ importer, code: region.code })),
+    const pairs = Object.keys(SOURCE_STRATEGIES).flatMap((source) =>
+      DEFAULT_REGIONS.map((region) => ({ source, code: region.code })),
     );
 
     const [coverageRows, countRows] = await this.withPoiStore(() =>
@@ -265,9 +299,9 @@ export class PoiImportAdminService {
     }
 
     return Promise.all(
-      pairs.map(({ importer, code }) =>
+      pairs.map(({ source, code }) =>
         this.statusFor(
-          importer,
+          source,
           code,
           coverageByCode,
           countBySourceRegion,
@@ -301,14 +335,12 @@ export class PoiImportAdminService {
   }
 
   private async statusFor(
-    importer: PoiImportService,
+    source: string,
     code: string,
     coverageByCode: Map<string, string | null>,
     countBySourceRegion: Map<string, number>,
     liveBySourceRegion: Map<string, 'running' | 'queued'>,
   ): Promise<RegionImportStatus> {
-    const source = importer.source;
-
     // OSM-only (design spec §11): `poi_import_regions` has no `source`
     // column and is only ever stamped by the OSM import path, so reading
     // the coverage map for a non-OSM source would silently surface OSM's
@@ -336,9 +368,9 @@ export class PoiImportAdminService {
     // `present: true` for something the worker would later error or hang on
     // trying to `createReadStream` (#847 review).
     let extract: RegionImportStatus['extract'] = null;
-    if (importer.extractDirConfigured) {
+    if (this.extractDirConfigured(source)) {
       try {
-        const path = importer.getExtractPath(code);
+        const path = this.getExtractPath(source, code);
         const s = await stat(path);
         if (!s.isFile()) {
           throw new Error(`POI extract path is not a regular file: ${path}`);
@@ -442,25 +474,63 @@ export class PoiImportAdminService {
   }
 
   /**
-   * Resolve the importer for `source`, and confirm `code` is one of ITS
-   * configured regions. Shared validation for both write-side entry points
+   * Resolve `source`'s strategy, and confirm `code` is one of the canonical
+   * `DEFAULT_REGIONS`. Shared validation for both write-side entry points
    * below — an upload or a trigger for an unregistered source, or a region
-   * outside that source's configured coverage, is a client mistake (400),
-   * not a 404/500: the admin UI only ever offers configured `(source, code)`
-   * pairs, so reaching here with an unknown pair means a stale page, a
-   * hand-crafted request, or a typo.
+   * outside the coverage list, is a client mistake (400), not a 404/500: the
+   * admin UI only ever offers configured `(source, code)` pairs, so reaching
+   * here with an unknown pair means a stale page, a hand-crafted request, or
+   * a typo.
    */
-  private importerFor(source: string, code: string): PoiImportService {
-    const importer = this.importers.find((i) => i.source === source);
-    if (!importer) {
+  private importerFor(source: string, code: string): PoiImportSource {
+    const strategy = SOURCE_STRATEGIES[source];
+    if (!strategy) {
       throw new BadRequestException(`unknown source: ${source}`);
     }
-    if (!importer.regions.some((r) => r.code === code)) {
+    if (!DEFAULT_REGIONS.some((r) => r.code === code)) {
       throw new BadRequestException(
         `unknown region ${code} for source ${source}`,
       );
     }
-    return importer;
+    return strategy;
+  }
+
+  /**
+   * The operator-configured extract directory for `source` — this
+   * front-door's OWN `TARMOTO_POI_IMPORT_DIR` (OSM) / `TARMOTO_FSQ_IMPORT_DIR`
+   * (FSQ) env, since it's what actually receives extract uploads
+   * (`storeExtract`). Read directly on every call rather than cached: this
+   * only ever changes via a redeploy, which reloads the module anyway —
+   * mirrors `POI_UPLOAD_MAX_BYTES`'s own module-load-time env read above.
+   */
+  private extractDir(source: string): string | undefined {
+    const envVar =
+      source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR';
+    return process.env[envVar] || undefined;
+  }
+
+  private extractDirConfigured(source: string): boolean {
+    return Boolean(this.extractDir(source));
+  }
+
+  /**
+   * The extract path for `(source, code)` under this front-door's configured
+   * extract dir, using the SAME `<code-lowercase>.osm` /
+   * `<code-lowercase>.fsq.jsonl` naming convention
+   * `OsmPoiImportSource`/`FsqPoiImportSource.extractFilename` use in
+   * apps/ingest — an operator-uploaded extract lands exactly where the
+   * ingest worker reads it from. Callers MUST have already confirmed
+   * `extractDirConfigured(source)` — this asserts the dir is set.
+   */
+  private getExtractPath(source: string, code: string): string {
+    const strategy = SOURCE_STRATEGIES[source];
+    if (!strategy) {
+      throw new Error(`unknown POI import source: ${source}`);
+    }
+    return join(
+      this.extractDir(source)!,
+      strategy.extractFilename(regionFor(code)),
+    );
   }
 
   /**
@@ -679,7 +749,7 @@ export class PoiImportAdminService {
         `extract exceeds ${POI_UPLOAD_MAX_BYTES} bytes`,
       );
     }
-    const importer = this.importerFor(source, code);
+    this.importerFor(source, code);
     const expectedExt = source === 'fsq' ? '.fsq.jsonl' : '.osm';
     if (!file.originalName.toLowerCase().endsWith(expectedExt)) {
       throw new BadRequestException(
@@ -690,14 +760,14 @@ export class PoiImportAdminService {
     // `getExtractPath` would throw a plain Error → 500. Surface a clear 503
     // instead (the status read collapses the same condition to `extract: null`,
     // so the UI still offers Upload) (#847 review).
-    if (!importer.extractDirConfigured) {
+    if (!this.extractDirConfigured(source)) {
       throw new ServiceUnavailableException(
         `POI extract storage is not configured for ${source} — set ${
           source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR'
         }`,
       );
     }
-    const target = importer.getExtractPath(code);
+    const target = this.getExtractPath(source, code);
 
     // `extractDirConfigured` only proves TARMOTO_*_IMPORT_DIR is SET, not
     // that the shared extract volume actually attached — a mount that failed

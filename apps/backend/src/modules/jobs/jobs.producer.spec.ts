@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
-import { JobsProducer, POI_IMPORT_STAGGER_MS } from './jobs.producer.js';
+import { JobsProducer } from './jobs.producer.js';
 import { JOB_NAMES, QUEUE_NAMES } from './jobs.constants.js';
 import { DIGEST_COMPOSE_PRIORITY } from './jobs.config.js';
 
@@ -19,14 +19,12 @@ describe('JobsProducer', () => {
   let badgesRecheck: QueueMock;
   let digestWeekly: QueueMock;
   let qualityConflation: QueueMock;
-  let poiImport: QueueMock;
 
   beforeEach(async () => {
     accountDeletionFinalize = makeQueue(QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE);
     badgesRecheck = makeQueue(QUEUE_NAMES.BADGES_RECHECK);
     digestWeekly = makeQueue(QUEUE_NAMES.DIGEST_WEEKLY);
     qualityConflation = makeQueue(QUEUE_NAMES.QUALITY_CONFLATION);
-    poiImport = makeQueue(QUEUE_NAMES.POI_IMPORT);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -46,10 +44,6 @@ describe('JobsProducer', () => {
         {
           provide: getQueueToken(QUEUE_NAMES.QUALITY_CONFLATION),
           useValue: qualityConflation,
-        },
-        {
-          provide: getQueueToken(QUEUE_NAMES.POI_IMPORT),
-          useValue: poiImport,
         },
       ],
     }).compile();
@@ -94,36 +88,6 @@ describe('JobsProducer', () => {
       { user_id: 'u1' },
       expect.objectContaining({ jobId: 'badges-recheck:u1' }),
     );
-  });
-
-  it('enqueues a staggered per-region POI import with a dispatch-scoped jobId (delay = index * stagger, attempts 3)', async () => {
-    // A real scheduler job.id contains colons (`repeat:<hash>:<ts>`).
-    await producer.enqueuePoiImportRegion('fsq', 'CZ', 2, 'repeat:sched:123');
-    expect(poiImport.add).toHaveBeenCalledWith(
-      JOB_NAMES.POI_IMPORT_REGION,
-      { source: 'fsq', code: 'CZ' },
-      expect.objectContaining({
-        // jobId scoped to the dispatch occurrence + source + colon-free (BullMQ
-        // reserves `:`): a dispatch retry re-enqueues idempotently, next week is
-        // fresh, and the same country from two sources stays two distinct jobs.
-        jobId: 'import-region_repeat_sched_123_fsq_CZ',
-        delay: 2 * POI_IMPORT_STAGGER_MS,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 30_000 },
-      }),
-    );
-    const opts = (
-      poiImport.add.mock.calls[0] as [string, unknown, { jobId?: string }]
-    )[2];
-    expect(opts.jobId).not.toContain(':');
-  });
-
-  it('does not stagger the first region (index 0 → no delay)', async () => {
-    await producer.enqueuePoiImportRegion('osm', 'CZ', 0, 'wk-1');
-    const opts = (
-      poiImport.add.mock.calls[0] as [string, unknown, { delay: number }]
-    )[2];
-    expect(opts.delay).toBe(0);
   });
 
   it('enqueues a quality-conflation run with no jobId (fresh per import)', async () => {

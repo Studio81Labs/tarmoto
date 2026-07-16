@@ -46,6 +46,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { DEFAULT_REGIONS } from '@tarmoto/ingest';
 import {
   POI_UPLOAD_MAX_BYTES,
   PoiImportAdminService,
@@ -55,28 +56,6 @@ import type { PoiImportRun } from '@tarmoto/poi-db';
 const statMock = jest.mocked(stat);
 const openMock = jest.mocked(open);
 const renameMock = jest.mocked(rename);
-
-/** Minimal `PoiImportService` test double — only the surface
- *  `PoiImportAdminService` reads (`source`, `regions`, `extractDirConfigured`,
- *  `getExtractPath`). `extractDirConfigured` defaults `true` so the status
- *  tests below (which drive `stat` directly via `statMock`) actually reach
- *  the `stat` call rather than short-circuiting on Fix B's guard. */
-function makeImporter(
-  over: {
-    source?: string;
-    regions?: { code: string; bbox: unknown }[];
-    extractDirConfigured?: boolean;
-    getExtractPath?: (code: string) => string;
-  } = {},
-) {
-  return {
-    source: 'osm',
-    regions: [{ code: 'CZ', bbox: {} }],
-    extractDirConfigured: true,
-    getExtractPath: (code: string) => `/extracts/${code}.osm`,
-    ...over,
-  };
-}
 
 /**
  * Fake ioredis client double for the queue's own Redis connection
@@ -102,14 +81,40 @@ function makeFakeRedis(over: { exists?: number } = {}) {
 }
 
 describe('PoiImportAdminService', () => {
+  // `PoiImportAdminService` now resolves its source/region metadata straight
+  // off `@tarmoto/ingest`'s real `DEFAULT_REGIONS` + a fixed osm/fsq strategy
+  // map (Task 5 rework — no more injected `POI_IMPORT_SOURCES` fake), so the
+  // per-source extract dir is this front-door's OWN env. Clear both before
+  // every test (most tests below want NEITHER source "configured" — extract
+  // dir tests opt in explicitly) and restore whatever was already set
+  // afterward, so no test leaks its env into another.
+  const EXTRACT_DIR_ENV_KEYS = [
+    'TARMOTO_POI_IMPORT_DIR',
+    'TARMOTO_FSQ_IMPORT_DIR',
+  ] as const;
+  const savedExtractDirEnv: Partial<
+    Record<(typeof EXTRACT_DIR_ENV_KEYS)[number], string>
+  > = {};
+
   beforeEach(() => {
     statMock.mockReset();
+    for (const key of EXTRACT_DIR_ENV_KEYS) {
+      savedExtractDirEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of EXTRACT_DIR_ENV_KEYS) {
+      const value = savedExtractDirEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   describe('manualJobId', () => {
     it('is deterministic and strips the reserved `:` delimiter to `_`', () => {
       const svc = new PoiImportAdminService(
-        [] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -125,7 +130,16 @@ describe('PoiImportAdminService', () => {
   });
 
   describe('listRegionStatus', () => {
+    // `listRegionStatus` now fans out over EVERY (source, region) pair in
+    // the real `SOURCE_STRATEGIES` (osm, fsq) × `DEFAULT_REGIONS` (17 codes)
+    // — 34 rows on every call, regardless of what the mocked DB/queue return.
+    // Below, "osm/CZ" etc. are found via `.find()` rather than assumed at a
+    // fixed array index, though osm's pairs (in `DEFAULT_REGIONS` order)
+    // always precede fsq's.
+    const PAIR_COUNT = DEFAULT_REGIONS.length * 2;
+
     it('assembles status per (source, region) with counts, coverage, extract, live state', async () => {
+      process.env.TARMOTO_POI_IMPORT_DIR = '/extracts';
       const dataSource = {
         query: jest.fn((sql: string) => {
           if (sql.includes('poi_import_regions'))
@@ -137,14 +151,21 @@ describe('PoiImportAdminService', () => {
       };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
       const queue = { getJobs: jest.fn().mockResolvedValue([]) };
+      // `statusFor` is invoked once per pair, synchronously in `pairs` order,
+      // up to its own first `await` — so with only OSM's extract dir
+      // configured, the FIRST `stat()` call is osm/CZ (DEFAULT_REGIONS[0]);
+      // the once-value below lands there, and osm's other 16 regions fall
+      // through to the persistent ENOENT default (no extract for them).
       statMock.mockResolvedValueOnce({
         size: 10,
         mtimeMs: 1_720_000_000_000,
         isFile: () => true,
       } as never);
+      statMock.mockRejectedValue(
+        Object.assign(new Error('nope'), { code: 'ENOENT' }),
+      );
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -152,8 +173,9 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
+      expect(rows).toHaveLength(PAIR_COUNT);
+      const osmCz = rows.find((r) => r.source === 'osm' && r.code === 'CZ');
+      expect(osmCz).toMatchObject({
         source: 'osm',
         code: 'CZ',
         configured: true,
@@ -163,7 +185,7 @@ describe('PoiImportAdminService', () => {
         live_state: 'idle',
         last_run: null,
       });
-      expect(rows[0]?.extract).toMatchObject({
+      expect(osmCz?.extract).toMatchObject({
         present: true,
         size_bytes: 10,
         modified_at: new Date(1_720_000_000_000).toISOString(),
@@ -187,17 +209,21 @@ describe('PoiImportAdminService', () => {
     // `createReadStream` it. Must surface as a fault (thrown, same as any
     // other non-ENOENT stat error), never as `present: true`.
     it('surfaces a fault (does not report present) when the extract path stats successfully but is not a regular file', async () => {
+      process.env.TARMOTO_POI_IMPORT_DIR = '/extracts';
+      process.env.TARMOTO_FSQ_IMPORT_DIR = '/extracts';
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn() };
       const queue = { getJobs: jest.fn().mockResolvedValue([]) };
-      statMock.mockResolvedValueOnce({
+      // EVERY pair's stat() (both sources configured) resolves to a
+      // non-regular file, so every one of the 34 pairs faults before ever
+      // reaching `runs.findOne` — not just a single pair.
+      statMock.mockResolvedValue({
         size: 4096,
         mtimeMs: 1_720_000_000_000,
         isFile: () => false,
       } as never);
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -210,6 +236,7 @@ describe('PoiImportAdminService', () => {
     });
 
     it('reports live_state running when the queue has an active job, and extract: null on ENOENT', async () => {
+      process.env.TARMOTO_POI_IMPORT_DIR = '/extracts';
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
       const queue = {
@@ -220,12 +247,13 @@ describe('PoiImportAdminService', () => {
           },
         ]),
       };
-      statMock.mockRejectedValueOnce(
+      // Every osm pair's stat() rejects ENOENT — no extract uploaded yet for
+      // any of them, a graceful null rather than a thrown fault.
+      statMock.mockRejectedValue(
         Object.assign(new Error('nope'), { code: 'ENOENT' }),
       );
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -233,8 +261,9 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows[0]?.live_state).toBe('running');
-      expect(rows[0]?.extract).toBeNull();
+      const osmCz = rows.find((r) => r.source === 'osm' && r.code === 'CZ');
+      expect(osmCz?.live_state).toBe('running');
+      expect(osmCz?.extract).toBeNull();
       // live_state now reflects ANY in-flight job matching (source, code)
       // from a single `getJobs` scan (Fix A), not a `getJob(manualJobId)`
       // probe — this job's id is irrelevant, only its `data` payload matters.
@@ -251,12 +280,10 @@ describe('PoiImportAdminService', () => {
           },
         ]),
       };
-      statMock.mockRejectedValueOnce(
-        Object.assign(new Error('nope'), { code: 'ENOENT' }),
-      );
+      // Neither extract dir env is set (outer beforeEach default), so no
+      // pair's stat() is ever invoked — nothing to mock.
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -264,7 +291,8 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows[0]?.live_state).toBe('queued');
+      const osmCz = rows.find((r) => r.source === 'osm' && r.code === 'CZ');
+      expect(osmCz?.live_state).toBe('queued');
     });
 
     it('reports a completed/failed/unknown job state as idle (only active/waiting/delayed/prioritized are live)', async () => {
@@ -278,12 +306,8 @@ describe('PoiImportAdminService', () => {
           },
         ]),
       };
-      statMock.mockRejectedValueOnce(
-        Object.assign(new Error('nope'), { code: 'ENOENT' }),
-      );
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -291,7 +315,8 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows[0]?.live_state).toBe('idle');
+      const osmCz = rows.find((r) => r.source === 'osm' && r.code === 'CZ');
+      expect(osmCz?.live_state).toBe('idle');
     });
 
     it('reports the most recent poi_import_runs row as last_run, ISO-serialized, including a non-null warning', async () => {
@@ -315,14 +340,12 @@ describe('PoiImportAdminService', () => {
         started_at: new Date('2026-07-01T00:00:00Z'),
         finished_at: new Date('2026-07-01T00:05:00Z'),
       };
+      // Every pair's runs.findOne resolves to this SAME fake row — only the
+      // osm/CZ assertion below (and the call-args check) is what matters.
       const runsRepo = { findOne: jest.fn().mockResolvedValue(runRow) };
       const queue = { getJobs: jest.fn().mockResolvedValue([]) };
-      statMock.mockRejectedValueOnce(
-        Object.assign(new Error('nope'), { code: 'ENOENT' }),
-      );
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -330,7 +353,8 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows[0]?.last_run).toEqual({
+      const osmCz = rows.find((r) => r.source === 'osm' && r.code === 'CZ');
+      expect(osmCz?.last_run).toEqual({
         id: '7',
         source: 'osm',
         region_code: 'CZ',
@@ -352,7 +376,7 @@ describe('PoiImportAdminService', () => {
       });
     });
 
-    it('assembles one row per (source, region) across multiple importers/regions, in registry order, scoping coverage to OSM only and counts per (source, region)', async () => {
+    it('assembles a row per (source, region) across the full DEFAULT_REGIONS coverage list, scoping coverage to OSM only and counts per (source, region)', async () => {
       const dataSource = {
         query: jest.fn((sql: string) => {
           if (sql.includes('poi_import_regions'))
@@ -368,23 +392,8 @@ describe('PoiImportAdminService', () => {
       };
       const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
       const queue = { getJobs: jest.fn().mockResolvedValue([]) };
-      statMock.mockRejectedValue(
-        Object.assign(new Error('nope'), { code: 'ENOENT' }),
-      );
 
-      const osm = makeImporter({
-        source: 'osm',
-        regions: [
-          { code: 'CZ', bbox: {} },
-          { code: 'SK', bbox: {} },
-        ],
-      });
-      const fsq = makeImporter({
-        source: 'fsq',
-        regions: [{ code: 'CZ', bbox: {} }],
-      });
       const svc = new PoiImportAdminService(
-        [osm, fsq] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -392,37 +401,48 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows.map((r) => [r.source, r.code])).toEqual([
-        ['osm', 'CZ'],
-        ['osm', 'SK'],
-        ['fsq', 'CZ'],
-      ]);
+      // 2 sources (osm, fsq) × the full 17-region DEFAULT_REGIONS list —
+      // every pair gets a row regardless of whether it has any DB data.
+      expect(rows).toHaveLength(PAIR_COUNT);
+      // osm's pairs (DEFAULT_REGIONS order) precede fsq's (SOURCE_STRATEGIES
+      // insertion order).
+      expect(rows[0]).toMatchObject({ source: 'osm', code: 'CZ' });
+      expect(rows[DEFAULT_REGIONS.length]).toMatchObject({
+        source: 'fsq',
+        code: 'CZ',
+      });
 
-      const [osmCz, osmSk, fsqCz] = rows;
+      const bySourceCode = new Map(
+        rows.map((r) => [`${r.source}:${r.code}`, r]),
+      );
       // OSM/CZ keeps the coverage stamp `poi_import_regions` has for CZ...
-      expect(osmCz?.imported_at).toBe('2026-07-10T00:00:00.000Z');
+      expect(bySourceCode.get('osm:CZ')?.imported_at).toBe(
+        '2026-07-10T00:00:00.000Z',
+      );
       // ...OSM/SK has no coverage row in the mock, so it's uncovered...
-      expect(osmSk?.imported_at).toBeNull();
+      expect(bySourceCode.get('osm:SK')?.imported_at).toBeNull();
       // ...and FSQ/CZ must NOT reuse OSM/CZ's stamp for the SAME region code
       // — `poi_import_regions` has no `source` column, so without the
       // source-scope check every non-OSM row would falsely inherit
       // whatever OSM's own coverage says (#847 review, fix 1).
-      expect(fsqCz?.imported_at).toBeNull();
+      expect(bySourceCode.get('fsq:CZ')?.imported_at).toBeNull();
 
       // Each row's poi_count comes from the grouped (source, import_region)
-      // map, not a shared/misattributed count.
-      expect(osmCz?.poi_count).toBe(42);
-      expect(osmSk?.poi_count).toBe(7);
-      expect(fsqCz?.poi_count).toBe(13);
+      // map, not a shared/misattributed count. A pair absent from the mocked
+      // GROUP BY rows (e.g. fsq/SK) defaults to 0.
+      expect(bySourceCode.get('osm:CZ')?.poi_count).toBe(42);
+      expect(bySourceCode.get('osm:SK')?.poi_count).toBe(7);
+      expect(bySourceCode.get('fsq:CZ')?.poi_count).toBe(13);
+      expect(bySourceCode.get('fsq:SK')?.poi_count).toBe(0);
 
       // Both bulk queries run exactly once regardless of how many (source,
-      // region) pairs exist — 2 calls total, not 2-per-pair (6) — proving
-      // the N+1 fix (#847 review, fix 2).
+      // region) pairs exist — 2 calls total, not 2-per-pair — proving the
+      // N+1 fix (#847 review, fix 2) still holds at the full 34-pair scale.
       expect(dataSource.query).toHaveBeenCalledTimes(2);
     });
 
     // #847 review Fix A: a CRON-dispatched `import-region` job uses a
-    // DIFFERENT jobId (`JobsProducer.enqueuePoiImportRegion`'s
+    // DIFFERENT jobId (the enqueue producer's
     // `import-region_<dispatchId>_<source>_<code>`, not `manualJobId`) and
     // never sets `trigger` on the wire (the processor defaults an absent
     // `trigger` to `'cron'`) — this simulates that exact payload shape to
@@ -440,12 +460,8 @@ describe('PoiImportAdminService', () => {
           },
         ]),
       };
-      statMock.mockRejectedValueOnce(
-        Object.assign(new Error('nope'), { code: 'ENOENT' }),
-      );
 
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -453,7 +469,8 @@ describe('PoiImportAdminService', () => {
 
       const rows = await svc.listRegionStatus();
 
-      expect(rows[0]?.live_state).toBe('running');
+      const osmCz = rows.find((r) => r.source === 'osm' && r.code === 'CZ');
+      expect(osmCz?.live_state).toBe('running');
     });
 
     // #847 review Fix B: a stat error that ISN'T ENOENT (e.g. EACCES/ENOTDIR/
@@ -462,15 +479,17 @@ describe('PoiImportAdminService', () => {
     // infrastructure fault look identical to "no extract uploaded yet". Only
     // ENOENT collapses to null; every other stat error propagates.
     it('propagates a non-ENOENT stat error (e.g. EACCES) instead of reporting extract: null', async () => {
+      process.env.TARMOTO_POI_IMPORT_DIR = '/extracts';
+      process.env.TARMOTO_FSQ_IMPORT_DIR = '/extracts';
       const dataSource = { query: jest.fn().mockResolvedValue([]) };
       const runsRepo = { findOne: jest.fn() };
       const queue = { getJobs: jest.fn().mockResolvedValue([]) };
-      statMock.mockRejectedValueOnce(
+      // Every pair's stat() (both sources configured) hits the same fault.
+      statMock.mockRejectedValue(
         Object.assign(new Error('denied'), { code: 'EACCES' }),
       );
 
       const svc = new PoiImportAdminService(
-        [makeImporter({ extractDirConfigured: true })] as never,
         dataSource as never,
         runsRepo as never,
         queue as never,
@@ -511,7 +530,6 @@ describe('PoiImportAdminService', () => {
       const qb = makeQb([RUN_ROW]);
       const runsRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
       const svc = new PoiImportAdminService(
-        [] as never,
         {} as never,
         runsRepo as never,
         {} as never,
@@ -559,7 +577,6 @@ describe('PoiImportAdminService', () => {
       ]);
       const runsRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
       const svc = new PoiImportAdminService(
-        [] as never,
         {} as never,
         runsRepo as never,
         {} as never,
@@ -576,7 +593,6 @@ describe('PoiImportAdminService', () => {
       const qb = makeQb([]);
       const runsRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
       const svc = new PoiImportAdminService(
-        [] as never,
         {} as never,
         runsRepo as never,
         {} as never,
@@ -604,7 +620,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -644,7 +659,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -672,7 +686,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -691,8 +704,8 @@ describe('PoiImportAdminService', () => {
     // total). A country-scale import can run for minutes, so a
     // `getJob(manualJobId)`-only check (which only ever sees the MANUAL
     // jobId) would miss a live cron job entirely — it enqueues under a
-    // DIFFERENT id (`import-region_<dispatchId>_<source>_<code>`,
-    // `JobsProducer.enqueuePoiImportRegion`) and never sets `trigger` on the
+    // DIFFERENT id (`import-region_<dispatchId>_<source>_<code>`, apps/ingest's
+    // `PoiImportProducer.enqueuePoiImportRegion`) and never sets `trigger` on the
     // wire (the processor defaults an absent `trigger` to `'cron'`). This
     // job simulates exactly that real payload shape to prove the scan
     // catches it by payload, not by id.
@@ -709,7 +722,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -732,7 +744,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -753,7 +764,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svcOsm = new PoiImportAdminService(
-        [makeImporter({ source: 'osm' })] as never,
         {} as never,
         {} as never,
         blockedQueue as never,
@@ -770,7 +780,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svcFsq = new PoiImportAdminService(
-        [makeImporter({ source: 'fsq' })] as never,
         {} as never,
         {} as never,
         openQueue as never,
@@ -788,7 +797,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -814,7 +822,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis({ exists: 1 })),
       };
       const svc = new PoiImportAdminService(
-        [makeImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -832,7 +839,6 @@ describe('PoiImportAdminService', () => {
       // POI DB down at boot → datasource never initialized. Must surface a clear
       // "store unavailable" (503, spec §7), not a raw TypeORM 500.
       const svc = new PoiImportAdminService(
-        [] as never,
         { isInitialized: false, query: jest.fn() } as never,
         {} as never,
         {} as never,
@@ -852,7 +858,6 @@ describe('PoiImportAdminService', () => {
       };
       const createQueryBuilder = jest.fn().mockReturnValue(qb);
       const svc = new PoiImportAdminService(
-        [] as never,
         { isInitialized: false } as never,
         { createQueryBuilder } as never,
         {} as never,
@@ -873,32 +878,23 @@ describe('PoiImportAdminService', () => {
 
     beforeEach(() => {
       dir = mkdtempSync(join(tmpdir(), 'tarmoto-poi-admin-test-'));
+      // Every test below uses source 'osm' unless noted, so default the OSM
+      // extract dir to the throwaway temp dir; the one test exercising the
+      // "not configured" path deletes this itself.
+      process.env.TARMOTO_POI_IMPORT_DIR = dir;
     });
 
     afterEach(() => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    /** Importer whose `getExtractPath` resolves INSIDE the throwaway temp
-     *  dir, mirroring the real `<code>.osm` / `<code>.fsq.jsonl` naming
-     *  (`OsmPoiImportSource`/`FsqPoiImportSource.extractFilename`) closely
-     *  enough for the extension-validation tests below to be meaningful. */
-    function makeStoreImporter(
-      over: {
-        source?: string;
-        regions?: { code: string; bbox: unknown }[];
-        extractDirConfigured?: boolean;
-      } = {},
-    ) {
-      const source = over.source ?? 'osm';
+    /** The extract path `getExtractPath` computes for `(source, code)` once
+     *  its extract dir env points at `dir` — mirrors the real
+     *  `OsmPoiImportSource`/`FsqPoiImportSource.extractFilename` naming
+     *  (`<code-lowercase>.osm` / `<code-lowercase>.fsq.jsonl`). */
+    function extractPath(source: string, code: string): string {
       const ext = source === 'fsq' ? '.fsq.jsonl' : '.osm';
-      return {
-        source,
-        regions: over.regions ?? [{ code: 'CZ', bbox: {} }],
-        extractDirConfigured: over.extractDirConfigured ?? true,
-        getExtractPath: (code: string) =>
-          join(dir, `${code.toLowerCase()}${ext}`),
-      };
+      return join(dir, `${code.toLowerCase()}${ext}`);
     }
 
     /** Any leftover `*.part` staging file left in `dir`. The atomic-write
@@ -933,9 +929,7 @@ describe('PoiImportAdminService', () => {
     // `TARMOTO_POI_UPLOAD_MAX_BYTES` at runtime, which would no longer have
     // any effect once the module has already been imported.
     it('rejects an oversize upload with 400 before touching the filesystem', async () => {
-      const importer = makeStoreImporter();
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -954,7 +948,6 @@ describe('PoiImportAdminService', () => {
 
     it('rejects an unknown source with 400', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter()] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -971,7 +964,6 @@ describe('PoiImportAdminService', () => {
 
     it('rejects an unknown region code for a known source with 400', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter()] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -987,11 +979,12 @@ describe('PoiImportAdminService', () => {
     });
 
     it('returns 503 (not 500) when the source has no configured extract dir', async () => {
-      // TARMOTO_POI_IMPORT_DIR unset → extractDirConfigured false → getExtractPath
-      // would throw a plain Error (500); storeExtract must surface a clear 503
-      // and write nothing (#847 review).
+      // Override this block's beforeEach default: TARMOTO_POI_IMPORT_DIR
+      // unset → extractDirConfigured false → getExtractPath would throw a
+      // plain Error (500); storeExtract must surface a clear 503 and write
+      // nothing (#847 review).
+      delete process.env.TARMOTO_POI_IMPORT_DIR;
       const svc = new PoiImportAdminService(
-        [makeStoreImporter({ extractDirConfigured: false })] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -1010,7 +1003,6 @@ describe('PoiImportAdminService', () => {
 
     it('rejects a filename whose extension does not match the source (fsq name against osm)', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter({ source: 'osm' })] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -1027,7 +1019,6 @@ describe('PoiImportAdminService', () => {
 
     it('rejects a filename whose extension does not match the source (osm name against fsq)', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter({ source: 'fsq' })] as never,
         {} as never,
         {} as never,
         {} as never,
@@ -1051,7 +1042,6 @@ describe('PoiImportAdminService', () => {
     // 500 instead of the same 503 class as the unconfigured-dir case.
     it('returns 503 (not 500) when the extract directory is configured but the mount never attached (ENOENT)', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter()] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1073,7 +1063,6 @@ describe('PoiImportAdminService', () => {
 
     it('returns 503 when the parent directory stats successfully but is not a directory', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter()] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1093,7 +1082,6 @@ describe('PoiImportAdminService', () => {
 
     it('propagates a non-ENOENT parent-dir stat error (e.g. EACCES) instead of collapsing to 503', async () => {
       const svc = new PoiImportAdminService(
-        [makeStoreImporter()] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1127,7 +1115,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [makeStoreImporter()] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -1146,8 +1133,7 @@ describe('PoiImportAdminService', () => {
     });
 
     it('does not block a storeExtract upload on an in-flight job for a different region or source', async () => {
-      const importer = makeStoreImporter();
-      const target = importer.getExtractPath('CZ');
+      const target = extractPath('osm', 'CZ');
       const queue = {
         getJobs: jest
           .fn()
@@ -1158,7 +1144,6 @@ describe('PoiImportAdminService', () => {
         client: Promise.resolve(makeFakeRedis()),
       };
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -1176,10 +1161,8 @@ describe('PoiImportAdminService', () => {
     });
 
     it('streams the upload atomically (temp file + fsync + rename) and returns the extract stat', async () => {
-      const importer = makeStoreImporter();
-      const target = importer.getExtractPath('CZ');
+      const target = extractPath('osm', 'CZ');
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1227,9 +1210,7 @@ describe('PoiImportAdminService', () => {
     it('fsyncs the temp file handle before the atomic rename', async () => {
       openMock.mockClear();
       renameMock.mockClear();
-      const importer = makeStoreImporter();
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1271,9 +1252,7 @@ describe('PoiImportAdminService', () => {
     it('fsyncs the containing directory after the atomic rename', async () => {
       openMock.mockClear();
       renameMock.mockClear();
-      const importer = makeStoreImporter();
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1323,10 +1302,8 @@ describe('PoiImportAdminService', () => {
     });
 
     it('replaces an existing extract in place on re-upload', async () => {
-      const importer = makeStoreImporter();
-      const target = importer.getExtractPath('CZ');
+      const target = extractPath('osm', 'CZ');
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1356,10 +1333,8 @@ describe('PoiImportAdminService', () => {
     });
 
     it('cleans up the .part file and rethrows when the source stream errors mid-write', async () => {
-      const importer = makeStoreImporter();
-      const target = importer.getExtractPath('CZ');
+      const target = extractPath('osm', 'CZ');
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         idleQueue() as never,
@@ -1395,14 +1370,12 @@ describe('PoiImportAdminService', () => {
     // `poi-upload-lock.interceptor.spec`. (`triggerImport`'s consumption of the
     // lock via `uploadInProgress` is covered in the `triggerImport` block.)
     it('does not touch the upload lock itself — held upstream by the interceptor (#972)', async () => {
-      const importer = makeStoreImporter();
       const redis = makeFakeRedis();
       const queue = {
         getJobs: jest.fn().mockResolvedValue([]),
         client: Promise.resolve(redis),
       };
       const svc = new PoiImportAdminService(
-        [importer] as never,
         {} as never,
         {} as never,
         queue as never,
@@ -1425,7 +1398,6 @@ describe('PoiImportAdminService', () => {
     const lockKey = 'poi:import:upload-lock:osm:CZ';
     const makeSvc = (redis: ReturnType<typeof makeFakeRedis>) =>
       new PoiImportAdminService(
-        [] as never,
         {} as never,
         {} as never,
         { client: Promise.resolve(redis) } as never,

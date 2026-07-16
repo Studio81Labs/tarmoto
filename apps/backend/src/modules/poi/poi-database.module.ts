@@ -65,9 +65,12 @@ export async function createPoiDataSource(
       name: 'poi',
       imports: [ConfigModule.forFeature(poiDatabaseConfig)],
       inject: [ConfigService],
-      // Backend still migrates the POI DB in this phase; T5 flips this to false.
+      // The backend no longer migrates the POI DB (Task 5, POI-ingestion
+      // extraction): apps/ingest is the sole migrator (`migrationsRun: true`
+      // there). The backend is read-only here and must tolerate an ahead
+      // schema — it never runs POI migrations itself.
       useFactory: (config: ConfigService) =>
-        buildPoiTypeOrmOptions(config, { migrationsRun: true }),
+        buildPoiTypeOrmOptions(config, { migrationsRun: false }),
       dataSourceFactory: (options) => createPoiDataSource(options!),
     }),
   ],

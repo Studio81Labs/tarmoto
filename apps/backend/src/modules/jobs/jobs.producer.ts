@@ -4,37 +4,9 @@ import type { Queue } from 'bullmq';
 import { JOB_NAMES, QUEUE_NAMES } from './jobs.constants.js';
 import { DEFAULT_JOB_OPTIONS, DIGEST_COMPOSE_PRIORITY } from './jobs.config.js';
 
-/**
- * Delay between consecutive per-region POI import jobs (#850). A continent-scale
- * run fans out ~17 country imports; spacing them 10 minutes apart keeps a single
- * heavy country from starving the worker pool and spreads the DB write load
- * across a few hours instead of one thundering batch. The Nth region's job is
- * delayed `N * POI_IMPORT_STAGGER_MS`.
- */
-export const POI_IMPORT_STAGGER_MS = 10 * 60_000;
-
 export interface DataExportJobData {
   request_id: string;
   user_id: string;
-}
-
-/** Child-job payload for a single region's offline POI import (#850). */
-export interface PoiImportRegionJobData {
-  /** Upper-case ISO 3166-1 alpha-2 code of the region to import. */
-  code: string;
-  /**
-   * Bulk source to import this region from (`osm` / `fsq`, #869) — routes the
-   * job back to the matching importer. Optional on the wire so a region job
-   * enqueued before this field existed still runs (the worker defaults it to
-   * `osm`, the only source at the time).
-   */
-  source?: string;
-  /**
-   * Who enqueued this region job (#847). `manual` = an admin trigger via the
-   * POI admin UI; `cron`/absent = the weekly dispatcher. Recorded in
-   * poi_import_runs so history distinguishes the two.
-   */
-  trigger?: 'manual' | 'cron';
 }
 
 export interface AccountDeletionFinalizeJobData {
@@ -107,50 +79,7 @@ export class JobsProducer {
     private readonly digestWeekly: Queue<DigestWeeklyComposeJobData>,
     @InjectQueue(QUEUE_NAMES.QUALITY_CONFLATION)
     private readonly qualityConflation: Queue,
-    @InjectQueue(QUEUE_NAMES.POI_IMPORT)
-    private readonly poiImport: Queue<PoiImportRegionJobData>,
   ) {}
-
-  /**
-   * Enqueue a single region's offline POI import (#850) as a staggered child of
-   * the weekly dispatcher. `staggerIndex` is the region's position in the fan-out
-   * (0-based); the job is delayed `staggerIndex * POI_IMPORT_STAGGER_MS` so a
-   * continent-scale run spreads across hours rather than firing every country at
-   * once.
-   *
-   * The jobId `import-region:<dispatchId>:<source>:<code>` is scoped to the
-   * dispatch OCCURRENCE (`dispatchId` = the weekly dispatcher job's id — stable
-   * across its retries, fresh each week) AND the source, so a dispatch that
-   * retries after enqueuing some regions re-enqueues them idempotently (BullMQ
-   * ignores a duplicate jobId) instead of doubling the heavy imports, while the
-   * same country from two sources (OSM + FSQ) stays two distinct jobs. Next
-   * week's dispatch — a new occurrence — still enqueues a fresh run.
-   * `attempts: 3` (a heavy region import is retried a few times, then waits for
-   * next week).
-   */
-  async enqueuePoiImportRegion(
-    source: string,
-    code: string,
-    staggerIndex: number,
-    dispatchId: string,
-  ): Promise<void> {
-    await this.poiImport.add(
-      JOB_NAMES.POI_IMPORT_REGION,
-      { source, code },
-      {
-        ...DEFAULT_JOB_OPTIONS,
-        // BullMQ reserves `:` as its Redis-key delimiter and scheduler `job.id`s
-        // contain colons (`repeat:<hash>:<ts>`), so strip them from the jobId.
-        jobId:
-          `${JOB_NAMES.POI_IMPORT_REGION}:${dispatchId}:${source}:${code}`.replace(
-            /:/g,
-            '_',
-          ),
-        attempts: 3,
-        delay: staggerIndex * POI_IMPORT_STAGGER_MS,
-      },
-    );
-  }
 
   /**
    * Enqueue a road-quality conflation run (#779). Enqueued by the OSM import

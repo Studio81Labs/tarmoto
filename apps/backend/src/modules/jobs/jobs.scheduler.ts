@@ -69,8 +69,6 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly modelEvalAgreement: Queue,
     @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
     private readonly napClosurePoll: Queue,
-    @InjectQueue(QUEUE_NAMES.POI_IMPORT)
-    private readonly poiImport: Queue,
     @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
     private readonly osmImport: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
@@ -109,14 +107,13 @@ export class JobsScheduler implements OnApplicationBootstrap {
    * Remove repeatables whose job was renamed. BullMQ keys a scheduler by
    * `${queue}.${name}`, so a rename registers a NEW key and leaves the old one
    * firing forever — its job then reaches a processor that no longer knows the
-   * name. #850 renamed the POI import's weekly `run` job to `dispatch`; drop the
-   * orphaned `poi.import.run` so it stops firing (the processor tolerates a
-   * still-queued `run` as a dispatch alias in the meantime).
+   * name. No queue this scheduler owns currently has a retired name: the POI
+   * import's own #850 `run`→`dispatch` rename cleanup moved to apps/ingest's
+   * `PoiImportScheduler` along with the `poi.import` queue itself (Task 5,
+   * POI-ingestion extraction). Kept as the extension point for the next one.
    */
   private async removeRetiredSchedulers(): Promise<void> {
-    const retired: Array<{ queue: Queue; schedulerId: string }> = [
-      { queue: this.poiImport, schedulerId: `${this.poiImport.name}.run` },
-    ];
+    const retired: Array<{ queue: Queue; schedulerId: string }> = [];
     for (const { queue, schedulerId } of retired) {
       try {
         const removed = await queue.removeJobScheduler(schedulerId);
@@ -196,12 +193,6 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.NAP_CLOSURE_POLL_RUN,
         pattern: RECURRING_PATTERNS.EVERY_3_MINUTES,
         description: 'NAP (NDIC) closure poll → road_closures (#743)',
-      },
-      {
-        queue: this.poiImport,
-        name: JOB_NAMES.POI_IMPORT_DISPATCH,
-        pattern: RECURRING_PATTERNS.WEEKLY_SUN_0300,
-        description: 'weekly POI import dispatcher → per-region jobs (#850)',
       },
       {
         queue: this.osmImport,
