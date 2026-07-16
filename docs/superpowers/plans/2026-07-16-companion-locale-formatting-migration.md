@@ -17,7 +17,7 @@
 - Companion CI typechecks test files: run `pnpm typecheck` in `apps/companion` after every task. Backend untouched. Double quotes.
 - Conventional commits, lowercase subjects. PR 3 = Tasks 1–3 (`refactor(companion)` series); PR 4 = Tasks 4–8.
 - Branch from current `main` (`df9f0f2d` or later).
-- **Behavior changes are intended and accepted** (spec §Risks "copy churn"): hardcoded en-GB/en-US shapes become resolved-locale shapes; UTC-pinned billing dates become viewer-timezone instants; TripCollaborateModal's forced-24h "Yesterday, 18:40" becomes locale `relativeTime`; the ride-header weekday (en-GB `weekday:"short"`) is dropped (`date()` has no weekday); grouping separators appear where `toFixed` had none. Do not "fix" these back.
+- **Behavior changes are intended and accepted** (spec §Risks "copy churn"): hardcoded en-GB/en-US shapes become resolved-locale shapes; UTC-pinned billing dates become viewer-timezone instants; TripCollaborateModal's forced-24h "Yesterday, 18:40" becomes locale `relativeTime`; the ride-header weekday (en-GB `weekday:"short"`) is dropped (`date()` has no weekday); grouping separators appear where `toFixed` had none; `splitDistanceKm` keeps one decimal where `formatKmValue` rounded to whole km, and has NO sub-1km meters switch (a <1 km aggregate renders "0.4 km", not "400 m" — adjudicated acceptable in M2 review; follow-up `splitDistanceM` only if product asks). Do not "fix" these back.
 
 ## The Transformation Recipe (applies to every task)
 
