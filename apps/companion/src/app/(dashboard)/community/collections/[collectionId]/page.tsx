@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { notFound as renderNotFound, useParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
@@ -271,30 +271,8 @@ export default function CollectionDetailPage() {
       </div>
     );
   }
-  if (load.phase === "not-found") {
-    return (
-      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
-        <Link
-          href="/community/collections"
-          className="inline-flex items-center gap-1 text-sm text-fg-dim hover:text-ink mb-4 transition"
-        >
-          <ArrowLeft size={16} />
-          {t("Collections")}
-        </Link>
-        <div className="rounded-2xl border border-line bg-cream p-10 text-center">
-          <RouteIcon size={40} className="mx-auto text-fg-mute mb-3" />
-          <p className="text-ink font-medium mb-1">
-            {t("Collection not found")}
-          </p>
-          <p className="text-sm text-fg-dim">
-            {t(
-              "This collection may have been deleted, or it's private and you don't own it. ",
-            )}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Deleted / private collections render the app-level v2 404 screen.
+  if (load.phase === "not-found") renderNotFound();
   if (load.phase === "error") {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">

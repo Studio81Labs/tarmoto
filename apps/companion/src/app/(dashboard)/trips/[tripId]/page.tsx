@@ -1,7 +1,11 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import {
+  notFound as renderNotFound,
+  useParams,
+  useRouter,
+} from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -13,7 +17,6 @@ import {
   LogOut,
   MapPin,
   Maximize2,
-  Route,
   Trash2,
   Users,
 } from "lucide-react";
@@ -54,14 +57,7 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { formatDistance, formatDuration } from "@/lib/utils";
-import {
-  Button,
-  Card,
-  Heading,
-  QualityBars,
-  Stamp,
-  Tooltip,
-} from "@tarmoto/ui";
+import { Button, Heading, QualityBars, Stamp, Tooltip } from "@tarmoto/ui";
 type RightTab = "route" | "inspect" | "conditions";
 interface LoadedTrip {
   detail: TripDetailResponse;
@@ -329,28 +325,8 @@ export default function TripDetailPage() {
       </div>
     );
   }
-  if (notFound) {
-    return (
-      <div className="mx-auto max-w-2xl animate-fade-in p-4 md:p-7">
-        <Link
-          href="/trips"
-          className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
-        >
-          <ArrowLeft size={14} />
-          {t("Back to trips ")}
-        </Link>
-        <Card padded={false} className="p-10 text-center">
-          <Route size={36} className="mx-auto mb-3 text-fg-mute" />
-          <Heading size="md" as="h2">
-            {t("Trip not found")}
-          </Heading>
-          <p className="mt-2 text-sm text-fg-dim">
-            {t("The trip may have been deleted, or the link may be wrong. ")}
-          </p>
-        </Card>
-      </div>
-    );
-  }
+  // Deleted trips / dead links render the app-level v2 404 screen.
+  if (notFound) renderNotFound();
   if (error || !loaded || !trip) {
     return (
       <div className="mx-auto max-w-2xl animate-fade-in p-4 md:p-7">
