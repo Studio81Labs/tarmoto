@@ -41,17 +41,21 @@ function saveUnitSystem(units: UnitSystem): void {
 
 interface PreferencesState {
   unitSystem: UnitSystem;
+  /** True once localStorage has been read; the FormatProvider keeps using
+   *  the server-seeded units until then so SSR and first paint agree. */
+  hydrated: boolean;
   setUnitSystem: (units: UnitSystem) => void;
   hydrate: () => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>((set) => ({
   unitSystem: "metric",
+  hydrated: false,
   setUnitSystem: (units) => {
     saveUnitSystem(units);
     set({ unitSystem: units });
   },
   hydrate: () => {
-    set({ unitSystem: loadUnitSystem() });
+    set({ unitSystem: loadUnitSystem(), hydrated: true });
   },
 }));
