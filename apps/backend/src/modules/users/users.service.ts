@@ -497,24 +497,57 @@ export class UsersService {
           }
         : null;
     }
+    let preferencesPatch: Record<string, unknown> | null = null;
     if (dto.preferences !== undefined) {
       // The backend compiles with ES2024 class fields (`useDefineForClassFields`
       // defaults to true at that target), so `plainToInstance` materializes
       // EVERY declared optional field of `UserPreferencesDto` as an own
       // `undefined` property — even the ones absent from the request body.
-      // Spreading `dto.preferences` directly would overwrite stored keys the
-      // caller never touched with `undefined`, which JSONB then drops on
-      // save. Strip undefined entries before merging so an untouched key
-      // in the patch never clobbers a previously stored value.
+      // Strip those before building the patch so an untouched key never
+      // clobbers a previously stored value.
       const patch = Object.fromEntries(
         Object.entries(dto.preferences).filter(
           ([, value]) => value !== undefined,
         ),
       );
-      user.preferences = { ...user.preferences, ...patch };
+      if (Object.keys(patch).length > 0) {
+        preferencesPatch = patch;
+      }
     }
 
+    // Detach the preferences column from the entity before save(): save()
+    // diffs entity values against a fresh internal reload and writes back
+    // any column that differs — so a concurrent preference writer landing
+    // between our findOne and this save would be silently overwritten by
+    // this request's stale whole-object snapshot. An undefined property is
+    // skipped by save() entirely; preferences are persisted ONLY via the
+    // atomic key-wise JSONB merge below, which composes with concurrent
+    // writers instead of racing them.
+    const loadedPreferences = user.preferences;
+    user.preferences = undefined as unknown as Record<string, unknown>;
+
     const saved = await this.userRepo.save(user);
+
+    if (preferencesPatch) {
+      // `||` is a shallow top-level merge — the same semantics as the
+      // previous `{...stored, ...patch}` spread, minus the lost-update race:
+      // each concurrent writer (units toggle, PreferencesSync reconciliation,
+      // the format-prefs capture route) merges only its own keys atomically.
+      await this.userRepo
+        .createQueryBuilder()
+        .update()
+        .set({
+          preferences: () => 'preferences || CAST(:prefsPatch AS jsonb)',
+        })
+        .where('id = :id', { id: userId })
+        .setParameter('prefsPatch', JSON.stringify(preferencesPatch))
+        .execute();
+    }
+
+    // Restore this request's merged view for the response mapping. Under a
+    // concurrent writer the DB may hold additional keys already; echoing our
+    // own read-plus-patch is the standard read-your-writes response.
+    saved.preferences = { ...loadedPreferences, ...(preferencesPatch ?? {}) };
     if (
       dto.avatar_url !== undefined &&
       previousAvatarUrl !== saved.avatar_url

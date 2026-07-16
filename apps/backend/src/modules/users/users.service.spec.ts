@@ -25,7 +25,16 @@ import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let userRepo: Partial<jest.Mocked<Repository<User>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>> & {
+    createQueryBuilder: jest.Mock;
+  };
+  let preferencesQb: {
+    update: jest.Mock;
+    set: jest.Mock;
+    where: jest.Mock;
+    setParameter: jest.Mock;
+    execute: jest.Mock;
+  };
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
   let userFollowRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
   let userBadgeRepo: Partial<jest.Mocked<Repository<UserBadge>>>;
@@ -95,12 +104,22 @@ describe('UsersService', () => {
         ),
     };
 
+    preferencesQb = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      setParameter: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     userRepo = {
       findOne: jest
         .fn()
         .mockImplementation(() => Promise.resolve(buildMockUser())),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       query: jest.fn(),
+      createQueryBuilder: jest.fn(() => preferencesQb),
+    } as unknown as Partial<jest.Mocked<Repository<User>>> & {
+      createQueryBuilder: jest.Mock;
     };
     contactRepo = {
       find: jest.fn().mockResolvedValue([mockContact]),
@@ -718,16 +737,45 @@ describe('UsersService', () => {
       );
     });
 
-    it('should merge preferences', async () => {
-      await service.updateProfile('user-1', {
+    it('should merge preferences atomically in the database, never via save()', async () => {
+      // save() must not carry the preferences column at all — a whole-object
+      // snapshot save is exactly the lost-update race the atomic merge
+      // exists to prevent (a concurrent writer's key would be silently
+      // overwritten by this request's stale read). Capture the column AT
+      // CALL TIME: jest records arguments by reference, and the service
+      // legitimately restores a merged view onto the same entity afterwards
+      // for the response, which would defeat a toHaveBeenCalledWith check.
+      let preferencesAtSaveTime: unknown = 'not-captured';
+      userRepo.save!.mockImplementationOnce((entity) => {
+        // save()'s overloaded mock types the param as `any`; narrow it.
+        preferencesAtSaveTime = (entity as User).preferences;
+        return Promise.resolve(entity as User);
+      });
+
+      const result = await service.updateProfile('user-1', {
         preferences: { daily_km: 300 },
       });
 
-      expect(userRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          preferences: { units: 'metric', daily_km: 300 },
-        }),
+      expect(preferencesAtSaveTime).toBeUndefined();
+      expect(preferencesQb.set).toHaveBeenCalledWith({
+        preferences: expect.any(Function),
+      });
+      expect(preferencesQb.setParameter).toHaveBeenCalledWith(
+        'prefsPatch',
+        JSON.stringify({ daily_km: 300 }),
       );
+      expect(preferencesQb.where).toHaveBeenCalledWith('id = :id', {
+        id: 'user-1',
+      });
+      expect(preferencesQb.execute).toHaveBeenCalledTimes(1);
+      // The response reflects this request's merged view.
+      expect(result.preferences).toEqual({ units: 'metric', daily_km: 300 });
+    });
+
+    it('skips the atomic merge entirely when no preferences are patched', async () => {
+      await service.updateProfile('user-1', { bio: 'No prefs touched.' });
+
+      expect(preferencesQb.execute).not.toHaveBeenCalled();
     });
 
     it('should preserve unsent preference keys when the dto is built via plainToInstance', async () => {
@@ -751,18 +799,24 @@ describe('UsersService', () => {
         },
       });
 
-      await service.updateProfile('user-1', dto);
+      const result = await service.updateProfile('user-1', dto);
 
-      expect(userRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          preferences: {
-            units: 'imperial',
-            daily_km: 250,
-            format_locale: 'cs-CZ',
-            timezone: 'Europe/Prague',
-          },
+      // The own-undefined dto keys must be stripped from the atomic patch —
+      // a JSONB `||` with undefined-turned-null entries would null out the
+      // stored `units`/`daily_km` just like the old spread did.
+      expect(preferencesQb.setParameter).toHaveBeenCalledWith(
+        'prefsPatch',
+        JSON.stringify({
+          format_locale: 'cs-CZ',
+          timezone: 'Europe/Prague',
         }),
       );
+      expect(result.preferences).toEqual({
+        units: 'imperial',
+        daily_km: 250,
+        format_locale: 'cs-CZ',
+        timezone: 'Europe/Prague',
+      });
     });
 
     it('should update avatar_url, bio, and home_region together', async () => {
