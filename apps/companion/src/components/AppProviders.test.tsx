@@ -1,5 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import { AppProviders } from "./AppProviders";
+import type { FormatPrefs } from "@/format";
+
+const mockFormatPrefs: FormatPrefs = {
+  formatLocale: "en-US",
+  timeZone: "UTC",
+  units: "metric",
+};
 
 const mocks = vi.hoisted(() => ({
   usePathname: vi.fn(),
@@ -36,7 +43,7 @@ describe("AppProviders", () => {
     mocks.usePathname.mockReturnValue("/embed/roads/at/tyrol");
 
     render(
-      <AppProviders>
+      <AppProviders formatPrefs={mockFormatPrefs}>
         <div>Embed child</div>
       </AppProviders>,
     );
@@ -54,7 +61,7 @@ describe("AppProviders", () => {
     mocks.usePathname.mockReturnValue("/embeddings");
 
     render(
-      <AppProviders>
+      <AppProviders formatPrefs={mockFormatPrefs}>
         <div>Similar prefix child</div>
       </AppProviders>,
     );
@@ -68,7 +75,7 @@ describe("AppProviders", () => {
     mocks.usePathname.mockReturnValue("/roads/best/at/tyrol");
 
     render(
-      <AppProviders>
+      <AppProviders formatPrefs={mockFormatPrefs}>
         <div>App child</div>
       </AppProviders>,
     );
