@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi, type UpdateProfileInput } from "@/lib/api";
+import { persistUnitPreference } from "@/lib/unit-preference";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
 import {
@@ -564,11 +565,9 @@ export default function ProfilePage() {
           onChange={(next) => {
             const units = next as UnitSystem;
             setUnitSystem(units);
-            void usersApi
-              .updateMe({ preferences: { units } })
-              .catch((error) =>
-                console.error("Failed to save unit preference", error),
-              );
+            // Serialized latest-wins persistence — rapid toggles must not
+            // race each other into a stale-last account write.
+            persistUnitPreference(units);
           }}
           options={[
             { value: "metric", label: t("Metric (km)") },
