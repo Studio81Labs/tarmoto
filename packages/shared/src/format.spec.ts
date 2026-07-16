@@ -154,6 +154,17 @@ describe("createFormatters — dates and times", () => {
     expect(norm(cs.monthYear(INSTANT))).toContain("2025");
   });
 
+  it("renders a locale month name only, UTC-pinned regardless of context timezone", () => {
+    const en = createFormatters({ locale: "en-US", units: "metric" });
+    const cs = createFormatters({
+      locale: "cs-CZ",
+      timeZone: "Europe/Prague",
+      units: "metric",
+    });
+    expect(en.month(INSTANT)).toBe("Apr");
+    expect(norm(cs.month(INSTANT))).toMatch(/dub/);
+  });
+
   it("pins calendar dates to UTC regardless of context timezone", () => {
     const prague = createFormatters({
       locale: "en-GB",

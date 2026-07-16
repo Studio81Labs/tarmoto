@@ -550,19 +550,18 @@ describe("computeYearOverYear", () => {
       format,
     );
     expect(points).toHaveLength(12);
-    // The month label has no per-row year (Formatters has no "month name
-    // only" primitive) — it's anchored on the latest requested year (2026)
-    // for every row, even though the row's own columns span 2025 AND 2026.
-    // Accepted: see ride-stats.ts's `computeYearOverYear` comment.
+    // Month name only, no year — this axis compares the same month across
+    // every requested year, so a year-bearing label would misleadingly
+    // suggest the row belongs to one specific year.
     expect(points[0]).toEqual({
       monthIndex: 0,
-      monthLabel: "Jan 2026",
+      monthLabel: "Jan",
       "2025": 100,
       "2026": 200,
     });
     expect(points[5]).toEqual({
       monthIndex: 5,
-      monthLabel: "Jun 2026",
+      monthLabel: "Jun",
       "2025": 0,
       "2026": 50,
     });

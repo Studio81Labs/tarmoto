@@ -483,23 +483,26 @@ export function computeRollingHeatmap(
   return [...byDate.values()];
 }
 
+// Any year works here — `format.month` renders the month name only, so the
+// anchor's year is discarded. Kept as a named constant (rather than e.g.
+// `new Date().getFullYear()`) so this row-shaping stays deterministic and
+// doesn't imply the label is tied to "this year" in any way.
+const YEAR_OVER_YEAR_LABEL_ANCHOR_YEAR = 2000;
+
 export function computeYearOverYear(
   rides: readonly RideForStats[],
   years: readonly number[],
   format: Formatters,
 ): YearOverYearPoint[] {
-  // The month label text needs ONE reference year even though the row
-  // itself spans every requested year (it's a shared category axis, not an
-  // instant) — Formatters has no "month name only" primitive, so the label
-  // reads e.g. "Jan 2026" rather than bare "Jan". Anchoring on the latest
-  // requested year keeps that suffix consistent across the whole chart
-  // instead of picking arbitrarily per row.
-  const labelYear =
-    years.length > 0 ? Math.max(...years) : new Date().getFullYear();
   const points: YearOverYearPoint[] = Array.from({ length: 12 }, (_, index) => {
     const point: YearOverYearPoint = {
       monthIndex: index,
-      monthLabel: format.monthYear(monthAnchor(labelYear, index)),
+      // Month name only, with no year — this axis compares the SAME month
+      // across every requested year, so a year-bearing label (`monthYear`)
+      // would misleadingly suggest the row belongs to one specific year.
+      monthLabel: format.month(
+        monthAnchor(YEAR_OVER_YEAR_LABEL_ANCHOR_YEAR, index),
+      ),
     };
     for (const year of years) {
       point[String(year)] = 0;

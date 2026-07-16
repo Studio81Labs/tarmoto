@@ -360,8 +360,16 @@ export default function StatsPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
-        <SurfaceBreakdownCard breakdown={breakdown} error={breakdownError} />
-        <CurvinessMixCard breakdown={breakdown} error={breakdownError} />
+        <SurfaceBreakdownCard
+          breakdown={breakdown}
+          error={breakdownError}
+          format={format}
+        />
+        <CurvinessMixCard
+          breakdown={breakdown}
+          error={breakdownError}
+          format={format}
+        />
       </div>
 
       <QualityTrendCard points={qualityTrend} format={format} />
@@ -658,8 +666,13 @@ function BreakdownBody({
 interface BreakdownCardProps {
   breakdown: RideBreakdown | null;
   error: string | null;
+  format: Formatters;
 }
-function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
+function SurfaceBreakdownCard({
+  breakdown,
+  error,
+  format,
+}: BreakdownCardProps) {
   return (
     <Card padded={false} className="p-[22px]">
       <SectionHeading
@@ -685,7 +698,7 @@ function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${s.label} · ${s.pct}%`}
+                  title={`${s.label} · ${format.decimal(s.pct, 1)}%`}
                 />
               ))}
             </div>
@@ -702,7 +715,9 @@ function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
                     />
                     <span className="text-ink">{s.label}</span>
                   </span>
-                  <Mono className="text-fg-dim">{s.pct}%</Mono>
+                  <Mono className="text-fg-dim">
+                    {`${format.decimal(s.pct, 1)}%`}
+                  </Mono>
                 </li>
               ))}
             </ul>
@@ -713,7 +728,7 @@ function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
   );
 }
 
-function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
+function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
   return (
     <Card padded={false} className="p-[22px]">
       <SectionHeading
@@ -745,7 +760,9 @@ function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
                   <div key={s.key}>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-ink">{s.label}</span>
-                      <Mono className="text-fg-dim">{s.pct}%</Mono>
+                      <Mono className="text-fg-dim">
+                        {`${format.decimal(s.pct, 1)}%`}
+                      </Mono>
                     </div>
                     <div
                       className="mt-1.5 h-2 overflow-hidden rounded-full"

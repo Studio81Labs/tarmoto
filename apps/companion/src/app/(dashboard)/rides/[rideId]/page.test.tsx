@@ -140,6 +140,9 @@ describe("RideDetailPage", () => {
     expect(screen.getByText("Climb & descent")).toBeInTheDocument();
     expect(screen.getByText("+700 m")).toBeInTheDocument();
     expect(screen.getByText("−650 m")).toBeInTheDocument();
+    // Net change: 700 - 650 = +50, formatted once via `format.splitElevation`
+    // rather than subtracting two already-formatted display strings.
+    expect(screen.getByText("+50 m")).toBeInTheDocument();
 
     // Speed profile (US-48): the per-segment speed graph renders for rides
     // with segment telemetry.
