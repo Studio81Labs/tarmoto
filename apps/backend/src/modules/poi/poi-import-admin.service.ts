@@ -133,10 +133,13 @@ return 0`;
  * service keeps only what the backend itself must own: the validated atomic
  * extract upload (`storeExtract`, admin -> backend -> shared volume) and the
  * per-`(source, code)` upload lock that coordinates it with a manual trigger.
- * `storeExtract` also best-effort-asks apps/ingest (`importInFlight`,
- * #1011 review FIX 2) whether an import for the same pair is currently
- * running, restoring the upload-vs-import guard that lost its local queue
- * when Phase 3 relocated it.
+ * `storeExtract` also asks apps/ingest (`importInFlight`, #1011 review FIX
+ * 2) whether an import for the same pair is currently running, restoring
+ * the upload-vs-import guard that lost its local queue when Phase 3
+ * relocated it. That ask SKIPS (upload proceeds) only when the integration
+ * isn't configured at all; once it IS configured, any failure to get a
+ * verified answer FAILS CLOSED with a 503 rather than silently proceeding
+ * (#1011 review FIX A).
  */
 @Injectable()
 export class PoiImportAdminService {
@@ -236,23 +239,55 @@ export class PoiImportAdminService {
   }
 
   /**
-   * Best-effort proxy → GET /internal/poi/import-status (#1011 review, FIX
-   * 2). Restores, across the app boundary, the upload-vs-import guard
-   * `storeExtract` lost when Phase 3 moved the `poi.import` queue entirely
-   * into apps/ingest (see the comment at its one call site below).
+   * Whether the apps/ingest internal-API integration is configured at all
+   * (`TARMOTO_INGEST_INTERNAL_URL` set) — checked directly against config,
+   * mirroring `ingestUrl`'s own guard, so a caller that needs to
+   * special-case "unconfigured" (namely `importInFlight`'s skip-the-guard
+   * branch below, #1011 review FIX A) can do so BEFORE ever calling
+   * `ingestFetch`, rather than tripping `ingestUrl`'s own unset-URL 503.
+   */
+  private ingestConfigured(): boolean {
+    return Boolean(
+      this.config.get<string>('TARMOTO_INGEST_INTERNAL_URL')?.trim(),
+    );
+  }
+
+  /**
+   * Proxy → GET /internal/poi/import-status (#1011 review FIX 2). Restores,
+   * across the app boundary, the upload-vs-import guard `storeExtract` lost
+   * when Phase 3 moved the `poi.import` queue entirely into apps/ingest (see
+   * the comment at its one call site below).
    *
-   * BEST-EFFORT: any failure to get a real answer from ingest — network
-   * error, non-2xx, `TARMOTO_INGEST_INTERNAL_URL` unset — resolves to
-   * `false` (not in flight) rather than throwing, so `storeExtract` still
-   * PROCEEDS. This is deliberately safe, not merely permissive: apps/ingest
-   * is the ONLY process that holds the `poi.import` queue/worker (Phase 3),
-   * so "ingest unreachable" and "no worker can possibly be importing" are
-   * the same fact — there is nothing left that could be racing this upload.
-   * Swallowing the error here (rather than letting `storeExtract` 503) also
-   * preserves the existing "upload works even if ingest is down" property
-   * the rest of this service already relies on.
+   * Two distinct outcomes — NOT one blanket "any failure proceeds" fallback
+   * (#1011 review FIX A: the original best-effort version was unsafe. A
+   * network partition, a token mismatch, or an ingest 5xx does NOT mean no
+   * worker is reading the current extract — it may well still be mid-read,
+   * so treating "couldn't verify" as "not in flight" reopened the exact
+   * upload-vs-import race this guard exists to close):
+   *
+   *  - `TARMOTO_INGEST_INTERNAL_URL` UNSET → the integration isn't
+   *    configured at all, so there is no ingest worker process that could
+   *    possibly be racing this upload (apps/ingest is the ONLY process that
+   *    ever holds the `poi.import` queue/worker, Phase 3) — "unconfigured"
+   *    and "nothing could be importing" are the same fact here. Skip the
+   *    guard (return `false`, i.e. proceed) WITHOUT calling ingest at all,
+   *    preserving the documented degraded mode where local uploads still
+   *    work without the ingest integration configured. Checked directly via
+   *    `ingestConfigured()` and short-circuited before any fetch, so this
+   *    never trips `ingestFetch`'s own unset-URL 503.
+   *  - URL SET → a verified answer is required. A clean `{ in_flight }`
+   *    response returns that value; ANYTHING else — a network error, a
+   *    timed-out or unreachable connection, a token mismatch (which
+   *    `ingestFetch` itself remaps to 502), any other non-OK status, or a
+   *    malformed body — FAILS CLOSED: this throws
+   *    `ServiceUnavailableException` (503) instead of returning `false`, so
+   *    `storeExtract` rejects the upload rather than silently racing a
+   *    worker it can no longer see.
    */
   private async importInFlight(source: string, code: string): Promise<boolean> {
+    if (!this.ingestConfigured()) {
+      return false;
+    }
     const params = new URLSearchParams({ source, code });
     try {
       const res = await this.ingestFetch<ImportStatusResponse>(
@@ -261,11 +296,13 @@ export class PoiImportAdminService {
       return res.in_flight;
     } catch (err) {
       this.logger.warn(
-        `import-status check unreachable for ${source}/${code} (treating as not in flight, upload proceeds): ${
+        `import-status check failed for ${source}/${code} — failing closed (refusing the upload) rather than risk racing a worker that may still be reading the current extract: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      return false;
+      throw new ServiceUnavailableException(
+        'Cannot verify POI import status; refusing to replace the extract while an import may be running.',
+      );
     }
   }
 
@@ -565,10 +602,11 @@ export class PoiImportAdminService {
     // extract file while an operator's new upload is about to atomically
     // replace it out from under it. Phase 3 moved the `poi.import` queue
     // entirely into apps/ingest, so the backend can no longer answer this
-    // itself — `importInFlight` above asks apps/ingest instead
-    // (best-effort: see its doc comment for why "ingest unreachable" is safe
-    // to treat as "not in flight" rather than merely convenient) (#1011
-    // review, FIX 2).
+    // itself — `importInFlight` above asks apps/ingest instead. It skips
+    // that ask (upload proceeds) only when the integration isn't configured
+    // at all; once it IS configured, any failure to get a verified answer
+    // throws (503) instead of silently proceeding — see its doc comment
+    // (#1011 review FIX A).
     if (await this.importInFlight(source, code)) {
       throw new ConflictException(
         `an import is in progress for ${source}/${code}; wait before replacing the extract`,

@@ -665,8 +665,8 @@ describe('PoiImportAdminService', () => {
       expect(redis.del).not.toHaveBeenCalled();
     });
 
-    // #1011 review (FIX 2): restores, via a best-effort cross-boundary check
-    // to apps/ingest, the upload-vs-import guard that used to live here as a
+    // #1011 review (FIX 2): restores, via a cross-boundary check to
+    // apps/ingest, the upload-vs-import guard that used to live here as a
     // local queue scan before Phase 3 moved the `poi.import` queue entirely
     // into apps/ingest (the two tests Task 2 deleted covered that queue scan
     // directly — these are the API-shaped equivalent).
@@ -703,16 +703,17 @@ describe('PoiImportAdminService', () => {
       expect(existsSync(target)).toBe(false);
     });
 
-    it('proceeds with the upload (best-effort) when apps/ingest is unreachable for the in-flight check', async () => {
+    it('proceeds with the upload when apps/ingest reports no import in flight for the pair', async () => {
       const target = extractPath('osm', 'CZ');
       const svc = new PoiImportAdminService(
         fakeConfig(),
         makeLockRedis() as never,
       );
-      // Parent-dir check, then the post-rename result stat.
       statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
       statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
-      fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ in_flight: false }), { status: 200 }),
+      );
 
       const result = await svc.storeExtract('osm', 'CZ', {
         stream: Readable.from(Buffer.from('hello')),
@@ -722,7 +723,113 @@ describe('PoiImportAdminService', () => {
 
       expect(result.present).toBe(true);
       expect(readFileSync(target, 'utf8')).toBe('hello');
+    });
+
+    // #1011 review FIX A: `TARMOTO_INGEST_INTERNAL_URL` unset means the
+    // ingest integration isn't wired up at all, so there's no worker process
+    // that could possibly be racing this upload — the guard is skipped
+    // (proceed) WITHOUT ever calling ingest, preserving the documented
+    // degraded mode where local uploads still work without the integration.
+    it('proceeds with the upload (no ingest call) when TARMOTO_INGEST_INTERNAL_URL is unset', async () => {
+      const target = extractPath('osm', 'CZ');
+      const svc = new PoiImportAdminService(
+        fakeConfig({ TARMOTO_INGEST_INTERNAL_URL: undefined }),
+        makeLockRedis() as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      statMock.mockResolvedValueOnce({ size: 5, mtimeMs: 0 } as never);
+
+      const result = await svc.storeExtract('osm', 'CZ', {
+        stream: Readable.from(Buffer.from('hello')),
+        size: 5,
+        originalName: 'cz.osm',
+      });
+
+      expect(result.present).toBe(true);
+      expect(readFileSync(target, 'utf8')).toBe('hello');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    // #1011 review FIX A: once the integration IS configured, a network
+    // error verifying import status must NOT be read as "not in flight" —
+    // the ingest worker may still be reading the CURRENT extract, so
+    // proceeding would reopen the exact race this guard exists to close.
+    // This inverts the old best-effort behavior (see git history for the
+    // prior version of this test), which is exactly the bug FIX A closes.
+    it('fails closed with 503 (and writes nothing) when apps/ingest is unreachable for the in-flight check', async () => {
+      const target = extractPath('osm', 'CZ');
+      const svc = new PoiImportAdminService(
+        fakeConfig(),
+        makeLockRedis() as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
       expect(leftoverPartFiles()).toEqual([]);
+      expect(existsSync(target)).toBe(false);
+    });
+
+    it('fails closed with 503 (not the raw upstream status) when apps/ingest answers with a server error', async () => {
+      // A 500 is still an unverifiable answer from the upload guard's point
+      // of view — it must collapse to the SAME 503, not leak ingest's own
+      // status code into the upload path.
+      const target = extractPath('osm', 'CZ');
+      const svc = new PoiImportAdminService(
+        fakeConfig(),
+        makeLockRedis() as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      fetchMock.mockResolvedValueOnce(
+        new Response('internal error', { status: 500 }),
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(leftoverPartFiles()).toEqual([]);
+      expect(existsSync(target)).toBe(false);
+    });
+
+    it('fails closed with 503 (not 502) when apps/ingest rejects the internal token', async () => {
+      // `ingestFetch` itself remaps a bare 401/403 to 502 for the
+      // trigger/regions/runs proxies (a backend<->ingest config mismatch,
+      // not an admin-session concern — see the "maps an upstream 401" test
+      // above). For THIS guard a token mismatch is just another
+      // unverifiable state, and must still reject the upload with 503, not
+      // let that 502 leak through.
+      const target = extractPath('osm', 'CZ');
+      const svc = new PoiImportAdminService(
+        fakeConfig(),
+        makeLockRedis() as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      fetchMock.mockResolvedValueOnce(
+        new Response('invalid internal token', { status: 401 }),
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(leftoverPartFiles()).toEqual([]);
+      expect(existsSync(target)).toBe(false);
     });
   });
 
