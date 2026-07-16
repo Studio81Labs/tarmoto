@@ -599,7 +599,7 @@ export class PoiImportAdminService {
         `expected a ${expectedExt} file for ${source}`,
       );
     }
-    // A deployment without TARMOTO_*_IMPORT_DIR set has no upload target;
+    // A deployment without TARMOTO_*_POI_IMPORT_DIR set has no upload target;
     // `getExtractPath` would throw a plain Error → 500. Surface a clear 503
     // instead (the status read collapses the same condition to `extract: null`,
     // so the UI still offers Upload) (#847 review).
@@ -614,7 +614,7 @@ export class PoiImportAdminService {
     }
     const target = this.getExtractPath(source, code);
 
-    // `extractDirConfigured` only proves TARMOTO_*_IMPORT_DIR is SET, not
+    // `extractDirConfigured` only proves TARMOTO_*_POI_IMPORT_DIR is SET, not
     // that the shared extract volume actually attached — a mount that failed
     // at container start (or an operator mistake leaving a plain file where
     // a directory belongs) still passes that check. Stat the PARENT

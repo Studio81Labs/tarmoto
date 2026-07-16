@@ -440,7 +440,7 @@ describe('PoiImportAdminService', () => {
     });
 
     // #847 review (this fix): `extractDirConfigured` only proves
-    // TARMOTO_*_IMPORT_DIR is SET, not that the shared mount actually
+    // TARMOTO_*_POI_IMPORT_DIR is SET, not that the shared mount actually
     // attached — a volume that failed to mount leaves the configured path's
     // PARENT directory simply absent. Without this check, `createWriteStream`
     // deep inside the pipeline below would throw a raw ENOENT — AFTER the

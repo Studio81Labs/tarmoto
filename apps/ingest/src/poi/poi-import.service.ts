@@ -37,7 +37,7 @@ export const FSQ_POI_IMPORT = Symbol("FSQ_POI_IMPORT");
  * `PoiModule` binds it to `[PoiImportService (OSM), FSQ_POI_IMPORT (FSQ)]`;
  * adding a third source later is one more entry here, with no processor change.
  * Each instance self-identifies via `source` and gates on its own `enabled`, so
- * the fan-out runs exactly the sources whose `TARMOTO_*_IMPORT_ENABLED` is set.
+ * the fan-out runs exactly the sources whose `TARMOTO_*_POI_IMPORT_ENABLED` is set.
  */
 export const POI_IMPORT_SOURCES = Symbol("POI_IMPORT_SOURCES");
 
