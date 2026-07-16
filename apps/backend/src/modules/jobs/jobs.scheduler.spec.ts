@@ -23,9 +23,33 @@ function fakeQueue(name: string): FakeQueue {
   };
 }
 
+/**
+ * Stands in for the ad-hoc `Queue` that `JobsScheduler#retiredQueueFor`
+ * constructs for a retired queue name. `removeJobScheduler`/`close` are the
+ * only two calls the retired-scheduler cleanup makes against it.
+ */
+interface FakeRetiredQueue {
+  removeJobScheduler: jest.Mock;
+  close: jest.Mock;
+}
+
+function fakeRetiredQueue(): FakeRetiredQueue {
+  return {
+    removeJobScheduler: jest.fn().mockResolvedValue(false),
+    close: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+/** Cast target for spying on the `protected retiredQueueFor` seam below. */
+interface SchedulerWithRetiredQueueFor {
+  retiredQueueFor: (name: string) => FakeRetiredQueue;
+}
+
 async function buildScheduler(workersEnabled: boolean): Promise<{
   scheduler: JobsScheduler;
   queues: Record<string, FakeQueue>;
+  retiredQueue: FakeRetiredQueue;
+  retiredQueueFor: jest.SpyInstance;
 }> {
   const queues = Object.fromEntries(
     ALL_QUEUE_NAMES.map((name) => [name, fakeQueue(name)]),
@@ -44,9 +68,24 @@ async function buildScheduler(workersEnabled: boolean): Promise<{
       { provide: JOBS_CONFIG_TOKEN, useValue: config },
     ],
   }).compile();
+  const scheduler = moduleRef.get(JobsScheduler);
+  // Stub the ad-hoc-Queue seam for every test, not just the one that asserts
+  // on it directly: `removeRetiredSchedulers` runs unconditionally whenever
+  // workers are enabled, and the real implementation would otherwise try to
+  // open a live BullMQ `Queue` off these fake queues' non-existent
+  // `.opts.connection` (`FakeQueue` above carries no `opts` at all).
+  const retiredQueue = fakeRetiredQueue();
+  const retiredQueueFor = jest
+    .spyOn(
+      scheduler as unknown as SchedulerWithRetiredQueueFor,
+      'retiredQueueFor',
+    )
+    .mockReturnValue(retiredQueue);
   return {
-    scheduler: moduleRef.get(JobsScheduler),
+    scheduler,
     queues,
+    retiredQueue,
+    retiredQueueFor,
   };
 }
 
@@ -137,5 +176,23 @@ describe('JobsScheduler', () => {
     expect(
       queues[QUEUE_NAMES.DIGEST_WEEKLY].upsertJobScheduler,
     ).toHaveBeenCalled();
+  });
+
+  it('removes the retired osm.import.run scheduler left behind by the osm.import -> road.import queue rename', async () => {
+    const { scheduler, retiredQueue, retiredQueueFor } =
+      await buildScheduler(true);
+
+    await scheduler.onApplicationBootstrap();
+
+    // The old queue is no longer injected (dropped along with
+    // QUEUE_NAMES.OSM_IMPORT), so the cleanup must bind an ad-hoc Queue to
+    // the bare retired name rather than reach for an `@InjectQueue`d one.
+    expect(retiredQueueFor).toHaveBeenCalledWith('osm.import');
+    // `${queue}.${job}` was the old scheduler key; `run` was the job name.
+    expect(retiredQueue.removeJobScheduler).toHaveBeenCalledWith(
+      'osm.import.run',
+    );
+    // The ad-hoc connection must not outlive this one cleanup call.
+    expect(retiredQueue.close).toHaveBeenCalledTimes(1);
   });
 });
