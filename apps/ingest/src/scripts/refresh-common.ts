@@ -6,9 +6,9 @@
  * exec-error surfacing.
  */
 
-import { readdir, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { readdir, rm, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 
 /**
  * Per-region outcome of a refresh run (shared by the OSM and FSQ extractors):
@@ -27,7 +27,7 @@ export interface RefreshSummary {
  * orphans (from a killed/restarted run) without ever touching an in-progress
  * upload's temp on the same shared volume (#976 review).
  */
-export const REFRESH_TMP_SUFFIX = '.refresh.part';
+export const REFRESH_TMP_SUFFIX = ".refresh.part";
 
 /**
  * A refresh temp older than this is treated as an orphan from a killed run and
@@ -45,7 +45,7 @@ export const STALE_TEMP_AGE_MS = 60 * 60 * 1000; // 1 hour
  * `.part`.
  */
 export function refreshTmpPath(finalOut: string): string {
-  return `${finalOut}.${process.pid}.${randomBytes(6).toString('hex')}${REFRESH_TMP_SUFFIX}`;
+  return `${finalOut}.${process.pid}.${randomBytes(6).toString("hex")}${REFRESH_TMP_SUFFIX}`;
 }
 
 /**
@@ -60,10 +60,10 @@ export function describeExecError(label: string, err: unknown): string {
     stderr?: string | Buffer;
   };
   const how = e.signal
-    ? `killed by ${e.signal}${e.signal === 'SIGKILL' ? ' (out of memory?)' : ''}`
-    : `exit ${e.code ?? '?'}`;
-  const stderr = String(e.stderr ?? '').trim();
-  return `${label} ${how}${stderr ? `: ${stderr.slice(-2000)}` : ''}`;
+    ? `killed by ${e.signal}${e.signal === "SIGKILL" ? " (out of memory?)" : ""}`
+    : `exit ${e.code ?? "?"}`;
+  const stderr = String(e.stderr ?? "").trim();
+  return `${label} ${how}${stderr ? `: ${stderr.slice(-2000)}` : ""}`;
 }
 
 /**

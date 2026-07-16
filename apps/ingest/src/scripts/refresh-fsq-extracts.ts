@@ -23,22 +23,22 @@
  * its own schedule, separate from the weekly OSM one.
  */
 
-import { mkdir, rename, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { spawn } from 'node:child_process';
-import type { PoiImportRegion } from '@tarmoto/ingest';
+import { mkdir, rename, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
+import type { PoiImportRegion } from "@tarmoto/ingest";
 import {
   buildFsqExtractSql,
   resolveFsqRefreshConfig,
   type FsqRefreshConfig,
-} from '@tarmoto/ingest';
+} from "@tarmoto/ingest";
 import {
   describeExecError,
   refreshTmpPath,
   sweepStaleTempFiles,
   type RefreshSummary,
-} from './refresh-common.js';
+} from "./refresh-common.js";
 
 /** Injectable seam so the orchestration is unit-testable without a real `duckdb`
  *  binary or the remote catalog. */
@@ -58,32 +58,32 @@ function runDuckdb(sql: string): Promise<void> {
     // `-init /dev/null` skips any user `.duckdbrc`; reading SQL from a pipe is
     // inherently non-interactive. No database file → a transient in-memory
     // session, all the COPY needs.
-    const child = spawn('duckdb', ['-init', '/dev/null'], {
-      stdio: ['pipe', 'ignore', 'pipe'],
+    const child = spawn("duckdb", ["-init", "/dev/null"], {
+      stdio: ["pipe", "ignore", "pipe"],
     });
     const { stdin, stderr: stderrStream } = child;
     if (!stdin || !stderrStream) {
-      reject(new Error('duckdb: failed to open stdin/stderr pipes'));
+      reject(new Error("duckdb: failed to open stdin/stderr pipes"));
       return;
     }
-    let stderr = '';
-    stderrStream.on('data', (chunk: Buffer) => {
+    let stderr = "";
+    stderrStream.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on('error', (err) => {
+    child.on("error", (err) => {
       // Failed to spawn (e.g. duckdb not on PATH).
       reject(
         new Error(`duckdb failed to start: ${err.message}`, { cause: err }),
       );
     });
-    child.on('close', (code, signal) => {
+    child.on("close", (code, signal) => {
       if (code === 0) {
         resolve();
         return;
       }
       reject(
         new Error(
-          describeExecError('duckdb', {
+          describeExecError("duckdb", {
             code: code ?? undefined,
             signal,
             stderr,
@@ -93,7 +93,7 @@ function runDuckdb(sql: string): Promise<void> {
     });
     // If duckdb dies before draining stdin, the write end errors (EPIPE); the
     // `close`/`error` handlers already carry the real reason, so ignore it here.
-    stdin.on('error', () => undefined);
+    stdin.on("error", () => undefined);
     stdin.end(sql);
   });
 }
@@ -142,12 +142,12 @@ export async function refreshAll(
 ): Promise<RefreshSummary> {
   if (config.targetDir === null) {
     throw new Error(
-      'TARMOTO_FSQ_IMPORT_DIR is not set — nowhere to write refreshed extracts',
+      "TARMOTO_FSQ_IMPORT_DIR is not set — nowhere to write refreshed extracts",
     );
   }
   if (config.token === null) {
     throw new Error(
-      'TARMOTO_FSQ_TOKEN is not set — cannot authenticate to the OS Places catalog',
+      "TARMOTO_FSQ_TOKEN is not set — cannot authenticate to the OS Places catalog",
     );
   }
   // Reclaim orphans from a previously killed run before writing new temps.
@@ -155,7 +155,7 @@ export async function refreshAll(
   const summary: RefreshSummary = { ok: [], failed: [] };
   log(
     `FSQ refresh: ${config.regions.length} region(s) — ` +
-      `${config.regions.map((r) => r.code).join(', ') || '(none)'}`,
+      `${config.regions.map((r) => r.code).join(", ") || "(none)"}`,
   );
   for (const region of config.regions) {
     try {
@@ -187,7 +187,7 @@ async function main(): Promise<void> {
   const config = resolveFsqRefreshConfig();
   if (!config.enabled) {
     console.log(
-      'FSQ refresh: TARMOTO_FSQ_REFRESH_ENABLED is not true — skipping.',
+      "FSQ refresh: TARMOTO_FSQ_REFRESH_ENABLED is not true — skipping.",
     );
     return;
   }
@@ -208,7 +208,7 @@ async function main(): Promise<void> {
 }
 
 // Run as a CLI only (not when imported by the spec).
-if (process.argv[1]?.endsWith('refresh-fsq-extracts.js')) {
+if (process.argv[1]?.endsWith("refresh-fsq-extracts.js")) {
   main().catch((err: unknown) => {
     console.error(err);
     process.exit(1);

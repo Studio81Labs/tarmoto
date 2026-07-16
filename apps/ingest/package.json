@@ -16,6 +16,8 @@
     "poi:import": "node dist/scripts/import-pois.js",
     "fsq:import": "node dist/scripts/import-pois.js fsq",
     "poi:load-boundaries": "node dist/scripts/load-region-boundaries.js",
+    "poi:refresh": "node dist/scripts/refresh-poi-extracts.js",
+    "fsq:refresh": "node dist/scripts/refresh-fsq-extracts.js",
     "db:migrate:poi": "typeorm migration:run -d node_modules/@tarmoto/poi-db/dist/data-source.js",
     "db:revert:poi": "typeorm migration:revert -d node_modules/@tarmoto/poi-db/dist/data-source.js"
   },

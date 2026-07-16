@@ -27,28 +27,28 @@
  * machinery via `refresh-common`.
  */
 
-import { createWriteStream } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { PoiImportRegion } from '@tarmoto/ingest';
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { PoiImportRegion } from "@tarmoto/ingest";
 import {
   bboxArg,
   geofabrikUrl,
   POI_TAGS_FILTER_EXPRESSIONS,
   resolvePoiRefreshConfig,
   type PoiRefreshConfig,
-} from '@tarmoto/ingest';
+} from "@tarmoto/ingest";
 import {
   describeExecError,
   refreshTmpPath,
   sweepStaleTempFiles,
   type RefreshSummary,
-} from './refresh-common.js';
+} from "./refresh-common.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,7 +62,7 @@ export interface RefreshDeps {
 }
 
 async function downloadToFile(url: string, dest: string): Promise<void> {
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await fetch(url, { redirect: "follow" });
   if (!res.ok || res.body === null) {
     throw new Error(
       `download failed (${res.status} ${res.statusText}) for ${url}`,
@@ -75,9 +75,9 @@ async function runOsmium(args: readonly string[]): Promise<void> {
   try {
     // osmium writes to its `-o` file, so stdout/stderr stay small; the generous
     // maxBuffer only guards against verbose progress on a huge input.
-    await execFileAsync('osmium', [...args], { maxBuffer: 256 * 1024 * 1024 });
+    await execFileAsync("osmium", [...args], { maxBuffer: 256 * 1024 * 1024 });
   } catch (err) {
-    throw new Error(describeExecError(`osmium ${args[0] ?? ''}`.trim(), err), {
+    throw new Error(describeExecError(`osmium ${args[0] ?? ""}`.trim(), err), {
       cause: err,
     });
   }
@@ -107,27 +107,27 @@ export async function refreshRegion(
   try {
     await deps.download(url, pbf);
     await deps.osmium([
-      'tags-filter',
+      "tags-filter",
       pbf,
       ...POI_TAGS_FILTER_EXPRESSIONS,
-      '-o',
+      "-o",
       filtered,
-      '--overwrite',
+      "--overwrite",
     ]);
     await deps.osmium([
-      'extract',
-      '-b',
+      "extract",
+      "-b",
       bboxArg(region.bbox),
       filtered,
       // Write OSM XML explicitly. osmium otherwise autodetects the output format
       // from the filename suffix, and our atomic temp name ends in `.part` (not
       // `.osm`) — which osmium can't detect ("Could not detect file format"), so
       // without this the extract fails for every region (#976 review).
-      '-f',
-      'osm',
-      '-o',
+      "-f",
+      "osm",
+      "-o",
       tmpOut,
-      '--overwrite',
+      "--overwrite",
     ]);
     await rename(tmpOut, finalOut);
   } finally {
@@ -153,7 +153,7 @@ export async function refreshAll(
 ): Promise<RefreshSummary> {
   if (config.targetDir === null) {
     throw new Error(
-      'TARMOTO_POI_IMPORT_DIR is not set — nowhere to write refreshed extracts',
+      "TARMOTO_POI_IMPORT_DIR is not set — nowhere to write refreshed extracts",
     );
   }
   // Reclaim orphans from a previously killed run before writing new temps.
@@ -161,7 +161,7 @@ export async function refreshAll(
   const summary: RefreshSummary = { ok: [], failed: [] };
   log(
     `POI refresh: ${config.regions.length} region(s) — ` +
-      `${config.regions.map((r) => r.code).join(', ') || '(none)'}`,
+      `${config.regions.map((r) => r.code).join(", ") || "(none)"}`,
   );
   for (const region of config.regions) {
     try {
@@ -187,7 +187,7 @@ async function main(): Promise<void> {
   const config = resolvePoiRefreshConfig();
   if (!config.enabled) {
     console.log(
-      'POI refresh: TARMOTO_POI_REFRESH_ENABLED is not true — skipping.',
+      "POI refresh: TARMOTO_POI_REFRESH_ENABLED is not true — skipping.",
     );
     return;
   }
@@ -209,7 +209,7 @@ async function main(): Promise<void> {
 }
 
 // Run as a CLI only (not when imported by the spec).
-if (process.argv[1]?.endsWith('refresh-poi-extracts.js')) {
+if (process.argv[1]?.endsWith("refresh-poi-extracts.js")) {
   main().catch((err: unknown) => {
     console.error(err);
     process.exit(1);
