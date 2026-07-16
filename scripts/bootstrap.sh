@@ -95,6 +95,23 @@ ok "TypeORM migrations applied"
 # apps/ingest (migrationsRun) — the backend now reads it with migrationsRun:false.
 # Bootstrap doesn't start apps/ingest, so apply the POI migrations here or a fresh
 # dev DB has no pois/poi_import_regions/poi_import_runs tables and POI reads 500.
+# The POI DB is a DISTINCT container (poi-postgres, host port 5434); the readiness
+# loop above only waited for the core Postgres, so wait for poi-postgres too — a
+# fresh empty volume can still be initializing when the core DB is already up, and
+# db:migrate:poi connecting too early aborts bootstrap with a connection failure.
+echo -n "  Waiting for the POI Postgres to be healthy..."
+RETRIES=30
+until docker compose -f infra/docker/docker-compose.yml exec -T poi-postgres pg_isready -U "${TARMOTO_POI_DATABASE_USER:-tarmoto}" >/dev/null 2>&1; do
+  RETRIES=$((RETRIES - 1))
+  if [ "$RETRIES" -le 0 ]; then
+    echo ""
+    fail "POI Postgres did not become healthy in time"
+  fi
+  sleep 1
+  echo -n "."
+done
+echo ""
+ok "POI Postgres is ready"
 pnpm db:migrate:poi
 ok "POI migrations applied"
 
