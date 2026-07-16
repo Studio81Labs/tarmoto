@@ -76,8 +76,12 @@ Contract changes (all additive):
 - Mobile `UserPreferences` type (`apps/mobile/src/types`) gains the optional fields for
   contract parity; no mobile behavior change.
 
-Existing `PATCH /me` shallow-merge semantics (`{...user.preferences, ...dto.preferences}`)
-already preserve unrelated keys when a client patches a subset.
+`PATCH /me` preference merges must strip `undefined`-valued keys before spreading
+(`users.service.ts` does this as of this work): with ES2024 class fields, `plainToInstance`
+materializes every declared optional DTO field as an own `undefined` property, so a naive
+`{...user.preferences, ...dto.preferences}` would wipe every key the PATCH didn't send —
+the original premise that the shallow merge "already preserves unrelated keys" was false
+and is regression-tested via a `plainToInstance`-built DTO in `users.service.spec.ts`.
 
 ### 2. Detection & sync (companion)
 
