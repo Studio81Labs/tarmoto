@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { I18nProvider } from "@/i18n/I18nProvider";
+import { FormatProvider } from "@/format/FormatProvider";
+import type { FormatPrefs } from "@/format";
 import { usePathname } from "next/navigation";
 import { NetworkStatusProvider } from "./NetworkStatusProvider";
 import { ToastHost } from "./ToastHost";
@@ -15,23 +17,36 @@ const AuthenticatedAppProviders = dynamic(() =>
 export function AppProviders({
   children,
   locale,
+  formatPrefs,
 }: {
   children: React.ReactNode;
   locale?: string | null;
+  formatPrefs: FormatPrefs;
 }) {
   const pathname = usePathname();
 
   const localeProp = locale !== undefined ? { locale } : {};
+  const formatProps = {
+    formatLocale: formatPrefs.formatLocale,
+    timeZone: formatPrefs.timeZone,
+    units: formatPrefs.units,
+  };
 
   if (pathname === "/embed" || pathname.startsWith("/embed/")) {
-    return <I18nProvider {...localeProp}>{children}</I18nProvider>;
+    return (
+      <I18nProvider {...localeProp}>
+        <FormatProvider {...formatProps}>{children}</FormatProvider>
+      </I18nProvider>
+    );
   }
 
   return (
     <I18nProvider {...localeProp}>
-      <NetworkStatusProvider />
-      <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>
-      <ToastHost />
+      <FormatProvider {...formatProps}>
+        <NetworkStatusProvider />
+        <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>
+        <ToastHost />
+      </FormatProvider>
     </I18nProvider>
   );
 }

@@ -103,6 +103,10 @@ export interface UserPreferences {
   road_types: string[];
   record_gps: boolean;
   crash_detection: boolean;
+  /** BCP-47 regional-format tag captured by companion; unused by mobile yet. */
+  format_locale?: string;
+  /** IANA display timezone captured by companion; unused by mobile yet. */
+  timezone?: string;
 }
 
 /**

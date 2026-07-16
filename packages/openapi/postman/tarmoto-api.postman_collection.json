@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "20f5512a-ad7a-4380-8b2c-5c9687b0a085",
+    "_postman_id": "0b195ade-422c-483a-8850-0b16ec763cda",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1728,7 +1728,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"language\": \"en\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false,\n    \"route_prefs\": {\n      \"road_preference\": \"direct\",\n      \"avoid_highways\": false,\n      \"avoid_tolls\": false,\n      \"avoid_unpaved\": false,\n      \"surfaces\": [\n        \"\"\n      ],\n      \"min_quality\": \"any\"\n    }\n  }\n}",
+              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"language\": \"en\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"metric\",\n    \"format_locale\": \"\",\n    \"timezone\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false,\n    \"route_prefs\": {\n      \"road_preference\": \"direct\",\n      \"avoid_highways\": false,\n      \"avoid_tolls\": false,\n      \"avoid_unpaved\": false,\n      \"surfaces\": [\n        \"\"\n      ],\n      \"min_quality\": \"any\"\n    }\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

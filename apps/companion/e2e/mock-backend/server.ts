@@ -2991,7 +2991,7 @@ export function buildApp(): Express {
       home_region: user.home_region,
       home_location: null,
       work_location: null,
-      preferences: {},
+      preferences: user.preferences,
       created_at: user.created_at,
     });
   });
@@ -3023,6 +3023,7 @@ export function buildApp(): Express {
   // - `avatar_url`:   string|null, ≤500
   // - `bio`:          string|null, ≤500
   // - `home_region`:  string|null, ≤120
+  // - `preferences`:  partial object, shallow-merged onto the stored one
   // `@IsOptional` in class-validator treats `null` AND `undefined`
   // as "skip validation" — so nullable fields accept `null` to
   // clear, and a present non-null value must satisfy the rest. The
@@ -3072,6 +3073,18 @@ export function buildApp(): Express {
     if (body.phone !== undefined) {
       user.phone = body.phone;
     }
+    // Mirrors the real backend's updateProfile merge (post-fix): shallow
+    // merge onto the stored object, skipping undefined-valued keys so a
+    // partial patch (e.g. just `{ format_locale, timezone }`) never wipes
+    // previously stored keys like `units`.
+    if (body.preferences !== undefined) {
+      const patch = Object.fromEntries(
+        Object.entries(body.preferences ?? {}).filter(
+          ([, value]) => value !== undefined,
+        ),
+      );
+      user.preferences = { ...user.preferences, ...patch };
+    }
     res.json({
       id: user.id,
       email: user.email,
@@ -3082,7 +3095,7 @@ export function buildApp(): Express {
       home_region: user.home_region,
       home_location: null,
       work_location: null,
-      preferences: {},
+      preferences: user.preferences,
       created_at: user.created_at,
     });
   });

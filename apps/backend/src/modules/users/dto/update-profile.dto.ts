@@ -9,10 +9,17 @@ import {
   MaxLength,
   ValidateIf,
   ValidateNested,
+  IsTimeZone,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { SUPPORTED_LOCALES, type SupportedLocale } from '@tarmoto/shared';
+import {
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+  canonicalizeFormatLocale,
+  TIMEZONE_MAX_LENGTH,
+} from '@tarmoto/shared';
+import { IsFormatLocale } from './is-format-locale.validator.js';
 import { ROUTE_PREFERENCES } from '../../routing/dto/route.dto.js';
 
 export const MIN_QUALITY_LEVELS = [
@@ -66,30 +73,65 @@ class LatLngDto {
 }
 
 class UserPreferencesDto {
-  @IsOptional()
-  @IsString()
-  units?: string;
+  // These three use the undefined-only skip (`@ValidateIf`) rather than
+  // `@IsOptional()` for the same reason `language` does below: `@IsOptional()`
+  // also skips validation for explicit `null`, which would let a PATCH persist
+  // nulls into the JSONB despite the response contract declaring optional
+  // strings. `@ValidateIf` still runs the validators for `null`, which reject it.
+  @ApiProperty({ enum: ['metric', 'imperial'], required: false })
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsIn(['metric', 'imperial'])
+  units?: 'metric' | 'imperial';
 
+  /**
+   * BCP-47 regional-format tag (e.g. "cs-CZ") driving number/date display.
+   * Canonicalized on write ("CS-cz" → "cs-CZ"); when canonicalization fails
+   * the raw value is kept so @IsFormatLocale rejects it with a 400 instead
+   * of a silent null landing in the JSONB.
+   */
+  @ApiProperty({ required: false })
+  @ValidateIf((_o, v) => v !== undefined)
+  @Transform(({ value }: { value: unknown }): unknown =>
+    typeof value === 'string'
+      ? (canonicalizeFormatLocale(value) ?? value)
+      : value,
+  )
+  @IsFormatLocale()
+  format_locale?: string;
+
+  /** IANA display timezone (e.g. "Europe/Prague"); mirrors the rider's device. */
+  @ApiProperty({ required: false })
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsTimeZone()
+  @MaxLength(TIMEZONE_MAX_LENGTH)
+  timezone?: string;
+
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   daily_km?: number;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   min_quality?: number;
 
+  @ApiProperty({ type: [String], required: false })
   @IsOptional()
   @IsString({ each: true })
   road_types?: string[];
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
   record_gps?: boolean;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
   crash_detection?: boolean;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @ValidateNested()
   @Type(() => UserRoutePrefsDto)

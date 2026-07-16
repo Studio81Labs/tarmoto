@@ -63,6 +63,22 @@ class UserPreferencesResponse {
   @ApiProperty({ required: false, enum: ['metric', 'imperial'] })
   units?: 'metric' | 'imperial';
 
+  @ApiProperty({
+    required: false,
+    description:
+      'BCP-47 regional-format locale (e.g. cs-CZ) driving number/date ' +
+      "display. Auto-captured from the rider's browser; user-editable later.",
+  })
+  format_locale?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'IANA display timezone (e.g. Europe/Prague). Auto-synced to mirror ' +
+      "the rider's current device (companion FormatPrefsSync).",
+  })
+  timezone?: string;
+
   @ApiProperty({ required: false })
   daily_km?: number;
 

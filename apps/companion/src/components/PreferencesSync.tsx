@@ -1,19 +1,101 @@
 "use client";
 
-import { useEffect } from "react";
-import { usePreferencesStore } from "@/stores/preferences";
+import { useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
+import { canonicalizeFormatLocale, isValidTimeZone } from "@tarmoto/shared";
+import { getStoredUnitSystem, usePreferencesStore } from "@/stores/preferences";
+import { usersApi } from "@/lib/api/users";
 
 /**
- * Hydrates the unit preference (km/mi) from localStorage once on mount.
- * Mounted in the authenticated app shell so every dashboard page reflects the
- * rider's saved units — previously only pages that called `hydrate()` directly
- * (Road map, Profile) did, so landing straight on e.g. `/rides` fell back to
- * the metric default even for imperial riders. Headless: renders nothing.
+ * Hydrates the unit preference and reconciles display preferences with the
+ * account record.
+ *
+ * Local hydrate runs first (fast paint with the device's last choice).
+ * Once the session is authenticated, one `/me` read reconciles in both
+ * directions:
+ *  - units: the account value wins when present (cross-device source of
+ *    truth); a rider with only a pre-account localStorage value gets it
+ *    backfilled once, so an expressed preference never silently stays
+ *    device-local (spec decision #4).
+ *  - format_locale / timezone: the RECORD follows the device (spec
+ *    decision #2). This must live here, against `/me`, not only in
+ *    FormatPrefsSync's cookie comparison — cookies set while logged out
+ *    make that comparison a no-op after login, and the record would never
+ *    be prefilled at all.
+ * Headless: renders nothing.
  */
 export function PreferencesSync() {
+  const { status } = useSession();
   const hydrate = usePreferencesStore((s) => s.hydrate);
+  const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+  // Guards the reconciliation effect below against React strict-mode
+  // double-invoke and repeat "authenticated" passes (session refresh
+  // re-renders) firing a second /me GET+PATCH cycle. Must NOT latch on a
+  // pre-auth pass — only set once the effect actually runs the
+  // reconciliation, so an eventual authenticated pass still fires.
+  const ran = useRef(false);
+
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || ran.current) return;
+    ran.current = true;
+    // No unmount-cancellation guard here on purpose: `ran` already ensures
+    // this async work only ever starts once per mounted instance, so a
+    // `cancelled` flag set by strict-mode's simulated-unmount cleanup would
+    // make the sole in-flight request bail before the (unmount-safe)
+    // zustand store update / network PATCH ever runs — silently dropping
+    // the reconciliation in dev. Same pattern as FormatPrefsSync.
+    void (async () => {
+      try {
+        // Snapshot the explicit local choice BEFORE the read: if it changes
+        // while /me is in flight, the rider toggled units mid-read and the
+        // account value below is stale — applying it would revert their
+        // just-made choice (with `ran` latched, nothing in-session would
+        // heal the revert) while the toggle's own PATCH puts the account on
+        // the new value anyway. Format prefs are device-derived and
+        // unaffected by the race.
+        const storedBefore = getStoredUnitSystem();
+        const { data: me } = await usersApi.getMe();
+
+        const prefsPatch: {
+          units?: "metric" | "imperial";
+          format_locale?: string;
+          timezone?: string;
+        } = {};
+
+        const accountUnits = me.preferences?.units;
+        const stored = getStoredUnitSystem();
+        if (stored === storedBefore) {
+          if (accountUnits === "metric" || accountUnits === "imperial") {
+            if (accountUnits !== stored) setUnitSystem(accountUnits);
+          } else if (stored) {
+            prefsPatch.units = stored;
+          }
+        }
+
+        const deviceLocale = canonicalizeFormatLocale(navigator.language);
+        if (deviceLocale && me.preferences?.format_locale !== deviceLocale) {
+          prefsPatch.format_locale = deviceLocale;
+        }
+        const deviceZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (
+          isValidTimeZone(deviceZone) &&
+          me.preferences?.timezone !== deviceZone
+        ) {
+          prefsPatch.timezone = deviceZone;
+        }
+
+        if (Object.keys(prefsPatch).length > 0) {
+          await usersApi.updateMe({ preferences: prefsPatch });
+        }
+      } catch (error) {
+        console.error("Failed to sync display preferences with account", error);
+      }
+    })();
+  }, [status, setUnitSystem]);
+
   return null;
 }
