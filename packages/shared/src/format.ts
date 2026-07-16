@@ -7,6 +7,14 @@
  * accept exactly the same `format_locale` / `timezone` values.
  */
 
+import {
+  celsiusToFahrenheit,
+  kmToMiles,
+  kmhToMph,
+  metersToFeet,
+  type UnitSystem,
+} from "./units";
+
 export const DEFAULT_FORMAT_LOCALE = "en";
 /** BCP-47 tags are bounded well under this; also caps abuse via the wire. */
 export const FORMAT_LOCALE_MAX_LENGTH = 35;
@@ -76,4 +84,307 @@ export function resolveFormatLocaleFromAcceptLanguage(
     if (canonical) return canonical;
   }
   return null;
+}
+
+export type DateInput = string | number | Date;
+
+export interface FormatContext {
+  /** BCP-47 regional-format tag (e.g. "cs-CZ"). Invalid input falls back to "en". */
+  locale: string;
+  /** IANA zone instants render in. Invalid/absent falls back to "UTC". */
+  timeZone?: string;
+  units: UnitSystem;
+}
+
+export interface SplitValueUnit {
+  value: string;
+  unit: string;
+}
+
+export interface Formatters {
+  /** Resolved (post-fallback) context, for callers that need to introspect. */
+  locale: string;
+  timeZone: string;
+  units: UnitSystem;
+  integer(value: number): string;
+  number(value: number, options?: Intl.NumberFormatOptions): string;
+  /** Localized `toFixed` replacement: fixed digits, locale separators/grouping. */
+  decimal(value: number, digits: number): string;
+  /** Takes a fraction: `percent(0.42)` → "42%". */
+  percent(fraction: number): string;
+  /** Instant, medium date, in the context timezone. */
+  date(value: DateInput): string;
+  /** Instant, "18 Apr"-shaped, in the context timezone. */
+  shortDate(value: DateInput): string;
+  /** Instant, "Apr 2025"-shaped, in the context timezone. */
+  monthYear(value: DateInput): string;
+  /** Instant, locale hour-cycle time, in the context timezone. */
+  time(value: DateInput): string;
+  /** Instant, medium date + short time, in the context timezone. */
+  dateTime(value: DateInput): string;
+  /** Instant range, "Apr 3 – 9"-shaped, in the context timezone. */
+  dateRange(start: DateInput, end: DateInput): string;
+  /**
+   * Date-only semantics (closure windows, "a day"): UTC-pinned so the
+   * rendered day never shifts with the viewer's timezone, locale-formatted.
+   */
+  calendarDate(value: DateInput): string;
+  calendarDateRange(start: DateInput, end: DateInput): string;
+  /** "now" / "5m ago" / "3h ago" / "2d ago", absolute `date()` beyond 7 days. */
+  relativeTime(value: DateInput, now?: DateInput): string;
+  /** "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8). */
+  duration(totalMinutes: number): string;
+  distanceKm(km: number): string;
+  distanceM(m: number): string;
+  speed(kmh: number): string;
+  elevation(m: number): string;
+  temperature(c: number): string;
+  splitDistanceKm(km: number): SplitValueUnit;
+  splitSpeed(kmh: number): SplitValueUnit;
+  splitElevation(m: number): SplitValueUnit;
+}
+
+// Intl constructor calls are expensive and list renders format thousands of
+// values, so instances are memoized per (locale, options). Keys come from
+// static option literals below plus the rare ad-hoc `number()` options —
+// bounded in practice.
+const numberFormats = new Map<string, Intl.NumberFormat>();
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+const relativeTimeFormats = new Map<string, Intl.RelativeTimeFormat>();
+
+function getNumberFormat(
+  locale: string,
+  options: Intl.NumberFormatOptions,
+): Intl.NumberFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = numberFormats.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat(locale, options);
+    numberFormats.set(key, format);
+  }
+  return format;
+}
+
+function getDateTimeFormat(
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = dateTimeFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, options);
+    dateTimeFormats.set(key, format);
+  }
+  return format;
+}
+
+function getRelativeTimeFormat(
+  locale: string,
+  options: Intl.RelativeTimeFormatOptions,
+): Intl.RelativeTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = relativeTimeFormats.get(key);
+  if (!format) {
+    format = new Intl.RelativeTimeFormat(locale, options);
+    relativeTimeFormats.set(key, format);
+  }
+  return format;
+}
+
+// One malformed wire timestamp must not crash-loop a whole list render, so
+// formatters render "" for unparseable dates instead of letting Intl throw.
+function toDate(value: DateInput): Date | null {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+export function createFormatters(ctx: FormatContext): Formatters {
+  const locale = canonicalizeFormatLocale(ctx.locale) ?? DEFAULT_FORMAT_LOCALE;
+  const timeZone =
+    ctx.timeZone !== undefined && isValidTimeZone(ctx.timeZone)
+      ? ctx.timeZone
+      : "UTC";
+  const units: UnitSystem = ctx.units === "imperial" ? "imperial" : "metric";
+
+  const formatNumber = (
+    value: number,
+    options: Intl.NumberFormatOptions,
+  ): string => getNumberFormat(locale, options).format(value);
+
+  const formatDate = (
+    value: DateInput,
+    options: Intl.DateTimeFormatOptions,
+  ): string => {
+    const date = toDate(value);
+    return date ? getDateTimeFormat(locale, options).format(date) : "";
+  };
+
+  const formatDateRange = (
+    start: DateInput,
+    end: DateInput,
+    options: Intl.DateTimeFormatOptions,
+  ): string => {
+    const from = toDate(start);
+    const to = toDate(end);
+    if (!from || !to) return "";
+    return getDateTimeFormat(locale, options).formatRange(from, to);
+  };
+
+  const unitNumber = (
+    value: number,
+    unit: string,
+    options: Intl.NumberFormatOptions,
+  ): string =>
+    formatNumber(value, {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+      ...options,
+    });
+
+  const splitUnitNumber = (
+    value: number,
+    unit: string,
+    options: Intl.NumberFormatOptions,
+  ): SplitValueUnit => {
+    const parts = getNumberFormat(locale, {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+      ...options,
+    }).formatToParts(value);
+    return {
+      value: parts
+        .filter((part) => part.type !== "unit")
+        .map((part) => part.value)
+        .join("")
+        .trim(),
+      unit: parts
+        .filter((part) => part.type === "unit")
+        .map((part) => part.value)
+        .join("")
+        .trim(),
+    };
+  };
+
+  const instant = (
+    extra: Intl.DateTimeFormatOptions,
+  ): Intl.DateTimeFormatOptions => ({ timeZone, ...extra });
+  const calendar = (
+    extra: Intl.DateTimeFormatOptions,
+  ): Intl.DateTimeFormatOptions => ({ timeZone: "UTC", ...extra });
+
+  const date = (value: DateInput): string =>
+    formatDate(value, instant({ dateStyle: "medium" }));
+
+  const relativeTime = (value: DateInput, now?: DateInput): string => {
+    const target = toDate(value);
+    if (!target) return "";
+    const reference =
+      (now !== undefined ? toDate(now) : new Date()) ?? new Date();
+    const diffMs = target.getTime() - reference.getTime();
+    const abs = Math.abs(diffMs);
+    const rtf = getRelativeTimeFormat(locale, {
+      numeric: "auto",
+      style: "narrow",
+    });
+    if (abs < MINUTE_MS) return rtf.format(0, "second");
+    if (abs < HOUR_MS)
+      return rtf.format(Math.trunc(diffMs / MINUTE_MS), "minute");
+    if (abs < DAY_MS) return rtf.format(Math.trunc(diffMs / HOUR_MS), "hour");
+    if (abs <= 7 * DAY_MS)
+      return rtf.format(Math.trunc(diffMs / DAY_MS), "day");
+    return date(target);
+  };
+
+  return {
+    locale,
+    timeZone,
+    units,
+    integer: (value) => formatNumber(value, { maximumFractionDigits: 0 }),
+    number: (value, options) => formatNumber(value, options ?? {}),
+    decimal: (value, digits) =>
+      formatNumber(value, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      }),
+    percent: (fraction) =>
+      formatNumber(fraction, { style: "percent", maximumFractionDigits: 0 }),
+    date,
+    shortDate: (value) =>
+      formatDate(value, instant({ day: "numeric", month: "short" })),
+    monthYear: (value) =>
+      formatDate(value, instant({ month: "short", year: "numeric" })),
+    time: (value) => formatDate(value, instant({ timeStyle: "short" })),
+    dateTime: (value) =>
+      formatDate(value, instant({ dateStyle: "medium", timeStyle: "short" })),
+    dateRange: (start, end) =>
+      formatDateRange(start, end, instant({ day: "numeric", month: "short" })),
+    calendarDate: (value) =>
+      formatDate(value, calendar({ dateStyle: "medium" })),
+    calendarDateRange: (start, end) =>
+      formatDateRange(start, end, calendar({ day: "numeric", month: "short" })),
+    relativeTime,
+    duration: (totalMinutes) => {
+      const total = Math.max(0, Math.round(totalMinutes));
+      const hours = Math.floor(total / 60);
+      const minutes = total % 60;
+      if (hours === 0) return `${minutes} min`;
+      if (minutes === 0) return `${hours}h`;
+      return `${hours}h ${minutes}m`;
+    },
+    distanceKm: (km) =>
+      units === "imperial"
+        ? unitNumber(kmToMiles(km), "mile", { maximumFractionDigits: 1 })
+        : unitNumber(km, "kilometer", { maximumFractionDigits: 1 }),
+    distanceM: (m) => {
+      if (units === "imperial") {
+        // ~1000 ft: below it feet read naturally, above it fractional miles.
+        return m < 305
+          ? unitNumber(metersToFeet(m), "foot", { maximumFractionDigits: 0 })
+          : unitNumber(kmToMiles(m / 1000), "mile", {
+              maximumFractionDigits: 1,
+            });
+      }
+      return m < 1000
+        ? unitNumber(m, "meter", { maximumFractionDigits: 0 })
+        : unitNumber(m / 1000, "kilometer", { maximumFractionDigits: 1 });
+    },
+    speed: (kmh) =>
+      units === "imperial"
+        ? unitNumber(kmhToMph(kmh), "mile-per-hour", {
+            maximumFractionDigits: 1,
+          })
+        : unitNumber(kmh, "kilometer-per-hour", { maximumFractionDigits: 0 }),
+    elevation: (m) =>
+      units === "imperial"
+        ? unitNumber(metersToFeet(m), "foot", { maximumFractionDigits: 0 })
+        : unitNumber(m, "meter", { maximumFractionDigits: 0 }),
+    temperature: (c) =>
+      units === "imperial"
+        ? unitNumber(celsiusToFahrenheit(c), "fahrenheit", {
+            maximumFractionDigits: 1,
+          })
+        : unitNumber(c, "celsius", { maximumFractionDigits: 1 }),
+    splitDistanceKm: (km) =>
+      units === "imperial"
+        ? splitUnitNumber(kmToMiles(km), "mile", { maximumFractionDigits: 1 })
+        : splitUnitNumber(km, "kilometer", { maximumFractionDigits: 1 }),
+    splitSpeed: (kmh) =>
+      units === "imperial"
+        ? splitUnitNumber(kmhToMph(kmh), "mile-per-hour", {
+            maximumFractionDigits: 1,
+          })
+        : splitUnitNumber(kmh, "kilometer-per-hour", {
+            maximumFractionDigits: 0,
+          }),
+    splitElevation: (m) =>
+      units === "imperial"
+        ? splitUnitNumber(metersToFeet(m), "foot", { maximumFractionDigits: 0 })
+        : splitUnitNumber(m, "meter", { maximumFractionDigits: 0 }),
+  };
 }
