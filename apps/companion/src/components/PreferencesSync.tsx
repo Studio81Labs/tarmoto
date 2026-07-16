@@ -42,11 +42,15 @@ export function PreferencesSync() {
   useEffect(() => {
     if (status !== "authenticated" || ran.current) return;
     ran.current = true;
-    let cancelled = false;
+    // No unmount-cancellation guard here on purpose: `ran` already ensures
+    // this async work only ever starts once per mounted instance, so a
+    // `cancelled` flag set by strict-mode's simulated-unmount cleanup would
+    // make the sole in-flight request bail before the (unmount-safe)
+    // zustand store update / network PATCH ever runs — silently dropping
+    // the reconciliation in dev. Same pattern as FormatPrefsSync.
     void (async () => {
       try {
         const { data: me } = await usersApi.getMe();
-        if (cancelled) return;
 
         const prefsPatch: {
           units?: "metric" | "imperial";
@@ -81,9 +85,6 @@ export function PreferencesSync() {
         console.error("Failed to sync display preferences with account", error);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [status, setUnitSystem]);
 
   return null;
