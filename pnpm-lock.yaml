@@ -500,6 +500,9 @@ importers:
       bullmq:
         specifier: ^5.76.4
         version: 5.76.5
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       pg:
         specifier: ^8.20.0
         version: 8.20.0

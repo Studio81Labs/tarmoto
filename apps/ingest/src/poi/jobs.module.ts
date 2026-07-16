@@ -18,7 +18,10 @@ import { PoiImportProducer } from "./poi-import.producer.js";
  *
  * Reading the env directly here (rather than via an async `useFactory`) is
  * required because Nest providers can't be conditionally included from an
- * async factory.
+ * async factory. For the same reason `apps/ingest/src/main.ts` preloads
+ * `dotenv/config` BEFORE importing `AppModule`, so a `TARMOTO_QUEUE_WORKER_ENABLED`
+ * supplied via `apps/ingest/.env` is already in `process.env` by the time this
+ * module-eval read runs (`ConfigModule.forRoot()` loads the file too late for it).
  */
 const rawToggle =
   process.env.TARMOTO_QUEUE_WORKER_ENABLED?.trim().toLowerCase();

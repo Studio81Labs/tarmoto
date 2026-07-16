@@ -1,4 +1,11 @@
 import "reflect-metadata";
+// Load apps/ingest/.env into process.env BEFORE importing AppModule below.
+// jobs.module's worker gate (TARMOTO_QUEUE_WORKER_ENABLED) is read at
+// module-evaluation time — which happens as AppModule is imported here, EARLIER
+// than ConfigModule.forRoot() loads the file — so without this preload a
+// .env-supplied toggle would be invisible to that gate and the worker/scheduler
+// would register anyway. No-ops in the container (no .env; real env vars are set).
+import "dotenv/config";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
 
