@@ -8,12 +8,8 @@ import { Button, QualityBars } from "@tarmoto/ui";
 import { communityApi, type CommunityRide } from "@/lib/api";
 import { UserAvatar } from "@/components/UserAvatar";
 import { buildRoutePreview } from "@/lib/ride-detail";
-import {
-  formatKmValue,
-  formatRideType,
-  formatShortDate,
-  scoreToQualityTier,
-} from "@/lib/utils";
+import { formatRideType, scoreToQualityTier } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * v2 community feed card: route mini-map on the left, ride title + quality
@@ -23,9 +19,10 @@ import {
  */
 export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const router = useRouter();
+  const format = useFormat();
   const preview = buildRoutePreview(ride.route_geometry, 200, 8);
   const tier = scoreToQualityTier(ride.avg_road_quality);
-  const title = ride.name?.trim() || formatShortDate(ride.started_at);
+  const title = ride.name?.trim() || format.shortDate(ride.started_at);
   // Open the ride detail under the community route so the Community nav item
   // stays active and the back link returns to the feed. It renders the same
   // detail view as ride history; `GET /rides/:id` serves publicly-shared rides
@@ -134,7 +131,9 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
           <div className="flex items-center gap-3.5 font-mono text-[11px] text-fg-dim">
             <span>
               <span className="font-bold text-ink">
-                {formatKmValue(ride.distance_km)}
+                {ride.distance_km != null
+                  ? format.splitDistanceKm(ride.distance_km).value
+                  : "—"}
               </span>{" "}
               {t("KM")}
             </span>

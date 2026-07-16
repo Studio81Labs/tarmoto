@@ -1,6 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import Link from "next/link";
+import { useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DataTable,
@@ -8,12 +9,9 @@ import {
   QualityBars,
   type DataTableColumn,
 } from "@tarmoto/ui";
-import {
-  formatDurationCompact,
-  formatKmValue,
-  formatShortDate,
-  scoreToQualityTier,
-} from "@/lib/utils";
+import { scoreToQualityTier } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
+import type { Formatters } from "@tarmoto/shared";
 import type { RideSummary, RidesQueryState, SortField } from "./useRidesQuery";
 
 interface Props {
@@ -34,89 +32,97 @@ interface Props {
  * (max_lean_angle) have no backend sort field, so those headers are static.
  * Each row links to the ride detail page (`/rides/[rideId]`).
  */
-const COLUMNS: DataTableColumn<RideSummary>[] = [
-  {
-    key: "started_at",
-    label: "DATE",
-    size: "90px",
-    sortable: true,
-    render: (r) => (
-      <Mono className="text-fg-dim">{formatShortDate(r.started_at)}</Mono>
-    ),
-  },
-  {
-    key: "ride",
-    label: "RIDE",
-    primary: true,
-    // Honest data gaps (per the v2 plan): the per-ride region subtext and the
-    // ⚠ hazard badge have no backing on the summary, so the RIDE cell shows
-    // the ride type alone.
-    render: (r) => (
-      <div className="leading-tight">
-        <span className="block truncate font-bold text-ink">
-          {r.name ?? formatShortDate(r.started_at)}
-        </span>
-        <Mono className="text-[10px] uppercase text-fg-mute">
-          {r.ride_type}
-        </Mono>
-      </div>
-    ),
-  },
-  {
-    key: "distance_km",
-    label: "KM",
-    size: "80px",
-    sortable: true,
-    render: (r) => (
-      <Mono className="font-bold text-ink">{formatKmValue(r.distance_km)}</Mono>
-    ),
-  },
-  {
-    key: "duration_min",
-    label: "DURATION",
-    size: "90px",
-    sortable: true,
-    render: (r) => (
-      <Mono className="text-fg-dim">
-        {formatDurationCompact(r.duration_min)}
-      </Mono>
-    ),
-  },
-  {
-    key: "avg",
-    label: "AVG",
-    size: "70px",
-    render: (r) => (
-      <Mono className="text-ink">
-        {r.avg_speed != null ? Math.round(r.avg_speed) : "—"}
-      </Mono>
-    ),
-  },
-  {
-    key: "lean",
-    label: "LEAN",
-    size: "70px",
-    render: (r) => (
-      <Mono className="text-ink">
-        {r.max_lean_angle != null ? `${Math.round(r.max_lean_angle)}°` : "—"}
-      </Mono>
-    ),
-  },
-  {
-    key: "avg_road_quality",
-    label: "QUALITY",
-    size: "110px",
-    sortable: true,
-    render: (r) => {
-      const tier = scoreToQualityTier(r.avg_road_quality);
-      return tier != null ? (
-        <QualityBars q={tier} size={4} />
-      ) : (
-        <span className="text-fg-mute">—</span>
-      );
+function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
+  return [
+    {
+      key: "started_at",
+      label: "DATE",
+      size: "90px",
+      sortable: true,
+      render: (r) => (
+        <Mono className="text-fg-dim">{format.shortDate(r.started_at)}</Mono>
+      ),
     },
-  },
-];
+    {
+      key: "ride",
+      label: "RIDE",
+      primary: true,
+      // Honest data gaps (per the v2 plan): the per-ride region subtext and the
+      // ⚠ hazard badge have no backing on the summary, so the RIDE cell shows
+      // the ride type alone.
+      render: (r) => (
+        <div className="leading-tight">
+          <span className="block truncate font-bold text-ink">
+            {r.name ?? format.shortDate(r.started_at)}
+          </span>
+          <Mono className="text-[10px] uppercase text-fg-mute">
+            {r.ride_type}
+          </Mono>
+        </div>
+      ),
+    },
+    {
+      key: "distance_km",
+      label: "KM",
+      size: "80px",
+      sortable: true,
+      render: (r) => (
+        <Mono className="font-bold text-ink">
+          {r.distance_km != null
+            ? format.splitDistanceKm(r.distance_km).value
+            : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "duration_min",
+      label: "DURATION",
+      size: "90px",
+      sortable: true,
+      render: (r) => (
+        <Mono className="text-fg-dim">
+          {r.duration_min != null
+            ? format.durationCompact(r.duration_min)
+            : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "avg",
+      label: "AVG",
+      size: "70px",
+      render: (r) => (
+        <Mono className="text-ink">
+          {r.avg_speed != null ? Math.round(r.avg_speed) : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "lean",
+      label: "LEAN",
+      size: "70px",
+      render: (r) => (
+        <Mono className="text-ink">
+          {r.max_lean_angle != null ? `${Math.round(r.max_lean_angle)}°` : "—"}
+        </Mono>
+      ),
+    },
+    {
+      key: "avg_road_quality",
+      label: "QUALITY",
+      size: "110px",
+      sortable: true,
+      render: (r) => {
+        const tier = scoreToQualityTier(r.avg_road_quality);
+        return tier != null ? (
+          <QualityBars q={tier} size={4} />
+        ) : (
+          <span className="text-fg-mute">—</span>
+        );
+      },
+    },
+  ];
+}
 
 export function RidesTable({
   state,
@@ -127,11 +133,13 @@ export function RidesTable({
   onSort,
   onPage,
 }: Props) {
+  const format = useFormat();
+  const columns = useMemo(() => buildColumns(format), [format]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <DataTable<RideSummary>
       ariaLabel={t("Ride history")}
-      columns={COLUMNS}
+      columns={columns}
       rows={rides}
       rowKey={(r) => r.id}
       getRowHref={(r) => `/rides/${r.id}`}

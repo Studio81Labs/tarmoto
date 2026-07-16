@@ -5,12 +5,9 @@ import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
-import {
-  formatShortDate,
-  ridesWithinDays,
-  scoreToQualityTier,
-} from "@/lib/utils";
-import type { MonthlyStats } from "@tarmoto/shared";
+import { ridesWithinDays, scoreToQualityTier } from "@/lib/utils";
+import type { Formatters, MonthlyStats } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
@@ -316,6 +313,7 @@ export default function HomePage() {
 }
 
 function SyncPill({ syncedAt }: { syncedAt: string | null }) {
+  const format = useFormat();
   if (!syncedAt) {
     // Spec's empty-state pill — ghost / line-strong border / fg-mute
     // dot + text. Shown until the rider's first mobile upload lands.
@@ -329,40 +327,29 @@ function SyncPill({ syncedAt }: { syncedAt: string | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {formatSyncedLabel(new Date(syncedAt))}
+      {formatSyncedLabel(syncedAt, format)}
     </div>
   );
 }
 
-// Returns a fully-translated sync label like "Mobile synced 4m ago".
-// Each bucket is its own catalog key so translators can place the
-// number naturally in any locale ("Synchronisé il y a 4 min", etc.)
-// rather than splicing English fragments through interpolation.
-//
-// `Math.floor` (not `Math.round`) so a 31-second gap reads as
-// "just now" and 59m31s reads as "59m ago" — rounding up would
-// roll buckets early.
-function formatSyncedLabel(d: Date): string {
-  const diffMin = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
-  if (diffMin < 1) return t("Mobile synced just now");
-  if (diffMin < 60) return t("Mobile synced {n}m ago", { n: diffMin });
-  const hours = Math.floor(diffMin / 60);
-  if (hours < 24) return t("Mobile synced {n}h ago", { n: hours });
-  return t("Mobile synced {n}d ago", { n: Math.floor(hours / 24) });
+// Returns a fully-translated sync label like "Mobile synced 4m ago". The
+// relative-time portion is delegated to the shared format seam so it stays
+// locale-correct — mirrors `relativeTime`'s "now" / "Xm/h/d ago" / absolute
+// date beyond 7 days.
+function formatSyncedLabel(iso: string, format: Formatters): string {
+  return t("Mobile synced {when}", { when: format.relativeTime(iso) });
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
-  const kmPct =
+  const format = useFormat();
+  const kmFraction =
     stats.prev_month_km > 0
-      ? Math.round(
-          ((stats.this_month_km - stats.prev_month_km) / stats.prev_month_km) *
-            100,
-        )
+      ? (stats.this_month_km - stats.prev_month_km) / stats.prev_month_km
       : null;
   const kmDelta =
-    kmPct == null
+    kmFraction == null
       ? t("first tracked month")
-      : `${kmPct > 0 ? "+" : ""}${kmPct}% ${t("vs last month")}`;
+      : `${kmFraction > 0 ? "+" : ""}${format.percent(kmFraction)} ${t("vs last month")}`;
   // Hours arrive with one decimal of precision; the design shows whole
   // hours ("32 HRS"), so round the display value but compute the delta
   // from the raw values to avoid rounding-induced misleading deltas.
@@ -374,7 +361,7 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
   // fall back to just the date rather than the misleading "No lean recorded".
   const leanSub =
     stats.max_lean_at != null
-      ? [stats.max_lean_ride_name, formatShortDate(stats.max_lean_at)]
+      ? [stats.max_lean_ride_name, format.shortDate(stats.max_lean_at)]
           .filter(Boolean)
           .join(" · ")
       : t("No lean recorded");
@@ -385,7 +372,7 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
         variant="ink"
         accentNumber
         label={t("This month")}
-        value={stats.this_month_km.toLocaleString()}
+        value={format.integer(stats.this_month_km)}
         unit="KM"
         delta={kmDelta}
       />

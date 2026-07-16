@@ -23,7 +23,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
 import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
-import { formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useContribution } from "@/hooks/useContribution";
 import { useDropdown, useLocalStorage } from "@/hooks";
@@ -335,6 +335,7 @@ function SidebarFooter({ collapsed }: { collapsed: boolean }) {
  * (1st = full), derived from the real rank rather than the design's mock 68%.
  */
 function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
+  const format = useFormat();
   const { contribution } = useContribution();
   if (collapsed || !contribution || contribution.km_mapped <= 0) return null;
 
@@ -375,8 +376,8 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
   // contributor. Keep a decimal whenever the rounded value would be zero.
   const kmLabel =
     Math.round(km_mapped) >= 1
-      ? Math.round(km_mapped).toLocaleString()
-      : km_mapped.toFixed(1);
+      ? format.integer(km_mapped)
+      : format.decimal(km_mapped, 1);
 
   return (
     <div className="mb-1.5 rounded-[10px] border border-cream/[0.08] bg-cream/[0.06] p-3">
@@ -628,6 +629,7 @@ function NotificationsDropdown({
   onMarkAllRead: () => void;
   onClose: () => void;
 }): ReactNode {
+  const format = useFormat();
   return (
     <div
       className={clsx(
@@ -707,7 +709,7 @@ function NotificationsDropdown({
                   {note.title}
                 </div>
                 <div className="mt-1 text-[11px] text-fg-dim">
-                  {note.body} · {formatRelativeTime(note.created_at)}
+                  {note.body} · {format.relativeTime(note.created_at)}
                 </div>
               </div>
             </Link>

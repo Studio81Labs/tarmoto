@@ -46,8 +46,9 @@ describe("RecentRidesTable", () => {
       started_at: "2026-04-18T08:00:00Z",
     };
     render(<RecentRidesTable rides={[noName]} />);
-    // "18 Apr" appears in both the DATE cell and the RIDE label cell — assert 2 occurrences
-    const matches = screen.getAllByText("18 Apr");
+    // "Apr 18" appears in both the DATE cell and the RIDE label cell (default
+    // en/UTC seam formatting — month before day) — assert 2 occurrences.
+    const matches = screen.getAllByText("Apr 18");
     expect(matches).toHaveLength(2);
   });
 

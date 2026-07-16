@@ -9,6 +9,7 @@ import { BikeFormModal } from "@/components/BikeFormModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
 import { Button, Card, Pill } from "@tarmoto/ui";
+import { useFormat } from "@/format/FormatProvider";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type ModalState =
   | {
@@ -238,10 +239,11 @@ function BikeRow({
   onDelete,
   onSetActive,
 }: BikeRowProps) {
+  const format = useFormat();
   const isActive = bike.isActive;
   const ridesLabel =
     typeof bike.totalRides === "number"
-      ? `${bike.totalRides.toLocaleString()} ride${bike.totalRides === 1 ? "" : "s"}`
+      ? `${format.integer(bike.totalRides)} ride${bike.totalRides === 1 ? "" : "s"}`
       : null;
   return (
     <li
@@ -290,7 +292,7 @@ function BikeRow({
               : "mt-1 text-[12px] text-fg-dim"
           }
         >
-          {bike.year} · {bike.totalKm.toLocaleString()}
+          {bike.year} · {format.integer(bike.totalKm)}
           {t("km ")}
           {ridesLabel ? ` · ${ridesLabel}` : ""}
         </p>
