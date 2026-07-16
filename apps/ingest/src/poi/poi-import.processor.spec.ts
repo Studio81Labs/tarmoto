@@ -217,6 +217,56 @@ describe("PoiImportProcessor", () => {
     expect(importRegion).not.toHaveBeenCalled();
   });
 
+  it("import-region: records a skipped run (not a throw) for a real DEFAULT_REGIONS code that's unconfigured for this source", async () => {
+    // Mirrors the real gap this guards: the admin front-door validates a
+    // manual trigger's `code` against the canonical DEFAULT_REGIONS list (17
+    // codes), not against this source's own narrowed `regions` — so an admin
+    // CAN name a real region (here "DE", absent from the 3-entry REGIONS
+    // fixture every `importer()` in this file defaults to) this source just
+    // doesn't cover. That must be a clean skip, not a failed run.
+    const recorder = {
+      start: jest.fn().mockResolvedValue("run-unconfigured"),
+      finish: jest.fn().mockResolvedValue(undefined),
+      fail: jest.fn().mockResolvedValue(undefined),
+    };
+    const importRegion = jest.fn();
+    const processor = new PoiImportProcessor(
+      [importer({ source: "osm", importRegion })],
+      {} as never,
+      recorder as never,
+    );
+
+    const result = await processor.process(
+      jobNamed(POI_IMPORT_JOB.REGION, {
+        code: "DE",
+        source: "osm",
+        trigger: "manual",
+      }),
+    );
+
+    const expected: PoiImportResult = {
+      region: "DE",
+      fetched: 0,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+      skipReason: "region DE not configured for source osm",
+      warning: null,
+    };
+    expect(result).toEqual(expected);
+    expect(importRegion).not.toHaveBeenCalled();
+    expect(recorder.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "osm",
+        regionCode: "DE",
+        trigger: "manual",
+        jobId: "job-1",
+      }),
+    );
+    expect(recorder.finish).toHaveBeenCalledWith("run-unconfigured", expected);
+    expect(recorder.fail).not.toHaveBeenCalled();
+  });
+
   it("import-region: throws when the job is missing a code", async () => {
     const { processor } = build([importer({ source: "osm" })]);
 

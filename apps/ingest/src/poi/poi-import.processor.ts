@@ -2,6 +2,7 @@ import { Processor, WorkerHost } from "@nestjs/bullmq";
 import { Inject, Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 import {
+  DEFAULT_REGIONS,
   POI_IMPORT_JOB,
   POI_IMPORT_QUEUE,
   type PoiImportRegionJobData,
@@ -129,7 +130,17 @@ export class PoiImportProcessor extends WorkerHost {
     }
     const region = importer.regions.find((r) => r.code === data.code);
     if (!region) {
-      // A code that isn't in this source's coverage list — surface it too.
+      // The admin front-door validates a manual trigger's `code` against the
+      // canonical `DEFAULT_REGIONS` list (all 17), not against THIS source's
+      // narrowed `regions` (`TARMOTO_*_IMPORT_REGIONS`) — the per-source
+      // enablement view is deferred to a later phase. So an operator can
+      // legitimately request e.g. `fsq:SK` while FSQ is narrowed to CZ only.
+      // A real region that's merely unconfigured for this source is a clean
+      // skip, not a failure; a code that isn't a region at all is still a
+      // malformed/stale job and must keep failing loudly.
+      if (DEFAULT_REGIONS.some((r) => r.code === data.code)) {
+        return this.recordUnconfiguredRegionSkip(data, source, job);
+      }
       throw new Error(
         `poi-import region job unknown code: ${data.code} (source ${source})`,
       );
@@ -182,5 +193,50 @@ export class PoiImportProcessor extends WorkerHost {
       }
       throw err;
     }
+  }
+
+  /**
+   * A `DEFAULT_REGIONS` code the admin front-door validated, but that isn't in
+   * THIS source's own (possibly narrowed) `regions` — see the region-lookup
+   * miss in `importRegion` above. Records a `skipped` run (the same shape a
+   * genuine "no extract yet" skip gets) instead of letting the job fail, since
+   * this is an operator selecting a valid-but-unconfigured `(source, code)`
+   * pair, not a malformed job.
+   */
+  private async recordUnconfiguredRegionSkip(
+    data: PoiImportRegionJobData,
+    source: string,
+    job: Job,
+  ): Promise<PoiImportResult> {
+    const runId = await this.recorder.start({
+      source,
+      regionCode: data.code,
+      trigger: data.trigger ?? "cron",
+      jobId: job.id ?? null,
+    });
+    const result: PoiImportResult = {
+      region: data.code,
+      fetched: 0,
+      upserted: 0,
+      tombstoned: 0,
+      skipped: true,
+      skipReason: `region ${data.code} not configured for source ${source}`,
+      warning: null,
+    };
+    // Best-effort, mirroring the success path above: a `finish()` failure here
+    // must never turn this clean skip into an unrecorded run.
+    try {
+      await this.recorder.finish(runId, result);
+    } catch (recErr) {
+      this.logger.warn(
+        `[${job.id ?? "no-id"}] failed to record poi import run ${runId}: ` +
+          `${recErr instanceof Error ? recErr.message : String(recErr)}`,
+      );
+    }
+    this.logger.log(
+      `[${job.id ?? "no-id"}] POI import (${source}/${data.code}) skipped: ` +
+        `not configured for this source`,
+    );
+    return result;
   }
 }

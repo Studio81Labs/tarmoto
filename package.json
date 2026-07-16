@@ -47,7 +47,7 @@
     "db:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",
     "db:migrate": "pnpm backend:db:migrate",
-    "db:migrate:poi": "pnpm poi-db:build && pnpm --filter @tarmoto/ingest-service build && pnpm --filter @tarmoto/ingest-service db:migrate:poi",
+    "db:migrate:poi": "pnpm poi-db:build && pnpm --filter @tarmoto/ingest-service db:migrate:poi",
     "db:seed": "pnpm shared:build && pnpm ingest:build && pnpm poi-db:build && pnpm backend:build && pnpm --filter @tarmoto/backend seed:demo",
     "poi:import": "pnpm shared:build && pnpm ingest:build && pnpm poi-db:build && pnpm --filter @tarmoto/ingest-service build && pnpm --filter @tarmoto/ingest-service poi:import",
     "fsq:import": "pnpm shared:build && pnpm ingest:build && pnpm poi-db:build && pnpm --filter @tarmoto/ingest-service build && pnpm --filter @tarmoto/ingest-service fsq:import",
