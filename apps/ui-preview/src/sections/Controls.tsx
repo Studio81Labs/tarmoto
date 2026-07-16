@@ -3,12 +3,14 @@ import { Section, SubStamp } from "../Section";
 import {
   Card,
   Combobox,
+  CopyField,
   DatePicker,
   DateTimePicker,
   FieldLabel,
   Input,
   NumberField,
   NumberGrid,
+  PasswordInput,
   RadioCardGroup,
   SegmentedControl,
   Select,
@@ -39,6 +41,7 @@ export function ControlsSection() {
   const [textareaVal, setTextareaVal] = useState(
     "Challenging hairpins through the Jeseniky ridge — bring rain gear.",
   );
+  const [password, setPassword] = useState("Str0ng-pass");
   const [tripKm, setTripKm] = useState(240);
   const [distUnit, setDistUnit] = useState<"km" | "mi">("km");
 
@@ -362,6 +365,40 @@ export function ControlsSection() {
               {`hint: `}
               <CN>FieldHint</CN>
               {` tone="default" below the field`}
+            </CodeBlock>
+          </div>
+        </Card>
+
+        {/* PasswordInput + CopyField */}
+        <Card padded className="!p-6">
+          <SubStamp>Password &amp; copy fields</SubStamp>
+          <FieldLabel htmlFor="pw-signup">Password</FieldLabel>
+          <PasswordInput
+            id="pw-signup"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            showStrength
+          />
+          <div className="mt-3">
+            <FieldLabel htmlFor="copy-invite">Invite link</FieldLabel>
+            <CopyField
+              id="copy-invite"
+              value="https://tarmoto.app/trips/join/9f2c81"
+              ariaLabel="Invite link"
+            />
+          </div>
+          <div className="mt-4">
+            <CodeBlock>
+              {`toggle: `}
+              <CN>aria-pressed</CN>
+              {` eye · type password↔text\n`}
+              {`strength: `}
+              <CN>passwordStrength()</CN>
+              {` 0–4 → quality ramp (UI hint only)\n`}
+              {`copy: `}
+              <CN>readOnly</CN>
+              {` mono · select-on-focus · clipboard + ✓ flash`}
             </CodeBlock>
           </div>
         </Card>

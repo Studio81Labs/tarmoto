@@ -3,7 +3,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { Button } from "@tarmoto/ui";
+import {
+  Button,
+  Checkbox,
+  FieldLabel,
+  Input,
+  PasswordInput,
+} from "@tarmoto/ui";
 import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeCallbackUrl } from "@/lib/callback-url";
@@ -17,6 +23,9 @@ export function LoginForm({
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Cosmetic for now — the credentials flow doesn't vary session length —
+  // but the control needs state to render as the shared Checkbox.
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const urlError = getLoginErrorMessage(searchParams.get("error"));
@@ -59,41 +68,36 @@ export function LoginForm({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
-            {t("Email")}
-          </label>
-          <input
+          <FieldLabel htmlFor="login-email">{t("Email")}</FieldLabel>
+          <Input
+            id="login-email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
+            onChange={setEmail}
+            tone="cream"
             placeholder={t("rider@example.com")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
-            {t("Password")}
-          </label>
-          <input
-            type="password"
+          <FieldLabel htmlFor="login-password">{t("Password")}</FieldLabel>
+          <PasswordInput
+            id="login-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
+            onChange={setPassword}
+            tone="cream"
             placeholder="••••••••"
             required
           />
         </div>
 
         <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 text-ink/65">
-            <input
-              type="checkbox"
-              className="rounded border-ink/30 bg-cream text-accent focus:ring-accent"
-            />
-            {t("Remember me")}
-          </label>
+          <Checkbox
+            checked={rememberMe}
+            onChange={setRememberMe}
+            label={t("Remember me")}
+          />
           <Link
             href="/forgot-password"
             className="font-semibold text-ink/70 hover:text-accent hover:underline"

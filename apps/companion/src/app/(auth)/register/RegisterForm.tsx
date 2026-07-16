@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { Button } from "@tarmoto/ui";
+import { Button, FieldLabel, Input, PasswordInput } from "@tarmoto/ui";
 import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
@@ -61,43 +61,41 @@ export function RegisterForm({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
-            {t("Display name")}
-          </label>
-          <input
+          <FieldLabel htmlFor="register-name">{t("Display name")}</FieldLabel>
+          <Input
+            id="register-name"
             type="text"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
+            onChange={setDisplayName}
+            tone="cream"
             placeholder={t("RoadWarrior42")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
-            {t("Email")}
-          </label>
-          <input
+          <FieldLabel htmlFor="register-email">{t("Email")}</FieldLabel>
+          <Input
+            id="register-email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
+            onChange={setEmail}
+            tone="cream"
             placeholder={t("rider@example.com")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
-            {t("Password")}
-          </label>
-          <input
-            type="password"
+          <FieldLabel htmlFor="register-password">{t("Password")}</FieldLabel>
+          <PasswordInput
+            id="register-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
+            onChange={setPassword}
+            tone="cream"
             placeholder={t("Min. 8 characters")}
+            autoComplete="new-password"
+            showStrength
             minLength={8}
             required
           />
