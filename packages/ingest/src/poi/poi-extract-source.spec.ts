@@ -1,9 +1,6 @@
-import { Readable } from 'node:stream';
-import { parsePoiExtract } from './poi-extract-source.js';
-import type {
-  AccommodationPoi,
-  ImportedPoi,
-} from './poi-provider.interface.js';
+import { Readable } from "node:stream";
+import { parsePoiExtract } from "./poi-extract-source.js";
+import type { AccommodationPoi, ImportedPoi } from "./osm-poi-tags.js";
 
 type PoiResult = { poi: ImportedPoi } | { accommodation: AccommodationPoi };
 
@@ -19,15 +16,15 @@ async function collect(xml: string): Promise<PoiResult[]> {
 
 /** Flatten a result to a comparable summary regardless of its variant. */
 function summarize(r: PoiResult): {
-  type: 'poi' | 'accommodation';
+  type: "poi" | "accommodation";
   kind: string;
   external_id: string;
   lat: number;
   lng: number;
 } {
-  const row = 'poi' in r ? r.poi : r.accommodation;
+  const row = "poi" in r ? r.poi : r.accommodation;
   return {
-    type: 'poi' in r ? 'poi' : 'accommodation',
+    type: "poi" in r ? "poi" : "accommodation",
     kind: row.kind,
     external_id: row.external_id,
     lat: row.lat,
@@ -48,44 +45,44 @@ const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
   </node>
 </osm>`;
 
-describe('parsePoiExtract', () => {
-  it('yields POIs and accommodations in document order, ignoring untagged nodes', async () => {
+describe("parsePoiExtract", () => {
+  it("yields POIs and accommodations in document order, ignoring untagged nodes", async () => {
     const results = await collect(SAMPLE);
 
     expect(results.map(summarize)).toEqual([
       {
-        type: 'poi',
-        kind: 'fuel_station',
-        external_id: 'osm:node:1',
+        type: "poi",
+        kind: "fuel_station",
+        external_id: "osm:node:1",
         lat: 49.5,
         lng: 18.4,
       },
       {
-        type: 'accommodation',
-        kind: 'hotel',
-        external_id: 'osm:node:3',
+        type: "accommodation",
+        kind: "hotel",
+        external_id: "osm:node:3",
         lat: 49.7,
         lng: 18.6,
       },
     ]);
   });
 
-  it('carries the full mapped row (tags, hours, stars)', async () => {
+  it("carries the full mapped row (tags, hours, stars)", async () => {
     const [first, second] = await collect(SAMPLE);
     if (
       !first ||
-      !('poi' in first) ||
+      !("poi" in first) ||
       !second ||
-      !('accommodation' in second)
+      !("accommodation" in second)
     ) {
-      throw new Error('expected a POI then an accommodation');
+      throw new Error("expected a POI then an accommodation");
     }
-    expect(first.poi.name).toBe('OMV');
-    expect(first.poi.tags).toMatchObject({ amenity: 'fuel' });
+    expect(first.poi.name).toBe("OMV");
+    expect(first.poi.tags).toMatchObject({ amenity: "fuel" });
     expect(second.accommodation.stars).toBe(4);
   });
 
-  it('ignores a document of purely untagged (geometry) nodes', async () => {
+  it("ignores a document of purely untagged (geometry) nodes", async () => {
     const results = await collect(`<osm>
       <node id="1" lat="1" lon="1"/>
       <node id="2" lat="2" lon="2"/>
@@ -93,7 +90,7 @@ describe('parsePoiExtract', () => {
     expect(results).toEqual([]);
   });
 
-  it('reduces a tagged way to the centroid of its resolved nodes', async () => {
+  it("reduces a tagged way to the centroid of its resolved nodes", async () => {
     const results = await collect(`<osm>
       <node id="1" lat="0" lon="0"/>
       <node id="2" lat="0" lon="2"/>
@@ -111,9 +108,9 @@ describe('parsePoiExtract', () => {
 
     expect(results.map(summarize)).toEqual([
       {
-        type: 'poi',
-        kind: 'restaurant',
-        external_id: 'osm:way:100',
+        type: "poi",
+        kind: "restaurant",
+        external_id: "osm:way:100",
         // Mean of the four square corners.
         lat: 1,
         lng: 1,
@@ -121,7 +118,7 @@ describe('parsePoiExtract', () => {
     ]);
   });
 
-  it('does not double-count the closing node of a closed (polygon) way', async () => {
+  it("does not double-count the closing node of a closed (polygon) way", async () => {
     // A closed way repeats its first node as its last (1,2,3,4,1); counting the
     // duplicate would bias the centroid toward (0,0) — it must stay the centre.
     const results = await collect(`<osm>
@@ -142,16 +139,16 @@ describe('parsePoiExtract', () => {
 
     expect(results.map(summarize)).toEqual([
       {
-        type: 'poi',
-        kind: 'restaurant',
-        external_id: 'osm:way:100',
+        type: "poi",
+        kind: "restaurant",
+        external_id: "osm:way:100",
         lat: 1,
         lng: 1,
       },
     ]);
   });
 
-  it('skips a tagged way whose nodes are missing or fewer than two', async () => {
+  it("skips a tagged way whose nodes are missing or fewer than two", async () => {
     const results = await collect(`<osm>
       <node id="1" lat="0" lon="0"/>
       <way id="100">
@@ -168,7 +165,7 @@ describe('parsePoiExtract', () => {
     expect(results).toEqual([]);
   });
 
-  it('reduces a multipolygon relation to the centroid of its member ways', async () => {
+  it("reduces a multipolygon relation to the centroid of its member ways", async () => {
     // A hotel mapped as an area: an untagged member way (the building outline)
     // whose four nodes form a box, with the POI tags on the relation. The
     // relation must yield one accommodation at the box centroid; the untagged
@@ -194,22 +191,22 @@ describe('parsePoiExtract', () => {
 
     expect(results.map(summarize)).toEqual([
       {
-        type: 'accommodation',
-        kind: 'hotel',
-        external_id: 'osm:relation:500',
+        type: "accommodation",
+        kind: "hotel",
+        external_id: "osm:relation:500",
         lat: 1,
         lng: 1,
       },
     ]);
     const [only] = results;
-    if (!only || !('accommodation' in only)) {
-      throw new Error('expected an accommodation');
+    if (!only || !("accommodation" in only)) {
+      throw new Error("expected an accommodation");
     }
-    expect(only.accommodation.name).toBe('Grand');
+    expect(only.accommodation.name).toBe("Grand");
     expect(only.accommodation.stars).toBe(5);
   });
 
-  it('averages direct node members with member-way nodes (best-effort resolve)', async () => {
+  it("averages direct node members with member-way nodes (best-effort resolve)", async () => {
     // A relation whose members are a direct node plus a member way; a second
     // member way is missing entirely and simply drops out of the average.
     const results = await collect(`<osm>
@@ -237,16 +234,16 @@ describe('parsePoiExtract', () => {
     // mean lng = (0+4+4+0+10)/5 = 3.6.
     expect(results.map(summarize)).toEqual([
       {
-        type: 'accommodation',
-        kind: 'camp_site',
-        external_id: 'osm:relation:500',
+        type: "accommodation",
+        kind: "camp_site",
+        external_id: "osm:relation:500",
         lat: 3.6,
         lng: 3.6,
       },
     ]);
   });
 
-  it('skips a relation whose members resolve to no coordinates', async () => {
+  it("skips a relation whose members resolve to no coordinates", async () => {
     const results = await collect(`<osm>
       <relation id="500">
         <member type="way" ref="999" role="outer"/>
@@ -258,7 +255,7 @@ describe('parsePoiExtract', () => {
     expect(results).toEqual([]);
   });
 
-  it('interleaves node, way and relation POIs in document order', async () => {
+  it("interleaves node, way and relation POIs in document order", async () => {
     const results = await collect(`<osm>
       <node id="1" lat="49.5" lon="18.4">
         <tag k="amenity" v="fuel"/>
@@ -284,38 +281,38 @@ describe('parsePoiExtract', () => {
     // of the relation's centroid — confirming way refs are buffered for tagged
     // ways too, and that emission order follows the document.
     expect(results.map((r) => summarize(r).external_id)).toEqual([
-      'osm:node:1',
-      'osm:way:100',
-      'osm:relation:500',
+      "osm:node:1",
+      "osm:way:100",
+      "osm:relation:500",
     ]);
     expect(results.map((r) => summarize(r).kind)).toEqual([
-      'fuel_station',
-      'restaurant',
-      'camp_site',
+      "fuel_station",
+      "restaurant",
+      "camp_site",
     ]);
   });
 
-  it('rejects malformed XML', async () => {
+  it("rejects malformed XML", async () => {
     await expect(collect('<osm><node id="1" <<>')).rejects.toBeDefined();
   });
 
-  it('fails fast on a parse error without first draining buffered rows', async () => {
+  it("fails fast on a parse error without first draining buffered rows", async () => {
     // The whole single-chunk document (two valid POI nodes + a malformed tail)
     // is parsed before the first pull, so both rows and the error are buffered.
     // The first `.next()` must reject rather than yield the buffered POIs.
     const iterator = parsePoiExtract(
       streamOf(
-        '<osm>' +
+        "<osm>" +
           '<node id="1" lat="1" lon="1"><tag k="amenity" v="fuel"/></node>' +
           '<node id="2" lat="2" lon="2"><tag k="amenity" v="cafe"/></node>' +
-          '<oops',
+          "<oops",
       ),
     );
 
     await expect(iterator.next()).rejects.toBeDefined();
   });
 
-  it('destroys the source when the consumer abandons iteration early', async () => {
+  it("destroys the source when the consumer abandons iteration early", async () => {
     const input = streamOf(SAMPLE);
     const iterator = parsePoiExtract(input);
 

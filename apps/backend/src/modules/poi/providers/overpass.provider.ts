@@ -15,7 +15,7 @@ import {
   toAccommodationPoi,
   toImportedPoi,
   type OsmPoiElement,
-} from './osm-poi-tags.js';
+} from '@tarmoto/ingest';
 
 // The OSM-tag → row mapping now lives in the shared, DB-free `osm-poi-tags`
 // module so the streaming `.osm` extract source (#850) reuses the exact same

@@ -1,13 +1,11 @@
-import type { Readable } from 'node:stream';
-import sax from 'sax';
-import type {
-  AccommodationPoi,
-  ImportedPoi,
-} from './poi-provider.interface.js';
+import type { Readable } from "node:stream";
+import sax from "sax";
 import {
   mapOsmElementToPoi,
   type OsmPoiElement,
-} from './providers/osm-poi-tags.js';
+  type AccommodationPoi,
+  type ImportedPoi,
+} from "./osm-poi-tags.js";
 
 /**
  * Streaming reader for a `.osm` XML extract → POI rows (#850) — the bulk-import
@@ -207,11 +205,11 @@ export async function* parsePoiExtract(
   let way: PendingWay | null = null;
   let relation: PendingRelation | null = null;
 
-  parser.on('opentag', (tag) => {
+  parser.on("opentag", (tag) => {
     // Attributes are absent-keyed, so every lookup is `string | undefined`.
     const attributes = tag.attributes as Record<string, string | undefined>;
     switch (tag.name) {
-      case 'node': {
+      case "node": {
         const { id, lat, lon } = attributes;
         // A node without id/coordinates is malformed OSM — skip it.
         node =
@@ -220,14 +218,14 @@ export async function* parsePoiExtract(
             : { id, lat: Number(lat), lng: Number(lon), tags: {} };
         break;
       }
-      case 'way':
+      case "way":
         // A way must carry an id (its identity + conflict key); skip if absent.
         way =
           attributes.id === undefined
             ? null
             : { id: attributes.id, tags: {}, refs: [] };
         break;
-      case 'relation':
+      case "relation":
         // A relation must carry an id (its identity + conflict key); skip if
         // absent, exactly like a way.
         relation =
@@ -240,20 +238,20 @@ export async function* parsePoiExtract(
                 memberWayRefs: [],
               };
         break;
-      case 'nd':
+      case "nd":
         if (way && attributes.ref !== undefined) way.refs.push(attributes.ref);
         break;
-      case 'member':
+      case "member":
         // Collect a relation's node/way members for centroid resolution; nested
         // relation members are ignored (we don't recurse into sub-relations).
         if (relation && attributes.ref !== undefined) {
-          if (attributes.type === 'node')
+          if (attributes.type === "node")
             relation.memberNodeRefs.push(attributes.ref);
-          else if (attributes.type === 'way')
+          else if (attributes.type === "way")
             relation.memberWayRefs.push(attributes.ref);
         }
         break;
-      case 'tag':
+      case "tag":
         // A tag belongs to whichever element is open — node, then way, then
         // relation, matching the nodes → ways → relations document order.
         if (attributes.k !== undefined && attributes.v !== undefined) {
@@ -267,14 +265,14 @@ export async function* parsePoiExtract(
     }
   });
 
-  parser.on('closetag', (name) => {
-    if (name === 'node' && node) {
+  parser.on("closetag", (name) => {
+    if (name === "node" && node) {
       // Buffer the coordinate for later way resolution, then classify — but
       // only tagged nodes are POI candidates; an untagged node is pure geometry.
       nodes.set(node.id, { lat: node.lat, lng: node.lng });
       if (Object.keys(node.tags).length > 0) {
         emit({
-          osmType: 'node',
+          osmType: "node",
           osmId: node.id,
           lat: node.lat,
           lng: node.lng,
@@ -282,7 +280,7 @@ export async function* parsePoiExtract(
         });
       }
       node = null;
-    } else if (name === 'way' && way) {
+    } else if (name === "way" && way) {
       // Buffer the node-ref list for any relation that references this way
       // later — every way, tagged or not, since a relation's geometry ways are
       // usually untagged (the tags live on the relation).
@@ -292,7 +290,7 @@ export async function* parsePoiExtract(
         const centre = wayCentroid(way, nodes);
         if (centre) {
           emit({
-            osmType: 'way',
+            osmType: "way",
             osmId: way.id,
             lat: centre.lat,
             lng: centre.lng,
@@ -301,14 +299,14 @@ export async function* parsePoiExtract(
         }
       }
       way = null;
-    } else if (name === 'relation' && relation) {
+    } else if (name === "relation" && relation) {
       // Only tagged relations are POI candidates; reduce their member geometry
       // (direct nodes + member ways' nodes) to one representative centroid.
       if (Object.keys(relation.tags).length > 0) {
         const centre = relationCentroid(relation, nodes, wayRefs);
         if (centre) {
           emit({
-            osmType: 'relation',
+            osmType: "relation",
             osmId: relation.id,
             lat: centre.lat,
             lng: centre.lng,
@@ -320,16 +318,16 @@ export async function* parsePoiExtract(
     }
   });
 
-  parser.on('error', (err) => {
+  parser.on("error", (err) => {
     failure = err;
     ended = true;
     signal();
   });
-  parser.on('end', () => {
+  parser.on("end", () => {
     ended = true;
     signal();
   });
-  input.on('error', (err) => {
+  input.on("error", (err) => {
     failure = err;
     ended = true;
     signal();
@@ -346,7 +344,7 @@ export async function* parsePoiExtract(
         // Rethrow the captured stream/parse error (sax + streams emit Errors).
         throw failure instanceof Error
           ? failure
-          : new Error('OSM XML parsing failed');
+          : new Error("OSM XML parsing failed");
       }
       if (queue.length > 0) {
         const result = queue.shift() as PoiResult;

@@ -1,4 +1,4 @@
-import type { StorableImportRow } from './poi-import-source.js';
+import type { StorableImportRow } from "./poi-import-source.js";
 
 /**
  * Foursquare OS Places → our store `kind` (#869). Keyed on category **labels**
@@ -24,7 +24,7 @@ function labelRule(
   kind: string,
 ): { readonly match: RegExp; readonly kind: string } {
   return {
-    match: new RegExp(`(?<!\\p{L})(?:${alternation})(?!\\p{L})`, 'iu'),
+    match: new RegExp(`(?<!\\p{L})(?:${alternation})(?!\\p{L})`, "iu"),
     kind,
   };
 }
@@ -33,26 +33,26 @@ const FSQ_KIND_RULES: readonly {
   readonly match: RegExp;
   readonly kind: string;
 }[] = [
-  labelRule('motel', 'motel'),
-  labelRule('hostel', 'hostel'),
-  labelRule('bed and breakfast|b&b|guest\\s?house|inn', 'guest_house'),
+  labelRule("motel", "motel"),
+  labelRule("hostel", "hostel"),
+  labelRule("bed and breakfast|b&b|guest\\s?house|inn", "guest_house"),
   labelRule(
-    'vacation rental|holiday (?:home|rental)|cottage|chalet|cabin',
-    'chalet',
+    "vacation rental|holiday (?:home|rental)|cottage|chalet|cabin",
+    "chalet",
   ),
-  labelRule('(?:serviced )?apartment', 'apartment'),
-  labelRule('campground|camp\\s?site|rv park|caravan', 'camp_site'),
-  labelRule('hotel|resort', 'hotel'),
+  labelRule("(?:serviced )?apartment", "apartment"),
+  labelRule("campground|camp\\s?site|rv park|caravan", "camp_site"),
+  labelRule("hotel|resort", "hotel"),
   labelRule(
-    'gas station|petrol station|fuel station|ev charging|charging station',
-    'fuel_station',
+    "gas station|petrol station|fuel station|ev charging|charging station",
+    "fuel_station",
   ),
-  labelRule('rest area', 'rest_area'),
-  labelRule('fast food', 'fast_food'),
-  labelRule('ice cream', 'ice_cream'),
-  labelRule('caf[eé]|coffee shop|coffee house|tea (?:room|house)', 'cafe'),
-  labelRule('scenic lookout|scenic viewpoint|viewpoint|overlook', 'viewpoint'),
-  labelRule('restaurant', 'restaurant'),
+  labelRule("rest area", "rest_area"),
+  labelRule("fast food", "fast_food"),
+  labelRule("ice cream", "ice_cream"),
+  labelRule("caf[eé]|coffee shop|coffee house|tea (?:room|house)", "cafe"),
+  labelRule("scenic lookout|scenic viewpoint|viewpoint|overlook", "viewpoint"),
+  labelRule("restaurant", "restaurant"),
 ];
 
 /**
@@ -97,7 +97,7 @@ export interface FsqPlaceRow {
 function splitList(value: string | null): string[] {
   return value
     ? value
-        .split(',')
+        .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
     : [];

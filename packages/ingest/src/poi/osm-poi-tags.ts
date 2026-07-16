@@ -1,9 +1,4 @@
-import type {
-  AccommodationPoi,
-  ImportedPoi,
-  StoredPoiFields,
-} from '../poi-provider.interface.js';
-import { ACCOMMODATION_KINDS, type AccommodationKind } from '@tarmoto/shared';
+import { ACCOMMODATION_KINDS, type AccommodationKind } from "@tarmoto/shared";
 
 /**
  * The pure, DB-free OSM-tag → `pois` row mapping (#850). Factored out of
@@ -17,11 +12,78 @@ import { ACCOMMODATION_KINDS, type AccommodationKind } from '@tarmoto/shared';
  * ways/relations; a computed centroid for extract ways), and the raw tag bag.
  */
 export interface OsmPoiElement {
-  osmType: 'node' | 'way' | 'relation';
+  osmType: "node" | "way" | "relation";
   osmId: number | string;
   lat: number;
   lng: number;
   tags: Record<string, string>;
+}
+
+/**
+ * Normalized accommodation POI returned by any provider.
+ * All providers must map their external response to this shape. Carries the
+ * shared `StoredPoiFields` decision-support columns (#849) so the live
+ * `/accommodations` response can surface opening hours + address, not just
+ * name / distance.
+ *
+ * Lives here (rather than the backend's `poi-provider.interface.ts`) because
+ * this is where it — and `ImportedPoi` / `StoredPoiFields` below — are
+ * actually constructed (`toAccommodationPoi` et al.); the backend re-exports
+ * them from `@tarmoto/ingest` so its existing consumers are unaffected.
+ */
+export interface AccommodationPoi extends StoredPoiFields {
+  external_id: string;
+  name: string | null;
+  kind: AccommodationKind;
+  lat: number;
+  lng: number;
+  website: string | null;
+  phone: string | null;
+  stars: number | null;
+}
+
+/**
+ * Decision-support fields captured from OSM tags and stored on every `pois`
+ * row (#848). Kept as a distinct shape so both the POI and accommodation
+ * import paths carry the same columns without widening the live read DTOs
+ * (`PoiDto` / `AccommodationDto`), which only surface these from Phase 1 on.
+ * Everything is nullable — OSM coverage of these tags is uneven.
+ */
+export interface StoredPoiFields {
+  /** Raw OSM `opening_hours` expression, e.g. `Mo-Su 09:00-18:00`. */
+  opening_hours: string | null;
+  /** Street line: `addr:street` (+ `addr:housenumber` when present). */
+  address_street: string | null;
+  /** `addr:city`, falling back to `addr:town` / `addr:village` (rural POIs). */
+  address_city: string | null;
+  address_postcode: string | null;
+  /** Upper-case ISO 3166-1 alpha-2 country, or null if not a 2-letter code. */
+  address_country: string | null;
+  /** Normalized cuisine (restaurants / cafés), e.g. `italian`. */
+  cuisine: string | null;
+  /** Brand, falling back to operator (fuel chains, franchises). */
+  brand: string | null;
+  /** Bounded raw OSM tag bag for future enrichment; null when empty. */
+  tags: Record<string, string> | null;
+}
+
+/**
+ * A POI fetched by the offline import (#745). Distinct from the backend's
+ * live-query `PointOfInterest` because the storage tag set (§7) is a
+ * **superset** of the live `PoiKind` enum — it also covers `fast_food`,
+ * `rest_area`, and `ice_cream`, which aren't live `/poi` categories. `kind` is
+ * therefore a free-form string written straight to `pois.kind`, decoupled from
+ * the live API so widening the store never changes the read enum. Carries the
+ * `StoredPoiFields` decision-support columns (#848).
+ */
+export interface ImportedPoi extends StoredPoiFields {
+  external_id: string;
+  name: string | null;
+  kind: string;
+  lat: number;
+  lng: number;
+  website: string | null;
+  phone: string | null;
 }
 
 /**
@@ -38,15 +100,15 @@ export const IMPORT_POI_TAGS: ReadonlyArray<{
   value: string;
   kind: string;
 }> = [
-  { key: 'amenity', value: 'restaurant', kind: 'restaurant' },
-  { key: 'amenity', value: 'cafe', kind: 'cafe' },
-  { key: 'amenity', value: 'fast_food', kind: 'fast_food' },
-  { key: 'amenity', value: 'fuel', kind: 'fuel_station' },
-  { key: 'amenity', value: 'ice_cream', kind: 'ice_cream' },
-  { key: 'shop', value: 'ice_cream', kind: 'ice_cream' },
-  { key: 'tourism', value: 'viewpoint', kind: 'viewpoint' },
-  { key: 'highway', value: 'rest_area', kind: 'rest_area' },
-  { key: 'highway', value: 'services', kind: 'rest_area' },
+  { key: "amenity", value: "restaurant", kind: "restaurant" },
+  { key: "amenity", value: "cafe", kind: "cafe" },
+  { key: "amenity", value: "fast_food", kind: "fast_food" },
+  { key: "amenity", value: "fuel", kind: "fuel_station" },
+  { key: "amenity", value: "ice_cream", kind: "ice_cream" },
+  { key: "shop", value: "ice_cream", kind: "ice_cream" },
+  { key: "tourism", value: "viewpoint", kind: "viewpoint" },
+  { key: "highway", value: "rest_area", kind: "rest_area" },
+  { key: "highway", value: "services", kind: "rest_area" },
 ];
 
 /** The accommodation `tourism=*` values we store — sourced from the live
@@ -88,12 +150,12 @@ export function toImportedPoi(el: OsmPoiElement): ImportedPoi | null {
   const tags = el.tags;
   return {
     external_id: `osm:${el.osmType}:${el.osmId}`,
-    name: tags.name ?? tags['name:en'] ?? null,
+    name: tags.name ?? tags["name:en"] ?? null,
     kind,
     lat: el.lat,
     lng: el.lng,
-    website: tags.website ?? tags['contact:website'] ?? null,
-    phone: tags.phone ?? tags['contact:phone'] ?? null,
+    website: tags.website ?? tags["contact:website"] ?? null,
+    phone: tags.phone ?? tags["contact:phone"] ?? null,
     ...extractStoredPoiFields(tags),
   };
 }
@@ -110,12 +172,12 @@ export function toAccommodationPoi(el: OsmPoiElement): AccommodationPoi | null {
   const tags = el.tags;
   return {
     external_id: `osm:${el.osmType}:${el.osmId}`,
-    name: tags.name ?? tags['name:en'] ?? null,
+    name: tags.name ?? tags["name:en"] ?? null,
     kind,
     lat: el.lat,
     lng: el.lng,
-    website: tags.website ?? tags['contact:website'] ?? null,
-    phone: tags.phone ?? tags['contact:phone'] ?? null,
+    website: tags.website ?? tags["contact:website"] ?? null,
+    phone: tags.phone ?? tags["contact:phone"] ?? null,
     stars: parseStarsTag(tags.stars),
     ...extractStoredPoiFields(tags),
   };
@@ -192,7 +254,7 @@ const CLASSIFIER_TAG_KEYS: readonly string[] = Array.from(
  */
 function normalizeTagText(raw: string | undefined | null): string | null {
   if (!raw) return null;
-  const cleaned = raw.replace(/[_;]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleaned = raw.replace(/[_;]/g, " ").replace(/\s+/g, " ").trim();
   return cleaned || null;
 }
 
@@ -215,7 +277,7 @@ function boundedTagBag(
   const out: Record<string, string> = {};
   for (const key of ordered.slice(0, MAX_TAG_BAG_KEYS)) {
     const value = tags[key];
-    if (typeof value !== 'string') continue;
+    if (typeof value !== "string") continue;
     out[key] =
       value.length > MAX_TAG_VALUE_LEN
         ? value.slice(0, MAX_TAG_VALUE_LEN)
@@ -233,8 +295,8 @@ function boundedTagBag(
 export function extractStoredPoiFields(
   tags: Record<string, string>,
 ): StoredPoiFields {
-  const street = tags['addr:street']?.trim() || null;
-  const housenumber = tags['addr:housenumber']?.trim() || null;
+  const street = tags["addr:street"]?.trim() || null;
+  const housenumber = tags["addr:housenumber"]?.trim() || null;
   // A bare house number with no street is useless on a card, so only build
   // the line when a street is present; append the number when we have both.
   const address_street = street
@@ -242,16 +304,16 @@ export function extractStoredPoiFields(
       ? `${street} ${housenumber}`
       : street
     : null;
-  const country = tags['addr:country']?.trim();
+  const country = tags["addr:country"]?.trim();
   return {
     opening_hours: tags.opening_hours?.trim() || null,
     address_street,
     address_city:
-      tags['addr:city']?.trim() ||
-      tags['addr:town']?.trim() ||
-      tags['addr:village']?.trim() ||
+      tags["addr:city"]?.trim() ||
+      tags["addr:town"]?.trim() ||
+      tags["addr:village"]?.trim() ||
       null,
-    address_postcode: tags['addr:postcode']?.trim() || null,
+    address_postcode: tags["addr:postcode"]?.trim() || null,
     // `addr:country` is usually an ISO 3166-1 alpha-2 code; store only a
     // clean 2-letter value (upper-cased) so the varchar(2) column never
     // holds a full country name.

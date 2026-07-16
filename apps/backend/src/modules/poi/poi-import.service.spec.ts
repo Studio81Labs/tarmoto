@@ -1,8 +1,8 @@
-// Mock the streaming extract parser so tests drive controlled POI rows without
-// a real `.osm` file, and stub `node:fs` so the file existence + read are
-// deterministic (createReadStream's return is handed straight to the mocked
-// parser, which ignores it). requireActual keeps the rest of fs intact for
-// TypeORM et al. loaded in this file.
+// Mock `node:fs` so the file-existence check + read are deterministic
+// (createReadStream's return is handed straight to the source's `parse`,
+// which the OSM stub below ignores; the FSQ source reads a REAL stream, so
+// its tests override `createReadStream` with one via `mockFsqExtract`).
+// requireActual keeps the rest of fs intact for TypeORM et al. loaded here.
 jest.mock('node:fs', () => {
   const actual = jest.requireActual<typeof import('node:fs')>('node:fs');
   return {
@@ -13,19 +13,19 @@ jest.mock('node:fs', () => {
     ),
   };
 });
-jest.mock('./poi-extract-source.js', () => ({
-  parsePoiExtract: jest.fn(),
-}));
 
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 import { createReadStream, existsSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { PoiImportService, WIPE_GUARD_WARNING } from './poi-import.service.js';
-import { parsePoiExtract } from './poi-extract-source.js';
-import { FsqPoiImportSource } from './poi-import-source.js';
+import {
+  FsqPoiImportSource,
+  type PoiImportRegion,
+  type PoiImportSource,
+  type StorableImportRow,
+} from '@tarmoto/ingest';
 import type { PoiImportConfig } from './poi-import.config.js';
-import type { PoiImportRegion } from '@tarmoto/ingest';
 import type {
   AccommodationPoi,
   ImportedPoi,
@@ -34,7 +34,6 @@ import type {
 
 const existsSyncMock = jest.mocked(existsSync);
 const createReadStreamMock = jest.mocked(createReadStream);
-const parsePoiExtractMock = jest.mocked(parsePoiExtract);
 
 // --- fixtures --------------------------------------------------------------
 
@@ -84,26 +83,37 @@ function accommodation(over: Partial<AccommodationPoi> = {}): ExtractItem {
   };
 }
 
-async function* extractOf(
-  ...items: ExtractItem[]
-): AsyncGenerator<ExtractItem> {
-  await Promise.resolve(); // async boundary — mirrors the streaming parser shape
-  for (const item of items) {
-    yield item;
+// Controllable OSM-shaped source. importRegion() streams through source.parse(),
+// so setting `stubExtract` replaces the old parsePoiExtract module-mock (which a
+// package-boundary jest.mock can no longer intercept now that the parser is
+// package-internal). Unwraps ExtractItem exactly like the real OsmPoiImportSource.
+let stubExtract: ExtractItem[] = [];
+let stubParseCalls = 0;
+class StubOsmSource implements PoiImportSource {
+  readonly source = 'osm';
+  extractFilename(region: PoiImportRegion): string {
+    return `${region.code.toLowerCase()}.osm`;
+  }
+  async *parse(): AsyncGenerator<StorableImportRow> {
+    stubParseCalls += 1;
+    await Promise.resolve(); // async boundary — mirrors the streaming parser shape
+    for (const item of stubExtract) {
+      yield 'poi' in item ? item.poi : item.accommodation;
+    }
   }
 }
 
-/** Point the mocked parser at a fresh generator per call (generators are single-use). */
+/** Point the stub source at a fresh set of items (generators are single-use per call). */
 function mockExtract(...items: ExtractItem[]): void {
-  parsePoiExtractMock.mockImplementation(() => extractOf(...items));
+  stubExtract = items;
 }
 
 /**
  * One line of FSQ OS Places NDJSON (see `FsqPoiImportSource.parse`), inside
  * `REGION`'s bbox (lng 18.4, lat 49.5) and classifying to `restaurant`.
- * Unlike OSM, the FSQ strategy doesn't go through the mocked
- * `parsePoiExtract` — it reads the stream `createReadStream` returns
- * directly — so driving a real FSQ import needs an actual `Readable`.
+ * Unlike OSM (driven through `StubOsmSource` above), the FSQ strategy reads
+ * the stream `createReadStream` returns directly — so driving a real FSQ
+ * import needs an actual `Readable`.
  */
 function fsqLine(over: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -153,8 +163,8 @@ describe('PoiImportService', () => {
   beforeEach(() => {
     existsSyncMock.mockReset();
     existsSyncMock.mockReturnValue(true);
-    parsePoiExtractMock.mockReset();
-    mockExtract(); // default: empty extract
+    stubExtract = []; // default: empty extract
+    stubParseCalls = 0;
 
     upsert = jest.fn().mockResolvedValue(undefined);
     // Default: no live rows inside the bbox → nothing to tombstone. The
@@ -199,7 +209,7 @@ describe('PoiImportService', () => {
       createQueryRunner,
     } as unknown as DataSource;
     config = { enabled: true, extractDir: '/extracts', regions: [REGION] };
-    service = new PoiImportService(dataSource, config);
+    service = new PoiImportService(dataSource, config, new StubOsmSource());
   });
 
   /** Rows passed to the first `upsert` call. */
@@ -259,7 +269,7 @@ describe('PoiImportService', () => {
 
     it('throws when extractDir is not configured, same as the internal resolver', () => {
       config.extractDir = null;
-      service = new PoiImportService(dataSource, config);
+      service = new PoiImportService(dataSource, config, new StubOsmSource());
       expect(() => service.getExtractPath('CZ')).toThrow(
         /TARMOTO_POI_IMPORT_DIR is not set/,
       );
@@ -297,7 +307,7 @@ describe('PoiImportService', () => {
         /already running/,
       );
       expect(existsSyncMock).not.toHaveBeenCalled();
-      expect(parsePoiExtractMock).not.toHaveBeenCalled();
+      expect(stubParseCalls).toBe(0);
       expect(upsert).not.toHaveBeenCalled();
       // No unlock call — the lock was never acquired — but the runner backing
       // the failed attempt is still released back to the pool.
@@ -601,7 +611,7 @@ describe('PoiImportService', () => {
       extractDir: '/extracts',
       regions: [REGION, NEIGHBOUR],
     };
-    service = new PoiImportService(dataSource, config);
+    service = new PoiImportService(dataSource, config, new StubOsmSource());
 
     loadInBbox([
       // Legacy (import_region null) rows absent from the extract:
@@ -763,7 +773,7 @@ describe('PoiImportService', () => {
       skipReason: 'no extract file at /extracts/cz.osm',
       warning: null,
     });
-    expect(parsePoiExtractMock).not.toHaveBeenCalled();
+    expect(stubParseCalls).toBe(0);
     expect(upsert).not.toHaveBeenCalled();
   });
 
@@ -779,7 +789,7 @@ describe('PoiImportService', () => {
     );
     // Fail fast: neither the file check nor the parser runs.
     expect(existsSyncMock).not.toHaveBeenCalled();
-    expect(parsePoiExtractMock).not.toHaveBeenCalled();
+    expect(stubParseCalls).toBe(0);
     expect(upsert).not.toHaveBeenCalled();
   });
 
@@ -789,7 +799,7 @@ describe('PoiImportService', () => {
     await expect(service.importRegion(REGION)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
-    expect(parsePoiExtractMock).not.toHaveBeenCalled();
+    expect(stubParseCalls).toBe(0);
   });
 
   it('importAll imports every configured region sequentially, one result each', async () => {
@@ -803,6 +813,6 @@ describe('PoiImportService', () => {
     const results = await service.importAll();
 
     expect(results.map((r) => r.region)).toEqual(['CZ', 'SK']);
-    expect(parsePoiExtractMock).toHaveBeenCalledTimes(2);
+    expect(stubParseCalls).toBe(2);
   });
 });

@@ -13,14 +13,14 @@ import { DataSource } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity.js';
 import { Poi } from '@tarmoto/poi-db';
 import { poiImportConfig } from './poi-import.config.js';
-import type { PoiImportRegion } from '@tarmoto/ingest';
 import {
   OsmPoiImportSource,
   POI_IMPORT_SOURCE,
+  poiAdvisoryLockKey,
+  type PoiImportRegion,
   type PoiImportSource,
   type StorableImportRow,
-} from './poi-import-source.js';
-import { poiAdvisoryLockKey } from './poi-import.lock.js';
+} from '@tarmoto/ingest';
 import { withPoiRepo } from './poi-repo.js';
 
 /**

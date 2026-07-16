@@ -14,7 +14,7 @@ import {
   PoiImportService,
 } from './poi-import.service.js';
 import { PoiImportAdminService } from './poi-import-admin.service.js';
-import { FsqPoiImportSource } from './poi-import-source.js';
+import { FsqPoiImportSource } from '@tarmoto/ingest';
 import { fsqImportConfig, poiImportConfig } from './poi-import.config.js';
 import { PoiDatabaseModule } from './poi-database.module.js';
 import { PoiImportRun } from '@tarmoto/poi-db';

@@ -1,9 +1,9 @@
-import { createInterface } from 'node:readline';
-import type { Readable } from 'node:stream';
-import type { PoiImportRegion } from '@tarmoto/ingest';
-import type { StoredPoiFields } from './poi-provider.interface.js';
-import { parsePoiExtract } from './poi-extract-source.js';
-import { fsqRowToImportRow, type FsqPlaceRow } from './fsq-poi-categories.js';
+import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
+import type { PoiImportRegion } from "./regions.js";
+import type { StoredPoiFields } from "./osm-poi-tags.js";
+import { parsePoiExtract } from "./poi-extract-source.js";
+import { fsqRowToImportRow, type FsqPlaceRow } from "./fsq-poi-categories.js";
 
 /**
  * The normalized row every bulk source yields — the common denominator of the
@@ -42,14 +42,14 @@ export interface PoiImportSource {
 }
 
 /** DI token for the optional per-instance source strategy (defaults to OSM). */
-export const POI_IMPORT_SOURCE = Symbol('POI_IMPORT_SOURCE');
+export const POI_IMPORT_SOURCE = Symbol("POI_IMPORT_SOURCE");
 
 /**
  * The OSM/Geofabrik source (#850): per-country `.osm` extracts streamed through
  * the sax reader, unwrapped to the flat POI / accommodation row.
  */
 export class OsmPoiImportSource implements PoiImportSource {
-  readonly source = 'osm';
+  readonly source = "osm";
 
   extractFilename(region: PoiImportRegion): string {
     return `${region.code.toLowerCase()}.osm`;
@@ -57,7 +57,7 @@ export class OsmPoiImportSource implements PoiImportSource {
 
   async *parse(stream: Readable): AsyncGenerator<StorableImportRow> {
     for await (const item of parsePoiExtract(stream)) {
-      yield 'poi' in item ? item.poi : item.accommodation;
+      yield "poi" in item ? item.poi : item.accommodation;
     }
   }
 }
@@ -72,7 +72,7 @@ export class OsmPoiImportSource implements PoiImportSource {
  * outage-safety contract as the OSM parser.
  */
 export class FsqPoiImportSource implements PoiImportSource {
-  readonly source = 'fsq';
+  readonly source = "fsq";
 
   extractFilename(region: PoiImportRegion): string {
     return `${region.code.toLowerCase()}.fsq.jsonl`;
