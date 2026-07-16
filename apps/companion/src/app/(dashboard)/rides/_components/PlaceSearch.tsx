@@ -1,9 +1,25 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { MapPin } from "lucide-react";
-import { ClearButton, SegmentedControl, fieldChrome } from "@tarmoto/ui";
+import { SearchCombobox, SegmentedControl } from "@tarmoto/ui";
 import { api } from "@/lib/api";
+
+// Lazy: maplibre-gl only loads when the radius popover actually opens —
+// keeps the filter bars light and keeps jsdom tests away from WebGL.
+const RadiusPreviewMap = dynamic(
+  () =>
+    import("@/components/map/RadiusPreviewMap").then(
+      (mod) => mod.RadiusPreviewMap,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[150px] w-full animate-pulse rounded-[10px] border border-line bg-paper" />
+    ),
+  },
+);
 export interface PlaceValue {
   label: string;
   lat: number;
@@ -33,6 +49,13 @@ const RADIUS_CHOICES: Array<{
 const DEFAULT_RADIUS_KM = 25;
 const GEOCODE_DEBOUNCE_MS = 350;
 const GEOCODE_MIN_CHARS = 2;
+
+// Composite key: lat/lng alone collides when Nominatim returns overlapping
+// admin levels (a city and its county can share the centroid). Adding the
+// label and index makes the key unique even for dual-tagged hits while
+// staying stable across re-renders of the same result set.
+const matchKey = (m: Match, i: number) => `${m.lat},${m.lng}|${m.label}|${i}`;
+
 export function PlaceSearch({
   value,
   onChange,
@@ -42,17 +65,22 @@ export function PlaceSearch({
   const [draft, setDraft] = useState(value?.label ?? "");
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+  // The radius picker popover, anchored under the field. Replaces the old
+  // always-visible segmented row that used to push the layout down the
+  // moment a place was picked.
+  const [radiusOpen, setRadiusOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     setDraft(value?.label ?? "");
   }, [value?.label]);
-  // Close the dropdown on outside click.
+  // Close the radius popover on outside click (the search dropdown has its
+  // own closer inside SearchCombobox).
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target as Node)) setOpen(false);
+      if (!containerRef.current.contains(e.target as Node))
+        setRadiusOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -127,12 +155,12 @@ export function PlaceSearch({
       km: value?.km ?? DEFAULT_RADIUS_KM,
     });
     setDraft(match.label);
-    setOpen(false);
   }
   function clear() {
     onChange(null);
     setDraft("");
     setMatches([]);
+    setRadiusOpen(false);
   }
   return (
     <div className="flex flex-col gap-1.5 flex-1 min-w-[220px]">
@@ -140,82 +168,69 @@ export function PlaceSearch({
         {label}
       </span>
       <div ref={containerRef} className="relative">
-        <MapPin
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute pointer-events-none"
-        />
-        {/* type="text", not "search": the field renders its own ClearButton,
-            and WebKit's native search-cancel ✕ would sit right next to it. */}
-        {/* eslint-disable-next-line no-restricted-syntax -- async geocode
-            combobox: custom debounce/abort/dropdown logic the ui Combobox
-            can't host; skinned with fieldChrome + ClearButton. */}
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setOpen(true);
+        <SearchCombobox
+          ariaLabel={label}
+          query={draft}
+          onQueryChange={(next) => {
+            setDraft(next);
+            setRadiusOpen(false);
           }}
-          onFocus={() => setOpen(true)}
+          items={matches.map((m, i) => ({
+            value: matchKey(m, i),
+            label: m.label,
+          }))}
+          onSelect={(key) => {
+            const match = matches.find((m, i) => matchKey(m, i) === key);
+            if (match) pick(match);
+          }}
+          loading={loading}
+          minChars={GEOCODE_MIN_CHARS}
           placeholder={placeholder}
-          className={fieldChrome({ hasLeading: true, hasTrailing: true })}
+          loadingMessage={t("Searching…")}
+          emptyMessage={t("No matches")}
+          leadingIcon={<MapPin size={14} />}
+          onClear={clear}
+          trailing={
+            value ? (
+              <button
+                type="button"
+                onClick={() => setRadiusOpen((open) => !open)}
+                aria-expanded={radiusOpen}
+                aria-label={t("Search radius: {km} km", { km: value.km })}
+                className="whitespace-nowrap rounded-md border border-line-strong bg-cream px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.4px] text-fg-dim transition hover:border-ink hover:text-ink"
+              >
+                {value.km} km
+              </button>
+            ) : undefined
+          }
         />
-        {(draft || value) && (
-          <ClearButton label={t("Clear place filter")} onClear={clear} />
-        )}
-        {open && draft.trim().length >= GEOCODE_MIN_CHARS && (
-          <div className="absolute z-10 mt-1 w-full rounded-[10px] border border-line-strong bg-paper p-1 shadow-[0_8px_24px_rgba(14,14,16,0.08)]">
-            {loading && (
-              <div className="px-2.5 py-1.5 text-xs text-fg-dim">
-                {t("Searching\u2026")}
-              </div>
-            )}
-            {!loading && matches.length === 0 && (
-              <div className="px-2.5 py-1.5 text-xs text-fg-mute">
-                {t("No matches")}
-              </div>
-            )}
-            {!loading &&
-              matches.map((m, i) => (
-                <button
-                  // Composite key: lat/lng alone collides when Nominatim
-                  // returns overlapping admin levels (a city and its
-                  // county can share the centroid). Adding the label and
-                  // index makes the key unique even for dual-tagged hits
-                  // while staying stable across re-renders of the same
-                  // result set.
-                  key={`${m.lat},${m.lng}|${m.label}|${i}`}
-                  type="button"
-                  onClick={() => pick(m)}
-                  className="block w-full rounded-md text-left px-2.5 py-1.5 text-sm text-ink hover:bg-paper-2 truncate transition"
-                  title={m.label}
-                >
-                  {m.label}
-                </button>
-              ))}
+        {radiusOpen && value && (
+          <div className="absolute right-0 z-20 mt-1 w-full min-w-[280px] rounded-[10px] border border-line-strong bg-paper p-3 shadow-[0_8px_24px_rgba(14,14,16,0.08)]">
+            <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
+              {t("Search radius")}
+            </span>
+            <SegmentedControl
+              ariaLabel={t("Search radius")}
+              value={String(value.km)}
+              onChange={(km) =>
+                onChange({
+                  label: value.label,
+                  lat: value.lat,
+                  lng: value.lng,
+                  km: Number(km),
+                })
+              }
+              options={RADIUS_CHOICES.map((r) => ({
+                value: String(r.km),
+                label: r.label,
+              }))}
+            />
+            <div className="mt-2.5">
+              <RadiusPreviewMap lat={value.lat} lng={value.lng} km={value.km} />
+            </div>
           </div>
         )}
       </div>
-      {value && (
-        <div className="mt-0.5">
-          <SegmentedControl
-            ariaLabel="Search radius"
-            value={String(value.km)}
-            onChange={(km) =>
-              onChange({
-                label: value.label,
-                lat: value.lat,
-                lng: value.lng,
-                km: Number(km),
-              })
-            }
-            options={RADIUS_CHOICES.map((r) => ({
-              value: String(r.km),
-              label: r.label,
-            }))}
-          />
-        </div>
-      )}
     </div>
   );
 }
