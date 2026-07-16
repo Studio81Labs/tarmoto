@@ -73,6 +73,7 @@ class LatLngDto {
 }
 
 class UserPreferencesDto {
+  @ApiProperty({ enum: ['metric', 'imperial'], required: false })
   @IsOptional()
   @IsIn(['metric', 'imperial'])
   units?: 'metric' | 'imperial';
@@ -83,6 +84,7 @@ class UserPreferencesDto {
    * the raw value is kept so @IsFormatLocale rejects it with a 400 instead
    * of a silent null landing in the JSONB.
    */
+  @ApiProperty({ required: false })
   @IsOptional()
   @Transform(({ value }) =>
     typeof value === 'string'
@@ -93,31 +95,38 @@ class UserPreferencesDto {
   format_locale?: string;
 
   /** IANA display timezone (e.g. "Europe/Prague"); mirrors the rider's device. */
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsTimeZone()
   @MaxLength(TIMEZONE_MAX_LENGTH)
   timezone?: string;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   daily_km?: number;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
   min_quality?: number;
 
+  @ApiProperty({ type: [String], required: false })
   @IsOptional()
   @IsString({ each: true })
   road_types?: string[];
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
   record_gps?: boolean;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
   crash_detection?: boolean;
 
+  @ApiProperty({ required: false })
   @IsOptional()
   @ValidateNested()
   @Type(() => UserRoutePrefsDto)
