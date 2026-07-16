@@ -25,8 +25,8 @@ describe("apps/ingest POI internal API (real infra)", () => {
   beforeAll(async () => {
     // Config factories read env at ConfigModule init (during compile()), so
     // set these BEFORE compile. Enable OSM so CZ is enabled+configured.
-    process.env.TARMOTO_POI_IMPORT_ENABLED = "true";
-    process.env.TARMOTO_POI_IMPORT_DIR = dir;
+    process.env.TARMOTO_OSM_POI_IMPORT_ENABLED = "true";
+    process.env.TARMOTO_OSM_POI_IMPORT_DIR = dir;
 
     app = await Test.createTestingModule({ imports: [AppModule] }).compile();
     svc = app.get(PoiInternalService);

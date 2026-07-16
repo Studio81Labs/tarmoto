@@ -12,7 +12,7 @@ import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
 import type { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity.js";
 import { Poi } from "@tarmoto/poi-db";
-import { poiImportConfig } from "./poi-import.config.js";
+import { osmPoiImportConfig } from "./poi-import.config.js";
 import {
   OsmPoiImportSource,
   POI_IMPORT_SOURCE,
@@ -25,7 +25,7 @@ import { withPoiRepo } from "./poi-repo.js";
 
 /**
  * DI token for the Foursquare `PoiImportService` instance (#869) — a second
- * instance of this service bound to the FSQ source + `fsqImportConfig`, wired
+ * instance of this service bound to the FSQ source + `fsqPoiImportConfig`, wired
  * via a factory in `PoiModule`. The default class provider stays OSM, so
  * `app.get(PoiImportService)` / the OSM cron are unchanged.
  */
@@ -178,8 +178,8 @@ export class PoiImportService {
   constructor(
     @InjectDataSource("poi")
     private readonly poiDataSource: DataSource,
-    @Inject(poiImportConfig.KEY)
-    private readonly config: ConfigType<typeof poiImportConfig>,
+    @Inject(osmPoiImportConfig.KEY)
+    private readonly config: ConfigType<typeof osmPoiImportConfig>,
     // The per-source strategy: filename + parser + `source` string. Optional so
     // the default provider + the existing tests get OSM with no wiring; the FSQ
     // instance is constructed with its own source + config.
@@ -208,7 +208,7 @@ export class PoiImportService {
 
   /**
    * Whether this source's extract directory is configured (its
-   * `TARMOTO_*_IMPORT_DIR` is set). When false, `getExtractPath` throws — the
+   * `TARMOTO_*_POI_IMPORT_DIR` is set). When false, `getExtractPath` throws — the
    * admin upload route checks this to return a clear 503 rather than a 500 (#847).
    */
   get extractDirConfigured(): boolean {
@@ -239,7 +239,7 @@ export class PoiImportService {
   private extractPath(region: PoiImportRegion): string {
     if (!this.config.extractDir) {
       throw new Error(
-        "POI import is enabled but TARMOTO_POI_IMPORT_DIR is not set",
+        "POI import is enabled but TARMOTO_OSM_POI_IMPORT_DIR is not set",
       );
     }
     return join(

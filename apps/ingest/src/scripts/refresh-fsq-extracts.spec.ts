@@ -95,7 +95,7 @@ describe("refresh-fsq-extracts", () => {
           workDir,
           { duckdb: fakeDuckdb() },
         ),
-      ).rejects.toThrow(/TARMOTO_FSQ_IMPORT_DIR/);
+      ).rejects.toThrow(/TARMOTO_FSQ_POI_IMPORT_DIR/);
     });
 
     it("throws when the token is missing", async () => {
@@ -105,7 +105,7 @@ describe("refresh-fsq-extracts", () => {
           workDir,
           { duckdb: fakeDuckdb() },
         ),
-      ).rejects.toThrow(/TARMOTO_FSQ_TOKEN/);
+      ).rejects.toThrow(/TARMOTO_FSQ_POI_TOKEN/);
     });
 
     it("isolates a per-region failure, continues, and surfaces it in the summary", async () => {

@@ -10,7 +10,7 @@ import {
   PoiImportService,
 } from "./poi-import.service.js";
 import { PoiImportRunRecorder } from "./poi-import-run.recorder.js";
-import { fsqImportConfig, poiImportConfig } from "./poi-import.config.js";
+import { fsqPoiImportConfig, osmPoiImportConfig } from "./poi-import.config.js";
 import { PoiDatabaseModule } from "./poi-database.module.js";
 
 /**
@@ -27,8 +27,8 @@ import { PoiDatabaseModule } from "./poi-database.module.js";
  */
 @Module({
   imports: [
-    ConfigModule.forFeature(poiImportConfig),
-    ConfigModule.forFeature(fsqImportConfig),
+    ConfigModule.forFeature(osmPoiImportConfig),
+    ConfigModule.forFeature(fsqPoiImportConfig),
     PoiDatabaseModule,
     TypeOrmModule.forFeature([PoiImportRun], "poi"),
   ],
@@ -39,9 +39,9 @@ import { PoiDatabaseModule } from "./poi-database.module.js";
       provide: FSQ_POI_IMPORT,
       useFactory: (
         dataSource: DataSource,
-        config: ConfigType<typeof fsqImportConfig>,
+        config: ConfigType<typeof fsqPoiImportConfig>,
       ) => new PoiImportService(dataSource, config, new FsqPoiImportSource()),
-      inject: [getDataSourceToken("poi"), fsqImportConfig.KEY],
+      inject: [getDataSourceToken("poi"), fsqPoiImportConfig.KEY],
     },
     {
       // The ordered import-source registry the weekly dispatcher iterates. OSM

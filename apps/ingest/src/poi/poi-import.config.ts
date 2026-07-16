@@ -38,34 +38,40 @@ function boolEnv(value: string | undefined): boolean {
   return (value ?? "false").trim().toLowerCase() === "true";
 }
 
-export const poiImportConfig = registerAs("poiImport", (): PoiImportConfig => {
-  const extractDir = process.env.TARMOTO_POI_IMPORT_DIR?.trim();
-  return {
-    enabled: boolEnv(process.env.TARMOTO_POI_IMPORT_ENABLED),
-    extractDir: extractDir ? extractDir : null,
-    regions: parseRegions(
-      process.env.TARMOTO_POI_IMPORT_REGIONS,
-      "TARMOTO_POI_IMPORT_REGIONS",
-    ),
-  };
-});
+export const osmPoiImportConfig = registerAs(
+  "osmPoiImport",
+  (): PoiImportConfig => {
+    const extractDir = process.env.TARMOTO_OSM_POI_IMPORT_DIR?.trim();
+    return {
+      enabled: boolEnv(process.env.TARMOTO_OSM_POI_IMPORT_ENABLED),
+      extractDir: extractDir ? extractDir : null,
+      regions: parseRegions(
+        process.env.TARMOTO_OSM_POI_IMPORT_REGIONS,
+        "TARMOTO_OSM_POI_IMPORT_REGIONS",
+      ),
+    };
+  },
+);
 
 /**
  * Config for the Foursquare OS Places bulk import (#869) — the second bulk
  * source alongside OSM, same shape + region model. The operator's offline
  * DuckDB recipe writes per-region `<code>.fsq.jsonl` extracts into
- * `TARMOTO_FSQ_IMPORT_DIR` (see the runbook). Enabled defaults to **false**;
+ * `TARMOTO_FSQ_POI_IMPORT_DIR` (see the runbook). Enabled defaults to **false**;
  * the coverage list defaults to the same {@link DEFAULT_REGIONS}, narrowed via
- * `TARMOTO_FSQ_IMPORT_REGIONS` (CZ-first at launch).
+ * `TARMOTO_FSQ_POI_IMPORT_REGIONS` (CZ-first at launch).
  */
-export const fsqImportConfig = registerAs("fsqImport", (): PoiImportConfig => {
-  const extractDir = process.env.TARMOTO_FSQ_IMPORT_DIR?.trim();
-  return {
-    enabled: boolEnv(process.env.TARMOTO_FSQ_IMPORT_ENABLED),
-    extractDir: extractDir ? extractDir : null,
-    regions: parseRegions(
-      process.env.TARMOTO_FSQ_IMPORT_REGIONS,
-      "TARMOTO_FSQ_IMPORT_REGIONS",
-    ),
-  };
-});
+export const fsqPoiImportConfig = registerAs(
+  "fsqPoiImport",
+  (): PoiImportConfig => {
+    const extractDir = process.env.TARMOTO_FSQ_POI_IMPORT_DIR?.trim();
+    return {
+      enabled: boolEnv(process.env.TARMOTO_FSQ_POI_IMPORT_ENABLED),
+      extractDir: extractDir ? extractDir : null,
+      regions: parseRegions(
+        process.env.TARMOTO_FSQ_POI_IMPORT_REGIONS,
+        "TARMOTO_FSQ_POI_IMPORT_REGIONS",
+      ),
+    };
+  },
+);

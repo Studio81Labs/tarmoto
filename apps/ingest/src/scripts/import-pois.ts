@@ -10,8 +10,8 @@
  *
  * An optional leading `osm` / `fsq` selects the source (default `osm`, so the
  * existing `<region>` form is unchanged); the next arg, if any, is the ISO
- * region code. OSM reads `<TARMOTO_POI_IMPORT_DIR>/<code>.osm`; FSQ reads
- * `<TARMOTO_FSQ_IMPORT_DIR>/<code>.fsq.jsonl` — both via `PoiImportService`
+ * region code. OSM reads `<TARMOTO_OSM_POI_IMPORT_DIR>/<code>.osm`; FSQ reads
+ * `<TARMOTO_FSQ_POI_IMPORT_DIR>/<code>.fsq.jsonl` — both via `PoiImportService`
  * (the FSQ instance under `FSQ_POI_IMPORT`), the same the weekly dispatcher uses.
  *
  * Unlike the cron trigger, this bypasses the source's `*_IMPORT_ENABLED` gate —
