@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Select } from "@tarmoto/ui";
 import { LOCALES, SUPPORTED_LOCALES, type SupportedLocale } from "@/i18n";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -41,27 +42,17 @@ export function LocaleSwitcher() {
 
   return (
     <div>
-      <label
-        htmlFor="settings-locale"
-        className="block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim mb-1.5"
-      >
-        {t("Language")}
-      </label>
-      <select
+      <Select
         id="settings-locale"
+        label={t("Language")}
         value={locale}
         disabled={pending}
-        onChange={(event) =>
-          handleChange(event.target.value as SupportedLocale)
-        }
-        className="w-full px-4 py-2.5 rounded-lg bg-paper border border-line text-ink text-sm focus:outline-none focus:border-ink transition disabled:opacity-60"
-      >
-        {SUPPORTED_LOCALES.map((value) => (
-          <option key={value} value={value}>
-            {LOCALES[value].label}
-          </option>
-        ))}
-      </select>
+        onChange={(next) => handleChange(next as SupportedLocale)}
+        options={SUPPORTED_LOCALES.map((value) => ({
+          value,
+          label: LOCALES[value].label,
+        }))}
+      />
       {error && (
         <p role="alert" className="mt-1 text-xs text-red-400">
           {error}

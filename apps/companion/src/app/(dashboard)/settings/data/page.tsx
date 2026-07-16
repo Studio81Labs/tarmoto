@@ -13,7 +13,14 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { isDeletionConfirmed } from "@/lib/account-deletion";
-import { Button, Card, Stamp } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  FieldLabel,
+  Input,
+  PasswordInput,
+  Stamp,
+} from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 type ExportState =
   | { kind: "idle" }
@@ -354,38 +361,28 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             {t("below. ")}
           </p>
           <div>
-            <label
-              htmlFor="delete-confirm-email"
-              className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-            >
+            <FieldLabel htmlFor="delete-confirm-email">
               {t("Your email address ")}
-            </label>
-            <input
+            </FieldLabel>
+            <Input
               id="delete-confirm-email"
               type="email"
               autoComplete="off"
               autoFocus
               value={typed}
-              onChange={(e) => setTyped(e.target.value)}
+              onChange={setTyped}
               disabled={busy}
-              className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[14px] text-ink transition focus:border-quality-q1 focus:outline-none disabled:opacity-50"
             />
           </div>
           <div>
-            <label
-              htmlFor="delete-confirm-password"
-              className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim"
-            >
+            <FieldLabel htmlFor="delete-confirm-password">
               {t("Your password ")}
-            </label>
-            <input
+            </FieldLabel>
+            <PasswordInput
               id="delete-confirm-password"
-              type="password"
-              autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               disabled={busy}
-              className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-[14px] text-ink transition focus:border-quality-q1 focus:outline-none disabled:opacity-50"
             />
           </div>
           {state.kind === "error" && (

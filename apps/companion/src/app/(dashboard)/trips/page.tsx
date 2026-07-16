@@ -48,7 +48,14 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
-import { Button, Input, MiniRouteSvg, PageHeader, Select } from "@tarmoto/ui";
+import {
+  Button,
+  FieldLabel,
+  Input,
+  MiniRouteSvg,
+  PageHeader,
+  Select,
+} from "@tarmoto/ui";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -1236,20 +1243,16 @@ function FolderModal({
         <h2 className="text-sm font-semibold text-ink mb-3">
           {mode === "create" ? "New folder" : "Rename folder"}
         </h2>
-        <label className="block text-xs text-fg-dim mb-1" htmlFor="folder-name">
-          {t("Name ")}
-        </label>
-        <input
+        <FieldLabel htmlFor="folder-name">{t("Name ")}</FieldLabel>
+        <Input
           id="folder-name"
           autoFocus
-          type="text"
           value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
+          onChange={(next) => {
+            setValue(next);
             setError(null);
           }}
           placeholder={t("e.g. Summer 2026 Alps")}
-          className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent"
         />
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">

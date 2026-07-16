@@ -22,7 +22,16 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
-import { Button, Card, Mono, Stamp } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  FieldLabel,
+  Input,
+  Mono,
+  RadioCardGroup,
+  Stamp,
+  Textarea,
+} from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import { UserAvatar } from "@/components/UserAvatar";
 import { CommunityScaffold } from "../_CommunityScaffold";
@@ -312,19 +321,14 @@ function Toolbar({
 }) {
   return (
     <div className="max-w-md">
-      <div className="relative flex-1">
-        <Search
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-dim"
-        />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          placeholder={t("Search collections\u2026")}
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-cream border border-line text-ink text-sm placeholder:text-fg-dim focus:outline-none focus:border-accent transition"
-        />
-      </div>
+      <Input
+        value={search}
+        onChange={onSearch}
+        ariaLabel={t("Search collections")}
+        placeholder={t("Search collections\u2026")}
+        tone="cream"
+        leadingIcon={<Search size={14} />}
+      />
     </div>
   );
 }
@@ -575,45 +579,34 @@ function CollectionModal({
 
         <div className="space-y-3">
           <div>
-            <label
-              htmlFor="collection-name"
-              className="block text-xs text-fg-dim mb-1"
-            >
-              {t("Name")}
-            </label>
-            <input
+            <FieldLabel htmlFor="collection-name">{t("Name")}</FieldLabel>
+            <Input
               id="collection-name"
               autoFocus
-              type="text"
               value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
+              onChange={(next) => {
+                setTitle(next);
                 setError(null);
               }}
               maxLength={MAX_COLLECTION_NAME_LENGTH + 10}
               placeholder={t("e.g. My Favourite Beskydy Loops")}
-              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label
-              htmlFor="collection-description"
-              className="block text-xs text-fg-dim mb-1"
-            >
+            <FieldLabel htmlFor="collection-description">
               {t("Description")}{" "}
               <span className="text-fg-mute">{t("(optional)")}</span>
-            </label>
-            <textarea
+            </FieldLabel>
+            <Textarea
               id="collection-description"
               value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
+              onChange={(next) => {
+                setDescription(next);
                 setError(null);
               }}
               rows={3}
               maxLength={MAX_COLLECTION_DESCRIPTION_LENGTH + 10}
               placeholder={t("What makes this collection special?")}
-              className="w-full px-3 py-2 rounded-lg bg-paper border border-line text-ink text-sm placeholder:text-fg-mute focus:outline-none focus:border-accent resize-none"
             />
             <p className="mt-1 text-[11px] text-fg-mute">
               {description.length}/{MAX_COLLECTION_DESCRIPTION_LENGTH}
@@ -624,49 +617,28 @@ function CollectionModal({
             <legend className="block text-xs text-fg-dim mb-2">
               {t("Visibility")}
             </legend>
-            <div className="space-y-2">
-              {(
-                [
-                  {
-                    value: "private",
-                    label: "Private",
-                    body: "Only you can see this collection.",
-                  },
-                  {
-                    value: "unlisted",
-                    label: "Unlisted",
-                    body: "Anyone with the link can view. Not listed publicly.",
-                  },
-                  {
-                    value: "public",
-                    label: "Public",
-                    body: "Anyone can find and view this collection.",
-                  },
-                ] as const
-              ).map((opt) => (
-                <label
-                  key={opt.value}
-                  className={`flex gap-3 p-3 rounded-lg cursor-pointer border transition ${
-                    visibility === opt.value
-                      ? "border-accent/40 bg-accent/5"
-                      : "border-line bg-paper hover:border-line-strong"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="collection-visibility"
-                    value={opt.value}
-                    checked={visibility === opt.value}
-                    onChange={() => setVisibility(opt.value)}
-                    className="mt-0.5 accent-accent"
-                  />
-                  <div>
-                    <p className="text-sm text-ink">{opt.label}</p>
-                    <p className="text-[11px] text-fg-dim">{opt.body}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+            <RadioCardGroup
+              name="collection-visibility"
+              value={visibility}
+              onChange={setVisibility}
+              options={[
+                {
+                  value: "private",
+                  label: "Private",
+                  help: "Only you can see this collection.",
+                },
+                {
+                  value: "unlisted",
+                  label: "Unlisted",
+                  help: "Anyone with the link can view. Not listed publicly.",
+                },
+                {
+                  value: "public",
+                  label: "Public",
+                  help: "Anyone can find and view this collection.",
+                },
+              ]}
+            />
           </fieldset>
         </div>
 

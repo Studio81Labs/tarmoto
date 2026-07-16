@@ -18,6 +18,18 @@ export interface InputProps {
   placeholder?: string;
   disabled?: boolean;
   readOnly?: boolean;
+  required?: boolean;
+  autoFocus?: boolean;
+  autoComplete?: string;
+  /** Virtual-keyboard hint for text-typed fields (e.g. "numeric" for a year). */
+  inputMode?:
+    | "text"
+    | "numeric"
+    | "decimal"
+    | "email"
+    | "tel"
+    | "search"
+    | "url";
   ariaLabel?: string;
   maxLength?: number;
   leadingIcon?: ReactNode;
@@ -36,6 +48,10 @@ export function Input({
   placeholder,
   disabled = false,
   readOnly = false,
+  required = false,
+  autoFocus = false,
+  autoComplete,
+  inputMode,
   ariaLabel,
   maxLength,
   leadingIcon,
@@ -67,6 +83,12 @@ export function Input({
           value={value}
           disabled={disabled}
           readOnly={readOnly}
+          required={required}
+          // eslint-disable-next-line jsx-a11y/no-autofocus -- caller's call:
+          // modal name fields and confirm dialogs opt in deliberately.
+          autoFocus={autoFocus}
+          {...(autoComplete !== undefined ? { autoComplete } : {})}
+          {...(inputMode !== undefined ? { inputMode } : {})}
           placeholder={placeholder}
           aria-label={ariaLabel}
           aria-invalid={error || undefined}
