@@ -71,11 +71,15 @@ export function RadiusPreviewMap({
     });
   }, [lat, lng, km, ready]);
 
+  // No pointer-events-none: interactions are already disabled via the
+  // handler switches above, and the attribution links must stay clickable
+  // (basemap licence). `controls={false}` keeps dead-but-focusable zoom/
+  // geolocate buttons out of the popover's tab order.
   return (
     <div
       aria-label={label}
-      role="img"
-      className={`pointer-events-none relative w-full overflow-hidden rounded-[10px] border border-line ${className}`}
+      role="group"
+      className={`relative w-full overflow-hidden rounded-[10px] border border-line ${className}`}
     >
       <MapCanvas
         ref={handleRef}
@@ -83,6 +87,7 @@ export function RadiusPreviewMap({
         zoom={8}
         showQuality={false}
         showSurface={false}
+        controls={false}
         onReady={handleReady}
       />
     </div>
