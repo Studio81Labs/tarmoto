@@ -9,10 +9,17 @@ import {
   MaxLength,
   ValidateIf,
   ValidateNested,
+  IsTimeZone,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { SUPPORTED_LOCALES, type SupportedLocale } from '@tarmoto/shared';
+import {
+  SUPPORTED_LOCALES,
+  type SupportedLocale,
+  canonicalizeFormatLocale,
+  TIMEZONE_MAX_LENGTH,
+} from '@tarmoto/shared';
+import { IsFormatLocale } from './is-format-locale.validator.js';
 import { ROUTE_PREFERENCES } from '../../routing/dto/route.dto.js';
 
 export const MIN_QUALITY_LEVELS = [
@@ -67,8 +74,29 @@ class LatLngDto {
 
 class UserPreferencesDto {
   @IsOptional()
-  @IsString()
-  units?: string;
+  @IsIn(['metric', 'imperial'])
+  units?: 'metric' | 'imperial';
+
+  /**
+   * BCP-47 regional-format tag (e.g. "cs-CZ") driving number/date display.
+   * Canonicalized on write ("CS-cz" → "cs-CZ"); when canonicalization fails
+   * the raw value is kept so @IsFormatLocale rejects it with a 400 instead
+   * of a silent null landing in the JSONB.
+   */
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string'
+      ? (canonicalizeFormatLocale(value) ?? value)
+      : value,
+  )
+  @IsFormatLocale()
+  format_locale?: string;
+
+  /** IANA display timezone (e.g. "Europe/Prague"); mirrors the rider's device. */
+  @IsOptional()
+  @IsTimeZone()
+  @MaxLength(TIMEZONE_MAX_LENGTH)
+  timezone?: string;
 
   @IsOptional()
   @IsNumber()
