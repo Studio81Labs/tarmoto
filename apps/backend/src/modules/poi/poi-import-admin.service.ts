@@ -366,15 +366,18 @@ export class PoiImportAdminService {
 
   /**
    * The operator-configured extract directory for `source` — this
-   * front-door's OWN `TARMOTO_POI_IMPORT_DIR` (OSM) / `TARMOTO_FSQ_IMPORT_DIR`
-   * (FSQ) env, since it's what actually receives extract uploads
-   * (`storeExtract`). Read directly on every call rather than cached: this
-   * only ever changes via a redeploy, which reloads the module anyway —
-   * mirrors `POI_UPLOAD_MAX_BYTES`'s own module-load-time env read above.
+   * front-door's OWN `TARMOTO_OSM_POI_IMPORT_DIR` (OSM) /
+   * `TARMOTO_FSQ_POI_IMPORT_DIR` (FSQ) env, since it's what actually receives
+   * extract uploads (`storeExtract`). Read directly on every call rather than
+   * cached: this only ever changes via a redeploy, which reloads the module
+   * anyway — mirrors `POI_UPLOAD_MAX_BYTES`'s own module-load-time env read
+   * above.
    */
   private extractDir(source: string): string | undefined {
     const envVar =
-      source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR';
+      source === 'fsq'
+        ? 'TARMOTO_FSQ_POI_IMPORT_DIR'
+        : 'TARMOTO_OSM_POI_IMPORT_DIR';
     return process.env[envVar]?.trim() || undefined;
   }
 
@@ -603,7 +606,9 @@ export class PoiImportAdminService {
     if (!this.extractDirConfigured(source)) {
       throw new ServiceUnavailableException(
         `POI extract storage is not configured for ${source} — set ${
-          source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR'
+          source === 'fsq'
+            ? 'TARMOTO_FSQ_POI_IMPORT_DIR'
+            : 'TARMOTO_OSM_POI_IMPORT_DIR'
         }`,
       );
     }

@@ -88,8 +88,8 @@ describe('PoiImportAdminService', () => {
   // dir tests opt in explicitly) and restore whatever was already set
   // afterward, so no test leaks its env into another.
   const EXTRACT_DIR_ENV_KEYS = [
-    'TARMOTO_POI_IMPORT_DIR',
-    'TARMOTO_FSQ_IMPORT_DIR',
+    'TARMOTO_OSM_POI_IMPORT_DIR',
+    'TARMOTO_FSQ_POI_IMPORT_DIR',
   ] as const;
   const savedExtractDirEnv: Partial<
     Record<(typeof EXTRACT_DIR_ENV_KEYS)[number], string>
@@ -308,7 +308,7 @@ describe('PoiImportAdminService', () => {
       // Every test below uses source 'osm' unless noted, so default the OSM
       // extract dir to the throwaway temp dir; the one test exercising the
       // "not configured" path deletes this itself.
-      process.env.TARMOTO_POI_IMPORT_DIR = dir;
+      process.env.TARMOTO_OSM_POI_IMPORT_DIR = dir;
     });
 
     afterEach(() => {
@@ -388,11 +388,11 @@ describe('PoiImportAdminService', () => {
     });
 
     it('returns 503 (not 500) when the source has no configured extract dir', async () => {
-      // Override this block's beforeEach default: TARMOTO_POI_IMPORT_DIR
+      // Override this block's beforeEach default: TARMOTO_OSM_POI_IMPORT_DIR
       // unset → extractDirConfigured false → getExtractPath would throw a
       // plain Error (500); storeExtract must surface a clear 503 and write
       // nothing (#847 review).
-      delete process.env.TARMOTO_POI_IMPORT_DIR;
+      delete process.env.TARMOTO_OSM_POI_IMPORT_DIR;
       const svc = new PoiImportAdminService(
         fakeConfig(),
         makeLockRedis() as never,

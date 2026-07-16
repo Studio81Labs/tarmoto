@@ -85,10 +85,10 @@ COPY --from=build /workspace/packages/poi-db/dist packages/poi-db/dist
 # Seed the extract-volume mount points owned by uid 100 so a FRESH named volume
 # comes up writable (Docker copies the empty volume's owner from the image mount
 # point on first mount). Both the OSM dir and the FSQ dir (may be one shared path).
-ARG TARMOTO_POI_IMPORT_DIR=/data/poi-extracts
-ARG TARMOTO_FSQ_IMPORT_DIR=/data/poi-extracts
-RUN osm="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}" \
- && fsq="${TARMOTO_FSQ_IMPORT_DIR:-/data/poi-extracts}" \
+ARG TARMOTO_OSM_POI_IMPORT_DIR=/data/poi-extracts
+ARG TARMOTO_FSQ_POI_IMPORT_DIR=/data/poi-extracts
+RUN osm="${TARMOTO_OSM_POI_IMPORT_DIR:-/data/poi-extracts}" \
+ && fsq="${TARMOTO_FSQ_POI_IMPORT_DIR:-/data/poi-extracts}" \
  && mkdir -p "$osm" "$fsq" \
  && chown tarmoto:tarmoto "$osm" "$fsq"
 

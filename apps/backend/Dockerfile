@@ -76,23 +76,23 @@ COPY docs/database/ docs/database/
 
 # Persistent POI-extract volume mount point(s) (#847 admin uploads). Each bulk
 # source's admin upload writes its extract to that source's OWN configured dir
-# and the import reads it back — OSM under TARMOTO_POI_IMPORT_DIR, FSQ under its
-# independent TARMOTO_FSQ_IMPORT_DIR (#869) — so BOTH must be writable volumes.
-# Create + chown each while still root so a FRESH named volume mounted there
-# inherits that ownership (Docker copies an empty volume's owner from the image
-# mount point on first mount) and the non-root runtime user can write —
+# and the import reads it back — OSM under TARMOTO_OSM_POI_IMPORT_DIR, FSQ under
+# its independent TARMOTO_FSQ_POI_IMPORT_DIR (#869) — so BOTH must be writable
+# volumes. Create + chown each while still root so a FRESH named volume mounted
+# there inherits that ownership (Docker copies an empty volume's owner from the
+# image mount point on first mount) and the non-root runtime user can write —
 # otherwise the volume comes up root-owned and uploads fail with EACCES.
 #
 # Seed the exact paths the deployment configures: the PaaS injects every app env
-# var as a build ARG (see the base-image note above), so TARMOTO_*_IMPORT_DIR
+# var as a build ARG (see the base-image note above), so TARMOTO_*_POI_IMPORT_DIR
 # reach this stage. The defaults preserve the prior single-dir behaviour for a
 # local `docker build`; an unset/empty FSQ dir falls back to the OSM dir (the
 # common single-shared-volume topology, so seeding it twice is a harmless no-op).
 # If a volume already exists root-owned, recreate it (or chown it once).
-ARG TARMOTO_POI_IMPORT_DIR=/data/poi-extracts
-ARG TARMOTO_FSQ_IMPORT_DIR=""
-RUN poi_dir="${TARMOTO_POI_IMPORT_DIR:-/data/poi-extracts}"; \
-    fsq_dir="${TARMOTO_FSQ_IMPORT_DIR:-$poi_dir}"; \
+ARG TARMOTO_OSM_POI_IMPORT_DIR=/data/poi-extracts
+ARG TARMOTO_FSQ_POI_IMPORT_DIR=""
+RUN poi_dir="${TARMOTO_OSM_POI_IMPORT_DIR:-/data/poi-extracts}"; \
+    fsq_dir="${TARMOTO_FSQ_POI_IMPORT_DIR:-$poi_dir}"; \
     mkdir -p "$poi_dir" "$fsq_dir" && chown tarmoto:tarmoto "$poi_dir" "$fsq_dir"
 
 USER tarmoto
