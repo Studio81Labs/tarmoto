@@ -50,6 +50,14 @@ export function PreferencesSync() {
     // the reconciliation in dev. Same pattern as FormatPrefsSync.
     void (async () => {
       try {
+        // Snapshot the explicit local choice BEFORE the read: if it changes
+        // while /me is in flight, the rider toggled units mid-read and the
+        // account value below is stale — applying it would revert their
+        // just-made choice (with `ran` latched, nothing in-session would
+        // heal the revert) while the toggle's own PATCH puts the account on
+        // the new value anyway. Format prefs are device-derived and
+        // unaffected by the race.
+        const storedBefore = getStoredUnitSystem();
         const { data: me } = await usersApi.getMe();
 
         const prefsPatch: {
@@ -60,10 +68,12 @@ export function PreferencesSync() {
 
         const accountUnits = me.preferences?.units;
         const stored = getStoredUnitSystem();
-        if (accountUnits === "metric" || accountUnits === "imperial") {
-          if (accountUnits !== stored) setUnitSystem(accountUnits);
-        } else if (stored) {
-          prefsPatch.units = stored;
+        if (stored === storedBefore) {
+          if (accountUnits === "metric" || accountUnits === "imperial") {
+            if (accountUnits !== stored) setUnitSystem(accountUnits);
+          } else if (stored) {
+            prefsPatch.units = stored;
+          }
         }
 
         const deviceLocale = canonicalizeFormatLocale(navigator.language);

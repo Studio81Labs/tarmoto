@@ -141,4 +141,33 @@ describe("PreferencesSync", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(getMe).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores a stale account read when a local unit change raced it", async () => {
+    let resolveMe!: (value: Awaited<ReturnType<typeof usersApi.getMe>>) => void;
+    getMe.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMe = resolve;
+      }),
+    );
+
+    render(<PreferencesSync />);
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
+
+    // The rider flips units while the initial /me read is still in flight —
+    // the settings toggle's own PATCH persists the new choice separately.
+    act(() => {
+      usePreferencesStore.getState().setUnitSystem("imperial");
+    });
+
+    // The in-flight read resolves with the PRE-toggle account value. Applying
+    // it would revert the rider's just-made choice, and `ran` blocks any
+    // later in-session reconciliation from healing the split.
+    await act(async () => {
+      resolveMe(meWithPreferences(convergedPreferences({ units: "metric" })));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(usePreferencesStore.getState().unitSystem).toBe("imperial");
+    expect(updateMe).not.toHaveBeenCalled();
+  });
 });
