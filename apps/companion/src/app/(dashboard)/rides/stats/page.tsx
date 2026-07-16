@@ -22,6 +22,7 @@ import {
   Mono,
   PageHeader,
   SegmentedControl,
+  SkeletonDashboard,
   Stamp,
   type DataTableColumn,
   type MetricTileProps,
@@ -184,12 +185,7 @@ export default function StatsPage() {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7">
         <StatsPageHeader />
-        {showLoader && (
-          <div className="flex items-center gap-2 text-fg-dim">
-            <Loader2 size={16} className="animate-spin" />
-            {t("Loading rides\u2026 ")}
-          </div>
-        )}
+        {showLoader && <SkeletonDashboard label={t("Loading rides…")} />}
       </div>
     );
   }

@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Route, Users } from "lucide-react";
+import { Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
 import {
   communityApi,
@@ -20,7 +20,14 @@ import {
 } from "@/lib/community-feed";
 import { useAuthStore } from "@/stores/auth";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-import { Card, FieldLabel, Input, Mono, Select } from "@tarmoto/ui";
+import {
+  Card,
+  FieldLabel,
+  Input,
+  Mono,
+  Select,
+  SkeletonList,
+} from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
 const PAGE_SIZE = 9;
@@ -276,10 +283,7 @@ export default function CommunityFeedPage() {
             </div>
           ) : loading ? (
             showLoader && (
-              <div className="flex items-center gap-2 rounded-xl border border-line bg-cream p-4 text-sm text-fg-dim">
-                <Loader2 size={16} className="animate-spin" />
-                {t("Loading community rides\u2026 ")}
-              </div>
+              <SkeletonList rows={4} label={t("Loading community rides…")} />
             )
           ) : isPristineEmpty ? (
             <CommunityEmptyState

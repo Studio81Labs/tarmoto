@@ -7,15 +7,7 @@ import {
   usePathname,
 } from "next/navigation";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Check,
-  Loader2,
-  Pencil,
-  Scale,
-  Share2,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Check, Pencil, Scale, Share2, X } from "lucide-react";
 import {
   Button,
   Card,
@@ -23,6 +15,7 @@ import {
   MetricTile,
   Mono,
   QualityBars,
+  SkeletonDashboard,
   Stamp,
   type DataTableColumn,
   type MetricTileProps,
@@ -205,12 +198,7 @@ export default function RideDetailPage() {
   if (loading) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
-        {showLoader && (
-          <div className="flex items-center gap-2 text-fg-dim">
-            <Loader2 size={16} className="animate-spin" />
-            {t("Loading ride… ")}
-          </div>
-        )}
+        {showLoader && <SkeletonDashboard label={t("Loading ride…")} />}
       </PageShell>
     );
   }
