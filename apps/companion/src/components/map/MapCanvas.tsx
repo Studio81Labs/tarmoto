@@ -112,6 +112,21 @@ interface Props {
   onViewChange?: (view: MapCanvasViewChange) => void;
   onReady?: (map: MapLibreMap) => void;
   /**
+   * Render the interactive control chrome (zoom / geolocate / scale).
+   * Non-interactive previews (e.g. RadiusPreviewMap) pass `false` so no
+   * dead-but-focusable buttons appear; the attribution control is always
+   * added regardless — the basemap licence requires it stays visible and
+   * clickable.
+   */
+  controls?: boolean;
+  /**
+   * MapLibre's construction-time interactivity switch. `false` never
+   * installs the drag/scroll/keyboard handlers at all — unlike disabling
+   * handlers in `onReady`, there is no window before style load where a
+   * "static" preview could still capture wheel or drag input.
+   */
+  interactive?: boolean;
+  /**
    * Pin the basemap to a specific theme instead of following the viewer's
    * color-scheme preference. Used by the public share pages, which always
    * render on cream regardless of who's viewing.
@@ -141,6 +156,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     surfaceOpacityExpression = 0.75,
     onViewChange,
     onReady,
+    controls = true,
+    interactive = true,
     forceColorScheme,
     children,
   },
@@ -249,19 +266,26 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // We manage our own AttributionControl (applyAttribution) so it can be
       // rebuilt when the POI-data credits change (#869); disable the default.
       attributionControl: false,
+      // Init-time prop, like center/zoom: previews pass false so the
+      // interaction handlers are never installed.
+      interactive,
     });
     applyAttribution(map);
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
-    map.addControl(
-      new maplibregl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: false,
-      }),
-    );
-    map.addControl(
-      new maplibregl.ScaleControl({ unit: "metric" }),
-      "bottom-left",
-    );
+    // Like center/zoom below, `controls` is an init-time prop — read once
+    // when the map mounts.
+    if (controls) {
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
+      map.addControl(
+        new maplibregl.GeolocateControl({
+          positionOptions: { enableHighAccuracy: true },
+          trackUserLocation: false,
+        }),
+      );
+      map.addControl(
+        new maplibregl.ScaleControl({ unit: "metric" }),
+        "bottom-left",
+      );
+    }
 
     map.on("load", () => {
       applyTarmotoMapTheme(map, colorSchemeRef.current);
