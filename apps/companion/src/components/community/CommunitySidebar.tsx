@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
-import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { useFormat } from "@/format/FormatProvider";
 import {
   fetchActiveChallengeCard,
   fetchSuggestedRiders,
@@ -28,7 +28,9 @@ function challengeUnit(metric: string): string {
 export function CommunitySidebar() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
-  const { format } = useNumberFormat();
+  // Only this hook call migrates here; the surrounding number/date display in
+  // this file waits for a later migration task.
+  const format = useFormat().number;
 
   const [challenge, setChallenge] = useState<ActiveChallengeCard | null>(null);
   const [board, setBoard] = useState<RegionalDimensionLeaderboard | null>(null);

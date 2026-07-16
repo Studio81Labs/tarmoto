@@ -41,19 +41,15 @@ describe("RoadSegmentPopover", () => {
       },
     } as never);
 
-    render(
-      <RoadSegmentPopover
-        segment={segment()}
-        unitSystem="metric"
-        onClose={() => {}}
-      />,
-    );
+    render(<RoadSegmentPopover segment={segment()} onClose={() => {}} />);
 
     // Personal stats from the RiddenSegment render up-front, before the fetch.
     expect(screen.getByText("4.0")).toBeInTheDocument(); // quality badge
     expect(screen.getByText("Good surface")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument(); // rides
-    expect(screen.getByText("30 May")).toBeInTheDocument();
+    // Default seam context (en/UTC, no FormatProvider) renders month-first,
+    // unlike the retired en-GB `formatShortDate` ("30 May").
+    expect(screen.getByText("May 30")).toBeInTheDocument();
 
     // Name + distance arrive from the segment-detail fetch.
     expect(
@@ -69,13 +65,7 @@ describe("RoadSegmentPopover", () => {
   it("settles to a generic name when the detail fetch fails (no stuck spinner)", async () => {
     getSegmentDetailMock.mockRejectedValueOnce(new Error("boom"));
 
-    render(
-      <RoadSegmentPopover
-        segment={segment()}
-        unitSystem="metric"
-        onClose={() => {}}
-      />,
-    );
+    render(<RoadSegmentPopover segment={segment()} onClose={() => {}} />);
 
     await waitFor(() =>
       expect(screen.queryByText("Loading…")).not.toBeInTheDocument(),
@@ -90,13 +80,7 @@ describe("RoadSegmentPopover", () => {
     } as never);
     const onClose = vi.fn();
 
-    render(
-      <RoadSegmentPopover
-        segment={segment()}
-        unitSystem="metric"
-        onClose={onClose}
-      />,
-    );
+    render(<RoadSegmentPopover segment={segment()} onClose={onClose} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Close road segment" }));
     expect(onClose).toHaveBeenCalledTimes(1);

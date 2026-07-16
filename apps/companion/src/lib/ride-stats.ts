@@ -6,24 +6,10 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters } from "@tarmoto/shared";
 
 export const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
 export type RideType = (typeof RIDE_TYPES)[number];
-
-export const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
 
 // Minimal shape consumed by every helper. The metric fields are derived from
 // `RideSummaryDto` (which `RideDetailDto` also satisfies) so a backend rename
@@ -53,7 +39,7 @@ export interface AllTimeTotals {
 
 export interface MonthlyBucket {
   monthIndex: number;
-  monthLabel: (typeof MONTH_LABELS)[number];
+  monthLabel: string;
   distanceKm: number;
   rides: number;
 }
@@ -72,7 +58,7 @@ export interface CalendarDay {
 
 export type YearOverYearPoint = {
   monthIndex: number;
-  monthLabel: (typeof MONTH_LABELS)[number];
+  monthLabel: string;
 } & Record<string, number | string>;
 
 /**
@@ -202,10 +188,11 @@ export function computeAllTimeTotals(
 export function computeMonthlyDistance(
   rides: readonly RideForStats[],
   year: number,
+  format: Formatters,
 ): MonthlyBucket[] {
-  const buckets: MonthlyBucket[] = MONTH_LABELS.map((label, index) => ({
+  const buckets: MonthlyBucket[] = Array.from({ length: 12 }, (_, index) => ({
     monthIndex: index,
-    monthLabel: label,
+    monthLabel: format.monthYear(monthAnchor(year, index)),
     distanceKm: 0,
     rides: 0,
   }));
@@ -244,21 +231,43 @@ export function distanceGranularity(window: StatsWindow): ChartGranularity {
 const monthKeyOf = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
-function monthPoint(year: number, monthIndex: number): DistancePoint {
+/**
+ * Noon UTC on the 1st of `year`/`monthIndex` — a month bucket has no
+ * inherent time-of-day, but `format.monthYear` renders in the viewer's
+ * timezone (it's an instant formatter, §5 of the design spec). Anchoring at
+ * midnight would risk shifting into the adjacent month for viewers at the
+ * extremes of the real IANA offset range (-12..+14); noon absorbs the full
+ * range without crossing a month boundary either direction.
+ */
+function monthAnchor(year: number, monthIndex: number): Date {
+  return new Date(Date.UTC(year, monthIndex, 1, 12));
+}
+
+function monthPoint(
+  year: number,
+  monthIndex: number,
+  format: Formatters,
+): DistancePoint {
+  const label = format.monthYear(monthAnchor(year, monthIndex));
   return {
     key: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
-    axisLabel: MONTH_LABELS[monthIndex]!,
-    tooltipLabel: `${MONTH_LABELS[monthIndex]} ${year}`,
+    axisLabel: label,
+    tooltipLabel: label,
     distanceKm: 0,
     rides: 0,
   };
 }
 
-function dayPoint(date: Date): DistancePoint {
+function dayPoint(date: Date, format: Formatters): DistancePoint {
+  // `localDateKey` reads local Y/M/D accessors, so the string is stable
+  // regardless of the runtime's own timezone; feeding that date-only string
+  // (not the `Date` object) to `calendarDate` keeps the tooltip UTC-pinned
+  // to the same calendar day rather than the viewer's timezone shifting it.
+  const key = localDateKey(date);
   return {
-    key: localDateKey(date),
+    key,
     axisLabel: String(date.getDate()),
-    tooltipLabel: `${date.getDate()} ${MONTH_LABELS[date.getMonth()]} ${date.getFullYear()}`,
+    tooltipLabel: format.calendarDate(key),
     distanceKm: 0,
     rides: 0,
   };
@@ -292,6 +301,7 @@ function fillSeries(
 export function computeDistanceSeries(
   rides: readonly RideForStats[],
   window: StatsWindow,
+  format: Formatters,
   now = new Date(),
 ): DistancePoint[] {
   if (window === "30d" || window === "90d") {
@@ -301,6 +311,7 @@ export function computeDistanceSeries(
       points.push(
         dayPoint(
           new Date(now.getFullYear(), now.getMonth(), now.getDate() - i),
+          format,
         ),
       );
     }
@@ -308,13 +319,15 @@ export function computeDistanceSeries(
   }
   if (window === "year") {
     const year = now.getFullYear();
-    const points = MONTH_LABELS.map((_, m) => monthPoint(year, m));
+    const points = Array.from({ length: 12 }, (_, m) =>
+      monthPoint(year, m, format),
+    );
     return fillSeries(points, rides, monthKeyOf);
   }
   const points: DistancePoint[] = [];
   for (let i = 11; i >= 0; i -= 1) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    points.push(monthPoint(d.getFullYear(), d.getMonth()));
+    points.push(monthPoint(d.getFullYear(), d.getMonth(), format));
   }
   return fillSeries(points, rides, monthKeyOf);
 }
@@ -340,6 +353,7 @@ export interface QualityPoint {
  */
 export function computeQualityTrend(
   rides: readonly RideForStats[],
+  format: Formatters,
   now = new Date(),
 ): QualityPoint[] {
   interface Acc {
@@ -353,7 +367,7 @@ export function computeQualityTrend(
   const index = new Map<string, Acc>();
   for (let i = 11; i >= 0; i -= 1) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const base = monthPoint(d.getFullYear(), d.getMonth());
+    const base = monthPoint(d.getFullYear(), d.getMonth(), format);
     const acc: Acc = {
       point: { ...base, avgQuality: null, rides: 0 },
       weighted: 0,
@@ -472,11 +486,20 @@ export function computeRollingHeatmap(
 export function computeYearOverYear(
   rides: readonly RideForStats[],
   years: readonly number[],
+  format: Formatters,
 ): YearOverYearPoint[] {
-  const points: YearOverYearPoint[] = MONTH_LABELS.map((label, index) => {
+  // The month label text needs ONE reference year even though the row
+  // itself spans every requested year (it's a shared category axis, not an
+  // instant) — Formatters has no "month name only" primitive, so the label
+  // reads e.g. "Jan 2026" rather than bare "Jan". Anchoring on the latest
+  // requested year keeps that suffix consistent across the whole chart
+  // instead of picking arbitrarily per row.
+  const labelYear =
+    years.length > 0 ? Math.max(...years) : new Date().getFullYear();
+  const points: YearOverYearPoint[] = Array.from({ length: 12 }, (_, index) => {
     const point: YearOverYearPoint = {
       monthIndex: index,
-      monthLabel: label,
+      monthLabel: format.monthYear(monthAnchor(labelYear, index)),
     };
     for (const year of years) {
       point[String(year)] = 0;

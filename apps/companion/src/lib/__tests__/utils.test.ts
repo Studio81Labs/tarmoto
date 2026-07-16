@@ -11,8 +11,6 @@ import {
   formatDistance,
   formatDistanceFromMeters,
   formatDuration,
-  formatElevation,
-  formatSpeed,
   formatRelativeTime,
   confidenceLabel,
 } from "../utils";
@@ -125,20 +123,6 @@ describe("formatDuration", () => {
     expect(formatDuration(undefined)).toBe("—");
     expect(formatDuration(Number.NaN)).toBe("—");
     expect(formatDuration(-5)).toBe("—");
-  });
-});
-
-describe("formatElevation", () => {
-  it("rounds meters to whole numbers with unit", () => {
-    expect(formatElevation(123.4)).toBe("123 m");
-    expect(formatElevation(0)).toBe("0 m");
-  });
-});
-
-describe("formatSpeed", () => {
-  it("rounds km/h to whole numbers with unit", () => {
-    expect(formatSpeed(42.7)).toBe("43 km/h");
-    expect(formatSpeed(0)).toBe("0 km/h");
   });
 });
 

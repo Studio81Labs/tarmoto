@@ -29,8 +29,8 @@ import {
 } from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
-import { useNumberFormat } from "@/hooks/useNumberFormat";
-import type { UnitSystem } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
+import type { Formatters } from "@tarmoto/shared";
 import { api, ApiError, explorationApi, roadsApi } from "@/lib/api";
 import { shareRoadMap } from "@/lib/road-map-share";
 import type {
@@ -38,13 +38,7 @@ import type {
   RiddenSegmentMeta,
   UnriddenSegment,
 } from "@/lib/api";
-import {
-  formatDate,
-  formatDistance,
-  formatDistanceFromMeters,
-  formatDuration,
-  scoreToQualityTier,
-} from "@/lib/utils";
+import { scoreToQualityTier } from "@/lib/utils";
 import type { components } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
 import { useTimeWindow, windowStartISO } from "../_components/TimeWindowPills";
@@ -180,9 +174,9 @@ function RoadMapPageInner() {
   const mapRef = useRef<PersonalRoadMapHandle>(null);
   // Preferences are hydrated from localStorage on the client; during SSR the
   // store still returns the metric default so the server-rendered markup
-  // matches the first client paint.
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const { format } = useNumberFormat();
+  // matches the first client paint. The format seam already reads the
+  // account's unit preference, so there's no separate `unitSystem` read here.
+  const format = useFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   useEffect(() => {
     hydratePreferences();
@@ -479,18 +473,10 @@ function RoadMapPageInner() {
       </RidesScaffold>
     );
   }
-  // `formatDistance` carries the metric/imperial conversion + decimal rule;
-  // take its number for the tile (so the shared formatter applies locale
-  // grouping) and its unit for the tile's small slot.
-  const allTimeDistance = formatDistance(stats.total_distance_km, unitSystem);
-  const distanceSpace = allTimeDistance.lastIndexOf(" ");
-  const distanceValue = Number(
-    distanceSpace > 0
-      ? allTimeDistance.slice(0, distanceSpace)
-      : allTimeDistance,
-  );
-  const distanceUnit =
-    distanceSpace > 0 ? allTimeDistance.slice(distanceSpace + 1) : undefined;
+  // `splitDistanceKm` already returns the value pre-formatted (locale
+  // grouping applied) and the converted unit label, in one call — no more
+  // manual re-splitting of a rendered "1,234.5 km" string.
+  const allTimeDistance = format.splitDistanceKm(stats.total_distance_km);
   return (
     <RidesScaffold
       fill
@@ -543,7 +529,7 @@ function RoadMapPageInner() {
           {/* Routes need no legend — this is the Ride History section, so a
               rider already knows the lines are their rides. */}
           {mapView === "coverage" && (
-            <MapLegend riddenCount={filteredRidden.length} />
+            <MapLegend riddenCount={filteredRidden.length} format={format} />
           )}
           {/* Routes failed to load: say so rather than let the empty map read
               as "you have no rides" (Coverage stays available via the toggle). */}
@@ -569,7 +555,7 @@ function RoadMapPageInner() {
           {mapView === "routes" && selectedRideId && (
             <RideRoutePopover
               rideId={selectedRideId}
-              unitSystem={unitSystem}
+              format={format}
               onClose={() => setSelectedRideId(null)}
             />
           )}
@@ -602,7 +588,7 @@ function RoadMapPageInner() {
             <MetricTile
               variant="ink"
               accentNumber
-              formatValue={format}
+              formatValue={format.integer}
               label={t("Rides on map")}
               value={rideTracks.length}
               delta={
@@ -615,23 +601,22 @@ function RoadMapPageInner() {
             <MetricTile
               variant="ink"
               accentNumber
-              formatValue={format}
+              formatValue={format.integer}
               label={t("Segments ridden")}
               value={
                 period === "all" ? stats.ridden_segments : filteredRidden.length
               }
               delta={t("of {total} in region", {
-                total: format(stats.total_segments),
+                total: format.integer(stats.total_segments),
               })}
             />
           )}
 
           {/* 2 — All-time (lifetime) distance ridden. */}
           <MetricTile
-            formatValue={format}
             label={t("All-time distance")}
-            value={distanceValue}
-            {...(distanceUnit !== undefined ? { unit: distanceUnit } : {})}
+            value={allTimeDistance.value}
+            unit={allTimeDistance.unit}
           />
 
           {/* 3 + 4 — Coverage/exploration cards: region coverage and the
@@ -640,7 +625,7 @@ function RoadMapPageInner() {
             <>
               <MetricTile
                 accentNumber
-                formatValue={format}
+                formatValue={format.integer}
                 label={t("Region coverage")}
                 value={stats.percent_explored}
                 unit="%"
@@ -667,11 +652,7 @@ function RoadMapPageInner() {
                   ) : (
                     <ul className="space-y-3">
                       {nearbyByDistance.slice(0, 10).map((seg) => (
-                        <NearbyRow
-                          key={seg.id}
-                          segment={seg}
-                          units={unitSystem}
-                        />
+                        <NearbyRow key={seg.id} segment={seg} format={format} />
                       ))}
                     </ul>
                   )}
@@ -779,9 +760,9 @@ function NearbyCenterControls({
 }
 interface NearbyRowProps {
   segment: UnriddenSegment;
-  units: UnitSystem;
+  format: Formatters;
 }
-function NearbyRow({ segment, units }: NearbyRowProps) {
+function NearbyRow({ segment, format }: NearbyRowProps) {
   const tier = scoreToQualityTier(segment.quality_score);
   return (
     <li className="flex items-center justify-between gap-3">
@@ -790,7 +771,7 @@ function NearbyRow({ segment, units }: NearbyRowProps) {
           {segment.road_name ?? t("Unnamed road")}
         </p>
         <Mono className="text-[11px] text-fg-mute">
-          {formatDistanceFromMeters(segment.distance_m, units)}
+          {format.distanceM(segment.distance_m)}
         </Mono>
       </div>
       {tier != null ? (
@@ -820,11 +801,11 @@ type RideDetail = components["schemas"]["RideDetailDto"];
  */
 function RideRoutePopover({
   rideId,
-  unitSystem,
+  format,
   onClose,
 }: {
   rideId: string;
-  unitSystem: UnitSystem;
+  format: Formatters;
   onClose: () => void;
 }) {
   const [ride, setRide] = useState<RideDetail | null>(null);
@@ -865,10 +846,10 @@ function RideRoutePopover({
           {status === "ready" && ride ? (
             <>
               <p className="truncate text-sm font-extrabold text-ink">
-                {ride.name || formatDate(ride.started_at)}
+                {ride.name || format.date(ride.started_at)}
               </p>
               <p className="text-[11px] text-fg-dim">
-                {formatDate(ride.started_at)}
+                {format.date(ride.started_at)}
               </p>
             </>
           ) : status === "error" ? (
@@ -896,11 +877,11 @@ function RideRoutePopover({
           <div className="mt-2 flex items-center gap-3 text-xs text-fg-dim">
             {ride.distance_km != null && (
               <span className="font-bold text-ink">
-                {formatDistance(ride.distance_km, unitSystem)}
+                {format.distanceKm(ride.distance_km)}
               </span>
             )}
             {ride.duration_min != null && (
-              <span>{formatDuration(ride.duration_min)}</span>
+              <span>{format.duration(ride.duration_min)}</span>
             )}
           </div>
           <Link
@@ -956,14 +937,15 @@ function MapViewToggle({
 
 interface MapLegendProps {
   riddenCount: number;
+  format: Formatters;
 }
-function MapLegend({ riddenCount }: MapLegendProps) {
+function MapLegend({ riddenCount, format }: MapLegendProps) {
   return (
     <div className="absolute top-[60px] left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-accent" />
         {t("Ridden ({count} segments)", {
-          count: riddenCount.toLocaleString(),
+          count: format.integer(riddenCount),
         })}
       </div>
       <div className="flex items-center gap-2">

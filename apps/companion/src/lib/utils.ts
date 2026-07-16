@@ -275,14 +275,6 @@ export function formatDuration(minutes: number | null | undefined): string {
   return `${h}h ${m}m`;
 }
 
-export function formatElevation(meters: number): string {
-  return `${Math.round(meters)} m`;
-}
-
-export function formatSpeed(kmh: number): string {
-  return `${Math.round(kmh)} km/h`;
-}
-
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createFormatters } from "@tarmoto/shared";
 import {
   buildRoutePreview,
   buildRoutePreviewFromLines,
@@ -8,6 +9,10 @@ import {
   readingToTier,
   type RideSegmentLike,
 } from "../ride-detail";
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
 
 function segment(overrides: Partial<RideSegmentLike> = {}): RideSegmentLike {
   return {
@@ -95,15 +100,15 @@ describe("computeQualityBreakdown", () => {
 
 describe("formatNumber", () => {
   it("formats numbers with the requested number of decimals", () => {
-    expect(formatNumber(12.345, 1)).toBe("12.3");
-    expect(formatNumber(12.345, 0)).toBe("12");
-    expect(formatNumber(0, 2)).toBe("0.00");
+    expect(formatNumber(12.345, 1, format)).toBe("12.3");
+    expect(formatNumber(12.345, 0, format)).toBe("12");
+    expect(formatNumber(0, 2, format)).toBe("0.00");
   });
 
   it("returns an em-dash for missing values", () => {
-    expect(formatNumber(null)).toBe("—");
-    expect(formatNumber(undefined)).toBe("—");
-    expect(formatNumber(Number.NaN)).toBe("—");
+    expect(formatNumber(null, 0, format)).toBe("—");
+    expect(formatNumber(undefined, 0, format)).toBe("—");
+    expect(formatNumber(Number.NaN, 0, format)).toBe("—");
   });
 });
 
