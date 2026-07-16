@@ -209,15 +209,10 @@ export class PoiImportAdminService {
     if (!res.ok) {
       // Best-effort read of the error detail. The body stream itself can
       // abort/stall (the deadline covers the whole exchange, not just the
-      // headers), but we already know the status — fall back to `statusText`
-      // so we still throw the CORRECT upstream status class below rather than
-      // letting a body-read rejection escape as a 500.
-      let detail = '';
-      try {
-        detail = await res.text();
-      } catch {
-        detail = '';
-      }
+      // headers), but we already know the status — fall back to an empty
+      // detail (→ `statusText` below) so we still throw the CORRECT upstream
+      // status class rather than letting a body-read rejection escape as a 500.
+      const detail = await res.text().catch(() => '');
       // Propagate most ingest statuses verbatim so the admin UI sees the
       // same error class: 400 (unknown/disabled pair), 409 (in-flight), 503
       // (store down). 401/403 are remapped to 502 instead: those mean
