@@ -4,6 +4,9 @@ import { act } from "react";
 import { FormatProvider, useFormat } from "./FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
 
+// Intl.NumberFormat/DateTimeFormat emit NBSP (U+00A0) and narrow NBSP
+// (U+202F) for some locales — match both deliberately, not accidentally.
+// eslint-disable-next-line no-irregular-whitespace
 const norm = (s: string) => s.replace(/[  ]/g, " ");
 
 function Probe() {
