@@ -156,7 +156,7 @@ import type {
   TripParameters,
   Waypoint,
 } from "@/lib/types";
-import { formatDistance, formatDuration } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 /**
  * TripPlannerPage — Full-screen map-based trip planner.
  *
@@ -226,6 +226,7 @@ const URL_PARAM_KEYS = {
   bbox: "bbox",
 } as const;
 export default function TripPlannerPage() {
+  const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
   // Controlled "Plan as multi-day trip" disclosure — collapsed by default
@@ -2565,12 +2566,12 @@ export default function TripPlannerPage() {
                 ) : null}
                 <span className="inline-flex items-center gap-1">
                   <MapPin size={11} aria-hidden className="text-fg-faint" />
-                  {formatDistance(totalDistanceKm)}
+                  {format.distanceKm(totalDistanceKm)}
                 </span>
                 {totalTimeMin !== null ? (
                   <span className="inline-flex items-center gap-1">
                     <Clock size={11} aria-hidden className="text-fg-faint" />
-                    {`~${formatDuration(totalTimeMin)}`}
+                    {`~${format.duration(totalTimeMin)}`}
                   </span>
                 ) : null}
                 {headerMemberCount !== null ? (
@@ -3343,7 +3344,7 @@ export default function TripPlannerPage() {
                         {totalTimeMin !== null
                           ? t("Route ready — {km} km · ~{time}", {
                               km: Math.round(totalDistanceKm),
-                              time: formatDuration(totalTimeMin),
+                              time: format.duration(totalTimeMin),
                             })
                           : t("Route ready — {km} km", {
                               km: Math.round(totalDistanceKm),

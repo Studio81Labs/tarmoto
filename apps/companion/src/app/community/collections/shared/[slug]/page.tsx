@@ -17,7 +17,7 @@ import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisib
 import { UserAvatar } from "@/components/UserAvatar";
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
-import { formatRelativeTime } from "@/lib/utils";
+import { getServerFormatters } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +55,7 @@ export default async function SharedCollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const format = await getServerFormatters();
   const [detail, preview] = await Promise.all([
     fetchSharedCollection(slug),
     fetchSharedCollectionPreview(slug),
@@ -137,7 +138,7 @@ export default async function SharedCollectionPage({
             </MetaChip>
             <MetaChip>
               <Calendar size={13} className="text-fg-mute" aria-hidden="true" />
-              {t("Updated")} {formatRelativeTime(detail.updated_at)}
+              {t("Updated")} {format.relativeTime(detail.updated_at)}
             </MetaChip>
           </div>
         </section>
@@ -153,7 +154,7 @@ export default async function SharedCollectionPage({
           <Stamp>{t("Routes")}</Stamp>
           {routes.length > 0 && (
             <Mono className="text-[11px] text-fg-mute">
-              {Math.round(totalKm).toLocaleString()} {t("KM")}
+              {format.splitDistanceKm(totalKm).value} {t("KM")}
             </Mono>
           )}
         </div>

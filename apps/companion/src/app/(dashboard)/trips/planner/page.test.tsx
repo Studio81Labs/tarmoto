@@ -2883,9 +2883,11 @@ describe("TripPlannerPage", () => {
 
     // Post-split header meta: day count + total distance segments
     // (revision 2 §C; icon-per-segment layout). Distance formats via
-    // formatDistance for parity with the trip-preview header.
+    // format.distanceKm for parity with the trip-preview header — the seam
+    // only shows a decimal when the value actually has one (240 -> "240 km",
+    // not the old toFixed(1)-forced "240.0 km").
     expect(screen.getAllByText("2 days").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("240.0 km").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("240 km").length).toBeGreaterThan(0);
   });
 
   it("expanding Plan as multi-day trip is the day-planning opt-in", () => {

@@ -8,9 +8,10 @@ import {
   parseImportedRoute,
   type ImportedRoute,
 } from "@/lib/gpx-kml-import";
-import { QUALITY_CONFIG, formatDistance } from "@/lib/utils";
+import { QUALITY_CONFIG } from "@/lib/utils";
 import { useTripStore } from "@/stores/trip";
 import { flattenSegments } from "@/stores/trip";
+import { useFormat } from "@/format/FormatProvider";
 import type { Trip } from "@/lib/types";
 interface TripImportDialogProps {
   open: boolean;
@@ -215,6 +216,7 @@ function RoutePreview({
   trip: Trip;
   segmentCount: number;
 }) {
+  const format = useFormat();
   const firstDay = trip.days[0];
   const maxSegmentKm =
     firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) || 1;
@@ -230,12 +232,12 @@ function RoutePreview({
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Stat
             label="Distance"
-            value={formatDistance(route.totalDistanceKm)}
+            value={format.distanceKm(route.totalDistanceKm)}
           />
           <Stat label="Points" value={String(route.points.length)} />
           <Stat
             label="Avg quality"
-            value={firstDay ? firstDay.avgQuality.toFixed(1) : "—"}
+            value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}
           />
         </div>
         <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
@@ -265,11 +267,11 @@ function RoutePreview({
                   <div
                     className={`${cfg.bg} h-full`}
                     style={{ width: `${widthPct}%` }}
-                    aria-label={`${cfg.label} • ${formatDistance(seg.distanceKm)}`}
+                    aria-label={`${cfg.label} • ${format.distanceKm(seg.distanceKm)}`}
                   />
                 </div>
                 <span className="w-14 text-right tabular-nums text-slate-500">
-                  {formatDistance(seg.distanceKm)}
+                  {format.distanceKm(seg.distanceKm)}
                 </span>
                 <span className={`w-16 text-right font-semibold ${cfg.color}`}>
                   {cfg.label}

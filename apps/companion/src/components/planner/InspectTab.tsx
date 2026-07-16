@@ -12,7 +12,7 @@ import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { TripDay, Waypoint } from "@/lib/types";
 import { normalizeDayFinish } from "@/stores/trip";
-import { formatDuration } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { FlaggedSectionCard } from "./FlaggedSectionCard";
 import { SectionStamp } from "./PlannerPanel";
 import { RouteQualityStrip } from "./RouteQualityStrip";
@@ -86,6 +86,7 @@ export function InspectTab({
   onInspectSegment,
   onRerouteSegment,
 }: InspectTabProps) {
+  const format = useFormat();
   const allSegments = useMemo(
     () => (day ? deriveDayQualitySegments(day) : []),
     [day],
@@ -129,15 +130,21 @@ export function InspectTab({
 
   const metrics = plan
     ? {
-        distance: plan.distanceKm ? plan.distanceKm.toFixed(1) : "—",
-        time: plan.timeMin ? formatDuration(plan.timeMin) : "—",
+        distance: plan.distanceKm
+          ? format.splitDistanceKm(plan.distanceKm).value
+          : "—",
+        time: plan.timeMin ? format.duration(plan.timeMin) : "—",
         score:
-          plan.quality.score !== null ? plan.quality.score.toFixed(1) : "—",
+          plan.quality.score !== null
+            ? format.decimal(plan.quality.score, 1)
+            : "—",
       }
     : {
-        distance: day.distanceKm ? day.distanceKm.toFixed(1) : "—",
-        time: day.durationMinutes ? formatDuration(day.durationMinutes) : "—",
-        score: day.avgQuality ? day.avgQuality.toFixed(1) : "—",
+        distance: day.distanceKm
+          ? format.splitDistanceKm(day.distanceKm).value
+          : "—",
+        time: day.durationMinutes ? format.duration(day.durationMinutes) : "—",
+        score: day.avgQuality ? format.decimal(day.avgQuality, 1) : "—",
       };
 
   return (

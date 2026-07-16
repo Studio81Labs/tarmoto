@@ -12,6 +12,7 @@ import {
 } from "@/lib/planner/quality-bands";
 import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Road Preview Card — opens when the rider taps ANY section of the
@@ -167,6 +168,7 @@ export function RoadPreviewPopover({
   onReroute,
   onOpenFullDetail,
 }: RoadPreviewPopoverProps) {
+  const format = useFormat();
   const [preview, setPreview] = useState<RoadPreview | null>(null);
   // A coalesced run (`run:<first>:<last>`) carries only its FIRST child's
   // roadSegmentId, so opening the drawer from it would show one sub-segment
@@ -276,7 +278,9 @@ export function RoadPreviewPopover({
                   className="text-xl font-extrabold tracking-[-0.5px]"
                   style={{ color: scoreColor }}
                 >
-                  {preview.score?.toFixed(1)}
+                  {preview.score != null
+                    ? format.decimal(preview.score, 1)
+                    : undefined}
                 </span>
                 <span className="text-xs font-semibold text-fg-mute">/ 5</span>
               </div>
@@ -324,7 +328,7 @@ export function RoadPreviewPopover({
                       <div
                         key={index}
                         className="rounded-sm"
-                        title={`${span.score.toFixed(1)} · ${span.lengthKm.toFixed(1)} km`}
+                        title={`${format.decimal(span.score, 1)} · ${format.distanceKm(span.lengthKm)}`}
                         style={{
                           // Width ∝ length so the bars map to the 0→N km axis;
                           // a floor keeps a short sliver visible.

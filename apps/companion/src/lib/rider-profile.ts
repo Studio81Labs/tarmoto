@@ -21,7 +21,7 @@
  */
 
 import {
-  formatCount,
+  formatCount as formatCountLocale,
   formatJoinedLabel,
   initialsFromName,
   type PublicProfile,
@@ -29,8 +29,20 @@ import {
 import type { components } from "@tarmoto/openapi-client";
 import { api, ApiError } from "@/lib/api";
 
-export { formatCount, formatJoinedLabel, initialsFromName };
+export { formatJoinedLabel, initialsFromName };
 export type { PublicProfile };
+
+/**
+ * Re-exports the shared `formatCount` with `locale` required rather than
+ * optional. Every companion call site renders inside a `Formatters` context
+ * (`useFormat()`), so there's no legitimate reason to fall back to the
+ * shared helper's environment-default locale here — requiring the argument
+ * makes a forgotten `format.locale` a typecheck failure instead of a silent
+ * wrong-locale render.
+ */
+export function formatCount(value: number, locale: string): string {
+  return formatCountLocale(value, locale);
+}
 
 /** UI badge entry — the generated `BadgeDto`. */
 export type UserBadge = components["schemas"]["BadgeDto"];

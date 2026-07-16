@@ -18,7 +18,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
-import { formatDistance, formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 
 type LoadState =
   | { phase: "loading" }
@@ -40,6 +40,7 @@ type LoadState =
  * surface, and the standalone `/shared/[slug]` page stays for anonymous links.
  */
 export default function DiscoverCollectionPage() {
+  const format = useFormat();
   const { slug } = useParams<{ slug: string }>();
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const queryClient = useQueryClient();
@@ -183,7 +184,7 @@ export default function DiscoverCollectionPage() {
             )}
             <span className="text-fg-mute">·</span>
             <Mono className="text-[11px] text-fg-mute">
-              {t("Updated")} {formatRelativeTime(detail!.updated_at)}
+              {t("Updated")} {format.relativeTime(detail!.updated_at)}
             </Mono>
           </div>
         </div>
@@ -237,7 +238,7 @@ export default function DiscoverCollectionPage() {
         />
         <MetricTile
           label={t("Total distance")}
-          value={formatDistance(totalKm)}
+          value={format.distanceKm(totalKm)}
         />
         <MetricTile label={t("Followers")} value={detail!.follower_count} />
       </section>
@@ -249,7 +250,7 @@ export default function DiscoverCollectionPage() {
         <Stamp>{t("Routes")}</Stamp>
         {routes.length > 0 && (
           <Mono className="text-[11px] text-fg-mute">
-            {Math.round(totalKm).toLocaleString()} {t("KM")}
+            {format.splitDistanceKm(totalKm).value} {t("KM")}
           </Mono>
         )}
       </div>

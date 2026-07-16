@@ -13,6 +13,7 @@ import {
 import { t } from "@/i18n";
 import type { Poi } from "@/lib/planner/types";
 import type { PassStatus } from "@/lib/passes-summary";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Decision-support fields a POI can carry: OSM tags for store-backed POIs
@@ -173,6 +174,7 @@ function DetailRow({
  * nodes render nothing.
  */
 export function PoiDetails({ poi }: { poi: Poi }) {
+  const format = useFormat();
   const d = readPoiDetails(poi);
   if (!hasPoiDetails(d)) return null;
   const address = [d.addressStreet, d.addressCity].filter(Boolean).join(", ");
@@ -190,10 +192,7 @@ export function PoiDetails({ poi }: { poi: Poi }) {
         </div>
       ) : null}
       {d.elevationM !== undefined ? (
-        <DetailRow icon={Mountain}>
-          {d.elevationM.toLocaleString()}
-          {t("m ")}
-        </DetailRow>
+        <DetailRow icon={Mountain}>{format.elevation(d.elevationM)}</DetailRow>
       ) : null}
       {d.stars !== undefined ? (
         <DetailRow icon={Star}>
