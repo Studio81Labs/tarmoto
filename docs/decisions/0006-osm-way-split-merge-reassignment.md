@@ -33,7 +33,7 @@ real snapshots.
 
 ## Decision
 
-> Note (2026-07-16): these env vars were renamed to `{source}_{domain}` — see `docs/superpowers/specs/2026-07-16-import-source-domain-naming-design.md`.
+> Note (2026-07-16): the road-import env vars in this decision were renamed `TARMOTO_OSM_IMPORT_*` → `TARMOTO_OSM_ROAD_IMPORT_*` (source/domain naming pass, PR #1016). The names below are the CURRENT ones — see `docs/superpowers/specs/2026-07-16-import-source-domain-naming-design.md`.
 
 Reassign identity by **geometry overlap** for the changed ranges, so history
 follows the road, not the way id.
@@ -130,7 +130,7 @@ that re-points the existing row onto the incoming geometry, insert as a fresh ro
 and stale as a **tombstone** (`road_segments.deactivated_at`, added by migration
 `1791`) rather than a hard delete, since the history tables FK to `road_segments`.
 Two subtleties: (a) **stale-by-absence** tombstoning is only sound over an
-**explicit import region** (`TARMOTO_OSM_IMPORT_BBOX`) — a data-derived bbox would
+**explicit import region** (`TARMOTO_OSM_ROAD_IMPORT_BBOX`) — a data-derived bbox would
 wrongly tombstone rows that fall in the rectangle but outside the extract, and miss
 removed roads beyond the current extrema — so without a configured region the
 importer does not tombstone a row merely for being absent from the snapshot. (It
@@ -144,7 +144,7 @@ hit a unique violation). The active discovery/aggregation reads filter
 `deactivated_at IS NULL` — best-roads, nearby, road + fun-zone detail aggregation,
 clustering, tiles, and route/commute quality enrichment — so a tombstoned road
 drops out of every current-network surface while its history rows survive. The
-scheduled job still stays off (`TARMOTO_OSM_IMPORT_ENABLED=false`) until the
+scheduled job still stays off (`TARMOTO_OSM_ROAD_IMPORT_ENABLED=false`) until the
 misassignment rate is validated on a real region.
 
 Defaults: **overlap threshold 0.5** — a carry-over needs real overlap above half
@@ -172,7 +172,7 @@ core throws instead.
   Geofabrik snapshot deltas, and the **misassignment rate quantified**, before the
   scheduled job is enabled on a live region — a wrong carry-over silently
   reattaches one road's reviews to another. Until then the importer stays off by
-  default (`TARMOTO_OSM_IMPORT_ENABLED=false`).
+  default (`TARMOTO_OSM_ROAD_IMPORT_ENABLED=false`).
 - Applying the plan needs the candidate existing rows for the region loaded and
   spatially indexed; the `geom` GiST index already exists.
 
