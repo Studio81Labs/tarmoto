@@ -79,6 +79,35 @@ describe("PlaceSearch", () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
+  it("closes the radius popover when focus leaves the control or on Escape", async () => {
+    vi.useRealTimers();
+    const { default: userEvent } = await import("@testing-library/user-event");
+    render(
+      <>
+        <PlaceSearch value={{ ...PLACE, km: 25 }} onChange={vi.fn()} />
+        <button type="button">Next filter</button>
+      </>,
+    );
+    const chip = screen.getByRole("button", { name: "Search radius: 25 km" });
+
+    // Tab out: walk the control's stops (clear ✕, radius radio, …) until
+    // focus lands on the next filter — the exact count isn't the contract.
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    const next = screen.getByRole("button", { name: "Next filter" });
+    for (let i = 0; i < 6 && document.activeElement !== next; i++) {
+      await userEvent.tab();
+    }
+    expect(next).toHaveFocus();
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+
+    // Escape while inside the control.
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-expanded", "true");
+    await userEvent.keyboard("{Escape}");
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("keeps the clear action reachable after the rider erases the text", () => {
     const onChange = vi.fn();
     render(<PlaceSearch value={{ ...PLACE, km: 25 }} onChange={onChange} />);

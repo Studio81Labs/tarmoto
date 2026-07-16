@@ -167,7 +167,22 @@ export function PlaceSearch({
       <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
         {label}
       </span>
-      <div ref={containerRef} className="relative">
+      <div
+        ref={containerRef}
+        className="relative"
+        // Mirror the combobox menu: the radius popover also closes when
+        // focus leaves the control (Tab past the radios/attribution to the
+        // next filter) or on Escape, so it can't sit stale over the
+        // following fields with the chip still reporting aria-expanded.
+        onBlur={(event) => {
+          if (!containerRef.current?.contains(event.relatedTarget as Node)) {
+            setRadiusOpen(false);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setRadiusOpen(false);
+        }}
+      >
         <SearchCombobox
           ariaLabel={label}
           query={draft}
