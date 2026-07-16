@@ -120,6 +120,13 @@ interface Props {
    */
   controls?: boolean;
   /**
+   * MapLibre's construction-time interactivity switch. `false` never
+   * installs the drag/scroll/keyboard handlers at all — unlike disabling
+   * handlers in `onReady`, there is no window before style load where a
+   * "static" preview could still capture wheel or drag input.
+   */
+  interactive?: boolean;
+  /**
    * Pin the basemap to a specific theme instead of following the viewer's
    * color-scheme preference. Used by the public share pages, which always
    * render on cream regardless of who's viewing.
@@ -150,6 +157,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     onViewChange,
     onReady,
     controls = true,
+    interactive = true,
     forceColorScheme,
     children,
   },
@@ -258,6 +266,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // We manage our own AttributionControl (applyAttribution) so it can be
       // rebuilt when the POI-data credits change (#869); disable the default.
       attributionControl: false,
+      // Init-time prop, like center/zoom: previews pass false so the
+      // interaction handlers are never installed.
+      interactive,
     });
     applyAttribution(map);
     // Like center/zoom below, `controls` is an init-time prop — read once

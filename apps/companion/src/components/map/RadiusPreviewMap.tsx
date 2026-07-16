@@ -37,17 +37,6 @@ export function RadiusPreviewMap({
   const [ready, setReady] = useState(false);
 
   const handleReady = (map: MapLibreMap) => {
-    for (const control of [
-      map.dragPan,
-      map.scrollZoom,
-      map.doubleClickZoom,
-      map.touchZoomRotate,
-      map.keyboard,
-      map.boxZoom,
-      map.dragRotate,
-    ]) {
-      control.disable();
-    }
     ensureLayers(map);
     setReady(true);
   };
@@ -71,10 +60,11 @@ export function RadiusPreviewMap({
     });
   }, [lat, lng, km, ready]);
 
-  // No pointer-events-none: interactions are already disabled via the
-  // handler switches above, and the attribution links must stay clickable
-  // (basemap licence). `controls={false}` keeps dead-but-focusable zoom/
-  // geolocate buttons out of the popover's tab order.
+  // No pointer-events-none: `interactive={false}` means the map never
+  // installs drag/scroll/keyboard handlers (construction-time, so there is
+  // no pre-style-load window either), and the attribution links must stay
+  // clickable (basemap licence). `controls={false}` keeps dead-but-
+  // focusable zoom/geolocate buttons out of the popover's tab order.
   return (
     <div
       aria-label={label}
@@ -88,6 +78,7 @@ export function RadiusPreviewMap({
         showQuality={false}
         showSurface={false}
         controls={false}
+        interactive={false}
         onReady={handleReady}
       />
     </div>
