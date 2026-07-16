@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule, getDataSourceToken } from '@nestjs/typeorm';
-import { PoiDataSource } from '../src/data-source.poi.js';
+import { PoiDataSource } from '@tarmoto/poi-db';
 import { PoiStoreService } from '../src/modules/poi/poi-store.service.js';
 
 /**

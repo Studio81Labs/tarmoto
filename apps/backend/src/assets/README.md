@@ -5,6 +5,13 @@ covers, used by `poi_import_regions` (geometry-membership coverage) instead of
 the old point-proximity buffer. Loaded once by a later migration/script — the
 running backend never fetches this over the network.
 
+**Duplicated in `apps/ingest/src/assets/`** (Task 5, POI-ingestion extraction):
+the actual loader script (`poi:load-boundaries`) moved to `apps/ingest`, which
+now owns the only _runtime_ copy. This backend copy stays because
+`derive-region-boundaries.mjs` (below) still lives here and writes its output
+to this path, and `test/poi-coverage.e2e-spec.ts` reads it directly as a
+fixture. Regenerate here, then copy the output to `apps/ingest/src/assets/` too.
+
 ## Source
 
 - **Natural Earth 1:50m admin-0 countries**, via the public GitHub mirror
