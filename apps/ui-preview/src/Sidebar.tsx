@@ -75,6 +75,7 @@ const GROUPS: NavGroup[] = [
       { id: "layouts", num: "24", label: "Layouts" },
       { id: "density", num: "25", label: "Density" },
       { id: "do-dont", num: "26", label: "Do & don't" },
+      { id: "system-states", num: "27", label: "System states" },
     ],
   },
 ];

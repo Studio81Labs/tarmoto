@@ -1,4 +1,9 @@
 export { Card, type CardProps, type CardVariant } from "./Card";
+export {
+  ErrorState,
+  type ErrorStateProps,
+  type ErrorStateKind,
+} from "./ErrorState";
 export { PageHeader, type PageHeaderProps } from "./PageHeader";
 export {
   MetricTile,

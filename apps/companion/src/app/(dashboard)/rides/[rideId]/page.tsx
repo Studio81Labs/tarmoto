@@ -1,7 +1,11 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, usePathname } from "next/navigation";
+import {
+  notFound as renderNotFound,
+  useParams,
+  usePathname,
+} from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -103,7 +107,9 @@ export default function RideDetailPage() {
       .GET("/api/v1/rides/{rideId}", { params: { path: { rideId } } })
       .then(({ data, error: apiError, response }) => {
         if (cancelled) return;
-        if (response?.status === 404) {
+        // 400 = a malformed id in the URL — as dead a link as a missing
+        // ride, so both land on the global 404 screen.
+        if (response?.status === 404 || response?.status === 400) {
           setNotFound(true);
           return;
         }
@@ -208,20 +214,9 @@ export default function RideDetailPage() {
       </PageShell>
     );
   }
-  if (notFound) {
-    return (
-      <PageShell backHref={backHref} backLabel={backLabel}>
-        <Card padded={false} className="p-10 text-center">
-          <p className="mb-1 font-bold text-ink">{t("Ride not found")}</p>
-          <p className="text-sm text-fg-dim">
-            {t(
-              "This ride may have been deleted, or it isn't shared publicly. ",
-            )}
-          </p>
-        </Card>
-      </PageShell>
-    );
-  }
+  // Deleted / private / malformed-id rides render the app-level v2 404
+  // screen (app/not-found.tsx) instead of a bespoke in-page card.
+  if (notFound) renderNotFound();
   if (error || !ride) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
