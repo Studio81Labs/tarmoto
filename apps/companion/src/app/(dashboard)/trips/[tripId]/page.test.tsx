@@ -23,11 +23,11 @@ let useParamsTripId: string | null = "trip-1";
 // deps, and a fresh object per render would re-fire the fetch (and flip
 // the page back to loading) on every unrelated state update.
 const mockRouter = { replace: mockReplace, push: vi.fn(), back: vi.fn() };
-const mockNotFound = vi.fn(() => {
-  // Mirror Next's real notFound(): interrupt render with the sentinel error
-  // its boundary catches in the app.
-  throw new Error("NEXT_NOT_FOUND");
-});
+// Unlike Next's real notFound() this records the call WITHOUT throwing:
+// jsdom has no not-found boundary, so the real sentinel would escape React
+// as an unhandled error and fail the run. Both pages fall through to their
+// error branch after a no-op notFound(), so rendering stays safe.
+const mockNotFound = vi.fn();
 vi.mock("next/navigation", () => ({
   useParams: () => ({ tripId: useParamsTripId }),
   useRouter: () => mockRouter,
@@ -336,15 +336,11 @@ describe("TripDetailPage — data fetching", () => {
     tripsApiGetMock.mockRejectedValue(
       new ApiError("Trip not found", 404, null),
     );
-    // The page interrupts its render via next/navigation's notFound(); the
-    // thrown sentinel unwinds through React, so silence the error noise.
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     render(<TripDetailPage />);
     await waitFor(() => {
       expect(mockNotFound).toHaveBeenCalled();
     });
     expect(mockReplace).not.toHaveBeenCalled();
-    consoleSpy.mockRestore();
   });
 
   it("redirects to /trips when the backend returns 403", async () => {

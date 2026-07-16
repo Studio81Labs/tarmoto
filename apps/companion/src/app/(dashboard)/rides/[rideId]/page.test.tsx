@@ -10,11 +10,11 @@ const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
   <div data-testid="ride-route-map">{props.label ?? "Ride route map"}</div>
 ));
 
-const mockNotFound = vi.fn(() => {
-  // Mirror Next's real notFound(): interrupt render with the sentinel error
-  // its boundary catches in the app.
-  throw new Error("NEXT_NOT_FOUND");
-});
+// Unlike Next's real notFound() this records the call WITHOUT throwing:
+// jsdom has no not-found boundary, so the real sentinel would escape React
+// as an unhandled error and fail the run. Both pages fall through to their
+// error branch after a no-op notFound(), so rendering stays safe.
+const mockNotFound = vi.fn();
 vi.mock("next/navigation", () => ({
   useParams: () => ({ rideId: routeRideId }),
   usePathname: () => routePathname,
@@ -280,17 +280,11 @@ describe("RideDetailPage", () => {
         error: undefined,
         response: { status },
       } as unknown as Awaited<ReturnType<typeof api.GET>>);
-      // The thrown NEXT_NOT_FOUND sentinel unwinds through React — silence
-      // the resulting error noise.
-      const consoleSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
 
       render(<RideDetailPage />);
       await waitFor(() => {
         expect(mockNotFound).toHaveBeenCalled();
       });
-      consoleSpy.mockRestore();
     },
   );
 
