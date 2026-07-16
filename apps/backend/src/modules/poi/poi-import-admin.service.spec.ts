@@ -202,6 +202,31 @@ describe('PoiImportAdminService', () => {
       );
     });
 
+    // extractDir() trims the env var, restoring parity with apps/ingest's
+    // poiImportConfig/fsqImportConfig (which already `?.trim()` — see
+    // poi-import.config.ts). Without it, a whitespace-padded
+    // TARMOTO_POI_IMPORT_DIR would make this front-door's resolved extract
+    // path diverge from the clean path the ingest worker reads from.
+    it('trims whitespace padding from TARMOTO_POI_IMPORT_DIR before resolving the extract path', async () => {
+      process.env.TARMOTO_POI_IMPORT_DIR = '  /extracts  ';
+      const dataSource = { query: jest.fn().mockResolvedValue([]) };
+      const runsRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      const queue = { getJobs: jest.fn().mockResolvedValue([]) };
+      statMock.mockRejectedValue(
+        Object.assign(new Error('nope'), { code: 'ENOENT' }),
+      );
+
+      const svc = new PoiImportAdminService(
+        dataSource as never,
+        runsRepo as never,
+        queue as never,
+      );
+
+      await svc.listRegionStatus();
+
+      expect(statMock).toHaveBeenCalledWith(join('/extracts', 'cz.osm'));
+    });
+
     // #847 review Fix C: a directory / FIFO / other non-regular node left at
     // the expected extract path (broken mount, manual mistake) still resolves
     // `stat` successfully, so without an explicit `isFile()` check it would

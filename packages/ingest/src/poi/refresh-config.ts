@@ -2,8 +2,10 @@ import { parseRegions, type PoiImportRegion } from "./regions.js";
 
 /**
  * Config for the automated extract refresh (#976) — the "fetch" half of the
- * offline POI pipeline, for BOTH bulk sources. A scheduled container (see
- * `apps/backend/Dockerfile.poi-refresh`) writes fresh per-region extracts to the
+ * offline POI pipeline, for BOTH bulk sources. A scheduled `apps/ingest`
+ * container (see the runbook; the retired standalone
+ * `apps/backend/Dockerfile.poi-refresh` one-shot container's osmium/duckdb
+ * role is folded into this image) writes fresh per-region extracts to the
  * shared import volume BEFORE the import cron reads them, so the store mirrors
  * CURRENT data instead of re-importing a static file:
  *  - **OSM** (weekly): download the per-country Geofabrik PBF, `osmium`-filter to

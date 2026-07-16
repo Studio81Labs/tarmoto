@@ -1,8 +1,10 @@
 /**
  * Automated FSQ (Foursquare OS Places) extract refresh (#976) — the DuckDB
  * "fetch" half of the offline POI pipeline, the sibling of
- * `refresh-poi-extracts` (osmium). Runs in the SAME scheduled container (see
- * `apps/backend/Dockerfile.poi-refresh`). For each configured region it runs a
+ * `refresh-poi-extracts` (osmium). Runs in the SAME scheduled `apps/ingest`
+ * container (see the runbook; the retired standalone
+ * `apps/backend/Dockerfile.poi-refresh` one-shot container's osmium/duckdb role
+ * is folded into this image). For each configured region it runs a
  * DuckDB script that attaches Foursquare's OS Places Iceberg catalog with the
  * operator's token, filters to the region's country + `DEFAULT_REGIONS` bbox +
  * POI categories, and ATOMICALLY writes `<code>.fsq.jsonl` to

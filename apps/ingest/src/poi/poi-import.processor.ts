@@ -1,7 +1,11 @@
 import { Processor, WorkerHost } from "@nestjs/bullmq";
 import { Inject, Logger } from "@nestjs/common";
 import { Job } from "bullmq";
-import { POI_IMPORT_JOB, POI_IMPORT_QUEUE } from "@tarmoto/ingest";
+import {
+  POI_IMPORT_JOB,
+  POI_IMPORT_QUEUE,
+  type PoiImportRegionJobData,
+} from "@tarmoto/ingest";
 import {
   POI_IMPORT_SOURCES,
   PoiImportService,
@@ -112,11 +116,7 @@ export class PoiImportProcessor extends WorkerHost {
   }
 
   private async importRegion(job: Job): Promise<PoiImportResult> {
-    const data = job.data as {
-      code?: string;
-      source?: string;
-      trigger?: "manual" | "cron";
-    };
+    const data = job.data as PoiImportRegionJobData;
     if (!data.code) {
       throw new Error("poi-import region job missing code");
     }

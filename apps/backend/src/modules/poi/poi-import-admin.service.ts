@@ -506,7 +506,7 @@ export class PoiImportAdminService {
   private extractDir(source: string): string | undefined {
     const envVar =
       source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR';
-    return process.env[envVar] || undefined;
+    return process.env[envVar]?.trim() || undefined;
   }
 
   private extractDirConfigured(source: string): boolean {

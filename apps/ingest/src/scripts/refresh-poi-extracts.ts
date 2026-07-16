@@ -1,7 +1,9 @@
 /**
  * Automated OSM extract refresh (#976) — the "fetch" half of the offline POI
- * pipeline. Runs in a scheduled osmium+node container (see
- * `apps/backend/Dockerfile.poi-refresh`), SEPARATE from the backend runtime so
+ * pipeline. Runs via a scheduled Coolify `docker exec` into the already-running
+ * `apps/ingest` container (see the runbook; the retired standalone
+ * `apps/backend/Dockerfile.poi-refresh` one-shot container's osmium/duckdb role
+ * is folded into this image), SEPARATE from the backend runtime so
  * osmium + multi-GB PBF handling never bloat the app image. For each configured
  * region it downloads the Geofabrik country PBF, `osmium tags-filter`s it to the
  * §7 POI tag set, `osmium extract -b`s it to the region's `DEFAULT_REGIONS`
