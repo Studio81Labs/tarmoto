@@ -31,12 +31,9 @@
     "@tarmoto/poi-db": "workspace:*",
     "@tarmoto/shared": "workspace:*",
     "bullmq": "^5.76.4",
-    "dotenv": "^17.4.2",
-    "fast-xml-parser": "^5.5.12",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sax": "^1.6.0",
     "typeorm": "^0.3.28"
   },
   "devDependencies": {
@@ -45,7 +42,6 @@
     "@nestjs/testing": "^11.0.1",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
-    "@types/sax": "^1.2.7",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
     "ts-jest": "^29.2.5",
@@ -62,6 +58,9 @@
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
+    "setupFiles": [
+      "<rootDir>/../test/jest-unit.setup.ts"
+    ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },

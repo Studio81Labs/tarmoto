@@ -65,8 +65,14 @@ describe("apps/ingest POI import (real PG)", () => {
     code: "Z9",
     bbox: { minLng: -150.1, minLat: -0.1, maxLng: -149.9, maxLat: 0.1 },
   };
-  const FRESH_EXTERNAL_ID = "osm:node:1"; // in the fixture extract → upserted
-  const STALE_EXTERNAL_ID = "osm:node:999"; // pre-seeded, absent from the extract → tombstoned
+  // Deliberately large, obviously-synthetic ids (not "1" / "999") — the
+  // upsert is keyed on `(source, external_id)` alone, NOT scoped by bbox, so
+  // a real dev-DB row that happened to already use a small, plausible id
+  // would get clobbered by the upsert below and then deleted by `afterAll`'s
+  // cleanup. The `beforeAll` guard right below double-checks neither id is
+  // already in use before this test writes anything.
+  const FRESH_EXTERNAL_ID = "osm:node:999000001"; // in the fixture extract → upserted
+  const STALE_EXTERNAL_ID = "osm:node:999000002"; // pre-seeded, absent from the extract → tombstoned
 
   beforeAll(async () => {
     process.env.TARMOTO_POI_IMPORT_DIR = dir;
@@ -77,7 +83,7 @@ describe("apps/ingest POI import (real PG)", () => {
     writeFileSync(
       join(dir, "z9.osm"),
       `<?xml version="1.0"?><osm version="0.6">` +
-        `<node id="1" lat="0.0" lon="-150.0"><tag k="amenity" v="restaurant"/>` +
+        `<node id="999000001" lat="0.0" lon="-150.0"><tag k="amenity" v="restaurant"/>` +
         `<tag k="name" v="E2E Diner"/></node></osm>`,
     );
 
@@ -86,6 +92,24 @@ describe("apps/ingest POI import (real PG)", () => {
     }).compile();
 
     const ds = app.get<DataSource>(getDataSourceToken("poi"));
+
+    // Fail fast, loudly, before writing anything: if either id already
+    // exists, upserting over it and then deleting it in `afterAll` would
+    // clobber + destroy a real row. This is belt-and-braces on top of the
+    // ids already being deliberately synthetic (see the constants above).
+    const collisions = await ds.query<{ external_id: string }[]>(
+      `SELECT external_id FROM pois WHERE source = 'osm' AND external_id = ANY($1)`,
+      [[FRESH_EXTERNAL_ID, STALE_EXTERNAL_ID]],
+    );
+    if (collisions.length > 0) {
+      throw new Error(
+        `poi-import.e2e-spec fixture collision: pois row(s) already exist for ` +
+          `${collisions.map((r) => r.external_id).join(", ")} — this test upserts ` +
+          `and then deletes rows with these exact (source, external_id) keys, so it ` +
+          `must never run against ids that could already be real data. Pick different, ` +
+          `still-obviously-synthetic ids for FRESH_EXTERNAL_ID/STALE_EXTERNAL_ID.`,
+      );
+    }
 
     // Seed the coverage-stamp target: a `poi_import_regions` row for the
     // synthetic code, not yet imported. The geometry only needs to be valid

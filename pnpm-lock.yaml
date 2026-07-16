@@ -500,12 +500,6 @@ importers:
       bullmq:
         specifier: ^5.76.4
         version: 5.76.5
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
-      fast-xml-parser:
-        specifier: ^5.5.12
-        version: 5.7.2
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -515,9 +509,6 @@ importers:
       rxjs:
         specifier: ^7.8.1
         version: 7.8.2
-      sax:
-        specifier: ^1.6.0
-        version: 1.6.0
       typeorm:
         specifier: ^0.3.28
         version: 0.3.28(ioredis@5.10.1)(pg@8.20.0)(redis@5.12.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
@@ -537,9 +528,6 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.2
-      '@types/sax':
-        specifier: ^1.2.7
-        version: 1.2.7
       jest:
         specifier: ^30.0.0
         version: 30.3.0(@types/node@24.12.2)(ts-node@10.9.2(@types/node@24.12.2)(typescript@5.9.3))
