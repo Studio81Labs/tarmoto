@@ -63,6 +63,7 @@ import {
   SegmentDetailSidebar,
   type SegmentDetailPanelState,
 } from "@/components/roads/SegmentDetailSidebar";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 /**
  * Personal road map (US-50).
  *
@@ -145,6 +146,8 @@ function RoadMapPageInner() {
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [loading, setLoading] = useState(true);
+  // Debounced: fast loads render content directly, no spinner flash.
+  const showLoader = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   // `center` is the live view/query centre: it tracks the rider's geolocated
   // position (auto-center + explicit "Center on me"/"Use my location") so the
@@ -442,10 +445,12 @@ function RoadMapPageInner() {
   if (loading) {
     return (
       <RidesScaffold fill>
-        <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading road map\u2026")}
-        </div>
+        {showLoader && (
+          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-dim">
+            <Loader2 size={16} className="animate-spin" />
+            {t("Loading road map\u2026")}
+          </div>
+        )}
       </RidesScaffold>
     );
   }

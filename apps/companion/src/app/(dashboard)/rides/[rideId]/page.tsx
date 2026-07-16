@@ -29,6 +29,7 @@ import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { usePreferencesStore } from "@/stores/preferences";
 import {
   formatDurationCompact,
@@ -79,6 +80,9 @@ export default function RideDetailPage() {
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // Debounced: fast loads swap straight to content instead of flashing the
+  // spinner for a frame or two.
+  const showLoader = useDelayedLoading(loading);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -195,10 +199,12 @@ export default function RideDetailPage() {
   if (loading) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
-        <div className="flex items-center gap-2 text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading ride… ")}
-        </div>
+        {showLoader && (
+          <div className="flex items-center gap-2 text-fg-dim">
+            <Loader2 size={16} className="animate-spin" />
+            {t("Loading ride… ")}
+          </div>
+        )}
       </PageShell>
     );
   }

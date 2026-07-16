@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import {
   formatShortDate,
   ridesWithinDays,
@@ -72,6 +73,9 @@ export default function HomePage() {
     error: ridesError,
   } = useRecentRides(5);
   const firstName = user?.displayName?.split(" ")[0];
+  // Debounced: with a warm cache both fetches resolve in well under the
+  // delay, so the loading placeholders never flash.
+  const showLoader = useDelayedLoading(loading || ridesLoading);
   const draftTrips = trips
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
     .slice(0, 3);
@@ -174,16 +178,18 @@ export default function HomePage() {
       </div>
 
       {loading || ridesLoading ? (
-        <DualEmptyState
-          ridesEmpty={<RidesEmptyCard />}
-          tripsEmpty={
-            <Card padded={false} className="px-6 py-10 text-center">
-              <p className="text-[13px] text-fg-dim">
-                {t("Loading your trips… ")}
-              </p>
-            </Card>
-          }
-        />
+        showLoader ? (
+          <DualEmptyState
+            ridesEmpty={<RidesEmptyCard />}
+            tripsEmpty={
+              <Card padded={false} className="px-6 py-10 text-center">
+                <p className="text-[13px] text-fg-dim">
+                  {t("Loading your trips… ")}
+                </p>
+              </Card>
+            }
+          />
+        ) : null
       ) : !hasAnyContent ? (
         // Nothing loaded. If a fetch failed, show a per-side retry card
         // rather than first-time onboarding — we can't claim "no rides /

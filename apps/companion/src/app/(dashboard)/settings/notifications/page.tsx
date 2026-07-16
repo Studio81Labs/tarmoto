@@ -19,6 +19,7 @@ import {
   type PartialNotificationPreferences,
   type VisibleNotificationCategory,
 } from "@/lib/notification-preferences";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 type SaveState =
   | { kind: "idle" }
   | { kind: "saving" }
@@ -30,6 +31,8 @@ type CategoryChannel = Extract<
 >;
 export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
+  // Debounced: fast loads render content directly, no spinner flash.
+  const showLoader = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [serverPrefs, setServerPrefs] = useState<NotificationPreferences>(
     DEFAULT_NOTIFICATION_PREFERENCES,
@@ -169,10 +172,12 @@ export default function NotificationsPage() {
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7">
-        <div className="flex items-center gap-2 text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading preferences… ")}
-        </div>
+        {showLoader && (
+          <div className="flex items-center gap-2 text-fg-dim">
+            <Loader2 size={16} className="animate-spin" />
+            {t("Loading preferences… ")}
+          </div>
+        )}
       </div>
     );
   }
