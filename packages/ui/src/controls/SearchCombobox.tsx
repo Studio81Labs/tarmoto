@@ -138,7 +138,19 @@ export function SearchCombobox({
   const showClear = !!onClear && !disabled && (clearVisible ?? query !== "");
 
   return (
-    <div ref={containerRef} className={cn("relative w-full", className)}>
+    <div
+      ref={containerRef}
+      className={cn("relative w-full", className)}
+      // Close when focus leaves the control (e.g. Tab to the next filter)
+      // so the popover can't sit stale over the following fields. Focus
+      // moves within the control (option mousedown is prevented, so the
+      // input keeps focus) don't trigger this.
+      onBlur={(event) => {
+        if (!containerRef.current?.contains(event.relatedTarget as Node)) {
+          setOpen(false);
+        }
+      }}
+    >
       {leadingIcon && (
         <span
           aria-hidden="true"
@@ -216,6 +228,9 @@ export function SearchCombobox({
                 id={`${listboxId}-opt-${index}`}
                 type="button"
                 role="option"
+                // Options are reached via ↑/↓ + aria-activedescendant, never
+                // Tab — the combobox pattern keeps one tab stop (the input).
+                tabIndex={-1}
                 aria-selected={index === activeIndex}
                 // preventDefault keeps focus in the input so the outside-
                 // click closer and aria-activedescendant stay coherent.

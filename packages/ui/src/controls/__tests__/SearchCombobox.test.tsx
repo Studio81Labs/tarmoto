@@ -73,6 +73,31 @@ test("arrow keys move the active option and Enter selects it", async () => {
   expect(onSelect).toHaveBeenCalledWith("tatra");
 });
 
+test("tabbing out of the control closes the menu and skips the options", async () => {
+  render(
+    <>
+      <SearchCombobox
+        ariaLabel="Place"
+        query="ta"
+        onQueryChange={() => {}}
+        items={ITEMS}
+        onSelect={() => {}}
+      />
+      <button type="button">Next filter</button>
+    </>,
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Place" }));
+  expect(screen.getByRole("listbox")).toBeVisible();
+  // Options carry tabIndex=-1 — one tab stop for the whole combobox.
+  expect(screen.getByRole("option", { name: "Brno, Czechia" })).toHaveAttribute(
+    "tabindex",
+    "-1",
+  );
+  await userEvent.tab();
+  expect(screen.getByRole("button", { name: "Next filter" })).toHaveFocus();
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+});
+
 test("Escape closes the menu", async () => {
   render(
     <SearchCombobox
