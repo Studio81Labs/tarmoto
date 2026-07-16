@@ -9,7 +9,15 @@ function readCookie(name: string): string | null {
   const match = document.cookie
     .split("; ")
     .find((cookie) => cookie.startsWith(`${name}=`));
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match.slice(name.length + 1));
+  } catch {
+    // A hand-tampered cookie value (e.g. a lone "%" or an invalid escape
+    // sequence) throws URIError inside decodeURIComponent — treat it the
+    // same as a missing cookie rather than crashing the effect.
+    return null;
+  }
 }
 
 /**

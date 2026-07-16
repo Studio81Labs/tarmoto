@@ -59,6 +59,12 @@ describe("resolveFormatLocaleFromAcceptLanguage", () => {
     );
   });
 
+  it("parses q-weights case-insensitively", () => {
+    expect(
+      resolveFormatLocaleFromAcceptLanguage("fr-FR;Q=0.9,de-DE;q=0.8"),
+    ).toBe("fr-FR");
+  });
+
   it("skips wildcards and malformed tags, falling through to the next candidate", () => {
     expect(resolveFormatLocaleFromAcceptLanguage("*,fr-FR;q=0.7")).toBe(
       "fr-FR",

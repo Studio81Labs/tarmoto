@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readFormatPrefs } from "./server";
+import { getServerFormatters, readFormatPrefs } from "./server";
 
 // vi.hoisted so the mock factory's state exists when vi.mock is hoisted
 // above the imports — a plain top-level const would hit the TDZ.
@@ -96,5 +96,32 @@ describe("readFormatPrefs", () => {
       timeZone: "UTC",
       units: "metric",
     });
+  });
+});
+
+describe("getServerFormatters", () => {
+  beforeEach(() => {
+    state.cookieJar.clear();
+    state.acceptLanguage = null;
+    state.throwCookies = false;
+    state.throwHeaders = false;
+  });
+
+  it("binds formatters to the cookie-read prefs (catches a locale/timeZone field swap)", async () => {
+    // locale and timeZone are both plain strings, so an accidental swap in
+    // getServerFormatters (locale: prefs.timeZone, timeZone: prefs.formatLocale)
+    // would typecheck but render wrong. Prague is UTC+2 in April, so 22:30
+    // UTC on the 18th is already the 19th there — a swap would fall back to
+    // en/UTC and lose that day shift.
+    state.cookieJar.set("tarmoto-format-locale", "cs-CZ");
+    state.cookieJar.set("tarmoto-timezone", "Europe/Prague");
+    state.cookieJar.set("tarmoto-units", "imperial");
+
+    const formatters = await getServerFormatters();
+
+    expect(formatters.locale).toBe("cs-CZ");
+    expect(formatters.timeZone).toBe("Europe/Prague");
+    expect(formatters.units).toBe("imperial");
+    expect(formatters.date("2025-04-18T22:30:00Z")).toContain("19");
   });
 });

@@ -71,11 +71,19 @@ export function resolveFormatLocaleFromAcceptLanguage(
     .split(",")
     .map((part) => {
       const [tag, ...params] = part.trim().split(";");
-      const qParam = params
-        .map((p) => p.trim())
-        .find((p) => p.startsWith("q="));
-      const q = qParam ? Number.parseFloat(qParam.slice(2)) : 1;
-      return { tag: (tag ?? "").trim(), q: Number.isNaN(q) ? 0 : q };
+      // Case-insensitive and numerically strict, mirroring resolveLocale's
+      // q-weight parsing in i18n.ts: only a full `q=<number>` match (any
+      // case) overrides the default of 1; anything else is ignored rather
+      // than mis-parsed via a lenient case-sensitive prefix + parseFloat.
+      let q = 1;
+      for (const param of params) {
+        const match = /^q=([0-9]*\.?[0-9]+)$/i.exec(param.trim());
+        if (match) {
+          const parsed = Number.parseFloat(match[1] ?? "");
+          if (!Number.isNaN(parsed)) q = parsed;
+        }
+      }
+      return { tag: (tag ?? "").trim(), q };
     })
     .filter((candidate) => candidate.tag !== "" && candidate.tag !== "*")
     .sort((a, b) => b.q - a.q);
