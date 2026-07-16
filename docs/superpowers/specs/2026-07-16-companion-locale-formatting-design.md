@@ -100,6 +100,11 @@ Mirrors the existing `/api/locale` route and mobile `timezoneSyncMonitor` patter
 - **v1 sync semantics: the record mirrors the device** (last writer wins across devices).
   Display is always per-device via that device's own cookies, so every viewer sees formats
   correct for their device; the record's job is future editability and server-side use.
+  Because cookies can be set while logged out (making the cookie comparison a no-op after
+  login), the authenticated shell also reconciles the _record_ directly: the existing
+  `PreferencesSync` `/me` read compares `preferences.format_locale`/`timezone` against the
+  device and PATCHes any divergence — this is what guarantees the record actually gets
+  prefilled, independent of cookie state.
 - **Units account-sync:** on login/hydration, `/me`'s `preferences.units` seeds the Zustand
   `unitSystem` store (account wins over localStorage when present) and refreshes the
   `tarmoto-units` cookie if it differs; the settings toggle writes the store + localStorage +
