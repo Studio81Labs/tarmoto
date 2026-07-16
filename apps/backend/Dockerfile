@@ -31,6 +31,7 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/backend/package.json apps/backend/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/ingest/package.json packages/ingest/package.json
+COPY packages/poi-db/package.json packages/poi-db/package.json
 COPY packages/openapi/package.json packages/openapi/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
@@ -40,9 +41,11 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY packages/ingest packages/ingest
+COPY packages/poi-db packages/poi-db
 COPY apps/backend apps/backend
 RUN pnpm --filter @tarmoto/shared build \
  && pnpm --filter @tarmoto/ingest build \
+ && pnpm --filter @tarmoto/poi-db build \
  && pnpm --filter @tarmoto/backend build
 
 # ---------- runtime ----------
@@ -60,6 +63,7 @@ COPY --from=build /workspace/pnpm-workspace.yaml /workspace/package.json /worksp
 COPY --from=build /workspace/apps/backend/package.json apps/backend/package.json
 COPY --from=build /workspace/packages/shared/package.json packages/shared/package.json
 COPY --from=build /workspace/packages/ingest/package.json packages/ingest/package.json
+COPY --from=build /workspace/packages/poi-db/package.json packages/poi-db/package.json
 COPY --from=build /workspace/packages/openapi/package.json packages/openapi/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --ignore-scripts --filter @tarmoto/backend...
@@ -67,6 +71,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
 COPY --from=build /workspace/packages/ingest/dist packages/ingest/dist
+COPY --from=build /workspace/packages/poi-db/dist packages/poi-db/dist
 COPY docs/database/ docs/database/
 
 # Persistent POI-extract volume mount point(s) (#847 admin uploads). Each bulk

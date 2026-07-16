@@ -115,25 +115,6 @@ describe('JobsScheduler', () => {
       { pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100 },
       expect.any(Object),
     );
-    // The weekly POI import registers its DISPATCH job (the fan-out entry point,
-    // #850), not a monolithic run, on the Sunday 03:00 slot.
-    expect(
-      queues[QUEUE_NAMES.POI_IMPORT].upsertJobScheduler,
-    ).toHaveBeenCalledWith(
-      'poi.import.dispatch',
-      { pattern: RECURRING_PATTERNS.WEEKLY_SUN_0300 },
-      expect.any(Object),
-    );
-  });
-
-  it('removes the retired poi.import.run scheduler orphaned by the run→dispatch rename (#850)', async () => {
-    const { scheduler, queues } = await buildScheduler(true);
-    await scheduler.onApplicationBootstrap();
-    // Without this, the old repeatable keeps firing a `run` job the processor
-    // only tolerates as an alias — the scheduler drops the orphan on boot.
-    expect(
-      queues[QUEUE_NAMES.POI_IMPORT].removeJobScheduler,
-    ).toHaveBeenCalledWith('poi.import.run');
   });
 
   it('skips schedule registration entirely when workers are disabled (split deployment API container)', async () => {

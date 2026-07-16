@@ -80,6 +80,14 @@ Per `.github/workflows/backend-deploy.yml`:
 - `BACKEND_URL` — the environment's backend origin (`https://api-staging.tarmoto.app` / `https://api.tarmoto.app`).
 - `COOLIFY_BACKEND_UUID` — the backend app's Coolify UUID for that environment.
 
+### Deploying `apps/ingest` (POI ingestion service)
+
+`apps/ingest` (`@tarmoto/ingest-service`) is a separate NestJS deployable — the always-on POI-import BullMQ worker + weekly/monthly extract-refresh target + the **sole owner of the POI-database migrations** (`migrationsRun: true`). See "Schema ownership" under POI database topology below for the resulting deploy-order constraint. It deploys through the **same** authenticated Coolify API mechanism as the backend (Auto Deploy OFF, CI-triggered), with its own per-environment `INGEST_URL` / `COOLIFY_INGEST_UUID` GitHub variables mirroring `BACKEND_URL` / `COOLIFY_BACKEND_UUID`.
+
+**Ops-enablement pending.** Unlike the backend, `apps/ingest` has no `ingest-deploy.yml` yet — `ingest-ci.yml` builds/lints/tests it on every push but does not deploy. Adding the deploy workflow is a deferred follow-up that first requires provisioning the Coolify `apps/ingest` application (staging + production) and setting its `INGEST_URL` / `COOLIFY_INGEST_UUID` env vars.
+
+**Deploy order at cutover is load-bearing.** Once the deploy workflow lands, deploy `apps/ingest` **first** — it applies any pending POI-database migrations on boot — **then** the slimmed backend. The backend's `'poi'` connection runs `migrationsRun: false` (a tolerant reader of a schema that may already be ahead of what it shipped with): deploying the backend before `apps/ingest` never fails its boot, but it won't see new POI columns/tables until `apps/ingest` has actually migrated them.
+
 ## Databases & Migrations
 
 ### POI database topology
@@ -93,9 +101,11 @@ pnpm db:up                  # Starts both tarmoto (5433) and tarmoto-poi-db (543
 pnpm db:migrate:poi         # Runs POI database migrations
 ```
 
+`db:migrate:poi` builds `@tarmoto/poi-db` and `@tarmoto/ingest-service`, then runs the POI migrations through `@tarmoto/ingest-service`'s CLI DataSource — the backend no longer runs POI migrations itself (see "Schema ownership" below).
+
 **Production:**
 
-Provision a dedicated Coolify Postgres instance (separate from the core backend database). Set the following on the backend Coolify application:
+Provision a dedicated Coolify Postgres instance (separate from the core backend database). Set the following on **both** the backend Coolify application (POI reader + admin front-door) **and** the `apps/ingest` Coolify application (POI writer + migrator):
 
 - `TARMOTO_POI_DATABASE_HOST`
 - `TARMOTO_POI_DATABASE_PORT`
@@ -104,6 +114,8 @@ Provision a dedicated Coolify Postgres instance (separate from the core backend 
 - `TARMOTO_POI_DATABASE_PASSWORD`
 
 **PostGIS must be available in the POI database.** The POI migration lineage runs `CREATE EXTENSION IF NOT EXISTS postgis` before creating spatial columns, so `TARMOTO_POI_DATABASE_USER` needs privileges to create extensions — otherwise a superuser must install PostGIS in the POI database once, up front, before `pnpm db:migrate:poi`. (Locally the `postgis/postgis` image does this automatically, which is why dev never hits it.)
+
+**Schema ownership.** `apps/ingest` is the sole migrator (`migrationsRun: true`, applied on boot) — it owns the POI-DB migration lineage (`@tarmoto/poi-db`). The backend's `'poi'` connection runs `migrationsRun: false`: it only ever reads and enqueues, and tolerates a schema that's already ahead of what it shipped with. **Deploy order at cutover:** `apps/ingest` first (applies pending POI migrations), then the slimmed backend — see "Deploying `apps/ingest`" above.
 
 ### POI database resilience
 
@@ -117,11 +129,11 @@ This design allows POI data maintenance (migrations, backups, maintenance window
 
 ### Populating the POI store
 
-The POI store starts empty; store read endpoints return an empty result (not an error) for regions that have not been imported yet. The store is filled from **per-country Geofabrik `.osm` extracts** (produced with `osmium tags-filter` — see [Producing per-country POI extracts](#producing-per-country-poi-extracts)), **not** a live Overpass bbox: bulk extracts scale to the full 17-country coverage list without hitting the Overpass public-API limits. Overpass stays the live read-path fallback (`poi.service`), never the bulk importer. Two ways to fill the store:
+The POI store starts empty; store read endpoints return an empty result (not an error) for regions that have not been imported yet. The store is filled from **per-country Geofabrik `.osm` extracts** (produced with `osmium tags-filter` — see [Producing per-country POI extracts](#producing-per-country-poi-extracts)), **not** a live Overpass bbox: bulk extracts scale to the full 17-country coverage list without hitting the Overpass public-API limits. Overpass stays the live read-path fallback (`poi.service`, backend), never the bulk importer. **The extract + import + migration write path lives entirely in `apps/ingest`** (`@tarmoto/ingest-service`) — the backend is a POI reader plus a thin admin front-door that only enqueues. Two ways to fill the store:
 
-- **On demand:** `pnpm poi:import` runs the import once over the configured regions (`TARMOTO_POI_IMPORT_REGIONS`, default all 17) from the extracts in `TARMOTO_POI_IMPORT_DIR`. It writes to the POI database and bypasses the `TARMOTO_POI_IMPORT_ENABLED` gate, so a one-off run doesn't need the flag flipped.
-- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor, `poi.import` queue, Sunday 03:00 UTC) runs on the process where `TARMOTO_QUEUE_WORKER_ENABLED=true` — the dedicated worker process in a split API/worker deployment, **not** the API. The weekly dispatch fans out over **every enabled source** (#869): it enqueues one staggered per-region job for each source whose `TARMOTO_<SOURCE>_IMPORT_ENABLED` is set, so OSM and FSQ refresh from the same weekly tick. Set `TARMOTO_POI_IMPORT_ENABLED=true`, `TARMOTO_POI_IMPORT_DIR`, and (optionally) `TARMOTO_POI_IMPORT_REGIONS` **there** for OSM (and the `TARMOTO_FSQ_IMPORT_*` trio for FSQ); setting them only on the API app has no effect. That worker process also needs `TARMOTO_POI_DATABASE_*` (it writes to the POI DB). Leave every `*_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a continent-scale import.
-- **Admin UI (#847):** operators can upload an extract + trigger a per-region import from the admin app (`/admin/poi`) instead of placing files + running the CLI. **Critical for a split API/worker deployment:** the upload writes the extract to `TARMOTO_*_IMPORT_DIR` on the **API** process, but the import job runs on the **worker** — so that directory MUST be **shared storage mounted in both the API and worker containers** (a shared volume). Without it the admin page shows the extract "present" (read from the API's filesystem) while the worker's import can't see the file and records a **skipped** run. That skip is visible in the admin run history (so it isn't silent), but a shared mount is required for the admin upload→import flow to work at all. If the extract dir isn't configured on the API, the upload returns a clear 503. **Volume ownership:** the image creates each configured `TARMOTO_*_IMPORT_DIR` (OSM **and** FSQ — independent paths) owned by the non-root `tarmoto` user, so a **fresh** named volume mounted there comes up writable. A volume that already exists **root-owned** (provisioned before this) must be `chown tarmoto:tarmoto`'d once (or recreated), or uploads fail with `EACCES`; if OSM and FSQ use **separate** volumes, each needs it. _(Follow-up: move extracts to worker-visible object storage to drop the shared-mount requirement.)_
+- **On demand:** `pnpm poi:import` builds and runs `@tarmoto/ingest-service`'s CLI (`apps/ingest/dist/scripts/import-pois.js`), importing once over the configured regions (`TARMOTO_POI_IMPORT_REGIONS`, default all 17) from the extracts in `TARMOTO_POI_IMPORT_DIR`. It writes to the POI database and bypasses the `TARMOTO_POI_IMPORT_ENABLED` gate, so a one-off run doesn't need the flag flipped.
+- **Recurring (production):** the weekly BullMQ import cron (scheduler + processor, `poi.import` queue, Sunday 03:00 UTC) runs in **`apps/ingest`'s own always-on worker** — a separate deployable from the backend, not a worker-mode instance of it. The weekly dispatch fans out over **every enabled source** (#869): it enqueues one staggered per-region job for each source whose `TARMOTO_<SOURCE>_IMPORT_ENABLED` is set, so OSM and FSQ refresh from the same weekly tick. Set `TARMOTO_POI_IMPORT_ENABLED=true`, `TARMOTO_POI_IMPORT_DIR`, and (optionally) `TARMOTO_POI_IMPORT_REGIONS` **on `apps/ingest`** for OSM (and the `TARMOTO_FSQ_IMPORT_*` trio for FSQ); setting them only on the backend has no effect. `apps/ingest` also needs `TARMOTO_POI_DATABASE_*` (it writes to the POI DB and owns its migrations). Leave every `*_IMPORT_ENABLED` unset/`false` in dev and CI so they don't run a continent-scale import.
+- **Admin UI (#847):** operators can upload an extract + trigger a per-region import from the admin app (`/admin/poi`) instead of placing files + running the CLI. The backend only ever enqueues this trigger onto the producer-only `poi.import` queue; **`apps/ingest`'s worker is what actually runs the import.** **Critical for this split:** the upload writes the extract to `TARMOTO_*_IMPORT_DIR` on the **backend**, but the import job runs in **`apps/ingest`** — so that directory MUST be **shared storage mounted in both the backend and `apps/ingest` containers** (a shared volume). Without it the admin page shows the extract "present" (read from the backend's filesystem) while `apps/ingest`'s import can't see the file and records a **skipped** run. That skip is visible in the admin run history (so it isn't silent), but a shared mount is required for the admin upload→import flow to work at all. If the extract dir isn't configured on the backend, the upload returns a clear 503. **Volume ownership:** both the backend's and `apps/ingest`'s images create each configured `TARMOTO_*_IMPORT_DIR` (OSM **and** FSQ — independent paths) owned by the same non-root `tarmoto` user (uid 100 in both images), so a **fresh** named volume mounted there comes up writable regardless of which container mounts it first. A volume that already exists **root-owned** (provisioned before this) must be `chown tarmoto:tarmoto`'d once (or recreated), or uploads fail with `EACCES`; if OSM and FSQ use **separate** volumes, each needs it. _(Follow-up: move extracts to `apps/ingest`-visible object storage to drop the shared-mount requirement.)_
 
 Both paths read the per-region `.osm` files an operator prepares out-of-band; produce them first.
 
@@ -136,9 +148,11 @@ import frontier otherwise. That decision (`PoiStoreService.isRequestCovered`) ru
 `ST_Covers(region_polygon, request)` against the `poi_import_regions` table, gated
 on `imported_at IS NOT NULL`.
 
-- **One-time (and whenever the asset changes):** `pnpm poi:load-boundaries` loads
-  the 17 country boundary polygons (Natural Earth 1:50m, committed at
-  `apps/backend/src/assets/import-region-boundaries.geojson`) into
+- **One-time (and whenever the asset changes):** `pnpm poi:load-boundaries` — now
+  building and running via **`apps/ingest`** (`@tarmoto/ingest-service`'s
+  `apps/ingest/dist/scripts/load-region-boundaries.js`) — loads the 17 country
+  boundary polygons (Natural Earth 1:50m, committed at
+  `apps/ingest/src/assets/import-region-boundaries.geojson`) into
   `poi_import_regions`. Run it **after** `pnpm db:migrate:poi`; it needs
   `TARMOTO_POI_DATABASE_*` where you run it. Idempotent (`ON CONFLICT (code)`),
   and it never resets `imported_at`.
@@ -146,7 +160,11 @@ on `imported_at IS NOT NULL`.
   once `pnpm poi:import` (OSM) has successfully imported it — the importer stamps
   `poi_import_regions.imported_at` for that region (FSQ imports do **not** stamp,
   since the fallback this gates is OSM-backed). So the deploy/refresh order is
-  `db:migrate:poi` → `poi:load-boundaries` (once) → `poi:import`.
+  `db:migrate:poi` → `poi:load-boundaries` (once) → `poi:import` — all three now
+  build and run through `@tarmoto/ingest-service` in `apps/ingest`. **Ordering
+  footgun unchanged:** the coverage stamp is an existing-row-only `UPDATE`, so
+  boundaries loaded after the first import silently never take effect for
+  already-imported regions — load them first.
 - **Until boundaries are loaded, coverage is inert** — `isRequestCovered` returns
   false for every request, so reads simply fall back to Overpass (safe, but the
   import's Overpass-suppression never kicks in). Load them as part of provisioning.
@@ -192,7 +210,7 @@ osmium extract -b 12.09,48.55,18.86,51.06 cz-poi.osm.pbf \
   -o "$TARMOTO_POI_IMPORT_DIR/cz.osm"
 ```
 
-Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` bbox. Then enable the import on the worker process: `TARMOTO_POI_IMPORT_ENABLED=true`, point `TARMOTO_POI_IMPORT_DIR` at the folder of `.osm` files, and narrow coverage with `TARMOTO_POI_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17.
+Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` bbox. Then enable the import on **`apps/ingest`**: `TARMOTO_POI_IMPORT_ENABLED=true`, point `TARMOTO_POI_IMPORT_DIR` at the folder of `.osm` files, and narrow coverage with `TARMOTO_POI_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17.
 
 **Validate volume + runtime before enabling all regions in production (#850 acceptance criterion).** Region-wide the filtered set is low millions of rows; `pois` is GiST-indexed on `geom` and GIN-indexed on `tags` (plus the `(source, external_id)` unique and `(address_country, kind)` browse index), so store reads stay bounded — but the import's fetch/upsert cost and the worker's memory/runtime scale with coverage. Bring regions online **incrementally**: validate per-country row counts and a full-run wall-clock on staging before flipping all 17 on in production at once.
 
@@ -200,45 +218,52 @@ Repeat per country in the active set, each clipped to its own `DEFAULT_REGIONS` 
 
 The manual steps above (download → `tags-filter` → clip → place) can run
 automatically so the weekly import mirrors **current** data instead of
-re-importing a static file. `apps/backend/Dockerfile.poi-refresh` builds a small
-osmium + node image whose one-shot entrypoint (`pnpm poi:refresh` →
-`dist/scripts/refresh-poi-extracts.js`) runs exactly that per-country pipeline
-for every configured region, writing each `<code>.osm` **atomically** to
-`TARMOTO_POI_IMPORT_DIR`.
+re-importing a static file. **`apps/ingest`** — the same always-on service that
+runs the `poi.import` BullMQ worker/scheduler and owns the POI-DB migrations —
+also carries the `osmium`/`duckdb` tooling for this. Its `pnpm poi:refresh` →
+`apps/ingest/dist/scripts/refresh-poi-extracts.js` runs exactly that per-country
+pipeline for every configured region, writing each `<code>.osm` **atomically**
+to `TARMOTO_POI_IMPORT_DIR`. (The standalone `apps/backend/Dockerfile.poi-refresh`
+one-shot container this used to run in is **retired** — its osmium/duckdb role
+folded into `apps/ingest`'s image.)
 
-It's kept **separate** from the backend/worker image on purpose — osmium and
-multi-GB PBF handling don't belong in the app runtime — but reuses the backend
-build, so the clip bbox comes straight from `DEFAULT_REGIONS` and can't drift.
-Region set + target dir are the **same** env as the importer
-(`TARMOTO_POI_IMPORT_REGIONS` / `TARMOTO_POI_IMPORT_DIR`); the Geofabrik country
-slugs live in `packages/ingest/src/poi/refresh-config.ts` (a spec asserts every region has one).
+`apps/ingest` is kept **separate** from the backend image on purpose — osmium
+and multi-GB PBF handling don't belong in the app runtime — and its build
+pulls in `packages/ingest`, so the clip bbox comes straight from
+`DEFAULT_REGIONS` and can't drift. Region set + target dir are the **same** env
+as the importer (`TARMOTO_POI_IMPORT_REGIONS` / `TARMOTO_POI_IMPORT_DIR`); the
+Geofabrik country slugs live in `packages/ingest/src/poi/refresh-config.ts` (a spec asserts every region has one).
 
-Operate it as a **scheduled task** (Coolify scheduled task / cron), timed to
-finish comfortably **before** the Sunday 03:00 UTC import tick (e.g. Saturday):
+Operate the refresh as a **scheduled task** (Coolify scheduled task / cron),
+timed to finish comfortably **before** the Sunday 03:00 UTC import tick (e.g.
+Saturday):
 
-- `TARMOTO_POI_REFRESH_ENABLED=true` — off by default; the container is a no-op
+- `TARMOTO_POI_REFRESH_ENABLED=true` — off by default; the script no-ops
   otherwise.
 - Mount the **same shared extract volume** at `TARMOTO_POI_IMPORT_DIR` that the
-  API/worker read. One refresh container can feed **both staging and prod** from
-  a single shared volume — the `<code>.osm` files are environment-agnostic
-  (filtered OSM), so producing them once avoids duplicating the (multi-GB) set
-  per environment. Every party that touches the volume — this container, the
-  staging backend, the prod backend — runs as **uid 100** (the image pins it to
-  match the backend `tarmoto` and the volume owner), so writes here are readable
-  by, and replaceable by, all of them. (A corollary of one shared volume: an
-  admin upload on one environment lands the same file every environment then
-  imports — intended here, but worth knowing.)
+  backend (admin uploads) and `apps/ingest` (the importer) read. One
+  `apps/ingest` deployment can feed **both staging and prod** from a single
+  shared volume — the `<code>.osm` files are environment-agnostic (filtered
+  OSM), so producing them once avoids duplicating the (multi-GB) set per
+  environment. Every party that touches the volume — `apps/ingest`, the staging
+  backend, the prod backend — runs as **uid 100** (both images pin it to the
+  same volume owner), so writes here are readable by, and replaceable by, all
+  of them. (A corollary of one shared volume: an admin upload on one
+  environment lands the same file every environment then imports — intended
+  here, but worth knowing.)
 - (optional) `TARMOTO_POI_IMPORT_REGIONS` to refresh a subset.
 - Ephemeral disk for the largest single country PBF (~4 GB for DE) plus its
   filtered copy — regions run sequentially and clean up between, so peak disk is
   one country, not all 17.
-- **Deploy model (Coolify / PaaS):** the image **idles by default**
-  (`sleep infinity`) — deploy it as a long-lived application and add a
-  **Scheduled Task** that runs `node apps/backend/dist/scripts/refresh-poi-extracts.js`
-  on the cron. A one-shot main process would exit and get restart-looped
-  (re-downloading gigabytes each cycle); a Dockerfile-based Coolify app has no
-  start-command field in the UI, so the idle CMD is baked in and the scheduled
-  task `exec`s the refresh into the running container.
+- **Deploy model (Coolify / PaaS):** `apps/ingest` is deployed as a normal
+  **always-on** application — the `poi.import` worker + weekly scheduler run
+  continuously and it serves `/healthz` — **not** an idling placeholder. Add a
+  **Scheduled Task** that `docker exec`s
+  `node apps/ingest/dist/scripts/refresh-poi-extracts.js` into the
+  already-running container on the cron. Because the container is never
+  one-shot, there's no restart-loop risk from the refresh script exiting — it's
+  a one-off exec against a long-lived process, not the container's own
+  entrypoint.
 - **Memory / swap:** osmium building a country-sized index spikes RAM (~1–2 GB
   for a country PBF). On a small or shared host ensure real headroom — and
   **swap** especially: a **no-swap host OOM-kills osmium** the instant it tips
@@ -250,15 +275,15 @@ Behaviour:
   and only renamed onto `<code>.osm` after every step succeeds. A failed
   download/filter/clip leaves the previous good extract untouched (never a
   truncated file) and the run continues to the next region.
-- **Observable:** the container exits **non-zero** if any region failed (so the
-  scheduler can alert), and logs every region's outcome. The next import simply
-  re-imports whatever landed — a region whose refresh failed re-imports its prior
-  extract.
+- **Observable:** the refresh script exits **non-zero** if any region failed
+  (so the scheduler can alert on the `docker exec`'s exit code), and logs every
+  region's outcome. The next import simply re-imports whatever landed — a
+  region whose refresh failed re-imports its prior extract.
 
 The manual pipeline above stays the fallback (one-off refresh, a region with no
-Geofabrik slug, or before the scheduled container is provisioned). The **FSQ**
-source is automated the same way — a `duckdb` pull in the **same** container, on
-its own monthly schedule (see
+Geofabrik slug, or before the scheduled task is provisioned). The **FSQ**
+source is automated the same way — a `duckdb` pull in the **same** `apps/ingest`
+container, on its own monthly schedule (see
 [Automating the FSQ refresh](#automating-the-fsq-refresh-scheduled-container-976)).
 
 **Manual uploads vs. the refresh — who owns which region.** The scheduled
@@ -323,15 +348,15 @@ COPY (
 ) TO '<TARMOTO_FSQ_IMPORT_DIR>/cz.fsq.jsonl' (FORMAT json);
 ```
 
-Then import with the **manual CLI** — `pnpm fsq:import` (all configured regions from `TARMOTO_FSQ_IMPORT_DIR`, narrowed by `TARMOTO_FSQ_IMPORT_REGIONS`, default all 17) or `node dist/scripts/import-pois.js fsq CZ` (one region). It bypasses the enabled gate like `poi:import`, and needs `TARMOTO_POI_DATABASE_*` where you run it. FSQ's extract dir + region list are independent of OSM's.
+Then import with the **manual CLI** — `pnpm fsq:import` (builds and runs via `@tarmoto/ingest-service`; all configured regions from `TARMOTO_FSQ_IMPORT_DIR`, narrowed by `TARMOTO_FSQ_IMPORT_REGIONS`, default all 17) or `node apps/ingest/dist/scripts/import-pois.js fsq CZ` (one region). It bypasses the enabled gate like `poi:import`, and needs `TARMOTO_POI_DATABASE_*` where you run it. FSQ's extract dir + region list are independent of OSM's.
 
-**Weekly FSQ cron.** The weekly BullMQ dispatch (§ above) now fans out over every enabled source, so setting `TARMOTO_FSQ_IMPORT_ENABLED=true` (plus `TARMOTO_FSQ_IMPORT_DIR`) on the worker process refreshes FSQ from the same Sunday tick as OSM — each source gated independently by its own `*_IMPORT_ENABLED`. The manual `fsq:import` CLI stays available for one-off runs.
+**Weekly FSQ cron.** The weekly BullMQ dispatch (§ above) now fans out over every enabled source, so setting `TARMOTO_FSQ_IMPORT_ENABLED=true` (plus `TARMOTO_FSQ_IMPORT_DIR`) on **`apps/ingest`** refreshes FSQ from the same Sunday tick as OSM — each source gated independently by its own `*_IMPORT_ENABLED`. The manual `fsq:import` CLI stays available for one-off runs.
 
 #### Automating the FSQ refresh (scheduled container, #976)
 
 The manual DuckDB recipe above runs automatically too — in the **same**
-`Dockerfile.poi-refresh` container as the OSM refresh (it carries both `osmium`
-and a pinned `duckdb`). `pnpm fsq:refresh` → `dist/scripts/refresh-fsq-extracts.js`
+**`apps/ingest`** container as the OSM refresh (it carries both `osmium`
+and a pinned `duckdb`). `pnpm fsq:refresh` → `apps/ingest/dist/scripts/refresh-fsq-extracts.js`
 runs the exact query above for every configured region and writes each
 `<code>.fsq.jsonl` **atomically** to `TARMOTO_FSQ_IMPORT_DIR`. The field list,
 category prefilter, country + bbox scoping, and the catalog/table are baked into
@@ -344,17 +369,19 @@ token expires ~monthly — independent of the weekly OSM one:
 - `TARMOTO_FSQ_REFRESH_ENABLED=true` — off by default (a no-op otherwise).
 - `TARMOTO_FSQ_TOKEN` — a Places Portal access token. **This is the one
   irreducible manual step:** it's short-lived (~monthly), so an operator rotates
-  it each refresh. It lives **only in this container** and is fed to DuckDB on
-  **stdin** (never a CLI arg / process-list entry), so it never reaches the
-  backend/worker — they read only the credential-free `.fsq.jsonl` files. That
-  keeps the manual recipe's "no FSQ credential in the app runtime" boundary intact
-  under automation.
+  it each refresh. It lives **only in the refresh step** (inside `apps/ingest`,
+  fed to DuckDB on **stdin** — never a CLI arg / process-list entry) and never
+  reaches the app runtime otherwise — neither the backend nor `apps/ingest`'s
+  own import worker ever see the token; both only ever read the credential-free
+  `.fsq.jsonl` files. That keeps the manual recipe's "no FSQ credential in the
+  app runtime" boundary intact under automation.
 - `TARMOTO_FSQ_IMPORT_DIR` — the shared extract volume the importer reads
   (independent of the OSM dir); `TARMOTO_FSQ_IMPORT_REGIONS` (optional) to narrow
   the set. Same **uid 100** ownership rule as OSM (see above).
-- **Deploy model** is identical to OSM: the image idles (`sleep infinity`); add a
-  second **Scheduled Task** that `exec`s
-  `node apps/backend/dist/scripts/refresh-fsq-extracts.js` on the monthly cron.
+- **Deploy model** is identical to OSM: `apps/ingest` is always-on, not idling;
+  add a second **Scheduled Task** that `docker exec`s
+  `node apps/ingest/dist/scripts/refresh-fsq-extracts.js` into the running
+  container on the monthly cron.
 - **Extensions + memory:** DuckDB `INSTALL`/`LOAD`s `httpfs` + `iceberg` at
   runtime (cached under the container user's `$HOME/.duckdb`, which the image
   provisions writable for uid 100), so a run needs network to DuckDB's extension

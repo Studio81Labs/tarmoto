@@ -41,6 +41,7 @@ jobs:
             docs
             cross
             marketing
+            ingest
           requireScope: true
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
