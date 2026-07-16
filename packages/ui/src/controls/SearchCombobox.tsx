@@ -167,7 +167,10 @@ export function SearchCombobox({
         aria-controls={listboxId}
         aria-autocomplete="list"
         aria-activedescendant={
-          menuVisible && activeIndex >= 0
+          // `!loading`: while a lookup is in flight only the loading row is
+          // rendered, so a leftover activeIndex must not point AT users at
+          // an option id that isn't in the DOM.
+          menuVisible && !loading && activeIndex >= 0
             ? `${listboxId}-opt-${activeIndex}`
             : undefined
         }
