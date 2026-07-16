@@ -10,3 +10,10 @@
 // get constructed, so the unit suite stays hermetic (no Postgres, no Redis)
 // even if that mistake slips back in.
 process.env.TARMOTO_QUEUE_WORKER_ENABLED = "false";
+
+// Belt-and-braces mirror of `jest-e2e.setup.ts`: the bare code default in
+// `jobs.module.ts` is now 6379 (the deployment value, matching the backend
+// producer) — NOT where the local docker-compose Redis listens (6380; see
+// `infra/docker/docker-compose.yml`). Pin it explicitly so this stays true
+// even if a future unit spec ends up constructing `PoiJobsModule`.
+process.env.TARMOTO_REDIS_PORT ??= "6380";

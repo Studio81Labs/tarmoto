@@ -12,3 +12,10 @@
 // keeps the BullMQ worker + scheduler out of the compiled module graph, so
 // this e2e never depends on Redis being reachable.
 process.env.TARMOTO_QUEUE_WORKER_ENABLED = "false";
+
+// The bare code default in `jobs.module.ts` is now 6379 (the deployment
+// value, matching the backend producer) — NOT where the local docker-compose
+// Redis listens (6380; see `infra/docker/docker-compose.yml`). Pin the test
+// Redis port explicitly rather than relying on that default, but still
+// respect an explicitly-set env (e.g. CI pointing at a different Redis).
+process.env.TARMOTO_REDIS_PORT ??= "6380";

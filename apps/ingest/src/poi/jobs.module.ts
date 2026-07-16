@@ -48,16 +48,18 @@ const WORKER_PROVIDERS: Provider[] = workersEnabled
       useFactory: (config: ConfigService) => ({
         connection: {
           host: config.get<string>("TARMOTO_REDIS_HOST") ?? "localhost",
-          // Default 6380, NOT Redis's standard 6379: this repo's
+          // Default 6379, Redis's standard port: this is the DEPLOYMENT
+          // value, matching the backend's own default so a producer (the
+          // backend, enqueuing `poi.import` jobs) and this consumer agree on
+          // where Redis is when only `TARMOTO_REDIS_HOST` is set. Local dev
+          // overrides this to 6380 via `apps/ingest/.env` (created by
+          // `pnpm bootstrap` from `apps/ingest/.env.example`, mirroring the
+          // backend's own `.env` convention), because this repo's
           // `infra/docker/docker-compose.yml` deliberately maps the dev Redis
           // container to host port 6380 (to avoid clashing with a
-          // system-local Redis), and unlike the backend — which overrides
-          // this via its own `apps/backend/.env` — apps/ingest has no `.env`
-          // convention yet, so the bare default must match `pnpm db:up`'s
-          // actual port or every local run (including this app's own test
-          // suite) retries against a closed port on every boot.
+          // system-local Redis).
           port: Number.parseInt(
-            config.get<string>("TARMOTO_REDIS_PORT") ?? "6380",
+            config.get<string>("TARMOTO_REDIS_PORT") ?? "6379",
             10,
           ),
           username: config.get<string>("TARMOTO_REDIS_USERNAME") || undefined,

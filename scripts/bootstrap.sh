@@ -40,7 +40,7 @@ ok "pnpm install"
 echo ""
 echo "Setting up environment files..."
 
-for app in backend mobile companion; do
+for app in backend mobile companion ingest; do
   EXAMPLE="apps/${app}/.env.example"
   TARGET="apps/${app}/.env"
   if [ -f "$EXAMPLE" ]; then
