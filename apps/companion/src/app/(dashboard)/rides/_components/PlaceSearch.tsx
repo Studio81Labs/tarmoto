@@ -112,11 +112,16 @@ export function PlaceSearch({
       setLoading(false);
       return;
     }
+    // Flag the lookup as loading for the whole debounce window, not just
+    // once the request fires: `matches` still holds the PREVIOUS query's
+    // results here, and the combobox suppresses items (display and
+    // keyboard selection) while loading — otherwise a fast typist could
+    // arrow-Enter a stale result that belongs to a different draft.
+    setLoading(true);
     const timer = setTimeout(() => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
-      setLoading(true);
       api
         .GET("/api/v1/geocode", {
           params: { query: { q } as never },

@@ -56,6 +56,26 @@ describe("PlaceSearch", () => {
     });
   });
 
+  it("suppresses the previous query's matches during the debounce gap", async () => {
+    render(<PlaceSearch value={null} onChange={vi.fn()} />);
+
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "tatra" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(
+      screen.getByRole("option", { name: "Tatra Mountains, Slovakia" }),
+    ).toBeVisible();
+
+    // A new draft immediately flips to the loading row — the old query's
+    // results must not be visible (or keyboard-selectable) while the new
+    // request hasn't even been debounced yet.
+    fireEvent.change(input, { target: { value: "brno" } });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(screen.getByText("Searching…")).toBeVisible();
+  });
+
   it("shows the radius as an in-field chip and changes it via the popover", () => {
     const onChange = vi.fn();
     render(<PlaceSearch value={{ ...PLACE, km: 25 }} onChange={onChange} />);
