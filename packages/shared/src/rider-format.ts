@@ -41,10 +41,10 @@ export function formatJoinedLabel(
  * integers and 1k–9.9k with one decimal, then rounds to integer-k at and
  * above 10k so the row doesn't flip from "9.9k" to "10.0k" awkwardly.
  */
-export function formatCount(value: number): string {
-  if (value < 1_000) return Math.round(value).toLocaleString();
+export function formatCount(value: number, locale?: string): string {
+  if (value < 1_000) return Math.round(value).toLocaleString(locale);
   const k = value / 1000;
-  if (k >= 9.95) return `${Math.round(k).toLocaleString()}k`;
+  if (k >= 9.95) return `${Math.round(k).toLocaleString(locale)}k`;
   return `${k.toFixed(1)}k`;
 }
 

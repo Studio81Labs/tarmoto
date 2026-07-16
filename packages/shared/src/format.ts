@@ -142,6 +142,8 @@ export interface Formatters {
   relativeTime(value: DateInput, now?: DateInput): string;
   /** "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8). */
   duration(totalMinutes: number): string;
+  /** "52m" / "4h 12m" — the tight table variant of `duration()`. */
+  durationCompact(totalMinutes: number): string;
   distanceKm(km: number): string;
   distanceM(m: number): string;
   speed(kmh: number): string;
@@ -350,6 +352,14 @@ export function createFormatters(ctx: FormatContext): Formatters {
       const hours = Math.floor(total / 60);
       const minutes = total % 60;
       if (hours === 0) return `${minutes} min`;
+      if (minutes === 0) return `${hours}h`;
+      return `${hours}h ${minutes}m`;
+    },
+    durationCompact: (totalMinutes) => {
+      const total = Math.max(0, Math.round(totalMinutes));
+      const hours = Math.floor(total / 60);
+      const minutes = total % 60;
+      if (hours === 0) return `${minutes}m`;
       if (minutes === 0) return `${hours}h`;
       return `${hours}h ${minutes}m`;
     },

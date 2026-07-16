@@ -213,6 +213,15 @@ describe("createFormatters — duration", () => {
   });
 });
 
+describe("createFormatters — durationCompact", () => {
+  const en = createFormatters({ locale: "en-US", units: "metric" });
+  it("keeps the tight compact style used by ride tables", () => {
+    expect(en.durationCompact(252)).toBe("4h 12m");
+    expect(en.durationCompact(52)).toBe("52m");
+    expect(en.durationCompact(120)).toBe("2h");
+  });
+});
+
 describe("createFormatters — unit-aware measurements", () => {
   const metric = createFormatters({ locale: "en-US", units: "metric" });
   const imperial = createFormatters({ locale: "en-US", units: "imperial" });
