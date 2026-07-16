@@ -91,6 +91,12 @@ echo ""
 echo "Running database migrations..."
 pnpm db:migrate
 ok "TypeORM migrations applied"
+# The POI database is a SEPARATE Postgres (ADR-0007) whose schema is owned by
+# apps/ingest (migrationsRun) — the backend now reads it with migrationsRun:false.
+# Bootstrap doesn't start apps/ingest, so apply the POI migrations here or a fresh
+# dev DB has no pois/poi_import_regions/poi_import_runs tables and POI reads 500.
+pnpm db:migrate:poi
+ok "POI migrations applied"
 
 # ── 8. Success summary ──────────────────────────────────────────────
 echo ""
