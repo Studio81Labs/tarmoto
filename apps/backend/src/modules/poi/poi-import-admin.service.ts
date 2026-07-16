@@ -124,6 +124,18 @@ end
 return 0`;
 
 /**
+ * Default application-level deadline (ms) for a single call to apps/ingest's
+ * internal API (#1011 review FIX B), configurable via
+ * `TARMOTO_INGEST_INTERNAL_TIMEOUT_MS`. Bounds every `ingestFetch` call —
+ * `listRegionStatus`, `listRuns`, `triggerImport`, and the `importInFlight`
+ * guard `storeExtract` calls — so a wedged ingest process that accepts the
+ * TCP connection but never responds can't hang the caller until the
+ * runtime's own long default; the upload path in particular would otherwise
+ * hang while still holding the Redis upload lock.
+ */
+const DEFAULT_INGEST_INTERNAL_TIMEOUT_MS = 5000;
+
+/**
  * Admin surface for the POI import system (#847). Phase 3 turned the read
  * side — per-`(source, region)` coverage/count/extract-presence/last-run/
  * live-queue-state (`listRegionStatus`), plus run history (`listRuns`), plus
@@ -162,6 +174,16 @@ export class PoiImportAdminService {
 
   private async ingestFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const token = this.config.get<string>('TARMOTO_INTERNAL_API_TOKEN')?.trim();
+    // #1011 review FIX B: an application-level deadline. Without one, a
+    // wedged ingest (TCP accepted, nothing ever sent back) hangs this call
+    // until the runtime's own long default — and the upload path hangs
+    // while still holding the Redis upload lock. `AbortSignal.timeout`
+    // manages its own timer entirely internally (fires the abort once, then
+    // is eligible for GC either way) — no manual `AbortController`/`clearTimeout`
+    // bookkeeping needed.
+    const timeoutMs =
+      Number(this.config.get<string>('TARMOTO_INGEST_INTERNAL_TIMEOUT_MS')) ||
+      DEFAULT_INGEST_INTERNAL_TIMEOUT_MS;
     let res: Response;
     try {
       res = await fetch(this.ingestUrl(path), {
@@ -171,6 +193,7 @@ export class PoiImportAdminService {
           ...(token ? { 'x-internal-token': token } : {}),
           ...(init?.headers ?? {}),
         },
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       throw new ServiceUnavailableException(

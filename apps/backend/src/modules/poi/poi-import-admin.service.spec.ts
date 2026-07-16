@@ -239,6 +239,45 @@ describe('PoiImportAdminService', () => {
         status: 503,
       });
     });
+
+    // #1011 review FIX B: every internal call is bounded by an
+    // application-level deadline so a wedged ingest (TCP accepted, nothing
+    // ever sent back) can't hang the caller until the runtime's own long
+    // default.
+    it('bounds the internal fetch with an AbortSignal (FIX B)', async () => {
+      fetchMock.mockResolvedValue(new Response('[]', { status: 200 }));
+      await svc().listRegionStatus();
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init!.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('surfaces a fetch that never resolves before the configured deadline as 503, not a hang (FIX B)', async () => {
+      // A `fetch` stand-in that only ever settles via its AbortSignal — the
+      // same contract the real `fetch` honors once `AbortSignal.timeout(ms)`
+      // fires — proves `ingestFetch`'s EXISTING network-error catch is what
+      // turns a timeout into 503; FIX B only needed to wire the signal in.
+      // A 5ms configured deadline exercises the REAL `AbortSignal.timeout`
+      // implementation deterministically and near-instantly, instead of
+      // waiting anywhere near the 5000ms default (or a real 5s test).
+      fetchMock.mockImplementation(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(
+                new DOMException('The operation was aborted', 'TimeoutError'),
+              ),
+            );
+          }),
+      );
+      const s = new PoiImportAdminService(
+        fakeConfig({ TARMOTO_INGEST_INTERNAL_TIMEOUT_MS: '5' }),
+        makeLockRedis() as never,
+      );
+
+      await expect(s.listRegionStatus()).rejects.toMatchObject({
+        status: 503,
+      });
+    });
   });
 
   describe('storeExtract', () => {
