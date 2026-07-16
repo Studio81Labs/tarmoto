@@ -498,7 +498,20 @@ export class UsersService {
         : null;
     }
     if (dto.preferences !== undefined) {
-      user.preferences = { ...user.preferences, ...dto.preferences };
+      // The backend compiles with ES2024 class fields (`useDefineForClassFields`
+      // defaults to true at that target), so `plainToInstance` materializes
+      // EVERY declared optional field of `UserPreferencesDto` as an own
+      // `undefined` property — even the ones absent from the request body.
+      // Spreading `dto.preferences` directly would overwrite stored keys the
+      // caller never touched with `undefined`, which JSONB then drops on
+      // save. Strip undefined entries before merging so an untouched key
+      // in the patch never clobbers a previously stored value.
+      const patch = Object.fromEntries(
+        Object.entries(dto.preferences).filter(
+          ([, value]) => value !== undefined,
+        ),
+      );
+      user.preferences = { ...user.preferences, ...patch };
     }
 
     const saved = await this.userRepo.save(user);

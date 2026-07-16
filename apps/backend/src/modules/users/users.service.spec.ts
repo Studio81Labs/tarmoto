@@ -4,11 +4,13 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Readable } from 'node:stream';
+import { plainToInstance } from 'class-transformer';
 import {
   DEFAULT_PRIVACY_PREFERENCES,
   buildFeatureSnapshot,
 } from '@tarmoto/shared';
 import { UsersService } from './users.service.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -724,6 +726,41 @@ describe('UsersService', () => {
       expect(userRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           preferences: { units: 'metric', daily_km: 300 },
+        }),
+      );
+    });
+
+    it('should preserve unsent preference keys when the dto is built via plainToInstance', async () => {
+      // Regression: with the backend's ES2024 target, `useDefineForClassFields`
+      // defaults to true, so `plainToInstance` materializes EVERY declared
+      // optional field of `UserPreferencesDto` as an own `undefined` property
+      // on the instance — not just the two keys the caller actually sent. A
+      // hand-built plain object literal (as above) does NOT have those extra
+      // own-undefined keys and would NOT reproduce the bug; only a dto built
+      // through `plainToInstance` does. Naively spreading that dto over the
+      // stored preferences would overwrite `units` and `daily_km` with
+      // `undefined`, which JSONB then drops on save.
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        preferences: { units: 'imperial', daily_km: 250 },
+      });
+      const dto = plainToInstance(UpdateProfileDto, {
+        preferences: {
+          format_locale: 'cs-CZ',
+          timezone: 'Europe/Prague',
+        },
+      });
+
+      await service.updateProfile('user-1', dto);
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preferences: {
+            units: 'imperial',
+            daily_km: 250,
+            format_locale: 'cs-CZ',
+            timezone: 'Europe/Prague',
+          },
         }),
       );
     });
