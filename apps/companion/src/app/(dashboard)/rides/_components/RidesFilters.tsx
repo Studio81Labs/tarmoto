@@ -36,6 +36,20 @@ interface Props {
 }
 
 /**
+ * Keep digits and the first decimal separator — "12.5" stays "12.5"; a
+ * second "." is dropped rather than producing an unparseable draft. Bare
+ * digit-stripping would silently rewrite "12.5" into 125 and apply a far
+ * stricter filter than the rider typed.
+ */
+function sanitizeKmDraft(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  return dot === -1
+    ? cleaned
+    : cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replaceAll(".", "");
+}
+
+/**
  * Local draft for a numeric filter, debounced before committing to the URL.
  * Same treatment as the search box below: the URL round-trip
  * (`router.replace` → `useSearchParams`) lags keystrokes, so an input
@@ -54,7 +68,12 @@ function useDebouncedNumberDraft(
   }, [committed]);
   useEffect(() => {
     const debounceId = setTimeout(() => {
+      // A trailing "." is a decimal mid-entry ("12." on the way to "12.5");
+      // committing now would round-trip the URL and reset the draft to "12",
+      // eating the separator under the rider's cursor. Wait for more input.
+      if (draft.endsWith(".")) return;
       const next = draft === "" ? undefined : Number(draft);
+      if (next !== undefined && !Number.isFinite(next)) return;
       if (next !== committed) commit(next);
     }, 300);
     return () => clearTimeout(debounceId);
@@ -86,6 +105,16 @@ export function RidesFilters({ state, update, reset }: Props) {
     state.maxDistance,
     (maxDistance) => update({ maxDistance }),
   );
+  const handleReset = () => {
+    // Clear the local drafts alongside the URL state. Reset only rewrites
+    // the URL, so an uncommitted draft (its debounce still pending) would
+    // survive the sync-from-committed effect and re-apply its filter
+    // moments after the rider cleared everything.
+    setSearchLocal("");
+    setMinKmLocal("");
+    setMaxKmLocal("");
+    reset();
+  };
   const hasAny = Boolean(
     state.from ||
     state.to ||
@@ -154,7 +183,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           <Input
             ariaLabel={t("Min km")}
             value={minKmLocal}
-            onChange={(next) => setMinKmLocal(next.replace(/\D/g, ""))}
+            onChange={(next) => setMinKmLocal(sanitizeKmDraft(next))}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -162,7 +191,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           <Input
             ariaLabel={t("Max km")}
             value={maxKmLocal}
-            onChange={(next) => setMaxKmLocal(next.replace(/\D/g, ""))}
+            onChange={(next) => setMaxKmLocal(sanitizeKmDraft(next))}
           />
         </div>
       </div>
@@ -232,7 +261,7 @@ export function RidesFilters({ state, update, reset }: Props) {
             iconOnly
             variant="secondary"
             size="sm"
-            onClick={reset}
+            onClick={handleReset}
             aria-label={t("Reset filters")}
             title={t("Reset filters")}
           >

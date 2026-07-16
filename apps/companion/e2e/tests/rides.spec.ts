@@ -1,4 +1,27 @@
+import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures";
+
+// The From/To filters are @tarmoto/ui DatePickers — button triggers that
+// open a calendar popover — so "filling" a date means clicking the trigger,
+// paging the calendar back to the target month, and picking the day cell.
+// The calendar opens on today's month, so the paging loop is bounded rather
+// than counted (the distance to April 2026 grows as CI's wall clock moves).
+async function pickDate(
+  page: Page,
+  trigger: RegExp,
+  monthHeading: RegExp,
+  day: RegExp,
+): Promise<void> {
+  await page.getByRole("button", { name: trigger }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  for (let i = 0; i < 48; i++) {
+    if ((await dialog.getByRole("heading", { name: monthHeading }).count()) > 0)
+      break;
+    await dialog.getByRole("button", { name: /previous/i }).click();
+  }
+  await dialog.getByRole("button", { name: day }).click();
+}
 
 // Three seeded rides cover the assertions for T29 (list), T30 (filter),
 // and T31 (detail). Distinct distances and start dates so the filter
@@ -114,27 +137,20 @@ test.describe("rides read path", () => {
       page.getByRole("link", { name: new RegExp(RIDE_OLD.name) }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Filters live inside <label> wrappers — getByLabel resolves to the
-    // wrapped input. The label text is rendered through the i18n
-    // helper with a trailing space ("From "), so the regex matches a
-    // word-boundary stop rather than the end of the accessible name.
-    // After each fill we blur the field; the page's `onChange` handler
-    // only commits the new value once the input dispatches a change
-    // event, which Playwright's `fill` triggers but the React
-    // synchronous render on the next tick needs a small breather to
-    // settle before the URL reflects it.
-    const fromField = page.getByLabel(/^from\b/i);
-    const toField = page.getByLabel(/^to\b/i);
-    const minKmField = page.getByLabel(/^min km\b/i);
-    await fromField.fill("2026-04-01");
+    // From/To are DatePicker buttons (aria-label "From date"/"To date",
+    // with the formatted value appended once set) — drive them through the
+    // calendar popover. Min km stays a text input, but its commit is
+    // debounced 300 ms before the URL write, so the polls below double as
+    // the debounce wait.
+    await pickDate(page, /^from date/i, /april 2026/i, /april 1, 2026/i);
     await expect
       .poll(() => new URL(page.url()).searchParams.get("from"))
       .toBe("2026-04-01");
-    await toField.fill("2026-04-30");
+    await pickDate(page, /^to date/i, /april 2026/i, /april 30, 2026/i);
     await expect
       .poll(() => new URL(page.url()).searchParams.get("to"))
       .toBe("2026-04-30");
-    await minKmField.fill("100");
+    await page.getByLabel(/^min km\b/i).fill("100");
     await expect
       .poll(() => new URL(page.url()).searchParams.get("minDist"))
       .toBe("100");
@@ -303,8 +319,8 @@ test.describe("rides extras", () => {
     ).toBeVisible();
   });
 
-  // T34 — Compare rides: `/rides/compare` exposes two <select>
-  // dropdowns. The page auto-picks the two most-recent rides on
+  // T34 — Compare rides: `/rides/compare` exposes two searchable ride
+  // comboboxes. The page auto-picks the two most-recent rides on
   // mount, then a side-by-side comparison view renders fed by
   // `/api/v1/rides/:id` for both rows. Seed three rides so we can
   // explicitly change one of the picks without racing the
@@ -315,7 +331,7 @@ test.describe("rides extras", () => {
     mockApi,
     user,
   }) => {
-    const a = await mockApi.seedRide(user, RIDE_OLD); // 80 km, March
+    await mockApi.seedRide(user, RIDE_OLD); // 80 km, March
     await mockApi.seedRide(user, RIDE_RECENT); // 220 km, April
     await mockApi.seedRide(user, RIDE_DETAIL); // 175 km, April-20
 
@@ -338,10 +354,13 @@ test.describe("rides extras", () => {
       })
       .toBeTruthy();
 
-    // Now explicitly switch ride A to the older 80 km ride. The
-    // "Ride A" label appears both on the picker `<select>` and the
-    // route map's aria-label, so scope to the combobox role.
-    await page.getByRole("combobox", { name: /ride a/i }).selectOption(a.id);
+    // Now explicitly switch ride A to the older 80 km ride. The picker is
+    // a @tarmoto/ui Combobox — clicking its input (role combobox) opens
+    // the option list; pick the seeded ride by its formatted option label.
+    // The "Ride A" label also appears on the route map's aria-label, so
+    // scope to the combobox role.
+    await page.getByRole("combobox", { name: /ride a/i }).click();
+    await page.getByRole("option", { name: new RegExp(RIDE_OLD.name) }).click();
 
     // The metric table renders one row per metric (Metric / Ride A /
     // Ride B). The v2 redesign dropped the separate "Stats diff" heading
