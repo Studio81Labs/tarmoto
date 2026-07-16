@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { useEffect } from "react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Loader2, Route } from "lucide-react";
+import { DatePicker } from "@tarmoto/ui";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { ConditionStatusLine } from "@/components/ConditionStatusLine";
 import { deriveConditionStatus } from "@/lib/conditions-status";
@@ -233,24 +234,16 @@ function ClosuresPanelBody({
       </div>
 
       {onPreviewDateChange ? (
-        <div>
-          <label
-            htmlFor="closures-preview-date"
-            className="block text-xs text-fg-mute mb-1"
-          >
-            {t("Preview date ")}
-          </label>
-          <input
-            id="closures-preview-date"
-            type="date"
-            value={toDateInputValue(previewDate)}
-            onChange={(e) => {
-              const next = parseDateInputValue(e.target.value);
-              if (next) onPreviewDateChange(next);
-            }}
-            className="w-full rounded-lg border border-line-strong bg-cream px-2 py-1.5 text-sm text-ink transition focus:border-accent focus:outline-none"
-          />
-        </div>
+        <DatePicker
+          id="closures-preview-date"
+          label={t("Preview date ")}
+          value={toDateInputValue(previewDate)}
+          onChange={(value) => {
+            const next = parseDateInputValue(value);
+            if (next) onPreviewDateChange(next);
+          }}
+          tone="cream"
+        />
       ) : (
         <p className="text-xs text-fg-mute">
           {t("Previewing {month} conditions on {previewDay}.", {

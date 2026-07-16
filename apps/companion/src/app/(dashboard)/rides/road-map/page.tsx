@@ -21,6 +21,7 @@ import {
   Alert,
   Button,
   Card,
+  Input,
   MetricTile,
   Mono,
   QualityBars,
@@ -749,26 +750,26 @@ function NearbyCenterControls({
         {locating ? t("Locating… ") : t("Use my location")}
       </Button>
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs text-fg-dim">
-          <span className="block mb-1">{t("Latitude")}</span>
-          <input
-            type="number"
-            step="0.0001"
+        <div className="text-xs text-fg-dim">
+          <label htmlFor="nearby-center-lat" className="block mb-1">
+            {t("Latitude")}
+          </label>
+          <Input
+            id="nearby-center-lat"
             value={latInput}
-            onChange={(e) => setLatInput(e.target.value)}
-            className="w-full px-2 py-1.5 rounded bg-paper border border-line-strong text-sm text-ink focus:outline-none focus:border-accent"
+            onChange={setLatInput}
           />
-        </label>
-        <label className="text-xs text-fg-dim">
-          <span className="block mb-1">{t("Longitude")}</span>
-          <input
-            type="number"
-            step="0.0001"
+        </div>
+        <div className="text-xs text-fg-dim">
+          <label htmlFor="nearby-center-lng" className="block mb-1">
+            {t("Longitude")}
+          </label>
+          <Input
+            id="nearby-center-lng"
             value={lngInput}
-            onChange={(e) => setLngInput(e.target.value)}
-            className="w-full px-2 py-1.5 rounded bg-paper border border-line-strong text-sm text-ink focus:outline-none focus:border-accent"
+            onChange={setLngInput}
           />
-        </label>
+        </div>
       </div>
       <Button block size="sm" variant="accent" onClick={apply}>
         {t("Apply coordinates ")}

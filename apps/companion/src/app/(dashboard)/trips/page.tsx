@@ -48,7 +48,7 @@ import {
 } from "@/lib/trip-folders";
 import { formatRelativeTime } from "@/lib/utils";
 import type { TripSummary } from "@/lib/types";
-import { Button, MiniRouteSvg, PageHeader } from "@tarmoto/ui";
+import { Button, Input, MiniRouteSvg, PageHeader, Select } from "@tarmoto/ui";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -833,19 +833,16 @@ function TripToolbar({
   };
   return (
     <div className="mb-[18px] flex flex-wrap items-center gap-3">
-      <div className="relative min-w-[280px] flex-1">
-        <Search
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-fg-mute"
-        />
-        <input
-          type="text"
-          value={filters.search}
-          onChange={(e) => onChange({ ...filters, search: e.target.value })}
-          placeholder={t("Search by name, description, or rider\u2026")}
-          className="w-full rounded-lg border border-line-strong bg-cream py-[10px] pl-9 pr-3 text-[13px] font-semibold text-ink outline-none placeholder:font-normal placeholder:text-fg-mute focus:border-accent"
-        />
-      </div>
+      <Input
+        type="text"
+        value={filters.search}
+        onChange={(search) => onChange({ ...filters, search })}
+        placeholder={t("Search by name, description, or rider\u2026")}
+        ariaLabel={t("Search trips")}
+        tone="cream"
+        leadingIcon={<Search size={14} />}
+        className="min-w-[280px] flex-1"
+      />
 
       {TRIP_STATUSES.map((status) => {
         const active = filters.statuses.has(status);
@@ -869,27 +866,27 @@ function TripToolbar({
         );
       })}
 
-      <label className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
           {t("Sort")}
         </span>
-        <select
+        <Select
+          ariaLabel={t("Sort trips")}
           value={filters.sort}
-          onChange={(e) =>
+          onChange={(next) =>
             onChange({
               ...filters,
-              sort: e.target.value as TripSortKey,
+              sort: next as TripSortKey,
             })
           }
-          className="min-w-[150px] rounded-lg border border-line-strong bg-cream py-[10px] pl-3 pr-8 text-[13px] font-semibold text-ink outline-none focus:border-accent"
-        >
-          {TRIP_SORT_KEYS.map((key) => (
-            <option key={key} value={key}>
-              {SORT_LABEL[key]}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={TRIP_SORT_KEYS.map((key) => ({
+            value: key,
+            label: SORT_LABEL[key],
+          }))}
+          tone="cream"
+          className="w-[170px]"
+        />
+      </div>
     </div>
   );
 }

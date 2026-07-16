@@ -2,12 +2,26 @@
 import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { FilterX, Search } from "lucide-react";
-import { Button, SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
+import {
+  Button,
+  DatePicker,
+  Input,
+  SegmentedControl,
+  Select,
+  type SegmentedOption,
+  type SelectOption,
+} from "@tarmoto/ui";
 import type { RidesQueryState } from "./useRidesQuery";
 import { PlaceSearch, type PlaceValue } from "./PlaceSearch";
 
 // Ride-type segmented control. "all" is a UI sentinel that clears the `type`
 // filter; the rest map 1:1 to the backend ride_type values.
+// "any" is a UI sentinel that clears the corresponding quality bound.
+const QUALITY_OPTIONS: SelectOption[] = [
+  { value: "any", label: "Any" },
+  ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+];
+
 const TYPE_OPTIONS: SegmentedOption<string>[] = [
   { value: "all", label: "All" },
   { value: "free", label: "Free" },
@@ -20,6 +34,54 @@ interface Props {
   update: (patch: Partial<RidesQueryState>) => void;
   reset: () => void;
 }
+
+/**
+ * Keep digits and the first decimal separator — "12.5" stays "12.5"; a
+ * second "." is dropped rather than producing an unparseable draft. Bare
+ * digit-stripping would silently rewrite "12.5" into 125 and apply a far
+ * stricter filter than the rider typed.
+ */
+function sanitizeKmDraft(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  const dot = cleaned.indexOf(".");
+  return dot === -1
+    ? cleaned
+    : cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replaceAll(".", "");
+}
+
+/**
+ * Local draft for a numeric filter, debounced before committing to the URL.
+ * Same treatment as the search box below: the URL round-trip
+ * (`router.replace` → `useSearchParams`) lags keystrokes, so an input
+ * controlled directly by `state` snaps back to the stale value mid-word and
+ * loses digits typed in quick succession.
+ */
+function useDebouncedNumberDraft(
+  committed: number | undefined,
+  commit: (next: number | undefined) => void,
+): [string, (next: string) => void] {
+  const [draft, setDraft] = useState(
+    committed != null ? String(committed) : "",
+  );
+  useEffect(() => {
+    setDraft(committed != null ? String(committed) : "");
+  }, [committed]);
+  useEffect(() => {
+    const debounceId = setTimeout(() => {
+      // A trailing "." is a decimal mid-entry ("12." on the way to "12.5");
+      // committing now would round-trip the URL and reset the draft to "12",
+      // eating the separator under the rider's cursor. Wait for more input.
+      if (draft.endsWith(".")) return;
+      const next = draft === "" ? undefined : Number(draft);
+      if (next !== undefined && !Number.isFinite(next)) return;
+      if (next !== committed) commit(next);
+    }, 300);
+    return () => clearTimeout(debounceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+  return [draft, setDraft];
+}
+
 export function RidesFilters({ state, update, reset }: Props) {
   // Local state for the search box — debounced before writing to URL.
   const [searchLocal, setSearchLocal] = useState(state.q ?? "");
@@ -35,6 +97,24 @@ export function RidesFilters({ state, update, reset }: Props) {
     return () => clearTimeout(debounceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchLocal]);
+  const [minKmLocal, setMinKmLocal] = useDebouncedNumberDraft(
+    state.minDistance,
+    (minDistance) => update({ minDistance }),
+  );
+  const [maxKmLocal, setMaxKmLocal] = useDebouncedNumberDraft(
+    state.maxDistance,
+    (maxDistance) => update({ maxDistance }),
+  );
+  const handleReset = () => {
+    // Clear the local drafts alongside the URL state. Reset only rewrites
+    // the URL, so an uncommitted draft (its debounce still pending) would
+    // survive the sync-from-committed effect and re-apply its filter
+    // moments after the rider cleared everything.
+    setSearchLocal("");
+    setMinKmLocal("");
+    setMaxKmLocal("");
+    reset();
+  };
   const hasAny = Boolean(
     state.from ||
     state.to ||
@@ -74,100 +154,79 @@ export function RidesFilters({ state, update, reset }: Props) {
   };
   const labelClass =
     "font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim";
-  const fieldClass =
-    "bg-paper border border-line rounded-lg px-2 py-1.5 text-sm text-ink focus:outline-none focus:border-ink transition";
   return (
     <div className="rounded-2xl bg-cream border border-line p-[18px] mb-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <label className={`${labelClass} flex flex-col gap-1.5`}>
-          {t("From ")}
-          <input
-            type="date"
+        {/* Label chrome lives on the inner span, never the wrapper — the mono
+            bold/uppercase/tracking styles inherit into the field text
+            otherwise (letter-spacing and text-transform cascade). */}
+        <div className="flex flex-col gap-1.5">
+          <span className={labelClass}>{t("From ")}</span>
+          <DatePicker
+            ariaLabel={t("From date")}
             value={state.from ?? ""}
-            onChange={(e) => update({ from: e.target.value || undefined })}
-            className={fieldClass}
+            onChange={(next) => update({ from: next || undefined })}
+            clearable
           />
-        </label>
-        <label className={`${labelClass} flex flex-col gap-1.5`}>
-          {t("To ")}
-          <input
-            type="date"
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className={labelClass}>{t("To ")}</span>
+          <DatePicker
+            ariaLabel={t("To date")}
             value={state.to ?? ""}
-            onChange={(e) => update({ to: e.target.value || undefined })}
-            className={fieldClass}
+            onChange={(next) => update({ to: next || undefined })}
+            clearable
           />
-        </label>
-        <label className={`${labelClass} flex flex-col gap-1.5`}>
-          {t("Min km ")}
-          <input
-            type="number"
-            min={0}
-            value={state.minDistance ?? ""}
-            onChange={(e) =>
-              update({
-                minDistance:
-                  e.target.value === "" ? undefined : Number(e.target.value),
-              })
-            }
-            className={fieldClass}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className={labelClass}>{t("Min km ")}</span>
+          <Input
+            ariaLabel={t("Min km")}
+            value={minKmLocal}
+            onChange={(next) => setMinKmLocal(sanitizeKmDraft(next))}
           />
-        </label>
-        <label className={`${labelClass} flex flex-col gap-1.5`}>
-          {t("Max km ")}
-          <input
-            type="number"
-            min={0}
-            value={state.maxDistance ?? ""}
-            onChange={(e) =>
-              update({
-                maxDistance:
-                  e.target.value === "" ? undefined : Number(e.target.value),
-              })
-            }
-            className={fieldClass}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className={labelClass}>{t("Max km ")}</span>
+          <Input
+            ariaLabel={t("Max km")}
+            value={maxKmLocal}
+            onChange={(next) => setMaxKmLocal(sanitizeKmDraft(next))}
           />
-        </label>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 mt-3">
         <div className="flex flex-col gap-1.5">
           <span className={labelClass}>{t("Quality (min \u2192 max)")}</span>
           <div className="flex items-center gap-2">
-            <select
-              value={state.minQuality ?? ""}
-              onChange={(e) =>
+            <Select
+              ariaLabel={t("Min quality")}
+              value={
+                state.minQuality != null ? String(state.minQuality) : "any"
+              }
+              onChange={(next) =>
                 update({
-                  minQuality:
-                    e.target.value === "" ? undefined : Number(e.target.value),
+                  minQuality: next === "any" ? undefined : Number(next),
                 })
               }
-              className={fieldClass}
-            >
-              <option value="">{t("Any")}</option>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
+              options={QUALITY_OPTIONS}
+              className="w-24"
+            />
             <span className="text-fg-mute">–</span>
-            <select
-              value={state.maxQuality ?? ""}
-              onChange={(e) =>
+            <Select
+              ariaLabel={t("Max quality")}
+              value={
+                state.maxQuality != null ? String(state.maxQuality) : "any"
+              }
+              onChange={(next) =>
                 update({
-                  maxQuality:
-                    e.target.value === "" ? undefined : Number(e.target.value),
+                  maxQuality: next === "any" ? undefined : Number(next),
                 })
               }
-              className={fieldClass}
-            >
-              <option value="">{t("Any")}</option>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
+              options={QUALITY_OPTIONS}
+              className="w-24"
+            />
           </div>
         </div>
 
@@ -183,22 +242,17 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </div>
 
-        <label className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+        <div className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
           <span className={labelClass}>{t("Search name")}</span>
-          <div className="relative">
-            <Search
-              size={14}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-mute"
-            />
-            <input
-              type="search"
-              value={searchLocal}
-              onChange={(e) => setSearchLocal(e.target.value)}
-              placeholder={t("Sunday\u2026")}
-              className="w-full bg-paper border border-line rounded-lg pl-7 pr-2 py-1.5 text-sm text-ink placeholder:text-fg-mute focus:outline-none focus:border-ink transition"
-            />
-          </div>
-        </label>
+          <Input
+            type="search"
+            ariaLabel={t("Search name")}
+            value={searchLocal}
+            onChange={setSearchLocal}
+            placeholder={t("Sunday\u2026")}
+            leadingIcon={<Search size={14} />}
+          />
+        </div>
 
         <PlaceSearch value={placeValue} onChange={handlePlaceChange} />
 
@@ -207,7 +261,7 @@ export function RidesFilters({ state, update, reset }: Props) {
             iconOnly
             variant="secondary"
             size="sm"
-            onClick={reset}
+            onClick={handleReset}
             aria-label={t("Reset filters")}
             title={t("Reset filters")}
           >

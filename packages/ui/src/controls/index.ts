@@ -41,4 +41,6 @@ export {
   type FieldHintProps,
   fieldChrome,
   type FieldChromeOptions,
+  ClearButton,
+  type ClearButtonProps,
 } from "./field";

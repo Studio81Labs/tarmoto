@@ -5,6 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import CommunityFeedPage from "./page";
 import { api, communityApi, type CommunityRidePage } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -152,9 +153,8 @@ describe("CommunityFeedPage", () => {
 
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.change(screen.getByLabelText("Sort feed"), {
-      target: { value: "newest" },
-    });
+    await userEvent.click(screen.getByLabelText("Sort feed"));
+    await userEvent.click(screen.getByRole("option", { name: "Newest" }));
 
     await waitFor(() =>
       expect(listMock).toHaveBeenLastCalledWith({
@@ -202,9 +202,8 @@ describe("CommunityFeedPage", () => {
 
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.change(screen.getByLabelText("Minimum popularity"), {
-      target: { value: "250" },
-    });
+    await userEvent.click(screen.getByLabelText("Minimum popularity"));
+    await userEvent.click(screen.getByRole("option", { name: "250+ views" }));
 
     await waitFor(() =>
       expect(listMock).toHaveBeenLastCalledWith({
@@ -221,6 +220,10 @@ describe("CommunityFeedPage", () => {
 
     render(<CommunityFeedPage />);
 
-    expect(screen.getByRole("option", { name: "Nearest" })).toBeDisabled();
+    await userEvent.click(screen.getByLabelText("Sort feed"));
+    expect(screen.getByRole("option", { name: "Nearest" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });
