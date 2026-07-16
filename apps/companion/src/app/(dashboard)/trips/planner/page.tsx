@@ -3114,6 +3114,8 @@ export default function TripPlannerPage() {
                     ) : null}
                     {/* sr-only select keeps `getByLabelText("Road preference")`
                       + `fireEvent.change` resolvable. */}
+                    {/* eslint-disable-next-line no-restricted-syntax -- sr-only
+                        AT/test bridge; the visible control is the RadioCardGrid. */}
                     <select
                       id="trip-planner-road-preference"
                       value={toTripRoadPreference(roadPreference)}
@@ -3226,6 +3228,8 @@ export default function TripPlannerPage() {
                 <label htmlFor="trip-planner-days" className="sr-only">
                   {t("Number of days")}
                 </label>
+                {/* eslint-disable-next-line no-restricted-syntax -- sr-only
+                    AT/test bridge; drafting proposes a single day visually. */}
                 <input
                   id="trip-planner-days"
                   type="number"

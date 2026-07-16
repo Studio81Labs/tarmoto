@@ -146,6 +146,9 @@ export function PlaceSearch({
         />
         {/* type="text", not "search": the field renders its own ClearButton,
             and WebKit's native search-cancel ✕ would sit right next to it. */}
+        {/* eslint-disable-next-line no-restricted-syntax -- async geocode
+            combobox: custom debounce/abort/dropdown logic the ui Combobox
+            can't host; skinned with fieldChrome + ClearButton. */}
         <input
           type="text"
           value={draft}

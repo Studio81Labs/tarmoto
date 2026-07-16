@@ -61,6 +61,28 @@ export default [
           message:
             "Don't fetch the backend directly. Use the generated client — `api` / `apiServer` from `@/lib/api` (see #861).",
         },
+        // Guard the form-control migration (#1006/#1008): rider-facing form
+        // fields render through @tarmoto/ui (Input, PasswordInput, Select,
+        // Combobox, Textarea, Checkbox, DatePicker, CopyField, …) so the
+        // field chrome stays consistent. Deliberate native elements — hidden
+        // file pickers, sr-only AT/test bridges, dark-theme road/embed
+        // surfaces, bespoke inline editors — carry a disable comment stating
+        // the reason.
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message:
+            "Use a @tarmoto/ui form control instead of a native <input>. If this element is deliberate (hidden file picker, sr-only bridge, dark surface, inline editor), add a disable comment with the reason.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message:
+            "Use @tarmoto/ui Select/Combobox instead of a native <select>. If this element is deliberate (sr-only bridge), add a disable comment with the reason.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message:
+            "Use @tarmoto/ui Textarea instead of a native <textarea>. If this element is deliberate (dark surface, read-only embed code), add a disable comment with the reason.",
+        },
       ],
     },
   },

@@ -327,6 +327,9 @@ export default function ProfilePage() {
               {joinedLabel ? ` · ${t("Joined")} ${joinedLabel}` : ""}
             </p>
           </div>
+          {/* eslint-disable-next-line no-restricted-syntax -- hidden file
+              picker (avatar upload); the ui library has no file control,
+              the visible affordance is a Button. */}
           <input
             ref={avatarFileInputRef}
             id="settings-avatar-file"
