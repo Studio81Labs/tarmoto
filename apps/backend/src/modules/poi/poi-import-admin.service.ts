@@ -300,6 +300,16 @@ export class PoiImportAdminService {
       const res = await this.ingestFetch<ImportStatusResponse>(
         `/internal/poi/import-status?${params.toString()}`,
       );
+      // The generic on `ingestFetch` is a compile-time assertion only — it does
+      // NOT validate the body at runtime. A 200 with a malformed body (e.g. `{}`
+      // from a partial deployment or an intermediary) would otherwise yield
+      // `undefined`, which `storeExtract` reads as falsy/idle — silently failing
+      // OPEN. An unverifiable body is an unverifiable state: reject it below.
+      if (typeof res.in_flight !== 'boolean') {
+        throw new Error(
+          'malformed import-status response (in_flight is not a boolean)',
+        );
+      }
       return res.in_flight;
     } catch (err) {
       this.logger.warn(

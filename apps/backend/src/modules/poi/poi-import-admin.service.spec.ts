@@ -876,6 +876,35 @@ describe('PoiImportAdminService', () => {
       expect(leftoverPartFiles()).toEqual([]);
       expect(existsSync(target)).toBe(false);
     });
+
+    it('fails closed with 503 (and writes nothing) when apps/ingest returns a 200 with a malformed body (no boolean in_flight)', async () => {
+      // The compile-time generic on `ingestFetch` does NO runtime validation,
+      // so a 200 whose body lacks a boolean `in_flight` (e.g. `{}` from a
+      // partial deployment or an intermediary) would leave `res.in_flight`
+      // `undefined` — which `storeExtract` reads as falsy/idle, silently
+      // failing OPEN. An unverifiable body must collapse to the same 503 as
+      // any other unverifiable state.
+      const target = extractPath('osm', 'CZ');
+      const svc = new PoiImportAdminService(
+        fakeConfig(),
+        makeLockRedis() as never,
+      );
+      statMock.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({}), { status: 200 }),
+      );
+
+      await expect(
+        svc.storeExtract('osm', 'CZ', {
+          stream: Readable.from(Buffer.from('x')),
+          size: 1,
+          originalName: 'cz.osm',
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      expect(leftoverPartFiles()).toEqual([]);
+      expect(existsSync(target)).toBe(false);
+    });
   });
 
   describe('upload lock (acquire / renew / release, #972)', () => {
