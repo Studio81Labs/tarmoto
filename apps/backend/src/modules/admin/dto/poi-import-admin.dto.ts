@@ -2,7 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import type {
   RegionImportStatus,
   RunSummary,
-} from '../../poi/poi-import-admin.service.js';
+  TriggerImportResponse,
+} from '@tarmoto/ingest';
 
 /**
  * One `poi_import_runs` row, serialized for the admin API (#847). Mirrors
@@ -62,6 +63,6 @@ export class RegionImportStatusDto implements RegionImportStatus {
  * Response body of `POST /admin/poi/regions/:source/:code/import` — mirrors
  * `PoiImportAdminService.triggerImport`'s return shape.
  */
-export class TriggerImportResponseDto {
+export class TriggerImportResponseDto implements TriggerImportResponse {
   @ApiProperty() job_id!: string;
 }

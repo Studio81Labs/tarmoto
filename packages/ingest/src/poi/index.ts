@@ -1,4 +1,5 @@
 export * from "./regions.js";
+export * from "./admin-status.js";
 export * from "./refresh-config.js";
 export * from "./osm-poi-tags.js";
 export * from "./fsq-poi-categories.js";

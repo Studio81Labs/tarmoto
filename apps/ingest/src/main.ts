@@ -6,6 +6,7 @@ import "reflect-metadata";
 // .env-supplied toggle would be invisible to that gate and the worker/scheduler
 // would register anyway. No-ops in the container (no .env; real env vars are set).
 import "dotenv/config";
+import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
 
@@ -14,6 +15,10 @@ import { AppModule } from "./app.module.js";
 // endpoint to hit; there is no public API surface here.
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  // Validate the internal API's POST body (the only routes with a body). A
+  // no-op on /healthz. `whitelist` strips unknown fields; `transform`
+  // instantiates the DTO class.
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   // Default 3005, NOT the backend's 3000: the root `pnpm dev` runs this service
   // and the backend on the same host, so a shared default port makes one exit
   // with EADDRINUSE (and the local worker never stays up). In the container this
