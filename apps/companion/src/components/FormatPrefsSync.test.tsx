@@ -76,6 +76,7 @@ describe("FormatPrefsSync", () => {
   });
 
   it("does not refresh when the POST fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 400 }));
 
     render(<FormatPrefsSync />);
@@ -83,5 +84,25 @@ describe("FormatPrefsSync", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(refresh).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to sync format preferences",
+      400,
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("logs and does not refresh when the POST rejects", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+
+    render(<FormatPrefsSync />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to sync format preferences",
+      expect.any(Error),
+    );
+    expect(refresh).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

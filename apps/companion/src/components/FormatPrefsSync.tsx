@@ -53,7 +53,11 @@ export function FormatPrefsSync() {
       }),
     })
       .then((response) => {
-        if (response.ok) router.refresh();
+        if (response.ok) {
+          router.refresh();
+        } else {
+          console.error("Failed to sync format preferences", response.status);
+        }
       })
       .catch((error) => {
         console.error("Failed to sync format preferences", error);
