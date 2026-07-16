@@ -40,6 +40,13 @@ export interface SearchComboboxProps {
   trailing?: ReactNode;
   /** Renders the clear ✕ (when the query is non-empty) wired to this. */
   onClear?: () => void;
+  /**
+   * Overrides the clear button's default `query !== ""` visibility rule.
+   * A filter field whose selection outlives the typed text (e.g. a place
+   * filter after the rider erases the label) passes `true` here so the
+   * active filter stays clearable.
+   */
+  clearVisible?: boolean;
   ariaLabel?: string;
   id?: string;
   tone?: "paper" | "cream";
@@ -69,6 +76,7 @@ export function SearchCombobox({
   leadingIcon,
   trailing,
   onClear,
+  clearVisible,
   ariaLabel,
   id,
   tone = "paper",
@@ -107,7 +115,11 @@ export function SearchCombobox({
       setOpen(false);
       return;
     }
-    if (!menuVisible || items.length === 0) return;
+    // While loading, the popover shows only the "Searching…" row but the
+    // caller may still be holding the previous query's `items` — keyboard
+    // navigation must not walk (or Enter-select) options that aren't
+    // currently displayed.
+    if (!menuVisible || loading || items.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((index) => (index + 1) % items.length);
@@ -123,7 +135,7 @@ export function SearchCombobox({
     }
   };
 
-  const showClear = !!onClear && query !== "" && !disabled;
+  const showClear = !!onClear && !disabled && (clearVisible ?? query !== "");
 
   return (
     <div ref={containerRef} className={cn("relative w-full", className)}>

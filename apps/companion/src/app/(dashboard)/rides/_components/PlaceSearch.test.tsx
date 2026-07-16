@@ -78,4 +78,15 @@ describe("PlaceSearch", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
+
+  it("keeps the clear action reachable after the rider erases the text", () => {
+    const onChange = vi.fn();
+    render(<PlaceSearch value={{ ...PLACE, km: 25 }} onChange={onChange} />);
+
+    // Erase the label — the near-filter (and its chip) are still applied,
+    // so the ✕ must survive to drop them.
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
 });

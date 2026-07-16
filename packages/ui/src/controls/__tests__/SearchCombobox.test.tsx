@@ -115,6 +115,44 @@ test("loading and empty states render their rows", async () => {
   expect(screen.getByText("No matches")).toBeVisible();
 });
 
+test("keyboard navigation is inert while loading, even with stale items", async () => {
+  const onSelect = vi.fn();
+  render(
+    <SearchCombobox
+      ariaLabel="Place"
+      query="ta"
+      onQueryChange={() => {}}
+      items={ITEMS}
+      onSelect={onSelect}
+      loading
+    />,
+  );
+  const input = screen.getByRole("combobox", { name: "Place" });
+  await userEvent.click(input);
+  // Only the "Searching…" row is visible — the stale items must not be
+  // reachable by keyboard.
+  expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(onSelect).not.toHaveBeenCalled();
+});
+
+test("clearVisible keeps the clear button available with an empty query", async () => {
+  const onClear = vi.fn();
+  render(
+    <SearchCombobox
+      ariaLabel="Place"
+      query=""
+      onQueryChange={() => {}}
+      items={[]}
+      onSelect={() => {}}
+      onClear={onClear}
+      clearVisible
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+  expect(onClear).toHaveBeenCalledTimes(1);
+});
+
 test("clear button appears with a query and fires onClear", async () => {
   const onClear = vi.fn();
   render(

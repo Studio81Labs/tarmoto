@@ -190,6 +190,9 @@ export function PlaceSearch({
           emptyMessage={t("No matches")}
           leadingIcon={<MapPin size={14} />}
           onClear={clear}
+          // The near-filter can outlive the typed text (rider erases the
+          // label while the place is still applied) — keep it clearable.
+          clearVisible={draft !== "" || value !== null}
           trailing={
             value ? (
               <button
