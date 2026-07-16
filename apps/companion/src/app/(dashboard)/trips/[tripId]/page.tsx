@@ -281,7 +281,12 @@ export default function TripDetailPage() {
           router.replace("/trips");
           return;
         }
-        if (err instanceof ApiError && err.status === 404) {
+        // 400 = malformed trip id in the URL — same dead link as a
+        // missing trip; both land on the 404 screen.
+        if (
+          err instanceof ApiError &&
+          (err.status === 404 || err.status === 400)
+        ) {
           setNotFound(true);
           return;
         }

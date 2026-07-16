@@ -10,9 +10,15 @@ const mockedRideRouteMap = vi.fn((props: { label?: string }) => (
   <div data-testid="ride-route-map">{props.label ?? "Ride route map"}</div>
 ));
 
+const mockNotFound = vi.fn(() => {
+  // Mirror Next's real notFound(): interrupt render with the sentinel error
+  // its boundary catches in the app.
+  throw new Error("NEXT_NOT_FOUND");
+});
 vi.mock("next/navigation", () => ({
   useParams: () => ({ rideId: routeRideId }),
   usePathname: () => routePathname,
+  notFound: () => mockNotFound(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -265,20 +271,28 @@ describe("RideDetailPage", () => {
     );
   });
 
-  it("keeps the community back link on the not-found state under /community/rides", async () => {
-    routePathname = "/community/rides/ride-1";
-    vi.mocked(api.GET).mockResolvedValueOnce({
-      data: null,
-      error: undefined,
-      response: { status: 404 },
-    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+  it.each([[404], [400]])(
+    "routes a backend %i to the app-level not-found screen",
+    async (status) => {
+      routePathname = "/community/rides/ride-1";
+      vi.mocked(api.GET).mockResolvedValueOnce({
+        data: null,
+        error: undefined,
+        response: { status },
+      } as unknown as Awaited<ReturnType<typeof api.GET>>);
+      // The thrown NEXT_NOT_FOUND sentinel unwinds through React — silence
+      // the resulting error noise.
+      const consoleSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
-    render(<RideDetailPage />);
-
-    expect(
-      await screen.findByRole("link", { name: /Community · Feed/i }),
-    ).toHaveAttribute("href", "/community/feed");
-  });
+      render(<RideDetailPage />);
+      await waitFor(() => {
+        expect(mockNotFound).toHaveBeenCalled();
+      });
+      consoleSpy.mockRestore();
+    },
+  );
 
   it("renders read-only for a community ride viewed by a non-owner", async () => {
     // Opened under the community route, so the back link returns to the feed.

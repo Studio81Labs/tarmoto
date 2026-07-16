@@ -107,7 +107,12 @@ export default function CollectionDetailPage() {
       const { data } = await routeCollectionsApi.get(id);
       setLoad({ phase: "ready", collection: mapDetailToView(data) });
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
+      // 400 = malformed id in the URL — same dead link as a missing
+      // collection; both land on the 404 screen.
+      if (
+        err instanceof ApiError &&
+        (err.status === 404 || err.status === 400)
+      ) {
         setLoad({ phase: "not-found" });
         return;
       }
