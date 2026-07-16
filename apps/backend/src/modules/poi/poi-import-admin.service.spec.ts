@@ -178,6 +178,19 @@ describe('PoiImportAdminService', () => {
       });
     });
 
+    it('maps an upstream 401 (internal token mismatch) to 502, not 401', async () => {
+      // A bare 401 here means ingest's `IngestInternalGuard` rejected our
+      // `x-internal-token` — a backend<->ingest config mismatch, not an
+      // expired admin session. Relaying it verbatim would make the admin
+      // SPA's 401-refresh middleware treat it as the latter.
+      fetchMock.mockResolvedValue(
+        new Response('invalid internal token', { status: 401 }),
+      );
+      await expect(svc().triggerImport('osm', 'CZ')).rejects.toMatchObject({
+        status: 502,
+      });
+    });
+
     it('409s locally (before calling ingest) when an upload is in progress for the pair', async () => {
       const lock = makeLockRedis({ exists: 1 });
       const s = new PoiImportAdminService(fakeConfig(), lock as never);
@@ -193,6 +206,13 @@ describe('PoiImportAdminService', () => {
         makeLockRedis() as never,
       );
       await expect(s.listRegionStatus()).rejects.toMatchObject({
+        status: 503,
+      });
+    });
+
+    it('503s when the ingest fetch itself throws (network error)', async () => {
+      fetchMock.mockRejectedValue(new Error('ECONNREFUSED'));
+      await expect(svc().listRegionStatus()).rejects.toMatchObject({
         status: 503,
       });
     });

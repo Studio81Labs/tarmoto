@@ -172,10 +172,19 @@ export class PoiImportAdminService {
       );
     }
     if (!res.ok) {
-      // Propagate the ingest status verbatim so the admin UI sees the same
-      // error class: 400 (unknown/disabled pair), 409 (in-flight), 503 (store).
       const detail = await res.text();
-      throw new HttpException(detail || res.statusText, res.status);
+      // Propagate most ingest statuses verbatim so the admin UI sees the
+      // same error class: 400 (unknown/disabled pair), 409 (in-flight), 503
+      // (store down). 401/403 are remapped to 502 instead: those mean
+      // ingest's `IngestInternalGuard` rejected our `x-internal-token` — a
+      // backend<->ingest token misconfiguration, not anything about the
+      // admin's OWN session. Relaying either verbatim would make the admin
+      // SPA's 401-refresh middleware misread a server-to-server auth failure
+      // as an expired admin session (spurious refresh/logout); 502 correctly
+      // reads as "this server's upstream gateway failed."
+      const status =
+        res.status === 401 || res.status === 403 ? 502 : res.status;
+      throw new HttpException(detail || res.statusText, status);
     }
     return (await res.json()) as T;
   }

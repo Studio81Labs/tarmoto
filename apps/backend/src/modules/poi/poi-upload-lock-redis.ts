@@ -21,8 +21,12 @@ export function createPoiUploadLockRedis(config: ConfigService): Redis {
     password: config.get<string>('TARMOTO_REDIS_PASSWORD') || undefined,
     // The lock methods issue one-shot commands; no blocking reads.
     maxRetriesPerRequest: null,
-    // Don't hammer Redis at boot if it's briefly down — the lock is a
-    // best-effort guard with a TTL backstop.
+    // `false` (the ioredis default) connects EAGERLY at construction time
+    // rather than deferring until the first command is issued. That eager
+    // boot-time connection is exactly why `PoiUploadLockRedisShutdownHook`
+    // below exists: without it closing the connection on Nest shutdown, the
+    // eagerly-opened socket would hang graceful shutdown / `openapi:gen` (see
+    // that class's doc comment).
     lazyConnect: false,
   });
 }
