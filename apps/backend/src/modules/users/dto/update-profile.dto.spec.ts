@@ -120,4 +120,21 @@ describe('UpdateProfileDto preferences validation', () => {
     const { errors } = await validatePreferences({ daily_km: 250 });
     expect(errors).toHaveLength(0);
   });
+
+  // Regression: `@IsOptional()` skips validators for explicit `null` too, so a
+  // PATCH like `{preferences: {format_locale: null}}` would sail past
+  // validation and the merge would persist a null into the JSONB even though
+  // the response contract declares these as optional STRINGS. Same
+  // undefined-only-skip rule as `language` (see the @ValidateIf note there).
+  it('rejects explicit null for units, format_locale, and timezone', async () => {
+    expect(
+      (await validatePreferences({ format_locale: null })).errors.length,
+    ).toBeGreaterThan(0);
+    expect(
+      (await validatePreferences({ timezone: null })).errors.length,
+    ).toBeGreaterThan(0);
+    expect(
+      (await validatePreferences({ units: null })).errors.length,
+    ).toBeGreaterThan(0);
+  });
 });

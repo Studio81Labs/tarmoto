@@ -73,8 +73,13 @@ class LatLngDto {
 }
 
 class UserPreferencesDto {
+  // These three use the undefined-only skip (`@ValidateIf`) rather than
+  // `@IsOptional()` for the same reason `language` does below: `@IsOptional()`
+  // also skips validation for explicit `null`, which would let a PATCH persist
+  // nulls into the JSONB despite the response contract declaring optional
+  // strings. `@ValidateIf` still runs the validators for `null`, which reject it.
   @ApiProperty({ enum: ['metric', 'imperial'], required: false })
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsIn(['metric', 'imperial'])
   units?: 'metric' | 'imperial';
 
@@ -85,8 +90,8 @@ class UserPreferencesDto {
    * of a silent null landing in the JSONB.
    */
   @ApiProperty({ required: false })
-  @IsOptional()
-  @Transform(({ value }) =>
+  @ValidateIf((_o, v) => v !== undefined)
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string'
       ? (canonicalizeFormatLocale(value) ?? value)
       : value,
@@ -96,7 +101,7 @@ class UserPreferencesDto {
 
   /** IANA display timezone (e.g. "Europe/Prague"); mirrors the rider's device. */
   @ApiProperty({ required: false })
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsTimeZone()
   @MaxLength(TIMEZONE_MAX_LENGTH)
   timezone?: string;
