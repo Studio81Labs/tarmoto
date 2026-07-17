@@ -594,33 +594,63 @@ describe("labelForDimension", () => {
 });
 
 // Builds a translator over a minimal en-only catalog stub (independent of the
-// real companion catalog) to prove `labelForDimension`/`unitForChallengeMetric`
-// actually route their return value through the supplied translator, rather
-// than just happening to still return the hardcoded English constant.
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…" / "XX …")
+// rather than an identity map. An identity map can't tell a real `t()` call
+// apart from a regression that bypasses `t()` and returns the raw canonical
+// English constant — both would produce the same string. With sentinel
+// values, a bypass regression returns the untranslated English constant and
+// these assertions fail.
 describe("gamification translator wiring", () => {
   const t = makeTranslator<string>({
     en: {
-      Distance: "Distance",
-      "Roads discovered": "Roads discovered",
-      "Hazards reported": "Hazards reported",
-      km: "km",
-      roads: "roads",
-      reports: "reports",
-      rides: "rides",
-      reviews: "reviews",
-      units: "units",
-      "{current} / {target} {unit}": "{current} / {target} {unit}",
-      "Maxed at {value}": "Maxed at {value}",
-      "Maxed at {value} {unit}": "Maxed at {value} {unit}",
+      Distance: "XX-Distance",
+      "Roads discovered": "XX-Roads",
+      "Hazards reported": "XX-Hazards",
+      "Distance Traveller": "XX-DistanceTraveller",
+      "Cumulative kilometres ridden across every bike.": "XX-CumulativeKm",
+      km: "XX-km",
+      roads: "XX-roads",
+      reports: "XX-reports",
+      rides: "XX-rides",
+      reviews: "XX-reviews",
+      units: "XX-units",
+      "{current} / {target} {unit}": "XX {current}/{target} {unit}",
+      "Maxed at {value}": "XX Maxed {value}",
+      "Maxed at {value} {unit}": "XX Maxed {value} {unit}",
     },
   });
 
-  it("labelForDimension returns English via the translator", () => {
-    expect(labelForDimension("total_distance_km", t)).toBe("Distance");
+  it("labelForDimension returns the translated sentinel, not the raw constant", () => {
+    expect(labelForDimension("total_distance_km", t)).toBe("XX-Distance");
   });
 
-  it("unitForChallengeMetric returns English via the translator", () => {
-    expect(unitForChallengeMetric("total_distance", t)).toBe("km");
+  it("unitForChallengeMetric returns the translated sentinel, not the raw constant", () => {
+    expect(unitForChallengeMetric("total_distance", t)).toBe("XX-km");
+  });
+
+  it("formatMilestoneLabel routes the progress template and unit through the translator", () => {
+    const milestone: Milestone = {
+      id: "roads",
+      name: "Roads",
+      description: "",
+      metric: "roadsDiscovered",
+      thresholds: [100, 250],
+    };
+    const progress = milestoneProgress(
+      milestone,
+      stats({ roadsDiscovered: 120 }),
+    );
+    // Exercises both the outer "{current} / {target} {unit}" template AND
+    // the MILESTONE_UNITS-via-t() unit lookup in the same assertion.
+    expect(formatMilestoneLabel(progress, format, t)).toBe(
+      "XX 120/250 XX-roads",
+    );
+  });
+
+  it("buildLiveSnapshot routes milestone name/description through the translator", () => {
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
+    expect(snap.milestones[0]?.name).toBe("XX-DistanceTraveller");
+    expect(snap.milestones[0]?.description).toBe("XX-CumulativeKm");
   });
 });
 
