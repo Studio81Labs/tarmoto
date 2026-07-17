@@ -1,3 +1,4 @@
+import type { Formatters } from "@tarmoto/shared";
 import { escapeHtmlAttribute } from "@/lib/embed-utils";
 
 export type RideWidgetVariant = "compact" | "landscape";
@@ -43,9 +44,10 @@ export function buildRideIframeCode(
 export function formatRideEmbedStat(
   value: number,
   noun: "view" | "click",
+  format: Formatters,
 ): string {
   const label = value === 1 ? noun : `${noun}s`;
-  return `${new Intl.NumberFormat("en-US").format(value)} ${label}`;
+  return `${format.integer(value)} ${label}`;
 }
 
 function widgetDimensions(variant: RideWidgetVariant): WidgetDimensions {

@@ -68,7 +68,7 @@ import {
   type CollectionRideRef,
   type RouteCollectionView,
 } from "@/lib/route-collections";
-import { formatDistance, formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 type LoadState =
   | {
       phase: "loading";
@@ -92,6 +92,7 @@ type LoadState =
  * `/community/collections/shared/[slug]` route, not this page.
  */
 export default function CollectionDetailPage() {
+  const format = useFormat();
   const { collectionId } = useParams<{
     collectionId: string;
   }>();
@@ -356,7 +357,7 @@ export default function CollectionDetailPage() {
             </span>
             <span className="text-fg-mute">·</span>
             <Mono className="text-[11px] text-fg-mute">
-              {t("Updated")} {formatRelativeTime(collection!.updatedAt)}
+              {t("Updated")} {format.relativeTime(collection!.updatedAt)}
             </Mono>
           </div>
         </div>
@@ -413,7 +414,7 @@ export default function CollectionDetailPage() {
           value={
             loadingMembers || memberLoadError
               ? "—"
-              : formatDistance(totalDistance)
+              : format.distanceKm(totalDistance)
           }
         />
         <MetricTile label={t("Followers")} value={collection!.followerCount} />
@@ -781,8 +782,8 @@ function RideRow({
   lines: number[][][] | undefined;
   onRemove: () => void;
 }) {
-  const displayName =
-    ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
+  const format = useFormat();
+  const displayName = ride.name ?? `Ride on ${format.date(ride.started_at)}`;
   return (
     <div className="flex items-center gap-3">
       <Link
@@ -797,7 +798,7 @@ function RideRow({
           <div className="mt-1 flex items-center gap-2 text-[11px] text-fg-dim">
             <span className="inline-flex items-center gap-1 text-fg-mute">
               <Calendar size={13} aria-hidden="true" />
-              {new Date(ride.started_at).toLocaleDateString()}
+              {format.date(ride.started_at)}
             </span>
             <span className="text-fg-mute">·</span>
             <span className="truncate">{t("You")}</span>
@@ -812,7 +813,7 @@ function RideRow({
       </Link>
       {ride.distance_km != null && (
         <Mono className="shrink-0 text-[13px] font-bold text-ink">
-          {formatDistance(ride.distance_km)}
+          {format.distanceKm(ride.distance_km)}
         </Mono>
       )}
       <StatusPill status={ride.status} />
@@ -867,6 +868,7 @@ function RoutePickerModal({
   onClose: () => void;
   onAdd: (input: { rideIds: string[] }) => void;
 }) {
+  const format = useFormat();
   const [selectedRides, setSelectedRides] = useState<Set<string>>(
     () => new Set(),
   );
@@ -884,11 +886,11 @@ function RoutePickerModal({
     const needle = search.trim().toLowerCase();
     if (!needle) return rides;
     return rides.filter((r) => {
-      const fallbackName = `Ride on ${new Date(r.started_at).toLocaleDateString()}`;
+      const fallbackName = `Ride on ${format.date(r.started_at)}`;
       const haystack = `${r.name ?? fallbackName} ${r.ride_type}`.toLowerCase();
       return haystack.includes(needle);
     });
-  }, [rides, search]);
+  }, [rides, search, format]);
   const toggle = (id: string) => {
     setSelectedRides((prev) => {
       const next = new Set(prev);
@@ -1050,6 +1052,7 @@ function RidePickerList({
   selected: Set<string>;
   onToggle: (id: string) => void;
 }) {
+  const format = useFormat();
   if (loading) {
     return (
       <div className="py-10 text-center text-sm text-fg-dim">
@@ -1105,12 +1108,11 @@ function RidePickerList({
     <ul className="flex flex-col gap-2 pb-1">
       {visibleRides.map((ride) => {
         const displayName =
-          ride.name ??
-          `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
-        const date = new Date(ride.started_at).toLocaleDateString();
+          ride.name ?? `Ride on ${format.date(ride.started_at)}`;
+        const date = format.date(ride.started_at);
         const meta =
           ride.distance_km != null
-            ? `${date} · ${formatDistance(ride.distance_km)}`
+            ? `${date} · ${format.distanceKm(ride.distance_km)}`
             : date;
         return (
           <PickerRow

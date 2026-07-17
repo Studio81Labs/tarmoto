@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Activity, CalendarDays, Plus, Sparkles } from "lucide-react";
 import { Card, Stamp, MetricTile } from "@tarmoto/ui";
+import { getServerFormatters } from "@/format/server";
 import { RouteEmbedPanel } from "./_components/RouteEmbedPanel";
 import {
   PublicShareFooter,
@@ -14,11 +15,7 @@ import {
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { fetchSharedRide } from "@/lib/shared-rides";
 import { siteUrl } from "@/lib/site";
-import {
-  formatRelativeTime,
-  formatRideType,
-  splitFormattedDistance,
-} from "@/lib/utils";
+import { formatRideType } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +33,7 @@ export default async function SharedRidePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+  const format = await getServerFormatters();
   const ride = await fetchSharedRide(token);
   if (!ride) notFound();
   const pageUrl = `${siteUrl()}/rides/shared/${token}`;
@@ -46,10 +44,8 @@ export default async function SharedRidePage({
   const rideLabel = `${ride.rider_name} · ${formatRideType(ride.ride_type)} ride`;
 
   const distance =
-    ride.distance_km != null
-      ? splitFormattedDistance(ride.distance_km, "metric")
-      : null;
-  const duration = splitDuration(ride.duration_min);
+    ride.distance_km != null ? format.splitDistanceKm(ride.distance_km) : null;
+  const duration = splitDuration(ride.duration_min, format);
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -74,7 +70,7 @@ export default async function SharedRidePage({
           </p>
           <div className="mt-[18px] flex flex-wrap gap-2.5">
             <SharePill icon={<CalendarDays size={13} />}>
-              {formatRelativeTime(ride.started_at)}
+              {format.relativeTime(ride.started_at)}
             </SharePill>
             <SharePill icon={<Activity size={13} />}>
               {t("{count} views", { count: ride.view_count })}
@@ -116,7 +112,7 @@ export default async function SharedRidePage({
             label={t("Quality")}
             value={
               ride.avg_road_quality != null
-                ? ride.avg_road_quality.toFixed(1)
+                ? format.decimal(ride.avg_road_quality, 1)
                 : "—"
             }
             {...(ride.avg_road_quality != null ? { unit: "/5" } : {})}
@@ -124,7 +120,9 @@ export default async function SharedRidePage({
           <MetricTile
             label={t("Curviness")}
             value={
-              ride.avg_curviness != null ? ride.avg_curviness.toFixed(1) : "—"
+              ride.avg_curviness != null
+                ? format.decimal(ride.avg_curviness, 1)
+                : "—"
             }
           />
         </div>

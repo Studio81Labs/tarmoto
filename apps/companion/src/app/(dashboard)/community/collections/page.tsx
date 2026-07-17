@@ -47,7 +47,7 @@ import {
   type RouteCollectionView,
 } from "@/lib/route-collections";
 import type { RouteCollectionVisibility } from "@/lib/api";
-import { formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 interface CollectionInputForm {
   title: string;
   description: string;
@@ -339,6 +339,7 @@ function CollectionCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const format = useFormat();
   const [menuOpen, setMenuOpen] = useState(false);
   // Distance + missing-count breakdowns deliberately live on the detail page,
   // not here. The list endpoint returns a summary (no per-item ids), so any
@@ -381,7 +382,7 @@ function CollectionCard({
 
         <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
-          {formatRelativeTime(collection.updatedAt)}
+          {format.relativeTime(collection.updatedAt)}
         </p>
       </Link>
 
@@ -433,6 +434,7 @@ function FollowedCollectionCard({
   collection: RouteCollectionView;
   onUnfollow: () => void;
 }) {
+  const format = useFormat();
   return (
     <div className="relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong">
       <Link
@@ -474,7 +476,7 @@ function FollowedCollectionCard({
 
         <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
-          {formatRelativeTime(collection.updatedAt)}
+          {format.relativeTime(collection.updatedAt)}
         </p>
       </Link>
 

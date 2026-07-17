@@ -1,12 +1,35 @@
 import { describe, expect, it } from "vitest";
+import { createFormatters } from "@tarmoto/shared";
 import {
   buildTripClosureRoutes,
   countClosuresBySeverity,
   detourLengthKm,
+  formatClosureWindow,
   previewDateForMonth,
   type PlannerClosure,
 } from "../closures-summary";
 import type { Trip } from "../types";
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
+// Two non-UTC contexts — same convention as FormatProvider.test.tsx's
+// Europe/Prague. Prague (CEST, UTC+2 in July) is the discriminating one:
+// 22:30Z + 2h crosses into the next UTC-instant day, so an instant-based
+// formatter (`date()`/`dateRange()`) would render "Jul 1" here where the
+// UTC-pinned `calendarDate*` must still say "Jun 30" — verified directly
+// against Intl. New York (EDT, UTC-4 in July) doesn't cross for this
+// instant, so it's a same-result sanity check in the other direction.
+const pragueFormat = createFormatters({
+  locale: "en",
+  units: "metric",
+  timeZone: "Europe/Prague",
+});
+const newYorkFormat = createFormatters({
+  locale: "en",
+  units: "metric",
+  timeZone: "America/New_York",
+});
 
 function closure(
   overrides: Partial<PlannerClosure> & { id: string },
@@ -93,6 +116,82 @@ describe("detourLengthKm", () => {
     expect(detourLengthKm(closure({ id: "no-detour", detour: null }))).toBe(
       null,
     );
+  });
+});
+
+describe("formatClosureWindow", () => {
+  it("renders a bounded window as a compact UTC calendar-date range", () => {
+    // Intl's formatRange wraps the en dash in thin spaces (U+2009), not
+    // regular spaces — spelled out explicitly rather than pasted as an
+    // invisible literal.
+    expect(
+      formatClosureWindow(
+        closure({
+          id: "bounded",
+          starts_at: "2026-07-01T00:00:00Z",
+          ends_at: "2026-07-18T00:00:00Z",
+        }),
+        format,
+      ),
+    ).toBe("Jul 1 – 18");
+  });
+
+  it("renders an open-ended window as a calendar date + 'onward'", () => {
+    expect(
+      formatClosureWindow(
+        closure({
+          id: "open-ended",
+          starts_at: "2026-07-01T00:00:00Z",
+          ends_at: null,
+        }),
+        format,
+      ),
+    ).toBe("Jul 1, 2026 onward");
+  });
+
+  it("keeps the start day stable across a month boundary regardless of the formatter's timezone context (open-ended)", () => {
+    // 22:30Z on the last day of June. `calendarDate` is UTC-pinned by
+    // construction (unlike the instant-based `date()`), so the rendered
+    // calendar day must NOT shift even when the Formatters context is
+    // built for a real viewer timezone — Prague (CEST, UTC+2) would roll
+    // this into July under instant-based formatting, which is exactly the
+    // bug this guards against.
+    const lateJuneClosure = closure({
+      id: "day-shift-open",
+      starts_at: "2026-06-30T22:30:00Z",
+      ends_at: null,
+    });
+
+    const utc = formatClosureWindow(lateJuneClosure, format);
+    const prague = formatClosureWindow(lateJuneClosure, pragueFormat);
+    const newYork = formatClosureWindow(lateJuneClosure, newYorkFormat);
+
+    expect(utc).toBe("Jun 30, 2026 onward");
+    expect(prague).toBe(utc);
+    expect(newYork).toBe(utc);
+  });
+
+  it("keeps the start day stable across a month boundary regardless of the formatter's timezone context (bounded)", () => {
+    // Same 22:30Z start as the open-ended case above, but now with an
+    // end date, exercising `calendarDateRange` instead of `calendarDate`.
+    // Without this case, swapping `calendarDateRange` for the instant-based
+    // `dateRange` would pass every other test in this file unnoticed — the
+    // other bounded-window test only ever runs under the default (UTC)
+    // formatter context.
+    const lateJuneClosure = closure({
+      id: "day-shift-bounded",
+      starts_at: "2026-06-30T22:30:00Z",
+      ends_at: "2026-07-05T00:00:00Z",
+    });
+
+    const utc = formatClosureWindow(lateJuneClosure, format);
+    const prague = formatClosureWindow(lateJuneClosure, pragueFormat);
+    const newYork = formatClosureWindow(lateJuneClosure, newYorkFormat);
+
+    // Intl's formatRange wraps the en dash (U+2013) in thin spaces (U+2009).
+    expect(utc).toBe("Jun 30 – Jul 5");
+    expect(prague).toBe(utc);
+    expect(newYork).toBe(utc);
   });
 });
 

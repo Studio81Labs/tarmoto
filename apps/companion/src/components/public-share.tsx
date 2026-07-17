@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Card, Mono, TarmotoMark } from "@tarmoto/ui";
+import type { Formatters } from "@tarmoto/shared";
 import { t } from "@/i18n";
 import type { RoutePreview } from "@/lib/ride-detail";
-import { formatDurationCompact } from "@/lib/utils";
 
 /**
  * Shared chrome for the public (unauthenticated) share pages
@@ -332,12 +332,15 @@ export function ShareCtaLink({
 }
 
 /** Split a duration (minutes) into a big value + small unit for a MetricTile. */
-export function splitDuration(min: number | null): {
+export function splitDuration(
+  min: number | null,
+  format: Formatters,
+): {
   value: string;
   unit?: string;
 } {
   if (min == null) return { value: "—" };
-  const compact = formatDurationCompact(min); // "4h 12m" or "52m"
+  const compact = format.durationCompact(min); // "4h 12m" or "52m"
   const space = compact.indexOf(" ");
   if (space < 0) return { value: compact };
   return { value: compact.slice(0, space), unit: compact.slice(space + 1) };

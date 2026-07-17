@@ -8,6 +8,7 @@ import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi, type UpdateProfileInput } from "@/lib/api";
 import { persistUnitPreference } from "@/lib/unit-preference";
 import { buildLinkAccountDeepLink } from "@/lib/account-link";
+import { useFormat } from "@/format/FormatProvider";
 import type { UnitSystem } from "@tarmoto/shared";
 import {
   Button,
@@ -26,6 +27,7 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 type CopyState = "idle" | "copied" | "error";
 type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
 export default function ProfilePage() {
+  const format = useFormat();
   const user = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
   const queryClient = useQueryClient();
@@ -110,12 +112,7 @@ export default function ProfilePage() {
     hydratePreferences();
   }, [hydratePreferences]);
   const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
-  const joinedLabel = joinedAt
-    ? new Date(joinedAt).toLocaleDateString(undefined, {
-        month: "short",
-        year: "numeric",
-      })
-    : null;
+  const joinedLabel = joinedAt ? format.monthYear(joinedAt) : null;
   // Spec pairs `Save changes` with `Cancel`. Cancel rolls every edited
   // field back to the last server-confirmed value, drops any save
   // errors, and clears the per-field dirty markers so a subsequent

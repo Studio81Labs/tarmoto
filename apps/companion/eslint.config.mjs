@@ -11,6 +11,47 @@ import next from "@next/eslint-plugin-next";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
+// Shared by both `no-restricted-syntax` blocks below (the broad
+// **/*.{ts,tsx,js,jsx} block and the src-scoped block). Flat config resolves
+// two matching configs that set the *same* rule key by letting the later one
+// win outright — it does not concatenate `no-restricted-syntax` option
+// arrays — so the src-scoped block must re-list these selectors (plus its own
+// locale-formatting additions) rather than relying on the broad block. A
+// single shared array keeps the two copies from drifting out of sync.
+const restrictedSyntaxSelectors = [
+  // Guard the #861 migration: the companion talks to the backend only
+  // through the generated OpenAPI client. Flag any raw `fetch()` whose URL
+  // is built from an API base/host so a new raw helper can't creep back in.
+  {
+    selector:
+      "CallExpression[callee.name='fetch'] > TemplateLiteral > Identifier[name=/^API_(BASE|HOST)/]",
+    message:
+      "Don't fetch the backend directly. Use the generated client — `api` / `apiServer` from `@/lib/api` (see #861).",
+  },
+  // Guard the form-control migration (#1006/#1008): rider-facing form
+  // fields render through @tarmoto/ui (Input, PasswordInput, Select,
+  // Combobox, Textarea, Checkbox, DatePicker, CopyField, …) so the
+  // field chrome stays consistent. Deliberate native elements — hidden
+  // file pickers, sr-only AT/test bridges, dark-theme road/embed
+  // surfaces, bespoke inline editors — carry a disable comment stating
+  // the reason.
+  {
+    selector: "JSXOpeningElement[name.name='input']",
+    message:
+      "Use a @tarmoto/ui form control instead of a native <input>. If this element is deliberate (hidden file picker, sr-only bridge, dark surface, inline editor), add a disable comment with the reason.",
+  },
+  {
+    selector: "JSXOpeningElement[name.name='select']",
+    message:
+      "Use @tarmoto/ui Select/Combobox instead of a native <select>. If this element is deliberate (sr-only bridge), add a disable comment with the reason.",
+  },
+  {
+    selector: "JSXOpeningElement[name.name='textarea']",
+    message:
+      "Use @tarmoto/ui Textarea instead of a native <textarea>. If this element is deliberate (dark surface, read-only embed code), add a disable comment with the reason.",
+  },
+];
+
 export default [
   {
     ignores: [
@@ -50,38 +91,57 @@ export default [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      // Guard the #861 migration: the companion talks to the backend only
-      // through the generated OpenAPI client. Flag any raw `fetch()` whose URL
-      // is built from an API base/host so a new raw helper can't creep back in.
+      "no-restricted-syntax": ["error", ...restrictedSyntaxSelectors],
+    },
+  },
+  {
+    // Locale-formatting guard: all display formatting goes through the
+    // src/format seam (useFormat/getServerFormatters). Raw toLocale*/Intl
+    // constructions bypass the rider's format preferences.
+    //
+    // NOTE: this object's `files` (src/**/*.{ts,tsx}) overlaps the guard
+    // block above (**/*.{ts,tsx,js,jsx}), and ESLint flat config resolves two
+    // matching configs that set the *same* rule key by letting the later one
+    // win outright — it does not concatenate the `no-restricted-syntax`
+    // option arrays. So this block re-spreads the shared
+    // `restrictedSyntaxSelectors` (raw-fetch #861 + native-form-control
+    // #1006/#1008) alongside its own locale selectors; dropping the spread
+    // would silently turn those guards off for every file this block also
+    // matches.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/format/**",
+      "src/**/*.test.{ts,tsx}",
+      "src/**/*.spec.{ts,tsx}",
+    ],
+    rules: {
       "no-restricted-syntax": [
         "error",
+        ...restrictedSyntaxSelectors,
+        {
+          selector: "CallExpression[callee.property.name='toLocaleString']",
+          message:
+            "Use useFormat()/getServerFormatters() (src/format) instead of toLocaleString — it applies the rider's format preferences.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleDateString']",
+          message:
+            "Use format.date()/shortDate()/calendarDate() from src/format instead of toLocaleDateString.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleTimeString']",
+          message: "Use format.time()/dateTime() from src/format.",
+        },
+        {
+          selector: "NewExpression[callee.object.name='Intl']",
+          message:
+            "Construct Intl formatters only inside src/format (the seam memoizes and applies preferences). Timezone DETECTION via Intl.DateTimeFormat().resolvedOptions() without `new` remains allowed.",
+        },
         {
           selector:
-            "CallExpression[callee.name='fetch'] > TemplateLiteral > Identifier[name=/^API_(BASE|HOST)/]",
+            "CallExpression[callee.object.name='Intl'][callee.property.name='NumberFormat']",
           message:
-            "Don't fetch the backend directly. Use the generated client — `api` / `apiServer` from `@/lib/api` (see #861).",
-        },
-        // Guard the form-control migration (#1006/#1008): rider-facing form
-        // fields render through @tarmoto/ui (Input, PasswordInput, Select,
-        // Combobox, Textarea, Checkbox, DatePicker, CopyField, …) so the
-        // field chrome stays consistent. Deliberate native elements — hidden
-        // file pickers, sr-only AT/test bridges, dark-theme road/embed
-        // surfaces, bespoke inline editors — carry a disable comment stating
-        // the reason.
-        {
-          selector: "JSXOpeningElement[name.name='input']",
-          message:
-            "Use a @tarmoto/ui form control instead of a native <input>. If this element is deliberate (hidden file picker, sr-only bridge, dark surface, inline editor), add a disable comment with the reason.",
-        },
-        {
-          selector: "JSXOpeningElement[name.name='select']",
-          message:
-            "Use @tarmoto/ui Select/Combobox instead of a native <select>. If this element is deliberate (sr-only bridge), add a disable comment with the reason.",
-        },
-        {
-          selector: "JSXOpeningElement[name.name='textarea']",
-          message:
-            "Use @tarmoto/ui Textarea instead of a native <textarea>. If this element is deliberate (dark surface, read-only embed code), add a disable comment with the reason.",
+            "Construct number formatters only inside src/format — Intl.NumberFormat() without new bypasses the rider's format preferences.",
         },
       ],
     },

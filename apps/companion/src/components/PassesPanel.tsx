@@ -6,6 +6,7 @@ import { Select } from "@tarmoto/ui";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { ConditionStatusLine } from "@/components/ConditionStatusLine";
 import { deriveConditionStatus } from "@/lib/conditions-status";
+import { useFormat } from "@/format/FormatProvider";
 import {
   MONTH_NAMES,
   STATUS_DISPLAY_ORDER,
@@ -367,6 +368,7 @@ function PassRow({
   pass: MountainPass;
   onFocus?: ((pass: MountainPass) => void) | undefined;
 }) {
+  const format = useFormat();
   const body = (
     <>
       <span
@@ -376,8 +378,7 @@ function PassRow({
       <span className="flex-1 min-w-0">
         <span className="text-ink truncate block">{pass.name}</span>
         <span className="text-fg-mute">
-          {pass.elevation_m.toLocaleString()}
-          {t("m ")}
+          {format.elevation(pass.elevation_m)}
           {pass.region ? ` · ${pass.region}` : ""}
         </span>
       </span>
@@ -416,6 +417,7 @@ function OnRoutePassCard({
   onFocus?: ((pass: MountainPass) => void) | undefined;
   onReroute?: ((pass: MountainPass) => void) | undefined;
 }) {
+  const format = useFormat();
   return (
     <li className="rounded-xl border border-line bg-cream p-3">
       <button
@@ -440,8 +442,7 @@ function OnRoutePassCard({
           </span>
         </div>
         <p className="mt-1 text-xs text-fg-mute">
-          {pass.elevation_m.toLocaleString()}
-          {t("m ")}
+          {format.elevation(pass.elevation_m)}
           {pass.region ? ` \u00B7 ${pass.region}` : ""}
         </p>
       </button>

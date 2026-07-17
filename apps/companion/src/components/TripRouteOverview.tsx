@@ -1,5 +1,5 @@
 import { buildRoutePreviewFromLines, type RoutePoint } from "@/lib/ride-detail";
-import { formatDistance } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { t } from "@/i18n";
 
 /**
@@ -35,11 +35,12 @@ export function TripRouteOverview({
   variant = "light",
   label,
 }: TripRouteOverviewProps) {
+  const format = useFormat();
   const preview = buildRoutePreviewFromLines(lines, 960, 14);
   const dark = variant === "dark";
 
   const stats = [
-    distanceKm != null ? formatDistance(distanceKm) : null,
+    distanceKm != null ? format.distanceKm(distanceKm) : null,
     dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount }),
     region || null,
   ].filter((s): s is string => Boolean(s));

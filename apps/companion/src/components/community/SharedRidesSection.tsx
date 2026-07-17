@@ -20,15 +20,10 @@ import { Lock, Share2 } from "lucide-react";
 import { Mono, QualityBars, Stamp } from "@tarmoto/ui";
 import { formatCount } from "@tarmoto/shared";
 import { fetchSharedRides, type UserSharedRide } from "@/lib/shared-rides";
-import {
-  formatDistance,
-  formatDuration,
-  formatShortDate,
-  scoreToQualityTier,
-} from "@/lib/utils";
+import { scoreToQualityTier } from "@/lib/utils";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { useAuthStore } from "@/stores/auth";
-import { usePreferencesStore } from "@/stores/preferences";
+import { useFormat } from "@/format/FormatProvider";
 
 const PAGE_SIZE = 5;
 
@@ -46,6 +41,7 @@ export function SharedRidesSection({
   isSelf,
   displayName,
 }: SharedRidesSectionProps) {
+  const format = useFormat();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [items, setItems] = useState<UserSharedRide[]>([]);
   const [total, setTotal] = useState(0);
@@ -101,7 +97,9 @@ export function SharedRidesSection({
         </div>
         {phase === "ready" && total > 0 && (
           <Mono className="shrink-0 text-[11px] text-fg-dim">
-            {t("{count} total views", { count: formatCount(totalViews) })}
+            {t("{count} total views", {
+              count: formatCount(totalViews, format.locale),
+            })}
           </Mono>
         )}
       </header>
@@ -143,10 +141,10 @@ function SharedRideRow({
   ride: UserSharedRide;
   isSelf: boolean;
 }) {
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   const preview = buildRoutePreview(ride.route_geometry, 200, 6);
   const tier = scoreToQualityTier(ride.avg_road_quality);
-  const title = ride.name?.trim() || formatShortDate(ride.started_at);
+  const title = ride.name?.trim() || format.shortDate(ride.started_at);
   const showPrivatePill = isSelf && !ride.is_public;
 
   return (
@@ -186,26 +184,31 @@ function SharedRideRow({
           )}
         </div>
         <Mono className="text-[10px] text-fg-mute">
-          {formatShortDate(ride.started_at)}
+          {format.shortDate(ride.started_at)}
         </Mono>
       </div>
 
       <RowMetric
         label={t("Distance")}
         value={
-          ride.distance_km != null
-            ? formatDistance(ride.distance_km, unitSystem)
-            : "—"
+          ride.distance_km != null ? format.distanceKm(ride.distance_km) : "—"
         }
       />
       <RowMetric
         label={t("Duration")}
-        value={formatDuration(ride.duration_min)}
+        value={
+          ride.duration_min != null ? format.duration(ride.duration_min) : "—"
+        }
       />
       <RowMetric
         label={t("Views")}
         value={
-          <Mono>{formatCount(Math.max(0, Math.round(ride.view_count)))}</Mono>
+          <Mono>
+            {formatCount(
+              Math.max(0, Math.round(ride.view_count)),
+              format.locale,
+            )}
+          </Mono>
         }
       />
 

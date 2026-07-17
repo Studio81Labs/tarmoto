@@ -21,10 +21,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
+import type { Formatters } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
+import { useFormat } from "@/format/FormatProvider";
 import {
   Button,
   PageHeader as DashboardPageHeader,
@@ -49,6 +51,7 @@ import {
   type ChallengeMeta,
   type GamificationSnapshot,
   type LeaderboardDimensionKey,
+  type LeaderboardMetric,
   type MilestoneProgress,
   type RegionalDimensionLeaderboard,
   type RegionalLeaderboardEntry,
@@ -114,6 +117,7 @@ type LoadState =
       message: string;
     };
 export default function AchievementsPage() {
+  const format = useFormat();
   const userId = useAuthStore((s) => s.user?.id);
   const [state, setState] = useState<LoadState>({ status: "idle" });
   // Tracks every join currently in flight. Using a set instead of a single
@@ -306,6 +310,7 @@ export default function AchievementsPage() {
       joiningIds={joiningIds}
       joinError={joinError}
       onJoin={handleJoin}
+      format={format}
     />
   );
 }
@@ -339,11 +344,13 @@ function Dashboard({
   joiningIds,
   joinError,
   onJoin,
+  format,
 }: {
   snapshot: GamificationSnapshot;
   joiningIds: ReadonlySet<string>;
   joinError: string | null;
   onJoin: (id: string) => void;
+  format: Formatters;
 }) {
   const visibleChallenges = useMemo(
     () => activeChallenges(snapshot.challenges),
@@ -361,9 +368,12 @@ function Dashboard({
       <TierHero
         earnedBadgeCount={earnedBadgeCount}
         activeCount={visibleChallenges.length}
+        format={format}
       />
 
-      {snapshot.seasonal && <SeasonalBanner seasonal={snapshot.seasonal} />}
+      {snapshot.seasonal && (
+        <SeasonalBanner seasonal={snapshot.seasonal} format={format} />
+      )}
 
       <section aria-labelledby="badges-heading">
         <SectionHeader
@@ -385,7 +395,7 @@ function Dashboard({
             )}
           />
         ) : (
-          <BadgeGrid badges={snapshot.badges} />
+          <BadgeGrid badges={snapshot.badges} format={format} />
         )}
       </section>
 
@@ -425,13 +435,14 @@ function Dashboard({
                 meta={snapshot.challengeMeta[challenge.id]}
                 joining={joiningIds.has(challenge.id)}
                 onJoin={onJoin}
+                format={format}
               />
             ))}
           </div>
         )}
       </section>
 
-      <RegionalLeaderboardsSection />
+      <RegionalLeaderboardsSection format={format} />
 
       {nextMilestone && (
         <section aria-labelledby="milestone-heading">
@@ -441,7 +452,7 @@ function Dashboard({
             title={t("Next milestone")}
             subtitle="What you're working toward right now."
           />
-          <MilestoneCard progress={nextMilestone} />
+          <MilestoneCard progress={nextMilestone} format={format} />
         </section>
       )}
     </div>
@@ -470,9 +481,11 @@ function PageHeader() {
 function TierHero({
   earnedBadgeCount,
   activeCount,
+  format,
 }: {
   earnedBadgeCount: number;
   activeCount: number;
+  format: Formatters;
 }) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const [progression, setProgression] = useState<RiderProgression | null>(null);
@@ -539,7 +552,7 @@ function TierHero({
           <div className="mt-1 text-[12px] text-fg-on-dark-mute">
             {t("Level {level} · {xp} XP", {
               level: progression.level,
-              xp: progression.xp.toLocaleString(),
+              xp: format.integer(progression.xp),
             })}
           </div>
         </div>
@@ -558,7 +571,7 @@ function TierHero({
               </div>
               <Mono className="mt-1.5 block text-[11px] text-fg-on-dark-mute">
                 {t("{xp} XP to go", {
-                  xp: progression.xp_to_next_tier.toLocaleString(),
+                  xp: format.integer(progression.xp_to_next_tier),
                 })}
               </Mono>
             </>
@@ -569,11 +582,11 @@ function TierHero({
 
         <div className="flex justify-start gap-[14px] md:justify-end">
           <HeroStat
-            value={earnedBadgeCount.toLocaleString()}
+            value={format.integer(earnedBadgeCount)}
             label={t("Badges")}
             accent
           />
-          <HeroStat value={activeCount.toLocaleString()} label={t("Active")} />
+          <HeroStat value={format.integer(activeCount)} label={t("Active")} />
           <HeroStat value={rank != null ? `#${rank}` : "—"} label={t("Rank")} />
         </div>
       </div>
@@ -606,9 +619,14 @@ function HeroStat({
   );
 }
 // ── Seasonal banner ──
-function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
+function SeasonalBanner({
+  seasonal,
+  format,
+}: {
+  seasonal: SeasonalChallenge;
+  format: Formatters;
+}) {
   const fraction = seasonalProgress(seasonal);
-  const percent = Math.round(fraction * 100);
   const daysLeft = formatDaysRemaining(seasonal.endsAt);
   return (
     <section
@@ -635,35 +653,49 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
         <div className="mt-5 flex flex-col gap-2 max-w-md">
           <div className="flex items-center justify-between text-xs text-ink">
             <span className="tabular-nums">
-              {Math.round(seasonal.current).toLocaleString()} /{" "}
-              {seasonal.target.toLocaleString()} {seasonal.unit}
+              {seasonal.unit === "km"
+                ? `${format.splitDistanceKm(seasonal.current).value} / ${format.distanceKm(seasonal.target)}`
+                : `${format.integer(seasonal.current)} / ${format.integer(seasonal.target)} ${seasonal.unit}`}
             </span>
             <span className="text-fg-dim">{daysLeft}</span>
           </div>
-          <ProgressBar fraction={fraction} ariaLabel={`${percent}% complete`} />
+          <ProgressBar
+            fraction={fraction}
+            ariaLabel={`${format.percent(fraction)} complete`}
+          />
         </div>
       </div>
     </section>
   );
 }
 // ── Badges ──
-function BadgeGrid({ badges }: { badges: BadgeType[] }) {
+function BadgeGrid({
+  badges,
+  format,
+}: {
+  badges: BadgeType[];
+  format: Formatters;
+}) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
       {badges.map((badge) => (
-        <BadgeCard key={badge.id} badge={badge} />
+        <BadgeCard key={badge.id} badge={badge} format={format} />
       ))}
     </div>
   );
 }
-function BadgeCard({ badge }: { badge: BadgeType }) {
+function BadgeCard({
+  badge,
+  format,
+}: {
+  badge: BadgeType;
+  format: Formatters;
+}) {
   const Icon = BADGE_ICONS[badge.icon] ?? Medal;
   const earned = Boolean(badge.earnedAt);
   const earnedLabel =
     earned && badge.earnedAt
-      ? new Date(badge.earnedAt)
-          .toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
-          .toUpperCase()
+      ? format.shortDate(badge.earnedAt).toUpperCase()
       : null;
   return (
     <div
@@ -675,7 +707,7 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
       )}
       title={
         earned && badge.earnedAt
-          ? `Earned ${new Date(badge.earnedAt).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}`
+          ? `Earned ${format.monthYear(badge.earnedAt)}`
           : badge.description
       }
     >
@@ -710,11 +742,13 @@ function ChallengeCard({
   meta,
   joining,
   onJoin,
+  format,
 }: {
   challenge: Challenge;
   meta: ChallengeMeta | undefined;
   joining: boolean;
   onJoin: (id: string) => void;
+  format: Formatters;
 }) {
   const style = CATEGORY_STYLE[challenge.category];
   const fraction = challengeProgress(challenge);
@@ -740,7 +774,7 @@ function ChallengeCard({
 
       <div
         role="progressbar"
-        aria-label={`${challenge.name}: ${percent}% complete`}
+        aria-label={`${challenge.name}: ${format.percent(fraction)} complete`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(safePercent)}
@@ -754,13 +788,27 @@ function ChallengeCard({
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-fg-dim">
         <Mono>
-          {Math.round(challenge.current).toLocaleString()} /{" "}
-          {challenge.target.toLocaleString()}
-          {challenge.unit && (
-            <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+          {challenge.unit === "km" ? (
+            // Distance challenges convert with the rider's units — both
+            // figures and the label derive from one formatter.
+            <>
+              {format.splitDistanceKm(challenge.current).value} /{" "}
+              {format.splitDistanceKm(challenge.target).value}
+              <span className="ml-1 text-fg-mute">
+                {format.splitDistanceKm(challenge.target).unit}
+              </span>
+            </>
+          ) : (
+            <>
+              {format.integer(challenge.current)} /{" "}
+              {format.integer(challenge.target)}
+              {challenge.unit && (
+                <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+              )}
+            </>
           )}
         </Mono>
-        <Mono>{percent}%</Mono>
+        <Mono>{format.percent(fraction)}</Mono>
       </div>
 
       <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-line pt-3 text-[11px] text-fg-mute">
@@ -775,7 +823,7 @@ function ChallengeCard({
         {meta && (
           <span className="inline-flex shrink-0 items-center gap-1 text-fg-dim">
             <Users size={11} aria-hidden="true" />
-            {meta.participantCount.toLocaleString()}
+            {format.integer(meta.participantCount)}
           </span>
         )}
       </div>
@@ -836,7 +884,7 @@ type LeaderboardLoad =
  * has been resolved from `/users/me`; until then we surface the global
  * ranking so the section is never blank.
  */
-function RegionalLeaderboardsSection() {
+function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
   const [homeRegion, setHomeRegion] = useState<string | null>(null);
   const [scope, setScope] = useState<RegionScope>("global");
   const [dimension, setDimension] =
@@ -978,15 +1026,17 @@ function RegionalLeaderboardsSection() {
           )}
         />
       ) : (
-        <RegionalLeaderboardTable dim={dim} />
+        <RegionalLeaderboardTable dim={dim} format={format} />
       )}
     </section>
   );
 }
 function RegionalLeaderboardTable({
   dim,
+  format,
 }: {
   dim: RegionalDimensionLeaderboard;
+  format: Formatters;
 }) {
   // Surface `me` even when outside the top N. The backend already excludes
   // duplicates by design — `entries` and `me` only ever overlap on the same
@@ -1007,7 +1057,8 @@ function RegionalLeaderboardTable({
         <span role="columnheader">#</span>
         <span role="columnheader">{t("Rider")}</span>
         <span role="columnheader" className="text-right">
-          {dim.unit}
+          {/* The distance dimension's rows convert — its header must too. */}
+          {dim.unit === "km" ? format.splitDistanceKm(1).unit : dim.unit}
         </span>
       </div>
       <div>
@@ -1017,6 +1068,7 @@ function RegionalLeaderboardTable({
             entry={entry}
             unit={dim.unit}
             zebra={i % 2 === 1}
+            format={format}
           />
         ))}
         {showOutsideTop && dim.me && (
@@ -1025,6 +1077,7 @@ function RegionalLeaderboardTable({
             unit={dim.unit}
             outsideTop
             zebra={dim.entries.length % 2 === 1}
+            format={format}
           />
         )}
       </div>
@@ -1036,11 +1089,13 @@ function RegionalLeaderboardRow({
   unit,
   outsideTop = false,
   zebra = false,
+  format,
 }: {
   entry: RegionalLeaderboardEntry;
   unit: string;
   outsideTop?: boolean;
   zebra?: boolean;
+  format: Formatters;
 }) {
   const isMe = entry.isMe;
   const topThree = entry.rank >= 1 && entry.rank <= 3;
@@ -1096,15 +1151,22 @@ function RegionalLeaderboardRow({
           isMe ? "text-accent" : "text-ink",
         )}
       >
-        {Math.round(entry.value).toLocaleString()} {unit}
+        {unit === "km"
+          ? format.distanceKm(entry.value)
+          : `${format.integer(entry.value)} ${unit}`}
       </span>
     </Link>
   );
 }
 // ── Milestone ──
-function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
-  const percent = Math.round(progress.fraction * 100);
-  const label = formatMilestoneLabel(progress);
+function MilestoneCard({
+  progress,
+  format,
+}: {
+  progress: MilestoneProgress;
+  format: Formatters;
+}) {
+  const label = formatMilestoneLabel(progress, format);
   return (
     <div className="rounded-[14px] border border-line bg-cream p-5">
       <div className="flex items-start justify-between gap-4">
@@ -1117,7 +1179,7 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
           </p>
         </div>
         <span className="shrink-0 text-xs text-fg-dim tabular-nums">
-          {percent}%
+          {format.percent(progress.fraction)}
         </span>
       </div>
 
@@ -1127,7 +1189,12 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
           {progress.nextThreshold !== null && (
             <span className="text-fg-dim">
               {t("{count} to go", {
-                count: Math.round(progress.remaining).toLocaleString(),
+                // Distance milestones convert `remaining` (a km figure)
+                // with the rider's units; count metrics stay plain.
+                count:
+                  progress.milestone.metric === "totalKm"
+                    ? format.distanceKm(progress.remaining)
+                    : format.integer(progress.remaining),
               })}
             </span>
           )}
@@ -1138,6 +1205,8 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
       <TierTrack
         thresholds={[...progress.milestone.thresholds].sort((a, b) => a - b)}
         current={progress.current}
+        metric={progress.milestone.metric}
+        format={format}
       />
     </div>
   );
@@ -1145,9 +1214,13 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
 function TierTrack({
   thresholds,
   current,
+  metric,
+  format,
 }: {
   thresholds: number[];
   current: number;
+  metric: LeaderboardMetric;
+  format: Formatters;
 }) {
   if (thresholds.length === 0) return null;
   return (
@@ -1164,7 +1237,12 @@ function TierTrack({
                 : "border-line-strong bg-cream text-fg-dim",
             )}
           >
-            {tier.toLocaleString()}
+            {/* Distance tiers convert with the milestone label above them
+                (a raw 10,000 chip under a "6,214 mi" label misleads);
+                count tiers stay plain integers. */}
+            {metric === "totalKm"
+              ? format.splitDistanceKm(tier).value
+              : format.integer(tier)}
           </li>
         );
       })}

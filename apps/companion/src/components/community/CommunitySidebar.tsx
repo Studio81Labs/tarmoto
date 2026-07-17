@@ -3,9 +3,10 @@ import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
+import type { Formatters } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
-import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { useFormat } from "@/format/FormatProvider";
 import {
   fetchActiveChallengeCard,
   fetchSuggestedRiders,
@@ -28,7 +29,7 @@ function challengeUnit(metric: string): string {
 export function CommunitySidebar() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
-  const { format } = useNumberFormat();
+  const format = useFormat();
 
   const [challenge, setChallenge] = useState<ActiveChallengeCard | null>(null);
   const [board, setBoard] = useState<RegionalDimensionLeaderboard | null>(null);
@@ -74,7 +75,7 @@ function ChallengeCard({
   format,
 }: {
   challenge: ActiveChallengeCard;
-  format: (n: number) => string;
+  format: Formatters;
 }) {
   const pct =
     challenge.target > 0
@@ -95,7 +96,8 @@ function ChallengeCard({
       </div>
       <div className="mt-2 flex justify-between text-[11px] text-fg-on-dark-mute">
         <Mono>
-          {format(challenge.current)} / {format(challenge.target)}
+          {format.integer(challenge.current)} /{" "}
+          {format.integer(challenge.target)}
           {unit ? ` ${unit}` : ""}
         </Mono>
         <Mono>
@@ -115,7 +117,7 @@ function LeaderboardCard({
 }: {
   board: RegionalDimensionLeaderboard;
   region: string | null;
-  format: (n: number) => string;
+  format: Formatters;
 }) {
   // Show the top rows; if the rider is outside them, append their own row.
   const rows = board.entries.slice(0, 5);
@@ -165,7 +167,7 @@ function LeaderboardCard({
                 e.isMe ? "text-fg-on-dark-mute" : "text-fg-dim"
               }`}
             >
-              {format(Math.round(e.value))} {t("km")}
+              {format.distanceKm(e.value)}
             </Mono>
           </li>
         ))}

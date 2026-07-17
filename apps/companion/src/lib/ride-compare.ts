@@ -10,6 +10,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters } from "@tarmoto/shared";
 import type { QualityTier } from "@/lib/types";
 import {
   buildRoutePreview,
@@ -313,12 +314,17 @@ function isValidLatLng(p: RoutePoint): boolean {
 export function formatDelta(
   delta: number | null | undefined,
   digits: number,
+  format: Formatters,
 ): string {
   if (delta == null || Number.isNaN(delta)) return "—";
+  // Technical rounding to settle the zero/sign branch below — a plain
+  // numeric `toFixed`, not routed through `format`: round-tripping a
+  // locale-formatted string (e.g. cs-CZ's "0,00") back through `Number()`
+  // for this comparison would silently break on the comma separator.
   const rounded = Number(delta.toFixed(digits));
-  if (rounded === 0) return `0${digits > 0 ? "." + "0".repeat(digits) : ""}`;
+  if (rounded === 0) return format.decimal(0, digits);
   const sign = rounded > 0 ? "+" : "−";
-  return `${sign}${Math.abs(rounded).toFixed(digits)}`;
+  return `${sign}${format.decimal(Math.abs(rounded), digits)}`;
 }
 
 /** Describes whether a delta is an improvement, regression, or neutral. */

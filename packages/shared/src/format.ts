@@ -126,6 +126,10 @@ export interface Formatters {
   shortDate(value: DateInput): string;
   /** Instant, "Apr 2025"-shaped, in the context timezone. */
   monthYear(value: DateInput): string;
+  /** Locale month name only ("Apr"), UTC-pinned — for chart axes comparing the same month across years. */
+  month(value: DateInput): string;
+  /** Compact "Apr 26"-shaped month + 2-digit year, UTC-pinned — for narrow chart axes spanning years. */
+  monthYearCompact(value: DateInput): string;
   /** Instant, locale hour-cycle time, in the context timezone. */
   time(value: DateInput): string;
   /** Instant, medium date + short time, in the context timezone. */
@@ -140,8 +144,16 @@ export interface Formatters {
   calendarDateRange(start: DateInput, end: DateInput): string;
   /** "now" / "5m ago" / "3h ago" / "2d ago", absolute `date()` beyond 7 days. */
   relativeTime(value: DateInput, now?: DateInput): string;
-  /** "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8). */
+  /**
+   * "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8).
+   * Non-finite input (NaN/Infinity) renders "—" rather than NaN-tainted math.
+   */
   duration(totalMinutes: number): string;
+  /**
+   * "52m" / "4h 12m" — the tight table variant of `duration()`. Same
+   * non-finite fallback ("—") as `duration()`.
+   */
+  durationCompact(totalMinutes: number): string;
   distanceKm(km: number): string;
   distanceM(m: number): string;
   speed(kmh: number): string;
@@ -335,6 +347,9 @@ export function createFormatters(ctx: FormatContext): Formatters {
       formatDate(value, instant({ day: "numeric", month: "short" })),
     monthYear: (value) =>
       formatDate(value, instant({ month: "short", year: "numeric" })),
+    month: (value) => formatDate(value, calendar({ month: "short" })),
+    monthYearCompact: (value) =>
+      formatDate(value, calendar({ month: "short", year: "2-digit" })),
     time: (value) => formatDate(value, instant({ timeStyle: "short" })),
     dateTime: (value) =>
       formatDate(value, instant({ dateStyle: "medium", timeStyle: "short" })),
@@ -346,10 +361,20 @@ export function createFormatters(ctx: FormatContext): Formatters {
       formatDateRange(start, end, calendar({ day: "numeric", month: "short" })),
     relativeTime,
     duration: (totalMinutes) => {
+      if (!Number.isFinite(totalMinutes)) return "—";
       const total = Math.max(0, Math.round(totalMinutes));
       const hours = Math.floor(total / 60);
       const minutes = total % 60;
       if (hours === 0) return `${minutes} min`;
+      if (minutes === 0) return `${hours}h`;
+      return `${hours}h ${minutes}m`;
+    },
+    durationCompact: (totalMinutes) => {
+      if (!Number.isFinite(totalMinutes)) return "—";
+      const total = Math.max(0, Math.round(totalMinutes));
+      const hours = Math.floor(total / 60);
+      const minutes = total % 60;
+      if (hours === 0) return `${minutes}m`;
       if (minutes === 0) return `${hours}h`;
       return `${hours}h ${minutes}m`;
     },

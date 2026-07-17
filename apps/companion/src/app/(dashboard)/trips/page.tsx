@@ -46,7 +46,7 @@ import {
   validateFolderName,
   type TripFolder,
 } from "@/lib/trip-folders";
-import { formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import type { TripSummary } from "@/lib/types";
 import {
   Button,
@@ -914,6 +914,7 @@ function TripCard({
   onDelete,
   onMove,
 }: TripCardProps) {
+  const format = useFormat();
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   // Summary endpoint only carries totals when backend ships #647; until
@@ -999,9 +1000,9 @@ function TripCard({
             {distance !== null && (
               <span>
                 <span className="font-bold text-ink">
-                  {Math.round(distance)}
+                  {format.splitDistanceKm(distance).value}
                 </span>{" "}
-                KM
+                {format.splitDistanceKm(distance).unit.toUpperCase()}
               </span>
             )}
             <span>
@@ -1025,7 +1026,7 @@ function TripCard({
           <div className="mt-3 flex items-center justify-between border-t border-line pt-3 font-mono text-[11px] text-fg-mute">
             <span>
               {trip.updatedAt ? "UPDATED " : "CREATED "}
-              {formatRelativeTime(updatedIso).toUpperCase()}
+              {format.relativeTime(updatedIso).toUpperCase()}
             </span>
             {currentFolder && (
               <span className="uppercase truncate max-w-[12ch]">

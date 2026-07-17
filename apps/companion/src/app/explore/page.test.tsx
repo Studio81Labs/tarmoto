@@ -7,6 +7,7 @@ import { useMapStore } from "@/stores/map";
 import { useAuthStore } from "@/stores/auth";
 import { DEFAULT_MAP_FILTERS, cloneFilters } from "@/lib/map-filters";
 import { usePreferencesStore } from "@/stores/preferences";
+import { FormatProvider } from "@/format/FormatProvider";
 
 const mockReplace = vi.fn();
 const mockSearchParams = vi.hoisted(() => ({
@@ -393,13 +394,22 @@ describe("ExplorerPage", () => {
   });
 
   it("formats segment length with the rider display unit preference", async () => {
+    // `useFormat()` only reflects the store's `unitSystem` inside a
+    // `FormatProvider` — SegmentDetailSidebar's own `hydratePreferences()`
+    // mount effect still reads localStorage into the (global) preferences
+    // store, and the provider here relays that into the format seam,
+    // mirroring the real app shell.
     window.localStorage.setItem("tarmoto:preferences:unit-system", "imperial");
     usePreferencesStore.setState({ unitSystem: "imperial" });
     vi.mocked(roadsApi.getSegmentDetail).mockResolvedValueOnce({
       data: segmentDetail(),
     });
 
-    render(<ExplorerPage />);
+    render(
+      <FormatProvider formatLocale="en" timeZone="UTC" units="metric">
+        <ExplorerPage />
+      </FormatProvider>,
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: /select mock segment/i }),

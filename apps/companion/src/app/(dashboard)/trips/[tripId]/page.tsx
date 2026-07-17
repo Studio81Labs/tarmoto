@@ -56,7 +56,7 @@ import {
   type TripDetailMember,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
-import { formatDistance, formatDuration } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import {
   Button,
   Heading,
@@ -77,6 +77,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function TripDetailPage() {
+  const format = useFormat();
   const { tripId } = useParams<{
     tripId: string;
   }>();
@@ -442,12 +443,12 @@ export default function TripDetailPage() {
               )}
               <span className="inline-flex items-center gap-1">
                 <MapPin size={11} aria-hidden className="text-fg-faint" />{" "}
-                {formatDistance(totalDistance)}
+                {format.distanceKm(totalDistance)}
               </span>
               {totalDuration > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <Clock size={11} aria-hidden className="text-fg-faint" />{" "}
-                  {`~${formatDuration(totalDuration)}`}
+                  {`~${format.duration(totalDuration)}`}
                 </span>
               )}
               <span className="inline-flex items-center gap-1">
@@ -865,6 +866,7 @@ function TripSummaryCard({
   totalElevation: number;
   qualityAvg: number | null;
 }) {
+  const format = useFormat();
   // Backend rows may not carry quality_avg yet — fall back to the mean of
   // the measured day qualities so the row still reflects real data.
   const dayQualities = trip.days.map((d) => d.avgQuality).filter((q) => q > 0);
@@ -879,26 +881,22 @@ function TripSummaryCard({
         {t("Trip summary ")}
       </Stamp>
       <div className="grid grid-cols-2 gap-3">
-        <TileStat label="Distance" value={formatDistance(totalDistance)} />
+        <TileStat label="Distance" value={format.distanceKm(totalDistance)} />
         <TileStat
           label="Ride time"
-          value={totalDuration > 0 ? formatDuration(totalDuration) : "—"}
+          value={totalDuration > 0 ? format.duration(totalDuration) : "—"}
         />
         <TileStat label="Days" value={String(trip.days.length)} />
         <TileStat
           label="Elevation"
-          value={
-            totalElevation > 0
-              ? `${Math.round(totalElevation).toLocaleString()} m`
-              : "—"
-          }
+          value={totalElevation > 0 ? format.elevation(totalElevation) : "—"}
           accent
         />
       </div>
       {avg != null && avg > 0 && (
         <div className="mt-3.5 flex items-center gap-2 border-t border-line pt-3">
           <span className="text-xl font-extrabold tracking-[-0.5px] text-accent">
-            {avg.toFixed(1)}
+            {format.decimal(avg, 1)}
           </span>
           <div className="flex-1">
             <QualityBars q={qualityTierOf(avg)} size={5} />

@@ -27,7 +27,7 @@ import {
   type UpsertRoadReviewInput,
 } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { useAuthStore } from "@/stores/auth";
 const MAX_REVIEW_PHOTOS = 5;
 const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -133,6 +133,7 @@ export function RoadReviewsPanel({
    */
   onCountChange?: (count: number) => void;
 }) {
+  const format = useFormat();
   const tc = reviewToneClasses(tone);
   const canLoadReviews = isUuid(segmentId);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -464,7 +465,9 @@ export function RoadReviewsPanel({
           </div>
           {!loading && averageRating != null && (
             <p className={`text-sm font-medium ${tc.star}`}>
-              {t("{rating} ★ average", { rating: averageRating.toFixed(1) })}
+              {t("{rating} ★ average", {
+                rating: format.decimal(averageRating, 1),
+              })}
             </p>
           )}
         </div>
@@ -952,6 +955,7 @@ function ReviewCard({
   tone: ReviewsTone;
   onChange: (next: Partial<RoadReview>) => void;
 }) {
+  const format = useFormat();
   const tc = reviewToneClasses(tone);
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
@@ -996,7 +1000,7 @@ function ReviewCard({
             </p>
           )}
           <p className={`text-xs ${tc.textMute}`}>
-            {formatRelativeTime(review.created_at)}
+            {format.relativeTime(review.created_at)}
           </p>
         </div>
         <div

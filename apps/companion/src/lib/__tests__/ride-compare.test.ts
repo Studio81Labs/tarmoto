@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createFormatters } from "@tarmoto/shared";
 import {
   buildUnifiedRoutePreview,
   computeStatRows,
@@ -7,6 +8,10 @@ import {
   formatDelta,
   type ComparableRide,
 } from "../ride-compare";
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
 
 function ride(overrides: Partial<ComparableRide> = {}): ComparableRide {
   return {
@@ -210,12 +215,12 @@ describe("buildUnifiedRoutePreview", () => {
 
 describe("formatDelta / deltaDirection", () => {
   it("formatDelta adds explicit +/− signs and renders zero without a sign", () => {
-    expect(formatDelta(5, 0)).toBe("+5");
-    expect(formatDelta(-3.2, 1)).toBe("−3.2");
-    expect(formatDelta(0, 1)).toBe("0.0");
+    expect(formatDelta(5, 0, format)).toBe("+5");
+    expect(formatDelta(-3.2, 1, format)).toBe("−3.2");
+    expect(formatDelta(0, 1, format)).toBe("0.0");
     // Tiny residuals under the display precision round to zero.
-    expect(formatDelta(0.0004, 2)).toBe("0.00");
-    expect(formatDelta(null, 0)).toBe("—");
+    expect(formatDelta(0.0004, 2, format)).toBe("0.00");
+    expect(formatDelta(null, 0, format)).toBe("—");
   });
 
   it("deltaDirection respects `higherIsBetter` and rounds to digits", () => {
