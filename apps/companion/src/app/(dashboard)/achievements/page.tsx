@@ -23,6 +23,7 @@ import {
 import clsx from "clsx";
 import type { Formatters } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { Badge as BadgeType } from "@/lib/types";
 import { usersApi } from "@/lib/api";
 import { useFormat } from "@/format/FormatProvider";
@@ -31,6 +32,7 @@ import {
   PageHeader as DashboardPageHeader,
   Mono,
   SegmentedControl,
+  Skeleton,
   Stamp,
 } from "@tarmoto/ui";
 import Link from "next/link";
@@ -259,6 +261,17 @@ export default function AchievementsPage() {
     },
     [userId, load],
   );
+  // Render-time guard: a snapshot tagged for a different user (because
+  // the userId prop changed before the new fetch resolved) must NOT be
+  // shown — fall through to the skeleton until the userId-effect kicks
+  // off a fresh load.
+  const stateForUser =
+    state.status === "ready" && state.userId === userId
+      ? state
+      : state.status === "error" && state.userId === userId
+        ? state
+        : null;
+  const showSkeleton = useDelayedLoading(Boolean(userId) && !stateForUser);
   if (!userId) {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in">
@@ -271,21 +284,11 @@ export default function AchievementsPage() {
       </div>
     );
   }
-  // Render-time guard: a snapshot tagged for a different user (because
-  // the userId prop changed before the new fetch resolved) must NOT be
-  // shown — fall through to the skeleton until the userId-effect kicks
-  // off a fresh load.
-  const stateForUser =
-    state.status === "ready" && state.userId === userId
-      ? state
-      : state.status === "error" && state.userId === userId
-        ? state
-        : null;
   if (!stateForUser) {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7 animate-fade-in space-y-8">
         <PageHeader />
-        <SkeletonGrid />
+        {showSkeleton && <AchievementsSkeleton />}
       </div>
     );
   }
@@ -1318,30 +1321,29 @@ function ErrorCard({
     </div>
   );
 }
-function SkeletonGrid() {
+function AchievementsSkeleton() {
   return (
-    <div className="space-y-8" aria-busy="true" aria-live="polite">
-      <div className="h-32 rounded-[14px] bg-cream border border-line animate-pulse" />
-      <div>
-        <div className="mb-3 h-4 w-24 bg-paper rounded animate-pulse" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-32 rounded-xl bg-cream border border-line animate-pulse"
-            />
-          ))}
+    <div>
+      <span role="status" className="sr-only">
+        {t("Loading achievements\u2026")}
+      </span>
+      <div aria-hidden="true" className="space-y-8">
+        <Skeleton className="h-32 w-full rounded-[14px]" />
+        <div>
+          <Skeleton className="mb-3 h-4 w-24" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton key={i} className="h-32 rounded-xl" />
+            ))}
+          </div>
         </div>
-      </div>
-      <div>
-        <div className="mb-3 h-4 w-32 bg-paper rounded animate-pulse" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-36 rounded-xl bg-cream border border-line animate-pulse"
-            />
-          ))}
+        <div>
+          <Skeleton className="mb-3 h-4 w-32" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-36 rounded-xl" />
+            ))}
+          </div>
         </div>
       </div>
     </div>

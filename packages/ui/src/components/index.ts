@@ -12,6 +12,7 @@ export {
   SkeletonList,
   SkeletonCard,
   SkeletonGrid,
+  SkeletonForm,
   SkeletonDashboard,
 } from "./Skeleton";
 export { PageHeader, type PageHeaderProps } from "./PageHeader";

@@ -161,6 +161,41 @@ export function SkeletonGrid({
   );
 }
 
+/** Form archetype (settings subpages): section cards of setting rows. */
+export function SkeletonForm({
+  sections = 2,
+  label = "Loading…",
+  className,
+}: {
+  sections?: number;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-[14px]", className)}>
+      <LoadingStatus label={label} />
+      {Array.from({ length: sections }, (_, section) => (
+        <div
+          key={section}
+          aria-hidden="true"
+          className="flex flex-col gap-4 rounded-[14px] border border-line bg-paper-2 p-5"
+        >
+          <Skeleton className="h-[9px] w-[110px] rounded-[4px]" />
+          {Array.from({ length: 3 }, (_, row) => (
+            <div key={row} className="flex items-center justify-between gap-4">
+              <div className="flex flex-1 flex-col gap-2">
+                <Skeleton className="h-3 w-[38%]" />
+                <Skeleton className="h-2.5 w-[62%]" />
+              </div>
+              <Skeleton className="h-5 w-9 rounded-full" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Dashboard archetype (home / stats / detail): KPI row + chart cards. */
 export function SkeletonDashboard({
   label = "Loading…",

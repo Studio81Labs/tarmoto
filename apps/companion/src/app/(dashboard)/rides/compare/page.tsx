@@ -2,10 +2,17 @@
 import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2, Scale } from "lucide-react";
+import { ArrowRight, Scale } from "lucide-react";
 import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
-import { Card, Combobox, Mono, QualityBars, Stamp } from "@tarmoto/ui";
+import {
+  Card,
+  Combobox,
+  Mono,
+  QualityBars,
+  SkeletonDashboard,
+  Stamp,
+} from "@tarmoto/ui";
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useAuthStore } from "@/stores/auth";
@@ -384,10 +391,7 @@ function ComparisonView({
       </div>
 
       {loading && showLoader && (
-        <div className="mt-2 flex items-center gap-2 text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading rides… ")}
-        </div>
+        <SkeletonDashboard className="mt-2" label={t("Loading rides… ")} />
       )}
 
       {error && !loading && (

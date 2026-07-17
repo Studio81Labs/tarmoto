@@ -1,10 +1,18 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
-import { Bell, Check, Loader2, Mail, Smartphone } from "lucide-react";
+import { Bell, Check, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Button, Card, RadioCardGrid, Stamp, Toggle } from "@tarmoto/ui";
+import {
+  Button,
+  Card,
+  RadioCardGrid,
+  SkeletonForm,
+  SkeletonPageHeader,
+  Stamp,
+  Toggle,
+} from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -173,10 +181,10 @@ export default function NotificationsPage() {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7">
         {showLoader && (
-          <div className="flex items-center gap-2 text-fg-dim">
-            <Loader2 size={16} className="animate-spin" />
-            {t("Loading preferences… ")}
-          </div>
+          <>
+            <SkeletonPageHeader />
+            <SkeletonForm sections={3} label={t("Loading preferences… ")} />
+          </>
         )}
       </div>
     );
