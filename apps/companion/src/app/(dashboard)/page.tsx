@@ -7,7 +7,7 @@ import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { ridesWithinDays, scoreToQualityTier } from "@/lib/utils";
-import type { Formatters, MonthlyStats } from "@tarmoto/shared";
+import type { MonthlyStats } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
@@ -311,7 +311,6 @@ export default function HomePage() {
 }
 
 function SyncPill({ syncedAt }: { syncedAt: string | null }) {
-  const format = useFormat();
   if (!syncedAt) {
     // Spec's empty-state pill — ghost / line-strong border / fg-mute
     // dot + text. Shown until the rider's first mobile upload lands.
@@ -325,7 +324,7 @@ function SyncPill({ syncedAt }: { syncedAt: string | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {formatSyncedLabel(syncedAt, format)}
+      {formatSyncedLabel(syncedAt)}
     </div>
   );
 }
@@ -334,8 +333,20 @@ function SyncPill({ syncedAt }: { syncedAt: string | null }) {
 // relative-time portion is delegated to the shared format seam so it stays
 // locale-correct — mirrors `relativeTime`'s "now" / "Xm/h/d ago" / absolute
 // date beyond 7 days.
-function formatSyncedLabel(iso: string, format: Formatters): string {
-  return t("Mobile synced {when}", { when: format.relativeTime(iso) });
+// Deliberately NOT `format.relativeTime()`: this phrase is embedded in a
+// translated sentence, so the time wording must come from the i18n catalog
+// (UI language), not the FORMAT locale — otherwise a cs-CZ format
+// preference yields mixed-language copy ("Mobile synced před 5 m") and the
+// <1 min bucket reads "synced now" instead of "synced just now". Same
+// translated-copy exclusion class as the challenge countdowns.
+function formatSyncedLabel(iso: string): string {
+  const d = new Date(iso);
+  const diffMin = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+  if (diffMin < 1) return t("Mobile synced just now");
+  if (diffMin < 60) return t("Mobile synced {n}m ago", { n: diffMin });
+  const hours = Math.floor(diffMin / 60);
+  if (hours < 24) return t("Mobile synced {n}h ago", { n: hours });
+  return t("Mobile synced {n}d ago", { n: Math.floor(hours / 24) });
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {

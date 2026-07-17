@@ -84,7 +84,7 @@ export function buildX(args: X, format: Formatters): string { ... }
 - `formatJoinedLabel` (shared) — deliberate UTC month-bucketing, stays.
 - `BestRoadsSchemaOrg.tsx` JSON-LD numbers — machine-facing SEO metadata, keep `toFixed` (add the eslint-disable if the guard trips it — it won't; it's `toFixed`, not `toLocale*`).
 - Radius-picker labels (`PlaceSearch.tsx:44-47,222,225`, `community/feed/page.tsx:260-261`) — product-defined km parameters, not measurements; unit-converting a radius picker is a product decision, out of scope (note as follow-up).
-- `lib/passes-summary.ts` `monthLabel`/`MONTH_NAMES` (month-number → name for a selector) and gamification challenge countdowns (`formatDaysRemaining`, `formatDaysShort`) — translated-copy territory (i18n catalogs), not Intl formatting.
+- `lib/passes-summary.ts` `monthLabel`/`MONTH_NAMES` (month-number → name for a selector), gamification challenge countdowns (`formatDaysRemaining`, `formatDaysShort`), and the dashboard `formatSyncedLabel` sentence buckets ("Mobile synced just now/{n}m ago") — translated-copy territory (i18n catalogs), not Intl formatting: time phrases EMBEDDED in translated sentences must follow the UI language, not the format locale (mixed-language copy otherwise; restored after Codex review).
 - `lib/exploration.ts` `buildShareSummary` — test-only consumers; leave untouched.
 - `TripCollaborateModal.tsx:1564` `<time dateTime={iso}>` — machine attribute, keep raw ISO.
 - `TimeWindowPills.tsx` `windowStartISO` — query-param builder, not display.
