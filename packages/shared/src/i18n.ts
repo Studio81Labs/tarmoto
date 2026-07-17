@@ -5,6 +5,8 @@
  * translator over it via `makeTranslator`.
  */
 
+import { IntlMessageFormat } from "intl-messageformat";
+
 export const DEFAULT_LOCALE = "en" as const;
 
 /**
@@ -85,10 +87,68 @@ export type Translator<K extends string> = (
 ) => string;
 
 /**
+ * Loose translator shape for threading through pure helper functions that
+ * cannot depend on a concrete catalog's key union (e.g. shared rider-format
+ * helpers, companion lib formatters). Locale binding is the caller's concern.
+ */
+export type LooseTranslate = (
+  key: string,
+  values?: TranslationValues,
+) => string;
+
+// Parsed-message cache shared by every translator. Keyed by source locale +
+// template so the same English fallback text can coexist with a translated
+// variant under different plural rules. `null` negative-caches templates
+// that fail to parse, so a malformed raw key doesn't re-throw per render.
+// Capped and cleared wholesale like the Formatters caches in format.ts.
+const MESSAGE_CACHE_MAX = 256;
+const messageFormats = new Map<string, IntlMessageFormat | null>();
+
+function getMessageFormat(
+  template: string,
+  locale: SupportedLocale,
+): IntlMessageFormat | null {
+  const cacheKey = `${locale}\u0000${template}`;
+  const cached = messageFormats.get(cacheKey);
+  if (cached !== undefined) return cached;
+  if (messageFormats.size >= MESSAGE_CACHE_MAX) messageFormats.clear();
+  let parsed: IntlMessageFormat | null;
+  try {
+    // ignoreTag keeps `<strong>`-style markup (backend email templates) as
+    // literal text instead of ICU rich-text tags demanding render functions.
+    parsed = new IntlMessageFormat(template, locale, undefined, {
+      ignoreTag: true,
+    });
+  } catch {
+    parsed = null;
+  }
+  messageFormats.set(cacheKey, parsed);
+  return parsed;
+}
+
+// The pre-ICU engine, retained as the compatibility fallback: it never
+// throws, leaves unmatched placeholders in place, and renders malformed
+// templates verbatim — the contract the legacy tests pin.
+function interpolateLegacy(
+  template: string,
+  values: TranslationValues,
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, valueKey: string) => {
+    const value = values[valueKey];
+    return value === undefined ? match : String(value);
+  });
+}
+
+/**
  * Build a translator over a surface's catalogs. Lookup order:
- * active-locale catalog → default-locale (en) catalog → the raw key. Then
- * `{placeholder}` values are substituted. Substitution is RAW — callers that
- * emit HTML MUST escape untrusted values before passing them in.
+ * active-locale catalog → default-locale (en) catalog → the raw key.
+ * Interpolation is ICU MessageFormat (plural/select/#) via
+ * `intl-messageformat`, using the plural rules of the locale whose catalog
+ * supplied the template (raw-key fallback ⇒ default locale). Calls without
+ * values return the template verbatim (fast path — most catalog entries).
+ * Any ICU parse/format error degrades to the legacy `{placeholder}`
+ * substitution. Substitution is RAW — callers that emit HTML MUST escape
+ * untrusted values before passing them in.
  */
 export function makeTranslator<K extends string>(
   catalogs: CatalogsByLocale<K>,
@@ -99,16 +159,25 @@ export function makeTranslator<K extends string>(
   };
 
   return (key, values, locale = DEFAULT_LOCALE) => {
-    const template =
-      read(locale, key) ??
-      (locale !== DEFAULT_LOCALE ? read(DEFAULT_LOCALE, key) : undefined) ??
-      key;
+    let template = read(locale, key);
+    let sourceLocale = locale;
+    if (template === undefined && locale !== DEFAULT_LOCALE) {
+      template = read(DEFAULT_LOCALE, key);
+      sourceLocale = DEFAULT_LOCALE;
+    }
+    if (template === undefined) {
+      template = key;
+      sourceLocale = DEFAULT_LOCALE;
+    }
 
     if (!values) return template;
 
-    return template.replace(/\{(\w+)\}/g, (match, valueKey: string) => {
-      const value = values[valueKey];
-      return value === undefined ? match : String(value);
-    });
+    const parsed = getMessageFormat(template, sourceLocale);
+    if (parsed === null) return interpolateLegacy(template, values);
+    try {
+      return parsed.format(values) as string;
+    } catch {
+      return interpolateLegacy(template, values);
+    }
   };
 }
