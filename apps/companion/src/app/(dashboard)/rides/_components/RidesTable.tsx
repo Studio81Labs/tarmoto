@@ -26,13 +26,19 @@ interface Props {
 
 /**
  * Full-width Ride History table matching the v2 design. Renders a real
- * semantic `<table>` via the shared `DataTable`. Columns: DATE / RIDE / KM /
- * DURATION / AVG / LEAN / QUALITY / →. DATE, KM, DURATION, and QUALITY are
- * sortable (backed by `useRidesQuery`'s sort state); AVG (avg_speed) and LEAN
- * (max_lean_angle) have no backend sort field, so those headers are static.
- * Each row links to the ride detail page (`/rides/[rideId]`).
+ * semantic `<table>` via the shared `DataTable`. Columns: DATE / RIDE /
+ * KM-or-MI / DURATION / AVG / LEAN / QUALITY / →. DATE, the distance column,
+ * DURATION, and QUALITY are sortable (backed by `useRidesQuery`'s sort
+ * state); AVG (avg_speed) and LEAN (max_lean_angle) have no backend sort
+ * field, so those headers are static. Each row links to the ride detail page
+ * (`/rides/[rideId]`).
  */
 function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
+  // The cell value converts to the rider's unit preference via
+  // `splitDistanceKm`, so the header must too — a static "KM" would lie to
+  // imperial riders. The magnitude passed here is arbitrary (unit short-forms
+  // don't vary with it); this just reads off the same formatter the cells use.
+  const distanceUnitLabel = format.splitDistanceKm(1).unit.toUpperCase();
   return [
     {
       key: "started_at",
@@ -63,7 +69,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
     },
     {
       key: "distance_km",
-      label: "KM",
+      label: distanceUnitLabel,
       size: "80px",
       sortable: true,
       render: (r) => (

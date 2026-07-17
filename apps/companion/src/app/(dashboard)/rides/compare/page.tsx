@@ -215,11 +215,14 @@ function ABCard({
   const hasGeometry = geometry != null && geometry.length >= 2;
   const distance = ride?.distance_km ?? selected?.distance_km ?? null;
   const duration = ride?.duration_min ?? selected?.duration_min ?? null;
-  // `formatKmValue`'s retired number-only shape — the "KM" suffix stays a
-  // literal (this footer never honoured the imperial unit preference either,
-  // pre-migration; unrelated to this task).
-  const distanceValue =
-    distance != null ? format.splitDistanceKm(distance).value : "—";
+  // Value and unit both come from the same split call so the footer always
+  // matches the rider's unit preference (metric "KM" or imperial "MI")
+  // instead of pairing a converted value with a hardcoded label.
+  const distanceSplit =
+    distance != null ? format.splitDistanceKm(distance) : null;
+  const distanceLabel = distanceSplit
+    ? `${distanceSplit.value} ${distanceSplit.unit.toUpperCase()}`
+    : "—";
   return (
     <div className="rounded-[14px] border border-line bg-cream p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -257,7 +260,7 @@ function ABCard({
         </div>
       )}
       <div className="mt-3 flex items-center gap-3">
-        <Mono className="text-[11px] text-fg-dim">{`${distanceValue} KM`}</Mono>
+        <Mono className="text-[11px] text-fg-dim">{distanceLabel}</Mono>
         <span className="text-fg-mute">·</span>
         <Mono className="text-[11px] text-fg-dim">
           {duration != null ? format.durationCompact(duration) : "—"}
@@ -269,15 +272,16 @@ function ABCard({
   );
 }
 
-/** `DD Mon · Name (NN km)` per the design's picker option format. */
+/** `DD Mon · Name (NN km)` per the design's picker option format — unit
+ * follows the rider's preference (`splitDistanceKm`'s own `.unit`), so
+ * imperial riders see "(NN mi)" instead of a hardcoded "km". */
 function formatPickerOption(ride: RideOption, format: Formatters): string {
   const date = format.shortDate(ride.started_at);
   const name = ride.name ?? t("Untitled ride");
-  const km =
-    ride.distance_km != null
-      ? ` (${format.splitDistanceKm(ride.distance_km).value} km)`
-      : "";
-  return `${date} · ${name}${km}`;
+  const distance =
+    ride.distance_km != null ? format.splitDistanceKm(ride.distance_km) : null;
+  const suffix = distance ? ` (${distance.value} ${distance.unit})` : "";
+  return `${date} · ${name}${suffix}`;
 }
 
 function ComparisonView({
