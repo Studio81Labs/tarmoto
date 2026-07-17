@@ -11,4 +11,17 @@ describe('ClientConfigController', () => {
       group_rides: 'force_on',
     });
   });
+
+  it('GET /config/limits returns the global-limits map', async () => {
+    const service = {
+      limitOverrides: jest
+        .fn()
+        .mockResolvedValue({ max_active_trips: 5, max_waypoints: null }),
+    } as unknown as jest.Mocked<ClientConfigService>;
+    const controller = new ClientConfigController(service);
+    await expect(controller.limits()).resolves.toEqual({
+      max_active_trips: 5,
+      max_waypoints: null,
+    });
+  });
 });
