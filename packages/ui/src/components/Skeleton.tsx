@@ -35,7 +35,9 @@ export function PageLoadingBar({ className }: { className?: string }) {
         className,
       )}
     >
-      <div className="absolute inset-y-0 w-[30%] animate-loading-bar rounded-[3px] bg-accent motion-reduce:animate-pulse" />
+      {/* Reduced motion: no animation at all — the segment rests statically
+          at the track's left edge, still reading as "in progress". */}
+      <div className="absolute inset-y-0 w-[30%] animate-loading-bar rounded-[3px] bg-accent motion-reduce:animate-none" />
     </div>
   );
 }
