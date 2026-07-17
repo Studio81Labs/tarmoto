@@ -55,6 +55,7 @@ import {
   MiniRouteSvg,
   PageHeader,
   Select,
+  SkeletonGrid,
 } from "@tarmoto/ui";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { toast } from "@/lib/toast";
@@ -522,14 +523,11 @@ export default function TripListPage() {
         />
 
         {loading ? (
-          <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="h-[290px] animate-pulse rounded-[14px] border border-line bg-cream"
-              />
-            ))}
-          </div>
+          <SkeletonGrid
+            cards={3}
+            label={t("Loading trips…")}
+            className="md:grid-cols-2"
+          />
         ) : trips.length === 0 ? (
           <EmptyState
             title={t("No trips yet")}

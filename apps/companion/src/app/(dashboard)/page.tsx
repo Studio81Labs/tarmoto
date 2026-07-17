@@ -27,6 +27,7 @@ import {
   MiniRouteSvg,
   Mono,
   QualityBars,
+  SkeletonList,
   Stamp,
 } from "@tarmoto/ui";
 
@@ -176,16 +177,7 @@ export default function HomePage() {
 
       {loading || ridesLoading ? (
         showLoader ? (
-          <DualEmptyState
-            ridesEmpty={<RidesEmptyCard />}
-            tripsEmpty={
-              <Card padded={false} className="px-6 py-10 text-center">
-                <p className="text-[13px] text-fg-dim">
-                  {t("Loading your trips… ")}
-                </p>
-              </Card>
-            }
-          />
+          <SkeletonList rows={3} label={t("Loading your rides and trips…")} />
         ) : null
       ) : !hasAnyContent ? (
         // Nothing loaded. If a fetch failed, show a per-side retry card

@@ -29,6 +29,7 @@ import {
   Input,
   Mono,
   RadioCardGroup,
+  SkeletonGrid,
   Stamp,
   Textarea,
 } from "@tarmoto/ui";
@@ -180,17 +181,11 @@ export default function RouteCollectionsPage() {
       </div>
 
       {showSkeleton ? (
-        <div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5"
-          aria-busy="true"
-        >
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-44 animate-pulse rounded-[14px] border border-line bg-cream"
-            />
-          ))}
-        </div>
+        <SkeletonGrid
+          cards={3}
+          label={t("Loading collections…")}
+          className="mt-5 md:grid-cols-2"
+        />
       ) : showLoadError ? (
         <div
           role="alert"

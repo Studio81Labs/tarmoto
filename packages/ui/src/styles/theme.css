@@ -62,4 +62,28 @@
   --font-sans: "Space Grotesk", system-ui, -apple-system, Helvetica, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
   --font-serif: "Fraunces", Georgia, serif;
+
+  /* ---------- loading (v2-loading spec) ---------- */
+  /* Skeleton shimmer: an ink-tinted gradient sweeping right-to-left. */
+  --animate-skeleton: tar-shimmer 1.5s linear infinite;
+  /* Indeterminate accent bar sliding across a 3px track. */
+  --animate-loading-bar: tar-bar 1.1s ease-in-out infinite;
+
+  @keyframes tar-shimmer {
+    0% {
+      background-position: 100% 0;
+    }
+    100% {
+      background-position: -100% 0;
+    }
+  }
+
+  @keyframes tar-bar {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
 }
