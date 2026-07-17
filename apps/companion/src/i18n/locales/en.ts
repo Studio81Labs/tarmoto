@@ -249,6 +249,10 @@ export const en = {
   "Download my data ": "Download my data ",
   "Download your data (link expires in 7 days) ":
     "Download your data (link expires in 7 days) ",
+  "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}} on the way.":
+    "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}} on the way.",
+  "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.":
+    "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.",
   "Drag via points to reorder them. Start and finish stay pinned. ":
     "Drag via points to reorder them. Start and finish stay pinned. ",
   "Draw region ": "Draw region ",
@@ -356,6 +360,8 @@ export const en = {
   "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ":
     "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ",
   "Invoice unavailable ": "Invoice unavailable ",
+  "Itinerary · {count, plural, one {# day} other {# days}}":
+    "Itinerary · {count, plural, one {# day} other {# days}}",
   "JPEG, PNG, or WebP photos (max": "JPEG, PNG, or WebP photos (max",
   "Join the Tarmoto rider community": "Join the Tarmoto rider community",
   Joined: "Joined",
@@ -1005,6 +1011,8 @@ export const en = {
   "{percent}% explored": "{percent}% explored",
   "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
   "{rideType} ride": "{rideType} ride",
+  "{count, plural, one {# day} other {# days}}":
+    "{count, plural, one {# day} other {# days}}",
   "{count, plural, one {# day} other {# days}} left":
     "{count, plural, one {# day} other {# days}} left",
   "{count, plural, one {# month} other {# months}} left":

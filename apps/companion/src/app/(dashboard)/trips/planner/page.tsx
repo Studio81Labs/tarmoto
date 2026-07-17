@@ -2168,11 +2168,10 @@ export default function TripPlannerPage() {
           toast.success(
             result.vias.length > 0
               ? t(
-                  "Drafted ≈{distance} through {count} Fun Zone{s} on the way.",
+                  "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}} on the way.",
                   {
                     distance: draftedDistance,
                     count: result.vias.length,
-                    s: result.vias.length === 1 ? "" : "s",
                   },
                 )
               : t("≈{distance} — already a full day's ride, left as routed.", {
@@ -2182,11 +2181,13 @@ export default function TripPlannerPage() {
         } else if (result.reachedTargetKm) {
           setDraftNote(null);
           toast.success(
-            t("Drafted ≈{distance} through {count} Fun Zone{s}.", {
-              distance: draftedDistance,
-              count: result.vias.length,
-              s: result.vias.length === 1 ? "" : "s",
-            }),
+            t(
+              "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.",
+              {
+                distance: draftedDistance,
+                count: result.vias.length,
+              },
+            ),
           );
         } else {
           // Honest report — the soft target is a goal, not a contract.
@@ -2567,9 +2568,8 @@ export default function TripPlannerPage() {
                 {daysVisible && dayPlans ? (
                   <span className="inline-flex items-center gap-1">
                     <Layers size={11} aria-hidden className="text-fg-faint" />
-                    {t("{days} day{s}", {
-                      days: dayPlans.length,
-                      s: dayPlans.length === 1 ? "" : "s",
+                    {t("{count, plural, one {# day} other {# days}}", {
+                      count: dayPlans.length,
                     })}
                   </span>
                 ) : null}
@@ -2796,9 +2796,8 @@ export default function TripPlannerPage() {
           >
             <div className="flex items-center justify-between gap-3 border-b border-line px-5 pb-3 pt-[18px]">
               <span className="whitespace-nowrap font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-                {t("Itinerary · {days} day{s}", {
-                  days: dayPlans.length,
-                  s: dayPlans.length === 1 ? "" : "s",
+                {t("Itinerary · {count, plural, one {# day} other {# days}}", {
+                  count: dayPlans.length,
                 })}
               </span>
               {/* Focus selected day — moved off the map (rider feedback):
