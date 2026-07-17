@@ -166,7 +166,7 @@ export default async function SharedRoadMapPage({
                 delta={
                   snapshot.period === "all"
                     ? undefined
-                    : TIME_PERIOD_LABELS[snapshot.period]
+                    : t(TIME_PERIOD_LABELS[snapshot.period])
                 }
               />
               <MetricTile

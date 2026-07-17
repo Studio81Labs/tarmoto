@@ -220,7 +220,7 @@ function PassesPanelBody({
           tone="cream"
           options={MONTH_NAMES.map((name, idx) => ({
             value: String(idx + 1),
-            label: name,
+            label: t(name),
           }))}
         />
       </div>
@@ -306,7 +306,7 @@ function PassesPanelBody({
         <>
           <p className="text-xs text-fg-dim">
             {t("In ")}
-            {monthLabel(month)}:{" "}
+            {t(monthLabel(month))}:{" "}
             <span className="text-quality-q1">
               {t("{count} closed", { count: counts.closed })}
             </span>

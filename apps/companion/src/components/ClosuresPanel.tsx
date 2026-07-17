@@ -209,7 +209,7 @@ function ClosuresPanelBody({
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-  const monthText = monthLabel(month);
+  const monthText = t(monthLabel(month));
   const previewDay = format.calendarDate(previewDate);
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);

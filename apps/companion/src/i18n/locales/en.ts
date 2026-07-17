@@ -65,6 +65,8 @@ export const en = {
   "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ":
     "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
   "Apply coordinates ": "Apply coordinates ",
+  April: "April",
+  August: "August",
   "Avatar URL ": "Avatar URL ",
   "Avg / ride": "Avg / ride",
   "Avg quality": "Avg quality",
@@ -232,6 +234,7 @@ export const en = {
   "Day {dayNumber} · {title}": "Day {dayNumber} · {title}",
   "Day-by-day ": "Day-by-day ",
   Days: "Days",
+  December: "December",
   "Default ride sharing": "Default ride sharing",
   "Default ride sharing ": "Default ride sharing ",
   "Delete ": "Delete ",
@@ -323,6 +326,7 @@ export const en = {
   "Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ":
     "Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ",
   "Fair or better": "Fair or better",
+  February: "February",
   "Filter by period": "Filter by period",
   "Filtering within ": "Filtering within ",
   Filters: "Filters",
@@ -392,6 +396,7 @@ export const en = {
   "Itinerary · {count, plural, one {# day} other {# days}}":
     "Itinerary · {count, plural, one {# day} other {# days}}",
   "JPEG, PNG, or WebP photos (max": "JPEG, PNG, or WebP photos (max",
+  January: "January",
   "Join the Tarmoto rider community": "Join the Tarmoto rider community",
   Joined: "Joined",
   "Joined ": "Joined ",
@@ -403,8 +408,12 @@ export const en = {
     "Joined {count, plural, one {# year} other {# years}} ago",
   "Joining\u2026": "Joining\u2026",
   "Joining\u2026 ": "Joining\u2026 ",
+  July: "July",
+  June: "June",
   "Know the road before you ride it.": "Know the road before you ride it.",
   L: "L",
+  "Last 30 days": "Last 30 days",
+  "Last 90 days": "Last 90 days",
   Latitude: "Latitude",
   "Leaderboard dimension": "Leaderboard dimension",
   Less: "Less",
@@ -453,6 +462,7 @@ export const en = {
     "Manage your plan, payment method, billing history, and renewal choices from one place. ",
   "Map ": "Map ",
   "Map preview ": "Map preview ",
+  March: "March",
   "Marketing emails": "Marketing emails",
   "Max km ": "Max km ",
   "Max lean": "Max lean",
@@ -463,6 +473,7 @@ export const en = {
   "Maximum curviness": "Maximum curviness",
   "Maximum distance": "Maximum distance",
   "Maximum distance ": "Maximum distance ",
+  May: "May",
   Members: "Members",
   "Members ": "Members ",
   Metric: "Metric",
@@ -563,7 +574,9 @@ export const en = {
   "Notification settings": "Notification settings",
   Notifications: "Notifications",
   "Notifications ": "Notifications ",
+  November: "November",
   "Number of days ": "Number of days ",
+  October: "October",
   "Offline maps": "Offline maps",
   Ongoing: "Ongoing",
   "Opacity fades as reports age ": "Opacity fades as reports age ",
@@ -762,6 +775,7 @@ export const en = {
   "Select review photos": "Select review photos",
   "Send reset link": "Send reset link",
   "Sending...": "Sending...",
+  September: "September",
   "Set active ": "Set active ",
   Settings: "Settings",
   "Settings ": "Settings ",
@@ -848,6 +862,8 @@ export const en = {
     "The trip may have been deleted, or the link may be wrong. ",
   "This collection may have been deleted, or it's private and you don't own it. ":
     "This collection may have been deleted, or it's private and you don't own it. ",
+  "This email already has a Tarmoto password account. Sign in with your password instead.":
+    "This email already has a Tarmoto password account. Sign in with your password instead.",
   "This is your review.": "This is your review.",
   "This region needs more rides before we can rank its roads. Take a ride through and help build the map. ":
     "This region needs more rides before we can rank its roads. Take a ride through and help build the map. ",
@@ -862,6 +878,7 @@ export const en = {
     "This trip has no days yet. Open it in the planner to generate the itinerary. ",
   "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ":
     "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ",
+  "This year": "This year",
   "To ": "To ",
   "To confirm, type your email address": "To confirm, type your email address",
   "Top roads": "Top roads",
@@ -924,6 +941,8 @@ export const en = {
   "Vote up": "Vote up",
   "Want to save this collection? ": "Want to save this collection? ",
   "Waypoints (": "Waypoints (",
+  "We couldn't complete social sign-in. Try again or use your password.":
+    "We couldn't complete social sign-in. Try again or use your password.",
   "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ":
     "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ",
   "Welcome back": "Welcome back",
