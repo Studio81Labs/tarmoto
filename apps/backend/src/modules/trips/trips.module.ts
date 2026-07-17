@@ -15,6 +15,7 @@ import { User } from '../../entities/user.entity.js';
 import { CommuteModule } from '../commute/index.js';
 import { EmailModule } from '../email/email.module.js';
 import { EventsModule } from '../events/events.module.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { TripActivityModule } from '../trip-activity/index.js';
 import { TripSharesModule } from '../trip-shares/trip-shares.module.js';
 import { RoutingModule } from '../routing/routing.module.js';
@@ -43,6 +44,10 @@ import { TripCollabService } from './trip-collab.service.js';
     ConfigModule,
     EmailModule,
     EventsModule,
+    // FeaturesModule exports FeatureResolver so trip creation, import,
+    // duplication, and reopen-via-update can gate against the caller's
+    // (or owner's) `max_active_trips` entitlement.
+    FeaturesModule,
     TripActivityModule,
     // TripSharesModule re-exports TripSharesService so trip member removal
     // can revoke the departing member's outstanding share links

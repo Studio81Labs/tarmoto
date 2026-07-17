@@ -200,7 +200,7 @@ export class AuthService {
       expires_in: ACCESS_TOKEN_EXPIRY,
       user: toUserResponse(
         user,
-        await this.featureResolver.resolveForLoadedUser(user),
+        await this.featureResolver.resolveEntitlementsForLoadedUser(user),
       ),
     };
   }

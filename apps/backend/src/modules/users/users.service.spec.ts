@@ -74,6 +74,10 @@ describe('UsersService', () => {
     }) as unknown as User;
 
   const mockFeatureSnapshot = buildFeatureSnapshot('free', {}, {});
+  const mockEntitlements = {
+    features: mockFeatureSnapshot,
+    limits: { max_active_trips: null },
+  };
 
   const mockContact = {
     id: 'contact-1',
@@ -183,9 +187,9 @@ describe('UsersService', () => {
         {
           provide: FeatureResolver,
           useValue: {
-            resolveForLoadedUser: jest
+            resolveEntitlementsForLoadedUser: jest
               .fn()
-              .mockResolvedValue(mockFeatureSnapshot),
+              .mockResolvedValue(mockEntitlements),
           },
         },
       ],
@@ -203,6 +207,7 @@ describe('UsersService', () => {
       expect(result.display_name).toBe('TestRider');
       expect(result.home_location).toBeNull();
       expect(result.language).toBe('en');
+      expect(result.limits).toEqual({ max_active_trips: null });
     });
 
     it('should throw NotFoundException for missing user', async () => {
@@ -668,6 +673,7 @@ describe('UsersService', () => {
         expect.objectContaining({ display_name: 'NewName' }),
       );
       expect(result.display_name).toBe('NewName');
+      expect(result.limits).toEqual({ max_active_trips: null });
     });
 
     it('should update phone', async () => {
@@ -986,6 +992,7 @@ describe('UsersService', () => {
       expect(result.avatar_url).toMatch(
         /^https:\/\/app\.tarmoto\.test\/uploads\/avatars\/user-1-/,
       );
+      expect(result.limits).toEqual({ max_active_trips: null });
 
       // The old avatar is removed by storage key, not by absolute
       // path — the storage-key helper turns the legacy URL into a

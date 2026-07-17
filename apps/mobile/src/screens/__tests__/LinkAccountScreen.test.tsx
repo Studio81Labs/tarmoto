@@ -1,4 +1,4 @@
-import { buildFeatureSnapshot } from "@tarmoto/shared";
+import { buildFeatureSnapshot, buildLimitSnapshot } from "@tarmoto/shared";
 import React from "react";
 import {
   fireEvent,
@@ -78,6 +78,7 @@ describe("LinkAccountScreen", () => {
         },
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-23T08:00:00.000Z",
       },
     });

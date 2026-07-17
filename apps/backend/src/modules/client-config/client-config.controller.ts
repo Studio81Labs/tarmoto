@@ -3,6 +3,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
   GLOBAL_FEATURE_STATES,
   type GlobalFeatureStates,
+  type GlobalLimitOverrides,
 } from '@tarmoto/shared';
 import { ClientConfigService } from './client-config.service.js';
 
@@ -33,5 +34,27 @@ export class ClientConfigController {
   })
   flags(): Promise<GlobalFeatureStates> {
     return this.service.featureStates();
+  }
+
+  @Get('limits')
+  @Header('Cache-Control', 'public, max-age=60')
+  @ApiOperation({
+    summary: 'Global limit-override map (feature → value, null = unlimited)',
+    description:
+      'Only operator overrides appear here; a missing key means the ' +
+      'limit resolves normally (registry tier value + per-user override, ' +
+      'served on /users/me). Clients may apply these values only as a ' +
+      'downward clamp (min with the cached snapshot) and must not raise ' +
+      'a limit from this map.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      additionalProperties: { type: 'number', nullable: true },
+    },
+  })
+  limits(): Promise<GlobalLimitOverrides> {
+    return this.service.limitOverrides();
   }
 }
