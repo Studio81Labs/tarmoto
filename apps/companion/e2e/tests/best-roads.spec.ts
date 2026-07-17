@@ -42,4 +42,30 @@ test.describe("best roads", () => {
       await context.close();
     }
   });
+
+  // T24 — Legacy embed redirects: the iframe embed widgets were retired
+  // (US-58); the permanent redirects are now the only compatibility path
+  // for pages that already embedded a widget, so a route/config change
+  // must not silently turn them into 404s. `maxRedirects: 0` exposes the
+  // raw 308 + Location instead of following it.
+  test("T24: retired /embed/* URLs permanently redirect to their full pages", async ({
+    request,
+  }) => {
+    const rides = await request.get("/embed/rides/some-token", {
+      maxRedirects: 0,
+    });
+    expect(rides.status()).toBe(308);
+    expect(rides.headers()["location"]).toBe("/rides/shared/some-token");
+
+    const roads = await request.get("/embed/roads/cz/beskydy/moravka", {
+      maxRedirects: 0,
+    });
+    expect(roads.status()).toBe(308);
+    expect(roads.headers()["location"]).toBe("/roads/best/cz/beskydy/moravka");
+
+    // The retired /discover page rides the same mechanism (#1025).
+    const discover = await request.get("/discover", { maxRedirects: 0 });
+    expect(discover.status()).toBe(308);
+    expect(discover.headers()["location"]).toBe("/explore");
+  });
 });
