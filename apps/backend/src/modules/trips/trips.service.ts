@@ -270,8 +270,16 @@ export class TripsService {
    * next mint re-checks, so the cap self-corrects. Accepted for v1 —
    * serialising every trip create on a per-user lock isn't worth that
    * failure mode.
+   *
+   * Public so the other services that mint or promote a trip into an open
+   * state route through the same single check: `SharingService.cloneRide`
+   * (new draft) and `TripGeneratorService.generate` (promotes a completed
+   * trip back to `planned`). Promotion callers must guard on the current
+   * status themselves (only call when a `completed` trip is going open) —
+   * the count already excludes `completed`, so calling it for an
+   * already-open trip would wrongly block editing at the cap.
    */
-  private async assertCanMintOpenTrip(ownerId: string): Promise<void> {
+  async assertCanMintOpenTrip(ownerId: string): Promise<void> {
     const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
     const limit = limits.max_active_trips;
     if (limit === null) return; // unlimited — skip the count entirely
@@ -380,6 +388,14 @@ export class TripsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!locked) throw new NotFoundException('Trip not found');
+
+      // Replacing the route on a completed trip promotes it back to an
+      // open (`planned`) state — a net-new open trip against the owner's
+      // cap. Gate it exactly like the PATCH reopen. Already-open trips
+      // don't change the count, so they're not gated (would block edits).
+      if (locked.status === 'completed') {
+        await this.assertCanMintOpenTrip(locked.owner_id);
+      }
 
       await manager.update(
         Trip,
@@ -1123,6 +1139,13 @@ export class TripsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!locked) throw new NotFoundException('Trip not found');
+
+      // Saving a manual route onto a completed trip promotes it back to an
+      // open (`planned`) state — gate the net-new open trip against the
+      // owner's cap, exactly like the PATCH reopen and the import path.
+      if (locked.status === 'completed') {
+        await this.assertCanMintOpenTrip(locked.owner_id);
+      }
 
       // Decouple ALL suggestions on this trip's days before deleting them —
       // mirrors Phase 1's day-1 unscoping but across every day. NULLing

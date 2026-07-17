@@ -1849,6 +1849,121 @@ describe('TripsService', () => {
 
       expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
     });
+
+    it('replaceWithImportedRoute (reopen): rejects at cap when a completed trip is promoted to planned', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .replaceWithImportedRoute(OWNER_ID, TRIP_ID, importDto)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+      // Rejected before promoting the trip.
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('replaceWithImportedRoute: does NOT check the cap when the trip is already open (editing, not promoting)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'planned' }),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+
+      await service.replaceWithImportedRoute(OWNER_ID, TRIP_ID, importDto);
+
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+    });
+
+    it("replaceWithImportedRoute (reopen): gates on the trip owner's cap, not the caller's", async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'editor',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed', owner_id: OWNER_ID }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      await service
+        .replaceWithImportedRoute(OTHER_ID, TRIP_ID, importDto)
+        .catch((e: unknown) => e);
+
+      expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
+        OWNER_ID,
+      );
+    });
+
+    it('saveManualRoute (reopen): rejects at cap when a completed trip is promoted to planned', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      routingProvider.route.mockResolvedValueOnce({
+        distance_km: 88.9,
+        duration_min: 124,
+        geometry: [
+          { lat: 50.08, lng: 14.42 },
+          { lat: 50.1, lng: 14.5 },
+        ],
+      });
+      enrichment.aggregate.mockResolvedValueOnce({
+        avgQuality: 4,
+        curvinessScore: 6,
+        scenicScore: 3,
+        elevationGain: 540,
+        elevationLoss: 540,
+        hazardCount: 0,
+        surfaceMixMetres: {},
+      });
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .saveManualRoute(OWNER_ID, TRIP_ID, {
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 50.08, lng: 14.42, type: 'start' },
+                { lat: 50.1, lng: 14.5, type: 'end' },
+              ],
+            },
+          ],
+        })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+    });
   });
 
   describe('remove', () => {
