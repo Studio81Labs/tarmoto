@@ -91,8 +91,13 @@ export const en = {
   "Bars share a scale so gain/loss are visually comparable across both rides. ":
     "Bars share a scale so gain/loss are visually comparable across both rides. ",
   "Basic navigation": "Basic navigation",
+  "Best Motorcycle Roads \u2014 Tarmoto":
+    "Best Motorcycle Roads \u2014 Tarmoto",
   "Best motorcycle roads ": "Best motorcycle roads ",
   "Best motorcycle roads in ": "Best motorcycle roads in ",
+  "Best motorcycle roads in {name}": "Best motorcycle roads in {name}",
+  "Best motorcycle roads in {name} \u2014 Tarmoto":
+    "Best motorcycle roads in {name} \u2014 Tarmoto",
   "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled. ":
     "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled. ",
   "Best roads ": "Best roads ",
@@ -217,6 +222,8 @@ export const en = {
     "Create your first trip to discover the best roads.",
   "Cumulative kilometres ridden across every bike.":
     "Cumulative kilometres ridden across every bike.",
+  "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.":
+    "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.",
   "Current plan": "Current plan",
   "Current plan ": "Current plan ",
   "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.":
@@ -314,6 +321,8 @@ export const en = {
   "Everything in Pro": "Everything in Pro",
   "Excellent only": "Excellent only",
   "Expires {mm}/{yyyy}": "Expires {mm}/{yyyy}",
+  "Explore crowdsourced road surface quality and active hazards on an interactive map. Find the best riding roads before you head out.":
+    "Explore crowdsourced road surface quality and active hazards on an interactive map. Find the best riding roads before you head out.",
   "Explore near": "Explore near",
   "Explore popular shared rides and discover routes worth repeating. ":
     "Explore popular shared rides and discover routes worth repeating. ",
@@ -411,6 +420,7 @@ export const en = {
   "Joining\u2026 ": "Joining\u2026 ",
   July: "July",
   June: "June",
+  "Know the road before you ride it": "Know the road before you ride it",
   "Know the road before you ride it.": "Know the road before you ride it.",
   L: "L",
   "Last 30 days": "Last 30 days",
@@ -671,6 +681,8 @@ export const en = {
   "Quality trend ": "Quality trend ",
   "Ranked by the current quality and curviness model. ":
     "Ranked by the current quality and curviness model. ",
+  "Ranked lists of the top-rated motorcycle roads in {name}, scored by quality and curviness.":
+    "Ranked lists of the top-rated motorcycle roads in {name}, scored by quality and curviness.",
   "Ranked roads": "Ranked roads",
   "Rate this road and add quick notes for the next rider. ":
     "Rate this road and add quick notes for the next rider. ",
@@ -724,6 +736,8 @@ export const en = {
   Road: "Road",
   "Road Cartographer": "Road Cartographer",
   "Road Preview Cards ": "Road Preview Cards ",
+  "Road Quality Explorer \u2014 Tarmoto":
+    "Road Quality Explorer \u2014 Tarmoto",
   "Road preference ": "Road preference ",
   "Road preview cards": "Road preview cards",
   "Road preview cards \u00b7 top ": "Road preview cards \u00b7 top ",
