@@ -222,7 +222,7 @@ export default function TripDetailPage() {
       setLeaving(false);
     }
   }, [loaded, router]);
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip, t), [trip]);
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   // Activate the trip in the store so the map's store-driven overlays

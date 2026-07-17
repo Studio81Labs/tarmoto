@@ -1284,7 +1284,7 @@ export default function TripPlannerPage() {
     setDraftPlannerParameters(plannerParams);
   }, [plannerParams, setDraftPlannerParameters]);
   const closureRoutes = useMemo(
-    () => buildTripClosureRoutes(displayedTrip),
+    () => buildTripClosureRoutes(displayedTrip, t),
     [displayedTrip],
   );
   const currentGenerationSignature = useMemo(

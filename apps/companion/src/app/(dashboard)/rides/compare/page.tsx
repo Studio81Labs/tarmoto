@@ -360,7 +360,7 @@ function ComparisonView({
 
   const statRows = useMemo(() => {
     if (!rideA || !rideB) return [];
-    return computeStatRows(rideA, rideB);
+    return computeStatRows(rideA, rideB, t);
   }, [rideA, rideB]);
   const qualityDiff = useMemo(() => {
     if (!rideA || !rideB) return [];

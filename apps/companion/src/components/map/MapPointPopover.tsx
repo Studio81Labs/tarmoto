@@ -442,7 +442,7 @@ function ConditionBody({
         {isClosure ? (
           <>
             <p className="font-mono text-[10px] uppercase tracking-[0.4px] text-fg-mute">
-              {formatClosureWindow(point.closure, format)}
+              {formatClosureWindow(point.closure, format, t)}
             </p>
             {point.closure.notes ? (
               <p className="mt-1">{point.closure.notes}</p>

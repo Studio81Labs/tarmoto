@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createFormatters } from "@tarmoto/shared";
+import { createFormatters, makeTranslator } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import {
   buildUnifiedRoutePreview,
   computeStatRows,
@@ -40,7 +41,7 @@ describe("computeStatRows", () => {
   it("produces one row per stat in stable order with `b - a` deltas", () => {
     const a = ride({ distance_km: 100, max_speed: 120, avg_road_quality: 3 });
     const b = ride({ distance_km: 150, max_speed: 110, avg_road_quality: 4.5 });
-    const rows = computeStatRows(a, b);
+    const rows = computeStatRows(a, b, t);
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
     expect(byKey.distance_km!.delta).toBe(50);
     // higher max_speed is better, but b is lower → regressed (sign check in deltaDirection test)
@@ -63,7 +64,9 @@ describe("computeStatRows", () => {
   it("returns null deltas when either side lacks the value", () => {
     const a = ride({ max_lean_angle: null });
     const b = ride({ max_lean_angle: 40 });
-    const row = computeStatRows(a, b).find((r) => r.key === "max_lean_angle")!;
+    const row = computeStatRows(a, b, t).find(
+      (r) => r.key === "max_lean_angle",
+    )!;
     expect(row.a).toBeNull();
     expect(row.b).toBe(40);
     expect(row.delta).toBeNull();
@@ -232,5 +235,60 @@ describe("formatDelta / deltaDirection", () => {
     expect(deltaDirection(5, null)).toBe("neutral");
     // Residuals under rounding are treated as neutral.
     expect(deltaDirection(0.004, true, 2)).toBe("neutral");
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…") rather
+// than an identity map. An identity map can't tell a real `t()` call apart
+// from a regression that bypasses `t()` and returns the raw canonical
+// English constant — both would produce the same string. With sentinel
+// values, a bypass regression returns the untranslated English constant and
+// these assertions fail.
+describe("ride-compare translator wiring", () => {
+  const sentinelT = makeTranslator<string>({
+    en: {
+      Distance: "XX-Distance",
+      km: "XX-km",
+      Duration: "XX-Duration",
+      min: "XX-min",
+      "Avg speed": "XX-Avg speed",
+      "km/h": "XX-km/h",
+      "Max speed": "XX-Max speed",
+      "Elevation gain": "XX-Elevation gain",
+      m: "XX-m",
+      "Elevation loss": "XX-Elevation loss",
+      "Avg road quality": "XX-Avg road quality",
+      "Curve count": "XX-Curve count",
+      "Max lean": "XX-Max lean",
+    },
+  });
+
+  it("computeStatRows routes every label and (translatable) unit through the translator", () => {
+    const rows = computeStatRows(ride(), ride(), sentinelT);
+    const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+
+    expect(byKey.distance_km!.label).toBe("XX-Distance");
+    expect(byKey.distance_km!.unit).toBe("XX-km");
+    expect(byKey.duration_min!.label).toBe("XX-Duration");
+    expect(byKey.duration_min!.unit).toBe("XX-min");
+    expect(byKey.avg_speed!.label).toBe("XX-Avg speed");
+    expect(byKey.avg_speed!.unit).toBe("XX-km/h");
+    expect(byKey.max_speed!.label).toBe("XX-Max speed");
+    expect(byKey.max_speed!.unit).toBe("XX-km/h");
+    expect(byKey.elevation_gain!.label).toBe("XX-Elevation gain");
+    expect(byKey.elevation_gain!.unit).toBe("XX-m");
+    expect(byKey.elevation_loss!.label).toBe("XX-Elevation loss");
+    expect(byKey.elevation_loss!.unit).toBe("XX-m");
+    expect(byKey.avg_road_quality!.label).toBe("XX-Avg road quality");
+    expect(byKey.curve_count!.label).toBe("XX-Curve count");
+    expect(byKey.curve_count!.unit).toBeUndefined();
+    expect(byKey.max_lean_angle!.label).toBe("XX-Max lean");
+
+    // "/5" and "°" are non-linguistic glyphs, deliberately NOT registered as
+    // catalog keys — routed through `t()` but rendered verbatim via the
+    // raw-key fallback in every locale, never actually translated.
+    expect(byKey.avg_road_quality!.unit).toBe("/5");
+    expect(byKey.max_lean_angle!.unit).toBe("°");
   });
 });

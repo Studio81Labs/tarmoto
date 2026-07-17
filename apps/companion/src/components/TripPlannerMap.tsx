@@ -510,7 +510,7 @@ const FetchedTripPlannerMap = forwardRef<
   },
   ref,
 ) {
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip, t), [trip]);
   const closuresData = useClosures(month, closureRoutes);
   const passesData = usePasses(month, closureRoutes);
   return (

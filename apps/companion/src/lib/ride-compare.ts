@@ -10,7 +10,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
-import type { Formatters } from "@tarmoto/shared";
+import type { Formatters, LooseTranslate } from "@tarmoto/shared";
 import type { QualityTier } from "@/lib/types";
 import {
   buildRoutePreview,
@@ -136,15 +136,25 @@ const STAT_DEFS: Array<Omit<StatRow, "a" | "b" | "delta"> & { key: StatKey }> =
 
 // Builds one StatRow per metric. Both-null rows still appear (with em-dashes)
 // so the table layout is stable regardless of which fields the API populated.
+// `def.unit` is still routed through `t()` even for the non-linguistic "/5"
+// and "°" glyphs (avg_road_quality, max_lean_angle) — neither is a
+// catalog key, so the raw-key fallback returns them unchanged in every
+// locale, which is the correct behaviour for symbols nobody should translate.
 export function computeStatRows(
   a: ComparableRide,
   b: ComparableRide,
+  t: LooseTranslate,
 ): StatRow[] {
   return STAT_DEFS.map((def) => {
     const av = a[def.key];
     const bv = b[def.key];
     return {
       ...def,
+      label: t(def.label),
+      // Conditional spread (not `unit: def.unit ? t(def.unit) : undefined`)
+      // so a unit-less def keeps `unit` absent rather than explicitly
+      // `undefined` — required under `exactOptionalPropertyTypes`.
+      ...(def.unit ? { unit: t(def.unit) } : {}),
       a: av,
       b: bv,
       delta: av != null && bv != null ? bv - av : null,

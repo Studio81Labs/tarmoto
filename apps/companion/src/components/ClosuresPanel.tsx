@@ -401,7 +401,7 @@ function OnRouteClosureCard({
           </span>
         </div>
         <p className="mt-1 text-xs text-fg-dim">
-          {formatClosureWindow(closure, format)}
+          {formatClosureWindow(closure, format, t)}
         </p>
         {closure.notes ? (
           <p className="mt-1 text-xs text-fg-dim">{closure.notes}</p>
@@ -485,7 +485,7 @@ function ClosureRow({
       </div>
 
       <p className="mt-1 text-xs text-fg-dim">
-        {formatClosureWindow(closure, format)}
+        {formatClosureWindow(closure, format, t)}
       </p>
 
       {detourKm != null && (
