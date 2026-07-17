@@ -22,7 +22,7 @@ export interface PoiImportRegion {
  * country's bounding rectangle — the operator clips the Geofabrik extract to
  * exactly this box (see runbook), so it doubles as the tombstone boundary.
  * Shipping all 17 as the default keeps the coverage list in the repo; a
- * deployment narrows it via `TARMOTO_POI_IMPORT_REGIONS` and enables the flag.
+ * deployment narrows it via `TARMOTO_OSM_POI_IMPORT_REGIONS` and enables the flag.
  */
 export const DEFAULT_REGIONS: readonly PoiImportRegion[] = [
   {
@@ -97,7 +97,7 @@ export const DEFAULT_REGIONS: readonly PoiImportRegion[] = [
 
 /**
  * Resolve the active region list from a comma-separated list of country codes
- * (`envName` names the source var, e.g. `TARMOTO_POI_IMPORT_REGIONS`). Unset /
+ * (`envName` names the source var, e.g. `TARMOTO_OSM_POI_IMPORT_REGIONS`). Unset /
  * blank → the full default list. An unknown code is a configuration error
  * (throws) rather than a silent drop — a typo would otherwise quietly skip a
  * country's import. Shared with the offline extract-refresh config

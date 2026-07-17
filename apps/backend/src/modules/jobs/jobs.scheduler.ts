@@ -5,7 +5,7 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
-import type { Queue } from 'bullmq';
+import { Queue } from 'bullmq';
 import {
   JOB_NAMES,
   QUEUE_NAMES,
@@ -69,8 +69,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly modelEvalAgreement: Queue,
     @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
     private readonly napClosurePoll: Queue,
-    @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
-    private readonly osmImport: Queue,
+    @InjectQueue(QUEUE_NAMES.ROAD_IMPORT)
+    private readonly roadImport: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -104,18 +104,39 @@ export class JobsScheduler implements OnApplicationBootstrap {
   }
 
   /**
-   * Remove repeatables whose job was renamed. BullMQ keys a scheduler by
-   * `${queue}.${name}`, so a rename registers a NEW key and leaves the old one
-   * firing forever — its job then reaches a processor that no longer knows the
-   * name. No queue this scheduler owns currently has a retired name: the POI
-   * import's own #850 `run`→`dispatch` rename cleanup moved to apps/ingest's
-   * `PoiImportScheduler` along with the `poi.import` queue itself (Task 5,
-   * POI-ingestion extraction). Kept as the extension point for the next one.
+   * Remove repeatables whose job or queue was renamed. BullMQ keys a
+   * scheduler by `${queue}.${name}`, so a rename registers a NEW key and
+   * leaves the old one firing forever — its job then reaches a processor
+   * that no longer knows the name, or lands in a queue nothing consumes
+   * anymore. The POI import's own #850 `run`→`dispatch` rename cleanup
+   * moved to apps/ingest's `PoiImportScheduler` along with the `poi.import`
+   * queue itself (Task 5, POI-ingestion extraction), so it isn't handled
+   * here.
+   *
+   * This IS the next one: the `osm.import`→`road.import` queue rename (the
+   * import source/domain naming pass) leaves an `osm.import.run` scheduler
+   * upserted in Redis in any environment that already booted the prior code
+   * (e.g. staging ran #781). `osm.import` is no longer a queue this scheduler
+   * (or Nest) injects, so the cleanup below binds an ad-hoc `Queue` to the
+   * bare retired name via `retiredQueueFor` instead of `@InjectQueue`.
    */
   private async removeRetiredSchedulers(): Promise<void> {
-    const retired: Array<{ queue: Queue; schedulerId: string }> = [];
-    for (const { queue, schedulerId } of retired) {
+    const retired: Array<{ queueName: string; schedulerId: string }> = [
+      // #781's OSM road-graph import queue, renamed `osm.import` ->
+      // `road.import` in this PR. Bare string literals on purpose: do NOT
+      // reintroduce `osm.import` into QUEUE_NAMES/JOB_NAMES or register it
+      // as a NestJS queue — this is a one-time cleanup of a queue this app
+      // no longer owns, not a queue this app still runs.
+      { queueName: 'osm.import', schedulerId: 'osm.import.run' },
+    ];
+    for (const { queueName, schedulerId } of retired) {
+      // Build + use + tear down the ad-hoc queue all inside try/finally: this
+      // runs UNGUARDED in onApplicationBootstrap, and the surrounding scheduler
+      // deliberately keeps boot resilient to Redis hiccups — a throw from the
+      // ad-hoc `Queue` construction or its `close()` must not bail startup.
+      let queue: Queue | undefined;
       try {
+        queue = this.retiredQueueFor(queueName);
         const removed = await queue.removeJobScheduler(schedulerId);
         if (removed) {
           this.logger.log(`Removed retired scheduler ${schedulerId}`);
@@ -125,8 +146,33 @@ export class JobsScheduler implements OnApplicationBootstrap {
         this.logger.error(
           `Failed to remove retired scheduler ${schedulerId}: ${msg}`,
         );
+      } finally {
+        try {
+          await queue?.close();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `Failed to close retired queue ${queueName}: ${msg}`,
+          );
+        }
       }
     }
+  }
+
+  /**
+   * Builds an ad-hoc BullMQ `Queue` bound to a retired queue name this
+   * scheduler no longer injects, purely so `removeJobScheduler` can reach its
+   * old repeatable key. Reuses the connection options an already-injected
+   * queue was constructed with (`Queue.opts.connection`) rather than opening
+   * a fresh pool from scratch — the caller closes the returned queue right
+   * after use so the ad-hoc connection can't leak past this one call.
+   *
+   * Its own method (rather than inlined in `removeRetiredSchedulers`) so
+   * specs can stub it out and assert against a mock instead of exercising a
+   * live Redis connection.
+   */
+  protected retiredQueueFor(name: string): Queue {
+    return new Queue(name, { connection: this.roadImport.opts.connection });
   }
 
   private specs(): RecurringJobSpec[] {
@@ -195,8 +241,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
         description: 'NAP (NDIC) closure poll → road_closures (#743)',
       },
       {
-        queue: this.osmImport,
-        name: JOB_NAMES.OSM_IMPORT_RUN,
+        queue: this.roadImport,
+        name: JOB_NAMES.ROAD_IMPORT_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_SUN_0100,
         description: 'weekly OSM road-graph import → road_segments (#781)',
       },

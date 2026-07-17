@@ -6,7 +6,7 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
-import { osmImportConfig } from '../osm-import/osm-import.config.js';
+import { osmRoadImportConfig } from '../osm-import/osm-import.config.js';
 import { qualityConflationConfig } from './quality-conflation.config.js';
 import { injectSmoothnessTags } from './smoothness-injection.js';
 import {
@@ -59,7 +59,7 @@ interface WayQualityRow {
  * ways at segment boundaries for full resolution is a possible future refinement
  * once the per-way loss is measured on a real region.
  *
- * **Region-bounding:** when `TARMOTO_OSM_IMPORT_BBOX` is set, only ways with
+ * **Region-bounding:** when `TARMOTO_OSM_ROAD_IMPORT_BBOX` is set, only ways with
  * geometry intersecting that rectangle are conflated — the same region the OSM
  * extract (and therefore the GraphHopper graph) covers. Unset → the whole live
  * network, matching the importer's own gating.
@@ -74,8 +74,8 @@ export class QualityConflationService {
   constructor(
     @InjectRepository(RoadSegment)
     private readonly repo: Repository<RoadSegment>,
-    @Inject(osmImportConfig.KEY)
-    private readonly config: ConfigType<typeof osmImportConfig>,
+    @Inject(osmRoadImportConfig.KEY)
+    private readonly config: ConfigType<typeof osmRoadImportConfig>,
     @Inject(qualityConflationConfig.KEY)
     private readonly conflationConfig: ConfigType<
       typeof qualityConflationConfig

@@ -11,7 +11,7 @@ import {
 } from './segment-rows.js';
 import { assembleWays } from './osm-assemble.js';
 import { parseOsmXml } from './osm-xml-source.js';
-import { osmImportConfig } from './osm-import.config.js';
+import { osmRoadImportConfig } from './osm-import.config.js';
 import { planReassignment, type ExistingSegment } from './split-merge.js';
 import type { LatLng } from './segmentation.js';
 
@@ -242,11 +242,11 @@ export class OsmImportService {
   constructor(
     @InjectRepository(RoadSegment)
     private readonly repo: Repository<RoadSegment>,
-    @Inject(osmImportConfig.KEY)
-    private readonly config: ConfigType<typeof osmImportConfig>,
+    @Inject(osmRoadImportConfig.KEY)
+    private readonly config: ConfigType<typeof osmRoadImportConfig>,
   ) {}
 
-  /** Whether the scheduled import is turned on (TARMOTO_OSM_IMPORT_ENABLED). */
+  /** Whether the scheduled import is turned on (TARMOTO_OSM_ROAD_IMPORT_ENABLED). */
   get enabled(): boolean {
     return this.config.enabled;
   }
@@ -261,7 +261,7 @@ export class OsmImportService {
     const { filePath } = this.config;
     if (!filePath) {
       throw new Error(
-        'OSM import is enabled but TARMOTO_OSM_IMPORT_FILE is not set',
+        'OSM import is enabled but TARMOTO_OSM_ROAD_IMPORT_FILE is not set',
       );
     }
     this.logger.log(`OSM import: reading ${filePath}`);
@@ -319,7 +319,7 @@ export class OsmImportService {
     }
 
     // Stale detection is only sound over an EXPLICIT region (the extract's
-    // boundary, TARMOTO_OSM_IMPORT_BBOX): a data-derived bbox (the extent of the
+    // boundary, TARMOTO_OSM_ROAD_IMPORT_BBOX): a data-derived bbox (the extent of the
     // incoming roads) would tombstone existing rows that fall in the rectangle but
     // outside this extract, and miss removed roads beyond the current extrema.
     // With a region we load every existing row inside it (so edge-removed roads

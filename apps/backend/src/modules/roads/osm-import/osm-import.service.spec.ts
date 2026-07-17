@@ -9,7 +9,7 @@ import {
   OsmImportService,
   ROAD_SEGMENT_ON_CONFLICT,
 } from './osm-import.service.js';
-import { osmImportConfig } from './osm-import.config.js';
+import { osmRoadImportConfig } from './osm-import.config.js';
 import type { OsmWay, RoadSegmentRow } from './segment-rows.js';
 
 /** A single ~100 m drivable way (two nodes → one segment). */
@@ -185,7 +185,7 @@ describe('OsmImportService', () => {
           useValue: repo,
         },
         {
-          provide: osmImportConfig.KEY,
+          provide: osmRoadImportConfig.KEY,
           useValue: osmConfig,
         },
       ],
@@ -535,7 +535,7 @@ describe('OsmImportService', () => {
     it('throws when enabled without a configured file path', async () => {
       osmConfig.filePath = null;
       await expect(service.importFromConfiguredFile()).rejects.toThrow(
-        /TARMOTO_OSM_IMPORT_FILE/,
+        /TARMOTO_OSM_ROAD_IMPORT_FILE/,
       );
     });
 

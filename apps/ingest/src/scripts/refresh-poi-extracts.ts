@@ -7,7 +7,7 @@
  * osmium + multi-GB PBF handling never bloat the app image. For each configured
  * region it downloads the Geofabrik country PBF, `osmium tags-filter`s it to the
  * §7 POI tag set, `osmium extract -b`s it to the region's `DEFAULT_REGIONS`
- * bbox, and ATOMICALLY writes `<code>.osm` to `TARMOTO_POI_IMPORT_DIR` — the same
+ * bbox, and ATOMICALLY writes `<code>.osm` to `TARMOTO_OSM_POI_IMPORT_DIR` — the same
  * shared volume the weekly import cron reads, so the store then mirrors CURRENT
  * data instead of re-importing a static file.
  *
@@ -22,7 +22,7 @@
  *  - **Bounded disk:** regions are processed sequentially and each region's
  *    multi-GB intermediates are removed before the next, so peak disk is one
  *    country's PBF + its filtered copy, not all 17 at once.
- *  - **Env-gated:** a no-op unless `TARMOTO_POI_REFRESH_ENABLED=true`.
+ *  - **Env-gated:** a no-op unless `TARMOTO_OSM_POI_REFRESH_ENABLED=true`.
  *
  * FSQ (OS Places) has a sibling script — `refresh-fsq-extracts` (a token-gated
  * DuckDB/Iceberg pull) — that shares this script's atomic-write/sweep/error
@@ -155,7 +155,7 @@ export async function refreshAll(
 ): Promise<RefreshSummary> {
   if (config.targetDir === null) {
     throw new Error(
-      "TARMOTO_POI_IMPORT_DIR is not set — nowhere to write refreshed extracts",
+      "TARMOTO_OSM_POI_IMPORT_DIR is not set — nowhere to write refreshed extracts",
     );
   }
   // Reclaim orphans from a previously killed run before writing new temps.
@@ -189,7 +189,7 @@ async function main(): Promise<void> {
   const config = resolvePoiRefreshConfig();
   if (!config.enabled) {
     console.log(
-      "POI refresh: TARMOTO_POI_REFRESH_ENABLED is not true — skipping.",
+      "POI refresh: TARMOTO_OSM_POI_REFRESH_ENABLED is not true — skipping.",
     );
     return;
   }

@@ -56,7 +56,7 @@ describe("poi-refresh.config", () => {
   describe("resolvePoiRefreshConfig", () => {
     it("is disabled with all regions by default", () => {
       const cfg = resolvePoiRefreshConfig({
-        TARMOTO_POI_IMPORT_DIR: "/data",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data",
       });
 
       expect(cfg.enabled).toBe(false);
@@ -64,11 +64,11 @@ describe("poi-refresh.config", () => {
       expect(cfg.regions).toHaveLength(DEFAULT_REGIONS.length);
     });
 
-    it("enables on TARMOTO_POI_REFRESH_ENABLED=true and narrows to (case-insensitive) TARMOTO_POI_IMPORT_REGIONS", () => {
+    it("enables on TARMOTO_OSM_POI_REFRESH_ENABLED=true and narrows to (case-insensitive) TARMOTO_OSM_POI_IMPORT_REGIONS", () => {
       const cfg = resolvePoiRefreshConfig({
-        TARMOTO_POI_REFRESH_ENABLED: "true",
-        TARMOTO_POI_IMPORT_DIR: "/data",
-        TARMOTO_POI_IMPORT_REGIONS: "cz, sk , AT",
+        TARMOTO_OSM_POI_REFRESH_ENABLED: "true",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data",
+        TARMOTO_OSM_POI_IMPORT_REGIONS: "cz, sk , AT",
       });
 
       expect(cfg.enabled).toBe(true);
@@ -76,13 +76,13 @@ describe("poi-refresh.config", () => {
       expect(cfg.regions.map((r) => r.code)).toEqual(["CZ", "SK", "AT"]);
     });
 
-    it("targetDir is null when TARMOTO_POI_IMPORT_DIR is unset", () => {
+    it("targetDir is null when TARMOTO_OSM_POI_IMPORT_DIR is unset", () => {
       expect(resolvePoiRefreshConfig({}).targetDir).toBeNull();
     });
 
     it("fails fast on an unknown region code instead of silently dropping it (#976 review)", () => {
       expect(() =>
-        resolvePoiRefreshConfig({ TARMOTO_POI_IMPORT_REGIONS: "CZ,ZZ" }),
+        resolvePoiRefreshConfig({ TARMOTO_OSM_POI_IMPORT_REGIONS: "CZ,ZZ" }),
       ).toThrow(/unknown region "ZZ"/);
     });
   });
@@ -96,12 +96,12 @@ describe("poi-refresh.config", () => {
       expect(cfg.regions).toHaveLength(DEFAULT_REGIONS.length);
     });
 
-    it("reads the token + dir and narrows to (case-insensitive) TARMOTO_FSQ_IMPORT_REGIONS", () => {
+    it("reads the token + dir and narrows to (case-insensitive) TARMOTO_FSQ_POI_IMPORT_REGIONS", () => {
       const cfg = resolveFsqRefreshConfig({
-        TARMOTO_FSQ_REFRESH_ENABLED: "true",
-        TARMOTO_FSQ_TOKEN: "  tok-123  ",
-        TARMOTO_FSQ_IMPORT_DIR: "/fsq",
-        TARMOTO_FSQ_IMPORT_REGIONS: "cz, sk",
+        TARMOTO_FSQ_POI_REFRESH_ENABLED: "true",
+        TARMOTO_FSQ_POI_TOKEN: "  tok-123  ",
+        TARMOTO_FSQ_POI_IMPORT_DIR: "/fsq",
+        TARMOTO_FSQ_POI_IMPORT_REGIONS: "cz, sk",
       });
       expect(cfg.enabled).toBe(true);
       expect(cfg.token).toBe("tok-123"); // trimmed
@@ -111,10 +111,10 @@ describe("poi-refresh.config", () => {
 
     it("uses the FSQ env, independent of the OSM region/dir vars", () => {
       const cfg = resolveFsqRefreshConfig({
-        TARMOTO_POI_IMPORT_DIR: "/osm",
-        TARMOTO_POI_IMPORT_REGIONS: "DE",
-        TARMOTO_FSQ_IMPORT_DIR: "/fsq",
-        TARMOTO_FSQ_IMPORT_REGIONS: "CZ",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/osm",
+        TARMOTO_OSM_POI_IMPORT_REGIONS: "DE",
+        TARMOTO_FSQ_POI_IMPORT_DIR: "/fsq",
+        TARMOTO_FSQ_POI_IMPORT_REGIONS: "CZ",
       });
       expect(cfg.targetDir).toBe("/fsq");
       expect(cfg.regions.map((r) => r.code)).toEqual(["CZ"]);
@@ -122,7 +122,7 @@ describe("poi-refresh.config", () => {
 
     it("fails fast on an unknown FSQ region code", () => {
       expect(() =>
-        resolveFsqRefreshConfig({ TARMOTO_FSQ_IMPORT_REGIONS: "CZ,ZZ" }),
+        resolveFsqRefreshConfig({ TARMOTO_FSQ_POI_IMPORT_REGIONS: "CZ,ZZ" }),
       ).toThrow(/unknown region "ZZ"/);
     });
   });

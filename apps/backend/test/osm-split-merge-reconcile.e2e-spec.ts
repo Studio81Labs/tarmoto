@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppDataSource } from '../src/data-source.js';
 import { OsmImportService } from '../src/modules/roads/osm-import/osm-import.service.js';
 import { RoadsService } from '../src/modules/roads/roads.service.js';
-import { osmImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
+import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 import { FunZone } from '../src/entities/fun-zone.entity.js';
 import type { OsmWay } from '../src/modules/roads/osm-import/segment-rows.js';
@@ -65,7 +65,7 @@ describe('OSM split/merge reconciliation (#835)', () => {
         OsmImportService,
         RoadsService,
         {
-          provide: osmImportConfig.KEY,
+          provide: osmRoadImportConfig.KEY,
           // An explicit region enclosing this test's ways so stale detection is
           // authoritative (a data-derived bbox would not tombstone).
           useValue: {

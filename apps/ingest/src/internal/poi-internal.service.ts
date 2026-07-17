@@ -58,7 +58,7 @@ export class PoiInternalService {
     // rows (a disabled source drops all 17 — "fewer rows when disabled"), and
     // each contributes ONLY the codes it is itself CONFIGURED for — its own
     // `regions` list (e.g. FSQ narrowed to CZ via
-    // `TARMOTO_FSQ_IMPORT_REGIONS`) — not the full `DEFAULT_REGIONS` list
+    // `TARMOTO_FSQ_POI_IMPORT_REGIONS`) — not the full `DEFAULT_REGIONS` list
     // (#1011 review, FIX 1). An out-of-scope pair is simply ABSENT from the
     // response rather than a `configured:false` row: the admin table
     // (`PoiImportsScreen`) only renders its "Not configured" state for an

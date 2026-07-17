@@ -42,7 +42,7 @@ const LEGACY_POI_IMPORT_RUN = "run";
  *      (source, region) across every ENABLED source in the registry (#869), so a
  *      two-source, 17-country run spreads its heavy per-country imports across
  *      hours instead of one giant job. A tick is a cheap no-op (no enqueues)
- *      while no source's `TARMOTO_*_IMPORT_ENABLED` is set.
+ *      while no source's `TARMOTO_*_POI_IMPORT_ENABLED` is set.
  *
  *   `import-region` (per-region): routes the job to its source's importer, then
  *      runs `PoiImportService.importRegion`, which parses that country's extract
@@ -87,7 +87,7 @@ export class PoiImportProcessor extends WorkerHost {
     const enabled = this.importers.filter((importer) => importer.enabled);
     if (enabled.length === 0) {
       this.logger.debug(
-        "POI import skipped: no source has TARMOTO_*_IMPORT_ENABLED=true",
+        "POI import skipped: no source has TARMOTO_*_POI_IMPORT_ENABLED=true",
       );
       return { skipped: true };
     }
@@ -132,7 +132,7 @@ export class PoiImportProcessor extends WorkerHost {
     if (!region) {
       // The admin front-door validates a manual trigger's `code` against the
       // canonical `DEFAULT_REGIONS` list (all 17), not against THIS source's
-      // narrowed `regions` (`TARMOTO_*_IMPORT_REGIONS`) — the per-source
+      // narrowed `regions` (`TARMOTO_*_POI_IMPORT_REGIONS`) — the per-source
       // enablement view is deferred to a later phase. So an operator can
       // legitimately request e.g. `fsq:SK` while FSQ is narrowed to CZ only.
       // A real region that's merely unconfigured for this source is a clean
