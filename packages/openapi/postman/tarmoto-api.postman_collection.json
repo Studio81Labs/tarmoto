@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "0b195ade-422c-483a-8850-0b16ec763cda",
+    "_postman_id": "434a2898-a6b8-4a8c-a356-12b817e241ce",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1442,250 +1442,6 @@
               "raw": "{{baseUrl}}/api/v1/model-eval/report.md",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "model-eval", "report.md"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "poi",
-      "item": [
-        {
-          "name": "Find accommodations near a point (US-10, US-36)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/accommodations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "accommodations"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "radius_km",
-                  "value": "",
-                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
-                  "disabled": true
-                },
-                {
-                  "key": "kinds",
-                  "value": "",
-                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`).",
-                  "disabled": true
-                },
-                {
-                  "key": "min_stars",
-                  "value": "",
-                  "description": "Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes \"no rating\" in with ratings the rider explicitly asked for.",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Find along-route POIs near a point (US-10)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/nearby",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "nearby"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "radius_km",
-                  "value": "",
-                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
-                  "disabled": true
-                },
-                {
-                  "key": "kinds",
-                  "value": "",
-                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`).",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "List stored POIs within a bounding box (#849)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/in-bbox",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "in-bbox"],
-              "query": [
-                {
-                  "key": "min_lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "min_lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "max_lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "max_lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "kinds",
-                  "value": "",
-                  "description": "Store kinds to include (e.g. `fuel_station,restaurant`). Free-form — the store `kind` is the OSM import superset, not the live enum. Omit to return every kind in the box.",
-                  "disabled": true
-                },
-                {
-                  "key": "limit",
-                  "value": "",
-                  "description": "Max rows to return (default 200, capped at 500).",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Stored POIs within a buffer of a route polyline (#849)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/in-corridor",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "in-corridor"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"\"\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Find POIs within a buffer of a route polyline (US-36)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/along-route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "along-route"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "POI store readiness (ADR 0007)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", "health"]
-            }
-          }
-        },
-        {
-          "name": "Fetch a single stored POI by id (#849)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/poi/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "poi", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
-              ]
             }
           }
         }
@@ -5783,6 +5539,250 @@
       ]
     },
     {
+      "name": "poi",
+      "item": [
+        {
+          "name": "Find accommodations near a point (US-10, US-36)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/accommodations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "accommodations"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_stars",
+                  "value": "",
+                  "description": "Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes \"no rating\" in with ratings the rider explicitly asked for.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Find along-route POIs near a point (US-10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/nearby",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "nearby"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List stored POIs within a bounding box (#849)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/in-bbox",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "in-bbox"],
+              "query": [
+                {
+                  "key": "min_lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "min_lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "max_lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "max_lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Store kinds to include (e.g. `fuel_station,restaurant`). Free-form — the store `kind` is the OSM import superset, not the live enum. Omit to return every kind in the box.",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max rows to return (default 200, capped at 500).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stored POIs within a buffer of a route polyline (#849)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/in-corridor",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "in-corridor"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Find POIs within a buffer of a route polyline (US-36)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/along-route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "along-route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POI store readiness (ADR 0007)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "health"]
+            }
+          }
+        },
+        {
+          "name": "Fetch a single stored POI by id (#849)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "geocode",
       "item": [
         {
@@ -6468,6 +6468,176 @@
                 "users",
                 ":userId",
                 "feature-flags",
+                ":feature"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                },
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List the limit registry with overrides",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-limits"]
+            }
+          }
+        },
+        {
+          "name": "Set a global limit override (launch mode / promo raise)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-limits/:feature/global",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-limits", ":feature", "global"],
+              "variable": [
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": 0,\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Clear a global limit override (back to normal)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-limits/:feature/global",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-limits", ":feature", "global"],
+              "variable": [
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "A user's resolved limits + override states",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", ":userId", "feature-limits"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set a per-user limit override (raise or restrict)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-limits/:feature",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-limits",
+                ":feature"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                },
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove a per-user limit override",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-limits/:feature",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-limits",
                 ":feature"
               ],
               "variable": [
@@ -7212,6 +7382,23 @@
               "raw": "{{baseUrl}}/api/v1/config/flags",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "config", "flags"]
+            }
+          }
+        },
+        {
+          "name": "Global limit-override map (feature → value, null = unlimited)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "limits"]
             }
           }
         }

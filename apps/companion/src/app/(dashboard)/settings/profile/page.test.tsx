@@ -1,4 +1,4 @@
-import { buildFeatureSnapshot } from "@tarmoto/shared";
+import { buildFeatureSnapshot, buildLimitSnapshot } from "@tarmoto/shared";
 import {
   act,
   fireEvent,
@@ -108,6 +108,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -126,6 +127,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -166,6 +168,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -184,6 +187,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -238,6 +242,7 @@ describe("ProfilePage", () => {
           preferences: {},
           subscription_tier: "free",
           features: buildFeatureSnapshot("free", {}, {}),
+          limits: buildLimitSnapshot("free", {}, {}),
           created_at: "2026-04-22T09:00:00.000Z",
         },
       });
@@ -263,6 +268,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -281,6 +287,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -321,6 +328,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -373,6 +381,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -418,6 +427,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -480,6 +490,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });
@@ -498,6 +509,7 @@ describe("ProfilePage", () => {
         preferences: {},
         subscription_tier: "free",
         features: buildFeatureSnapshot("free", {}, {}),
+        limits: buildLimitSnapshot("free", {}, {}),
         created_at: "2026-04-22T09:00:00.000Z",
       },
     });

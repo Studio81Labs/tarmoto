@@ -8,7 +8,7 @@
  * subscription: when does it subscribe, when does it tear down, and
  * how does a triggered event hand off into `useCrashStore`.
  */
-import { buildFeatureSnapshot } from "@tarmoto/shared";
+import { buildFeatureSnapshot, buildLimitSnapshot } from "@tarmoto/shared";
 import React from "react";
 import { act, render } from "@testing-library/react-native";
 import CrashDetectionRunner from "../CrashDetectionRunner";
@@ -38,6 +38,7 @@ function userWithCrashDetection(enabled: boolean): User {
     work_location: null,
     subscription_tier: "free",
     features: buildFeatureSnapshot("free", {}, {}),
+    limits: buildLimitSnapshot("free", {}, {}),
     created_at: "2026-04-25T10:00:00Z",
     preferences: {
       units: "metric",
