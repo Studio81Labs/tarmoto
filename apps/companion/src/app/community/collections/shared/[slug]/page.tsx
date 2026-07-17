@@ -45,7 +45,7 @@ export async function generateMetadata({
         "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
         {
           count: detail.item_count,
-          owner: detail.owner_name || t("a Tarmoto rider"),
+          owner: detail.owner_name || t("a Tarmoto rider", undefined, locale),
         },
         locale,
       ),
