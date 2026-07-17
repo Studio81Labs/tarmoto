@@ -13,6 +13,7 @@ import {
   Layers3,
   TriangleAlert,
   Siren,
+  Flame,
   Info,
 } from "lucide-react";
 import {
@@ -42,6 +43,8 @@ import {
 import { ApiError, api, roadsApi, tripsApi } from "@/lib/api";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
+import { FunZonePanel } from "./_components/FunZonePanel";
+import { fetchFunZonesInBbox, type FunZoneListItem } from "@/lib/discover";
 import { tripFromDetail } from "@/lib/trip-from-detail";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -251,6 +254,15 @@ function ExplorerPageInner() {
   const [rideDetailState, setRideDetailState] = useState<RideDetailPanelState>({
     status: "idle",
   });
+  // "Fun Zones" overlay (public /roads/fun-zones, migrated from the retired
+  // /discover page): score-ramped zone polygons for the viewport, click →
+  // right-docked detail drawer. Zones are fetched only while the pill is on.
+  const [showFunZones, setShowFunZones] = useState(false);
+  const [funZones, setFunZones] = useState<FunZoneListItem[]>([]);
+  const [funZonesError, setFunZonesError] = useState(false);
+  const [selectedFunZoneId, setSelectedFunZoneId] = useState<string | null>(
+    null,
+  );
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -449,6 +461,40 @@ function ExplorerPageInner() {
   useEffect(() => {
     if (!showMyRides) setSelectedRideId(null);
   }, [showMyRides]);
+  useEffect(() => {
+    if (!showFunZones) setSelectedFunZoneId(null);
+  }, [showFunZones]);
+  // Viewport-driven zone fetch while the overlay is on. Debounced so
+  // continuous panning doesn't spam the endpoint; superseded requests abort.
+  // On failure the previous zones stay on the map and a floating notice
+  // appears — silently blanking the overlay would read as "no zones here".
+  useEffect(() => {
+    if (!showFunZones || !conditionBbox) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const bbox = conditionBbox.split(",").map(Number) as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      fetchFunZonesInBbox(bbox, { signal: controller.signal })
+        .then((zones) => {
+          setFunZones(
+            [...zones].sort((a, b) => b.composite_score - a.composite_score),
+          );
+          setFunZonesError(false);
+        })
+        .catch((err) => {
+          if ((err as { name?: string }).name === "AbortError") return;
+          setFunZonesError(true);
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [showFunZones, conditionBbox]);
   // A session/account change (sign-in as another user, sign-out) must never
   // leave the previous rider's private trip/ride drawer open.
   useEffect(() => {
@@ -669,6 +715,7 @@ function ExplorerPageInner() {
                 // One drawer at a time — a trip click supersedes ride/segment.
                 setSelectedSegmentId(null);
                 setSelectedRideId(null);
+                setSelectedFunZoneId(null);
                 setSelectedTripId(tripId);
               }}
               showMyRides={showMyRides}
@@ -676,11 +723,22 @@ function ExplorerPageInner() {
               onRideSelect={(rideId) => {
                 setSelectedSegmentId(null);
                 setSelectedTripId(null);
+                setSelectedFunZoneId(null);
                 setSelectedRideId(rideId);
+              }}
+              showFunZones={showFunZones}
+              funZones={funZones}
+              selectedFunZoneId={selectedFunZoneId}
+              onFunZoneSelect={(zoneId) => {
+                setSelectedSegmentId(null);
+                setSelectedTripId(null);
+                setSelectedRideId(null);
+                setSelectedFunZoneId(zoneId);
               }}
               onSegmentSelect={(segmentId) => {
                 setSelectedTripId(null);
                 setSelectedRideId(null);
+                setSelectedFunZoneId(null);
                 setSelectedSegmentId(segmentId);
               }}
               selectedSegmentId={selectedSegmentId}
@@ -820,6 +878,15 @@ function ExplorerPageInner() {
                 <TriangleAlert size={14} />
                 {t("Conditions ")}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowFunZones((v) => !v)}
+                aria-pressed={showFunZones}
+                className={overlayPillClass(showFunZones)}
+              >
+                <Flame size={14} />
+                {t("Fun Zones ")}
+              </button>
             </div>
           </div>
 
@@ -836,6 +903,11 @@ function ExplorerPageInner() {
               Uses the actual returned count so the copy stays correct whatever
               the configured cap is. Bottom-center clears the bottom-left
               legend; pointer-events-none so it never blocks the map. */}
+          {showFunZones && funZonesError && (
+            <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-red-700 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+              {t("Couldn't refresh Fun Zones for this area ")}
+            </div>
+          )}
           {showMyRides && rideTracksTruncated && (
             <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
               <Info size={13} className="shrink-0 text-accent" aria-hidden />
@@ -862,6 +934,13 @@ function ExplorerPageInner() {
             state={rideDetailState}
             onClose={() => setSelectedRideId(null)}
             anchor={isAuthenticated ? "viewport" : "container"}
+          />
+          <FunZonePanel
+            zoneId={selectedFunZoneId}
+            summary={
+              funZones.find((zone) => zone.id === selectedFunZoneId) ?? null
+            }
+            onClose={() => setSelectedFunZoneId(null)}
           />
 
           {/* Narrow-viewport info panel — overlays the map instead of

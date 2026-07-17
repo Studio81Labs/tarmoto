@@ -5,7 +5,6 @@ import { auth } from "@/lib/auth";
 // can reach them without the login wall.
 const PUBLIC_PATHS = [
   "/explore",
-  "/discover",
   "/roads/best",
   "/rides/shared",
   "/rides/road-map/shared",
