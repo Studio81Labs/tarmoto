@@ -81,7 +81,10 @@ export function PageHeader({
         <div className="pointer-events-none sticky top-0 z-30 h-0">
           {/* left/width in cqw (not translate) — the entry animation
               animates transform and would override a translate-x. */}
-          <div className="pointer-events-auto absolute left-[calc(50%-50cqw)] flex w-[100cqw] animate-header-in items-center gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-md motion-reduce:animate-none md:px-7">
+          {/* min-h matches the bar's height when the right slot holds a
+              button (40px control + padding + border), so title-only pages
+              render the same bar height as action-bearing ones. */}
+          <div className="pointer-events-auto absolute left-[calc(50%-50cqw)] flex min-h-[57px] w-[100cqw] animate-header-in items-center gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-md motion-reduce:animate-none md:px-7">
             {icon && (
               <span className="shrink-0 text-accent" aria-hidden="true">
                 {icon}
