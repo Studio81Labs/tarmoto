@@ -245,7 +245,19 @@ export function formatMilestoneLabel(
   progress: MilestoneProgress,
   format: Formatters,
 ): string {
-  const unit = MILESTONE_UNITS[progress.milestone.metric];
+  const metric = progress.milestone.metric;
+  if (metric === "totalKm") {
+    // Distance milestones follow the rider's unit preference — current and
+    // threshold derive from the same formatter so they share one unit
+    // (byte-identical to the old output for metric riders).
+    if (progress.nextThreshold === null) {
+      return `Maxed at ${format.distanceKm(progress.current)}`;
+    }
+    const current = format.splitDistanceKm(progress.current);
+    const target = format.splitDistanceKm(progress.nextThreshold);
+    return `${current.value} / ${target.value} ${target.unit}`;
+  }
+  const unit = MILESTONE_UNITS[metric];
   if (progress.nextThreshold === null) {
     return `Maxed at ${format.integer(progress.current)} ${unit}`;
   }

@@ -1134,7 +1134,9 @@ function RegionalLeaderboardRow({
           isMe ? "text-accent" : "text-ink",
         )}
       >
-        {format.integer(entry.value)} {unit}
+        {unit === "km"
+          ? format.distanceKm(entry.value)
+          : `${format.integer(entry.value)} ${unit}`}
       </span>
     </Link>
   );
@@ -1170,7 +1172,12 @@ function MilestoneCard({
           {progress.nextThreshold !== null && (
             <span className="text-fg-dim">
               {t("{count} to go", {
-                count: format.integer(progress.remaining),
+                // Distance milestones convert `remaining` (a km figure)
+                // with the rider's units; count metrics stay plain.
+                count:
+                  progress.milestone.metric === "totalKm"
+                    ? format.distanceKm(progress.remaining)
+                    : format.integer(progress.remaining),
               })}
             </span>
           )}
