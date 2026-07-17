@@ -103,13 +103,16 @@ test.describe("rides read path", () => {
 
     // Distance / duration / quality cells render in their formatted shape.
     // Scope to the recent ride's row: KM column shows whole km, DURATION
-    // uses the compact "Xh Ym" form, and QUALITY renders the QualityBars
-    // glyph (aria-labelled "Quality N of 5"; 4.6 → tier 5).
+    // uses `format.durationCompact()` (locale-formatting migration, #1012
+    // Task 8) — for an exact-hour duration that renders just "Xh", dropping
+    // the zero-minutes suffix the pre-migration helper used to keep ("Xh
+    // 0m") — and QUALITY renders the QualityBars glyph (aria-labelled
+    // "Quality N of 5"; 4.6 → tier 5).
     const recentRow = page
       .getByRole("row")
       .filter({ hasText: RIDE_RECENT.name });
     await expect(recentRow.getByText("220")).toBeVisible();
-    await expect(recentRow.getByText("4h 0m")).toBeVisible();
+    await expect(recentRow.getByText("4h", { exact: true })).toBeVisible();
     await expect(recentRow.getByLabel("Quality 5 of 5")).toBeVisible();
 
     // The "All rides · N" tab badge reflects both rides (the single-page

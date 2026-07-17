@@ -1,9 +1,4 @@
-import {
-  kmToMiles,
-  metersToFeet,
-  type UnitSystem,
-  type QualitySource,
-} from "@tarmoto/shared";
+import type { QualitySource } from "@tarmoto/shared";
 import type { QualityTier, HazardType } from "@/lib/types";
 
 // ── Road Quality ──
@@ -149,94 +144,6 @@ export function hazardFadeOpacity(
 }
 
 // ── Formatting ──
-
-// Single cutover point between feet and miles in imperial mode, expressed in
-// metres so both distance formatters can reference it directly. 160.934 m is
-// exactly 0.1 mi.
-const IMPERIAL_FEET_CUTOFF_M = 160.934;
-
-/**
- * Distance formatter used across the companion dashboard. The metric branch
- * matches the pre-existing `formatDistance(km)` output exactly so callers
- * that don't opt into a unit system render as before (short distances in
- * metres, km with one decimal, zero → `"0 m"`). The only new metric
- * behaviour is a defensive fallback for NaN / negative inputs, which
- * weren't meaningfully supported either way.
- *
- * The imperial branch is new: a tiered label (sub-0.1 mi in feet, 1–10 mi
- * with one decimal, ≥10 mi whole) that pages opt into by passing `units`.
- *
- * NOTE: `@tarmoto/shared` exports a simpler `formatDistance` too. Always
- * import from `@/lib/utils` inside the companion so the dashboard renders
- * distances consistently. The shared version is meant for contexts (e.g.
- * mobile) that don't need the imperial branch.
- */
-export function formatDistance(
-  km: number,
-  units: UnitSystem = "metric",
-): string {
-  if (units === "imperial") {
-    if (!Number.isFinite(km) || km <= 0) return "0 mi";
-    const meters = km * 1000;
-    if (meters < IMPERIAL_FEET_CUTOFF_M) {
-      return `${metersToFeet(meters)} ft`;
-    }
-    const mi = kmToMiles(km);
-    if (mi < 10) return `${mi.toFixed(1)} mi`;
-    return `${mi.toFixed(0)} mi`;
-  }
-  if (!Number.isFinite(km) || km < 0) return "0 m";
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
-}
-
-/**
- * Speed (backend km/h) as a rounded value + uppercased unit, honouring the
- * rider's unit preference (km/h vs mph). For MetricTile-style displays that
- * format the number themselves.
- */
-export function splitFormattedSpeed(
-  kmh: number,
-  units: UnitSystem = "metric",
-): { value: number; unit: string } {
-  return units === "imperial"
-    ? { value: Math.round(kmToMiles(kmh)), unit: "MPH" }
-    : { value: Math.round(kmh), unit: "KM/H" };
-}
-
-/**
- * Elevation (backend metres) as a rounded value + uppercased unit, honouring
- * the rider's unit preference (m vs ft).
- */
-export function splitFormattedElevation(
-  meters: number,
-  units: UnitSystem = "metric",
-): { value: number; unit: string } {
-  return units === "imperial"
-    ? { value: Math.round(metersToFeet(meters)), unit: "FT" }
-    : { value: Math.round(meters), unit: "M" };
-}
-
-/**
- * Thin wrapper for sources whose native unit is metres (road segment lengths,
- * distance-to-point from /exploration/nearby-unridden). Kept next to
- * `formatDistance` so a single display rule covers both shapes.
- */
-export function formatDistanceFromMeters(
-  meters: number,
-  units: UnitSystem = "metric",
-): string {
-  if (!Number.isFinite(meters) || meters <= 0) {
-    return units === "imperial" ? "0 ft" : "0 m";
-  }
-  if (units === "imperial" && meters < IMPERIAL_FEET_CUTOFF_M) {
-    return `${metersToFeet(meters)} ft`;
-  }
-  if (units === "metric" && meters < 1000) {
-    return `${Math.round(meters)} m`;
-  }
-  return formatDistance(meters / 1000, units);
-}
 
 /**
  * Round a backend road-quality score (0–5 scale) to a 1–5 QualityBars tier,

@@ -86,4 +86,68 @@ export default [
       ],
     },
   },
+  {
+    // Locale-formatting guard: all display formatting goes through the
+    // src/format seam (useFormat/getServerFormatters). Raw toLocale*/Intl
+    // constructions bypass the rider's format preferences.
+    //
+    // NOTE: this object's `files` (src/**/*.{ts,tsx}) overlaps the guard
+    // block above (**/*.{ts,tsx,js,jsx}), and ESLint flat config resolves two
+    // matching configs that set the *same* rule key by letting the later one
+    // win outright — it does not concatenate the `no-restricted-syntax`
+    // option arrays. So the raw-fetch (#861) and native-form-control
+    // (#1006/#1008) selectors are repeated here too; dropping them would
+    // silently turn those guards off for every file this block also matches.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/format/**",
+      "src/**/*.test.{ts,tsx}",
+      "src/**/*.spec.{ts,tsx}",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.name='fetch'] > TemplateLiteral > Identifier[name=/^API_(BASE|HOST)/]",
+          message:
+            "Don't fetch the backend directly. Use the generated client — `api` / `apiServer` from `@/lib/api` (see #861).",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message:
+            "Use a @tarmoto/ui form control instead of a native <input>. If this element is deliberate (hidden file picker, sr-only bridge, dark surface, inline editor), add a disable comment with the reason.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message:
+            "Use @tarmoto/ui Select/Combobox instead of a native <select>. If this element is deliberate (sr-only bridge), add a disable comment with the reason.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message:
+            "Use @tarmoto/ui Textarea instead of a native <textarea>. If this element is deliberate (dark surface, read-only embed code), add a disable comment with the reason.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleString']",
+          message:
+            "Use useFormat()/getServerFormatters() (src/format) instead of toLocaleString — it applies the rider's format preferences.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleDateString']",
+          message:
+            "Use format.date()/shortDate()/calendarDate() from src/format instead of toLocaleDateString.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleTimeString']",
+          message: "Use format.time()/dateTime() from src/format.",
+        },
+        {
+          selector: "NewExpression[callee.object.name='Intl']",
+          message:
+            "Construct Intl formatters only inside src/format (the seam memoizes and applies preferences). Timezone DETECTION via Intl.DateTimeFormat().resolvedOptions() without `new` remains allowed.",
+        },
+      ],
+    },
+  },
 ];
