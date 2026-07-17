@@ -652,8 +652,9 @@ function SeasonalBanner({
         <div className="mt-5 flex flex-col gap-2 max-w-md">
           <div className="flex items-center justify-between text-xs text-ink">
             <span className="tabular-nums">
-              {format.integer(seasonal.current)} /{" "}
-              {format.integer(seasonal.target)} {seasonal.unit}
+              {seasonal.unit === "km"
+                ? `${format.splitDistanceKm(seasonal.current).value} / ${format.distanceKm(seasonal.target)}`
+                : `${format.integer(seasonal.current)} / ${format.integer(seasonal.target)} ${seasonal.unit}`}
             </span>
             <span className="text-fg-dim">{daysLeft}</span>
           </div>
@@ -786,10 +787,24 @@ function ChallengeCard({
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-fg-dim">
         <Mono>
-          {format.integer(challenge.current)} /{" "}
-          {format.integer(challenge.target)}
-          {challenge.unit && (
-            <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+          {challenge.unit === "km" ? (
+            // Distance challenges convert with the rider's units — both
+            // figures and the label derive from one formatter.
+            <>
+              {format.splitDistanceKm(challenge.current).value} /{" "}
+              {format.splitDistanceKm(challenge.target).value}
+              <span className="ml-1 text-fg-mute">
+                {format.splitDistanceKm(challenge.target).unit}
+              </span>
+            </>
+          ) : (
+            <>
+              {format.integer(challenge.current)} /{" "}
+              {format.integer(challenge.target)}
+              {challenge.unit && (
+                <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+              )}
+            </>
           )}
         </Mono>
         <Mono>{format.percent(fraction)}</Mono>
@@ -1041,7 +1056,8 @@ function RegionalLeaderboardTable({
         <span role="columnheader">#</span>
         <span role="columnheader">{t("Rider")}</span>
         <span role="columnheader" className="text-right">
-          {dim.unit}
+          {/* The distance dimension's rows convert — its header must too. */}
+          {dim.unit === "km" ? format.splitDistanceKm(1).unit : dim.unit}
         </span>
       </div>
       <div>
