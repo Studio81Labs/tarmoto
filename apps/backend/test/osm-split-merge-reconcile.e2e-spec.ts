@@ -30,6 +30,16 @@ describe('OSM split/merge reconciliation (#835)', () => {
   // A remote corner of the map so this test's ways can't collide with seeded rows.
   const LNG = 9.11;
   const LAT = 47.03;
+  // An explicit region enclosing this test's ways so stale detection is
+  // authoritative (a data-derived bbox would not tombstone) — passed directly to
+  // `importFrom` now that the importer no longer reads a region off its config
+  // (the folder model, Sub-project B; see `OsmImportService.importRegion`).
+  const REGION: [number, number, number, number] = [
+    LNG - 0.1,
+    LAT - 0.1,
+    LNG + 0.2,
+    LAT + 0.2,
+  ];
 
   /** A single ~100 m drivable way at a given offset from the test origin. */
   function way(id: number, dLat = 0, dLng = 0): OsmWay {
@@ -66,13 +76,7 @@ describe('OSM split/merge reconciliation (#835)', () => {
         RoadsService,
         {
           provide: osmRoadImportConfig.KEY,
-          // An explicit region enclosing this test's ways so stale detection is
-          // authoritative (a data-derived bbox would not tombstone).
-          useValue: {
-            enabled: true,
-            filePath: null,
-            bbox: [LNG - 0.1, LAT - 0.1, LNG + 0.2, LAT + 0.2],
-          },
+          useValue: { enabled: true, extractDir: null, regions: [] },
         },
       ],
     }).compile();
@@ -98,7 +102,7 @@ describe('OSM split/merge reconciliation (#835)', () => {
   it('carries id + history onto a re-keyed way and tombstones an unmatched row', async () => {
     // 1) Seed the existing network: way 8100 (one ~100 m segment) + a stale way
     //    8199 far away that the next snapshot won't contain.
-    await service.importFrom([way(8100), way(8199, 0.05)]);
+    await service.importFrom([way(8100), way(8199, 0.05)], REGION);
     const seededMain = await segmentsForWay('8100');
     const seededStale = await segmentsForWay('8199');
     expect(seededMain).toHaveLength(1);
@@ -123,7 +127,7 @@ describe('OSM split/merge reconciliation (#835)', () => {
 
     // 2) Re-import: the SAME geometry now belongs to way 8200 (a split/merge
     //    re-keyed it), and way 8199 is gone from the snapshot.
-    const result = await service.importFrom([way(8200)]);
+    const result = await service.importFrom([way(8200)], REGION);
     expect(result.carriedOver).toBe(1);
     expect(result.deactivated).toBe(1);
 

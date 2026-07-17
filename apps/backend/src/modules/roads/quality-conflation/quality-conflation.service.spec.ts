@@ -4,11 +4,9 @@ import { join } from 'node:path';
 import type { Repository } from 'typeorm';
 import type { ConfigType } from '@nestjs/config';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
-import type { osmRoadImportConfig } from '../osm-import/osm-import.config.js';
 import type { qualityConflationConfig } from './quality-conflation.config.js';
 import { QualityConflationService } from './quality-conflation.service.js';
 
-type Config = ConfigType<typeof osmRoadImportConfig>;
 type ConflationConfig = ConfigType<typeof qualityConflationConfig>;
 
 const CONFLATION_OFF: ConflationConfig = {
@@ -19,22 +17,20 @@ const CONFLATION_OFF: ConflationConfig = {
 
 function makeService(
   rows: unknown[],
-  bbox: Config['bbox'] = null,
   conflation: ConflationConfig = CONFLATION_OFF,
 ): { service: QualityConflationService; query: jest.Mock } {
   const query = jest.fn().mockResolvedValue(rows);
   const repo = { query } as unknown as Repository<RoadSegment>;
-  const config: Config = { enabled: false, filePath: null, bbox };
   return {
-    service: new QualityConflationService(repo, config, conflation),
+    service: new QualityConflationService(repo, conflation),
     query,
   };
 }
 
 /** First `repo.query(sql, params)` call, typed for assertions. */
 function firstCall(query: jest.Mock): { sql: string; params: unknown[] } {
-  const call = query.mock.calls[0] as [string, unknown[]];
-  return { sql: call[0], params: call[1] };
+  const call = query.mock.calls[0] as [string, unknown[] | undefined];
+  return { sql: call[0], params: call[1] ?? [] };
 }
 
 describe('QualityConflationService', () => {
@@ -82,24 +78,15 @@ describe('QualityConflationService', () => {
     expect(sql).toContain('GROUP BY osm_way_id');
   });
 
-  it('does not region-bound when no bbox is configured', async () => {
+  it('always conflates the whole live network (no region bound)', async () => {
+    // The import now spans multiple independently-refreshed regions (the folder
+    // model, Sub-project B), so a single import bbox can no longer describe the
+    // covered area — conflation reads every live, scored way, unconditionally.
     const { service, query } = makeService([]);
     await service.buildConflation();
     const { sql, params } = firstCall(query);
     expect(sql).not.toContain('ST_MakeEnvelope');
     expect(params).toEqual([]);
-  });
-
-  it('region-bounds to the configured bbox when set', async () => {
-    const bbox: Config['bbox'] = [12.09, 48.55, 18.86, 51.06];
-    const { service, query } = makeService([], bbox);
-    await service.buildConflation();
-    const { sql, params } = firstCall(query);
-    expect(sql).toContain('geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)');
-    expect(sql).toContain(
-      'ST_Intersects(geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))',
-    );
-    expect(params).toEqual([12.09, 48.55, 18.86, 51.06]);
   });
 
   it('drops a way whose representative is non-finite (defensive)', async () => {
@@ -126,7 +113,7 @@ describe('QualityConflationService', () => {
   describe('runConflation', () => {
     it('reflects the enable flag', () => {
       expect(makeService([]).service.enabled).toBe(false);
-      const on = makeService([], null, {
+      const on = makeService([], {
         enabled: true,
         inputFilePath: '/in.osm',
         outputFilePath: '/out.osm',
@@ -135,7 +122,7 @@ describe('QualityConflationService', () => {
     });
 
     it('throws when the input/output paths are not configured', async () => {
-      const { service } = makeService([], null, {
+      const { service } = makeService([], {
         enabled: true,
         inputFilePath: null,
         outputFilePath: null,
@@ -160,7 +147,6 @@ describe('QualityConflationService', () => {
         );
         const { service } = makeService(
           [{ osmWayId: '100', representativeQuality: 4.6, segmentCount: 2 }],
-          null,
           { enabled: true, inputFilePath: input, outputFilePath: output },
         );
 
@@ -186,7 +172,6 @@ describe('QualityConflationService', () => {
         await writeFile(output, 'PREVIOUS GOOD EXTRACT');
         const { service } = makeService(
           [{ osmWayId: '100', representativeQuality: 4.6, segmentCount: 2 }],
-          null,
           {
             enabled: true,
             inputFilePath: missingInput,
