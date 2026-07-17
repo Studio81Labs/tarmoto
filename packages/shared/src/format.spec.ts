@@ -240,6 +240,22 @@ describe("createFormatters — duration", () => {
   });
 });
 
+describe("createFormatters — monthYearCompact", () => {
+  it("renders a compact localized month + 2-digit year, UTC-pinned", () => {
+    const en = createFormatters({ locale: "en-US", units: "metric" });
+    const cs = createFormatters({
+      locale: "cs-CZ",
+      timeZone: "Europe/Prague",
+      units: "metric",
+    });
+    expect(en.monthYearCompact("2026-01-15T12:00:00Z")).toBe("Jan 26");
+    // UTC-pinned like month(): 23:30Z on Apr 30 must not roll into May
+    // even under a Prague context.
+    expect(en.monthYearCompact("2025-04-30T23:30:00Z")).toBe("Apr 25");
+    expect(norm(cs.monthYearCompact("2026-01-15T12:00:00Z"))).toMatch(/led/);
+  });
+});
+
 describe("createFormatters — durationCompact", () => {
   const en = createFormatters({ locale: "en-US", units: "metric" });
   it("keeps the tight compact style used by ride tables", () => {

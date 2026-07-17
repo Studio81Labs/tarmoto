@@ -128,6 +128,8 @@ export interface Formatters {
   monthYear(value: DateInput): string;
   /** Locale month name only ("Apr"), UTC-pinned — for chart axes comparing the same month across years. */
   month(value: DateInput): string;
+  /** Compact "Apr 26"-shaped month + 2-digit year, UTC-pinned — for narrow chart axes spanning years. */
+  monthYearCompact(value: DateInput): string;
   /** Instant, locale hour-cycle time, in the context timezone. */
   time(value: DateInput): string;
   /** Instant, medium date + short time, in the context timezone. */
@@ -346,6 +348,8 @@ export function createFormatters(ctx: FormatContext): Formatters {
     monthYear: (value) =>
       formatDate(value, instant({ month: "short", year: "numeric" })),
     month: (value) => formatDate(value, calendar({ month: "short" })),
+    monthYearCompact: (value) =>
+      formatDate(value, calendar({ month: "short", year: "2-digit" })),
     time: (value) => formatDate(value, instant({ timeStyle: "short" })),
     dateTime: (value) =>
       formatDate(value, instant({ dateStyle: "medium", timeStyle: "short" })),

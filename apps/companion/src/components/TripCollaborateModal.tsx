@@ -1566,7 +1566,16 @@ function ActivityTab({
                       dateTime={entry.created_at}
                       className="shrink-0 font-mono text-[9.5px] text-fg-mute"
                     >
-                      {format.relativeTime(entry.created_at)}
+                      {/* Bucket-aware: the section header already names the
+                          day, so Yesterday rows show the clock time (locale
+                          hour cycle) — relativeTime alone would render every
+                          yesterday entry as the same "yesterday", losing
+                          intra-day ordering. Earlier rows show the date. */}
+                      {bucket === "today"
+                        ? format.relativeTime(entry.created_at)
+                        : bucket === "yesterday"
+                          ? format.time(entry.created_at)
+                          : format.shortDate(entry.created_at)}
                     </time>
                   </li>
                 );

@@ -196,8 +196,11 @@ export function SegmentTrendChart({
                   stroke={palette.axis}
                   fontSize={10}
                   tickLine={false}
+                  // Compact "Jan 26" ticks — full monthYear crowds or gets
+                  // minTickGap-suppressed on the 320px sidebar; the tooltip
+                  // (formatTrendTooltipLabel) keeps the full month + year.
                   tickFormatter={(value: string) =>
-                    format.monthYear(monthBucketAnchor(value))
+                    format.monthYearCompact(monthBucketAnchor(value))
                   }
                   minTickGap={24}
                 />
