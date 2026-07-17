@@ -16,9 +16,10 @@ export const metadata: Metadata = {
  *
  * The `.tarmoto-no-cream` marker on this wrapper opts the embed subtree
  * out of every `body.bg-cream:not(:has(.tarmoto-no-cream))` rule. The
- * same marker is reused by the public unauthenticated layouts
- * (`/explore`, `/discover`, `/roads/best`) which also render dark slate
- * shells until the rider signs in.
+ * same marker is reused by the public `/discover` and `/roads/best`
+ * layouts, which still render dark slate shells (`/explore` has since
+ * migrated to cream). The dark theme is deprecated — these are the last
+ * holdouts and migrate next.
  *
  * `min-h-screen bg-slate-950` paints the iframe canvas dark even when
  * the embedded widget is shorter than the iframe viewport — without it
