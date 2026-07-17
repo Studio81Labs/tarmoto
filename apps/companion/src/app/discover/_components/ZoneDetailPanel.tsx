@@ -101,10 +101,10 @@ export function ZoneDetailPanel({ summary }: Props) {
         <div className="grid grid-cols-3 gap-3 px-4 py-3 border-b border-slate-800 text-center">
           <Stat label="Roads" value={String(zone.road_count)} />
           <Stat
-            label="Curve km"
+            label={`Curve ${format.splitDistanceKm(1).unit}`}
             value={
               zone.total_curve_km != null
-                ? format.integer(zone.total_curve_km)
+                ? format.splitDistanceKm(zone.total_curve_km).value
                 : "—"
             }
           />

@@ -96,7 +96,7 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                       {zone.road_count}
                       {t("roads ")}
                       {zone.total_curve_km != null
-                        ? ` · ${format.integer(zone.total_curve_km)} km curves`
+                        ? ` · ${format.distanceKm(zone.total_curve_km)} curves`
                         : ""}
                       {zone.avg_quality != null
                         ? ` · avg ${format.decimal(zone.avg_quality, 1)}★`
