@@ -26,6 +26,7 @@ import {
   type RoadReview,
   type UpsertRoadReviewInput,
 } from "@/lib/api";
+import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import { useFormat } from "@/format/FormatProvider";
 import { useAuthStore } from "@/stores/auth";
@@ -454,42 +455,42 @@ export function RoadReviewsPanel({
           {isAuthenticated ? (
             myReview ? (
               <>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  uppercase
+                  className="flex-1"
                   onClick={openEdit}
                   disabled={submitting}
-                  className={`inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`}
+                  leftIcon={<Pencil size={13} />}
                   aria-label={t("Edit your review")}
                 >
-                  <Pencil size={13} />
                   {t("Edit ")}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="danger"
+                  uppercase
+                  className="flex-1"
                   onClick={handleDeleteReview}
                   disabled={submitting}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border border-rose-500/40 px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-rose-600 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  loading={submitting && editorMode === null}
+                  leftIcon={<Trash2 size={13} />}
                   aria-label={t("Delete your review")}
                 >
-                  {submitting && editorMode === null ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={13} />
-                  )}
                   {t("Delete ")}
-                </button>
+                </Button>
               </>
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                uppercase
+                block
                 onClick={openCreate}
                 disabled={submitting}
-                className={`inline-flex w-full items-center justify-center gap-2 rounded-[10px] border px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`}
+                leftIcon={<Pencil size={13} />}
                 aria-label={t("Write a review for this road")}
               >
-                <Pencil size={13} />
                 {t("Write a review ")}
-              </button>
+              </Button>
             )
           ) : (
             <p className={`text-xs ${tc.textMute}`}>
@@ -849,23 +850,24 @@ function ReviewEditor({
       {/* Footer actions */}
       <div className={`my-4 h-px w-full ${tc.divider}`} />
       <div className="flex items-center gap-2.5">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          uppercase
           onClick={onCancel}
           disabled={disabled}
-          className={`rounded-[10px] border px-5 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`}
         >
           {t("Cancel ")}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="accent"
+          uppercase
+          className="flex-1"
           onClick={onSubmit}
-          disabled={disabled || uploading}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={uploading}
+          loading={disabled}
         >
-          {disabled ? <Loader2 size={13} className="animate-spin" /> : null}
           {mode === "create" ? "Submit review" : "Save changes"}
-        </button>
+        </Button>
       </div>
     </section>
   );

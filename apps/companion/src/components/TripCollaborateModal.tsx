@@ -544,14 +544,15 @@ function InviteTab({
                 </div>
               </div>
             </div>
-            <button
-              type="button"
+            <Button
+              variant="danger"
+              size="sm"
+              className="shrink-0"
               disabled={loading}
               onClick={onRegenerate}
-              className="shrink-0 rounded-lg border border-quality-q1/40 px-3 py-1.5 font-sans text-xs font-bold text-quality-q1 transition hover:bg-quality-q1/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("Revoke")}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
@@ -1373,30 +1374,26 @@ function SuggestionCard({
         <div className="flex items-center gap-[7px]">
           {canModerate && isOpen && (
             <>
-              <button
-                type="button"
+              <Button
+                variant="success"
+                size="sm"
                 onClick={() => onResolve("accept")}
-                className="rounded-lg border border-[#1f8a5b]/40 bg-[#1f8a5b]/10 px-3 py-1.5 font-sans text-xs font-bold text-[#1f8a5b] transition hover:bg-[#1f8a5b]/20"
               >
                 {t("Accept ")}
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => onResolve("reject")}
-                className="rounded-lg border border-quality-q1/40 bg-quality-q1/10 px-3 py-1.5 font-sans text-xs font-bold text-quality-q1 transition hover:bg-quality-q1/20"
               >
                 {t("Reject ")}
-              </button>
+              </Button>
             </>
           )}
           {canModerate && !isOpen && (
-            <button
-              type="button"
-              onClick={onReopen}
-              className="rounded-lg border border-line-strong px-3 py-1.5 font-sans text-xs font-bold text-fg-dim transition hover:border-ink hover:text-ink"
-            >
+            <Button variant="secondary" size="sm" onClick={onReopen}>
               {t("Reopen")}
-            </button>
+            </Button>
           )}
           {(isAuthor || canDeleteOthers) && (
             <button
