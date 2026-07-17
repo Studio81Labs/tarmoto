@@ -36,7 +36,7 @@ export default async function DiscoverLayout({
     return <AppShell>{children}</AppShell>;
   }
   return (
-    <div className="tarmoto-no-cream flex flex-col h-screen overflow-hidden bg-slate-950">
+    <div className="flex flex-col h-screen overflow-hidden bg-cream text-ink">
       <PublicExploreHeader callbackUrl="/discover" />
       <div className="flex-1 overflow-hidden">{children}</div>
     </div>

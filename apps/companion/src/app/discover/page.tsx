@@ -107,7 +107,7 @@ function DiscoverPageInner() {
           setRetryNonce((n) => n + 1);
         }}
       />
-      <div className="flex-1 relative bg-slate-900">
+      <div className="flex-1 relative bg-cream">
         <DiscoverMap
           retryNonce={retryNonce}
           onZonesLoaded={(next) => {

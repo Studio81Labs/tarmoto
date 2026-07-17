@@ -255,7 +255,7 @@ export function DiscoverMap({
           <button
             type="button"
             onClick={() => drawRef.current?.start()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-100 text-sm hover:bg-slate-800 transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cream/90 border border-line-strong text-ink text-sm shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm hover:bg-paper-2 transition"
           >
             <Square size={14} />
             {drawnBbox ? t("Redraw region ") : t("Draw region ")}
@@ -265,7 +265,7 @@ export function DiscoverMap({
           <button
             type="button"
             onClick={() => drawRef.current?.clearDrawn()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 text-sm hover:bg-slate-800 transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cream/90 border border-line-strong text-fg-dim text-sm shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm hover:bg-paper-2 transition"
           >
             <X size={12} />
             {t("Clear region ")}

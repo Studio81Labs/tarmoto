@@ -1,6 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useFormat } from "@/format/FormatProvider";
+import { Skeleton } from "@tarmoto/ui";
 import { useDiscoverStore } from "./useDiscoverStore";
 import type { FunZoneListItem } from "@/lib/discover";
 interface Props {
@@ -18,11 +19,11 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
   const format = useFormat();
   const { drawnBbox, selectedZoneId, setSelectedZoneId } = useDiscoverStore();
   return (
-    <aside className="w-[300px] border-r border-slate-800 bg-slate-950 overflow-y-auto flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+    <aside className="w-[300px] border-r border-line bg-paper overflow-y-auto flex flex-col">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-line">
         <div>
-          <h2 className="text-sm font-semibold text-white">{t("Fun Zones")}</h2>
-          <p className="text-xs text-slate-400">
+          <h2 className="text-sm font-semibold text-ink">{t("Fun Zones")}</h2>
+          <p className="text-xs text-fg-dim">
             {loading
               ? "Loading…"
               : `${zones.length} in ${drawnBbox ? "drawn region" : "view"}`}
@@ -33,14 +34,14 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
             {t("Drawn ")}
           </span>
         ) : (
-          <span className="text-[10px] uppercase tracking-wider text-slate-500">
+          <span className="text-[10px] uppercase tracking-wider text-fg-dim">
             {t("Viewport ")}
           </span>
         )}
       </header>
 
       {error ? (
-        <div className="p-4 text-sm text-slate-300">
+        <div className="p-4 text-sm text-fg-dim">
           <p className="mb-2">{t("Couldn't load zones.")}</p>
           <button
             type="button"
@@ -53,20 +54,17 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
       ) : loading && zones.length === 0 ? (
         <div className="p-4 space-y-2">
           {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-16 rounded bg-slate-900 border border-slate-800 animate-pulse"
-            />
+            <Skeleton key={i} className="h-16 w-full rounded-[10px]" />
           ))}
         </div>
       ) : zones.length === 0 ? (
-        <div className="p-4 text-sm text-slate-400">
+        <div className="p-4 text-sm text-fg-dim">
           {drawnBbox
             ? "No Fun Zones in drawn region — try a larger area or clear."
             : "No Fun Zones in view yet — zoom out or drag the map."}
         </div>
       ) : (
-        <ul className="divide-y divide-slate-800">
+        <ul className="divide-y divide-line">
           {zones.map((zone, i) => {
             const active = zone.id === selectedZoneId;
             return (
@@ -76,8 +74,8 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                   onClick={() => setSelectedZoneId(zone.id)}
                   className={`w-full text-left px-4 py-3 transition flex gap-3 items-start ${
                     active
-                      ? "bg-slate-900 border-l-2 border-accent"
-                      : "hover:bg-slate-900/60 border-l-2 border-transparent"
+                      ? "bg-paper-2 border-l-2 border-accent"
+                      : "hover:bg-paper-2/60 border-l-2 border-transparent"
                   }`}
                 >
                   <span className="flex-shrink-0 mt-0.5 w-7 h-7 rounded-full bg-accent/10 text-accent text-xs font-semibold flex items-center justify-center tabular-nums">
@@ -85,14 +83,14 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-medium text-white truncate">
+                      <h3 className="text-sm font-medium text-ink truncate">
                         {zone.name ?? fallbackName(zone)}
                       </h3>
                       <span className="text-xs tabular-nums text-accent flex-shrink-0">
                         {format.decimal(zone.composite_score, 1)}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-xs text-fg-dim mt-1">
                       {zone.road_count}
                       {t("roads ")}
                       {zone.total_curve_km != null
@@ -103,7 +101,7 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                         : ""}
                     </p>
                     {zone.best_season ? (
-                      <p className="text-[10px] text-slate-500 mt-0.5">
+                      <p className="text-[10px] text-fg-dim mt-0.5">
                         {zone.best_season}
                       </p>
                     ) : null}
