@@ -90,7 +90,7 @@ export default function RouteCollectionsPage() {
       await unfollowCollection(collection.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to unfollow collection",
+        err instanceof Error ? err.message : t("Failed to unfollow collection"),
       );
     }
   };
@@ -124,7 +124,7 @@ export default function RouteCollectionsPage() {
       await removeCollection(collection.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to delete collection",
+        err instanceof Error ? err.message : t("Failed to delete collection"),
       );
     }
   };
@@ -531,12 +531,12 @@ function CollectionModal({
   }, []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const nameError = validateCollectionName(title, collections, excludeId);
+    const nameError = validateCollectionName(title, collections, t, excludeId);
     if (nameError) {
       setError(nameError);
       return;
     }
-    const descError = validateCollectionDescription(description);
+    const descError = validateCollectionDescription(description, t);
     if (descError) {
       setError(descError);
       return;

@@ -61,7 +61,7 @@ export function BikeFormModal({
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting) return;
-    const validation = validateBikeForm(values);
+    const validation = validateBikeForm(values, new Date(), t);
     if (hasErrors(validation)) {
       setErrors(validation);
       return;

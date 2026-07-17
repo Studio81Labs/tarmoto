@@ -1,3 +1,4 @@
+import type { LooseTranslate } from "@tarmoto/shared";
 import type { CreateBikeInput } from "@/lib/api";
 import type { Bike } from "@/lib/types";
 
@@ -39,29 +40,33 @@ export function bikeToFormValues(bike: Bike): BikeFormValues {
 
 export function validateBikeForm(
   values: BikeFormValues,
-  now: Date = new Date(),
+  now: Date,
+  t: LooseTranslate,
 ): BikeFormErrors {
   const errors: BikeFormErrors = {};
 
-  if (!values.make.trim()) errors.make = "Make is required";
-  if (!values.model.trim()) errors.model = "Model is required";
+  if (!values.make.trim()) errors.make = t("Make is required");
+  if (!values.model.trim()) errors.model = t("Model is required");
 
   const yearTrimmed = values.year.trim();
   if (!yearTrimmed) {
-    errors.year = "Year is required";
+    errors.year = t("Year is required");
   } else if (!/^\d{4}$/.test(yearTrimmed)) {
-    errors.year = "Enter a 4-digit year";
+    errors.year = t("Enter a 4-digit year");
   } else {
     const year = Number(yearTrimmed);
     const max = maxBikeYear(now);
     if (year < MIN_BIKE_YEAR || year > max) {
-      errors.year = `Year must be between ${MIN_BIKE_YEAR} and ${max}`;
+      errors.year = t("Year must be between {min} and {max}", {
+        min: MIN_BIKE_YEAR,
+        max,
+      });
     }
   }
 
   const photo = values.photoUrl.trim();
   if (photo && !isHttpUrl(photo)) {
-    errors.photoUrl = "Photo URL must start with http:// or https://";
+    errors.photoUrl = t("Photo URL must start with http:// or https://");
   }
 
   return errors;

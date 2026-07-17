@@ -215,9 +215,10 @@ export default function TripListPage() {
           if (cancelled) return;
           setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
           toast.success(
-            result.succeeded === 1
-              ? "Moved 1 folder to your Tarmoto account."
-              : `Moved ${result.succeeded} folders to your Tarmoto account.`,
+            t(
+              "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
+              { count: result.succeeded },
+            ),
           );
         }
       } catch {
@@ -1232,7 +1233,7 @@ function FolderModal({
   }, []);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const validationError = validateFolderName(value, folders, excludeId);
+    const validationError = validateFolderName(value, folders, t, excludeId);
     if (validationError) {
       setError(validationError);
       return;

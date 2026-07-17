@@ -1420,7 +1420,7 @@ export default function TripPlannerPage() {
       const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
       if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
         toast.error(
-          "Imported routes need at least two route points before saving.",
+          t("Imported routes need at least two route points before saving."),
         );
         setSaving(false);
         return;
@@ -1450,7 +1450,9 @@ export default function TripPlannerPage() {
         generationSurfaces(p).length === 0
       ) {
         toast.error(
-          "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+          t(
+            "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+          ),
         );
         setSaving(false);
         return;
@@ -1459,7 +1461,7 @@ export default function TripPlannerPage() {
       const firstDay = displayedTrip.days[0];
       const startWp = firstDay?.waypoints[0];
       if (!startWp) {
-        toast.error("Add a start waypoint before saving this trip.");
+        toast.error(t("Add a start waypoint before saving this trip."));
         setSaving(false);
         return;
       }
@@ -1512,7 +1514,7 @@ export default function TripPlannerPage() {
       }
       router.push(`/trips/${tripId}`);
     } catch (err) {
-      toast.error("Could not save this trip. Please try again.");
+      toast.error(t("Could not save this trip. Please try again."));
       console.warn("Failed to save trip", err);
       setSaving(false);
     }
@@ -2348,7 +2350,7 @@ export default function TripPlannerPage() {
       const latestTrip = activeTripRef.current;
       const startWaypoint = findStartWaypoint(latestTrip);
       if (!latestTrip || !startWaypoint) {
-        toast.error("Add a start waypoint before selecting this route.");
+        toast.error(t("Add a start waypoint before selecting this route."));
         return;
       }
       const requestToken = requestTokenRef.current + 1;
@@ -2389,7 +2391,7 @@ export default function TripPlannerPage() {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
-        toast.error("Could not select this route option. Please try again.");
+        toast.error(t("Could not select this route option. Please try again."));
       } finally {
         if (requestTokenRef.current === requestToken) {
           generationLockRef.current = false;

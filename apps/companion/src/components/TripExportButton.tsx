@@ -32,9 +32,9 @@ export function TripExportButton({ trip }: TripExportButtonProps) {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      toast.success("GPX downloaded");
+      toast.success(t("GPX downloaded"));
     } catch {
-      toast.error("Could not generate GPX");
+      toast.error(t("Could not generate GPX"));
     }
   }
   return (

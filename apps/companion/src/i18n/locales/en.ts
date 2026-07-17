@@ -19,6 +19,10 @@ export const en = {
   "3 stars or better": "3 stars or better",
   "4 stars or better": "4 stars or better",
   "5 stars only": "5 stars only",
+  "A collection with that name already exists":
+    "A collection with that name already exists",
+  "A folder with that name already exists":
+    "A folder with that name already exists",
   "A short blurb about your riding \u2014 shown on your public profile.":
     "A short blurb about your riding \u2014 shown on your public profile.",
   "API access": "API access",
@@ -31,6 +35,10 @@ export const en = {
   "Active challenges": "Active challenges",
   "Active hazards ": "Active hazards ",
   Add: "Add",
+  "Add a start waypoint before saving this trip.":
+    "Add a start waypoint before saving this trip.",
+  "Add a start waypoint before selecting this route.":
+    "Add a start waypoint before selecting this route.",
   "Add at least two waypoints to surface along-route stops. ":
     "Add at least two waypoints to surface along-route stops. ",
   "Add bike ": "Add bike ",
@@ -163,6 +171,9 @@ export const en = {
   "Collaborate ": "Collaborate ",
   "Collaborate on this trip ": "Collaborate on this trip ",
   "Collaboration tabs": "Collaboration tabs",
+  "Collection name is required": "Collection name is required",
+  "Collection name must be {max} characters or fewer":
+    "Collection name must be {max} characters or fewer",
   "Collection not found": "Collection not found",
   "Collection not found ": "Collection not found ",
   "Collection \u2014 Tarmoto": "Collection \u2014 Tarmoto",
@@ -201,12 +212,20 @@ export const en = {
     "Could not copy automatically. Select the code and copy it manually. ",
   "Could not copy your email. Please copy it manually. ":
     "Could not copy your email. Please copy it manually. ",
+  "Could not generate GPX": "Could not generate GPX",
+  "Could not join this shared trip. Ask the owner for a fresh link.":
+    "Could not join this shared trip. Ask the owner for a fresh link.",
   "Could not load achievements": "Could not load achievements",
   "Could not load leaderboards": "Could not load leaderboards",
   "Could not load leaderboards ": "Could not load leaderboards ",
   "Could not load preferences: ": "Could not load preferences: ",
   "Could not load profile": "Could not load profile",
   "Could not load settings: ": "Could not load settings: ",
+  "Could not save this trip. Please try again.":
+    "Could not save this trip. Please try again.",
+  "Could not select this route option. Please try again.":
+    "Could not select this route option. Please try again.",
+  "Could not submit vote.": "Could not submit vote.",
   "Couldn't load the route preview right now. ":
     "Couldn't load the route preview right now. ",
   "Couldn't load this collection": "Couldn't load this collection",
@@ -271,6 +290,8 @@ export const en = {
   "Deleting\u2026 ": "Deleting\u2026 ",
   Description: "Description",
   "Description ": "Description ",
+  "Description must be {max} characters or fewer":
+    "Description must be {max} characters or fewer",
   "Detour approx. {distance}": "Detour approx. {distance}",
   "Detour available \u00b7 approx. ": "Detour available \u00b7 approx. ",
   "Direct / efficient": "Direct / efficient",
@@ -326,6 +347,7 @@ export const en = {
   Ended: "Ended",
   "Ends today": "Ends today",
   "Ends tomorrow": "Ends tomorrow",
+  "Enter a 4-digit year": "Enter a 4-digit year",
   "Enter your email and we'll send a reset link":
     "Enter your email and we'll send a reset link",
   "Estimated from road surface": "Estimated from road surface",
@@ -350,6 +372,8 @@ export const en = {
   "Export failed: ": "Export failed: ",
   "Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ":
     "Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ",
+  "Failed to delete collection": "Failed to delete collection",
+  "Failed to unfollow collection": "Failed to unfollow collection",
   Fair: "Fair",
   "Fair or better": "Fair or better",
   February: "February",
@@ -359,6 +383,9 @@ export const en = {
   "Filters ": "Filters ",
   "Finding the best roads for you ": "Finding the best roads for you ",
   Flooding: "Flooding",
+  "Folder name is required": "Folder name is required",
+  "Folder name must be {max} characters or fewer":
+    "Folder name must be {max} characters or fewer",
   "Folders ": "Folders ",
   "Focus day": "Focus day",
   "Focus selected day": "Focus selected day",
@@ -376,6 +403,7 @@ export const en = {
   "Full road quality zoom": "Full road quality zoom",
   "Fun Zones": "Fun Zones",
   "GPX (tracks) ": "GPX (tracks) ",
+  "GPX downloaded": "GPX downloaded",
   "GPX export": "GPX export",
   "Generate itinerary": "Generate itinerary",
   "Generate or load a trip first to create an invite link. ":
@@ -420,6 +448,8 @@ export const en = {
     "Import or generate a route to check crossings. ",
   "Import or generate a route to check mountain pass crossings. ":
     "Import or generate a route to check mountain pass crossings. ",
+  "Imported routes need at least two route points before saving.":
+    "Imported routes need at least two route points before saving.",
   "In ": "In ",
   "Included right now ": "Included right now ",
   "Invite link ": "Invite link ",
@@ -494,6 +524,7 @@ export const en = {
   "MB each). ": "MB each). ",
   MOTO: "MOTO",
   "MT-09": "MT-09",
+  "Make is required": "Make is required",
   "Manage routes, visibility, and sharing from":
     "Manage routes, visibility, and sharing from",
   "Manage your plan, payment method, billing history, and renewal choices from one place. ":
@@ -523,6 +554,7 @@ export const en = {
   "Minimum road quality ": "Minimum road quality ",
   "Minimum stay rating ": "Minimum stay rating ",
   "Mixed (balanced)": "Mixed (balanced)",
+  "Model is required": "Model is required",
   More: "More",
   Motorways: "Motorways",
   "Mountain passes": "Mountain passes",
@@ -656,6 +688,8 @@ export const en = {
     "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
   "Personal road map ": "Personal road map ",
   "Personalised recommendations ": "Personalised recommendations ",
+  "Photo URL must start with http:// or https://":
+    "Photo URL must start with http:// or https://",
   "Photo uploaded. ": "Photo uploaded. ",
   Photos: "Photos",
   "Pick another file ": "Pick another file ",
@@ -832,6 +866,8 @@ export const en = {
   "Segments ": "Segments ",
   "Segments ridden": "Segments ridden",
   "Select a day to focus": "Select a day to focus",
+  "Select at least one paved surface or turn off Avoid unpaved roads before saving.":
+    "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
   "Select review photos": "Select review photos",
   "Send reset link": "Send reset link",
   "Sending...": "Sending...",
@@ -1025,6 +1061,9 @@ export const en = {
   "Write a review for this road": "Write a review for this road",
   Yamaha: "Yamaha",
   Year: "Year",
+  "Year is required": "Year is required",
+  "Year must be between {min} and {max}":
+    "Year must be between {min} and {max}",
   "Year-over-year": "Year-over-year",
   You: "You",
   "You ": "You ",
@@ -1196,6 +1235,8 @@ export const en = {
     "{count, plural, one {# week} other {# weeks}} left",
   "{count, plural, one {DAY} other {DAYS}}":
     "{count, plural, one {DAY} other {DAYS}}",
+  "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.":
+    "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
   "{count, plural, one {PASS} other {PASSES}}":
     "{count, plural, one {PASS} other {PASSES}}",
   "{count, plural, one {pass} other {passes}}":

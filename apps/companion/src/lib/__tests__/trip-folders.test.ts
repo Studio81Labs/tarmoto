@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTranslator } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import {
   MAX_FOLDER_NAME_LENGTH,
   clearLegacyFolders,
@@ -54,27 +56,63 @@ function makeLegacyFolder(
 
 describe("validateFolderName", () => {
   it("rejects empty names", () => {
-    expect(validateFolderName("   ", [])).toMatch(/required/i);
+    expect(validateFolderName("   ", [], t)).toMatch(/required/i);
   });
 
   it("rejects names over the length limit", () => {
     expect(
-      validateFolderName("a".repeat(MAX_FOLDER_NAME_LENGTH + 1), []),
+      validateFolderName("a".repeat(MAX_FOLDER_NAME_LENGTH + 1), [], t),
     ).toMatch(/characters or fewer/);
   });
 
   it("rejects duplicate names case-insensitively", () => {
     const existing = [makeFolder({ name: "Alps 2026" })];
-    expect(validateFolderName("alps 2026", existing)).toMatch(/already exists/);
+    expect(validateFolderName("alps 2026", existing, t)).toMatch(
+      /already exists/,
+    );
   });
 
   it("allows re-saving the same folder when excludeId is set", () => {
     const existing = [makeFolder({ id: "id-1", name: "Alps 2026" })];
-    expect(validateFolderName("alps 2026", existing, "id-1")).toBeNull();
+    expect(validateFolderName("alps 2026", existing, t, "id-1")).toBeNull();
   });
 
   it("accepts a valid, unique name", () => {
-    expect(validateFolderName("Iceland Ring", [])).toBeNull();
+    expect(validateFolderName("Iceland Ring", [], t)).toBeNull();
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…") rather
+// than an identity map. An identity map can't tell a real `t()` call apart
+// from a regression that bypasses `t()` and returns the raw canonical
+// English string directly — both would produce the same string. With
+// sentinel values, a bypass regression returns the untranslated English text
+// and these assertions fail.
+describe("validateFolderName translator wiring", () => {
+  const sentinelT = makeTranslator<string>({
+    en: {
+      "Folder name is required": "XX-folder-required",
+      "Folder name must be {max} characters or fewer": "XX-folder-max-{max}",
+      "A folder with that name already exists": "XX-folder-exists",
+    },
+  });
+
+  it("routes the required-name message through the translator", () => {
+    expect(validateFolderName("   ", [], sentinelT)).toBe("XX-folder-required");
+  });
+
+  it("routes the length-limit message through the translator with max interpolated", () => {
+    expect(
+      validateFolderName("a".repeat(MAX_FOLDER_NAME_LENGTH + 1), [], sentinelT),
+    ).toBe(`XX-folder-max-${MAX_FOLDER_NAME_LENGTH}`);
+  });
+
+  it("routes the duplicate-name message through the translator", () => {
+    const existing = [makeFolder({ name: "Alps 2026" })];
+    expect(validateFolderName("alps 2026", existing, sentinelT)).toBe(
+      "XX-folder-exists",
+    );
   });
 });
 

@@ -979,7 +979,7 @@ function ReviewCard({
     } catch (err) {
       onChange(previous);
       toast.error(
-        err instanceof Error ? err.message : "Could not submit vote.",
+        err instanceof Error ? err.message : t("Could not submit vote."),
       );
     } finally {
       setPendingVote(null);
