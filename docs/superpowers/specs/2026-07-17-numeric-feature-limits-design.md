@@ -79,7 +79,7 @@ One migration creates both and **seeds launch mode**: `limit_states('max_active_
 ### 3.4 Wire contract (additive only)
 
 - `/users/me` and auth responses (`login`/`register`/`refresh`): new `limits: LimitSnapshotDto` beside the untouched `features: FeatureSnapshotDto`, with the same compile-time shape-guard pattern.
-- `GET /api/v1/config/flags`: response gains `limits: Record<string, number | null>` (active global limit overrides) beside the existing states map, same 60 s cache semantics, for the client downward-clamp fast path.
+- New `GET /api/v1/config/limits`: the active global limit overrides as a flat `Record<string, number | null>` map — a sibling endpoint of `/config/flags` rather than a field on it, because the `/config/flags` response is itself the flat states map and cannot gain a `limits` key without breaking shape. Same 60 s cache semantics, for the client downward-clamp fast path.
 - OpenAPI regen + generated-client refresh in companion/mobile/admin. All changes additive; no existing field changes shape.
 
 ### 3.5 Admin surface
