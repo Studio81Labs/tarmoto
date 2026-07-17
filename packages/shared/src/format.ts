@@ -142,9 +142,15 @@ export interface Formatters {
   calendarDateRange(start: DateInput, end: DateInput): string;
   /** "now" / "5m ago" / "3h ago" / "2d ago", absolute `date()` beyond 7 days. */
   relativeTime(value: DateInput, now?: DateInput): string;
-  /** "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8). */
+  /**
+   * "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8).
+   * Non-finite input (NaN/Infinity) renders "—" rather than NaN-tainted math.
+   */
   duration(totalMinutes: number): string;
-  /** "52m" / "4h 12m" — the tight table variant of `duration()`. */
+  /**
+   * "52m" / "4h 12m" — the tight table variant of `duration()`. Same
+   * non-finite fallback ("—") as `duration()`.
+   */
   durationCompact(totalMinutes: number): string;
   distanceKm(km: number): string;
   distanceM(m: number): string;
@@ -351,6 +357,7 @@ export function createFormatters(ctx: FormatContext): Formatters {
       formatDateRange(start, end, calendar({ day: "numeric", month: "short" })),
     relativeTime,
     duration: (totalMinutes) => {
+      if (!Number.isFinite(totalMinutes)) return "—";
       const total = Math.max(0, Math.round(totalMinutes));
       const hours = Math.floor(total / 60);
       const minutes = total % 60;
@@ -359,6 +366,7 @@ export function createFormatters(ctx: FormatContext): Formatters {
       return `${hours}h ${minutes}m`;
     },
     durationCompact: (totalMinutes) => {
+      if (!Number.isFinite(totalMinutes)) return "—";
       const total = Math.max(0, Math.round(totalMinutes));
       const hours = Math.floor(total / 60);
       const minutes = total % 60;

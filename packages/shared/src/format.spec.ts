@@ -155,7 +155,11 @@ describe("createFormatters — dates and times", () => {
   });
 
   it("renders a locale month name only, UTC-pinned regardless of context timezone", () => {
-    const en = createFormatters({ locale: "en-US", units: "metric" });
+    const en = createFormatters({
+      locale: "en-US",
+      timeZone: "Europe/Prague",
+      units: "metric",
+    });
     const cs = createFormatters({
       locale: "cs-CZ",
       timeZone: "Europe/Prague",
@@ -163,6 +167,14 @@ describe("createFormatters — dates and times", () => {
     });
     expect(en.month(INSTANT)).toBe("Apr");
     expect(norm(cs.month(INSTANT))).toMatch(/dub/);
+    // Discriminating case: 23:30 UTC on Apr 30 is already 01:30 May 1 in
+    // Prague (UTC+2) — the context timezone `en` is pinned to above. month()
+    // must ignore it and stay UTC-pinned (chart axes compare the same
+    // calendar month across years regardless of viewer timezone), so this
+    // must render "Apr". If month() ever switched to reading the context
+    // timezone the way the instant-based formatters (date/shortDate/etc.)
+    // do, this would render "May" instead.
+    expect(en.month("2025-04-30T23:30:00Z")).toBe("Apr");
   });
 
   it("pins calendar dates to UTC regardless of context timezone", () => {
@@ -222,6 +234,10 @@ describe("createFormatters — duration", () => {
     expect(en.duration(52)).toBe("52 min");
     expect(en.duration(120)).toBe("2h");
   });
+
+  it("renders an em-dash for non-finite input instead of NaN math", () => {
+    expect(en.duration(Number.NaN)).toBe("—");
+  });
 });
 
 describe("createFormatters — durationCompact", () => {
@@ -230,6 +246,10 @@ describe("createFormatters — durationCompact", () => {
     expect(en.durationCompact(252)).toBe("4h 12m");
     expect(en.durationCompact(52)).toBe("52m");
     expect(en.durationCompact(120)).toBe("2h");
+  });
+
+  it("renders an em-dash for non-finite input instead of NaN math", () => {
+    expect(en.durationCompact(Number.NaN)).toBe("—");
   });
 });
 

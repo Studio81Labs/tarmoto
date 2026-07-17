@@ -40,6 +40,10 @@ export function formatJoinedLabel(
  * Compact count formatter — renders raw counts under 1k as locale-formatted
  * integers and 1k–9.9k with one decimal, then rounds to integer-k at and
  * above 10k so the row doesn't flip from "9.9k" to "10.0k" awkwardly.
+ *
+ * @param locale - BCP-47 tag applied to the grouping separators. Omitted
+ * keeps today's runtime-default `toLocaleString()` behavior unchanged
+ * (mobile's existing contract).
  */
 export function formatCount(value: number, locale?: string): string {
   if (value < 1_000) return Math.round(value).toLocaleString(locale);
