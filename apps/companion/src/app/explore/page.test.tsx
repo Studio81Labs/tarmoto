@@ -387,12 +387,13 @@ describe("ExplorerPage", () => {
   });
 
   it("narrow viewport: arming Draw region steps the overlay aside for a cancellable draw", async () => {
-    // Stub matchMedia to report a narrow viewport (jsdom-only) so the info
-    // column renders as the full-width map overlay rather than a grid column.
+    // Stub matchMedia to report a narrow viewport *with* a fine pointer
+    // (a small desktop window / mouse) — the case where the overlay variant
+    // renders and the drag-based draw control is still offered.
     vi.stubGlobal(
       "matchMedia",
-      vi.fn(() => ({
-        matches: false,
+      vi.fn((query: string) => ({
+        matches: query.includes("any-pointer: fine"),
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
       })),
@@ -421,6 +422,33 @@ describe("ExplorerPage", () => {
       expect(
         await screen.findByRole("button", { name: /^draw region$/i }),
       ).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("touch-only device: hides the drag-based Draw region control", async () => {
+    // No fine pointer: the drag-only control can't complete a box, so the
+    // sidebar offers the zone list without a Draw region button.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    try {
+      window.history.replaceState({}, "", "/explore?zones=1");
+      render(<ExplorerPage />);
+      // The Fun Zones block still renders (its empty state is present)…
+      expect(
+        await screen.findByText(/no fun zones in view/i),
+      ).toBeInTheDocument();
+      // …but no draw affordance.
+      expect(
+        screen.queryByRole("button", { name: /^draw region$/i }),
+      ).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }

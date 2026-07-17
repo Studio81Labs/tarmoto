@@ -195,6 +195,25 @@ function ExplorerPageInner() {
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
+  // The draw-region control is drag-based and only handles mouse events, so we
+  // offer it only where a fine pointer (mouse / trackpad) exists. On touch-only
+  // devices it can't complete a box; the zone list still scopes to the
+  // viewport there (pan to re-scope). SSR-stable default true; narrowed post
+  // mount. Proper touch draw is a follow-up on the shared RegionDrawControl.
+  const [canDrawRegion, setCanDrawRegion] = useState(true);
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const mq = window.matchMedia("(any-pointer: fine)");
+    const update = () => setCanDrawRegion(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
   // Post-mount narrow-screen default: close the sidebar so the map
   // gets full width on phones. Runs once on mount; subsequent user
   // toggles of the Filters pill are respected (the effect is keyed
@@ -593,6 +612,7 @@ function ExplorerPageInner() {
           zones={funZones}
           selectedZoneId={selectedFunZoneId}
           hasDrawnRegion={drawnBbox != null}
+          canDraw={canDrawRegion}
           error={funZonesError}
           format={format}
           onSelectZone={(zoneId) => {
@@ -1203,6 +1223,7 @@ function FunZonesBlock({
   zones,
   selectedZoneId,
   hasDrawnRegion,
+  canDraw,
   error,
   format,
   onSelectZone,
@@ -1212,6 +1233,8 @@ function FunZonesBlock({
   zones: readonly FunZoneListItem[];
   selectedZoneId: string | null;
   hasDrawnRegion: boolean;
+  /** Whether the drag-based draw-region control is offered (fine pointer). */
+  canDraw: boolean;
   error: boolean;
   format: ReturnType<typeof useFormat>;
   onSelectZone: (zoneId: string) => void;
@@ -1233,27 +1256,29 @@ function FunZonesBlock({
         </span>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          leftIcon={<Square size={13} />}
-          onClick={onDrawRegion}
-          className="flex-1"
-        >
-          {hasDrawnRegion ? t("Redraw region") : t("Draw region")}
-        </Button>
-        {hasDrawnRegion && (
+      {canDraw && (
+        <div className="flex gap-2">
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
-            leftIcon={<X size={13} />}
-            onClick={onClearRegion}
+            leftIcon={<Square size={13} />}
+            onClick={onDrawRegion}
+            className="flex-1"
           >
-            {t("Clear")}
+            {hasDrawnRegion ? t("Redraw region") : t("Draw region")}
           </Button>
-        )}
-      </div>
+          {hasDrawnRegion && (
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<X size={13} />}
+              onClick={onClearRegion}
+            >
+              {t("Clear")}
+            </Button>
+          )}
+        </div>
+      )}
 
       {error ? (
         <p className="text-xs text-fg-dim">
