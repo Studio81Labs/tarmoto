@@ -143,7 +143,10 @@ vi.mock("@/components/TripExportButton", () => ({
 }));
 
 vi.mock("@/components/TripImportDialog", () => ({
-  TripImportDialog: () => null,
+  // Renders a marker while open so tests can assert the ?import=1 entry
+  // point without pulling in the real parse/preview machinery.
+  TripImportDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="import-dialog-open" /> : null,
 }));
 
 vi.mock("@/components/TripCollaborateModal", () => ({
@@ -597,6 +600,20 @@ describe("TripPlannerPage", () => {
     vi.mocked(useTripStore).getState = vi.fn(() => storeState as never);
     useClosuresMock.mockReturnValue(closuresData);
     usePassesMock.mockReturnValue(passesData);
+  });
+
+  it("opens the import dialog for the /trips ?import=1 entry point and strips the param", () => {
+    window.history.replaceState({}, "", "/trips/planner?import=1");
+    render(<TripPlannerPage />);
+
+    expect(screen.getByTestId("import-dialog-open")).toBeInTheDocument();
+    // Param stripped so a reload (or the planner's URL sync) can't re-open it.
+    expect(window.location.search).not.toContain("import=1");
+  });
+
+  it("does not open the import dialog on the bare planner URL", () => {
+    render(<TripPlannerPage />);
+    expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
   });
 
   it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
