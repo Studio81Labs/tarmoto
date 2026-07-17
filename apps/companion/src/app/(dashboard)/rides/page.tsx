@@ -102,7 +102,7 @@ function RidesPageInner() {
             onPage={(page) => update({ page })}
           />
           {list.error && (
-            <p className="mt-2 text-xs text-red-400">{list.error}</p>
+            <p className="mt-2 text-xs text-red-700">{list.error}</p>
           )}
         </>
       )}

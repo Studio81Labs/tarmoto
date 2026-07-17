@@ -238,7 +238,7 @@ export function RoadPreviewCard({
             )}
           </div>
 
-          <RoadReviewsPanel segmentId={segment.id} tone="cream" />
+          <RoadReviewsPanel segmentId={segment.id} />
 
           {segment.photos.length > 0 && (
             <div>

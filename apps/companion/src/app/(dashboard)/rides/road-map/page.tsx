@@ -452,7 +452,7 @@ function RoadMapPageInner() {
     return (
       <RidesScaffold fill>
         <div className="flex flex-1 items-center justify-center p-6">
-          <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+          <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
             {loadError ?? "Could not load exploration data"}
           </div>
         </div>
@@ -539,7 +539,7 @@ function RoadMapPageInner() {
           {/* Routes failed to load: say so rather than let the empty map read
               as "you have no rides" (Coverage stays available via the toggle). */}
           {mapView === "routes" && tracksError && (
-            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-quality-q1/10 px-3 py-1.5 text-[11px] font-semibold text-red-400 backdrop-blur">
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-quality-q1/10 px-3 py-1.5 text-[11px] font-semibold text-red-700 backdrop-blur">
               {t("Couldn't load your rides — try again")}
             </div>
           )}
@@ -569,7 +569,7 @@ function RoadMapPageInner() {
           {locationError && (
             <div
               role="alert"
-              className="absolute bottom-16 right-4 z-10 max-w-[240px] rounded-xl border border-quality-q1/40 bg-quality-q1/10 px-3 py-2 text-[11px] font-semibold text-red-400 backdrop-blur"
+              className="absolute bottom-16 right-4 z-10 max-w-[240px] rounded-xl border border-quality-q1/40 bg-quality-q1/10 px-3 py-2 text-[11px] font-semibold text-red-700 backdrop-blur"
             >
               {locationError}
             </div>
