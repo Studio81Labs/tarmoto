@@ -71,13 +71,18 @@ function formatTrendTooltipLabel(
   value: React.ReactNode,
   format: Formatters,
 ): React.ReactNode {
-  // `value` is the point's date-only string ("YYYY-MM" or "YYYY-MM-DD"
-  // depending on caller) — `calendarDate` is UTC-pinned by construction, so
-  // it's safe to hand the raw string straight through with no anchor trick
-  // (unlike the axis ticks below, which go through the instant-based
-  // `monthYear`).
+  // `value` is a trend point's `date` key, which is always a month bucket in
+  // production: it's populated verbatim from `TrendPointDto.month` (backend
+  // `SegmentDetailSidebar.tsx`'s `trendPoints()`), and the backend derives
+  // that column via `DATE_TRUNC('month', recorded_at)` — it can never carry
+  // a day component on the wire. Some unit-test fixtures use "YYYY-MM-DD"
+  // shorthand for readability, but that's test convenience, not a real data
+  // shape this component needs to support. Route through the same
+  // instant-based `monthYear`/`monthBucketAnchor` pair the axis ticks use
+  // (below) so the tooltip can't render a fabricated day-of-month (e.g. "Jul
+  // 1, 2026" via `calendarDate`) for what is only ever a month.
   return typeof value === "string" || typeof value === "number"
-    ? format.calendarDate(value)
+    ? format.monthYear(monthBucketAnchor(String(value)))
     : "";
 }
 function formatTrendTooltipValue(
@@ -95,13 +100,14 @@ function formatTrendTooltipValue(
 /**
  * Parses a trend point's date-only string ("YYYY-MM" in production per
  * `TrendPointDto.month`, "YYYY-MM-DD" in some test fixtures — only the
- * year/month are used either way) into a UTC-noon anchor for the axis
- * ticks. `format.monthYear` is an instant (viewer-timezone) formatter, so
- * handing it the raw string — which parses as UTC MIDNIGHT on day 1 — can
- * roll into the previous month for any viewer behind UTC (verified: a
- * "2026-01" string renders "Dec 2025" at UTC-12). Noon UTC is >12h clear of
- * every real IANA offset (-12..+14) in both directions, so the month can
- * never shift. Mirrors `monthAnchor` in `lib/ride-stats.ts`.
+ * year/month are used either way) into a UTC-noon anchor for the axis ticks
+ * AND the tooltip label (`formatTrendTooltipLabel` above). `format.monthYear`
+ * is an instant (viewer-timezone) formatter, so handing it the raw string —
+ * which parses as UTC MIDNIGHT on day 1 — can roll into the previous month
+ * for any viewer behind UTC (verified: a "2026-01" string renders "Dec 2025"
+ * at UTC-12). Noon UTC is >12h clear of every real IANA offset (-12..+14) in
+ * both directions, so the month can never shift. Mirrors `monthAnchor` in
+ * `lib/ride-stats.ts`.
  */
 function monthBucketAnchor(dateStr: string): Date {
   const [year, month] = dateStr.split("-").map(Number);
