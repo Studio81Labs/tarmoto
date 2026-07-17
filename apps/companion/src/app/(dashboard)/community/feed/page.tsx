@@ -19,6 +19,7 @@ import {
   type RideTypeFilter,
 } from "@/lib/community-feed";
 import { useAuthStore } from "@/stores/auth";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { Card, FieldLabel, Input, Mono, Select } from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
@@ -47,6 +48,9 @@ export default function CommunityFeedPage() {
   const [items, setItems] = useState<CommunityRide[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // Debounced: fast loads swap straight to content instead of flashing
+  // the loader card for a frame or two.
+  const showLoader = useDelayedLoading(loading);
   const [error, setError] = useState<string | null>(null);
   // Wait for `AuthSync` to hydrate the token before fetching — otherwise the
   // first request races it and goes out anonymously, which the backend now
@@ -271,10 +275,12 @@ export default function CommunityFeedPage() {
               {error}
             </div>
           ) : loading ? (
-            <div className="flex items-center gap-2 rounded-xl border border-line bg-cream p-4 text-sm text-fg-dim">
-              <Loader2 size={16} className="animate-spin" />
-              {t("Loading community rides\u2026 ")}
-            </div>
+            showLoader && (
+              <div className="flex items-center gap-2 rounded-xl border border-line bg-cream p-4 text-sm text-fg-dim">
+                <Loader2 size={16} className="animate-spin" />
+                {t("Loading community rides\u2026 ")}
+              </div>
+            )
           ) : isPristineEmpty ? (
             <CommunityEmptyState
               icon={<Users size={18} strokeWidth={2} />}

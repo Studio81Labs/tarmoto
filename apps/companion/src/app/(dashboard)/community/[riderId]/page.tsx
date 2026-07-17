@@ -1,7 +1,7 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { notFound as renderNotFound, useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -171,10 +171,8 @@ export default function RiderProfilePage() {
       {loading ? (
         <ProfileSkeleton />
       ) : notFound ? (
-        <EmptyState
-          title={t("Rider not found")}
-          message="This profile is either private or no longer exists."
-        />
+        // Private / deleted profiles render the app-level v2 404 screen.
+        renderNotFound()
       ) : error || !profile ? (
         <EmptyState
           title={t("Could not load profile")}

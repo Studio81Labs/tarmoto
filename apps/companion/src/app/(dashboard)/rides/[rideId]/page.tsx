@@ -1,7 +1,11 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, usePathname } from "next/navigation";
+import {
+  notFound as renderNotFound,
+  useParams,
+  usePathname,
+} from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -29,6 +33,7 @@ import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useFormat } from "@/format/FormatProvider";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { scoreToQualityTier } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
 import { kmToMiles, type Formatters } from "@tarmoto/shared";
@@ -71,6 +76,9 @@ export default function RideDetailPage() {
   const format = useFormat();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // Debounced: fast loads swap straight to content instead of flashing the
+  // spinner for a frame or two.
+  const showLoader = useDelayedLoading(loading);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -91,7 +99,9 @@ export default function RideDetailPage() {
       .GET("/api/v1/rides/{rideId}", { params: { path: { rideId } } })
       .then(({ data, error: apiError, response }) => {
         if (cancelled) return;
-        if (response?.status === 404) {
+        // 400 = a malformed id in the URL — as dead a link as a missing
+        // ride, so both land on the global 404 screen.
+        if (response?.status === 404 || response?.status === 400) {
           setNotFound(true);
           return;
         }
@@ -187,27 +197,18 @@ export default function RideDetailPage() {
   if (loading) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
-        <div className="flex items-center gap-2 text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading ride… ")}
-        </div>
+        {showLoader && (
+          <div className="flex items-center gap-2 text-fg-dim">
+            <Loader2 size={16} className="animate-spin" />
+            {t("Loading ride… ")}
+          </div>
+        )}
       </PageShell>
     );
   }
-  if (notFound) {
-    return (
-      <PageShell backHref={backHref} backLabel={backLabel}>
-        <Card padded={false} className="p-10 text-center">
-          <p className="mb-1 font-bold text-ink">{t("Ride not found")}</p>
-          <p className="text-sm text-fg-dim">
-            {t(
-              "This ride may have been deleted, or it isn't shared publicly. ",
-            )}
-          </p>
-        </Card>
-      </PageShell>
-    );
-  }
+  // Deleted / private / malformed-id rides render the app-level v2 404
+  // screen (app/not-found.tsx) instead of a bespoke in-page card.
+  if (notFound) renderNotFound();
   if (error || !ride) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>

@@ -190,8 +190,8 @@ test.describe("cross-cutting", () => {
     await expect(page).toHaveURL(/\/trips(\?|$)/, { timeout: 15_000 });
   });
 
-  // T69 — 404 page: navigating to an unknown route renders the
-  // custom not-found shell with a heading and a "Go home" link.
+  // T69 — 404 page: navigating to an unknown route renders the v2
+  // system-state screen with the 404 stamp and recovery links.
   test("T69: unknown route renders the custom 404", async ({
     authedPage: page,
   }) => {
@@ -199,9 +199,17 @@ test.describe("cross-cutting", () => {
       waitUntil: "domcontentloaded",
     });
     await expect(
-      page.getByRole("heading", { level: 1, name: /road not found/i }),
+      page.getByRole("heading", {
+        level: 1,
+        name: /this road isn’t on the map/i,
+      }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: /^go home$/i })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /back to home/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /open road explorer/i }),
+    ).toBeVisible();
   });
 
   // T70 — SEO metadata: the public `/roads/best/:country/:region`

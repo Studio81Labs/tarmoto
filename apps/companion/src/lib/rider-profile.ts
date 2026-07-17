@@ -84,7 +84,9 @@ export async function fetchPublicProfile(
   if (result.error) {
     const status =
       typeof result.response?.status === "number" ? result.response.status : 0;
-    if (status === 404) {
+    // 400 = a malformed rider id in the URL (e.g. /community/fee) — as
+    // dead a link as a missing rider, so both render the 404 screen.
+    if (status === 404 || status === 400) {
       throw new RiderProfileNotFoundError(riderId);
     }
     throw new RiderProfileFetchError(

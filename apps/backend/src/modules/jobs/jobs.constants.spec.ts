@@ -29,10 +29,10 @@ describe('jobs.constants', () => {
     // Issue #276 shipped ten queues; #496 added two model-eval queues.
     // Drift here means a producer or processor will try to enqueue
     // into a queue that the rest of the system never registered.
-    // #743 added the NAP closure poll queue (13th); #745 the POI import (14th).
-    // #781 added the OSM import queue (15th); #779 the quality conflation (16th).
-    // #867 removed the unused push-notification stub queue (back to 15).
-    expect(ALL_QUEUE_NAMES).toHaveLength(15);
+    // #781 added the OSM import queue; #779 the quality conflation; #867
+    // removed the push-notification stub. Phase 3 moved poi.import wholly into
+    // apps/ingest, dropping it from the backend registry (15 → 14).
+    expect(ALL_QUEUE_NAMES).toHaveLength(14);
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {

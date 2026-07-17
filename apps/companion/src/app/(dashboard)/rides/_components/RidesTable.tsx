@@ -13,6 +13,7 @@ import { scoreToQualityTier } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 import type { Formatters } from "@tarmoto/shared";
 import type { RideSummary, RidesQueryState, SortField } from "./useRidesQuery";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 
 interface Props {
   state: RidesQueryState;
@@ -142,6 +143,8 @@ export function RidesTable({
   const format = useFormat();
   const columns = useMemo(() => buildColumns(format), [format]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Debounced: fast (re)fetches keep the table steady, no loading-text flash.
+  const showLoading = useDelayedLoading(loading);
   return (
     <DataTable<RideSummary>
       ariaLabel={t("Ride history")}
@@ -157,7 +160,14 @@ export function RidesTable({
       sort={{ key: state.sort, direction: state.order }}
       onSort={(key) => onSort(key as SortField)}
       emptyState={
-        loading ? t("Loading rides… ") : t("No rides match these filters. ")
+        // While a fast (re)fetch runs the empty row stays blank — "No rides
+        // match" would flash a wrong message, and the loading text would
+        // flash on every warm response.
+        loading
+          ? showLoading
+            ? t("Loading rides… ")
+            : " "
+          : t("No rides match these filters. ")
       }
       // Pagination only when it earns its space — on a single page the arrows
       // are inert and the count already lives in the "All rides · N" tab badge,

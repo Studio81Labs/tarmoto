@@ -10,6 +10,7 @@ import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG, scoreToQualityTier } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
@@ -308,6 +309,9 @@ function ComparisonView({
   const [rideA, setRideA] = useState<FetchedRide | null>(null);
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
   const [loading, setLoading] = useState(false);
+  // Debounced: fast detail fetches swap straight to the comparison
+  // instead of flashing the loader row.
+  const showLoader = useDelayedLoading(loading);
   const [error, setError] = useState<string | null>(null);
   // Both `fetchRide` calls hit the authed detail endpoint — gate the
   // effect on auth so a comparison opened cold doesn't race AuthSync.
@@ -379,7 +383,7 @@ function ComparisonView({
         />
       </div>
 
-      {loading && (
+      {loading && showLoader && (
         <div className="mt-2 flex items-center gap-2 text-fg-dim">
           <Loader2 size={16} className="animate-spin" />
           {t("Loading rides… ")}

@@ -42,7 +42,11 @@ export { Challenge } from './challenge.entity.js';
 export { ChallengeEntry } from './challenge-entry.entity.js';
 export { MountainPass } from './mountain-pass.entity.js';
 export { RoadClosure } from './road-closure.entity.js';
-export { Poi } from '@tarmoto/poi-db';
+// NOTE: `Poi` is intentionally NOT re-exported here. It belongs to the POI DB
+// (`@tarmoto/poi-db`), a separate read-only connection wired by
+// `PoiDatabaseModule` — not this app-DB entity barrel. Re-exporting it would
+// fold it into any `Object.values(AllEntities)` app-DB DataSource (e.g. the
+// demo-seed e2e), registering an entity for a table that isn't in that DB.
 export { DataExportRequest } from './data-export-request.entity.js';
 export type { DataExportStatus } from './data-export-request.entity.js';
 export { GroupRide } from './group-ride.entity.js';

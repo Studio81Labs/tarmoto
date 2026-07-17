@@ -55,6 +55,7 @@ import {
   type StatsWindow,
   type YearlyTotal,
 } from "@/lib/ride-stats";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 const RIDE_TYPE_OPTIONS: SegmentedOption<string>[] = [
   { value: "all", label: "All" },
   { value: "free", label: "Free" },
@@ -79,6 +80,8 @@ const YOY_COLORS = [
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
+  // Debounced: fast loads render content directly, no spinner flash.
+  const showLoader = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
   const format = useFormat();
@@ -178,10 +181,12 @@ export default function StatsPage() {
     return (
       <div className="mx-auto w-full max-w-page p-4 md:p-7">
         <StatsPageHeader />
-        <div className="flex items-center gap-2 text-fg-dim">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading rides\u2026 ")}
-        </div>
+        {showLoader && (
+          <div className="flex items-center gap-2 text-fg-dim">
+            <Loader2 size={16} className="animate-spin" />
+            {t("Loading rides\u2026 ")}
+          </div>
+        )}
       </div>
     );
   }
