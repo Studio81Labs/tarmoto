@@ -145,15 +145,25 @@ snapshot against the existing rows in the same area, so a run buffers one
 region's ~100 m segment rows and loads the matching existing rows into memory
 (it can't be a pure per-chunk stream like a plain upsert).
 
-The folder model gives this tiling "for free": each `DEFAULT_REGIONS` country
-is already a self-contained `(extract, bbox)` pair, so `importAll()`'s
-region-by-region loop bounds memory to one region at a time no matter how many
-are configured — no more hand-splitting a country-sized file into bbox-clipped
-sub-imports the way the old single-file contract required. (A way split
+`importAll()`'s region-by-region loop bounds **peak** memory to one region at a
+time no matter how many are configured — but that bound is only as small as the
+largest single region. Because reconciliation buffers a whole region's ~100 m
+segment rows (plus the assembler's node map, and the incoming array) at once, a
+region's extract **must fit the import worker's heap**. The single-file model
+made this the operator's job ("tile each source to fit the heap"); the folder
+model replaces per-file tiling with **per-country** extracts, which is only
+safe while a country fits the heap.
+
+The launch set (cz, sk, at) is moderate and expected to fit a standard worker
+heap — but this must be validated on the first real import, and the worker's
+`--max-old-space-size` sized accordingly. A country whose drivable network
+outgrows the heap (e.g. DE / IT / PL) must NOT be enabled until it is split into
+bounded **sub-region tiles**, each carrying its own clip polygon so per-region
+tombstoning stays correct (the country-polygon scoping from #1033 is what makes
+sub-region tiles safe). That in-engine sub-region tiling is a **tracked
+pre-enablement requirement for large countries** — not yet built. (A way split
 exactly across a region border loses history only at that seam; adjacent
-regions still reconcile independently. In-engine sub-region tiling beyond
-`DEFAULT_REGIONS` is a possible future enhancement if a single country ever
-outgrows one import's memory budget.)
+regions still reconcile independently.)
 
 ## Cadence & manual runs
 

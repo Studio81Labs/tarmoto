@@ -503,8 +503,11 @@ Dev/staging can enable it freely.
 
 Like the POI OSM refresh, the manual steps above run automatically from the
 **same** always-on `apps/ingest` container (it already carries `osmium` for the
-POI refresh — no additional tooling needed). `pnpm road:refresh` →
-`apps/ingest/dist/scripts/refresh-road-extracts.js` runs the drivable-highway
+POI refresh — no additional tooling needed). The `apps/ingest` script
+`road:refresh` (run from the container as `node
+apps/ingest/dist/scripts/refresh-road-extracts.js`, or from the repo root as
+`pnpm --filter @tarmoto/ingest-service road:refresh` — it is NOT a root
+`package.json` script) runs the drivable-highway
 filter + per-region clip for every configured region, writing each `<code>.osm`
 **atomically** to `TARMOTO_OSM_ROAD_IMPORT_DIR`.
 
