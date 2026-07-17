@@ -24,7 +24,7 @@ export function RouteCollectionVisibilityPill({
     visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
   const tone =
     visibility === "public"
-      ? "border-emerald-500/30 text-emerald-600 bg-emerald-500/5"
+      ? "border-emerald-500/30 text-emerald-700 bg-emerald-500/5"
       : visibility === "unlisted"
         ? "border-accent/30 text-accent bg-accent/5"
         : // Outline style like public/unlisted (tinted border + light `/5`
