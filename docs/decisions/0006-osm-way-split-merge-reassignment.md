@@ -35,7 +35,7 @@ real snapshots.
 
 > Note (2026-07-16): the road-import env vars in this decision were renamed `TARMOTO_OSM_IMPORT_*` → `TARMOTO_OSM_ROAD_IMPORT_*` (source/domain naming pass, PR #1016). The names below are the CURRENT ones — see `docs/superpowers/specs/2026-07-16-import-source-domain-naming-design.md`.
 >
-> Note (2026-07-17): the importer moved to a **folder model** (Sub-project B) — the single global road-import bbox env var (`TARMOTO_OSM_ROAD_IMPORT_B*`) is retired. Each region in `TARMOTO_OSM_ROAD_IMPORT_REGIONS` now carries its own bbox, and the stale-by-absence tombstoning described below is scoped per-region exactly as before, just against that region's bbox instead of one global one — see `docs/superpowers/specs/2026-07-17-osm-road-extract-folder-model-design.md`.
+> Note (2026-07-17): the importer moved to a **folder model** (Sub-project B) — the single global road-import bbox env var (`TARMOTO_OSM_ROAD_IMPORT_BBOX`) is retired. Each region in `TARMOTO_OSM_ROAD_IMPORT_REGIONS` now carries its own bbox, and the stale-by-absence tombstoning described below is scoped per-region exactly as before, just against that region's bbox instead of one global one — see `docs/superpowers/specs/2026-07-17-osm-road-extract-folder-model-design.md`.
 
 Reassign identity by **geometry overlap** for the changed ranges, so history
 follows the road, not the way id.

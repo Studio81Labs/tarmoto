@@ -22,12 +22,15 @@ import type { LatLng } from './segmentation.js';
  *  limit (each row binds ~8 columns). */
 const UPSERT_CHUNK = 500;
 
-/** Zero result — a skipped (absent / empty) region contributes nothing. */
-const EMPTY_RESULT: OsmImportResult = {
+/** Zero result — a skipped (absent / empty) region contributes nothing. Frozen:
+ *  shared across every skip path, and `importAll` only ever reads its fields
+ *  into a fresh accumulator, so a stray in-place mutation would otherwise leak
+ *  across calls. */
+const EMPTY_RESULT: OsmImportResult = Object.freeze({
   upserted: 0,
   carriedOver: 0,
   deactivated: 0,
-};
+});
 
 /** `PoiImportRegion.bbox` is an object; the reconcile/PostGIS layer uses the
  *  `[minLng, minLat, maxLng, maxLat]` tuple. Convert at the boundary. */
@@ -303,12 +306,14 @@ export class OsmImportService {
 
   /**
    * Import one region's `<extractDir>/<code>.osm`. Absent file → skip (no
-   * authoritative snapshot). Present but 0 ways → skip WITH A WARNING (do not
-   * tombstone): a folder-model region is an automated whole-country extract, so
-   * an empty result signals a broken refresh, not a genuinely empty country —
-   * tombstoning the region on that would be far worse than skipping it for a
-   * cycle. (This intentionally overrides `reconcile`'s authoritative-empty
-   * behavior, which was designed for hand-supplied single-file tiles.)
+   * authoritative snapshot). Present but 0 ways, OR present with ways but NONE
+   * inside the region bbox (a mis-produced or misnamed extract) → skip WITH A
+   * WARNING (do not tombstone): a folder-model region is an automated
+   * whole-country extract, so either empty result signals a broken refresh, not
+   * a genuinely empty country — tombstoning the region on that would be far
+   * worse than skipping it for a cycle. (This intentionally overrides
+   * `reconcile`'s authoritative-empty behavior, which was designed for
+   * hand-supplied single-file tiles.)
    */
   async importRegion(
     region: PoiImportRegion,
@@ -332,15 +337,35 @@ export class OsmImportService {
       );
       return EMPTY_RESULT;
     }
-    return this.reconcile(incoming, bboxTuple(region.bbox));
+    // A present, non-empty extract can still be entirely OUTSIDE the region — a
+    // mis-produced or misnamed extract (e.g. SK data written to cz.osm). Left
+    // unguarded, `reconcile`'s own region filter would drop every row and then
+    // see a post-filter-EMPTY set WITH a region, which it correctly treats as
+    // "the region was cleared" and tombstones every live row in it. Catch that
+    // here — before reconcile — so a bad extract skips instead of wiping the
+    // region.
+    const tuple = bboxTuple(region.bbox);
+    const inRegion = incoming.filter((r) => this.intersectsRegion(r, tuple));
+    if (inRegion.length === 0) {
+      this.logger.warn(
+        `OSM import (${region.code}): extract has ${incoming.length} way(s) but none intersect the region bbox — skipping (likely a mis-produced or misnamed extract; NOT tombstoning the region)`,
+      );
+      return EMPTY_RESULT;
+    }
+    return this.reconcile(incoming, tuple);
   }
 
   private async fileExists(path: string): Promise<boolean> {
     try {
       await access(path);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      // ENOENT (genuinely absent) is the only case that means "skip this
+      // region". Anything else (permission/IO error on the shared volume) is a
+      // real failure that must surface — not be silently reported as "absent" —
+      // so it can page/alert and let BullMQ retry.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw err;
     }
   }
 

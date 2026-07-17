@@ -1,3 +1,4 @@
+import { DEFAULT_REGIONS } from "../poi/regions.js";
 import {
   DRIVABLE_HIGHWAYS,
   ROAD_TAGS_FILTER_EXPRESSIONS,
@@ -33,7 +34,7 @@ describe("resolveRoadRefreshConfig", () => {
     const cfg = resolveRoadRefreshConfig({} as NodeJS.ProcessEnv);
     expect(cfg.enabled).toBe(false);
     expect(cfg.targetDir).toBeNull();
-    expect(cfg.regions.length).toBeGreaterThan(1);
+    expect(cfg.regions.length).toBe(DEFAULT_REGIONS.length);
   });
 
   it("throws on an unknown region code (no silent drop)", () => {

@@ -566,14 +566,30 @@ describe('OsmImportService', () => {
     });
 
     it('skips a region whose extract file is absent (no tombstone)', async () => {
+      const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importRegion(CZ, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
       // reconcile never ran → no load/transaction
       expect(loadExisting).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
     });
 
     it('skips a present-but-empty extract with a warning (no tombstone)', async () => {
       await writeFile(join(dir, 'cz.osm'), '<osm version="0.6"></osm>');
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importRegion(CZ, dir);
+      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      expect(loadExisting).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+    });
+
+    it('skips an extract whose ways are all outside the region bbox (no tombstone)', async () => {
+      // A present, non-empty extract that landed in the wrong file (e.g. SK data
+      // written to cz.osm) — its single way sits well east/north of CZ's
+      // maxLng/maxLat, so it is entirely outside the region. Must NOT reach
+      // `reconcile`: a post-filter-empty set WITH a region would otherwise
+      // tombstone every live CZ row.
+      await writeFile(join(dir, 'cz.osm'), wayXml(1, 60, 30));
       const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importRegion(CZ, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
@@ -587,13 +603,23 @@ describe('OsmImportService', () => {
       const result = await service.importRegion(CZ, dir);
       expect(result.upserted).toBe(1);
       // loadExistingInBbox called with the CZ tuple
-      expect(loadExisting).toHaveBeenCalled();
+      expect(loadExisting).toHaveBeenCalledWith(
+        expect.any(String),
+        [12.09, 48.55, 18.86, 51.06],
+      );
     });
   });
 
   describe('importAll', () => {
+    let dir: string;
+    beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'road-import-all-'));
+    });
+    afterEach(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
     it('loops the configured regions and aggregates upserts', async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'road-import-all-'));
       await writeFile(join(dir, 'cz.osm'), wayXml(1));
       // SK's way must actually sit inside SK's bbox (16.83–22.57E, 47.73–49.61N),
       // not CZ's — otherwise reconcile's own intersectsRegion filter drops it and
@@ -613,7 +639,6 @@ describe('OsmImportService', () => {
       loadExisting.mockResolvedValue([]);
       const result = await service.importAll();
       expect(result.upserted).toBe(2);
-      await rm(dir, { recursive: true, force: true });
     });
 
     it('throws when extractDir is unset', async () => {
