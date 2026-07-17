@@ -223,6 +223,8 @@ export interface QualityMapHandle {
   openConditionPopover(ref: { kind: "closure" | "pass"; id: string }): void;
   /** Arm the Fun Zone draw-region box (drag on the map to draw). */
   startDrawRegion(): void;
+  /** Abort an in-progress draw without committing a box. */
+  cancelDrawRegion(): void;
   /** Clear any drawn Fun Zone region (reverts the fetch to the viewport). */
   clearDrawnRegion(): void;
 }
@@ -306,6 +308,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         },
         startDrawRegion() {
           drawRef.current?.start();
+        },
+        cancelDrawRegion() {
+          drawRef.current?.cancel();
         },
         clearDrawnRegion() {
           drawRef.current?.clearDrawn();

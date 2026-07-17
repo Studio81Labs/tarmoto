@@ -273,6 +273,11 @@ function ExplorerPageInner() {
   const [drawnBbox, setDrawnBbox] = useState<
     [number, number, number, number] | null
   >(null);
+  // Narrow viewports render the info column as a full-width overlay that
+  // covers the map — no room to drag a box. While a draw is armed there we
+  // hide the overlay (map exposed) and show a floating cancel affordance,
+  // restoring the panel once the box is drawn or the draw is cancelled.
+  const [narrowDrawing, setNarrowDrawing] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -478,8 +483,10 @@ function ExplorerPageInner() {
   useEffect(() => {
     if (!showFunZones) {
       setSelectedFunZoneId(null);
-      // Toggling the overlay off also drops any drawn region + its map box.
+      // Toggling the overlay off also drops any drawn region + its map box,
+      // and ends a narrow draw session.
       setDrawnBbox(null);
+      setNarrowDrawing(false);
       mapRef.current?.clearDrawnRegion();
     }
   }, [showFunZones]);
@@ -594,7 +601,11 @@ function ExplorerPageInner() {
             setSelectedRideId(null);
             setSelectedFunZoneId(zoneId);
           }}
-          onDrawRegion={() => mapRef.current?.startDrawRegion()}
+          onDrawRegion={() => {
+            mapRef.current?.startDrawRegion();
+            // Narrow overlay covers the map — step it aside to drag on.
+            if (!isWideViewport) setNarrowDrawing(true);
+          }}
           onClearRegion={() => mapRef.current?.clearDrawnRegion()}
         />
       )}
@@ -847,7 +858,11 @@ function ExplorerPageInner() {
                 setSelectedRideId(null);
                 setSelectedFunZoneId(zoneId);
               }}
-              onDrawnRegionChange={setDrawnBbox}
+              onDrawnRegionChange={(bbox) => {
+                setDrawnBbox(bbox);
+                // A committed/cleared box ends the narrow draw session.
+                setNarrowDrawing(false);
+              }}
               onSegmentSelect={(segmentId) => {
                 setSelectedTripId(null);
                 setSelectedRideId(null);
@@ -1056,12 +1071,32 @@ function ExplorerPageInner() {
             onClose={() => setSelectedFunZoneId(null)}
           />
 
+          {/* Narrow draw session: the overlay is stepped aside so the rider
+              can drag on the exposed map. A floating chip keeps a cancel out
+              (which restores the panel via `startDrawRegion`'s counterpart). */}
+          {!isWideViewport && narrowDrawing && (
+            <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+              <Square size={12} className="shrink-0 text-accent" aria-hidden />
+              {t("Drag on the map to draw a region")}
+              <button
+                type="button"
+                onClick={() => {
+                  mapRef.current?.cancelDrawRegion();
+                  setNarrowDrawing(false);
+                }}
+                className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+              >
+                {t("Cancel")}
+              </button>
+            </div>
+          )}
+
           {/* Narrow-viewport info panel — overlays the map instead of
             taking a grid column so a phone keeps useful map area
-            underneath. Close button toggles off whichever info
-            layer is active (mirrors how toggling the pill in the
-            top overlay dismisses the panel). */}
-          {rightPanelOpen && !isWideViewport && (
+            underneath. Hidden while a draw is armed (above). Close button
+            toggles off whichever info layer is active (mirrors how toggling
+            the pill in the top overlay dismisses the panel). */}
+          {rightPanelOpen && !isWideViewport && !narrowDrawing && (
             <aside
               className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
               aria-label={t("Info layers")}
