@@ -8,12 +8,8 @@ import { FieldHint } from "./field/FieldHint";
  * Shares `fieldChrome` with Input/Select; `resize-none` keeps panel layouts
  * stable. See Input for the `tone`/labelling rationale.
  */
-export interface TextareaProps {
+interface TextareaBaseProps {
   value: string;
-  /** Optional for `readOnly` fields (e.g. copyable embed snippets). */
-  onChange?: (value: string) => void;
-  /** Read-only display (copyable code/links); pairs with `mono`. */
-  readOnly?: boolean;
   /** Monospace content — embed snippets, code, tokens. */
   mono?: boolean;
   tone?: "paper" | "cream";
@@ -28,6 +24,17 @@ export interface TextareaProps {
   hintId?: string | undefined;
   className?: string;
 }
+
+/**
+ * Discriminated on `readOnly`: an editable textarea must wire `onChange`
+ * (a controlled field without one would silently reset every keystroke),
+ * while a read-only display (copyable code/links) may omit it.
+ */
+export type TextareaProps = TextareaBaseProps &
+  (
+    | { readOnly: true; onChange?: (value: string) => void }
+    | { readOnly?: false; onChange: (value: string) => void }
+  );
 
 export function Textarea({
   value,
