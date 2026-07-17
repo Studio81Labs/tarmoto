@@ -167,7 +167,7 @@ function LeaderboardCard({
                 e.isMe ? "text-fg-on-dark-mute" : "text-fg-dim"
               }`}
             >
-              {format.integer(e.value)} {t("km")}
+              {format.distanceKm(e.value)}
             </Mono>
           </li>
         ))}

@@ -372,20 +372,19 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
     : 0;
 
   // The backend reports km to one decimal and a single ~100m segment is
-  // ~0.1km, so rounding to an integer would show "0 KM MAPPED" for a fresh
-  // contributor. Keep a decimal whenever the rounded value would be zero.
-  const kmLabel =
-    Math.round(km_mapped) >= 1
-      ? format.integer(km_mapped)
-      : format.decimal(km_mapped, 1);
+  // ~0.1km, so rounding to an integer would show "0 MAPPED" for a fresh
+  // contributor. splitDistanceKm keeps one decimal (and converts for
+  // imperial riders); the unit feeds the badge label below so the number
+  // and its unit always agree.
+  const mapped = format.splitDistanceKm(km_mapped);
 
   return (
     <div className="mb-1.5 rounded-[10px] border border-cream/[0.08] bg-cream/[0.06] p-3">
       <Stamp tone="on-dark">{t("Your contribution")}</Stamp>
       <div className="mt-1 text-[20px] font-extrabold tracking-[-0.5px] text-cream">
-        {kmLabel}{" "}
+        {mapped.value}{" "}
         <Mono className="text-[10px] font-medium text-cream/60">
-          {t("KM MAPPED")}
+          {mapped.unit.toUpperCase()} {t("MAPPED")}
         </Mono>
       </div>
       {ranked && (

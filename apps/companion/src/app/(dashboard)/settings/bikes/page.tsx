@@ -292,8 +292,7 @@ function BikeRow({
               : "mt-1 text-[12px] text-fg-dim"
           }
         >
-          {bike.year} · {format.integer(bike.totalKm)}
-          {t("km ")}
+          {bike.year} · {format.distanceKm(bike.totalKm)}
           {ridesLabel ? ` · ${ridesLabel}` : ""}
         </p>
       </div>
