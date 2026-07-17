@@ -567,6 +567,33 @@ describe("FeatureFlagsScreen", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("set override blocks a blank value instead of silently defaulting to zero", async () => {
+    const user = userEvent.setup();
+    render(<FeatureFlagsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Set override" }));
+    const dialog = screen.getByRole("dialog");
+
+    // Uncheck Unlimited but leave the value field blank — `Number("")` is
+    // `0`, so this must not silently submit a real 0 (which would block the
+    // feature for everyone) without the operator explicitly typing it.
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: /unlimited/i }),
+    );
+    await user.type(
+      within(dialog).getByRole("textbox", { name: /reason/i }),
+      "Oops, forgot the value",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Set override" }),
+    );
+
+    expect(mockSetLimitGlobal).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Value must be a non-negative integer (or Unlimited)."),
+    ).toBeInTheDocument();
+  });
+
   it("set override submits a null value when Unlimited is checked", async () => {
     const user = userEvent.setup();
     render(<FeatureFlagsScreen />);

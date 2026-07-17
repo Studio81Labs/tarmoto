@@ -541,8 +541,15 @@ function FeatureLimitsCard() {
       setDialogError("A reason is required for any global limit change.");
       return;
     }
-    const parsed = Number(valueInput);
-    if (!unlimited && (!Number.isInteger(parsed) || parsed < 0)) {
+    const trimmedValue = valueInput.trim();
+    const parsed = Number(trimmedValue);
+    // `Number("")` coerces to `0`, so an empty field must be rejected
+    // explicitly — otherwise a blank value silently submits as a real 0
+    // (blocking the feature for everyone) instead of prompting the operator.
+    if (
+      !unlimited &&
+      (trimmedValue === "" || !Number.isInteger(parsed) || parsed < 0)
+    ) {
       setDialogError("Value must be a non-negative integer (or Unlimited).");
       return;
     }
