@@ -495,6 +495,42 @@ function ExplorerPageInner() {
       controller.abort();
     };
   }, [showFunZones, conditionBbox]);
+  // Legacy /discover deep links: the permanent redirect lands here with the
+  // old page's query intact (lng/lat/z camera, zone=<id>, zones=1, and the
+  // drawn-region bbox — the last has no explorer equivalent; drawn-region
+  // zone browsing lives in the trip planner). Consume the params once on
+  // mount — restore the camera, open the Fun Zones overlay/panel — then
+  // strip them so the URL doesn't replay stale one-shot state on refresh.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const zoneId = params.get("zone");
+    const wantZones = zoneId != null || params.get("zones") === "1";
+    const lng = params.get("lng") != null ? Number(params.get("lng")) : NaN;
+    const lat = params.get("lat") != null ? Number(params.get("lat")) : NaN;
+    const z = params.get("z") != null ? Number(params.get("z")) : NaN;
+    const hasCamera = Number.isFinite(lng) && Number.isFinite(lat);
+    const hasLegacyParams =
+      wantZones || hasCamera || params.get("bbox") != null;
+    if (!hasLegacyParams) return;
+    if (hasCamera) {
+      const nextZoom = Number.isFinite(z) ? z : useMapStore.getState().zoom;
+      // Child effects ran first, so the map instance exists — fly it, and
+      // mirror into the store for a later remount (same as search-pick).
+      mapRef.current?.flyTo({ lng, lat, zoom: nextZoom });
+      setCenter({ lng, lat });
+      setZoom(nextZoom);
+    }
+    if (wantZones) {
+      setShowFunZones(true);
+      if (zoneId) setSelectedFunZoneId(zoneId);
+    }
+    const url = new URL(window.location.href);
+    for (const key of ["zone", "zones", "lng", "lat", "z", "bbox"]) {
+      url.searchParams.delete(key);
+    }
+    window.history.replaceState(window.history.state, "", url);
+  }, [setCenter, setZoom]);
   // A session/account change (sign-in as another user, sign-out) must never
   // leave the previous rider's private trip/ride drawer open.
   useEffect(() => {
