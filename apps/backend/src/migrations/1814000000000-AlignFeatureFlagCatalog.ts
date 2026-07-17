@@ -10,8 +10,11 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *     launch-mode `force_on` row (seeded in 1796) and any per-user override
  *     are moved to the new key so the feature stays open pre-monetization.
  *   - `unlimited_trip_planning` is retired (superseded by the
- *     `max_active_trips` limit). Its rows are deleted — the resolver already
- *     ignores keys outside the registry, this just keeps the tables clean.
+ *     `max_active_trips` limit). Only its global `feature_states` row is
+ *     dropped (a single known launch-mode seed value, restored by `down`);
+ *     any per-user `user_features` rows are LEFT in place — the resolver
+ *     already ignores keys outside the registry, and deleting them would
+ *     irreversibly discard operator grant/revoke decisions on a rollback.
  *
  * The many NEW catalog keys (added flags/limits) need no migration: they are
  * pure registry vocabulary with no override rows and no enforcement yet.
@@ -28,8 +31,10 @@ export class AlignFeatureFlagCatalog1814000000000 implements MigrationInterface 
         SET feature = 'road_quality_full_zoom'
         WHERE feature = 'full_road_quality_zoom';
 
+      -- Drop only the global launch-mode row for the retired flag; leave any
+      -- per-user override rows (inert — the resolver ignores unknown keys —
+      -- and preserved so a rollback can't lose operator decisions).
       DELETE FROM feature_states WHERE feature = 'unlimited_trip_planning';
-      DELETE FROM user_features WHERE feature = 'unlimited_trip_planning';
     `);
   }
 
