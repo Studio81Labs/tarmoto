@@ -3516,7 +3516,6 @@ export function buildApp(): Express {
       avg_curviness: ride.avg_curviness,
       duration_min: deriveDurationMin(ride),
       view_count: share.view_count,
-      embed_click_count: 0,
       route_geometry: ride.route_geometry,
     });
   });

@@ -143,7 +143,10 @@ vi.mock("@/components/TripExportButton", () => ({
 }));
 
 vi.mock("@/components/TripImportDialog", () => ({
-  TripImportDialog: () => null,
+  // Renders a marker while open so tests can assert the ?import=1 entry
+  // point without pulling in the real parse/preview machinery.
+  TripImportDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="import-dialog-open" /> : null,
 }));
 
 vi.mock("@/components/TripCollaborateModal", () => ({
@@ -599,6 +602,20 @@ describe("TripPlannerPage", () => {
     usePassesMock.mockReturnValue(passesData);
   });
 
+  it("opens the import dialog for the /trips ?import=1 entry point and strips the param", () => {
+    window.history.replaceState({}, "", "/trips/planner?import=1");
+    render(<TripPlannerPage />);
+
+    expect(screen.getByTestId("import-dialog-open")).toBeInTheDocument();
+    // Param stripped so a reload (or the planner's URL sync) can't re-open it.
+    expect(window.location.search).not.toContain("import=1");
+  });
+
+  it("does not open the import dialog on the bare planner URL", () => {
+    render(<TripPlannerPage />);
+    expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
+  });
+
   it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
 
@@ -659,7 +676,7 @@ describe("TripPlannerPage", () => {
       target: { value: "direct" },
     });
     fireEvent.click(screen.getByLabelText("Gravel"));
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid motorways"));
     fireEvent.click(screen.getByLabelText("Avoid tolls"));
 
     const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
@@ -1149,7 +1166,7 @@ describe("TripPlannerPage", () => {
 
     // A REAL rider edit → one defaults write.
     fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
-    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    fireEvent.click(screen.getByLabelText(/avoid motorways/i));
     await waitFor(() => expect(savePrefsSpy).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
@@ -1259,7 +1276,7 @@ describe("TripPlannerPage", () => {
 
     // Rider edit → debounced write-back fires once.
     fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
-    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    fireEvent.click(screen.getByLabelText(/avoid motorways/i));
     await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
@@ -1421,7 +1438,7 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Asphalt")).toBeChecked();
     expect(screen.getByLabelText("Gravel")).toBeChecked();
     expect(screen.getByLabelText("Concrete")).not.toBeChecked();
-    expect(screen.getByLabelText("Avoid highways")).not.toBeChecked();
+    expect(screen.getByLabelText("Avoid motorways")).not.toBeChecked();
     expect(screen.getByLabelText("Avoid tolls")).toBeChecked();
     expect(screen.getByLabelText("Avoid unpaved roads")).not.toBeChecked();
   });
@@ -1468,7 +1485,7 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByLabelText("Gravel"));
     expect(window.location.search).toContain("surfaces=asphalt%2Cgravel");
 
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid motorways"));
     expect(window.location.search).toContain("avoidHighways=0");
   });
 
@@ -2580,7 +2597,7 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid motorways"));
     expect(storeState.markRouteDirty).toHaveBeenCalledTimes(1);
   });
 
@@ -2883,9 +2900,11 @@ describe("TripPlannerPage", () => {
 
     // Post-split header meta: day count + total distance segments
     // (revision 2 §C; icon-per-segment layout). Distance formats via
-    // formatDistance for parity with the trip-preview header.
+    // format.distanceKm for parity with the trip-preview header — the seam
+    // only shows a decimal when the value actually has one (240 -> "240 km",
+    // not the old toFixed(1)-forced "240.0 km").
     expect(screen.getAllByText("2 days").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("240.0 km").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("240 km").length).toBeGreaterThan(0);
   });
 
   it("expanding Plan as multi-day trip is the day-planning opt-in", () => {

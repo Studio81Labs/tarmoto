@@ -278,7 +278,7 @@ export default function CommunityFeedPage() {
       <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_320px]">
         <div className="flex min-w-0 flex-col gap-[14px]">
           {error ? (
-            <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-400">
+            <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-700">
               {error}
             </div>
           ) : loading ? (

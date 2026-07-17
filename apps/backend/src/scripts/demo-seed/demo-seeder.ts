@@ -728,7 +728,6 @@ export class DemoSeeder {
         share_token: token(`${userId}-${i}`, rng),
         is_public: true,
         view_count: Math.floor(rng() * 500),
-        embed_click_count: Math.floor(rng() * 50),
       }),
     );
     await repo.save(rows, { chunk: SAVE_CHUNK });

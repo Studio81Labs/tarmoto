@@ -24,14 +24,13 @@ export function RouteCollectionVisibilityPill({
     visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
   const tone =
     visibility === "public"
-      ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/5"
+      ? "border-emerald-500/30 text-emerald-700 bg-emerald-500/5"
       : visibility === "unlisted"
         ? "border-accent/30 text-accent bg-accent/5"
-        : // Outline style like public/unlisted (tinted border + light `/5`
-          // inner), but neutral grey needs a darker `-600` text to stay
-          // legible on the cream dashboard — a light `-300`/`-400` grey
-          // washes out against the near-transparent fill.
-          "border-slate-500/40 text-slate-600 bg-slate-500/5";
+        : // Outline style like public/unlisted (tinted border + light inner),
+          // in a neutral ink grey. `text-ink/70` keeps the 10px label legible
+          // on the near-transparent fill (a lighter tone washes out).
+          "border-ink/25 text-ink/70 bg-ink/[0.05]";
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${tone}${

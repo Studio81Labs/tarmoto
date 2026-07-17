@@ -131,7 +131,8 @@ import { AddEmailLog1799000000000 } from './migrations/1799000000000-AddEmailLog
 import { AddUserLanguage1800000000000 } from './migrations/1800000000000-AddUserLanguage.js';
 import { AddEmailTemplate1810000000000 } from './migrations/1810000000000-AddEmailTemplate.js';
 import { AddRoadQualitySeed1811000000000 } from './migrations/1811000000000-AddRoadQualitySeed.js';
-import { AddLimitEntitlements1812000000000 } from './migrations/1812000000000-AddLimitEntitlements.js';
+import { DropSharedRideEmbedClickCount1812000000000 } from './migrations/1812000000000-DropSharedRideEmbedClickCount.js';
+import { AddLimitEntitlements1813000000000 } from './migrations/1813000000000-AddLimitEntitlements.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -281,7 +282,8 @@ export const AppDataSource = new DataSource({
     AddUserLanguage1800000000000,
     AddEmailTemplate1810000000000,
     AddRoadQualitySeed1811000000000,
-    AddLimitEntitlements1812000000000,
+    DropSharedRideEmbedClickCount1812000000000,
+    AddLimitEntitlements1813000000000,
   ],
   synchronize: false,
 });

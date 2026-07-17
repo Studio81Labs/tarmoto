@@ -5,6 +5,7 @@ import {
   formatRoadLength,
   formatRoadQuality,
 } from "@/lib/best-roads-format";
+import { getServerFormatters } from "@/format/server";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -19,10 +20,11 @@ type Road = Pick<
 interface Props {
   roads: Road[];
 }
-export function BestRoadsList({ roads }: Props) {
+export async function BestRoadsList({ roads }: Props) {
+  const format = await getServerFormatters();
   if (roads.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-400">
+      <div className="rounded-xl border border-line bg-paper p-8 text-center text-fg-dim">
         <p className="text-lg font-semibold">{t("Not enough data yet")}</p>
         <p className="mt-2 text-sm">
           {t(
@@ -33,7 +35,7 @@ export function BestRoadsList({ roads }: Props) {
     );
   }
   return (
-    <ol className="divide-y divide-slate-800 rounded-xl border border-slate-800 bg-slate-900/60">
+    <ol className="divide-y divide-line rounded-xl border border-line bg-paper">
       {roads.map((r, i) => {
         return (
           <li
@@ -41,30 +43,30 @@ export function BestRoadsList({ roads }: Props) {
             id={`road-${r.id}`}
             className="flex items-center gap-4 p-4"
           >
-            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-accent">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-ink text-sm font-bold text-cream">
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold">{formatRoadLabel(r)}</h3>
-              <p className="text-xs text-slate-400">
-                {formatRoadLength(r.length_m)} · {r.surface_type}
+              <p className="text-xs text-fg-dim">
+                {formatRoadLength(r.length_m, format)} · {r.surface_type}
               </p>
             </div>
             <dl className="hidden gap-6 sm:flex">
               <div className="text-center">
-                <dt className="text-[10px] uppercase tracking-wider text-slate-500">
+                <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
                   {t("Quality ")}
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
-                  {formatRoadQuality(r.quality_score)}
+                  {formatRoadQuality(r.quality_score, format)}
                 </dd>
               </div>
               <div className="text-center">
-                <dt className="text-[10px] uppercase tracking-wider text-slate-500">
+                <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
                   {t("Curviness ")}
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
-                  {r.curviness_score.toFixed(1)}
+                  {format.decimal(r.curviness_score, 1)}
                 </dd>
               </div>
             </dl>

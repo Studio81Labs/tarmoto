@@ -6,6 +6,7 @@ import {
   setActiveLocale,
   translate,
 } from ".";
+import { companionCatalogs } from "./locales";
 
 describe("companion i18n barrel", () => {
   beforeEach(() => {
@@ -31,5 +32,20 @@ describe("companion i18n barrel", () => {
   it("re-exports the shared registry + resolver", () => {
     expect(SUPPORTED_LOCALES).toEqual(Object.keys(LOCALES));
     expect(resolveLocale("en-GB")).toBe("en");
+  });
+
+  it("registers a companion catalog for every supported locale", () => {
+    expect(Object.keys(companionCatalogs).sort()).toEqual(
+      [...SUPPORTED_LOCALES].sort(),
+    );
+  });
+
+  it("renders an ICU plural through the companion translator", () => {
+    expect(
+      translate("{count, plural, one {# day} other {# days}}", { count: 1 }),
+    ).toBe("1 day");
+    expect(
+      translate("{count, plural, one {# day} other {# days}}", { count: 3 }),
+    ).toBe("3 days");
   });
 });

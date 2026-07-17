@@ -71,13 +71,16 @@ test.describe("community follow-up flows", () => {
       page.getByRole("heading", { level: 1, name: /mira hajkova/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Distance hero tile: lifetime km over completed rides.
+    // Distance hero tile: lifetime km over completed rides. The unit comes
+    // from `format.splitDistanceKm(...).unit` (locale-formatting migration,
+    // #1012 Task 8) — Intl's CLDR short unit name for kilometres is
+    // lowercase ("km"), not the pre-migration hardcoded uppercase "KM".
     const distanceTile = page
       .locator("div")
       .filter({ hasText: /^Distance/ })
       .first();
     await expect(distanceTile).toContainText("180");
-    await expect(distanceTile).toContainText("KM");
+    await expect(distanceTile).toContainText("km");
 
     // Shared-rides section reflects the one public share.
     await expect(page.getByText("1 public rides")).toBeVisible();

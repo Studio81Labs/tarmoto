@@ -8,23 +8,31 @@ import {
   type FunZoneListItem,
 } from "@/lib/discover";
 import { ElevationSparkline } from "@/components/map/ElevationSparkline";
-import { useDiscoverStore } from "./useDiscoverStore";
+import { Skeleton } from "@tarmoto/ui";
+import { useFormat } from "@/format/FormatProvider";
+
 interface Props {
+  /** Zone whose detail is open; null renders nothing. */
+  zoneId: string | null;
   /** Matching list item so the header can render immediately from the list
    *  cache, while the detail fetch resolves the top-roads section. */
   summary: FunZoneListItem | null;
+  onClose: () => void;
 }
+
 /**
- * Right-side panel: zone header, stat strip, and ranked top-roads list with
- * per-road elevation sparklines. Driven by useDiscoverStore.selectedZoneId.
+ * Right-docked drawer for a clicked Fun Zone: zone header, stat strip, and
+ * ranked top-roads list with per-road elevation sparklines. Carried over
+ * from the retired /discover page's ZoneDetailPanel, restyled for the
+ * cream explorer and driven by props instead of the discover store.
  */
-export function ZoneDetailPanel({ summary }: Props) {
-  const { selectedZoneId, setSelectedZoneId } = useDiscoverStore();
+export function FunZonePanel({ zoneId, summary, onClose }: Props) {
+  const format = useFormat();
   const [detail, setDetail] = useState<FunZoneDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!selectedZoneId) {
+    if (!zoneId) {
       setDetail(null);
       setError(null);
       return;
@@ -38,115 +46,114 @@ export function ZoneDetailPanel({ summary }: Props) {
     const controller = new AbortController();
     (async () => {
       try {
-        const d = await fetchFunZoneDetail(selectedZoneId, {
+        const d = await fetchFunZoneDetail(zoneId, {
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
         if (d == null) {
           // 404 — the zone disappeared between list and detail fetch. Close
-          // the panel quietly and let the list state reconcile on next poll.
-          setSelectedZoneId(null);
+          // the panel quietly and let the overlay reconcile on next fetch.
+          onClose();
           return;
         }
         setDetail(d);
       } catch (err) {
-        if (
-          (
-            err as {
-              name?: string;
-            }
-          ).name === "AbortError"
-        )
-          return;
+        if ((err as { name?: string }).name === "AbortError") return;
         setError("Couldn't load zone details.");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
     })();
     return () => controller.abort();
-    // setSelectedZoneId is stable from Zustand.
+    // onClose is a stable inline setter wrapper from the page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedZoneId]);
-  if (!selectedZoneId) return null;
+  }, [zoneId]);
+  if (!zoneId) return null;
   const zone = detail?.zone ?? summary;
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
   return (
-    <aside className="w-[360px] border-l border-slate-800 bg-slate-950 flex flex-col animate-slide-in-right">
-      <header className="flex items-start justify-between px-4 py-3 border-b border-slate-800 gap-3">
+    <aside
+      className="absolute inset-y-0 right-0 z-20 flex w-[360px] max-w-full flex-col border-l border-line bg-paper shadow-[-6px_0_16px_rgba(14,14,16,0.08)] animate-slide-in-right"
+      aria-label={t("Fun Zone details")}
+    >
+      <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-white truncate">
+          <h2 className="truncate text-base font-semibold text-ink">
             {zone?.name ?? "Unnamed zone"}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+          <p className="mt-0.5 text-xs tabular-nums text-fg-dim">
             {t("Score ")}
-            {zone?.composite_score?.toFixed(1) ?? "—"}
+            {zone?.composite_score != null
+              ? format.decimal(zone.composite_score, 1)
+              : "—"}
             {zone?.best_season ? ` · ${zone.best_season}` : ""}
           </p>
         </div>
         <button
           type="button"
-          onClick={() => setSelectedZoneId(null)}
+          onClick={onClose}
           aria-label={t("Close zone details")}
-          className="text-slate-400 hover:text-white transition"
+          className="text-fg-dim transition hover:text-ink"
         >
           <X size={18} />
         </button>
       </header>
 
       {zone ? (
-        <div className="grid grid-cols-3 gap-3 px-4 py-3 border-b border-slate-800 text-center">
+        <div className="grid grid-cols-3 gap-3 border-b border-line px-4 py-3 text-center">
           <Stat label="Roads" value={String(zone.road_count)} />
           <Stat
-            label="Curve km"
+            label={`Curve ${format.splitDistanceKm(1).unit}`}
             value={
               zone.total_curve_km != null
-                ? Math.round(zone.total_curve_km).toString()
+                ? format.splitDistanceKm(zone.total_curve_km).value
                 : "—"
             }
           />
           <Stat
             label="Quality"
-            value={zone.avg_quality != null ? zone.avg_quality.toFixed(1) : "—"}
+            value={
+              zone.avg_quality != null
+                ? format.decimal(zone.avg_quality, 1)
+                : "—"
+            }
           />
         </div>
       ) : null}
 
       <div className="flex-1 overflow-y-auto">
         {error ? (
-          <div className="p-4 text-sm text-slate-300">
+          <div className="p-4 text-sm text-fg-dim">
             <p className="mb-2">{error}</p>
           </div>
         ) : loading && topRoads.length === 0 ? (
-          <div className="p-4 space-y-2">
+          <div className="space-y-2 p-4">
             {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-24 rounded bg-slate-900 border border-slate-800 animate-pulse"
-              />
+              <Skeleton key={i} className="h-24 w-full rounded-[10px]" />
             ))}
           </div>
         ) : topRoads.length === 0 ? (
-          <div className="p-4 text-sm text-slate-400">
+          <div className="p-4 text-sm text-fg-dim">
             {t("No contributing roads available yet. ")}
           </div>
         ) : (
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-line">
             {topRoads.map((road: FunZoneDetail["top_roads"][number]) => (
               <li key={road.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="text-sm font-medium text-white truncate">
+                    <h3 className="truncate text-sm font-medium text-ink">
                       {road.road_name ?? "Unnamed road"}
                       {road.road_number ? ` — ${road.road_number}` : ""}
                     </h3>
-                    <p className="text-xs text-slate-400 tabular-nums">
+                    <p className="text-xs tabular-nums text-fg-dim">
                       {road.quality_score != null
-                        ? `★ ${road.quality_score.toFixed(1)} · `
+                        ? `★ ${format.decimal(road.quality_score, 1)} · `
                         : ""}
                       {t("curviness ")}
-                      {road.curviness_score.toFixed(1)} ·{" "}
-                      {(road.length_m / 1000).toFixed(1)}
-                      {t("km \u00B7")} {road.surface_type}
+                      {format.decimal(road.curviness_score, 1)} ·{" "}
+                      {format.distanceKm(road.length_m / 1000)} ·{" "}
+                      {road.surface_type}
                     </p>
                   </div>
                 </div>
@@ -155,7 +162,7 @@ export function ZoneDetailPanel({ summary }: Props) {
                     <ElevationSparkline profile={road.elevation_profile} />
                   </div>
                 ) : (
-                  <p className="text-[10px] text-slate-500 mt-2">
+                  <p className="mt-2 text-[10px] text-fg-dim">
                     {t("No elevation data ")}
                   </p>
                 )}
@@ -167,13 +174,12 @@ export function ZoneDetailPanel({ summary }: Props) {
     </aside>
   );
 }
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-lg font-semibold text-white tabular-nums">
-        {value}
-      </div>
-      <div className="text-[10px] uppercase tracking-wider text-slate-500">
+      <div className="text-lg font-semibold tabular-nums text-ink">{value}</div>
+      <div className="text-[10px] uppercase tracking-wider text-fg-dim">
         {label}
       </div>
     </div>

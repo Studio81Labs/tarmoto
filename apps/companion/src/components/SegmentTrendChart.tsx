@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { Minus, TrendingDown, TrendingUp, Wrench } from "lucide-react";
+import type { Formatters } from "@tarmoto/shared";
 import {
   TREND_RANGES,
   TREND_RANGE_LABEL,
@@ -24,70 +25,85 @@ import {
   filterByRange,
   summariseTrend,
 } from "@/lib/segment-trend";
+import { useFormat } from "@/format/FormatProvider";
 /**
  * Road quality trend graph (US-45). Rendered inside the expanded
- * RoadPreviewCard in the trip planner sidebar. All derivation lives in
- * `lib/segment-trend.ts`; this component is pure presentation + interaction.
+ * RoadPreviewCard in the trip planner sidebar and the explore segment
+ * sidebar. All derivation lives in `lib/segment-trend.ts`; this component is
+ * pure presentation + interaction.
  */
-type TrendTone = "dark" | "cream";
-
 interface SegmentTrendChartProps {
   segmentId: string;
   history: readonly QualityPoint[];
   regionalHistory?: readonly QualityPoint[] | undefined;
   now?: Date;
-  /** Colour theme — `dark` (default) for the trip planner, `cream` for explore. */
-  tone?: TrendTone;
 }
 const DEFAULT_RANGE: TrendRange = "1y";
 
-/** Recharts takes concrete colour strings, so the theme lives here. */
-function trendChartPalette(tone: TrendTone) {
-  return tone === "cream"
-    ? {
-        grid: "rgba(14,14,16,0.10)",
-        axis: "rgba(14,14,16,0.45)",
-        tooltipBg: "#f5efe6",
-        tooltipBorder: "rgba(14,14,16,0.18)",
-        tooltipLabel: "#0e0e10",
-        line: "#ff6a1a",
-        regional: "rgba(14,14,16,0.35)",
-        refStroke: "#f5efe6",
-      }
-    : {
-        grid: "#1e293b",
-        axis: "#64748b",
-        tooltipBg: "#0f172a",
-        tooltipBorder: "#1e293b",
-        tooltipLabel: "#e2e8f0",
-        line: "#22d3ee",
-        regional: "#94a3b8",
-        refStroke: "#0f172a",
-      };
-}
-function formatTrendTooltipLabel(value: React.ReactNode) {
-  return typeof value === "string" || typeof value === "number" ? value : "";
+/** Recharts takes concrete colour strings, so the cream theme lives here. */
+const TREND_PALETTE = {
+  grid: "rgba(14,14,16,0.10)",
+  axis: "rgba(14,14,16,0.45)",
+  tooltipBg: "#f5efe6",
+  tooltipBorder: "rgba(14,14,16,0.18)",
+  tooltipLabel: "#0e0e10",
+  line: "#ff6a1a",
+  regional: "rgba(14,14,16,0.35)",
+  refStroke: "#f5efe6",
+} as const;
+function formatTrendTooltipLabel(
+  value: React.ReactNode,
+  format: Formatters,
+): React.ReactNode {
+  // `value` is a trend point's `date` key, which is always a month bucket in
+  // production: it's populated verbatim from `TrendPointDto.month` (backend
+  // `SegmentDetailSidebar.tsx`'s `trendPoints()`), and the backend derives
+  // that column via `DATE_TRUNC('month', recorded_at)` — it can never carry
+  // a day component on the wire. Some unit-test fixtures use "YYYY-MM-DD"
+  // shorthand for readability, but that's test convenience, not a real data
+  // shape this component needs to support. Route through the same
+  // instant-based `monthYear`/`monthBucketAnchor` pair the axis ticks use
+  // (below) so the tooltip can't render a fabricated day-of-month (e.g. "Jul
+  // 1, 2026" via `calendarDate`) for what is only ever a month.
+  return typeof value === "string" || typeof value === "number"
+    ? format.monthYear(monthBucketAnchor(String(value)))
+    : "";
 }
 function formatTrendTooltipValue(
   value: TooltipValueType | undefined,
   name: React.ReactNode,
+  format: Formatters,
 ) {
   const numeric =
     typeof value === "number" ? value : Number.parseFloat(String(value));
   const label =
     typeof name === "string" || typeof name === "number" ? String(name) : "";
   if (!Number.isFinite(numeric)) return ["—", label] as const;
-  return [numeric.toFixed(2), label] as const;
+  return [format.decimal(numeric, 2), label] as const;
+}
+/**
+ * Parses a trend point's date-only string ("YYYY-MM" in production per
+ * `TrendPointDto.month`, "YYYY-MM-DD" in some test fixtures — only the
+ * year/month are used either way) into a UTC-noon anchor for the axis ticks
+ * AND the tooltip label (`formatTrendTooltipLabel` above). `format.monthYear`
+ * is an instant (viewer-timezone) formatter, so handing it the raw string —
+ * which parses as UTC MIDNIGHT on day 1 — can roll into the previous month
+ * for any viewer behind UTC (verified: a "2026-01" string renders "Dec 2025"
+ * at UTC-12). Noon UTC is >12h clear of every real IANA offset (-12..+14) in
+ * both directions, so the month can never shift. Mirrors `monthAnchor` in
+ * `lib/ride-stats.ts`.
+ */
+function monthBucketAnchor(dateStr: string): Date {
+  const [year, month] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, 1, 12));
 }
 export function SegmentTrendChart({
   segmentId,
   history,
   regionalHistory,
   now,
-  tone = "dark",
 }: SegmentTrendChartProps) {
-  const cream = tone === "cream";
-  const palette = trendChartPalette(tone);
+  const format = useFormat();
   const [range, setRange] = useState<TrendRange>(DEFAULT_RANGE);
   const filteredHistory = useMemo(
     () => filterByRange(history, range, now),
@@ -122,7 +138,7 @@ export function SegmentTrendChart({
     <div>
       <div className="flex items-center justify-between gap-2 mb-3">
         {hasTrend ? (
-          <TrendSummaryBadge summary={summary} cream={cream} />
+          <TrendSummaryBadge summary={summary} format={format} />
         ) : (
           <span />
         )}
@@ -130,12 +146,11 @@ export function SegmentTrendChart({
           segmentId={segmentId}
           range={range}
           onChange={setRange}
-          cream={cream}
         />
       </div>
 
       {!hasTrend ? (
-        <p className={cream ? "text-fg-mute" : "text-slate-500"}>
+        <p className="text-fg-mute">
           {t("Not enough readings in this range to plot a trend yet. ")}
         </p>
       ) : (
@@ -155,19 +170,27 @@ export function SegmentTrendChart({
                 data={data}
                 margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke={palette.grid} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={TREND_PALETTE.grid}
+                />
                 <XAxis
                   dataKey="date"
-                  stroke={palette.axis}
+                  stroke={TREND_PALETTE.axis}
                   fontSize={10}
                   tickLine={false}
-                  tickFormatter={formatDateTick}
+                  // Compact "Jan 26" ticks — full monthYear crowds or gets
+                  // minTickGap-suppressed on the 320px sidebar; the tooltip
+                  // (formatTrendTooltipLabel) keeps the full month + year.
+                  tickFormatter={(value: string) =>
+                    format.monthYearCompact(monthBucketAnchor(value))
+                  }
                   minTickGap={24}
                 />
                 <YAxis
                   domain={[1, 5]}
                   ticks={[1, 2, 3, 4, 5]}
-                  stroke={palette.axis}
+                  stroke={TREND_PALETTE.axis}
                   fontSize={10}
                   tickLine={false}
                   axisLine={false}
@@ -175,21 +198,26 @@ export function SegmentTrendChart({
                 />
                 <Tooltip
                   contentStyle={{
-                    background: palette.tooltipBg,
-                    border: `1px solid ${palette.tooltipBorder}`,
+                    background: TREND_PALETTE.tooltipBg,
+                    border: `1px solid ${TREND_PALETTE.tooltipBorder}`,
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  labelStyle={{ color: palette.tooltipLabel }}
-                  labelFormatter={formatTrendTooltipLabel}
-                  formatter={formatTrendTooltipValue}
+                  labelStyle={{ color: TREND_PALETTE.tooltipLabel }}
+                  labelFormatter={(value: React.ReactNode) =>
+                    formatTrendTooltipLabel(value, format)
+                  }
+                  formatter={(
+                    value: TooltipValueType | undefined,
+                    name: React.ReactNode,
+                  ) => formatTrendTooltipValue(value, name, format)}
                 />
                 <Line
                   type="monotone"
                   dataKey="score"
-                  stroke={palette.line}
+                  stroke={TREND_PALETTE.line}
                   strokeWidth={2}
-                  dot={{ r: 2, fill: palette.line }}
+                  dot={{ r: 2, fill: TREND_PALETTE.line }}
                   activeDot={{ r: 4 }}
                   isAnimationActive={false}
                   name="This segment"
@@ -198,7 +226,7 @@ export function SegmentTrendChart({
                   <Line
                     type="monotone"
                     dataKey="regional"
-                    stroke={palette.regional}
+                    stroke={TREND_PALETTE.regional}
                     strokeWidth={1.5}
                     strokeDasharray="4 4"
                     dot={false}
@@ -213,7 +241,7 @@ export function SegmentTrendChart({
                     y={clampScore(event.score)}
                     r={5}
                     fill={event.kind === "repair" ? "#1f8a5b" : "#d2483a"}
-                    stroke={palette.refStroke}
+                    stroke={TREND_PALETTE.refStroke}
                     strokeWidth={2}
                     ifOverflow="extendDomain"
                   />
@@ -224,7 +252,6 @@ export function SegmentTrendChart({
           <ChartLegend
             hasRegional={filteredRegional.length > 0}
             events={events}
-            cream={cream}
           />
         </>
       )}
@@ -235,20 +262,16 @@ function RangeSelector({
   segmentId,
   range,
   onChange,
-  cream,
 }: {
   segmentId: string;
   range: TrendRange;
   onChange: (range: TrendRange) => void;
-  cream: boolean;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={t("Trend date range")}
-      className={`flex overflow-hidden rounded-lg border text-[11px] ${
-        cream ? "border-line" : "border-slate-800"
-      }`}
+      className="flex overflow-hidden rounded-lg border border-line text-[11px]"
     >
       {TREND_RANGES.map((option) => {
         const active = option === range;
@@ -264,9 +287,7 @@ function RangeSelector({
             className={`px-2 py-1 transition ${
               active
                 ? "bg-accent/10 text-accent"
-                : cream
-                  ? "text-fg-mute hover:bg-paper hover:text-ink"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+                : "text-fg-mute hover:bg-paper hover:text-ink"
             }`}
           >
             {option === "all" ? "All" : option.toUpperCase()}
@@ -278,27 +299,27 @@ function RangeSelector({
 }
 function TrendSummaryBadge({
   summary,
-  cream,
+  format,
 }: {
   summary: ReturnType<typeof summariseTrend>;
-  cream: boolean;
+  format: Formatters;
 }) {
   if (!summary) return <span />;
   const { delta, direction } = summary;
   const config = {
     improving: {
       icon: <TrendingUp size={12} />,
-      color: cream ? "text-emerald-600" : "text-emerald-400",
+      color: "text-emerald-600",
       label: "Improving",
     },
     declining: {
       icon: <TrendingDown size={12} />,
-      color: cream ? "text-rose-600" : "text-rose-400",
+      color: "text-rose-600",
       label: "Declining",
     },
     stable: {
       icon: <Minus size={12} />,
-      color: cream ? "text-fg-mute" : "text-slate-400",
+      color: "text-fg-mute",
       label: "Stable",
     },
   }[direction];
@@ -306,15 +327,13 @@ function TrendSummaryBadge({
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium ${config.color}`}
-      title={`${summary.firstScore.toFixed(2)} → ${summary.latestScore.toFixed(2)}`}
+      title={`${format.decimal(summary.firstScore, 2)} → ${format.decimal(summary.latestScore, 2)}`}
     >
       {config.icon}
       {config.label}
-      <span
-        className={`ml-0.5 tabular-nums ${cream ? "text-fg-mute" : "text-slate-400"}`}
-      >
+      <span className="ml-0.5 tabular-nums text-fg-mute">
         ({sign}
-        {delta.toFixed(2)})
+        {format.decimal(delta, 2)})
       </span>
     </span>
   );
@@ -322,81 +341,43 @@ function TrendSummaryBadge({
 function ChartLegend({
   hasRegional,
   events,
-  cream,
 }: {
   hasRegional: boolean;
   events: ReturnType<typeof detectChangeEvents>;
-  cream: boolean;
 }) {
   const repairCount = events.filter((e) => e.kind === "repair").length;
   const detCount = events.filter((e) => e.kind === "deterioration").length;
   return (
-    <ul
-      className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] ${
-        cream ? "text-fg-mute" : "text-slate-500"
-      }`}
-    >
+    <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-mute">
       <li className="flex items-center gap-1">
         <span className="w-2 h-2 rounded-full bg-accent" />
         {t("This segment ")}
       </li>
       {hasRegional && (
         <li className="flex items-center gap-1">
-          <span
-            className={`inline-block w-3 border-t border-dashed ${
-              cream ? "border-fg-mute" : "border-slate-400"
-            }`}
-          />
+          <span className="inline-block w-3 border-t border-dashed border-fg-mute" />
           {t("Regional avg ")}
         </li>
       )}
       {repairCount > 0 && (
-        <li
-          className={`flex items-center gap-1 ${
-            cream ? "text-emerald-600" : "text-emerald-400"
-          }`}
-        >
+        <li className="flex items-center gap-1 text-emerald-600">
           <Wrench size={10} />
-          {t(repairCount === 1 ? "{count} repair" : "{count} repairs", {
+          {t("{count, plural, one {# repair} other {# repairs}}", {
             count: repairCount,
           })}
         </li>
       )}
       {detCount > 0 && (
-        <li
-          className={`flex items-center gap-1 ${
-            cream ? "text-rose-600" : "text-rose-400"
-          }`}
-        >
+        <li className="flex items-center gap-1 text-rose-600">
           <TrendingDown size={10} />
           {t(
-            detCount === 1 ? "{count} deterioration" : "{count} deteriorations",
-            { count: detCount },
+            "{count, plural, one {# deterioration} other {# deteriorations}}",
+            {
+              count: detCount,
+            },
           )}
         </li>
       )}
     </ul>
   );
-}
-function formatDateTick(value: string): string {
-  // Compact MMM YY labels keep the axis readable at sidebar widths.
-  const [year, month] = value.split("-");
-  if (!year || !month) return value;
-  const monthIndex = Number(month) - 1;
-  const names = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  const name = names[monthIndex] ?? month;
-  return `${name} ${year.slice(2)}`;
 }

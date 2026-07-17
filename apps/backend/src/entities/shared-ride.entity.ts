@@ -34,9 +34,6 @@ export class SharedRide {
   @Column({ type: 'int', default: 0 })
   view_count!: number;
 
-  @Column({ type: 'int', default: 0 })
-  embed_click_count!: number;
-
   /** How many times this route has been cloned into another rider's trips. */
   @Column({ type: 'int', default: 0 })
   clone_count!: number;

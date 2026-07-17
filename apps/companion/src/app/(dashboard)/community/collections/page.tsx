@@ -47,7 +47,7 @@ import {
   type RouteCollectionView,
 } from "@/lib/route-collections";
 import type { RouteCollectionVisibility } from "@/lib/api";
-import { formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 interface CollectionInputForm {
   title: string;
   description: string;
@@ -193,10 +193,10 @@ export default function RouteCollectionsPage() {
         >
           <AlertTriangle
             size={32}
-            className="mx-auto text-amber-400 mb-3"
+            className="mx-auto text-amber-700 mb-3"
             aria-hidden="true"
           />
-          <p className="text-amber-200 mb-1">
+          <p className="text-amber-700 mb-1">
             {t("Couldn't load your collections")}
           </p>
           <p className="text-sm text-fg-dim mb-4">
@@ -339,6 +339,7 @@ function CollectionCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const format = useFormat();
   const [menuOpen, setMenuOpen] = useState(false);
   // Distance + missing-count breakdowns deliberately live on the detail page,
   // not here. The list endpoint returns a summary (no per-item ids), so any
@@ -373,15 +374,15 @@ function CollectionCard({
         <div className="flex items-center gap-2 text-sm text-fg-dim">
           <RouteIcon size={13} />
           <span>
-            {collection.itemCount === 1
-              ? t("1 route")
-              : t("{count} routes", { count: collection.itemCount })}
+            {t("{count, plural, one {# route} other {# routes}}", {
+              count: collection.itemCount,
+            })}
           </span>
         </div>
 
         <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
-          {formatRelativeTime(collection.updatedAt)}
+          {format.relativeTime(collection.updatedAt)}
         </p>
       </Link>
 
@@ -433,6 +434,7 @@ function FollowedCollectionCard({
   collection: RouteCollectionView;
   onUnfollow: () => void;
 }) {
+  const format = useFormat();
   return (
     <div className="relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong">
       <Link
@@ -459,9 +461,9 @@ function FollowedCollectionCard({
           <span className="inline-flex items-center gap-1">
             <RouteIcon size={13} />
             <span>
-              {collection.itemCount === 1
-                ? t("1 route")
-                : t("{count} routes", { count: collection.itemCount })}
+              {t("{count, plural, one {# route} other {# routes}}", {
+                count: collection.itemCount,
+              })}
             </span>
           </span>
           {collection.ownerName && (
@@ -474,7 +476,7 @@ function FollowedCollectionCard({
 
         <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
-          {formatRelativeTime(collection.updatedAt)}
+          {format.relativeTime(collection.updatedAt)}
         </p>
       </Link>
 
@@ -486,7 +488,7 @@ function FollowedCollectionCard({
           onUnfollow();
         }}
         aria-label={`Unfollow ${collection.title}`}
-        className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-red-400 hover:bg-paper transition"
+        className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-red-800 hover:bg-paper transition"
       >
         <Trash2 size={16} />
       </button>
@@ -637,7 +639,7 @@ function CollectionModal({
           </fieldset>
         </div>
 
-        {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+        {error && <p className="mt-3 text-xs text-red-700">{error}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" disabled={submitting} onClick={onClose}>
@@ -746,7 +748,7 @@ function CardMenuItem({
 }) {
   const toneClass =
     tone === "danger"
-      ? "text-red-400 hover:bg-red-500/10"
+      ? "text-red-700 hover:bg-red-500/10"
       : "text-ink hover:bg-paper";
   return (
     <button
@@ -803,7 +805,7 @@ function ConfirmDialog({
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-[2px]"
     >
       <div className="w-full max-w-sm rounded-[14px] border border-line bg-paper p-6 shadow-xl">
         <h2

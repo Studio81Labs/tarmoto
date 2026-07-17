@@ -8,9 +8,10 @@ import {
   parseImportedRoute,
   type ImportedRoute,
 } from "@/lib/gpx-kml-import";
-import { QUALITY_CONFIG, formatDistance } from "@/lib/utils";
+import { QUALITY_CONFIG } from "@/lib/utils";
 import { useTripStore } from "@/stores/trip";
 import { flattenSegments } from "@/stores/trip";
+import { useFormat } from "@/format/FormatProvider";
 import type { Trip } from "@/lib/types";
 interface TripImportDialogProps {
   open: boolean;
@@ -98,16 +99,16 @@ export function TripImportDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="trip-import-title"
-      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-[2px]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden">
-        <header className="flex items-center justify-between px-5 py-3 border-b border-slate-800">
+      <div className="w-full max-w-2xl overflow-hidden rounded-[14px] border border-line-strong bg-cream shadow-[0_18px_48px_rgba(14,14,16,0.3)]">
+        <header className="flex items-center justify-between border-b border-line px-5 py-3">
           <h2
             id="trip-import-title"
-            className="text-sm font-semibold text-slate-200 flex items-center gap-2"
+            className="flex items-center gap-2 text-sm font-semibold text-ink"
           >
             <FileUp size={14} className="text-accent" />
             {t("Import GPX or KML ")}
@@ -116,7 +117,7 @@ export function TripImportDialog({
             type="button"
             onClick={onClose}
             aria-label={t("Close import dialog")}
-            className="text-slate-500 hover:text-slate-200 transition"
+            className="text-fg-dim transition hover:text-ink"
           >
             <X size={16} />
           </button>
@@ -128,19 +129,19 @@ export function TripImportDialog({
           )}
 
           {status === "parsing" && (
-            <div className="flex items-center gap-3 text-slate-300 text-sm py-6 justify-center">
+            <div className="flex items-center justify-center gap-3 py-6 text-sm text-fg-dim">
               <Loader2 size={16} className="animate-spin" />
               {t("Parsing route\u2026 ")}
             </div>
           )}
 
           {status === "error" && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200 space-y-3">
+            <div className="space-y-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-700">
               <p>{error}</p>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="text-xs font-semibold text-red-200 underline hover:text-white"
+                className="text-xs font-semibold text-red-700 underline hover:text-ink"
               >
                 {t("Pick another file ")}
               </button>
@@ -172,8 +173,8 @@ export function TripImportDialog({
           />
         </div>
 
-        <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800">
-          <Button variant="on-dark" size="sm" onClick={onClose}>
+        <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
+          <Button variant="secondary" size="sm" onClick={onClose}>
             {t("Cancel ")}
           </Button>
           {status === "ready" && (
@@ -191,16 +192,16 @@ function IdlePicker({ onPick }: { onPick: () => void }) {
     <button
       type="button"
       onClick={onPick}
-      className="w-full rounded-xl border-2 border-dashed border-slate-700 hover:border-accent transition p-8 text-center"
+      className="w-full rounded-xl border-2 border-dashed border-line-strong p-8 text-center transition hover:border-accent"
     >
       <FileUp
         size={32}
-        className="mx-auto text-slate-500 group-hover:text-accent mb-3"
+        className="mx-auto mb-3 text-fg-dim group-hover:text-accent"
       />
-      <p className="text-sm text-slate-200 font-medium">
+      <p className="text-sm font-medium text-ink">
         {t("Choose a GPX or KML file ")}
       </p>
-      <p className="text-xs text-slate-500 mt-1">
+      <p className="mt-1 text-xs text-fg-dim">
         {t("Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ")}
       </p>
     </button>
@@ -215,30 +216,31 @@ function RoutePreview({
   trip: Trip;
   segmentCount: number;
 }) {
+  const format = useFormat();
   const firstDay = trip.days[0];
   const maxSegmentKm =
     firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) || 1;
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-        <p className="text-xs uppercase tracking-wider text-slate-500 mb-1">
+      <div className="rounded-xl border border-line bg-paper-2 p-4">
+        <p className="mb-1 text-xs uppercase tracking-wider text-fg-dim">
           {t("Route ")}
         </p>
-        <p className="text-base font-semibold text-slate-100 truncate">
+        <p className="truncate text-base font-semibold text-ink">
           {route.name}
         </p>
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Stat
             label="Distance"
-            value={formatDistance(route.totalDistanceKm)}
+            value={format.distanceKm(route.totalDistanceKm)}
           />
           <Stat label="Points" value={String(route.points.length)} />
           <Stat
             label="Avg quality"
-            value={firstDay ? firstDay.avgQuality.toFixed(1) : "—"}
+            value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}
           />
         </div>
-        <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+        <p className="mt-3 text-[11px] leading-relaxed text-fg-dim">
           {t(
             "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay. ",
           )}
@@ -246,7 +248,7 @@ function RoutePreview({
       </div>
 
       <div>
-        <p className="text-xs uppercase tracking-wider text-slate-500 mb-2">
+        <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
           {t("Segment quality (")}
           {segmentCount})
         </p>
@@ -260,18 +262,20 @@ function RoutePreview({
                 className="flex items-center gap-2 text-xs"
                 data-testid={`import-segment-${seg.id}`}
               >
-                <span className="w-24 truncate text-slate-400">{seg.name}</span>
-                <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+                <span className="w-24 truncate text-fg-dim">{seg.name}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-ink/10">
                   <div
                     className={`${cfg.bg} h-full`}
                     style={{ width: `${widthPct}%` }}
-                    aria-label={`${cfg.label} • ${formatDistance(seg.distanceKm)}`}
+                    aria-label={`${cfg.label} • ${format.distanceKm(seg.distanceKm)}`}
                   />
                 </div>
-                <span className="w-14 text-right tabular-nums text-slate-500">
-                  {formatDistance(seg.distanceKm)}
+                <span className="w-14 text-right tabular-nums text-fg-dim">
+                  {format.distanceKm(seg.distanceKm)}
                 </span>
-                <span className={`w-16 text-right font-semibold ${cfg.color}`}>
+                <span
+                  className={`quality-${seg.qualityTier} w-16 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold`}
+                >
                   {cfg.label}
                 </span>
               </div>
@@ -282,18 +286,18 @@ function RoutePreview({
 
       {route.waypoints.length > 0 && (
         <div>
-          <p className="text-xs uppercase tracking-wider text-slate-500 mb-2">
+          <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
             {t("Waypoints (")}
             {route.waypoints.length})
           </p>
-          <ul className="space-y-1 text-xs text-slate-400 max-h-28 overflow-y-auto pr-1">
+          <ul className="max-h-28 space-y-1 overflow-y-auto pr-1 text-xs text-fg-dim">
             {route.waypoints.map((wp, i) => (
               <li key={i} className="flex items-center gap-2 truncate">
-                <MapPin size={12} className="text-slate-500 shrink-0" />
+                <MapPin size={12} className="shrink-0 text-fg-dim" />
                 <span className="truncate">
                   {wp.name ?? `Waypoint ${i + 1}`}
                 </span>
-                <span className="tabular-nums text-slate-600">
+                <span className="tabular-nums text-fg-dim">
                   {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
                 </span>
               </li>
@@ -307,10 +311,10 @@ function RoutePreview({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wider text-slate-500">
+      <p className="text-[11px] uppercase tracking-wider text-fg-dim">
         {label}
       </p>
-      <p className="font-semibold text-slate-100 tabular-nums">{value}</p>
+      <p className="font-semibold tabular-nums text-ink">{value}</p>
     </div>
   );
 }

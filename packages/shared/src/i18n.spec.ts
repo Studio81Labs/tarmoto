@@ -6,6 +6,8 @@ import {
   isSupportedLocale,
   makeTranslator,
   resolveLocale,
+  type CatalogsByLocale,
+  type SupportedLocale,
 } from "./i18n";
 
 describe("i18n / registry", () => {
@@ -68,5 +70,79 @@ describe("i18n / makeTranslator", () => {
   it("falls back to the default-locale catalog for an unpopulated locale", () => {
     // @ts-expect-error — "et" is not a registered SupportedLocale; exercises the English fallback
     expect(t("greeting", { name: "Riku" }, "et")).toBe("Hi Riku,");
+  });
+});
+
+describe("i18n / makeTranslator (ICU)", () => {
+  type Key = string;
+  const icuT = makeTranslator<Key>({
+    en: {
+      rides: "{count, plural, one {# ride} other {# rides}}",
+      whose: "{gender, select, female {her} male {his} other {their}} bike",
+      prose: "a full day's ride",
+      literalBrace: "literal '{' brace {name}",
+      markup: '<strong style="color:#f8fafc;">{code}</strong>',
+      views: "{count, number} views",
+    },
+  });
+
+  it("selects English plural branches and formats # with the message locale", () => {
+    expect(icuT("rides", { count: 1 })).toBe("1 ride");
+    expect(icuT("rides", { count: 2 })).toBe("2 rides");
+    // Intentional change from the String(n) engine: en grouping.
+    expect(icuT("rides", { count: 1234 })).toBe("1,234 rides");
+  });
+
+  it("supports select", () => {
+    expect(icuT("whose", { gender: "female" })).toBe("her bike");
+    expect(icuT("whose", { gender: "x" })).toBe("their bike");
+  });
+
+  it("keeps prose apostrophes and renders escaped literal braces", () => {
+    expect(icuT("prose", {})).toBe("a full day's ride");
+    expect(icuT("literalBrace", { name: "x" })).toBe("literal { brace x");
+  });
+
+  it("treats markup as literal text (ignoreTag)", () => {
+    expect(icuT("markup", { code: "ABC" })).toBe(
+      '<strong style="color:#f8fafc;">ABC</strong>',
+    );
+  });
+
+  it("locale-formats explicit number-typed arguments (documented engine change)", () => {
+    expect(icuT("views", { count: 1234 })).toBe("1,234 views");
+  });
+
+  it("falls back to legacy interpolation for malformed messages and missing values", () => {
+    // Unbalanced brace — ICU parse fails; legacy regex leaves it untouched.
+    expect(icuT("Hi {name", { name: "R" })).toBe("Hi {name");
+    // Valid ICU, missing value — legacy contract: placeholder stays.
+    expect(icuT("Hi {a} {b}", { a: "x" })).toBe("Hi x {b}");
+  });
+
+  it("proves the machinery with a Czech-shaped catalog (one/few/other)", () => {
+    // 'cs' is deliberately NOT in LOCALES — cast to exercise the engine the
+    // way a future registered language would, without unhiding any UI.
+    const cs = makeTranslator<string>({
+      en: { left: "{count, plural, one {# day} other {# days}} left" },
+      cs: {
+        left: "{count, plural, one {Zbývá # den} few {Zbývají # dny} other {Zbývá # dní}}",
+      },
+    } as unknown as CatalogsByLocale<string>);
+    const csLocale = "cs" as SupportedLocale;
+    expect(cs("left", { count: 1 }, csLocale)).toBe("Zbývá 1 den");
+    expect(cs("left", { count: 2 }, csLocale)).toBe("Zbývají 2 dny");
+    expect(cs("left", { count: 5 }, csLocale)).toBe("Zbývá 5 dní");
+  });
+
+  it("applies the plural rules of the catalog that supplied the template", () => {
+    // Key missing from cs catalog → en template AND en plural rules apply.
+    const cs = makeTranslator<string>({
+      en: { left: "{count, plural, one {# day} other {# days}} left" },
+      cs: {},
+    } as unknown as CatalogsByLocale<string>);
+    const csLocale = "cs" as SupportedLocale;
+    expect(cs("left", { count: 2 }, csLocale)).toBe("2 days left");
+    expect(cs("left", { count: 1234 }, csLocale)).toBe("1,234 days left");
   });
 });

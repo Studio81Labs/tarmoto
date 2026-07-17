@@ -9,6 +9,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters } from "@tarmoto/shared";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG, QUALITY_TIERS, scoreToTier } from "@/lib/utils";
 
@@ -70,10 +71,11 @@ export function computeQualityBreakdown(
 
 export function formatNumber(
   value: number | null | undefined,
-  digits = 0,
+  digits: number = 0,
+  format: Formatters,
 ): string {
   if (value == null || Number.isNaN(value)) return "—";
-  return value.toFixed(digits);
+  return format.decimal(value, digits);
 }
 
 export interface RoutePoint {

@@ -2,7 +2,7 @@ import { BedDouble, MapPin } from "lucide-react";
 import { QualityBars, Stamp } from "@tarmoto/ui";
 import { t } from "@/i18n";
 import type { TripDay } from "@/lib/types";
-import { formatDistance, formatDuration } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Shared "Day-by-day" itinerary cards. Rendered read-only in the trip
@@ -71,6 +71,7 @@ export function DayByDayList({
   showHeading?: boolean;
   className?: string;
 }) {
+  const format = useFormat();
   if (days.length === 0) return null;
   return (
     <section className={`space-y-2 ${className ?? ""}`}>
@@ -117,13 +118,13 @@ export function DayByDayList({
                 <div className="grid grid-cols-3 gap-2.5">
                   <TileStat
                     label="Distance"
-                    value={formatDistance(day.distanceKm)}
+                    value={format.distanceKm(day.distanceKm)}
                   />
                   <TileStat
                     label="Ride time"
                     value={
                       day.durationMinutes > 0
-                        ? formatDuration(day.durationMinutes)
+                        ? format.duration(day.durationMinutes)
                         : "—"
                     }
                   />
@@ -131,7 +132,7 @@ export function DayByDayList({
                     label="Elevation"
                     value={
                       day.elevationGain > 0
-                        ? `${Math.round(day.elevationGain)} m`
+                        ? format.elevation(day.elevationGain)
                         : "—"
                     }
                     accent
@@ -147,11 +148,12 @@ export function DayByDayList({
                   )}
                   <span className="inline-flex items-center gap-1.5">
                     <MapPin size={12} className="text-fg-mute" />
-                    {t("{count} {waypointLabel}", {
-                      count: day.waypoints.length,
-                      waypointLabel:
-                        day.waypoints.length === 1 ? "waypoint" : "waypoints",
-                    })}
+                    {t(
+                      "{count, plural, one {# waypoint} other {# waypoints}}",
+                      {
+                        count: day.waypoints.length,
+                      },
+                    )}
                   </span>
                 </div>
               </button>

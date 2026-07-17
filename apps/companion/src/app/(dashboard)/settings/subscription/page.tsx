@@ -15,6 +15,8 @@ import {
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { Button, Card, Heading, SkeletonForm, Stamp } from "@tarmoto/ui";
+import type { Formatters } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   buildFallbackSubscriptionSnapshot,
@@ -72,6 +74,7 @@ export default function SubscriptionPage() {
   // call goes out unauthed, surfacing as a misleading "Unauthorized"
   // banner.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  const format = useFormat();
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
@@ -107,8 +110,8 @@ export default function SubscriptionPage() {
   }, [authReady]);
   const snapshot = state.kind === "loaded" ? state.snapshot : null;
   const renewalLabel = useMemo(
-    () => (snapshot ? describeRenewal(snapshot.currentPlan) : ""),
-    [snapshot],
+    () => (snapshot ? describeRenewal(snapshot.currentPlan, format) : ""),
+    [snapshot, format],
   );
   async function openCheckout(tier: "premium" | "pro") {
     setActionState({ kind: `checkout-${tier}`, error: null });
@@ -226,7 +229,7 @@ export default function SubscriptionPage() {
       />
 
       {actionState.error ? (
-        <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+        <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
           {actionState.error}
         </div>
       ) : null}
@@ -234,7 +237,7 @@ export default function SubscriptionPage() {
       {state.kind === "loading" ? (
         <LoadingState />
       ) : state.kind === "error" ? (
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {state.message}
         </div>
       ) : snapshot ? (
@@ -287,7 +290,7 @@ export default function SubscriptionPage() {
           </section>
 
           <section className="mb-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <BillingHistoryCard snapshot={snapshot} />
+            <BillingHistoryCard snapshot={snapshot} format={format} />
             <CancelPlanCard
               currentTier={snapshot.currentPlan.tier}
               renewalLabel={renewalLabel}
@@ -527,7 +530,13 @@ function PlanCard({
     </article>
   );
 }
-function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
+function BillingHistoryCard({
+  snapshot,
+  format,
+}: {
+  snapshot: SubscriptionSnapshot;
+  format: Formatters;
+}) {
   return (
     <Card padded={false} className="p-6">
       <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
@@ -550,7 +559,7 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
             >
               <div>
                 <p className="font-mono text-[14px] font-semibold text-ink tabular-nums">
-                  {formatInvoiceDate(invoice.date)}
+                  {formatInvoiceDate(invoice.date, format)}
                 </p>
                 <p className="mt-1 text-[14px] text-fg-dim">
                   {invoice.amountLabel} · {invoiceStatusLabel(invoice.status)}

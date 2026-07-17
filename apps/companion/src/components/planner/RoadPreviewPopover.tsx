@@ -11,7 +11,9 @@ import {
   scoreToBand,
 } from "@/lib/planner/quality-bands";
 import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
+import type { Formatters } from "@tarmoto/shared";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Road Preview Card — opens when the rider taps ANY section of the
@@ -64,12 +66,14 @@ function formatCapturedMonth(isoMonth: string | undefined): string | null {
   return label ? `${label} ${year}` : null;
 }
 
-function segmentTitle(segment: RouteSegment): string {
-  const lengthKm = Math.round(segment.lengthKm * 10) / 10;
+// Takes the formatter so the heading speaks the same unit as the
+// micro-strip tooltips and scale below it (miles for imperial riders).
+function segmentTitle(segment: RouteSegment, format: Formatters): string {
+  const length = format.distanceKm(segment.lengthKm);
   if (segment.band === "no_data") {
-    return `${lengthKm} km · no rider passes yet`;
+    return `${length} · no rider passes yet`;
   }
-  return `Day ${segment.dayNumber} section · ${lengthKm} km`;
+  return `Day ${segment.dayNumber} section · ${length}`;
 }
 
 function StreetViewLink({ segment }: { segment: RouteSegment }) {
@@ -167,6 +171,7 @@ export function RoadPreviewPopover({
   onReroute,
   onOpenFullDetail,
 }: RoadPreviewPopoverProps) {
+  const format = useFormat();
   const [preview, setPreview] = useState<RoadPreview | null>(null);
   // A coalesced run (`run:<first>:<last>`) carries only its FIRST child's
   // roadSegmentId, so opening the drawer from it would show one sub-segment
@@ -257,7 +262,7 @@ export function RoadPreviewPopover({
         </div>
 
         <div className="p-[18px]">
-          <Heading size="sm">{segmentTitle(segment)}</Heading>
+          <Heading size="sm">{segmentTitle(segment, format)}</Heading>
 
           {preview?.hasData ? (
             <>
@@ -276,7 +281,9 @@ export function RoadPreviewPopover({
                   className="text-xl font-extrabold tracking-[-0.5px]"
                   style={{ color: scoreColor }}
                 >
-                  {preview.score?.toFixed(1)}
+                  {preview.score != null
+                    ? format.decimal(preview.score, 1)
+                    : undefined}
                 </span>
                 <span className="text-xs font-semibold text-fg-mute">/ 5</span>
               </div>
@@ -288,14 +295,18 @@ export function RoadPreviewPopover({
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-quality-q2/60 bg-quality-q2/15 px-2.5 py-1">
                     <span className="h-[7px] w-[7px] rounded-full bg-quality-q2" />
                     <Mono className="text-[9.5px] font-bold tracking-[0.4px] text-[#A9762A]">
-                      {t("LOW CONFIDENCE ")}· {preview.passes}{" "}
-                      {preview.passes === 1 ? t("PASS ") : t("PASSES ")}
+                      {t("LOW CONFIDENCE ")}·{" "}
+                      {t("{count, plural, one {# PASS} other {# PASSES}}", {
+                        count: preview.passes ?? 0,
+                      })}
                     </Mono>
                   </span>
                 ) : (
                   <span className="text-[11.5px] text-fg-mute">
-                    {t("based on ")}
-                    {preview.passes} {t("rider passes ")}
+                    {t(
+                      "based on {count, plural, one {# rider pass} other {# rider passes}}",
+                      { count: preview.passes ?? 0 },
+                    )}
                   </span>
                 )}
               </div>
@@ -324,7 +335,7 @@ export function RoadPreviewPopover({
                       <div
                         key={index}
                         className="rounded-sm"
-                        title={`${span.score.toFixed(1)} · ${span.lengthKm.toFixed(1)} km`}
+                        title={`${format.decimal(span.score, 1)} · ${format.distanceKm(span.lengthKm)}`}
                         style={{
                           // Width ∝ length so the bars map to the 0→N km axis;
                           // a floor keeps a short sliver visible.
@@ -338,12 +349,22 @@ export function RoadPreviewPopover({
                       />
                     ))}
                   </div>
-                  <div className="mt-1.5 flex justify-between">
-                    <Mono className="text-[9px] text-fg-mute">0 KM</Mono>
-                    <Mono className="text-[9px] text-fg-mute">
-                      {Math.round(segment.lengthKm * 10) / 10} KM
-                    </Mono>
-                  </div>
+                  {/* Scale endpoints must speak the same unit as the
+                      micro-segment tooltips above (which convert for
+                      imperial riders) — derive both from one split call. */}
+                  {(() => {
+                    const scaleEnd = format.splitDistanceKm(segment.lengthKm);
+                    return (
+                      <div className="mt-1.5 flex justify-between">
+                        <Mono className="text-[9px] text-fg-mute">
+                          0 {scaleEnd.unit.toUpperCase()}
+                        </Mono>
+                        <Mono className="text-[9px] text-fg-mute">
+                          {scaleEnd.value} {scaleEnd.unit.toUpperCase()}
+                        </Mono>
+                      </div>
+                    );
+                  })()}
                 </>
               ) : null}
 

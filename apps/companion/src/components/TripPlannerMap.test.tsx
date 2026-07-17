@@ -362,7 +362,7 @@ describe("TripPlannerMap", () => {
     expect(canvas).toHaveAttribute("data-show-surface", "false");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Color the route line by surface" }),
+      screen.getByRole("button", { name: "Colour the route line by surface" }),
     );
     expect(canvas).toHaveAttribute("data-show-quality", "false");
     expect(canvas).toHaveAttribute("data-show-surface", "true");
@@ -375,7 +375,7 @@ describe("TripPlannerMap", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Color the route line by road quality",
+        name: "Colour the route line by road quality",
       }),
     );
     expect(canvas).toHaveAttribute("data-show-quality", "true");
@@ -390,7 +390,7 @@ describe("TripPlannerMap", () => {
 
     const canvas = screen.getByTestId("planner-map-canvas");
     const qualityButton = screen.getByRole("button", {
-      name: "Color the route line by road quality",
+      name: "Colour the route line by road quality",
     });
     expect(qualityButton).toHaveAttribute("aria-pressed", "true");
     // The route legend for the active mode is visible while quality is on.

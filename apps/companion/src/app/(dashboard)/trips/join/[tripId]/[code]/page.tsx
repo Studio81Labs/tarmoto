@@ -101,7 +101,7 @@ export default function TripInviteJoinPage() {
   if (state.kind === "error") {
     return (
       <Centered>
-        <AlertTriangle className="mb-4 h-10 w-10 text-amber-400" />
+        <AlertTriangle className="mb-4 h-10 w-10 text-amber-700" />
         <h1 className="text-xl font-semibold text-ink">
           {t("We couldn't open this invite")}
         </h1>
@@ -156,7 +156,6 @@ export default function TripInviteJoinPage() {
           distanceKm={preview.distance_km}
           dayCount={preview.num_days}
           region={preview.region}
-          variant="light"
           label={preview.title}
         />
       </div>

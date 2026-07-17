@@ -15,6 +15,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters, LooseTranslate } from "@tarmoto/shared";
 import type { Badge, RiderStats } from "@/lib/types";
 
 type MeProfileDto = components["schemas"]["MeProfileDto"];
@@ -240,37 +241,61 @@ export function pickNextMilestone(
   return actionable.sort((a, b) => b.fraction - a.fraction)[0] ?? null;
 }
 
-export function formatMilestoneLabel(progress: MilestoneProgress): string {
-  const unit = MILESTONE_UNITS[progress.milestone.metric];
-  if (progress.nextThreshold === null) {
-    return `Maxed at ${formatNumber(progress.current)} ${unit}`;
+export function formatMilestoneLabel(
+  progress: MilestoneProgress,
+  format: Formatters,
+): string {
+  const metric = progress.milestone.metric;
+  if (metric === "totalKm") {
+    // Distance milestones follow the rider's unit preference — current and
+    // threshold derive from the same formatter so they share one unit
+    // (byte-identical to the old output for metric riders).
+    if (progress.nextThreshold === null) {
+      return `Maxed at ${format.distanceKm(progress.current)}`;
+    }
+    const current = format.splitDistanceKm(progress.current);
+    const target = format.splitDistanceKm(progress.nextThreshold);
+    return `${current.value} / ${target.value} ${target.unit}`;
   }
-  return `${formatNumber(progress.current)} / ${formatNumber(progress.nextThreshold)} ${unit}`;
+  const unit = MILESTONE_UNITS[metric];
+  if (progress.nextThreshold === null) {
+    return `Maxed at ${format.integer(progress.current)} ${unit}`;
+  }
+  return `${format.integer(progress.current)} / ${format.integer(progress.nextThreshold)} ${unit}`;
 }
 
 export function formatDaysRemaining(
   endsAt: string,
-  now: Date = new Date(),
+  now: Date,
+  t: LooseTranslate,
 ): string {
   const end = new Date(endsAt).getTime();
-  if (!Number.isFinite(end)) return "Ongoing";
+  if (!Number.isFinite(end)) return t("Ongoing");
   const diffMs = end - now.getTime();
-  if (diffMs <= 0) return "Ended";
+  if (diffMs <= 0) return t("Ended");
   const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  if (days === 0) return "Ends today";
-  if (days === 1) return "Ends tomorrow";
-  if (days < 7) return `${days} days left`;
+  if (days === 0) return t("Ends today");
+  if (days === 1) return t("Ends tomorrow");
+  if (days < 7) {
+    return t("{count, plural, one {# day} other {# days}} left", {
+      count: days,
+    });
+  }
   const weeks = Math.floor(days / 7);
   const extra = days % 7;
   if (weeks < 4) {
     return extra === 0
-      ? `${weeks} week${weeks === 1 ? "" : "s"} left`
-      : `${weeks}w ${extra}d left`;
+      ? t("{count, plural, one {# week} other {# weeks}} left", {
+          count: weeks,
+        })
+      : t("{weeks}w {days}d left", { weeks, days: extra });
   }
   // Clamp to at least 1 so the 28-29 day band (weeks === 4, days / 30 === 0)
   // doesn't render "0 months left".
   const months = Math.max(1, Math.floor(days / 30));
-  return `${months} month${months === 1 ? "" : "s"} left`;
+  return t("{count, plural, one {# month} other {# months}} left", {
+    count: months,
+  });
 }
 
 const MILESTONE_UNITS: Record<LeaderboardMetric, string> = {
@@ -282,10 +307,6 @@ const MILESTONE_UNITS: Record<LeaderboardMetric, string> = {
 function clamp01(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return value > 1 ? 1 : value;
-}
-
-function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString();
 }
 
 // ── Demo data ──

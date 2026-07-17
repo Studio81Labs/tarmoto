@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { FormatProvider } from "@/format/FormatProvider";
 import { RoadPreviewPopover } from "./RoadPreviewPopover";
 import { plannerApi } from "@/lib/planner/api";
 import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
@@ -91,6 +92,26 @@ describe("RoadPreviewPopover", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the quality-strip scale in the same unit as its tooltips for imperial riders", async () => {
+    getRoadPreviewMock.mockResolvedValue(measuredPreview());
+    render(
+      <FormatProvider formatLocale="en-US" timeZone="UTC" units="imperial">
+        <RoadPreviewPopover segment={segment()} onClose={vi.fn()} />
+      </FormatProvider>,
+    );
+
+    await screen.findByText("QUALITY ACROSS SECTION");
+    // 4.2 km ≈ 2.6 mi — the scale endpoints must convert together with the
+    // micro-segment tooltips; a raw "KM" label under mile tooltips would
+    // make the chart internally inconsistent.
+    expect(screen.getByText("2.6 MI")).toBeInTheDocument();
+    expect(screen.getByText("0 MI")).toBeInTheDocument();
+    expect(screen.queryByText("4.2 KM")).not.toBeInTheDocument();
+    // The heading converts together with the strip — no "4.2 km" title
+    // above a miles-labeled chart.
+    expect(screen.getByText("Day 1 section · 2.6 mi")).toBeInTheDocument();
+  });
+
   it("shows a graceful empty state when there is no imagery coverage", async () => {
     // The Mapillary lookup found no coverage.
     getSegmentImageryMock.mockResolvedValue(null);
@@ -116,6 +137,22 @@ describe("RoadPreviewPopover", () => {
     expect(screen.getByText(/2 PASSES/)).toBeInTheDocument();
     expect(screen.getByText(/treat this as provisional/i)).toBeInTheDocument();
     expect(screen.queryByText(/based on/)).not.toBeInTheDocument();
+  });
+
+  it("renders the singular '1 PASS' low-confidence badge when a single pass backs the score", async () => {
+    // passes ≤ 3 always routes to the low-confidence badge, so the singular
+    // form a rider can actually see at passes: 1 is "1 PASS" — the
+    // normal-confidence "based on 1 rider pass" branch is structurally
+    // unreachable and stays guarded by the catalog ICU tests instead.
+    getRoadPreviewMock.mockResolvedValue(measuredPreview({ passes: 1 }));
+    render(
+      <RoadPreviewPopover segment={segment({ passes: 1 })} onClose={vi.fn()} />,
+    );
+
+    expect(
+      await screen.findByText(/LOW CONFIDENCE.*1 PASS\b/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/1 PASSES/)).not.toBeInTheDocument();
   });
 
   it("renders the no-data state with the unverified OSM tag", async () => {

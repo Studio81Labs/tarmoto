@@ -16,15 +16,10 @@ import {
 import { RidesScaffold } from "../_RidesScaffold";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { useAuthStore } from "@/stores/auth";
+import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { QualityTier } from "@/lib/types";
-import {
-  QUALITY_CONFIG,
-  formatDurationCompact,
-  formatKmValue,
-  formatShortDate,
-  scoreToQualityTier,
-} from "@/lib/utils";
+import { QUALITY_CONFIG, scoreToQualityTier } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
 import {
   computeStatRows,
@@ -33,6 +28,7 @@ import {
   type ComparableRide,
   type StatRow,
 } from "@/lib/ride-compare";
+import type { Formatters } from "@tarmoto/shared";
 import { RideRouteMap } from "../_components/RideRouteMap";
 
 /** The `RideSummaryDto` fields the picker dropdown reads. */
@@ -53,6 +49,7 @@ function CompareRidesPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const format = useFormat();
   const selectedA = searchParams.get("a");
   const selectedB = searchParams.get("b");
   const [options, setOptions] = useState<RideOption[]>([]);
@@ -126,7 +123,7 @@ function CompareRidesPageInner() {
       {optionsError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
+          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700"
         >
           {optionsError}
         </div>
@@ -148,6 +145,7 @@ function CompareRidesPageInner() {
           optionsLoading={optionsLoading}
           onChangeA={(id) => updateParams(id, selectedB)}
           onChangeB={(id) => updateParams(selectedA, id)}
+          format={format}
         />
       )}
     </RidesScaffold>
@@ -161,6 +159,7 @@ function CompareBody({
   optionsLoading,
   onChangeA,
   onChangeB,
+  format,
 }: {
   selectedA: string | null;
   selectedB: string | null;
@@ -168,6 +167,7 @@ function CompareBody({
   optionsLoading: boolean;
   onChangeA: (id: string) => void;
   onChangeB: (id: string) => void;
+  format: Formatters;
 }) {
   const ready = selectedA && selectedB && selectedA !== selectedB;
   const sameRide =
@@ -183,6 +183,7 @@ function CompareBody({
         optionsLoading={optionsLoading}
         onChangeA={onChangeA}
         onChangeB={onChangeB}
+        format={format}
       />
       {sameRide && (
         <div className="mt-4 rounded-xl border border-quality-q2/40 bg-quality-q2/15 p-4 text-sm text-amber-700">
@@ -206,6 +207,7 @@ function ABCard({
   optionsLoading,
   ride,
   onChange,
+  format,
 }: {
   slot: Slot;
   value: string | null;
@@ -213,6 +215,7 @@ function ABCard({
   optionsLoading: boolean;
   ride: FetchedRide | null;
   onChange: (id: string) => void;
+  format: Formatters;
 }) {
   const selected = options.find((o) => o.id === value) ?? null;
   const quality = ride ? scoreToQualityTier(ride.avg_road_quality) : null;
@@ -220,6 +223,14 @@ function ABCard({
   const hasGeometry = geometry != null && geometry.length >= 2;
   const distance = ride?.distance_km ?? selected?.distance_km ?? null;
   const duration = ride?.duration_min ?? selected?.duration_min ?? null;
+  // Value and unit both come from the same split call so the footer always
+  // matches the rider's unit preference (metric "KM" or imperial "MI")
+  // instead of pairing a converted value with a hardcoded label.
+  const distanceSplit =
+    distance != null ? format.splitDistanceKm(distance) : null;
+  const distanceLabel = distanceSplit
+    ? `${distanceSplit.value} ${distanceSplit.unit.toUpperCase()}`
+    : "—";
   return (
     <div className="rounded-[14px] border border-line bg-cream p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -236,7 +247,7 @@ function ABCard({
         onChange={onChange}
         options={options.map((opt) => ({
           value: opt.id,
-          label: formatPickerOption(opt),
+          label: formatPickerOption(opt, format),
         }))}
         disabled={optionsLoading || options.length === 0}
         placeholder={optionsLoading ? t("Loading rides…") : t("Select a ride")}
@@ -257,12 +268,10 @@ function ABCard({
         </div>
       )}
       <div className="mt-3 flex items-center gap-3">
-        <Mono className="text-[11px] text-fg-dim">
-          {`${formatKmValue(distance)} KM`}
-        </Mono>
+        <Mono className="text-[11px] text-fg-dim">{distanceLabel}</Mono>
         <span className="text-fg-mute">·</span>
         <Mono className="text-[11px] text-fg-dim">
-          {formatDurationCompact(duration)}
+          {duration != null ? format.durationCompact(duration) : "—"}
         </Mono>
         <span className="text-fg-mute">·</span>
         <Mono className="text-[11px] text-fg-dim">{"—"}</Mono>
@@ -271,13 +280,16 @@ function ABCard({
   );
 }
 
-/** `DD Mon · Name (NN km)` per the design's picker option format. */
-function formatPickerOption(ride: RideOption): string {
-  const date = formatShortDate(ride.started_at);
+/** `DD Mon · Name (NN km)` per the design's picker option format — unit
+ * follows the rider's preference (`splitDistanceKm`'s own `.unit`), so
+ * imperial riders see "(NN mi)" instead of a hardcoded "km". */
+function formatPickerOption(ride: RideOption, format: Formatters): string {
+  const date = format.shortDate(ride.started_at);
   const name = ride.name ?? t("Untitled ride");
-  const km =
-    ride.distance_km != null ? ` (${formatKmValue(ride.distance_km)} km)` : "";
-  return `${date} · ${name}${km}`;
+  const distance =
+    ride.distance_km != null ? format.splitDistanceKm(ride.distance_km) : null;
+  const suffix = distance ? ` (${distance.value} ${distance.unit})` : "";
+  return `${date} · ${name}${suffix}`;
 }
 
 function ComparisonView({
@@ -289,6 +301,7 @@ function ComparisonView({
   optionsLoading,
   onChangeA,
   onChangeB,
+  format,
 }: {
   rideAId: string | null;
   rideBId: string | null;
@@ -298,6 +311,7 @@ function ComparisonView({
   optionsLoading: boolean;
   onChangeA: (id: string) => void;
   onChangeB: (id: string) => void;
+  format: Formatters;
 }) {
   const [rideA, setRideA] = useState<FetchedRide | null>(null);
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
@@ -363,6 +377,7 @@ function ComparisonView({
           optionsLoading={optionsLoading}
           ride={rideA}
           onChange={onChangeA}
+          format={format}
         />
         <ABCard
           slot="b"
@@ -371,6 +386,7 @@ function ComparisonView({
           optionsLoading={optionsLoading}
           ride={rideB}
           onChange={onChangeB}
+          format={format}
         />
       </div>
 
@@ -379,16 +395,26 @@ function ComparisonView({
       )}
 
       {error && !loading && (
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
       {!loading && !error && rideA && rideB && (
         <>
-          <MetricTable rideA={rideA} rideB={rideB} rows={statRows} />
+          <MetricTable
+            rideA={rideA}
+            rideB={rideB}
+            rows={statRows}
+            format={format}
+          />
           <ElevationCompareSection rideA={rideA} rideB={rideB} />
-          <QualityDiffSection rideA={rideA} rideB={rideB} rows={qualityDiff} />
+          <QualityDiffSection
+            rideA={rideA}
+            rideB={rideB}
+            rows={qualityDiff}
+            format={format}
+          />
         </>
       )}
     </div>
@@ -416,10 +442,12 @@ function MetricTable({
   rideA,
   rideB,
   rows,
+  format,
 }: {
   rideA: FetchedRide;
   rideB: FetchedRide;
   rows: StatRow[];
+  format: Formatters;
 }) {
   const byKey = new Map(rows.map((r) => [r.key, r]));
   // Design rows first, in the design's order.
@@ -427,8 +455,24 @@ function MetricTable({
     if (!row) return "—";
     const v = side === "a" ? row.a : row.b;
     if (v == null) return "—";
-    return `${formatNumber(v, row.digits)}${row.unit ? ` ${row.unit}` : ""}`;
+    // Unit-bearing metrics convert with the rider's preference (value and
+    // unit from one formatter); dimensionless rows (quality, curves, lean)
+    // keep their fixed suffixes from STAT_DEFS.
+    switch (row.key) {
+      case "distance_km":
+        return format.distanceKm(v);
+      case "avg_speed":
+      case "max_speed":
+        return format.speed(v);
+      case "elevation_gain":
+      case "elevation_loss":
+        return format.elevation(v);
+      default:
+        return `${formatNumber(v, row.digits, format)}${row.unit ? ` ${row.unit}` : ""}`;
+    }
   };
+  const durationLabel = (min: number | null): string =>
+    min != null ? format.durationCompact(min) : "—";
   const designRows: Array<{ label: string; a: string; b: string }> = [
     {
       label: t("Distance"),
@@ -437,8 +481,8 @@ function MetricTable({
     },
     {
       label: t("Duration"),
-      a: formatDurationCompact(rideA.duration_min),
-      b: formatDurationCompact(rideB.duration_min),
+      a: durationLabel(rideA.duration_min),
+      b: durationLabel(rideB.duration_min),
     },
     {
       label: t("Avg speed"),
@@ -483,8 +527,8 @@ function MetricTable({
     },
   ];
 
-  const nameA = rideA.name ?? formatShortDate(rideA.started_at);
-  const nameB = rideB.name ?? formatShortDate(rideB.started_at);
+  const nameA = rideA.name ?? format.shortDate(rideA.started_at);
+  const nameB = rideB.name ?? format.shortDate(rideB.started_at);
 
   return (
     <Card padded={false} className="overflow-hidden">
@@ -628,14 +672,16 @@ function QualityDiffSection({
   rideA,
   rideB,
   rows,
+  format,
 }: {
   rideA: FetchedRide;
   rideB: FetchedRide;
   rows: ReturnType<typeof diffQualityBreakdown>;
+  format: Formatters;
 }) {
   const total = rows.reduce((acc, row) => acc + row.percent + row.bPercent, 0);
-  const nameA = rideA.name ?? formatShortDate(rideA.started_at);
-  const nameB = rideB.name ?? formatShortDate(rideB.started_at);
+  const nameA = rideA.name ?? format.shortDate(rideA.started_at);
+  const nameB = rideB.name ?? format.shortDate(rideB.started_at);
   return (
     <Card padded={false} className="p-5">
       <Stamp as="h2">{t("Road quality")}</Stamp>
@@ -659,7 +705,7 @@ function QualityDiffSection({
               dir === "improved"
                 ? "text-emerald-700"
                 : dir === "regressed"
-                  ? "text-red-400"
+                  ? "text-red-700"
                   : "text-fg-mute";
             return (
               <li

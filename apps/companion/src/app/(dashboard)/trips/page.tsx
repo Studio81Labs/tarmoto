@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
+  FileUp,
   Plus,
   Route,
   MapPin,
@@ -46,7 +47,7 @@ import {
   validateFolderName,
   type TripFolder,
 } from "@/lib/trip-folders";
-import { formatRelativeTime } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import type { TripSummary } from "@/lib/types";
 import {
   Button,
@@ -480,24 +481,33 @@ export default function TripListPage() {
             "Plan multi-day routes, organise them into folders, and ride them from the mobile app.",
           )}
           right={
-            <Link
-              href="/trips/planner"
-              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-            >
-              <Plus size={14} />
-              {t("New trip")}
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/trips/planner?import=1"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+              >
+                <FileUp size={14} />
+                {t("Import GPX")}
+              </Link>
+              <Link
+                href="/trips/planner"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+              >
+                <Plus size={14} />
+                {t("New trip")}
+              </Link>
+            </div>
           }
         />
 
         {errorBanner && (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
             <span>{errorBanner}</span>
             <button
               type="button"
               aria-label={t("Dismiss error")}
               onClick={() => setErrorBanner(null)}
-              className="text-red-400 hover:text-ink"
+              className="text-red-700 hover:text-ink"
             >
               <X size={14} />
             </button>
@@ -914,6 +924,7 @@ function TripCard({
   onDelete,
   onMove,
 }: TripCardProps) {
+  const format = useFormat();
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   // Summary endpoint only carries totals when backend ships #647; until
@@ -999,9 +1010,9 @@ function TripCard({
             {distance !== null && (
               <span>
                 <span className="font-bold text-ink">
-                  {Math.round(distance)}
+                  {format.splitDistanceKm(distance).value}
                 </span>{" "}
-                KM
+                {format.splitDistanceKm(distance).unit.toUpperCase()}
               </span>
             )}
             <span>
@@ -1025,7 +1036,7 @@ function TripCard({
           <div className="mt-3 flex items-center justify-between border-t border-line pt-3 font-mono text-[11px] text-fg-mute">
             <span>
               {trip.updatedAt ? "UPDATED " : "CREATED "}
-              {formatRelativeTime(updatedIso).toUpperCase()}
+              {format.relativeTime(updatedIso).toUpperCase()}
             </span>
             {currentFolder && (
               <span className="uppercase truncate max-w-[12ch]">
@@ -1252,7 +1263,7 @@ function FolderModal({
           }}
           placeholder={t("e.g. Summer 2026 Alps")}
         />
-        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel ")}
@@ -1379,7 +1390,7 @@ function MenuItem({
 }) {
   const toneClass =
     tone === "danger"
-      ? "text-red-400 hover:bg-red-500/10"
+      ? "text-red-700 hover:bg-red-500/10"
       : "text-ink hover:bg-paper";
   return (
     <button

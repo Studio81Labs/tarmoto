@@ -72,7 +72,7 @@ test.describe("trip planner", () => {
     // Route preferences collapsed to a summary row in revision 3 —
     // expand it before reaching for the avoid checkboxes.
     await page.getByRole("button", { name: "Route preferences" }).click();
-    await page.getByLabel(/avoid highways/i).click({ force: true });
+    await page.getByLabel(/avoid motorways/i).click({ force: true });
 
     // Now "Save route" is enabled (dirty + existing geometry + ≥2 waypoints).
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
@@ -117,7 +117,7 @@ test.describe("trip planner", () => {
     // Route preferences collapsed to a summary row in revision 3 —
     // expand it before reaching for the avoid checkboxes.
     await page.getByRole("button", { name: "Route preferences" }).click();
-    await page.getByLabel(/avoid highways/i).click({ force: true });
+    await page.getByLabel(/avoid motorways/i).click({ force: true });
 
     // Save the route — this calls PUT /trips/:id/route on the existing trip.
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
@@ -219,7 +219,7 @@ test.describe("trip planner", () => {
       page.getByRole("button", { name: /link to previous day/i }),
     ).not.toBeVisible();
 
-    // Toggle "Avoid highways" to dirty the route. Toggling marks ALL days
+    // Toggle "Avoid motorways" to dirty the route. Toggling marks ALL days
     // stale and fires live routing for the selected day (day 1). We wait
     // 1.5 s — enough for the 300 ms debounce + near-instant mock response
     // to clear day 1 from stalePreviewDays — then switch to day 2 so live
@@ -228,7 +228,7 @@ test.describe("trip planner", () => {
     // Route preferences collapsed to a summary row in revision 3 —
     // expand it before reaching for the avoid checkboxes.
     await page.getByRole("button", { name: "Route preferences" }).click();
-    await page.getByLabel(/avoid highways/i).click({ force: true });
+    await page.getByLabel(/avoid motorways/i).click({ force: true });
 
     // Give day-1 routing time to complete (300 ms debounce + mock latency).
     await page.waitForTimeout(1_500);

@@ -12,9 +12,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { Button, MetricTile, Mono, Stamp } from "@tarmoto/ui";
-import { splitFormattedDistance } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
-import { usePreferencesStore } from "@/stores/preferences";
+import { useFormat } from "@/format/FormatProvider";
 import {
   fetchPublicBadges,
   fetchPublicProfile,
@@ -249,7 +248,7 @@ function Header({
               </span>
             )}
             {profile.home_region && <span className="text-fg-mute">·</span>}
-            <span>{formatJoinedLabel(profile.created_at)}</span>
+            <span>{formatJoinedLabel(profile.created_at, new Date(), t)}</span>
           </div>
           {profile.bio && (
             <p className="mt-3 max-w-[560px] text-[15px] leading-[1.5] text-ink">
@@ -306,11 +305,12 @@ interface StatsRowProps {
   earnedBadgeCount: number;
 }
 function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const distance = splitFormattedDistance(
-    profile.total_distance_km,
-    unitSystem,
-  );
+  const format = useFormat();
+  // `splitDistanceKm().value` is already a locale-formatted string (grouping,
+  // decimal), so it renders as-is — MetricTile only runs `formatValue` for a
+  // raw numeric `value`.
+  const distance = format.splitDistanceKm(profile.total_distance_km);
+  const formatValue = (n: number) => formatCount(n, format.locale);
   return (
     <div className="mb-4 grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
       {/* Distance — the dark hero tile (accent number). */}
@@ -318,29 +318,28 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
         variant="ink"
         accentNumber
         label={t("Distance")}
-        value={Math.round(distance.value)}
+        value={distance.value}
         unit={distance.unit}
-        formatValue={formatCount}
       />
       <MetricTile
         label={t("Rides shared")}
         value={profile.shared_ride_count}
-        formatValue={formatCount}
+        formatValue={formatValue}
       />
       <MetricTile
         label={t("Followers")}
         value={profile.follower_count}
-        formatValue={formatCount}
+        formatValue={formatValue}
       />
       <MetricTile
         label={t("Following")}
         value={profile.following_count}
-        formatValue={formatCount}
+        formatValue={formatValue}
       />
       <MetricTile
         label={t("Badges")}
         value={earnedBadgeCount}
-        formatValue={formatCount}
+        formatValue={formatValue}
       />
     </div>
   );

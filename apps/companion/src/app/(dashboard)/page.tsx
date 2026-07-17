@@ -6,12 +6,9 @@ import { useUserTrips } from "@/hooks/useUserTrips";
 import { useRecentRides } from "@/hooks/useRecentRides";
 import { useMonthlyStats } from "@/hooks/useMonthlyStats";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-import {
-  formatShortDate,
-  ridesWithinDays,
-  scoreToQualityTier,
-} from "@/lib/utils";
+import { ridesWithinDays, scoreToQualityTier } from "@/lib/utils";
 import type { MonthlyStats } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
@@ -327,20 +324,23 @@ function SyncPill({ syncedAt }: { syncedAt: string | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {formatSyncedLabel(new Date(syncedAt))}
+      {formatSyncedLabel(syncedAt)}
     </div>
   );
 }
 
-// Returns a fully-translated sync label like "Mobile synced 4m ago".
-// Each bucket is its own catalog key so translators can place the
-// number naturally in any locale ("Synchronisé il y a 4 min", etc.)
-// rather than splicing English fragments through interpolation.
-//
-// `Math.floor` (not `Math.round`) so a 31-second gap reads as
-// "just now" and 59m31s reads as "59m ago" — rounding up would
-// roll buckets early.
-function formatSyncedLabel(d: Date): string {
+// Returns a fully-translated sync label like "Mobile synced 4m ago". The
+// relative-time portion is delegated to the shared format seam so it stays
+// locale-correct — mirrors `relativeTime`'s "now" / "Xm/h/d ago" / absolute
+// date beyond 7 days.
+// Deliberately NOT `format.relativeTime()`: this phrase is embedded in a
+// translated sentence, so the time wording must come from the i18n catalog
+// (UI language), not the FORMAT locale — otherwise a cs-CZ format
+// preference yields mixed-language copy ("Mobile synced před 5 m") and the
+// <1 min bucket reads "synced now" instead of "synced just now". Same
+// translated-copy exclusion class as the challenge countdowns.
+function formatSyncedLabel(iso: string): string {
+  const d = new Date(iso);
   const diffMin = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
   if (diffMin < 1) return t("Mobile synced just now");
   if (diffMin < 60) return t("Mobile synced {n}m ago", { n: diffMin });
@@ -350,17 +350,15 @@ function formatSyncedLabel(d: Date): string {
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
-  const kmPct =
+  const format = useFormat();
+  const kmFraction =
     stats.prev_month_km > 0
-      ? Math.round(
-          ((stats.this_month_km - stats.prev_month_km) / stats.prev_month_km) *
-            100,
-        )
+      ? (stats.this_month_km - stats.prev_month_km) / stats.prev_month_km
       : null;
   const kmDelta =
-    kmPct == null
+    kmFraction == null
       ? t("first tracked month")
-      : `${kmPct > 0 ? "+" : ""}${kmPct}% ${t("vs last month")}`;
+      : `${kmFraction > 0 ? "+" : ""}${format.percent(kmFraction)} ${t("vs last month")}`;
   // Hours arrive with one decimal of precision; the design shows whole
   // hours ("32 HRS"), so round the display value but compute the delta
   // from the raw values to avoid rounding-induced misleading deltas.
@@ -372,7 +370,7 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
   // fall back to just the date rather than the misleading "No lean recorded".
   const leanSub =
     stats.max_lean_at != null
-      ? [stats.max_lean_ride_name, formatShortDate(stats.max_lean_at)]
+      ? [stats.max_lean_ride_name, format.shortDate(stats.max_lean_at)]
           .filter(Boolean)
           .join(" · ")
       : t("No lean recorded");
@@ -383,8 +381,8 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
         variant="ink"
         accentNumber
         label={t("This month")}
-        value={stats.this_month_km.toLocaleString()}
-        unit="KM"
+        value={format.splitDistanceKm(stats.this_month_km).value}
+        unit={format.splitDistanceKm(stats.this_month_km).unit.toUpperCase()}
         delta={kmDelta}
       />
       <MetricTile
@@ -552,6 +550,7 @@ function TripDraftCard({
   };
   seed: number;
 }) {
+  const format = useFormat();
   const status =
     (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";
   // MiniRouteSvg and QualityBars are visually coupled — both take this one
@@ -594,21 +593,25 @@ function TripDraftCard({
           {trip.distance_km != null && trip.distance_km > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">
-                {Math.round(trip.distance_km)}
+                {format.splitDistanceKm(trip.distance_km).value}
               </span>{" "}
-              {t("KM")}
+              {format.splitDistanceKm(trip.distance_km).unit}
             </Mono>
           )}
           {trip.num_days > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">{trip.num_days}</span>{" "}
-              {trip.num_days === 1 ? t("DAY") : t("DAYS")}
+              {t("{count, plural, one {DAY} other {DAYS}}", {
+                count: trip.num_days,
+              })}
             </Mono>
           )}
           {trip.passes_count != null && trip.passes_count > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
-              {trip.passes_count === 1 ? t("PASS") : t("PASSES")}
+              {t("{count, plural, one {PASS} other {PASSES}}", {
+                count: trip.passes_count,
+              })}
             </Mono>
           )}
         </div>

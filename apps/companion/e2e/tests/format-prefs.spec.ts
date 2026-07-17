@@ -69,7 +69,7 @@ test.describe("format preferences autodetection", () => {
     // load — filter for the toggle's PATCH by its `units` payload.
     //
     // The radio is a real `<input type="radio" class="sr-only">` nested in
-    // a clickable `<label>` (same pattern as the "avoid highways" checkbox
+    // a clickable `<label>` (same pattern as the "avoid motorways" checkbox
     // in trip-planner.spec.ts) — the visually-hidden input's hit box sits
     // under the label's painted content, so a plain `.click()` times out
     // with "<label> intercepts pointer events". `force: true` is this
@@ -88,5 +88,37 @@ test.describe("format preferences autodetection", () => {
 
     const payload = JSON.parse(request.postData() ?? "{}");
     expect(payload.preferences?.units).toBe("imperial");
+  });
+
+  test("renders localized numbers and dates for a cs-CZ rider", async ({
+    authedPage: page,
+    mockApi,
+    user,
+  }) => {
+    await mockApi.seedRide(user, {
+      name: "Localized ride",
+      distance_km: 1234.5,
+      started_at: "2025-04-18T22:30:00Z",
+    });
+
+    await page.goto("/rides");
+    await expect(page.getByText("Localized ride")).toBeVisible();
+
+    // cs-CZ decimal comma + grouping ("1 234,5") — the visible payoff of
+    // the whole migration (RidesTable's KM column renders
+    // `format.splitDistanceKm(...).value`). The character class tolerates
+    // the grouping separator ICU actually emits across Node/browser
+    // versions: NBSP (U+00A0), narrow no-break space (U+202F), or a plain
+    // ASCII space/`\s` match.
+    await expect(page.getByText(/1[  \s]234,5/).first()).toBeVisible();
+
+    // 22:30Z on Apr 18 is Apr 19 in Prague (CEST, UTC+2) — viewer-timezone
+    // day shift. RidesTable's DATE column renders `format.shortDate(...)`,
+    // which for cs-CZ is day-then-numeric-month with trailing periods
+    // ("19. 4."); allow the dateStyle-medium "19. 4. 2025" shape too in case
+    // the locator matches a different surface.
+    await expect(
+      page.getByText(/19\.\s*4\.|19\. 4\. 2025/).first(),
+    ).toBeVisible();
   });
 });

@@ -18,8 +18,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * — launch mode — until monetization goes live, mirroring how 1795 seeded
  * every toggle feature `force_on`.
  */
-export class AddLimitEntitlements1812000000000 implements MigrationInterface {
-  name = 'AddLimitEntitlements1812000000000';
+export class AddLimitEntitlements1813000000000 implements MigrationInterface {
+  name = 'AddLimitEntitlements1813000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

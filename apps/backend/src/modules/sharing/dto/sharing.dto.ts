@@ -248,12 +248,6 @@ export class SharedRideDetailDto {
   })
   view_count!: number;
 
-  @ApiProperty({
-    description:
-      'Number of outbound clicks from embeddable route widgets into the full Tarmoto ride page.',
-  })
-  embed_click_count!: number;
-
   @ApiProperty({ nullable: true, type: [RouteGeometryPointDto] })
   route_geometry!: Array<{ lat: number; lng: number }> | null;
 }

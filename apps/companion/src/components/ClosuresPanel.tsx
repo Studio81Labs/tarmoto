@@ -1,7 +1,6 @@
 "use client";
 import { t } from "@/i18n";
 import { useEffect } from "react";
-import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Loader2, Route } from "lucide-react";
 import { DatePicker } from "@tarmoto/ui";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
@@ -14,7 +13,7 @@ import {
   type PlannerClosureRoute,
 } from "@/lib/closures-summary";
 import { monthLabel } from "@/lib/passes-summary";
-import { formatDistance } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
 const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
   full: "text-quality-q1",
@@ -100,6 +99,12 @@ interface ClosuresPanelProps {
   onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
   /** Insert a via around this on-route closure and re-route. */
   onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
+  /**
+   * Draws a `border-t` divider above the panel (default). /explore composites
+   * this into a multi-block info column and places dividers between blocks
+   * itself, so it passes `false` to drop the leading divider.
+   */
+  topDivider?: boolean;
 }
 export function ClosuresPanel({
   month,
@@ -112,6 +117,7 @@ export function ClosuresPanel({
   showRegionalList = true,
   onFocusClosure,
   onRerouteClosure,
+  topDivider = true,
 }: ClosuresPanelProps) {
   if (data) {
     return (
@@ -124,6 +130,7 @@ export function ClosuresPanel({
         showRegionalList={showRegionalList}
         onFocusClosure={onFocusClosure}
         onRerouteClosure={onRerouteClosure}
+        topDivider={topDivider}
       />
     );
   }
@@ -138,6 +145,7 @@ export function ClosuresPanel({
       showRegionalList={showRegionalList}
       onFocusClosure={onFocusClosure}
       onRerouteClosure={onRerouteClosure}
+      topDivider={topDivider}
     />
   );
 }
@@ -151,6 +159,7 @@ function FetchedClosuresPanel({
   showRegionalList,
   onFocusClosure,
   onRerouteClosure,
+  topDivider = true,
 }: Omit<ClosuresPanelProps, "data">) {
   const data = useClosures(
     month,
@@ -168,6 +177,7 @@ function FetchedClosuresPanel({
       routes={routes}
       showRouteWarnings={showRouteWarnings}
       data={data}
+      topDivider={topDivider}
       onPreviewDateChange={onPreviewDateChange}
       showRegionalList={showRegionalList}
       onFocusClosure={onFocusClosure}
@@ -184,6 +194,7 @@ function ClosuresPanelBody({
   showRegionalList = true,
   onFocusClosure,
   onRerouteClosure,
+  topDivider = true,
 }: {
   month: number;
   routes: PlannerClosureRoute[];
@@ -193,8 +204,9 @@ function ClosuresPanelBody({
   showRegionalList?: boolean | undefined;
   onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
   onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
+  topDivider?: boolean;
 }) {
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const {
     closures,
@@ -211,11 +223,7 @@ function ClosuresPanelBody({
     hydratePreferences();
   }, [hydratePreferences]);
   const monthText = monthLabel(month);
-  const previewDay = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(previewDate);
+  const previewDay = format.calendarDate(previewDate);
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);
   // ONE data-state-aware status (revision 6): an empty source is
@@ -227,7 +235,11 @@ function ClosuresPanelBody({
   });
   const routeBoxVisible = showRouteWarnings && routes.length > 0;
   return (
-    <div className="space-y-3 pt-2 border-t border-line">
+    <div
+      className={
+        topDivider ? "space-y-3 border-t border-line pt-2" : "space-y-3"
+      }
+    >
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
         <AlertTriangle size={14} className="text-accent" />
         {t("Closures & roadworks ")}
@@ -278,11 +290,10 @@ function ClosuresPanelBody({
           ) : hasRouteClosures ? (
             <>
               <p className="text-xs text-fg-dim">
-                {t("Current trip crosses {count} active {closureLabel}.", {
-                  count: routeCounts.total,
-                  closureLabel:
-                    routeCounts.total === 1 ? "closure" : "closures",
-                })}
+                {t(
+                  "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.",
+                  { count: routeCounts.total },
+                )}
               </p>
               {hasRouteFailure && (
                 <p className="text-xs text-amber-600">{routeError}</p>
@@ -292,7 +303,6 @@ function ClosuresPanelBody({
                   <OnRouteClosureCard
                     key={closure.id}
                     closure={closure}
-                    units={unitSystem}
                     onFocus={onFocusClosure}
                     onReroute={onRerouteClosure}
                   />
@@ -354,7 +364,6 @@ function ClosuresPanelBody({
               <ClosureRow
                 key={closure.id}
                 closure={closure}
-                units={unitSystem}
                 onFocus={onFocusClosure}
               />
             ))}
@@ -371,15 +380,14 @@ function ClosuresPanelBody({
  */
 function OnRouteClosureCard({
   closure,
-  units,
   onFocus,
   onReroute,
 }: {
   closure: PlannerClosure;
-  units: UnitSystem;
   onFocus?: ((closure: PlannerClosure) => void) | undefined;
   onReroute?: ((closure: PlannerClosure) => void) | undefined;
 }) {
+  const format = useFormat();
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
   return (
@@ -410,7 +418,7 @@ function OnRouteClosureCard({
           </span>
         </div>
         <p className="mt-1 text-xs text-fg-dim">
-          {formatClosureWindow(closure)}
+          {formatClosureWindow(closure, format)}
         </p>
         {closure.notes ? (
           <p className="mt-1 text-xs text-fg-dim">{closure.notes}</p>
@@ -418,7 +426,7 @@ function OnRouteClosureCard({
         {detourKm != null && (
           <p className="mt-2 inline-flex rounded-[7px] border border-line-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.4px] text-fg-dim">
             {t("Detour ~")}
-            {formatDistance(detourKm, units)}
+            {format.distanceKm(detourKm)}
           </p>
         )}
       </button>
@@ -461,14 +469,13 @@ function ClosuresLegend() {
 function ClosureRow({
   closure,
   compact = false,
-  units,
   onFocus,
 }: {
   closure: PlannerClosure;
   compact?: boolean;
-  units: UnitSystem;
   onFocus?: ((closure: PlannerClosure) => void) | undefined;
 }) {
+  const format = useFormat();
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
   const body = (
@@ -494,12 +501,14 @@ function ClosureRow({
         </div>
       </div>
 
-      <p className="mt-1 text-xs text-fg-dim">{formatClosureWindow(closure)}</p>
+      <p className="mt-1 text-xs text-fg-dim">
+        {formatClosureWindow(closure, format)}
+      </p>
 
       {detourKm != null && (
         <p className="mt-2 text-xs text-sky-700">
           {t("Detour available \u00B7 approx. ")}
-          {formatDistance(detourKm, units)}
+          {format.distanceKm(detourKm)}
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Textarea } from "../Textarea";
 import { Field } from "../field/Field";
@@ -61,4 +61,23 @@ test("honors an external hintId with no local hint (Field composition)", () => {
     "aria-describedby",
     screen.getByText("Markdown supported.").id,
   );
+});
+
+test("readOnly mode renders without an onChange handler and stays read-only", () => {
+  render(
+    <Textarea
+      ariaLabel="Embed code"
+      value='<iframe src="https://example.com"></iframe>'
+      readOnly
+      mono
+      rows={7}
+    />,
+  );
+  const ta = screen.getByLabelText<HTMLTextAreaElement>("Embed code");
+  expect(ta).toHaveAttribute("readonly");
+  expect(ta.className).toContain("font-mono");
+  // Typing must not throw (no handler) and must not change the value —
+  // React's frozen-controlled-field trap is exactly what readOnly avoids.
+  fireEvent.change(ta, { target: { value: "overwritten" } });
+  expect(ta.value).toBe('<iframe src="https://example.com"></iframe>');
 });

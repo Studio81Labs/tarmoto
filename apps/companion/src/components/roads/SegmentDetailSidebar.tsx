@@ -20,12 +20,10 @@ import type { QualityPoint } from "@/lib/segment-trend";
 import {
   HAZARD_CONFIG,
   QUALITY_CONFIG,
-  formatDate,
-  formatDistanceFromMeters,
-  formatRelativeTime,
   qualityProvenanceLabel,
   scoreToTier,
 } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
 
 export type SegmentDetailPanelState =
@@ -159,7 +157,7 @@ function SegmentDetailContent({
 }: {
   segment: RoadSegmentDetailResponse;
 }) {
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const score = segment.quality_score ?? 0;
   const currentTier: QualityTier | null = score > 0 ? scoreToTier(score) : null;
@@ -170,7 +168,9 @@ function SegmentDetailContent({
     segment.quality_source ?? null,
     segment.reading_count ?? 0,
   );
-  const passLabel = segment.reading_count === 1 ? t("pass") : t("passes");
+  const passLabel = t("{count, plural, one {pass} other {passes}}", {
+    count: segment.reading_count ?? 0,
+  });
   const qualityHistory = trendPoints(segment.quality_history);
   const regionalHistory = trendPoints(segment.regional_quality_history);
   const hasTrend = qualityHistory.length > 1;
@@ -192,7 +192,7 @@ function SegmentDetailContent({
             tier?.bg ?? "bg-paper"
           }`}
         >
-          {segment.quality_score == null ? "N/A" : score.toFixed(1)}
+          {segment.quality_score == null ? "N/A" : format.decimal(score, 1)}
         </div>
         <div className="min-w-0">
           <div className="truncate font-sans text-[20px] font-extrabold leading-[1.1] tracking-[-0.5px] text-ink">
@@ -200,7 +200,7 @@ function SegmentDetailContent({
           </div>
           <Mono className="mt-1 block text-[11px] text-fg-mute">
             {segment.road_number ? `${segment.road_number} · ` : ""}
-            {formatDistanceFromMeters(segment.length_m, unitSystem)}
+            {format.distanceM(segment.length_m)}
           </Mono>
           <div className="mt-[9px] flex flex-wrap gap-1.5">
             <Pill>{tier?.label ?? t("Unrated")}</Pill>
@@ -219,7 +219,7 @@ function SegmentDetailContent({
         <Metric
           icon={<Gauge size={14} />}
           label={t("Confidence")}
-          value={`${confidence}%`}
+          value={format.percent(confidence / 100)}
           caption={confidenceCaption(confidence)}
         />
         <Metric
@@ -237,7 +237,7 @@ function SegmentDetailContent({
         <Metric
           icon={<Clock size={14} />}
           label={t("Last updated")}
-          value={formatDate(segment.last_updated)}
+          value={format.date(segment.last_updated)}
         />
       </div>
 
@@ -246,7 +246,8 @@ function SegmentDetailContent({
         <div className="mb-[7px] flex items-baseline justify-between gap-3">
           <Stamp>{t("Confidence")}</Stamp>
           <Mono className="text-[11px] text-fg-dim">
-            {confidence}% · {segment.reading_count} {passLabel}
+            {format.percent(confidence / 100)} · {segment.reading_count}{" "}
+            {passLabel}
           </Mono>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-paper-2">
@@ -292,7 +293,7 @@ function SegmentDetailContent({
                     active ? "text-fg-dim" : "text-fg-mute"
                   }`}
                 >
-                  {pct}%
+                  {format.percent(pct / 100)}
                 </Mono>
               </div>
             );
@@ -310,7 +311,6 @@ function SegmentDetailContent({
               segmentId={segment.id}
               history={qualityHistory}
               regionalHistory={regionalHistory}
-              tone="cream"
             />
           </div>
         </>
@@ -360,7 +360,7 @@ function SegmentDetailContent({
                     <p className="mt-1 text-[11px] text-fg-dim">
                       {(hazard.reporter ?? "Unknown rider") +
                         " · " +
-                        formatRelativeTime(hazard.created_at) +
+                        format.relativeTime(hazard.created_at) +
                         " · " +
                         hazard.confirmations +
                         " confirmations"}
@@ -380,15 +380,14 @@ function SegmentDetailContent({
         <div className="flex items-center justify-between gap-3">
           <Stamp>{t("Reviews & photos")}</Stamp>
           <Mono className="text-[11px] text-fg-mute">
-            {reviewCount === 1
-              ? t("1 review")
-              : t("{count} reviews", { count: reviewCount })}
+            {t("{count, plural, one {# review} other {# reviews}}", {
+              count: reviewCount,
+            })}
           </Mono>
         </div>
         <div className="mt-3.5">
           <RoadReviewsPanel
             segmentId={segment.id}
-            tone="cream"
             hideHeader
             onCountChange={setReviewCount}
           />

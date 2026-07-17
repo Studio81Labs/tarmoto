@@ -7,6 +7,8 @@
  * Zero platform-specific dependencies; only `Date` and string APIs.
  */
 
+import type { LooseTranslate } from "./i18n";
+
 /**
  * "Joined this month" / "Joined 5 months ago" / "Joined 2 years ago".
  *
@@ -17,35 +19,62 @@
  * ledger drift or clock skew never produces "Joined -2 months ago". UTC
  * accessors keep the comparison timezone-agnostic so a user's locale can't
  * flip the displayed bucket.
+ *
+ * @param t - Optional translator. Omitted keeps today's exact English
+ * output (mobile's existing contract); when provided, the label routes
+ * through ICU plural messages so translated locales get real plural rules.
  */
 export function formatJoinedLabel(
   joinedAt: string,
   now: Date = new Date(),
+  t?: LooseTranslate,
 ): string {
   const date = new Date(joinedAt);
-  if (Number.isNaN(date.getTime())) return "Joined recently";
+  if (Number.isNaN(date.getTime())) {
+    return t ? t("Joined recently") : "Joined recently";
+  }
   let months =
     (now.getUTCFullYear() - date.getUTCFullYear()) * 12 +
     (now.getUTCMonth() - date.getUTCMonth());
   if (now.getUTCDate() < date.getUTCDate()) months -= 1;
   if (months < 0) months = 0;
-  if (months < 1) return "Joined this month";
-  if (months < 12)
-    return `Joined ${months} month${months === 1 ? "" : "s"} ago`;
+  if (months < 1) return t ? t("Joined this month") : "Joined this month";
+  if (months < 12) {
+    return t
+      ? t("Joined {count, plural, one {# month} other {# months}} ago", {
+          count: months,
+        })
+      : `Joined ${months} month${months === 1 ? "" : "s"} ago`;
+  }
   const years = Math.floor(months / 12);
-  return `Joined ${years} year${years === 1 ? "" : "s"} ago`;
+  return t
+    ? t("Joined {count, plural, one {# year} other {# years}} ago", {
+        count: years,
+      })
+    : `Joined ${years} year${years === 1 ? "" : "s"} ago`;
 }
 
 /**
  * Compact count formatter — renders raw counts under 1k as locale-formatted
  * integers and 1k–9.9k with one decimal, then rounds to integer-k at and
  * above 10k so the row doesn't flip from "9.9k" to "10.0k" awkwardly.
+ *
+ * @param locale - BCP-47 tag applied to the grouping separators. Omitted
+ * keeps today's runtime-default `toLocaleString()` behavior unchanged
+ * (mobile's existing contract).
  */
-export function formatCount(value: number): string {
-  if (value < 1_000) return Math.round(value).toLocaleString();
+export function formatCount(value: number, locale?: string): string {
+  if (value < 1_000) return Math.round(value).toLocaleString(locale);
   const k = value / 1000;
-  if (k >= 9.95) return `${Math.round(k).toLocaleString()}k`;
-  return `${k.toFixed(1)}k`;
+  if (k >= 9.95) return `${Math.round(k).toLocaleString(locale)}k`;
+  // Localize the compact decimal when a locale is supplied ("1,5k" for
+  // de-DE). An omitted locale keeps the legacy `toFixed` period form
+  // byte-identical — mobile's existing contract.
+  if (locale === undefined) return `${k.toFixed(1)}k`;
+  return `${k.toLocaleString(locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}k`;
 }
 
 /**

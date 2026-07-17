@@ -1,9 +1,10 @@
 name: Backend Deploy
 
-# Deploy model:
-#   push to main  → staging    (CI triggers the Coolify deploy API)
-#   push tag v*   → production  (CI triggers the Coolify deploy API)
-#   workflow_dispatch → choose staging or production
+# Reusable workflow (`workflow_call`), invoked by deploy.yml — the single
+# entry point for Coolify deploys. deploy.yml resolves staging vs
+# production (push to main, tag v*, or a workflow_dispatch choice) and
+# passes it in as the `environment` input below; this workflow has no
+# push/tag/workflow_dispatch triggers of its own.
 #
 # Deploy target: self-hosted Coolify PaaS. Staging and production are
 # triggered by the SAME authenticated Coolify API call — Coolify "Auto
@@ -23,34 +24,18 @@ name: Backend Deploy
 #   COOLIFY_BACKEND_UUID   the backend app's Coolify UUID
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - "apps/backend/**"
-      - "packages/shared/**"
-      - "packages/ingest/**"
-      - "packages/poi-db/**"
-      - "packages/openapi/**"
-      - "tsconfig.base.json"
-      - "docs/database/**"
-      - ".github/workflows/backend-deploy.yml"
-      - "scripts/smoke/**"
-      - "scripts/ci/**"
-  workflow_dispatch:
+  workflow_call:
     inputs:
       environment:
-        description: "Target environment"
+        description: "Target environment (staging | production)"
         required: true
-        type: choice
-        options: ["staging", "production"]
-        default: "staging"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: backend-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  group: backend-deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -58,7 +43,7 @@ jobs:
     name: Deploy & verify
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+      name: ${{ inputs.environment }}
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -69,22 +54,12 @@ jobs:
 
       - name: Resolve environment
         id: env
+        # The orchestrator (deploy.yml) resolves staging vs production and
+        # passes it in as a required workflow_call input, so this step just
+        # surfaces it as a step output for the rest of the job to consume.
         env:
-          INPUT_ENV: ${{ inputs.environment || '' }}
-          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          ENV_NAME: ${{ inputs.environment }}
         run: |
-          # Explicit operator selection wins. Otherwise infer from the
-          # trigger ref: tag → production, branch → staging. If we
-          # checked $IS_TAG first, a workflow_dispatch from a `v*` tag
-          # selecting "staging" would silently deploy production despite
-          # the operator-selected target.
-          if [ -n "$INPUT_ENV" ]; then
-            ENV_NAME="$INPUT_ENV"
-          elif [ "$IS_TAG" = "true" ]; then
-            ENV_NAME="production"
-          else
-            ENV_NAME="staging"
-          fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve env-specific deploy targets

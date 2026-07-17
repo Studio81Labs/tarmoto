@@ -25,18 +25,11 @@ import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
-import { useNumberFormat } from "@/hooks/useNumberFormat";
+import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-import { usePreferencesStore } from "@/stores/preferences";
-import {
-  formatDurationCompact,
-  scoreToQualityTier,
-  splitFormattedDistance,
-  splitFormattedElevation,
-  splitFormattedSpeed,
-} from "@/lib/utils";
+import { scoreToQualityTier } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
-import { kmToMiles, type UnitSystem } from "@tarmoto/shared";
+import { kmToMiles, type Formatters } from "@tarmoto/shared";
 import { downloadRideExport } from "@/lib/ride-export";
 import { RideExportMenu } from "../_components/RideExportMenu";
 import { RideRouteMap } from "../_components/RideRouteMap";
@@ -73,8 +66,7 @@ export default function RideDetailPage() {
   const backLabel = fromCommunity
     ? t("Community · Feed")
     : t("Ride History · All rides");
-  const { format } = useNumberFormat();
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
   // Debounced: fast loads swap straight to content instead of flashing the
@@ -208,7 +200,7 @@ export default function RideDetailPage() {
   if (error || !ride) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {error ?? "Could not load ride"}
         </div>
       </PageShell>
@@ -217,23 +209,33 @@ export default function RideDetailPage() {
 
   const rideName = ride.name?.trim()
     ? ride.name
-    : `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
+    : `Ride on ${format.date(ride.started_at)}`;
   const avgTier = scoreToQualityTier(ride.avg_road_quality);
-  const startedDate = new Date(ride.started_at).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  // Weekday dropped — `format.date` has no weekday slot (accepted change,
+  // migration recipe §Global Constraints).
+  const startedDate = format.date(ride.started_at);
   // All metrics honour the rider's unit preference (km/m·mph·ft) so the grid
   // stays internally consistent — not a mix of converted distance and raw
-  // metric speed/elevation.
-  const distance = splitFormattedDistance(ride.distance_km ?? 0, unitSystem);
-  const duration = splitDuration(ride.duration_min);
-  const avgSpeed = splitFormattedSpeed(ride.avg_speed ?? 0, unitSystem);
-  const topSpeed = splitFormattedSpeed(ride.max_speed ?? 0, unitSystem);
-  const ascent = splitFormattedElevation(ride.elevation_gain ?? 0, unitSystem);
-  const descent = splitFormattedElevation(ride.elevation_loss ?? 0, unitSystem);
+  // metric speed/elevation. The format seam already reads the account's
+  // unit preference, so there's no separate `unitSystem` store read here.
+  const distance = format.splitDistanceKm(ride.distance_km ?? 0);
+  const duration = splitDuration(ride.duration_min, format);
+  const avgSpeed = format.splitSpeed(ride.avg_speed ?? 0);
+  const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
+  const ascent = format.splitElevation(ride.elevation_gain ?? 0);
+  const descent = format.splitElevation(ride.elevation_loss ?? 0);
+  // Net change is computed on the raw metric delta, then split/converted
+  // once via `format.splitElevation` — subtracting the two ALREADY-split
+  // (and unit-converted) display values would be wrong once `.value` is a
+  // formatted string rather than a number.
+  const netElevationM =
+    ride.elevation_gain != null && ride.elevation_loss != null
+      ? ride.elevation_gain - ride.elevation_loss
+      : null;
+  const netElevation =
+    netElevationM != null
+      ? format.splitElevation(Math.abs(netElevationM))
+      : null;
   const speedUnit = avgSpeed.unit;
 
   // Distance / Duration / Avg / Top / Max lean / Ascent — the design's 2×3 grid.
@@ -368,7 +370,7 @@ export default function RideDetailPage() {
                 </div>
               )}
               {renameError && (
-                <p className="mt-1 text-xs text-red-400">{renameError}</p>
+                <p className="mt-1 text-xs text-red-700">{renameError}</p>
               )}
             </div>
 
@@ -430,7 +432,11 @@ export default function RideDetailPage() {
 
         <div className="grid grid-cols-2 gap-3 lg:content-start">
           {tiles.map((tile) => (
-            <MetricTile key={tile.label} formatValue={format} {...tile} />
+            <MetricTile
+              key={tile.label}
+              formatValue={format.integer}
+              {...tile}
+            />
           ))}
         </div>
       </div>
@@ -447,7 +453,7 @@ export default function RideDetailPage() {
             label={t("Total ascent")}
             value={
               ride.elevation_gain != null
-                ? `+${format(ascent.value)} ${ascent.unit.toLowerCase()}`
+                ? `+${ascent.value} ${ascent.unit}`
                 : "—"
             }
           />
@@ -455,17 +461,15 @@ export default function RideDetailPage() {
             label={t("Total descent")}
             value={
               ride.elevation_loss != null
-                ? `−${format(descent.value)} ${descent.unit.toLowerCase()}`
+                ? `−${descent.value} ${descent.unit}`
                 : "—"
             }
           />
           <ElevationStat
             label={t("Net change")}
             value={
-              ride.elevation_gain != null && ride.elevation_loss != null
-                ? `${ascent.value - descent.value >= 0 ? "+" : "−"}${format(
-                    Math.abs(ascent.value - descent.value),
-                  )} ${ascent.unit.toLowerCase()}`
+              netElevation != null
+                ? `${netElevationM! >= 0 ? "+" : "−"}${netElevation.value} ${netElevation.unit}`
                 : "—"
             }
           />
@@ -478,7 +482,7 @@ export default function RideDetailPage() {
       </Card>
 
       {/* Speed profile (US-48): per-segment avg/max speed for populated rides */}
-      <SpeedProfileCard segments={ride.segments} unitSystem={unitSystem} />
+      <SpeedProfileCard segments={ride.segments} format={format} />
 
       {/* Ride dynamics + character */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -512,19 +516,23 @@ export default function RideDetailPage() {
               label={t("Avg road quality")}
               value={
                 ride.avg_road_quality != null
-                  ? `${formatNumber(ride.avg_road_quality, 1)} / 5`
+                  ? `${formatNumber(ride.avg_road_quality, 1, format)} / 5`
                   : "—"
               }
             />
             <CharacterStat
               label={t("Curves")}
-              value={ride.curve_count != null ? format(ride.curve_count) : "—"}
+              value={
+                ride.curve_count != null
+                  ? format.integer(ride.curve_count)
+                  : "—"
+              }
             />
             <CharacterStat
               label={t("Fuel estimate")}
               value={
                 ride.fuel_estimate_l != null
-                  ? `${formatNumber(ride.fuel_estimate_l, 1)} L`
+                  ? `${formatNumber(ride.fuel_estimate_l, 1, format)} L`
                   : "—"
               }
             />
@@ -532,7 +540,7 @@ export default function RideDetailPage() {
               label={t("Elev. descent")}
               value={
                 ride.elevation_loss != null
-                  ? `${format(descent.value)} ${descent.unit.toLowerCase()}`
+                  ? `${descent.value} ${descent.unit}`
                   : "—"
               }
             />
@@ -546,7 +554,6 @@ export default function RideDetailPage() {
           segments={ride.segments}
           distanceKm={ride.distance_km}
           format={format}
-          unitSystem={unitSystem}
         />
       )}
     </PageShell>
@@ -664,16 +671,13 @@ function RoadSegments({
   segments,
   distanceKm,
   format,
-  unitSystem,
 }: {
   segments: RideSegment[];
   distanceKm: number | null;
-  format: (n: number, o?: Intl.NumberFormatOptions) => string;
-  unitSystem: UnitSystem;
+  format: Formatters;
 }) {
-  const total =
-    distanceKm != null ? splitFormattedDistance(distanceKm, unitSystem) : null;
-  const speedUnit = splitFormattedSpeed(0, unitSystem).unit;
+  const total = distanceKm != null ? format.splitDistanceKm(distanceKm) : null;
+  const speedUnit = format.splitSpeed(0).unit;
   // KM-per-segment, surface, and character aren't on the segment payload, so
   // the table surfaces the telemetry we do record (avg / max speed, lean,
   // quality) — the design's missing columns degrade rather than fabricate.
@@ -704,9 +708,7 @@ function RoadSegments({
       size: "100px",
       render: (s) => (
         <Mono className="text-ink">
-          {s.speed_avg != null
-            ? splitFormattedSpeed(s.speed_avg, unitSystem).value
-            : "—"}
+          {s.speed_avg != null ? format.splitSpeed(s.speed_avg).value : "—"}
         </Mono>
       ),
     },
@@ -716,9 +718,7 @@ function RoadSegments({
       size: "100px",
       render: (s) => (
         <Mono className="text-ink">
-          {s.speed_max != null
-            ? splitFormattedSpeed(s.speed_max, unitSystem).value
-            : "—"}
+          {s.speed_max != null ? format.splitSpeed(s.speed_max).value : "—"}
         </Mono>
       ),
     },
@@ -763,7 +763,7 @@ function RoadSegments({
           </div>
           {total != null && (
             <Mono className="text-[11px] text-fg-dim">
-              {format(total.value)} {total.unit} {t("TOTAL")}
+              {total.value} {total.unit} {t("TOTAL")}
             </Mono>
           )}
         </div>
@@ -773,9 +773,12 @@ function RoadSegments({
 }
 
 /** Duration split into a big value + small unit for the MetricTile. */
-function splitDuration(min: number | null): { value: string; unit: string } {
+function splitDuration(
+  min: number | null,
+  format: Formatters,
+): { value: string; unit: string } {
   if (min == null) return { value: "—", unit: "" };
-  const compact = formatDurationCompact(min); // "4h 12m" or "52m"
+  const compact = format.durationCompact(min); // "4h 12m" or "52m"
   const space = compact.indexOf(" ");
   if (space < 0) return { value: compact, unit: "" };
   return { value: compact.slice(0, space), unit: compact.slice(space + 1) };
@@ -788,15 +791,15 @@ function splitDuration(min: number | null): { value: string; unit: string } {
  */
 function SpeedProfileCard({
   segments,
-  unitSystem,
+  format,
 }: {
   segments: RideSegment[];
-  unitSystem: UnitSystem;
+  format: Formatters;
 }) {
   const points = buildSpeedProfile(segments);
   const conv = (kmh: number) =>
-    unitSystem === "imperial" ? kmToMiles(kmh) : kmh;
-  const unit = splitFormattedSpeed(0, unitSystem).unit;
+    format.units === "imperial" ? kmToMiles(kmh) : kmh;
+  const unit = format.splitSpeed(0).unit;
   const avg = points
     .filter((p) => p.avgKmh != null)
     .map((p) => ({ x: p.segmentNumber, y: conv(p.avgKmh!) }));

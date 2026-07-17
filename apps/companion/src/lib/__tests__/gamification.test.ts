@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "@tarmoto/openapi-client";
+import { createFormatters } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import type { RiderStats } from "../types";
 import {
   activeChallenges,
@@ -30,6 +32,10 @@ import {
 } from "../gamification";
 
 const NOW = new Date("2026-04-18T00:00:00Z");
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
 
 function stats(overrides: Partial<RiderStats> = {}): RiderStats {
   return {
@@ -218,62 +224,62 @@ describe("formatMilestoneLabel", () => {
 
   it("shows current / next with the metric unit", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 12_345 }));
-    expect(formatMilestoneLabel(progress)).toBe("12,345 / 25,000 km");
+    expect(formatMilestoneLabel(progress, format)).toBe("12,345 / 25,000 km");
   });
 
   it("labels maxed milestones", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 30_000 }));
-    expect(formatMilestoneLabel(progress)).toBe("Maxed at 30,000 km");
+    expect(formatMilestoneLabel(progress, format)).toBe("Maxed at 30,000 km");
   });
 });
 
 describe("formatDaysRemaining", () => {
   it("reports ended when past the end", () => {
     expect(
-      formatDaysRemaining(new Date(NOW.getTime() - 1000).toISOString(), NOW),
+      formatDaysRemaining(new Date(NOW.getTime() - 1000).toISOString(), NOW, t),
     ).toBe("Ended");
   });
 
   it("reports today when less than 24 hours remain", () => {
     const endsAt = new Date(NOW.getTime() + 6 * 60 * 60 * 1000).toISOString();
-    expect(formatDaysRemaining(endsAt, NOW)).toBe("Ends today");
+    expect(formatDaysRemaining(endsAt, NOW, t)).toBe("Ends today");
   });
 
   it("uses the tomorrow shortcut for one day left", () => {
     const endsAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000).toISOString();
-    expect(formatDaysRemaining(endsAt, NOW)).toBe("Ends tomorrow");
+    expect(formatDaysRemaining(endsAt, NOW, t)).toBe("Ends tomorrow");
   });
 
   it("reports days under a week", () => {
     const endsAt = new Date(
       NOW.getTime() + 3 * 24 * 60 * 60 * 1000,
     ).toISOString();
-    expect(formatDaysRemaining(endsAt, NOW)).toBe("3 days left");
+    expect(formatDaysRemaining(endsAt, NOW, t)).toBe("3 days left");
   });
 
   it("switches to weeks between 1 and 4 weeks", () => {
     const endsAt = new Date(
       NOW.getTime() + 10 * 24 * 60 * 60 * 1000,
     ).toISOString();
-    expect(formatDaysRemaining(endsAt, NOW)).toBe("1w 3d left");
+    expect(formatDaysRemaining(endsAt, NOW, t)).toBe("1w 3d left");
   });
 
   it("switches to months past four weeks", () => {
     const endsAt = new Date(
       NOW.getTime() + 45 * 24 * 60 * 60 * 1000,
     ).toISOString();
-    expect(formatDaysRemaining(endsAt, NOW)).toBe("1 month left");
+    expect(formatDaysRemaining(endsAt, NOW, t)).toBe("1 month left");
   });
 
   it("rounds the 28-29 day band up to '1 month left' instead of zero", () => {
     const endsAt = new Date(
       NOW.getTime() + 28 * 24 * 60 * 60 * 1000,
     ).toISOString();
-    expect(formatDaysRemaining(endsAt, NOW)).toBe("1 month left");
+    expect(formatDaysRemaining(endsAt, NOW, t)).toBe("1 month left");
   });
 
   it("falls back to 'Ongoing' for malformed dates", () => {
-    expect(formatDaysRemaining("not-a-date", NOW)).toBe("Ongoing");
+    expect(formatDaysRemaining("not-a-date", NOW, t)).toBe("Ongoing");
   });
 });
 

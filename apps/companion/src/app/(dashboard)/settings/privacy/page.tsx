@@ -145,7 +145,7 @@ export default function PrivacyPage() {
             "Visibility, data sharing, consent — control what's public and what stays with you.",
           )}
         />
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {t("Could not load settings: ")}
           {loadError}
         </div>
@@ -279,7 +279,7 @@ export default function PrivacyPage() {
         <div className="flex items-start justify-between gap-4 px-5 py-4">
           <div>
             <p className="text-[14px] font-semibold text-ink">
-              {t("Personalized recommendations ")}
+              {t("Personalised recommendations ")}
             </p>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
@@ -290,7 +290,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.personalizedRecommendationsConsent}
             onChange={togglePersonalized}
-            ariaLabel="Personalized recommendations consent"
+            ariaLabel="Personalised recommendations consent"
           />
         </div>
       </Card>
@@ -324,7 +324,7 @@ function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
         </span>
       )}
       {saveState.kind === "error" && (
-        <span className="text-[13px] text-red-400">{saveState.message}</span>
+        <span className="text-[13px] text-red-700">{saveState.message}</span>
       )}
       {isDirty && saveState.kind !== "saving" && (
         <span className="text-[13px] text-fg-mute">{t("Unsaved changes")}</span>

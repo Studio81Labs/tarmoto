@@ -2,7 +2,6 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { findSubRegions, type Country, type Region } from "@tarmoto/shared";
 import { BestRoadsMap } from "./BestRoadsMap";
-import { BestRoadsEmbedPanel } from "./BestRoadsEmbedPanel";
 import { BestRoadsList } from "./BestRoadsList";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
 import type { BestRoad } from "@/lib/bestRoads";
@@ -44,19 +43,15 @@ export function BestRoadsPageBody({
   // to its children here — otherwise those sub-region pages are only
   // reachable via the sitemap.
   const subRegions = parent ? [] : findSubRegions(country.code, region.slug);
-  const origin = new URL(pageUrl).origin;
   return (
-    <div className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
-        <nav className="mb-4 text-sm text-slate-400">
-          <Link href="/roads/best" className="hover:text-white">
+        <nav className="mb-4 text-sm text-fg-dim">
+          <Link href="/roads/best" className="hover:text-ink">
             {t("Best roads ")}
           </Link>
           <span className="mx-2">/</span>
-          <Link
-            href={`/roads/best/${country.code}`}
-            className="hover:text-white"
-          >
+          <Link href={`/roads/best/${country.code}`} className="hover:text-ink">
             {country.name}
           </Link>
           {parent && (
@@ -64,7 +59,7 @@ export function BestRoadsPageBody({
               <span className="mx-2">/</span>
               <Link
                 href={`/roads/best/${country.code}/${parent.slug}`}
-                className="hover:text-white"
+                className="hover:text-ink"
               >
                 {parent.name}
               </Link>
@@ -79,9 +74,9 @@ export function BestRoadsPageBody({
             {t("Best motorcycle roads in ")}
             {region.name}
           </h1>
-          <p className="mt-3 max-w-3xl text-slate-300">{region.description}</p>
+          <p className="mt-3 max-w-3xl text-fg-dim">{region.description}</p>
           {region.bestSeason && (
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-fg-dim">
               {t("Best season: ")}
               {region.bestSeason}
             </p>
@@ -102,14 +97,6 @@ export function BestRoadsPageBody({
           <BestRoadsList roads={roads} />
         </section>
 
-        <BestRoadsEmbedPanel
-          origin={origin}
-          country={country.code}
-          region={parent?.slug ?? region.slug}
-          subregion={parent ? region.slug : undefined}
-          regionName={region.name}
-        />
-
         {subRegions.length > 0 && (
           <section className="mb-8">
             <h2 className="mb-4 text-xl font-semibold">{t("Sub-regions")}</h2>
@@ -118,10 +105,10 @@ export function BestRoadsPageBody({
                 <li key={sr.slug}>
                   <Link
                     href={`/roads/best/${country.code}/${region.slug}/${sr.slug}`}
-                    className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
+                    className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
                   >
                     <h3 className="text-lg font-semibold">{sr.name}</h3>
-                    <p className="mt-1 text-sm text-slate-400 line-clamp-2">
+                    <p className="mt-1 text-sm text-fg-dim line-clamp-2">
                       {sr.description}
                     </p>
                   </Link>
@@ -132,18 +119,18 @@ export function BestRoadsPageBody({
         )}
 
         {roads.length > 0 && (
-          <section className="mb-12 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+          <section className="mb-12 rounded-xl border border-line bg-paper p-6">
             <h2 className="text-lg font-semibold">
               {t("Plan a trip with these roads ")}
             </h2>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-fg-dim">
               {t(
                 "Pre-load this list into your trip planner to build a multi-day ride around them. ",
               )}
             </p>
             <Link
               href={`/trip-planner?segments=${segmentIds}`}
-              className="mt-4 inline-flex items-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-accent/90 transition"
+              className="mt-4 inline-flex items-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-95"
             >
               {t("Plan a trip with these roads ")}
             </Link>

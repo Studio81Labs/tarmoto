@@ -12,7 +12,7 @@ import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { TripDay, Waypoint } from "@/lib/types";
 import { normalizeDayFinish } from "@/stores/trip";
-import { formatDuration } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { FlaggedSectionCard } from "./FlaggedSectionCard";
 import { SectionStamp } from "./PlannerPanel";
 import { RouteQualityStrip } from "./RouteQualityStrip";
@@ -86,6 +86,7 @@ export function InspectTab({
   onInspectSegment,
   onRerouteSegment,
 }: InspectTabProps) {
+  const format = useFormat();
   const allSegments = useMemo(
     () => (day ? deriveDayQualitySegments(day) : []),
     [day],
@@ -127,17 +128,30 @@ export function InspectTab({
   const startLabel = spine[0]?.name ?? "Start";
   const finishLabel = spine[spine.length - 1]?.name ?? "Finish";
 
+  // Distance keeps its value and unit paired from the SAME `splitDistanceKm`
+  // call — an imperial viewer must see "mi", never a converted mile figure
+  // mislabelled "km". Falls back to the current unit system (not a
+  // hardcoded "km") when there's no distance to show, so the empty-state
+  // sublabel is still honest.
+  const scopedDistanceKm = plan ? plan.distanceKm : day.distanceKm;
+  const distanceSplit = scopedDistanceKm
+    ? format.splitDistanceKm(scopedDistanceKm)
+    : null;
+  const distanceUnit =
+    distanceSplit?.unit ?? (format.units === "imperial" ? "mi" : "km");
   const metrics = plan
     ? {
-        distance: plan.distanceKm ? plan.distanceKm.toFixed(1) : "—",
-        time: plan.timeMin ? formatDuration(plan.timeMin) : "—",
+        distance: distanceSplit?.value ?? "—",
+        time: plan.timeMin ? format.duration(plan.timeMin) : "—",
         score:
-          plan.quality.score !== null ? plan.quality.score.toFixed(1) : "—",
+          plan.quality.score !== null
+            ? format.decimal(plan.quality.score, 1)
+            : "—",
       }
     : {
-        distance: day.distanceKm ? day.distanceKm.toFixed(1) : "—",
-        time: day.durationMinutes ? formatDuration(day.durationMinutes) : "—",
-        score: day.avgQuality ? day.avgQuality.toFixed(1) : "—",
+        distance: distanceSplit?.value ?? "—",
+        time: day.durationMinutes ? format.duration(day.durationMinutes) : "—",
+        score: day.avgQuality ? format.decimal(day.avgQuality, 1) : "—",
       };
 
   return (
@@ -189,7 +203,7 @@ export function InspectTab({
               {
                 key: "DISTANCE",
                 value: metrics.distance,
-                unit: "km",
+                unit: distanceUnit,
                 accent: false,
               },
               { key: "TIME", value: metrics.time, unit: "", accent: false },
