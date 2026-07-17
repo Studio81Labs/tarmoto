@@ -139,9 +139,11 @@ describe("RoadPreviewPopover", () => {
     expect(screen.queryByText(/based on/)).not.toBeInTheDocument();
   });
 
-  it("uses singular 'rider pass' with normal-confidence when only 1 pass backs the score", async () => {
-    // When passes: 1, we always hit low-confidence (≤3) so this verifies the
-    // low-confidence ICU plural singular form.
+  it("renders the singular '1 PASS' low-confidence badge when a single pass backs the score", async () => {
+    // passes ≤ 3 always routes to the low-confidence badge, so the singular
+    // form a rider can actually see at passes: 1 is "1 PASS" — the
+    // normal-confidence "based on 1 rider pass" branch is structurally
+    // unreachable and stays guarded by the catalog ICU tests instead.
     getRoadPreviewMock.mockResolvedValue(measuredPreview({ passes: 1 }));
     render(
       <RoadPreviewPopover segment={segment({ passes: 1 })} onClose={vi.fn()} />,
@@ -150,19 +152,6 @@ describe("RoadPreviewPopover", () => {
     expect(
       await screen.findByText(/LOW CONFIDENCE.*1 PASS\b/),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/1 PASSES/)).not.toBeInTheDocument();
-  });
-
-  it("uses singular 'PASS' in the low-confidence note with 1 pass", async () => {
-    getRoadPreviewMock.mockResolvedValue(measuredPreview({ passes: 1 }));
-    render(
-      <RoadPreviewPopover segment={segment({ passes: 1 })} onClose={vi.fn()} />,
-    );
-
-    // Verify that the ICU plural handling correctly renders "1 PASS" (singular)
-    // not "1 PASSES" (plural) in the low-confidence badge.
-    expect(await screen.findByText(/LOW CONFIDENCE/)).toBeInTheDocument();
-    expect(screen.getByText(/1 PASS\b/)).toBeInTheDocument();
     expect(screen.queryByText(/1 PASSES/)).not.toBeInTheDocument();
   });
 
