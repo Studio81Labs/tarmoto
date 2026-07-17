@@ -1,5 +1,6 @@
 import {
   describeRenewal,
+  formatInvoiceDate,
   normalizeSubscriptionSnapshot,
   shouldUseSubscriptionPreview,
   type CurrentSubscriptionPlan,
@@ -39,6 +40,13 @@ describe("describeRenewal", () => {
   // present-but-malformed renews_at must degrade to the retired helper's
   // "soon" copy, not silently reroute an active plan to the portal message
   // (or strip a trial's end-date line entirely).
+  it("degrades an unparseable invoice date to the missing-value dash instead of a blank heading", () => {
+    expect(formatInvoiceDate("2026-11-15T00:00:00.000Z", format)).toBe(
+      "Nov 15, 2026",
+    );
+    expect(formatInvoiceDate("not-a-date", format)).toBe("—");
+  });
+
   it('degrades to "soon" when the renewal date is present but unparseable', () => {
     expect(describeRenewal(plan({ renewsAt: "not-a-date" }), format)).toBe(
       "Renews soon",

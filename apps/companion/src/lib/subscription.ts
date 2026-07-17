@@ -243,7 +243,12 @@ export function formatPaymentMethodExpiry(
 }
 
 export function formatInvoiceDate(date: string, format: Formatters): string {
-  return format.date(date);
+  // `format.date()` renders "" for an unparseable timestamp, which would
+  // leave the billing-history row with a blank heading. Degrade to the
+  // repo's standard missing-value dash so partially migrated billing data
+  // stays intelligible ("soon" — the retired helper's fallback — reads
+  // wrong for a past invoice).
+  return format.date(date) || "—";
 }
 
 export function invoiceStatusLabel(status: InvoiceStatus): string {
