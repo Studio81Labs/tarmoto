@@ -2779,7 +2779,7 @@ const TripPlannerMapContent = forwardRef<
           <button
             type="button"
             aria-pressed={lineColorMode === "quality"}
-            aria-label="Color the route line by road quality"
+            aria-label="Colour the route line by road quality"
             onClick={() =>
               setLineColorMode((mode) =>
                 mode === "quality" ? null : "quality",
@@ -2793,7 +2793,7 @@ const TripPlannerMapContent = forwardRef<
           <button
             type="button"
             aria-pressed={lineColorMode === "surface"}
-            aria-label="Color the route line by surface"
+            aria-label="Colour the route line by surface"
             onClick={() =>
               setLineColorMode((mode) =>
                 mode === "surface" ? null : "surface",

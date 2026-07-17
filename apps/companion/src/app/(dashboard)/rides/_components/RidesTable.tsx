@@ -178,7 +178,10 @@ export function RidesTable({
         totalPages > 1 ? (
           <div className="flex items-center justify-between px-5 py-2.5 text-sm text-fg-dim">
             <span className="font-mono tabular-nums">
-              {`${total} ride${total === 1 ? "" : "s"}`}
+              {t("{count, plural, one {{n} ride} other {{n} rides}}", {
+                count: total,
+                n: format.integer(total),
+              })}
             </span>
             <div className="flex items-center gap-2">
               <button

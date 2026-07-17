@@ -404,7 +404,7 @@ function ChartLegend({
           }`}
         >
           <Wrench size={10} />
-          {t(repairCount === 1 ? "{count} repair" : "{count} repairs", {
+          {t("{count, plural, one {# repair} other {# repairs}}", {
             count: repairCount,
           })}
         </li>
@@ -417,8 +417,10 @@ function ChartLegend({
         >
           <TrendingDown size={10} />
           {t(
-            detCount === 1 ? "{count} deterioration" : "{count} deteriorations",
-            { count: detCount },
+            "{count, plural, one {# deterioration} other {# deteriorations}}",
+            {
+              count: detCount,
+            },
           )}
         </li>
       )}

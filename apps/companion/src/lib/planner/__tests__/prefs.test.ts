@@ -121,7 +121,7 @@ describe("buildPrefsSummary (revision 3 §B)", () => {
         surfaces: ["asphalt"],
         minQuality: "excellent_only",
       }),
-    ).toBe("Maximum twisty · asphalt · Excellent only · avoid highways +2");
+    ).toBe("Maximum twisty · asphalt · Excellent only · avoid motorways +2");
   });
 
   it("summarizes multi-surface and no-avoid combinations", () => {

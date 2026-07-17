@@ -627,7 +627,7 @@ function SeasonalBanner({
   format: Formatters;
 }) {
   const fraction = seasonalProgress(seasonal);
-  const daysLeft = formatDaysRemaining(seasonal.endsAt);
+  const daysLeft = formatDaysRemaining(seasonal.endsAt, new Date(), t);
   return (
     <section
       aria-label={t("Seasonal challenge")}

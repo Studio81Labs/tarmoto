@@ -194,7 +194,7 @@ const SURFACE_SUMMARY_LABELS: Partial<Record<SurfaceType, string>> = {
 
 /**
  * Pure derivation of the §02 collapsed summary row, e.g.
- * "Maximum twisty · asphalt · Excellent only · avoid highways +2".
+ * "Maximum twisty · asphalt · Excellent only · avoid motorways +2".
  */
 export function buildPrefsSummary(prefs: UserRoutePrefs): string {
   const parts: string[] = [ROAD_PREFERENCE_LABELS[prefs.roadPreference]];
@@ -214,7 +214,7 @@ export function buildPrefsSummary(prefs: UserRoutePrefs): string {
   parts.push(MIN_QUALITY_LABELS[prefs.minQuality]);
 
   const avoids: string[] = [];
-  if (prefs.avoidHighways) avoids.push("avoid highways");
+  if (prefs.avoidHighways) avoids.push("avoid motorways");
   if (prefs.avoidTolls) avoids.push("avoid tolls");
   if (prefs.avoidUnpaved) avoids.push("avoid unpaved");
   if (avoids.length === 1) parts.push(avoids[0]!);
