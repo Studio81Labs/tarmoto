@@ -123,7 +123,7 @@ function CompareRidesPageInner() {
       {optionsError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
+          className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700"
         >
           {optionsError}
         </div>
@@ -395,7 +395,7 @@ function ComparisonView({
       )}
 
       {error && !loading && (
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -705,7 +705,7 @@ function QualityDiffSection({
               dir === "improved"
                 ? "text-emerald-700"
                 : dir === "regressed"
-                  ? "text-red-400"
+                  ? "text-red-700"
                   : "text-fg-mute";
             return (
               <li

@@ -311,7 +311,6 @@ function SegmentDetailContent({
               segmentId={segment.id}
               history={qualityHistory}
               regionalHistory={regionalHistory}
-              tone="cream"
             />
           </div>
         </>
@@ -389,7 +388,6 @@ function SegmentDetailContent({
         <div className="mt-3.5">
           <RoadReviewsPanel
             segmentId={segment.id}
-            tone="cream"
             hideHeader
             onCountChange={setReviewCount}
           />

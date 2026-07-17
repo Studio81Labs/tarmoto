@@ -363,7 +363,7 @@ export default function ProfilePage() {
           <p
             role="alert"
             aria-live="assertive"
-            className="text-[12px] text-red-400"
+            className="text-[12px] text-red-700"
           >
             {avatarUploadError}
           </p>
@@ -452,7 +452,7 @@ export default function ProfilePage() {
             <span
               role="alert"
               aria-live="assertive"
-              className="text-[13px] text-red-400"
+              className="text-[13px] text-red-700"
             >
               {saveError}
             </span>
@@ -536,7 +536,7 @@ export default function ProfilePage() {
               </span>
             )}
             {copyState === "error" && (
-              <span role="alert" className="text-sm text-red-400">
+              <span role="alert" className="text-sm text-red-700">
                 {t("Could not copy your email. Please copy it manually. ")}
               </span>
             )}

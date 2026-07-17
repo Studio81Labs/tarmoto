@@ -50,55 +50,33 @@ const EMPTY_REVIEW_DRAFT: ReviewDraft = {
   photoUrls: [],
 };
 
-export type ReviewsTone = "dark" | "cream";
-
 /**
- * Theme class sets so this panel can render on the dark trip-planner card
- * (`RoadPreviewCard`) and the cream explore segment sidebar from one component.
- * Defaults to `dark` so the existing planner usage is untouched.
+ * Cream theme class set for the review panel — rendered on the trip-planner
+ * card and the explore segment sidebar (both cream since the dark theme was
+ * retired).
  */
-function reviewToneClasses(tone: ReviewsTone) {
-  const cream = tone === "cream";
-  return {
-    cream,
-    textPrimary: cream ? "text-ink" : "text-white",
-    textBody: cream ? "text-fg-dim" : "text-slate-300",
-    textMute: cream ? "text-fg-mute" : "text-slate-500",
-    hover: cream ? "hover:text-ink" : "hover:text-white",
-    star: cream ? "text-amber-600" : "text-amber-300",
-    infoBox: cream
-      ? "border border-dashed border-line-strong bg-paper text-fg-mute"
-      : "border border-slate-800 bg-slate-950/40 text-slate-500",
-    loadingBox: cream
-      ? "border border-line bg-paper text-fg-dim"
-      : "border border-slate-800 bg-slate-950/60 text-slate-400",
-    outlineBtn: cream
-      ? "border-line-strong text-ink hover:bg-paper"
-      : "border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white",
-    editorCard: cream
-      ? "border-line bg-paper"
-      : "border-slate-800 bg-slate-950/60",
-    input: cream
-      ? "border-line-strong bg-cream text-ink placeholder:text-fg-mute focus:border-accent"
-      : "border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-accent",
-    reviewCard: cream
-      ? "border-line bg-cream"
-      : "border-slate-800 bg-slate-950/50",
-    chipInactive: cream
-      ? "border-line-strong text-fg-dim hover:border-ink hover:text-ink"
-      : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white",
-    // Selected rating chips use the brand accent (not amber) per the spec.
-    ratingActive: cream
-      ? "border-accent bg-accent/15 text-ink"
-      : "border-accent bg-accent/15 text-white",
-    label: cream ? "text-fg-mute" : "text-slate-400",
-    dashedUpload: cream
-      ? "border-line-strong bg-cream hover:border-ink"
-      : "border-slate-700 bg-slate-950/40 hover:border-slate-500",
-    divider: cream ? "bg-line" : "bg-slate-800",
-    photoTile: cream ? "border-line bg-paper" : "border-slate-800 bg-slate-900",
-  };
-}
+const TC = {
+  textPrimary: "text-ink",
+  textBody: "text-fg-dim",
+  textMute: "text-fg-mute",
+  hover: "hover:text-ink",
+  star: "text-amber-600",
+  infoBox: "border border-dashed border-line-strong bg-paper text-fg-mute",
+  loadingBox: "border border-line bg-paper text-fg-dim",
+  outlineBtn: "border-line-strong text-ink hover:bg-paper",
+  editorCard: "border-line bg-paper",
+  input:
+    "border-line-strong bg-cream text-ink placeholder:text-fg-mute focus:border-accent",
+  reviewCard: "border-line bg-cream",
+  chipInactive:
+    "border-line-strong text-fg-dim hover:border-ink hover:text-ink",
+  // Selected rating chips use the brand accent (not amber) per the spec.
+  ratingActive: "border-accent bg-accent/15 text-ink",
+  label: "text-fg-mute",
+  dashedUpload: "border-line-strong bg-cream hover:border-ink",
+  divider: "bg-line",
+  photoTile: "border-line bg-paper",
+} as const;
 
 /** Mono all-caps field label used inside the review editor. */
 function FieldLabel({
@@ -119,12 +97,10 @@ function FieldLabel({
 
 export function RoadReviewsPanel({
   segmentId,
-  tone = "dark",
   hideHeader = false,
   onCountChange,
 }: {
   segmentId: string;
-  tone?: ReviewsTone;
   hideHeader?: boolean;
   /**
    * Reports the live review count whenever it changes (load, create, delete),
@@ -134,7 +110,7 @@ export function RoadReviewsPanel({
   onCountChange?: (count: number) => void;
 }) {
   const format = useFormat();
-  const tc = reviewToneClasses(tone);
+  const tc = TC;
   const canLoadReviews = isUuid(segmentId);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const viewerId = useAuthStore((state) => state.user?.id ?? null);
@@ -482,39 +458,28 @@ export function RoadReviewsPanel({
                   type="button"
                   onClick={openEdit}
                   disabled={submitting}
-                  className={
-                    tc.cream
-                      ? `inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`
-                      : `inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`
-                  }
+                  className={`inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] transition disabled:cursor-not-allowed disabled:opacity-60 ${tc.outlineBtn}`}
                   aria-label={t("Edit your review")}
                 >
-                  <Pencil size={tc.cream ? 13 : 12} />
-                  {tc.cream ? t("Edit ") : t("Edit your review ")}
+                  <Pencil size={13} />
+                  {t("Edit ")}
                 </button>
                 <button
                   type="button"
                   onClick={handleDeleteReview}
                   disabled={submitting}
-                  className={
-                    tc.cream
-                      ? "inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border border-rose-500/40 px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-rose-600 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                      : "inline-flex items-center gap-1 rounded-full border border-rose-500/30 px-3 py-1.5 text-xs text-rose-500 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  }
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border border-rose-500/40 px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-rose-600 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                   aria-label={t("Delete your review")}
                 >
                   {submitting && editorMode === null ? (
-                    <Loader2
-                      size={tc.cream ? 13 : 12}
-                      className="animate-spin"
-                    />
+                    <Loader2 size={13} className="animate-spin" />
                   ) : (
-                    <Trash2 size={tc.cream ? 13 : 12} />
+                    <Trash2 size={13} />
                   )}
-                  {tc.cream ? t("Delete ") : t("Delete your review ")}
+                  {t("Delete ")}
                 </button>
               </>
-            ) : tc.cream ? (
+            ) : (
               <button
                 type="button"
                 onClick={openCreate}
@@ -523,17 +488,6 @@ export function RoadReviewsPanel({
                 aria-label={t("Write a review for this road")}
               >
                 <Pencil size={13} />
-                {t("Write a review ")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={openCreate}
-                disabled={submitting}
-                className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label={t("Write a review for this road")}
-              >
-                <Pencil size={12} />
                 {t("Write a review ")}
               </button>
             )
@@ -548,7 +502,6 @@ export function RoadReviewsPanel({
       {editorMode && (
         <ReviewEditor
           mode={editorMode}
-          tone={tone}
           remainingPhotoSlots={Math.max(
             0,
             MAX_REVIEW_PHOTOS - draft.photoUrls.length,
@@ -588,7 +541,7 @@ export function RoadReviewsPanel({
       )}
 
       {!editorMode && submitError && (
-        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">
+        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700">
           {submitError}
         </div>
       )}
@@ -628,7 +581,6 @@ export function RoadReviewsPanel({
               <ReviewCard
                 key={review.id}
                 review={review}
-                tone={tone}
                 onChange={(next) => patchReview(review.id, next)}
               />
             ))}
@@ -664,7 +616,6 @@ function upsertReview(current: RoadReview[], next: RoadReview): RoadReview[] {
 }
 function ReviewEditor({
   mode,
-  tone,
   remainingPhotoSlots,
   draft,
   disabled,
@@ -678,7 +629,6 @@ function ReviewEditor({
   onSubmit,
 }: {
   mode: "create" | "edit";
-  tone: ReviewsTone;
   remainingPhotoSlots: number;
   draft: ReviewDraft;
   disabled: boolean;
@@ -691,7 +641,7 @@ function ReviewEditor({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
-  const tc = reviewToneClasses(tone);
+  const tc = TC;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
   const [uploading, setUploading] = useState(false);
@@ -784,9 +734,10 @@ function ReviewEditor({
       {/* Comment */}
       <label className="mt-3 block">
         <FieldLabel className={tc.label}>{t("Comment")}</FieldLabel>
-        {/* eslint-disable-next-line no-restricted-syntax -- road-detail pages
-            are still the raw dark-slate theme (`tc.*` classes); cream-only
-            fieldChrome doesn't apply until the road pages move to v2. */}
+        {/* eslint-disable-next-line no-restricted-syntax -- the review editor
+            uses its own compact field chrome (`tc.input`) tuned to this
+            panel's dense layout; migrating to the ui Textarea is a separate
+            follow-up. */}
         <textarea
           value={draft.comment}
           onChange={(event) => onCommentChange(event.target.value)}
@@ -805,8 +756,8 @@ function ReviewEditor({
       {/* Bike model */}
       <label className="mt-3 block">
         <FieldLabel className={tc.label}>{t("Bike model")}</FieldLabel>
-        {/* eslint-disable-next-line no-restricted-syntax -- dark-theme road
-            page, see the comment on the textarea above. */}
+        {/* eslint-disable-next-line no-restricted-syntax -- review-editor
+            field chrome, see the comment on the textarea above. */}
         <input
           type="text"
           value={draft.bikeModel}
@@ -950,15 +901,13 @@ function validateSelectedPhotos(
 }
 function ReviewCard({
   review,
-  tone,
   onChange,
 }: {
   review: RoadReview;
-  tone: ReviewsTone;
   onChange: (next: Partial<RoadReview>) => void;
 }) {
   const format = useFormat();
-  const tc = reviewToneClasses(tone);
+  const tc = TC;
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
   const submitVote = async (isHelpful: boolean) => {

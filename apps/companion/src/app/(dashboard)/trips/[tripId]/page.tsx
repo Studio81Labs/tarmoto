@@ -387,7 +387,7 @@ export default function TripDetailPage() {
           <ArrowLeft size={14} />
           {t("Back to trips ")}
         </Link>
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-700">
           {error ?? "Unknown error loading trip."}
         </div>
       </div>
@@ -586,7 +586,7 @@ export default function TripDetailPage() {
       {(deleteError || leaveError) && (
         <div
           role="alert"
-          className="border-b border-quality-q1/30 bg-quality-q1/10 px-4 py-2 text-xs text-red-400"
+          className="border-b border-quality-q1/30 bg-quality-q1/10 px-4 py-2 text-xs text-red-700"
         >
           {deleteError ?? leaveError}
         </div>

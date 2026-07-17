@@ -190,7 +190,7 @@ export default function StatsPage() {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <StatsPageHeader />
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {loadError}
         </div>
       </div>

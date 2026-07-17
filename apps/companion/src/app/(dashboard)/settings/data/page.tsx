@@ -241,7 +241,7 @@ export default function DataPage() {
             </a>
           )}
           {exportState.kind === "error" && (
-            <span role="alert" className="text-[13px] text-red-400">
+            <span role="alert" className="text-[13px] text-red-700">
               {exportState.message}
             </span>
           )}
@@ -330,7 +330,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
       <div className="w-full max-w-md rounded-2xl border border-quality-q1/40 bg-cream shadow-[0_24px_60px_rgba(14,14,16,0.2)]">
         <header className="flex items-start justify-between gap-4 border-b border-line p-5">
           <div className="flex items-center gap-2">
-            <AlertTriangle size={18} className="text-red-400" />
+            <AlertTriangle size={18} className="text-red-700" />
             <h3
               id="delete-account-title"
               className="font-sans text-[18px] font-extrabold tracking-[-0.5px] text-ink"
@@ -386,7 +386,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             />
           </div>
           {state.kind === "error" && (
-            <p role="alert" className="text-[14px] text-red-400">
+            <p role="alert" className="text-[14px] text-red-700">
               {state.message}
             </p>
           )}
