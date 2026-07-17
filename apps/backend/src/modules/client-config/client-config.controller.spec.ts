@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/unbound-method */
+import 'reflect-metadata';
 import { ClientConfigController } from './client-config.controller.js';
 import { ClientConfigService } from './client-config.service.js';
 
@@ -22,6 +24,30 @@ describe('ClientConfigController', () => {
     await expect(controller.limits()).resolves.toEqual({
       max_active_trips: 5,
       max_waypoints: null,
+    });
+  });
+
+  it('GET /config/flags carries Cache-Control: public, max-age=60 header metadata', () => {
+    const headers = Reflect.getMetadata(
+      '__headers__',
+      ClientConfigController.prototype.flags,
+    ) as Array<{ name: string; value: string }> | undefined;
+    expect(headers).toBeDefined();
+    expect(headers).toContainEqual({
+      name: 'Cache-Control',
+      value: 'public, max-age=60',
+    });
+  });
+
+  it('GET /config/limits carries Cache-Control: public, max-age=60 header metadata', () => {
+    const headers = Reflect.getMetadata(
+      '__headers__',
+      ClientConfigController.prototype.limits,
+    ) as Array<{ name: string; value: string }> | undefined;
+    expect(headers).toBeDefined();
+    expect(headers).toContainEqual({
+      name: 'Cache-Control',
+      value: 'public, max-age=60',
     });
   });
 });
