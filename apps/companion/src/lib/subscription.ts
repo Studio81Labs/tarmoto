@@ -212,7 +212,12 @@ export function describeRenewal(
   plan: CurrentSubscriptionPlan,
   format: Formatters,
 ): string {
-  const date = plan.renewsAt ? format.date(plan.renewsAt) : null;
+  // `format.date()` renders "" for an unparseable timestamp; without the
+  // "soon" fallback a malformed (but present) `renews_at` would silently
+  // reroute an active plan to the portal copy / a trial to no end-date —
+  // misleading during malformed or partially migrated billing data. This
+  // preserves the retired helper's "Renews soon"-class behavior.
+  const date = plan.renewsAt ? format.date(plan.renewsAt) || "soon" : null;
   if (plan.cancelAtPeriodEnd && date) {
     return `Downgrades ${date}`;
   }

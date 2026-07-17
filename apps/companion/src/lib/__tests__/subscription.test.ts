@@ -1,8 +1,56 @@
 import {
+  describeRenewal,
   normalizeSubscriptionSnapshot,
   shouldUseSubscriptionPreview,
+  type CurrentSubscriptionPlan,
 } from "../subscription";
 import { ApiError } from "../api";
+import { createFormatters } from "@tarmoto/shared";
+
+const format = createFormatters({ locale: "en", units: "metric" });
+
+function plan(
+  overrides: Partial<CurrentSubscriptionPlan> = {},
+): CurrentSubscriptionPlan {
+  return {
+    tier: "pro",
+    name: "Pro",
+    status: "active",
+    priceLabel: "€29.99/mo",
+    renewsAt: "2026-11-15T00:00:00.000Z",
+    cancelAtPeriodEnd: false,
+    manageUrl: null,
+    ...overrides,
+  };
+}
+
+describe("describeRenewal", () => {
+  it("renders the localized renewal date for an active plan", () => {
+    expect(describeRenewal(plan(), format)).toBe("Renews Nov 15, 2026");
+  });
+
+  it("falls back to the portal copy when no renewal date exists", () => {
+    expect(describeRenewal(plan({ renewsAt: null }), format)).toBe(
+      "Billing cycle managed in the portal",
+    );
+  });
+
+  // Regression: format.date() renders "" for an unparseable timestamp; a
+  // present-but-malformed renews_at must degrade to the retired helper's
+  // "soon" copy, not silently reroute an active plan to the portal message
+  // (or strip a trial's end-date line entirely).
+  it('degrades to "soon" when the renewal date is present but unparseable', () => {
+    expect(describeRenewal(plan({ renewsAt: "not-a-date" }), format)).toBe(
+      "Renews soon",
+    );
+    expect(
+      describeRenewal(
+        plan({ renewsAt: "not-a-date", status: "trialing" }),
+        format,
+      ),
+    ).toBe("Trial ends soon");
+  });
+});
 
 describe("shouldUseSubscriptionPreview", () => {
   it("enables preview mode for explicit 404 errors", () => {

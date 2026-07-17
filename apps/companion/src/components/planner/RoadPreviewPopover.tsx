@@ -342,12 +342,22 @@ export function RoadPreviewPopover({
                       />
                     ))}
                   </div>
-                  <div className="mt-1.5 flex justify-between">
-                    <Mono className="text-[9px] text-fg-mute">0 KM</Mono>
-                    <Mono className="text-[9px] text-fg-mute">
-                      {Math.round(segment.lengthKm * 10) / 10} KM
-                    </Mono>
-                  </div>
+                  {/* Scale endpoints must speak the same unit as the
+                      micro-segment tooltips above (which convert for
+                      imperial riders) — derive both from one split call. */}
+                  {(() => {
+                    const scaleEnd = format.splitDistanceKm(segment.lengthKm);
+                    return (
+                      <div className="mt-1.5 flex justify-between">
+                        <Mono className="text-[9px] text-fg-mute">
+                          0 {scaleEnd.unit.toUpperCase()}
+                        </Mono>
+                        <Mono className="text-[9px] text-fg-mute">
+                          {scaleEnd.value} {scaleEnd.unit.toUpperCase()}
+                        </Mono>
+                      </div>
+                    );
+                  })()}
                 </>
               ) : null}
 

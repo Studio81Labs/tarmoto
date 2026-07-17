@@ -132,7 +132,7 @@ export function DayByDayList({
                     label="Elevation"
                     value={
                       day.elevationGain > 0
-                        ? `${Math.round(day.elevationGain)} m`
+                        ? format.elevation(day.elevationGain)
                         : "—"
                     }
                     accent
