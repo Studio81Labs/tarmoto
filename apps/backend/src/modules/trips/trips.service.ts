@@ -13,6 +13,7 @@ import { EntityManager, In, Repository } from 'typeorm';
 import {
   DEFAULT_LOCALE,
   haversineKm,
+  isWithinLimit,
   latLngToPoint,
   pointToLatLng,
 } from '@tarmoto/shared';
@@ -27,6 +28,8 @@ import { User } from '../../entities/user.entity.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { featureLimitExceeded } from '../features/feature-limit.error.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import {
@@ -78,6 +81,9 @@ const LIST_OVERVIEW_SIMPLIFY_TOLERANCE_DEG = 0.002;
 // anonymous link-joiners start in.
 const PRIVILEGED_ROLES = new Set(['owner', 'editor']);
 
+/** Trip statuses that count against `max_active_trips` (owner only). */
+const OPEN_TRIP_STATUSES = ['draft', 'planned', 'active'] as const;
+
 @Injectable()
 export class TripsService {
   private readonly logger = new Logger(TripsService.name);
@@ -103,9 +109,12 @@ export class TripsService {
     @Inject(ROUTING_PROVIDER)
     private readonly routingProvider: RoutingProvider,
     private readonly enrichment: RouteEnrichmentService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
+    await this.assertCanMintOpenTrip(userId);
+
     // Validate against the EFFECTIVE values after defaults apply, so that
     // a partial input like `{ daily_km_min: 500 }` is caught against the
     // default `daily_km_max: 350` instead of silently persisting an
@@ -162,6 +171,12 @@ export class TripsService {
     if (source.owner_id !== userId && !isMember) {
       throw new NotFoundException('Trip not found');
     }
+
+    // The duplicate is minted with `owner_id: userId` below (the caller
+    // becomes the new trip's owner, even when duplicating a trip they
+    // only co-collaborate on), so it's the CALLER's cap that governs
+    // here — checked only after the 404 authorization above.
+    await this.assertCanMintOpenTrip(userId);
 
     // US-37 — only carry the source folder forward when the duplicating
     // user actually owns it. The companion's "Duplicate" action is
@@ -248,6 +263,26 @@ export class TripsService {
     return this.getDetail(userId, dupId);
   }
 
+  /**
+   * `max_active_trips` gate — counts open trips the OWNER holds and
+   * rejects minting another at the cap. Check-then-act: two concurrent
+   * creates can each pass the count and briefly overshoot by one; the
+   * next mint re-checks, so the cap self-corrects. Accepted for v1 —
+   * serialising every trip create on a per-user lock isn't worth that
+   * failure mode.
+   */
+  private async assertCanMintOpenTrip(ownerId: string): Promise<void> {
+    const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
+    const limit = limits.max_active_trips;
+    if (limit === null) return; // unlimited — skip the count entirely
+    const current = await this.tripRepo.count({
+      where: { owner_id: ownerId, status: In([...OPEN_TRIP_STATUSES]) },
+    });
+    if (!isWithinLimit(limit, current)) {
+      throw featureLimitExceeded('max_active_trips', limit, current);
+    }
+  }
+
   private async allocateAndPersistTrip(
     userId: string,
     dto: CreateTripDto,
@@ -306,6 +341,8 @@ export class TripsService {
     userId: string,
     dto: ImportTripDto,
   ): Promise<TripDetailDto> {
+    await this.assertCanMintOpenTrip(userId);
+
     const totalKm = totalDistanceKm(dto.geometry);
     // Imported trips are 1-day routes — daily_km_{min,max} both
     // represent the actual distance. The 1 km floor protects the
@@ -534,6 +571,20 @@ export class TripsService {
           lock: { mode: 'pessimistic_write' },
         });
         if (!locked) throw new NotFoundException('Trip not found');
+
+        // Reopening a completed trip mints a new open slot. The trip's
+        // own row is still `completed` at this point (the UPDATE below
+        // hasn't run yet), so the upcoming count reflects the owner's
+        // OTHER open trips — correct. Gate on the OWNER's cap, not the
+        // caller's: a privileged editor can reopen a trip they don't own,
+        // and it's the owner's slot budget that a reopen consumes.
+        const reopening =
+          dto.status !== undefined &&
+          locked.status === 'completed' &&
+          dto.status !== 'completed';
+        if (reopening) {
+          await this.assertCanMintOpenTrip(locked.owner_id);
+        }
 
         const effectiveMin = dto.daily_km_min ?? locked.daily_km_min;
         const effectiveMax = dto.daily_km_max ?? locked.daily_km_max;
