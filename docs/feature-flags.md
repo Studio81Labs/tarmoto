@@ -167,7 +167,7 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 - **Flags (22):** the full §1 vocabulary — 11 Free, 6 Pro, 5 Premium. `full_road_quality_zoom` renamed to `road_quality_full_zoom`; `unlimited_trip_planning` retired (superseded by the `max_active_trips` limit).
 - **Limits (6):** the full §2 set. Only `max_active_trips` (Free = 1) is **enforced** today — across every trip mint + completed→open promotion path. The other five are defined vocabulary with no enforcement yet.
-- Migration `1814-AlignFeatureFlagCatalog` renames the launch-mode override row for the renamed flag and drops the retired flag's rows. The newly-added flags/limits carry **no override rows and no launch seed** — they are inert registry vocabulary until a feature is wired to them.
+- Migration `1814-AlignFeatureFlagCatalog` is a faithful key rename: it moves the launch-mode `force_on` row (and any per-user override) from `full_road_quality_zoom` to `road_quality_full_zoom`, preserving each row's state. The retired `unlimited_trip_planning` override rows are left in place as inert orphans (the resolver ignores keys outside the registry) so a rollback can't lose operator state. The newly-added flags/limits carry **no override rows and no launch seed** — they are inert registry vocabulary until a feature is wired to them.
 - Existing launch-mode dark-ship posture is unchanged (`max_active_trips = NULL`; several Pro/Premium flags seeded `force_on`) until monetization goes live. Clients still do not consume the snapshot for gating — that remains the next workstream.
 
 ### 6.3 Remaining to reach this catalog

@@ -89,10 +89,13 @@ operator clears via `DELETE /admin/feature-limits/max_active_trips/global`
 to activate `free = 1`.
 
 > The Pro road-quality-zoom flag was renamed `full_road_quality_zoom` →
-> `road_quality_full_zoom`, and `unlimited_trip_planning` was retired
-> (superseded by `max_active_trips`), by migration
-> `1814-AlignFeatureFlagCatalog`. Admin requests against the old keys are
-> now rejected as unknown features.
+> `road_quality_full_zoom` (migration `1814-AlignFeatureFlagCatalog` moves
+> its override rows to the new key), and `unlimited_trip_planning` was
+> retired from the registry (superseded by `max_active_trips`). Admin
+> requests against either old key are now rejected as unknown features. The
+> retired flag's old override rows are left in the tables as inert orphans
+> (the resolver ignores unregistered keys) rather than deleted, so a
+> rollback can restore prior behavior.
 
 Keys with no override row (the newly-added catalog flags/limits, and flags
 for not-yet-built features) resolve purely by tier from day one.
