@@ -134,12 +134,15 @@ const STAT_DEFS: Array<Omit<StatRow, "a" | "b" | "delta"> & { key: StatKey }> =
     },
   ];
 
+// Non-linguistic notation units render as-is — never translated (see the
+// ride-compare exclude list: fraction-marker glyph / degree symbol, not
+// linguistic unit words). Excluded from `t()` entirely, not just from
+// catalog registration, so a future unrelated catalog entry for "°" or "/5"
+// can never silently start rendering here.
+const NON_LINGUISTIC_UNITS = new Set(["/5", "°"]);
+
 // Builds one StatRow per metric. Both-null rows still appear (with em-dashes)
 // so the table layout is stable regardless of which fields the API populated.
-// `def.unit` is still routed through `t()` even for the non-linguistic "/5"
-// and "°" glyphs (avg_road_quality, max_lean_angle) — neither is a
-// catalog key, so the raw-key fallback returns them unchanged in every
-// locale, which is the correct behaviour for symbols nobody should translate.
 export function computeStatRows(
   a: ComparableRide,
   b: ComparableRide,
@@ -151,10 +154,14 @@ export function computeStatRows(
     return {
       ...def,
       label: t(def.label),
-      // Conditional spread (not `unit: def.unit ? t(def.unit) : undefined`)
-      // so a unit-less def keeps `unit` absent rather than explicitly
-      // `undefined` — required under `exactOptionalPropertyTypes`.
-      ...(def.unit ? { unit: t(def.unit) } : {}),
+      // Conditional spread (not `unit: ... : undefined`) so a unit-less def
+      // keeps `unit` absent rather than explicitly `undefined` — required
+      // under `exactOptionalPropertyTypes`.
+      ...(def.unit
+        ? {
+            unit: NON_LINGUISTIC_UNITS.has(def.unit) ? def.unit : t(def.unit),
+          }
+        : {}),
       a: av,
       b: bv,
       delta: av != null && bv != null ? bv - av : null,

@@ -261,6 +261,13 @@ describe("ride-compare translator wiring", () => {
       "Avg road quality": "XX-Avg road quality",
       "Curve count": "XX-Curve count",
       "Max lean": "XX-Max lean",
+      // Deliberately mapped here even though production code must NEVER look
+      // these up: proves the "/5"/"°" exclusion is a hard code-level skip,
+      // not merely an artifact of these keys being unregistered in the real
+      // catalog. If a future regression routes them through `t()`, this
+      // sentinel entry would make it visible instead of silently matching.
+      "/5": "XX-5",
+      "°": "XX-deg",
     },
   });
 
@@ -285,9 +292,11 @@ describe("ride-compare translator wiring", () => {
     expect(byKey.curve_count!.unit).toBeUndefined();
     expect(byKey.max_lean_angle!.label).toBe("XX-Max lean");
 
-    // "/5" and "°" are non-linguistic glyphs, deliberately NOT registered as
-    // catalog keys — routed through `t()` but rendered verbatim via the
-    // raw-key fallback in every locale, never actually translated.
+    // "/5" and "°" are non-linguistic glyphs, excluded from `t()` entirely
+    // (not merely unregistered) — the sentinel catalog above DOES map both
+    // to a translated value, so if these ever came back "XX-5"/"XX-deg"
+    // that would mean the exclusion was silently dropped and these glyphs
+    // are being routed through the translator again.
     expect(byKey.avg_road_quality!.unit).toBe("/5");
     expect(byKey.max_lean_angle!.unit).toBe("°");
   });
