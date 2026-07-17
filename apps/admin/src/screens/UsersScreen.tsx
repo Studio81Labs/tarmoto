@@ -623,7 +623,10 @@ function UserFeatureLimitsCard({ userId }: { userId: string }) {
     removeOverrideMutation.mutate(
       { params: { path: { userId, feature } } },
       {
-        onSuccess: () => void refetch(),
+        onSuccess: () => {
+          setLimitError(null);
+          void refetch();
+        },
         onError: (err: unknown) => {
           const serverMsg = (err as { message?: string } | undefined)?.message;
           setLimitError(serverMsg ?? "Failed to remove the limit override.");

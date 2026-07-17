@@ -650,7 +650,7 @@ function FeatureLimitsCard() {
           <Button
             variant="secondary"
             size="sm"
-            disabled={pendingKey === row.feature}
+            loading={pendingKey === row.feature}
             onClick={() => openDialog(row)}
           >
             Set override
