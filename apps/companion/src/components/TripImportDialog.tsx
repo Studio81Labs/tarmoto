@@ -273,7 +273,9 @@ function RoutePreview({
                 <span className="w-14 text-right tabular-nums text-fg-mute">
                   {format.distanceKm(seg.distanceKm)}
                 </span>
-                <span className={`w-16 text-right font-semibold ${cfg.color}`}>
+                <span
+                  className={`quality-${seg.qualityTier} w-16 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold`}
+                >
                   {cfg.label}
                 </span>
               </div>
