@@ -64,10 +64,22 @@ vi.mock("./_components/QualityMap", () => ({
   // /explore wires the search-pick path through that imperative
   // handle (T29 asserts the call here).
   QualityMap: forwardRef<
-    { flyTo: (t: { lng: number; lat: number; zoom: number }) => void },
+    {
+      flyTo: (t: { lng: number; lat: number; zoom: number }) => void;
+      startDrawRegion: () => void;
+      clearDrawnRegion: () => void;
+    },
     MockQualityMapProps
   >(function MockQualityMap(props, ref) {
-    useImperativeHandle(ref, () => ({ flyTo: flyToMock }), []);
+    useImperativeHandle(
+      ref,
+      () => ({
+        flyTo: flyToMock,
+        startDrawRegion: () => {},
+        clearDrawnRegion: () => {},
+      }),
+      [],
+    );
     return mockQualityMap(props);
   }),
 }));
