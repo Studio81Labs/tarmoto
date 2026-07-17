@@ -33,13 +33,21 @@ describe('OSM split/merge reconciliation (#835)', () => {
   // An explicit region enclosing this test's ways so stale detection is
   // authoritative (a data-derived bbox would not tombstone) — passed directly to
   // `importFrom` now that the importer no longer reads a region off its config
-  // (the folder model, Sub-project B; see `OsmImportService.importRegion`).
-  const REGION: [number, number, number, number] = [
-    LNG - 0.1,
-    LAT - 0.1,
-    LNG + 0.2,
-    LAT + 0.2,
-  ];
+  // (the folder model, Sub-project B; see `OsmImportService.importRegion`). The
+  // region is now a GeoJSON POLYGON string (for `ST_GeomFromGeoJSON`), not a bbox
+  // tuple (#1033) — here a rectangle enclosing every test way.
+  const REGION: string = JSON.stringify({
+    type: 'Polygon',
+    coordinates: [
+      [
+        [LNG - 0.1, LAT - 0.1],
+        [LNG + 0.2, LAT - 0.1],
+        [LNG + 0.2, LAT + 0.2],
+        [LNG - 0.1, LAT + 0.2],
+        [LNG - 0.1, LAT - 0.1],
+      ],
+    ],
+  });
 
   /** A single ~100 m drivable way at a given offset from the test origin. */
   function way(id: number, dLat = 0, dLng = 0): OsmWay {

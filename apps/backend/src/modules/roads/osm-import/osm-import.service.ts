@@ -15,12 +15,19 @@ import {
 import { assembleWays } from './osm-assemble.js';
 import { parseOsmXml } from './osm-xml-source.js';
 import { osmRoadImportConfig } from './osm-import.config.js';
+import { regionPolygon } from './region-polygons.js';
 import { planReassignment, type ExistingSegment } from './split-merge.js';
 import type { LatLng } from './segmentation.js';
 
 /** Rows per bulk upsert — keeps each statement well under PG's 65,535-param
  *  limit (each row binds ~8 columns). */
 const UPSERT_CHUNK = 500;
+
+/** Incoming geometries per region-filter query. A national extract can carry
+ *  hundreds of thousands of ways; batching the `unnest … WITH ORDINALITY`
+ *  intersect keeps each statement's text-array bind bounded (2 binds/query, so
+ *  the param limit is irrelevant — this bounds the array payload size instead). */
+const REGION_FILTER_CHUNK = 2000;
 
 /** Zero result — a skipped (absent / empty) region contributes nothing. Frozen:
  *  shared across every skip path, and `importAll` only ever reads its fields
@@ -31,14 +38,6 @@ const EMPTY_RESULT: OsmImportResult = Object.freeze({
   carriedOver: 0,
   deactivated: 0,
 });
-
-/** `PoiImportRegion.bbox` is an object; the reconcile/PostGIS layer uses the
- *  `[minLng, minLat, maxLng, maxLat]` tuple. Convert at the boundary. */
-function bboxTuple(
-  b: PoiImportRegion['bbox'],
-): [number, number, number, number] {
-  return [b.minLng, b.minLat, b.maxLng, b.maxLat];
-}
 
 /** Target table — referenced bare in the raw conflict clause to read the
  *  existing row (Postgres `DO UPDATE` refers to the target row by table name,
@@ -186,46 +185,6 @@ const CARRY_OVER_UPDATE = `
   WHERE id = $9
 `;
 
-/**
- * Does the line segment (x0,y0)-(x1,y1) intersect the axis-aligned rectangle
- * [xmin,ymin,xmax,ymax]? Liang–Barsky parametric clip: the segment enters the rect
- * iff its clipped [t0,t1] range is non-empty. Matches PostGIS `ST_Intersects` for a
- * linestring vs an envelope, so the incoming-row filter agrees exactly with the
- * existing-row load (a corner-clipping segment is kept/dropped the same way).
- */
-function segmentIntersectsRect(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  xmin: number,
-  ymin: number,
-  xmax: number,
-  ymax: number,
-): boolean {
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const p = [-dx, dx, -dy, dy];
-  const q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0];
-  let t0 = 0;
-  let t1 = 1;
-  for (let i = 0; i < 4; i++) {
-    if (p[i] === 0) {
-      if (q[i]! < 0) return false; // parallel and outside this edge
-    } else {
-      const t = q[i]! / p[i]!;
-      if (p[i]! < 0) {
-        if (t > t1) return false;
-        if (t > t0) t0 = t;
-      } else {
-        if (t < t0) return false;
-        if (t < t1) t1 = t;
-      }
-    }
-  }
-  return t0 <= t1;
-}
-
 export interface OsmImportResult {
   /** Rows inserted or updated in place through the conflict upsert. */
   upserted: number;
@@ -251,10 +210,10 @@ export interface OsmImportResult {
  * the geometry changes, and skips unchanged rows.
  *
  * Split/merge reconciliation (#835, ADR-0006): the whole regional snapshot is
- * buffered and matched against the existing rows in its bbox, so a way that was
- * split or merged carries its `id` + history onto the incoming geometry by
- * geometry overlap, and a row nothing matches is tombstoned (`deactivated_at`),
- * never hard-deleted (the history tables FK it).
+ * buffered and matched against the existing rows in its country polygon, so a
+ * way that was split or merged carries its `id` + history onto the incoming
+ * geometry by geometry overlap, and a row nothing matches is tombstoned
+ * (`deactivated_at`), never hard-deleted (the history tables FK it).
  */
 @Injectable()
 export class OsmImportService {
@@ -275,9 +234,9 @@ export class OsmImportService {
   /**
    * Import every configured region's `<code>.osm` extract from `extractDir` in
    * one pass (the folder model, Sub-project B). Each region reconciles against
-   * its own bbox; results aggregate. A region whose extract is absent or empty is
-   * skipped (never tombstoned — see {@link importRegion}), so one missing/broken
-   * extract can't wipe a region or abort the others.
+   * its own country polygon; results aggregate. A region whose extract is absent
+   * or empty is skipped (never tombstoned — see {@link importRegion}), so one
+   * missing/broken extract can't wipe a region or abort the others.
    */
   async importAll(): Promise<OsmImportResult> {
     const { extractDir, regions } = this.config;
@@ -307,13 +266,20 @@ export class OsmImportService {
   /**
    * Import one region's `<extractDir>/<code>.osm`. Absent file → skip (no
    * authoritative snapshot). Present but 0 ways, OR present with ways but NONE
-   * inside the region bbox (a mis-produced or misnamed extract) → skip WITH A
+   * inside the region POLYGON (a mis-produced or misnamed extract) → skip WITH A
    * WARNING (do not tombstone): a folder-model region is an automated
    * whole-country extract, so either empty result signals a broken refresh, not
    * a genuinely empty country — tombstoning the region on that would be far
    * worse than skipping it for a cycle. (This intentionally overrides
    * `reconcile`'s authoritative-empty behavior, which was designed for
    * hand-supplied single-file tiles.)
+   *
+   * The region is scoped by its actual country POLYGON (bundled boundary), not
+   * its bounding rectangle: adjacent countries' rectangles overlap, so a
+   * rectangle scope would let this region tombstone a neighbour's roads that fall
+   * in the shared strip (#1033). The incoming filter ({@link filterToRegion}) and
+   * the existing-row load ({@link loadExistingInRegion}) run the SAME PostGIS
+   * `ST_Intersects` test, so a border row is judged identically on both sides.
    */
   async importRegion(
     region: PoiImportRegion,
@@ -337,22 +303,23 @@ export class OsmImportService {
       );
       return EMPTY_RESULT;
     }
-    // A present, non-empty extract can still be entirely OUTSIDE the region — a
-    // mis-produced or misnamed extract (e.g. SK data written to cz.osm). Left
-    // unguarded, `reconcile`'s own region filter would drop every row and then
-    // see a post-filter-EMPTY set WITH a region, which it correctly treats as
-    // "the region was cleared" and tombstones every live row in it. Catch that
-    // here — before reconcile — so a bad extract skips instead of wiping the
-    // region.
-    const tuple = bboxTuple(region.bbox);
-    const inRegion = incoming.filter((r) => this.intersectsRegion(r, tuple));
+    // Scope the incoming set to the country polygon. `osmium extract` ships
+    // COMPLETE ways, so an extract carries a bit of neighbouring geometry that
+    // must be dropped before reconcile. A present, non-empty extract can also be
+    // entirely OUTSIDE the region — a mis-produced or misnamed extract (e.g. SK
+    // data written to cz.osm). Left unguarded, reconcile would see a post-filter
+    // EMPTY set WITH a region, which it correctly treats as "the region was
+    // cleared" and tombstones every live row in it. Catch that here — before
+    // reconcile — so a bad extract skips instead of wiping the region.
+    const polygon = regionPolygon(region.code);
+    const inRegion = await this.filterToRegion(incoming, polygon);
     if (inRegion.length === 0) {
       this.logger.warn(
-        `OSM import (${region.code}): extract has ${incoming.length} way(s) but none intersect the region bbox — skipping (likely a mis-produced or misnamed extract; NOT tombstoning the region)`,
+        `OSM import (${region.code}): extract has ${incoming.length} way(s) but none intersect the region polygon — skipping (likely a mis-produced or misnamed extract; NOT tombstoning the region)`,
       );
       return EMPTY_RESULT;
     }
-    return this.reconcile(incoming, tuple);
+    return this.reconcile(inRegion, polygon);
   }
 
   private async fileExists(path: string): Promise<boolean> {
@@ -379,39 +346,35 @@ export class OsmImportService {
     return incoming;
   }
 
-  /** Import an in-memory way source against an explicit region bbox (or none).
-   *  The reconcile seam used by unit tests and by {@link importRegion}. */
+  /** Import an in-memory way source against an explicit region polygon — a
+   *  GeoJSON geometry string for `ST_GeomFromGeoJSON` (or none). The source is
+   *  assumed already region-scoped (as {@link importRegion} scopes it via
+   *  {@link filterToRegion}); reconcile does not re-filter. The reconcile seam
+   *  used by unit tests and by {@link importRegion}. */
   async importFrom(
     source: OsmWaySource,
-    region: [number, number, number, number] | null = null,
+    region: string | null = null,
   ): Promise<OsmImportResult> {
     return this.reconcile(await this.bufferRows(source), region);
   }
 
   /**
-   * Reconcile the incoming snapshot against the existing rows in its bbox (#835,
-   * ADR-0006). Rows whose stable `(osm_way_id, segment_index)` is unchanged upsert
-   * in place (ids preserved, #751); the leftovers on each side are matched by
-   * geometry so history follows the road across a split/merge — carry-over as an
-   * id-preserving UPDATE, no match as a fresh insert, and an unmatched existing row
-   * as a tombstone (`deactivated_at`), never a delete.
+   * Reconcile the incoming snapshot against the existing rows in its region
+   * (#835, ADR-0006). `incoming` is assumed already region-scoped by the caller
+   * ({@link importRegion} via {@link filterToRegion}; direct callers pass an
+   * already-in-region set), so reconcile does NOT re-filter — `region` (the
+   * GeoJSON polygon string, or null) is used only to choose the existing-row load
+   * and gate stale-by-absence tombstoning. Rows whose stable `(osm_way_id,
+   * segment_index)` is unchanged upsert in place (ids preserved, #751); the
+   * leftovers on each side are matched by geometry so history follows the road
+   * across a split/merge — carry-over as an id-preserving UPDATE, no match as a
+   * fresh insert, and an unmatched existing row as a tombstone (`deactivated_at`),
+   * never a delete.
    */
   private async reconcile(
-    rawIncoming: RoadSegmentRow[],
-    region: [number, number, number, number] | null,
+    incoming: RoadSegmentRow[],
+    region: string | null,
   ): Promise<OsmImportResult> {
-    // `osmium extract -b` does NOT clip geometries — it emits every COMPLETE way
-    // that crosses the bbox, so a boundary-crossing way yields full-length rows
-    // outside the configured region. Constrain the incoming set to the region:
-    // otherwise one tile would upsert out-of-tile keys whose old out-of-tile rows
-    // (loaded only from THIS bbox) can't carry over, and an adjacent tile would
-    // then see those keys as unchanged and tombstone the old rows, orphaning
-    // history. A segment straddling the edge is kept by both tiles — the upsert is
-    // idempotent on identical geometry.
-    const incoming = region
-      ? rawIncoming.filter((r) => this.intersectsRegion(r, region))
-      : rawIncoming;
-
     // With a configured region an EMPTY tile is still authoritative — every road
     // in it was removed / reclassified non-drivable, so its existing rows must be
     // tombstoned. Only short-circuit the no-region case (nothing to compare, and
@@ -423,16 +386,17 @@ export class OsmImportService {
     }
 
     // Stale detection is only sound over an EXPLICIT region (the extract's
-    // authoritative boundary, the region's bbox parameter): a data-derived bbox
-    // (the extent of the incoming roads) would tombstone existing rows that fall
-    // in the rectangle but outside this extract, and miss removed roads beyond
-    // the current extrema.
-    // With a region we load every existing row inside it (so edge-removed roads
-    // are candidates) and may tombstone; without one we load only the incoming
-    // extent for carry-over matching and never tombstone.
-    const existing = await this.loadExistingInBbox(
-      region ?? this.dataBbox(incoming),
-    );
+    // authoritative boundary — the country polygon): a data-derived bbox (the
+    // extent of the incoming roads) would tombstone existing rows that fall in the
+    // rectangle but outside this extract, and miss removed roads beyond the
+    // current extrema.
+    // With a region we load every existing row inside the POLYGON (so edge-removed
+    // roads are candidates, and neighbouring countries' roads in the overlapping
+    // bbox strip are NOT — #1033) and may tombstone; without one we load only the
+    // incoming extent for carry-over matching and never tombstone.
+    const existing = region
+      ? await this.loadExistingInRegion(region)
+      : await this.loadExistingInBbox(this.dataBbox(incoming));
     const existingByKey = new Map(
       existing.map((e) => [this.identityKey(e.osm_way_id, e.segment_index), e]),
     );
@@ -489,13 +453,13 @@ export class OsmImportService {
     // vacated so the re-key/insert doesn't collide. We TOMBSTONE those holders
     // (rather than null their identity): a reused key is definitive proof the old
     // holder lost that identity, and nulling `osm_way_id` would orphan the row —
-    // `loadExistingInBbox` skips NULL osm ids, so no later tile could ever
+    // the existing-row load skips NULL osm ids, so no later region could ever
     // reconcile it and it would linger live as a phantom crowd row. Two sources:
-    //  - in-bbox stale rows whose key the snapshot reassigned (always, even with
+    //  - in-scope stale rows whose key the snapshot reassigned (always, even with
     //    no region — this is key reuse, not stale-by-absence);
-    //  - out-of-bbox LIVE owners of a claimed key: the ON CONFLICT arbiter is
-    //    global but `existingByKey` is bbox-scoped, so a key owned by a live row
-    //    just outside this tile (a segment split/moved across the boundary) would
+    //  - out-of-scope LIVE owners of a claimed key: the ON CONFLICT arbiter is
+    //    global but `existingByKey` is region-scoped, so a key owned by a live row
+    //    just outside this region (a segment split/moved across the boundary) would
     //    otherwise be silently overwritten in place.
     const inBboxReusedIds = leftoverExisting
       .filter(
@@ -640,39 +604,6 @@ export class OsmImportService {
     return `${osmWayId}:${segmentIndex}`;
   }
 
-  /** Whether the segment's geometry actually intersects the rectangle `[minLng,
-   *  minLat, maxLng, maxLat]` — the SAME exact test `loadExistingInBbox` runs in
-   *  Postgres (`ST_Intersects`), so a segment clipping a tile corner is judged
-   *  identically on both sides. A bbox-overlap check would over-keep such a
-   *  segment on the incoming side only, leaking out-of-region rows. Each leg is
-   *  clipped against the rectangle (Liang–Barsky); any leg that survives means the
-   *  polyline enters it. */
-  private intersectsRegion(
-    row: RoadSegmentRow,
-    [minLng, minLat, maxLng, maxLat]: [number, number, number, number],
-  ): boolean {
-    const coords = row.geom.coordinates;
-    for (let i = 1; i < coords.length; i++) {
-      const [x0, y0] = coords[i - 1]!;
-      const [x1, y1] = coords[i]!;
-      if (
-        segmentIntersectsRect(
-          x0!,
-          y0!,
-          x1!,
-          y1!,
-          minLng,
-          minLat,
-          maxLng,
-          maxLat,
-        )
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private toLatLngs(line: GeoJSON.LineString): LatLng[] {
     return line.coordinates.map(([lng, lat]) => ({ lat: lat!, lng: lng! }));
   }
@@ -742,6 +673,87 @@ export class OsmImportService {
       segment_index: r.segment_index,
       coords: this.toLatLngs(r.geom),
     }));
+  }
+
+  /**
+   * Existing ACTIVE, OSM-imported rows whose geometry intersects the region
+   * POLYGON (`geometry` GeoJSON string) — the reassignment candidate pool for a
+   * configured region. Uses the SAME `ST_Intersects(geom, ST_GeomFromGeoJSON())`
+   * test as {@link filterToRegion}, so a border row is loaded here iff the
+   * incoming filter would keep it — the reconcile invariant that stops a
+   * kept-incoming row's owner from being tombstoned (#1033). Crowd-sourced rows
+   * (null `osm_way_id`) are excluded: they aren't part of the OSM network, so the
+   * importer never reassigns or tombstones them.
+   */
+  private async loadExistingInRegion(polygon: string): Promise<
+    Array<{
+      id: string;
+      osm_way_id: string;
+      segment_index: number;
+      coords: LatLng[];
+    }>
+  > {
+    // Annotate the binding (rather than an `as` cast) so `r` is typed under both
+    // the local and strict OpenAPI-gen tsconfigs, which disagree on whether a cast
+    // is redundant.
+    const rows: Array<{
+      id: string;
+      osm_way_id: string;
+      segment_index: number;
+      geom: GeoJSON.LineString;
+    }> = await this.repo.query(
+      // `&&` (bbox overlap on the polygon's envelope) is only the GiST prefilter;
+      // `ST_Intersects` is the exact test, so a row is a stale candidate only when
+      // its geometry genuinely lies inside the country polygon — not merely inside
+      // its bounding rectangle (which overlaps neighbouring countries, #1033).
+      `SELECT id, osm_way_id::text AS osm_way_id, segment_index,
+              ST_AsGeoJSON(geom)::json AS geom
+       FROM ${TABLE}
+       WHERE deactivated_at IS NULL
+         AND osm_way_id IS NOT NULL
+         AND geom && ST_GeomFromGeoJSON($1)
+         AND ST_Intersects(geom, ST_GeomFromGeoJSON($1))`,
+      [polygon],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      osm_way_id: r.osm_way_id,
+      segment_index: r.segment_index,
+      coords: this.toLatLngs(r.geom),
+    }));
+  }
+
+  /**
+   * The subset of `rows` whose geometry intersects the region POLYGON — the
+   * incoming-side counterpart of {@link loadExistingInRegion}, running the SAME
+   * PostGIS `ST_Intersects` test (NOT a JS approximation, which would disagree at
+   * the border and reintroduce id loss, #1033). A national extract can carry
+   * hundreds of thousands of ways, so the intersect is batched
+   * ({@link REGION_FILTER_CHUNK} geometries/query) and the 1-based `WITH
+   * ORDINALITY` positions are mapped back to the chunk's rows.
+   */
+  private async filterToRegion(
+    rows: RoadSegmentRow[],
+    polygon: string,
+  ): Promise<RoadSegmentRow[]> {
+    if (rows.length === 0) return [];
+    const kept: RoadSegmentRow[] = [];
+    for (let start = 0; start < rows.length; start += REGION_FILTER_CHUNK) {
+      const chunk = rows.slice(start, start + REGION_FILTER_CHUNK);
+      // Annotate the binding (not an `as` cast) so `o` is typed under both the
+      // local and strict OpenAPI-gen tsconfigs.
+      const ords: Array<{ ord: number }> = await this.repo.query(
+        `SELECT g.ord::int AS ord
+         FROM unnest($1::text[]) WITH ORDINALITY AS g(gj, ord)
+         WHERE ST_Intersects(ST_GeomFromGeoJSON(g.gj), ST_GeomFromGeoJSON($2))`,
+        [chunk.map((r) => JSON.stringify(r.geom)), polygon],
+      );
+      for (const o of ords) {
+        // `ord` is 1-based over the chunk.
+        kept.push(chunk[o.ord - 1]!);
+      }
+    }
+    return kept;
   }
 
   private async flush(

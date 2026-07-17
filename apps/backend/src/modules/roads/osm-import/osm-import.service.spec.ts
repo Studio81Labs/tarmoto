@@ -11,6 +11,7 @@ import {
   ROAD_SEGMENT_ON_CONFLICT,
 } from './osm-import.service.js';
 import { osmRoadImportConfig } from './osm-import.config.js';
+import { regionPolygon } from './region-polygons.js';
 import type { OsmWay, RoadSegmentRow } from './segment-rows.js';
 
 /** A single ~100 m drivable way (two nodes → one segment). */
@@ -24,6 +25,31 @@ function straightWay(id: number): OsmWay {
       { lat: 0.0009, lng: 0 },
     ],
   };
+}
+
+/** A rectangle region as a GeoJSON Polygon string — the reconcile/importFrom
+ *  region param is now the country polygon (for `ST_GeomFromGeoJSON`), not a bbox
+ *  tuple. The exact coordinates are opaque to these unit tests (the geometry
+ *  queries are mocked); only region-set-vs-null and the string value passed to the
+ *  load matter. */
+function poly(
+  minLng: number,
+  minLat: number,
+  maxLng: number,
+  maxLat: number,
+): string {
+  return JSON.stringify({
+    type: 'Polygon',
+    coordinates: [
+      [
+        [minLng, minLat],
+        [maxLng, minLat],
+        [maxLng, maxLat],
+        [minLng, maxLat],
+        [minLng, minLat],
+      ],
+    ],
+  });
 }
 
 describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
@@ -143,6 +169,7 @@ describe('OsmImportService', () => {
   };
   let createQueryBuilder: jest.Mock;
   let loadExisting: jest.Mock;
+  let filterRegion: jest.Mock;
   let managerQuery: jest.Mock;
   let osmConfig: {
     enabled: boolean;
@@ -164,14 +191,29 @@ describe('OsmImportService', () => {
       execute: jest.fn().mockResolvedValue({}),
     };
     createQueryBuilder = jest.fn().mockReturnValue(qb);
-    // `loadExistingInBbox` — no existing rows by default, so every incoming
-    // segment is a fresh insert (no carry-over / stale). The transaction runs the
-    // callback against a manager whose insert builder is the shared `qb`.
+    // `loadExistingInRegion` / `loadExistingInBbox` / `loadOutOfBboxKeyOwners` —
+    // no existing rows by default, so every incoming segment is a fresh insert (no
+    // carry-over / stale). The transaction runs the callback against a manager
+    // whose insert builder is the shared `qb`.
     loadExisting = jest.fn().mockResolvedValue([]);
+    // `filterToRegion`'s `unnest … WITH ORDINALITY` query — default: every incoming
+    // row is in-region (return its 1-based ordinal). Tests override for the
+    // out-of-region case (return no ordinals → nothing in region).
+    filterRegion = jest.fn((_sql: string, params: unknown[]) =>
+      Promise.resolve((params[0] as string[]).map((_g, i) => ({ ord: i + 1 }))),
+    );
     managerQuery = jest.fn().mockResolvedValue(undefined);
     const manager = { createQueryBuilder, query: managerQuery };
+    // `repo.query` serves three raw queries; dispatch by SQL: the region filter
+    // (`unnest … WITH ORDINALITY`) vs the existing-row load + out-of-bbox owner
+    // load (both hit `road_segments`, driven by `loadExisting`'s call order).
+    const repoQuery = jest.fn((sql: string, params: unknown[]): unknown =>
+      sql.includes('WITH ORDINALITY')
+        ? (filterRegion(sql, params) as unknown)
+        : (loadExisting(sql, params) as unknown),
+    );
     const repo = {
-      query: loadExisting,
+      query: repoQuery,
       manager: {
         transaction: jest.fn((cb: (m: typeof manager) => Promise<unknown>) =>
           cb(manager),
@@ -348,7 +390,7 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom(
         [incomingDownstream],
-        [-1, -1, 20, 20],
+        poly(-1, -1, 20, 20),
       );
 
       expect(result).toMatchObject({ carriedOver: 1, deactivated: 1 });
@@ -423,7 +465,10 @@ describe('OsmImportService', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: 'out-of-tile' }]);
 
-      const result = await service.importFrom([straightWay(1)], [-1, -1, 1, 1]);
+      const result = await service.importFrom(
+        [straightWay(1)],
+        poly(-1, -1, 1, 1),
+      );
 
       expect(result).toMatchObject({
         upserted: 1,
@@ -449,7 +494,7 @@ describe('OsmImportService', () => {
         ]),
       ]);
 
-      const result = await service.importFrom([], [-1, -1, 20, 20]);
+      const result = await service.importFrom([], poly(-1, -1, 20, 20));
 
       expect(result.deactivated).toBe(1);
       const deactivate = (
@@ -470,7 +515,7 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom(
         [straightWay(2)],
-        [-1, -1, 20, 20],
+        poly(-1, -1, 20, 20),
       );
 
       expect(result).toMatchObject({
@@ -488,23 +533,23 @@ describe('OsmImportService', () => {
       expect(deactivate![0]).not.toMatch(/DELETE/i);
     });
 
-    it('drops incoming rows outside the configured region (complete-way overhang)', async () => {
-      // osmium extract -b keeps whole crossing ways, so rows can land outside the
-      // region; the importer must constrain to the bbox or a neighbouring tile
-      // would later tombstone their old rows. straightWay sits at (0,0); the region
-      // is far away, so the row is filtered out and nothing is written.
+    it('does NOT re-filter incoming — the caller pre-scopes to the region (importRegion → filterToRegion)', async () => {
+      // reconcile now assumes `incoming` is already region-scoped, so it never
+      // drops rows by geometry itself: scoping is done once, in the DB, by
+      // importRegion's filterToRegion (whose PostGIS test matches the existing-row
+      // load exactly — the #1033 invariant). This guards against re-introducing a
+      // JS incoming filter, whose polygon test could diverge from the SQL load and
+      // tombstone a kept-incoming row's owner. straightWay sits at (0,0), well
+      // outside the region polygon, yet is still reconciled + inserted.
       const result = await service.importFrom(
         [straightWay(1)],
-        [100, 100, 101, 101],
+        poly(100, 100, 101, 101),
       );
 
-      expect(result).toMatchObject({
-        upserted: 0,
-        carriedOver: 0,
-        deactivated: 0,
-      });
-      expect(qb.execute).not.toHaveBeenCalled();
-      expect(managerQuery).not.toHaveBeenCalled();
+      expect(result.upserted).toBe(1);
+      expect(qb.execute).toHaveBeenCalledTimes(1);
+      // importFrom does not filter — only importRegion runs filterToRegion.
+      expect(filterRegion).not.toHaveBeenCalled();
     });
 
     it('does NOT tombstone when no region is configured (data bbox is not authoritative)', async () => {
@@ -540,8 +585,7 @@ describe('OsmImportService', () => {
   // there would span several hundred metres and segmentation would cut it into
   // multiple ~100 m rows. The default covers every CZ-only call site verbatim;
   // `importAll`'s cross-region test overrides the coordinates for its second
-  // (SK) region so the way actually falls inside SK's bbox rather than
-  // colliding with CZ's.
+  // (SK) region so the way falls inside SK rather than colliding with CZ.
   function wayXml(id: number, lat = 50.0, lng = 14.0): string {
     return (
       `<osm version="0.6">` +
@@ -583,30 +627,32 @@ describe('OsmImportService', () => {
       expect(warn).toHaveBeenCalled();
     });
 
-    it('skips an extract whose ways are all outside the region bbox (no tombstone)', async () => {
+    it('skips an extract whose ways are all outside the region polygon (no tombstone)', async () => {
       // A present, non-empty extract that landed in the wrong file (e.g. SK data
-      // written to cz.osm) — its single way sits well east/north of CZ's
-      // maxLng/maxLat, so it is entirely outside the region. Must NOT reach
-      // `reconcile`: a post-filter-empty set WITH a region would otherwise
-      // tombstone every live CZ row.
+      // written to cz.osm) — filterToRegion finds NONE of its ways inside the CZ
+      // polygon. Must NOT reach `reconcile`: a post-filter-empty set WITH a region
+      // would otherwise tombstone every live CZ row. (filterToRegion is the DB
+      // `unnest … WITH ORDINALITY` query; here it returns no in-region ordinals.)
       await writeFile(join(dir, 'cz.osm'), wayXml(1, 60, 30));
+      filterRegion.mockResolvedValueOnce([]); // nothing inside the CZ polygon
       const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importRegion(CZ, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      // reconcile never ran → the existing-row load was never issued.
       expect(loadExisting).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalled();
     });
 
-    it('reconciles a non-empty extract scoped to the region bbox', async () => {
+    it('reconciles a non-empty extract scoped to the region polygon', async () => {
       await writeFile(join(dir, 'cz.osm'), wayXml(1));
       loadExisting.mockResolvedValue([]); // no existing rows
       const result = await service.importRegion(CZ, dir);
       expect(result.upserted).toBe(1);
-      // loadExistingInBbox called with the CZ tuple
-      expect(loadExisting).toHaveBeenCalledWith(
-        expect.any(String),
-        [12.09, 48.55, 18.86, 51.06],
-      );
+      // loadExistingInRegion is called with the CZ country polygon (not a bbox
+      // tuple) — the same geometry filterToRegion scoped the incoming set to.
+      expect(loadExisting).toHaveBeenCalledWith(expect.any(String), [
+        regionPolygon('CZ'),
+      ]);
     });
   });
 
@@ -621,9 +667,9 @@ describe('OsmImportService', () => {
 
     it('loops the configured regions and aggregates upserts', async () => {
       await writeFile(join(dir, 'cz.osm'), wayXml(1));
-      // SK's way must actually sit inside SK's bbox (16.83–22.57E, 47.73–49.61N),
-      // not CZ's — otherwise reconcile's own intersectsRegion filter drops it and
-      // the aggregate would silently undercount.
+      // SK's way sits inside SK (48.5N, 19.5E). In real runs importRegion scopes
+      // each extract to its country polygon via filterToRegion (a DB query, mocked
+      // here to accept every incoming way), so both regions contribute one upsert.
       await writeFile(join(dir, 'sk.osm'), wayXml(2, 48.5, 19.5));
       osmConfig.extractDir = dir;
       osmConfig.regions = [

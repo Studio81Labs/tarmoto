@@ -14,17 +14,22 @@ import { parseRegions, type PoiImportRegion } from '@tarmoto/ingest';
  * to read). The importer reads `<extractDir>/<code>.osm` for each region.
  *
  * `regions` (`TARMOTO_OSM_ROAD_IMPORT_REGIONS`, default all `DEFAULT_REGIONS`)
- * is the coverage list. Each region carries its authoritative bbox, which bounds
+ * is the coverage list. Each region's authoritative scope is its **country
+ * polygon** (the bundled `import-region-boundaries.geojson`), which bounds
  * **stale-by-absence** tombstoning for that region (a re-import may tombstone rows
- * inside the region's bbox that are absent from its extract, never rows outside).
- * Shared with the producer's region env so refresh + import target the same set;
- * an unknown code fails fast rather than being silently dropped.
+ * inside the region's polygon that are absent from its extract, never rows
+ * outside). The bbox on each region is used only by the producer's clip step;
+ * import scoping is polygon-based, because adjacent countries' bboxes overlap and
+ * a bbox scope would let a region tombstone a neighbour's roads (#1033). Shared
+ * with the producer's region env so refresh + import target the same set; an
+ * unknown code fails fast rather than being silently dropped.
  *
  * Extract contract: each `<code>.osm` is an `osmium extract -b` output using the
  * default `complete_ways` strategy — boundary-crossing ways are emitted COMPLETE
- * (extending beyond the bbox). The importer's `reconcile()` filters incoming rows
- * to the region bbox (`intersectsRegion`) and tombstones only within it, so a way
- * straddling two adjacent regions is scoped correctly and its shared segment
+ * (extending beyond the bbox). `importRegion` filters incoming rows to the region
+ * POLYGON (`filterToRegion`, a PostGIS `ST_Intersects`) and reconcile tombstones
+ * only within that same polygon, so a way straddling two adjacent regions is
+ * scoped to whichever country actually contains each part and its shared segment
  * upserts idempotently. (This replaces the old single-file "clip to exactly this
  * rectangle" contract.)
  */

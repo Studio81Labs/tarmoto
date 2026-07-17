@@ -14,7 +14,7 @@ apps/ingest refresh-road-extracts.js → <extractDir>/<code>.osm (one per region
          OsmImportService.importAll() loops the configured regions
                                                     │  per region:
                                                     ▼
-  parseOsmXml → assembleWays → buildSegmentRows → importRegion → reconcile(region.bbox)
+  parseOsmXml → assembleWays → buildSegmentRows → importRegion → filterToRegion(polygon) → reconcile(polygon)
 ```
 
 - **Producer** — `apps/ingest` (a separate deployable) downloads each region's
@@ -48,10 +48,13 @@ per-region extracts, mirroring the POI importer's model:
   the whole job (nothing to read).
 - **`regions`** (`TARMOTO_OSM_ROAD_IMPORT_REGIONS`, default all
   `DEFAULT_REGIONS`) — the coverage list, the SAME 17-country list POI/FSQ use
-  (`packages/ingest/src/poi/regions.ts`). Each region carries its own
-  authoritative bbox, which bounds **stale-by-absence** tombstoning for that
-  region alone (a re-import may tombstone rows inside the region's bbox that
-  are absent from its extract, never rows outside it). Shared with the
+  (`packages/ingest/src/poi/regions.ts`). Each region's authoritative import
+  scope is its **country polygon** (the bundled `import-region-boundaries.geojson`),
+  which bounds **stale-by-absence** tombstoning for that region alone (a re-import
+  may tombstone rows inside the region's polygon that are absent from its extract,
+  never rows outside it). The region bbox is used only by the producer's clip
+  step, not for import scoping — adjacent countries' bboxes overlap, so a bbox
+  scope would let a region tombstone a neighbour's roads (#1033). Shared with the
   producer's region env so refresh and import always target the same set; an
   unknown code fails fast rather than being silently dropped.
 - **`OsmImportService.importAll()`** loops the configured regions and calls
@@ -72,19 +75,25 @@ its default `complete_ways` strategy emits every way that crosses the bbox
 **whole**, extending beyond it. A way straddling two adjacent regions therefore
 lands, complete, in **both** regions' `<code>.osm` files.
 
-The importer reconciles this per region: `reconcile()` filters incoming rows to
-the region's bbox (`intersectsRegion` — a Liang–Barsky segment/rectangle clip
-that matches PostGIS `ST_Intersects` exactly, so a row is judged identically
-against the incoming snapshot and the existing-row load) before comparing
-against existing rows, and only tombstones **absent** rows within that same
-bbox. So:
+The importer reconciles this per region against the region's **country polygon**
+(not its bounding rectangle — adjacent countries' rectangles overlap, and a
+rectangle scope would let a later region tombstone an earlier region's roads that
+fall in the shared strip, destroying their id + crowd history, #1033).
+`importRegion` filters incoming rows to the polygon (`filterToRegion` — a PostGIS
+`ST_Intersects` against `ST_GeomFromGeoJSON`) before reconcile compares against
+existing rows, and reconcile loads the existing rows with the **same**
+`ST_Intersects` polygon test (`loadExistingInRegion`) — so a border row is judged
+identically against the incoming snapshot and the existing-row load, and only
+**absent** rows inside that polygon are tombstoned. So:
 
-- the extract only has to **cover** the region — the producer never clips
-  geometries itself;
-- a way straddling the edge is kept, correctly scoped, by **both** regions'
-  imports, and its shared segment upserts idempotently on either side;
+- the extract only has to **cover** the country — the producer never clips
+  geometries itself, and any neighbouring overhang is dropped by the polygon
+  filter;
+- a way straddling the edge is scoped to whichever country actually contains each
+  part, and its shared segment upserts idempotently;
 - stale-by-absence tombstoning stays sound per region, bounded by the region's
-  own authoritative bbox — never a data-derived guess.
+  own authoritative country polygon — never its overlapping rectangle, never a
+  data-derived guess.
 
 (This replaces the old single-file "the extract must be clipped to exactly this
 rectangle" contract.)
