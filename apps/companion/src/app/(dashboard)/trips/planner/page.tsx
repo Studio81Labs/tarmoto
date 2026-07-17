@@ -2215,6 +2215,7 @@ export default function TripPlannerPage() {
     );
   }, [
     dailyKmTarget,
+    format,
     plannerRegion,
     routeOptions,
     selectedDayIndex,
@@ -2305,6 +2306,7 @@ export default function TripPlannerPage() {
       }
     },
     [
+      format,
       plannerParams,
       plannerRegion,
       renameWaypoint,
