@@ -14,13 +14,16 @@ export const en = {
     ". You can view this trip without a Tarmoto account. ",
   ". Your shared rides and account settings stay intact, while ":
     ". Your shared rides and account settings stay intact, while ",
+  "1 active trip": "1 active trip",
   "1 day": "1 day",
   "3 stars or better": "3 stars or better",
   "4 stars or better": "4 stars or better",
   "5 stars only": "5 stars only",
   "A short blurb about your riding \u2014 shown on your public profile.":
     "A short blurb about your riding \u2014 shown on your public profile.",
+  "API access": "API access",
   "Accept ": "Accept ",
+  "Access ends {date}": "Access ends {date}",
   Achievements: "Achievements",
   Active: "Active",
   "Active ": "Active ",
@@ -43,6 +46,7 @@ export const en = {
   "Add your motorcycle to get bike-specific stats and recommendations. ":
     "Add your motorcycle to get bike-specific stats and recommendations. ",
   "Adopt as trip draft ": "Adopt as trip draft ",
+  "Advanced analytics": "Advanced analytics",
   "All time": "All time",
   "All-time distance": "All-time distance",
   "All years": "All years",
@@ -83,6 +87,7 @@ export const en = {
     "Badges, challenges, leaderboards, and milestones for your riding region. ",
   "Bars share a scale so gain/loss are visually comparable across both rides. ":
     "Bars share a scale so gain/loss are visually comparable across both rides. ",
+  "Basic navigation": "Basic navigation",
   "Best motorcycle roads ": "Best motorcycle roads ",
   "Best motorcycle roads in ": "Best motorcycle roads in ",
   "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled. ":
@@ -95,6 +100,7 @@ export const en = {
   "Billing ": "Billing ",
   "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync. ":
     "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync. ",
+  "Billing cycle managed in the portal": "Billing cycle managed in the portal",
   "Billing history ": "Billing history ",
   "Billing portal unavailable ": "Billing portal unavailable ",
   "Bio ": "Bio ",
@@ -110,7 +116,9 @@ export const en = {
   "Cancel drawing ": "Cancel drawing ",
   "Cancel subscription": "Cancel subscription",
   "Cancel subscription ": "Cancel subscription ",
+  Canceled: "Canceled",
   "Cancellation options ": "Cancellation options ",
+  Card: "Card",
   "Centre on me": "Centre on me",
   "Centre on me ": "Centre on me ",
   "Check the local weather forecast on the morning of the ride \u2014 Alpine and coastal sections can swing from sun to thunderstorms in a few hours. If high winds, ice, or heavy rain are forecast, reconsider the route. ":
@@ -205,6 +213,7 @@ export const en = {
     "Create your first trip to discover the best roads.",
   "Cumulative kilometres ridden across every bike.":
     "Cumulative kilometres ridden across every bike.",
+  "Current plan": "Current plan",
   "Current plan ": "Current plan ",
   "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.":
     "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.",
@@ -246,8 +255,10 @@ export const en = {
   "Distance ": "Distance ",
   "Distance Traveller": "Distance Traveller",
   "Don't have an account?": "Don't have an account?",
+  Downgrade: "Downgrade",
   "Downgrade to Free at the end of your current billing period. ":
     "Downgrade to Free at the end of your current billing period. ",
+  "Downgrades {date}": "Downgrades {date}",
   "Download invoice ": "Download invoice ",
   "Download my data ": "Download my data ",
   "Download your data (link expires in 7 days) ":
@@ -289,7 +300,9 @@ export const en = {
   "Estimated from road type": "Estimated from road type",
   "Estimated from surveyed smoothness": "Estimated from surveyed smoothness",
   "Every road you've ridden ": "Every road you've ridden ",
+  "Everything in Pro": "Everything in Pro",
   "Excellent only": "Excellent only",
+  "Expires {mm}/{yyyy}": "Expires {mm}/{yyyy}",
   "Explore near": "Explore near",
   "Explore popular shared rides and discover routes worth repeating. ":
     "Explore popular shared rides and discover routes worth repeating. ",
@@ -316,10 +329,13 @@ export const en = {
   "Forgot password?": "Forgot password?",
   "Forgot password? ": "Forgot password? ",
   "Found ": "Found ",
+  Free: "Free",
   "From ": "From ",
   "Fuel estimate": "Fuel estimate",
+  "Full road quality zoom": "Full road quality zoom",
   "Fun Zones": "Fun Zones",
   "GPX (tracks) ": "GPX (tracks) ",
+  "GPX export": "GPX export",
   "Generate itinerary": "Generate itinerary",
   "Generate or load a trip first to create an invite link. ":
     "Generate or load a trip first to create an invite link. ",
@@ -333,6 +349,7 @@ export const en = {
   "Global ": "Global ",
   "Good or better": "Good or better",
   "Hazard Hunter": "Hazard Hunter",
+  "Hazard alerts": "Hazard alerts",
   "Hazard type ": "Hazard type ",
   "Hazards ": "Hazards ",
   "Hazards reported": "Hazards reported",
@@ -538,8 +555,10 @@ export const en = {
   Notifications: "Notifications",
   "Notifications ": "Notifications ",
   "Number of days ": "Number of days ",
+  "Offline maps": "Offline maps",
   Ongoing: "Ongoing",
   "Opacity fades as reports age ": "Opacity fades as reports age ",
+  Open: "Open",
   "Open billing portal ": "Open billing portal ",
   "Open collaboration panel ": "Open collaboration panel ",
   "Open in Tarmoto mobile ": "Open in Tarmoto mobile ",
@@ -557,6 +576,7 @@ export const en = {
   "PNG, JPEG, or WebP up to 5 MB. ": "PNG, JPEG, or WebP up to 5 MB. ",
   "POI types": "POI types",
   "Page ": "Page ",
+  Paid: "Paid",
   "Parameters ": "Parameters ",
   "Parsing route\u2026 ": "Parsing route\u2026 ",
   "Pass status legend": "Pass status legend",
@@ -591,6 +611,7 @@ export const en = {
   "Position ": "Position ",
   "Pre-load this list into your trip planner to build a multi-day ride around them. ":
     "Pre-load this list into your trip planner to build a multi-day ride around them. ",
+  Premium: "Premium",
   "Preview data shown while live billing management is still being wired up. ":
     "Preview data shown while live billing management is still being wired up. ",
   "Preview unavailable ": "Preview unavailable ",
@@ -599,8 +620,10 @@ export const en = {
     "Previewing {month} conditions on {previewDay}.",
   "Previous ": "Previous ",
   "Previous page": "Previous page",
+  "Priority hazard alerts": "Priority hazard alerts",
   "Privacy & Data": "Privacy & Data",
   "Private ": "Private ",
+  Pro: "Pro",
   "Product analytics": "Product analytics",
   "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ":
     "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ",
@@ -636,6 +659,7 @@ export const en = {
   "Record another ride to add it here. ":
     "Record another ride to add it here. ",
   "Redo ": "Redo ",
+  Refunded: "Refunded",
   "Region coverage": "Region coverage",
   "Region scope": "Region scope",
   "Region: ": "Region: ",
@@ -648,6 +672,7 @@ export const en = {
   Remove: "Remove",
   "Remove ": "Remove ",
   "Renewal ": "Renewal ",
+  "Renews {date}": "Renews {date}",
   Reorder: "Reorder",
   "Request export ": "Request export ",
   "Reset ": "Reset ",
@@ -680,6 +705,7 @@ export const en = {
   "Road quality ": "Road quality ",
   "Road quality breakdown": "Road quality breakdown",
   "Road quality distribution": "Road quality distribution",
+  "Road quality overlay (limited)": "Road quality overlay (limited)",
   "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay. ":
     "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay. ",
   "Road reviews ": "Road reviews ",
@@ -835,6 +861,7 @@ export const en = {
   "Travel month": "Travel month",
   "Travel month ": "Travel month ",
   "Trend date range": "Trend date range",
+  "Trial ends {date}": "Trial ends {date}",
   "Trip ": "Trip ",
   "Trip detail panel": "Trip detail panel",
   "Trip detail tabs": "Trip detail tabs",
@@ -847,8 +874,11 @@ export const en = {
   "Try broadening the feed or switching back to the most popular rides. ":
     "Try broadening the feed or switching back to the most popular rides. ",
   Type: "Type",
+  Unavailable: "Unavailable",
   "Undo ": "Undo ",
   "Unique roads you were first to map.": "Unique roads you were first to map.",
+  "Unlimited group rides": "Unlimited group rides",
+  "Unlimited trip planning": "Unlimited trip planning",
   Unnamed: "Unnamed",
   "Unnamed road": "Unnamed road",
   "Unridden ": "Unridden ",
@@ -862,6 +892,7 @@ export const en = {
   Updated: "Updated",
   "Updated ": "Updated ",
   "Updated weekly": "Updated weekly",
+  Upgrade: "Upgrade",
   "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ":
     "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ",
   "Upload avatar": "Upload avatar",
@@ -983,6 +1014,7 @@ export const en = {
   "segments highlighted ": "segments highlighted ",
   "segments) ": "segments) ",
   selected: "selected",
+  soon: "soon",
   "to discover ": "to discover ",
   "to go ": "to go ",
   trip: "trip",
@@ -990,6 +1022,7 @@ export const en = {
   unknown: "unknown",
   views: "views",
   "your dashboard ": "your dashboard ",
+  "{brand} ending in {last4}": "{brand} ending in {last4}",
   "{count} advisory": "{count} advisory",
   "{count} closed": "{count} closed",
   "{count} folder": "{count} folder",
