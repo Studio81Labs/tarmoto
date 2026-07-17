@@ -1,0 +1,114 @@
+name: Deploy
+
+# Orchestrates the Coolify deploys for the backend/ingest sole-migrator/reader
+# pair. Ingest owns the POI migrations; backend only reads that schema, so
+# ingest MUST finish deploying before backend deploys — otherwise backend
+# could start against a schema ingest hasn't migrated yet. This workflow is
+# the ONLY trigger for backend-deploy.yml / ingest-deploy.yml: both are
+# `workflow_call`-only reusable workflows and resolve staging/production from
+# the `environment` input this workflow passes in, not from their own ref.
+#
+# Deploy model (unchanged from the pre-orchestrator workflows):
+#   push to main  → staging     (CI triggers the Coolify deploy API)
+#   push tag v*   → production  (CI triggers the Coolify deploy API)
+#   workflow_dispatch → choose staging or production
+#
+# The path filter below is the UNION of the former backend-deploy.yml and
+# ingest-deploy.yml filters, plus root build inputs (package.json,
+# pnpm-lock.yaml, pnpm-workspace.yaml) that affect both apps' builds but
+# weren't watched by either workflow before. Deploying both apps together on
+# any matching change also closes the gap where the two workflows' path
+# filters had drifted apart (e.g. ingest wasn't watching packages/openapi/**
+# or docs/database/**), which could leave one app stale relative to the
+# other.
+#
+# Day-2 ops: docs/process/runbook.md
+# Per-app deploy steps, required secrets/vars: see backend-deploy.yml and
+# ingest-deploy.yml.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "apps/backend/**"
+      - "apps/ingest/**"
+      - "packages/shared/**"
+      - "packages/ingest/**"
+      - "packages/poi-db/**"
+      - "packages/openapi/**"
+      - "tsconfig.base.json"
+      - "docs/database/**"
+      - "scripts/smoke/**"
+      - "scripts/ci/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/backend-deploy.yml"
+      - ".github/workflows/ingest-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.name }}
+    steps:
+      - name: Resolve environment
+        id: env
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          # Explicit operator selection (workflow_dispatch) wins. Otherwise
+          # infer from the trigger ref: tag → production, branch → staging.
+          # Gating on $EVENT_NAME first (rather than "$INPUT_ENV is set")
+          # means a workflow_dispatch run manually triggered against a `v*`
+          # tag still honors the operator's chosen environment instead of
+          # silently deploying production.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          else
+            ENV_NAME="staging"
+          fi
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+
+  ingest:
+    name: Deploy ingest
+    needs: resolve
+    uses: ./.github/workflows/ingest-deploy.yml
+    with:
+      environment: ${{ needs.resolve.outputs.environment }}
+    secrets: inherit
+
+  backend:
+    name: Deploy backend
+    # Ingest is the sole migrator for the POI schema; backend only reads it.
+    # `needs: ingest` enforces ingest-before-backend ordering, and the
+    # explicit success check below is defense-in-depth on top of the default
+    # needs-gating so the dependency is unmissable in the YAML.
+    needs: [resolve, ingest]
+    if: ${{ needs.ingest.result == 'success' }}
+    uses: ./.github/workflows/backend-deploy.yml
+    with:
+      environment: ${{ needs.resolve.outputs.environment }}
+    secrets: inherit

@@ -1,14 +1,17 @@
-name: Backend Deploy
+name: Ingest Deploy
 
 # Reusable workflow (`workflow_call`), invoked by deploy.yml — the single
 # entry point for Coolify deploys. deploy.yml resolves staging vs
-# production (push to main, tag v*, or a workflow_dispatch choice) and
-# passes it in as the `environment` input below; this workflow has no
-# push/tag/workflow_dispatch triggers of its own.
+# production (push to main, tag v*, or a workflow_dispatch choice), runs
+# this workflow BEFORE backend-deploy.yml (ingest is the sole POI-schema
+# migrator; backend only reads it), and passes the resolved environment
+# in as the `environment` input below. This workflow has no push/tag/
+# workflow_dispatch triggers of its own.
 #
 # Deploy target: self-hosted Coolify PaaS. Staging and production are
 # triggered by the SAME authenticated Coolify API call — Coolify "Auto
-# Deploy" is kept OFF so CI is the single source of deploys.
+# Deploy" is kept OFF so CI is the single source of deploys. Mirrors
+# backend-deploy.yml; see that file for the full pattern this was copied from.
 #
 # Day-2 ops: docs/process/runbook.md
 #
@@ -19,9 +22,9 @@ name: Backend Deploy
 #   COOLIFY_API_BASE_URL   Base URL of the PaaS API (no trailing slash)
 #
 # Required per-environment (staging / production) variables:
-#   BACKEND_URL            e.g. https://api.tarmoto.app (prod) or
-#                          https://api-staging.tarmoto.app (staging)
-#   COOLIFY_BACKEND_UUID   the backend app's Coolify UUID
+#   INGEST_URL             e.g. https://ingest.tarmoto.app (prod) or
+#                          https://ingest-staging.tarmoto.app (staging)
+#   COOLIFY_INGEST_UUID    the ingest app's Coolify UUID
 
 on:
   workflow_call:
@@ -35,7 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: backend-deploy-${{ inputs.environment }}
+  group: ingest-deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -70,16 +73,16 @@ jobs:
         # of bubbling up as a curl 401 / unbound shell var later.
         env:
           ENV_NAME: ${{ steps.env.outputs.name }}
-          BASE_URL: ${{ vars.BACKEND_URL }}
-          APP_UUID: ${{ vars.COOLIFY_BACKEND_UUID }}
+          BASE_URL: ${{ vars.INGEST_URL }}
+          APP_UUID: ${{ vars.COOLIFY_INGEST_UUID }}
         run: |
           set -euo pipefail
           test -n "$BASE_URL" || {
-            echo "::error::BACKEND_URL var is not set in env ${ENV_NAME}"
+            echo "::error::INGEST_URL var is not set in env ${ENV_NAME}"
             exit 1
           }
           test -n "$APP_UUID" || {
-            echo "::error::COOLIFY_BACKEND_UUID var is not set in env ${ENV_NAME}"
+            echo "::error::COOLIFY_INGEST_UUID var is not set in env ${ENV_NAME}"
             exit 1
           }
           echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
@@ -91,18 +94,20 @@ jobs:
           set -euo pipefail
           APP_VERSION="$(bash scripts/ci/resolve-app-version.sh)"
           test -n "$APP_VERSION" || {
-            echo "::error::Unable to resolve backend app version"
+            echo "::error::Unable to resolve ingest app version"
             exit 1
           }
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Resolved backend app version: ${APP_VERSION}"
+          echo "Resolved ingest app version: ${APP_VERSION}"
 
-      - name: Set Coolify backend version env
+      - name: Set Coolify ingest version env
         # Stamp the resolved version into Coolify BEFORE triggering the deploy so
         # the new container builds/runs with it. Fills TARMOTO_APP_VERSION and
-        # TARMOTO_SENTRY_RELEASE (both = the resolved version), mirroring the
-        # tabletap/nexcue convention. Coolify's envs/bulk upserts the given keys
-        # (it does not replace the whole env).
+        # TARMOTO_SENTRY_RELEASE (both = the resolved version), mirroring
+        # backend-deploy.yml. Coolify's envs/bulk upserts the given keys (it
+        # does not replace the whole env). TARMOTO_DEPLOY_ENV is NOT stamped
+        # here — it's a static per-environment Coolify var, set once per app,
+        # not derived from the deploy.
         env:
           ENV_NAME: ${{ steps.env.outputs.name }}
           APP_VERSION: ${{ steps.version.outputs.app_version }}
@@ -153,7 +158,7 @@ jobs:
             exit 1
           fi
           if [ "$HTTP_CODE" = "404" ]; then
-            echo "::error::Coolify API returned HTTP 404 while setting the version env. Check COOLIFY_BACKEND_UUID."
+            echo "::error::Coolify API returned HTTP 404 while setting the version env. Check COOLIFY_INGEST_UUID."
             rm -f "$REQUEST" "$RESPONSE"
             exit 1
           fi
@@ -276,7 +281,7 @@ jobs:
               return 2
             fi
             if [ "$code" = "404" ]; then
-              echo "::error::Coolify API returned HTTP 404 while listing deployments. Check COOLIFY_BACKEND_UUID."
+              echo "::error::Coolify API returned HTTP 404 while listing deployments. Check COOLIFY_INGEST_UUID."
               return 2
             fi
             if [ "$code" != "200" ]; then
@@ -348,7 +353,7 @@ jobs:
           # deploy means routing or DNS is in a bad state.
           for attempt in 1 2 3 4 5; do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-              "${BASE_URL}/api/v1/healthz" || echo '000')
+              "${BASE_URL}/healthz" || echo '000')
             if [ "$CODE" = "200" ]; then
               echo "Healthcheck passed (200)"
               exit 0
@@ -358,12 +363,6 @@ jobs:
           done
           echo "::error::Healthcheck failed after Coolify reported deploy finished"
           exit 1
-
-      - name: Smoke test
-        id: smoke
-        env:
-          BASE_URL: ${{ steps.resolve.outputs.base_url }}
-        run: scripts/smoke/smoke.sh "$BASE_URL"
 
       - name: Surface manual rollback instructions on failure
         # Coolify v4's API does not expose a "redeploy this previous
@@ -383,23 +382,19 @@ jobs:
           # one to name in the operator-facing error message.
           WAIT_OUTCOME: ${{ steps.wait_deploy.outcome }}
           HEALTHCHECK_OUTCOME: ${{ steps.healthcheck.outcome }}
-          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
           set +e
 
-          # Pick the actual failing step rather than always blaming smoke.
-          # Order matches execution order — the first failure short-
-          # circuits the rest, so the earliest `failure` wins.
+          # Pick the actual failing step rather than always blaming the
+          # deploy trigger. Order matches execution order — the first
+          # failure short-circuits the rest, so the earliest `failure` wins.
           if [ "$WAIT_OUTCOME" = "failure" ]; then
             FAILED_STEP="Coolify deployment never reached status=finished"
           elif [ "$HEALTHCHECK_OUTCOME" = "failure" ]; then
             FAILED_STEP="post-deploy healthcheck against ${BASE_URL}"
-          elif [ "$SMOKE_OUTCOME" = "failure" ]; then
-            FAILED_STEP="smoke test"
           else
-            # Deploy trigger or env-validation step failed before any of
-            # the three id'd ones reported. The job's error log has the
-            # specific step.
+            # Deploy trigger or env-validation step failed before either
+            # id'd step reported. The job's error log has the specific step.
             FAILED_STEP="deploy setup (Coolify API trigger or missing secret/var)"
           fi
 
@@ -430,4 +425,3 @@ jobs:
           echo "::error::  1. Open Coolify → ${ENV_NAME} application → Deployments"
           echo "::error::  2. Find the most recent deployment with status=finished and a healthy commit"
           echo "::error::  3. Click Redeploy"
-          echo "::error::  4. After rollback, run: scripts/smoke/smoke.sh ${BASE_URL}"
