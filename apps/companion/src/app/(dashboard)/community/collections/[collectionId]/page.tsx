@@ -297,7 +297,7 @@ export default function CollectionDetailPage() {
           {t("Collections")}
         </Link>
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-10 text-center">
-          <p className="text-amber-200 font-medium mb-1">
+          <p className="text-amber-700 font-medium mb-1">
             {t("Couldn't load this collection")}
           </p>
           <p className="text-sm text-fg-dim mb-4">{load.message}</p>
@@ -388,7 +388,7 @@ export default function CollectionDetailPage() {
       )}
 
       {actionError && (
-        <p role="alert" className="mt-3 text-xs text-red-400">
+        <p role="alert" className="mt-3 text-xs text-red-700">
           {actionError}
         </p>
       )}
@@ -427,9 +427,9 @@ export default function CollectionDetailPage() {
             <div>
               <Stamp>{t("Routes")}</Stamp>
               <div className="mt-0.5 font-sans text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-                {collection!.itemCount === 1
-                  ? t("1 route")
-                  : t("{count} routes", { count: collection!.itemCount })}
+                {t("{count, plural, one {# route} other {# routes}}", {
+                  count: collection!.itemCount,
+                })}
               </div>
             </div>
           </div>
@@ -453,7 +453,7 @@ export default function CollectionDetailPage() {
             {memberLoadError && (
               <div
                 role="alert"
-                className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400"
+                className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700"
               >
                 {t(
                   "Couldn't load your routes right now. Try again in a moment. ",
@@ -1068,7 +1068,7 @@ function RidePickerList({
     return (
       <div
         role="alert"
-        className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-200"
+        className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-700"
       >
         {t(
           "Couldn't load your rides right now. Close this and try again in a moment. ",

@@ -190,7 +190,7 @@ export default function StatsPage() {
     return (
       <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
         <StatsPageHeader />
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {loadError}
         </div>
       </div>
@@ -962,8 +962,12 @@ function CalendarCell({ cell, maxDistance, format }: CalendarCellProps) {
   const dayLabel = format.calendarDate(cell.date);
   const title =
     cell.rides === 0
-      ? `${dayLabel}: no rides`
-      : `${dayLabel}: ${cell.rides} ride${cell.rides === 1 ? "" : "s"}, ${format.distanceKm(cell.distanceKm)}`;
+      ? t("{date}: no rides", { date: dayLabel })
+      : t("{date}: {count, plural, one {# ride} other {# rides}}, {distance}", {
+          date: dayLabel,
+          count: cell.rides,
+          distance: format.distanceKm(cell.distanceKm),
+        });
   // Ridden cells get a 1px ink-line outline as a secondary cue alongside
   // the fill intensity. Empty cells stay borderless so they read as the
   // paper baseline against the surrounding cream card.

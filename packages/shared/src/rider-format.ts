@@ -7,6 +7,8 @@
  * Zero platform-specific dependencies; only `Date` and string APIs.
  */
 
+import type { LooseTranslate } from "./i18n";
+
 /**
  * "Joined this month" / "Joined 5 months ago" / "Joined 2 years ago".
  *
@@ -17,23 +19,39 @@
  * ledger drift or clock skew never produces "Joined -2 months ago". UTC
  * accessors keep the comparison timezone-agnostic so a user's locale can't
  * flip the displayed bucket.
+ *
+ * @param t - Optional translator. Omitted keeps today's exact English
+ * output (mobile's existing contract); when provided, the label routes
+ * through ICU plural messages so translated locales get real plural rules.
  */
 export function formatJoinedLabel(
   joinedAt: string,
   now: Date = new Date(),
+  t?: LooseTranslate,
 ): string {
   const date = new Date(joinedAt);
-  if (Number.isNaN(date.getTime())) return "Joined recently";
+  if (Number.isNaN(date.getTime())) {
+    return t ? t("Joined recently") : "Joined recently";
+  }
   let months =
     (now.getUTCFullYear() - date.getUTCFullYear()) * 12 +
     (now.getUTCMonth() - date.getUTCMonth());
   if (now.getUTCDate() < date.getUTCDate()) months -= 1;
   if (months < 0) months = 0;
-  if (months < 1) return "Joined this month";
-  if (months < 12)
-    return `Joined ${months} month${months === 1 ? "" : "s"} ago`;
+  if (months < 1) return t ? t("Joined this month") : "Joined this month";
+  if (months < 12) {
+    return t
+      ? t("Joined {count, plural, one {# month} other {# months}} ago", {
+          count: months,
+        })
+      : `Joined ${months} month${months === 1 ? "" : "s"} ago`;
+  }
   const years = Math.floor(months / 12);
-  return `Joined ${years} year${years === 1 ? "" : "s"} ago`;
+  return t
+    ? t("Joined {count, plural, one {# year} other {# years}} ago", {
+        count: years,
+      })
+    : `Joined ${years} year${years === 1 ? "" : "s"} ago`;
 }
 
 /**

@@ -139,6 +139,22 @@ describe("RoadPreviewPopover", () => {
     expect(screen.queryByText(/based on/)).not.toBeInTheDocument();
   });
 
+  it("renders the singular '1 PASS' low-confidence badge when a single pass backs the score", async () => {
+    // passes ≤ 3 always routes to the low-confidence badge, so the singular
+    // form a rider can actually see at passes: 1 is "1 PASS" — the
+    // normal-confidence "based on 1 rider pass" branch is structurally
+    // unreachable and stays guarded by the catalog ICU tests instead.
+    getRoadPreviewMock.mockResolvedValue(measuredPreview({ passes: 1 }));
+    render(
+      <RoadPreviewPopover segment={segment({ passes: 1 })} onClose={vi.fn()} />,
+    );
+
+    expect(
+      await screen.findByText(/LOW CONFIDENCE.*1 PASS\b/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/1 PASSES/)).not.toBeInTheDocument();
+  });
+
   it("renders the no-data state with the unverified OSM tag", async () => {
     getRoadPreviewMock.mockResolvedValue({
       segmentId: "d1-s2",

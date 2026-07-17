@@ -1,5 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { formatCount } from "./rider-format";
+import { formatCount, formatJoinedLabel } from "./rider-format";
+import { makeTranslator } from "./i18n";
+
+describe("formatJoinedLabel", () => {
+  const NOW = new Date("2026-07-15T12:00:00Z");
+
+  it("keeps the legacy English output when no translator is passed (mobile contract)", () => {
+    expect(formatJoinedLabel("2026-07-01T00:00:00Z", NOW)).toBe(
+      "Joined this month",
+    );
+    expect(formatJoinedLabel("2026-06-01T00:00:00Z", NOW)).toBe(
+      "Joined 1 month ago",
+    );
+    expect(formatJoinedLabel("2026-02-01T00:00:00Z", NOW)).toBe(
+      "Joined 5 months ago",
+    );
+    expect(formatJoinedLabel("2024-05-01T00:00:00Z", NOW)).toBe(
+      "Joined 2 years ago",
+    );
+    expect(formatJoinedLabel("not-a-date", NOW)).toBe("Joined recently");
+  });
+
+  it("routes through the translator when one is passed", () => {
+    const t = makeTranslator<string>({
+      en: {
+        "Joined {count, plural, one {# month} other {# months}} ago":
+          "Joined {count, plural, one {# month} other {# months}} ago",
+        "Joined {count, plural, one {# year} other {# years}} ago":
+          "Joined {count, plural, one {# year} other {# years}} ago",
+        "Joined this month": "Joined this month",
+        "Joined recently": "Joined recently",
+      },
+    });
+    expect(formatJoinedLabel("2026-06-01T00:00:00Z", NOW, t)).toBe(
+      "Joined 1 month ago",
+    );
+    expect(formatJoinedLabel("2026-02-01T00:00:00Z", NOW, t)).toBe(
+      "Joined 5 months ago",
+    );
+    expect(formatJoinedLabel("2024-05-01T00:00:00Z", NOW, t)).toBe(
+      "Joined 2 years ago",
+    );
+    expect(formatJoinedLabel("2026-07-01T00:00:00Z", NOW, t)).toBe(
+      "Joined this month",
+    );
+  });
+});
 
 describe("formatCount", () => {
   it("localizes grouping when a locale is passed", () => {

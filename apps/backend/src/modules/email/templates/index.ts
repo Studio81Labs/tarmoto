@@ -22,9 +22,9 @@ import {
  * a missing field is a compile error instead of an empty string in a
  * customer's inbox.
  *
- * i18n hook: each context can grow a `locale` field. We start with
- * English-only and pick a real i18n library when the second locale
- * lands — premature abstraction would lock us into the wrong shape.
+ * i18n hook: each context can grow a `locale` field. Templates use the
+ * shared `makeTranslator` with ICU plural formatting. Adding a new locale
+ * requires providing translated catalogs via the i18n module.
  */
 
 export type EmailTag =

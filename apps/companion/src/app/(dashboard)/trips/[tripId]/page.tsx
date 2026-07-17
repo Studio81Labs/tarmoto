@@ -387,7 +387,7 @@ export default function TripDetailPage() {
           <ArrowLeft size={14} />
           {t("Back to trips ")}
         </Link>
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-700">
           {error ?? "Unknown error loading trip."}
         </div>
       </div>
@@ -438,7 +438,9 @@ export default function TripDetailPage() {
               {trip.days.length > 1 && (
                 <span className="inline-flex items-center gap-1">
                   <Layers size={11} aria-hidden className="text-fg-faint" />
-                  {t("{count} days", { count: trip.days.length })}
+                  {t("{count, plural, one {# day} other {# days}}", {
+                    count: trip.days.length,
+                  })}
                 </span>
               )}
               <span className="inline-flex items-center gap-1">
@@ -453,14 +455,9 @@ export default function TripDetailPage() {
               )}
               <span className="inline-flex items-center gap-1">
                 <Users size={11} aria-hidden className="text-fg-faint" />{" "}
-                {t(
-                  loaded.members.length === 1
-                    ? "{count} member"
-                    : "{count} members",
-                  {
-                    count: loaded.members.length,
-                  },
-                )}
+                {t("{count, plural, one {# member} other {# members}}", {
+                  count: loaded.members.length,
+                })}
               </span>
             </div>
           </div>
@@ -589,7 +586,7 @@ export default function TripDetailPage() {
       {(deleteError || leaveError) && (
         <div
           role="alert"
-          className="border-b border-quality-q1/30 bg-quality-q1/10 px-4 py-2 text-xs text-red-400"
+          className="border-b border-quality-q1/30 bg-quality-q1/10 px-4 py-2 text-xs text-red-700"
         >
           {deleteError ?? leaveError}
         </div>

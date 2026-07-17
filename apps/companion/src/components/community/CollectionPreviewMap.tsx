@@ -152,8 +152,9 @@ export function CollectionPreviewMap({ routes }: Props) {
           className="inline-block h-1 w-5 rounded-sm"
           style={{ backgroundColor: ROUTE_COLOR }}
         />
-        {drawableCount}{" "}
-        {drawableCount === 1 ? t("route traced") : t("routes traced")}
+        {t("{count, plural, one {# route traced} other {# routes traced}}", {
+          count: drawableCount,
+        })}
       </div>
     </div>
   );

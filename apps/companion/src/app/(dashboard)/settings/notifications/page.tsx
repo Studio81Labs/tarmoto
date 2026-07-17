@@ -200,7 +200,7 @@ export default function NotificationsPage() {
             "Email, alerts, community updates — choose which signals reach you and where.",
           )}
         />
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {t("Could not load preferences: ")}
           {loadError}
         </div>
@@ -332,7 +332,7 @@ function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
         </span>
       )}
       {saveState.kind === "error" && (
-        <span className="text-[13px] text-red-400">{saveState.message}</span>
+        <span className="text-[13px] text-red-700">{saveState.message}</span>
       )}
       {isDirty && saveState.kind !== "saving" && (
         <span className="text-[13px] text-fg-mute">{t("Unsaved changes")}</span>

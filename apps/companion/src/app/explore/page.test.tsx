@@ -24,6 +24,7 @@ type MockQualityMapProps = {
     zoom: number;
     bbox: [number, number, number, number];
   }) => void;
+  onDrawnRegionChange?: (bbox: [number, number, number, number] | null) => void;
 };
 
 const flyToMock = vi.fn();
@@ -50,8 +51,33 @@ const mockQualityMap = vi.fn((props: MockQualityMapProps) => (
     >
       Report mock viewport
     </button>
+    <button
+      type="button"
+      onClick={() => props.onDrawnRegionChange?.([1.1, 2.2, 3.3, 4.4])}
+    >
+      Report mock draw region
+    </button>
+    <button type="button" onClick={() => props.onDrawnRegionChange?.(null)}>
+      Clear mock draw region
+    </button>
   </>
 ));
+
+// Mock the public Fun Zones fetchers so the draw-region flow can assert the
+// bbox the list is scoped to without a live backend.
+const fetchFunZonesInBboxMock = vi.fn(
+  async (
+    _bbox: [number, number, number, number],
+    _init?: { signal?: AbortSignal },
+  ) => [] as never[],
+);
+vi.mock("@/lib/discover", () => ({
+  fetchFunZonesInBbox: (
+    bbox: [number, number, number, number],
+    init?: { signal?: AbortSignal },
+  ) => fetchFunZonesInBboxMock(bbox, init),
+  fetchFunZoneDetail: vi.fn(async () => null),
+}));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/explore",
@@ -64,10 +90,24 @@ vi.mock("./_components/QualityMap", () => ({
   // /explore wires the search-pick path through that imperative
   // handle (T29 asserts the call here).
   QualityMap: forwardRef<
-    { flyTo: (t: { lng: number; lat: number; zoom: number }) => void },
+    {
+      flyTo: (t: { lng: number; lat: number; zoom: number }) => void;
+      startDrawRegion: () => void;
+      cancelDrawRegion: () => void;
+      clearDrawnRegion: () => void;
+    },
     MockQualityMapProps
   >(function MockQualityMap(props, ref) {
-    useImperativeHandle(ref, () => ({ flyTo: flyToMock }), []);
+    useImperativeHandle(
+      ref,
+      () => ({
+        flyTo: flyToMock,
+        startDrawRegion: () => {},
+        cancelDrawRegion: () => {},
+        clearDrawnRegion: () => {},
+      }),
+      [],
+    );
     return mockQualityMap(props);
   }),
 }));
@@ -261,6 +301,7 @@ describe("ExplorerPage", () => {
     vi.mocked(roadsApi.getSegmentDetail).mockReset();
     apiGetMock.mockReset();
     flyToMock.mockReset();
+    fetchFunZonesInBboxMock.mockClear();
     // Tests run against the authenticated explore path by default —
     // the search input only renders for signed-in riders (the public
     // geocode endpoint is AuthGuard-protected so we hide rather than
@@ -304,6 +345,113 @@ describe("ExplorerPage", () => {
     const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
     expect(props.showFunZones).toBe(false);
     expect(flyToMock).not.toHaveBeenCalled();
+  });
+
+  it("scopes the Fun Zones fetch to a drawn region, then reverts on clear", async () => {
+    // ?zones=1 opens the overlay on mount (legacy /discover deep link).
+    window.history.replaceState({}, "", "/explore?zones=1");
+    render(<ExplorerPage />);
+
+    // A reported viewport scopes the initial fetch.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock viewport" }),
+    );
+    await waitFor(() =>
+      expect(fetchFunZonesInBboxMock).toHaveBeenLastCalledWith(
+        [13.1, 48.2, 14.9, 49.8],
+        expect.anything(),
+      ),
+    );
+
+    // Drawing a region re-scopes the fetch to that box.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Report mock draw region" }),
+    );
+    await waitFor(() =>
+      expect(fetchFunZonesInBboxMock).toHaveBeenLastCalledWith(
+        [1.1, 2.2, 3.3, 4.4],
+        expect.anything(),
+      ),
+    );
+
+    // Clearing the region reverts to the viewport bbox.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear mock draw region" }),
+    );
+    await waitFor(() =>
+      expect(fetchFunZonesInBboxMock).toHaveBeenLastCalledWith(
+        [13.1, 48.2, 14.9, 49.8],
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("narrow viewport: arming Draw region steps the overlay aside for a cancellable draw", async () => {
+    // Stub matchMedia to report a narrow viewport *with* a fine pointer
+    // (a small desktop window / mouse) — the case where the overlay variant
+    // renders and the drag-based draw control is still offered.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query.includes("any-pointer: fine"),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    try {
+      window.history.replaceState({}, "", "/explore?zones=1");
+      render(<ExplorerPage />);
+
+      // The overlay renders its Draw region control.
+      const drawBtn = await screen.findByRole("button", {
+        name: /^draw region$/i,
+      });
+
+      // Arming the draw hides the map-covering overlay (so the rider can drag)
+      // and surfaces a floating cancel affordance instead.
+      fireEvent.click(drawBtn);
+      expect(
+        screen.getByText(/drag on the map to draw a region/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /^draw region$/i }),
+      ).toBeNull();
+
+      // Cancel restores the overlay without committing a box.
+      fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+      expect(
+        await screen.findByRole("button", { name: /^draw region$/i }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("touch-only device: hides the drag-based Draw region control", async () => {
+    // No fine pointer: the drag-only control can't complete a box, so the
+    // sidebar offers the zone list without a Draw region button.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    try {
+      window.history.replaceState({}, "", "/explore?zones=1");
+      render(<ExplorerPage />);
+      // The Fun Zones block still renders (its empty state is present)…
+      expect(
+        await screen.findByText(/no fun zones in view/i),
+      ).toBeInTheDocument();
+      // …but no draw affordance.
+      expect(
+        screen.queryByRole("button", { name: /^draw region$/i }),
+      ).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("T29: picking an address-search result flies the map to the place (#573)", () => {

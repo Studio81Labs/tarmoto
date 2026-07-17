@@ -148,11 +148,12 @@ export function DayByDayList({
                   )}
                   <span className="inline-flex items-center gap-1.5">
                     <MapPin size={12} className="text-fg-mute" />
-                    {t("{count} {waypointLabel}", {
-                      count: day.waypoints.length,
-                      waypointLabel:
-                        day.waypoints.length === 1 ? "waypoint" : "waypoints",
-                    })}
+                    {t(
+                      "{count, plural, one {# waypoint} other {# waypoints}}",
+                      {
+                        count: day.waypoints.length,
+                      },
+                    )}
                   </span>
                 </div>
               </button>

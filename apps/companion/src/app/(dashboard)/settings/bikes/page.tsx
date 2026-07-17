@@ -156,7 +156,7 @@ export default function BikesPage() {
         }
       />
       {error?.kind === "action" && (
-        <div className="mb-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+        <div className="mb-4 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
           {error.message}
         </div>
       )}
@@ -171,7 +171,7 @@ export default function BikesPage() {
           ))}
         </div>
       ) : error?.kind === "load" ? (
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {error.message}
         </div>
       ) : sortedBikes.length === 0 ? (
@@ -243,7 +243,10 @@ function BikeRow({
   const isActive = bike.isActive;
   const ridesLabel =
     typeof bike.totalRides === "number"
-      ? `${format.integer(bike.totalRides)} ride${bike.totalRides === 1 ? "" : "s"}`
+      ? t("{count, plural, one {{n} ride} other {{n} rides}}", {
+          count: bike.totalRides,
+          n: format.integer(bike.totalRides),
+        })
       : null;
   return (
     <li
