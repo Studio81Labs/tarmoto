@@ -269,7 +269,7 @@ describe("PoiImportService", () => {
       config.extractDir = null;
       service = new PoiImportService(dataSource, config, new StubOsmSource());
       expect(() => service.getExtractPath("CZ")).toThrow(
-        /TARMOTO_POI_IMPORT_DIR is not set/,
+        /TARMOTO_OSM_POI_IMPORT_DIR is not set/,
       );
     });
   });

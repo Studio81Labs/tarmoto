@@ -9,7 +9,7 @@ import { JobsProducer } from '../jobs.producer.js';
  * Recurring worker (#781): imports the configured OSM `.osm` extract into
  * `road_segments`. The read+parse+upsert lives in `OsmImportService`; this is
  * just the BullMQ trigger. Skips (no file read) unless
- * `TARMOTO_OSM_IMPORT_ENABLED=true`, so a tick is a cheap no-op when the import
+ * `TARMOTO_OSM_ROAD_IMPORT_ENABLED=true`, so a tick is a cheap no-op when the import
  * is off — letting a read/parse error propagate so BullMQ retries.
  *
  * On a **successful** import it chains the road-quality conflation (#779) so the
@@ -19,7 +19,7 @@ import { JobsProducer } from '../jobs.producer.js';
  * fixed-time conflation cron. (The conflation processor still no-ops when
  * `TARMOTO_QUALITY_CONFLATION_ENABLED` is off.)
  */
-@Processor(QUEUE_NAMES.OSM_IMPORT)
+@Processor(QUEUE_NAMES.ROAD_IMPORT)
 export class OsmImportProcessor extends WorkerHost {
   private readonly logger = new Logger(OsmImportProcessor.name);
 
@@ -33,7 +33,7 @@ export class OsmImportProcessor extends WorkerHost {
   async process(job: Job): Promise<{ skipped: true } | { upserted: number }> {
     if (!this.osmImport.enabled) {
       this.logger.debug(
-        'OSM import skipped: TARMOTO_OSM_IMPORT_ENABLED is not true',
+        'OSM import skipped: TARMOTO_OSM_ROAD_IMPORT_ENABLED is not true',
       );
       return { skipped: true };
     }

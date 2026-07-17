@@ -75,7 +75,7 @@ describe("apps/ingest POI import (real PG)", () => {
   const STALE_EXTERNAL_ID = "osm:node:999000002"; // pre-seeded, absent from the extract → tombstoned
 
   beforeAll(async () => {
-    process.env.TARMOTO_POI_IMPORT_DIR = dir;
+    process.env.TARMOTO_OSM_POI_IMPORT_DIR = dir;
 
     // Minimal single-node `.osm` extract inside TEST_REGION's bbox. Filename
     // must match `<code>.osm` (lower-cased) — `OsmPoiImportSource`'s

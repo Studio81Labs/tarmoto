@@ -366,15 +366,18 @@ export class PoiImportAdminService {
 
   /**
    * The operator-configured extract directory for `source` — this
-   * front-door's OWN `TARMOTO_POI_IMPORT_DIR` (OSM) / `TARMOTO_FSQ_IMPORT_DIR`
-   * (FSQ) env, since it's what actually receives extract uploads
-   * (`storeExtract`). Read directly on every call rather than cached: this
-   * only ever changes via a redeploy, which reloads the module anyway —
-   * mirrors `POI_UPLOAD_MAX_BYTES`'s own module-load-time env read above.
+   * front-door's OWN `TARMOTO_OSM_POI_IMPORT_DIR` (OSM) /
+   * `TARMOTO_FSQ_POI_IMPORT_DIR` (FSQ) env, since it's what actually receives
+   * extract uploads (`storeExtract`). Read directly on every call rather than
+   * cached: this only ever changes via a redeploy, which reloads the module
+   * anyway — mirrors `POI_UPLOAD_MAX_BYTES`'s own module-load-time env read
+   * above.
    */
   private extractDir(source: string): string | undefined {
     const envVar =
-      source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR';
+      source === 'fsq'
+        ? 'TARMOTO_FSQ_POI_IMPORT_DIR'
+        : 'TARMOTO_OSM_POI_IMPORT_DIR';
     return process.env[envVar]?.trim() || undefined;
   }
 
@@ -596,20 +599,22 @@ export class PoiImportAdminService {
         `expected a ${expectedExt} file for ${source}`,
       );
     }
-    // A deployment without TARMOTO_*_IMPORT_DIR set has no upload target;
+    // A deployment without TARMOTO_*_POI_IMPORT_DIR set has no upload target;
     // `getExtractPath` would throw a plain Error → 500. Surface a clear 503
     // instead (the status read collapses the same condition to `extract: null`,
     // so the UI still offers Upload) (#847 review).
     if (!this.extractDirConfigured(source)) {
       throw new ServiceUnavailableException(
         `POI extract storage is not configured for ${source} — set ${
-          source === 'fsq' ? 'TARMOTO_FSQ_IMPORT_DIR' : 'TARMOTO_POI_IMPORT_DIR'
+          source === 'fsq'
+            ? 'TARMOTO_FSQ_POI_IMPORT_DIR'
+            : 'TARMOTO_OSM_POI_IMPORT_DIR'
         }`,
       );
     }
     const target = this.getExtractPath(source, code);
 
-    // `extractDirConfigured` only proves TARMOTO_*_IMPORT_DIR is SET, not
+    // `extractDirConfigured` only proves TARMOTO_*_POI_IMPORT_DIR is SET, not
     // that the shared extract volume actually attached — a mount that failed
     // at container start (or an operator mistake leaving a plain file where
     // a directory belongs) still passes that check. Stat the PARENT

@@ -4,7 +4,7 @@
 // gate (`apps/ingest/src/poi/jobs.module.ts`) is a plain top-level `const`
 // read once at module-require time (Nest providers can't be conditionally
 // included from an async factory, so it can't be deferred into a
-// `ConfigService`-backed lazy read like `TARMOTO_POI_IMPORT_DIR` can).
+// `ConfigService`-backed lazy read like `TARMOTO_OSM_POI_IMPORT_DIR` can).
 // Setting this inside a test file's `beforeAll` would be too late: by then
 // the spec's own static `import { AppModule }` has already pulled in
 // `jobs.module.ts` and evaluated the gate with whatever the env var was at

@@ -15,7 +15,7 @@ describe("DEFAULT_REGIONS", () => {
 });
 
 describe("parseRegions", () => {
-  const ENV = "TARMOTO_POI_IMPORT_REGIONS";
+  const ENV = "TARMOTO_OSM_POI_IMPORT_REGIONS";
 
   it("returns the full list for undefined or blank input", () => {
     expect(parseRegions(undefined, ENV)).toHaveLength(17);
@@ -33,7 +33,7 @@ describe("parseRegions", () => {
 
   it("throws on an unknown code, naming the env var", () => {
     expect(() => parseRegions("CZ,ZZ", ENV)).toThrow(
-      /Invalid TARMOTO_POI_IMPORT_REGIONS: unknown region "ZZ"/,
+      /Invalid TARMOTO_OSM_POI_IMPORT_REGIONS: unknown region "ZZ"/,
     );
   });
 });

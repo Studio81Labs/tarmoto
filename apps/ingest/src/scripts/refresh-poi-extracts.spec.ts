@@ -143,7 +143,7 @@ describe("refresh-poi-extracts", () => {
           download: fakeDownload(),
           osmium: fakeOsmium(),
         }),
-      ).rejects.toThrow(/TARMOTO_POI_IMPORT_DIR/);
+      ).rejects.toThrow(/TARMOTO_OSM_POI_IMPORT_DIR/);
     });
 
     it("isolates a per-region failure, continues, and surfaces it in the summary", async () => {

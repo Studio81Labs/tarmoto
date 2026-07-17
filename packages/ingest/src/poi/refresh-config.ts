@@ -15,7 +15,7 @@ import { parseRegions, type PoiImportRegion } from "./regions.js";
  *    → `<code>.fsq.jsonl`.
  *
  * Region set + target dir are shared with the importer (same
- * `TARMOTO_{POI,FSQ}_IMPORT_REGIONS` / `_DIR`), and bboxes come straight from
+ * `TARMOTO_{OSM_POI,FSQ_POI}_IMPORT_REGIONS` / `_DIR`), and bboxes come straight from
  * `DEFAULT_REGIONS`, so the clip box can never drift from the one the importer's
  * stale-by-absence tombstoning is bounded by (#850). The FSQ token is the only
  * environment-derived value in the DuckDB SQL and is confined to this container
@@ -84,17 +84,17 @@ function boolEnv(value: string | undefined): boolean {
 }
 
 export interface PoiRefreshConfig {
-  /** Gate — off unless `TARMOTO_POI_REFRESH_ENABLED=true`. */
+  /** Gate — off unless `TARMOTO_OSM_POI_REFRESH_ENABLED=true`. */
   enabled: boolean;
   /**
    * Directory the fresh `<code>.osm` files are written to — the SAME
-   * `TARMOTO_POI_IMPORT_DIR` the importer reads. `null` when unset (the script
+   * `TARMOTO_OSM_POI_IMPORT_DIR` the importer reads. `null` when unset (the script
    * fails fast: there's nowhere to write).
    */
   targetDir: string | null;
   /**
    * Regions to refresh: `DEFAULT_REGIONS` narrowed by
-   * `TARMOTO_POI_IMPORT_REGIONS` (default all). Shares the importer's region env
+   * `TARMOTO_OSM_POI_IMPORT_REGIONS` (default all). Shares the importer's region env
    * so the refresh and the import always target the same set; an unknown code
    * fails fast (like the importer's `parseRegions`) rather than being silently
    * dropped.
@@ -105,7 +105,7 @@ export interface PoiRefreshConfig {
 /**
  * Resolve the OSM refresh config from the environment — standalone (no Nest DI),
  * so the refresh container needn't boot the app. Region validation is shared
- * with the importer (`parseRegions`): an unknown `TARMOTO_POI_IMPORT_REGIONS`
+ * with the importer (`parseRegions`): an unknown `TARMOTO_OSM_POI_IMPORT_REGIONS`
  * code fails fast rather than being silently dropped (#976 review) — otherwise
  * the scheduled task would exit green having refreshed nothing while the import
  * keeps reusing stale files.
@@ -113,13 +113,13 @@ export interface PoiRefreshConfig {
 export function resolvePoiRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): PoiRefreshConfig {
-  const dir = env.TARMOTO_POI_IMPORT_DIR?.trim();
+  const dir = env.TARMOTO_OSM_POI_IMPORT_DIR?.trim();
   return {
-    enabled: boolEnv(env.TARMOTO_POI_REFRESH_ENABLED),
+    enabled: boolEnv(env.TARMOTO_OSM_POI_REFRESH_ENABLED),
     targetDir: dir ? dir : null,
     regions: parseRegions(
-      env.TARMOTO_POI_IMPORT_REGIONS,
-      "TARMOTO_POI_IMPORT_REGIONS",
+      env.TARMOTO_OSM_POI_IMPORT_REGIONS,
+      "TARMOTO_OSM_POI_IMPORT_REGIONS",
     ),
   };
 }
@@ -161,10 +161,10 @@ export const FSQ_CATEGORY_PREFILTER =
 export const FSQ_DUCKDB_MEMORY_LIMIT = "2GB";
 
 export interface FsqRefreshConfig {
-  /** Gate — off unless `TARMOTO_FSQ_REFRESH_ENABLED=true`. */
+  /** Gate — off unless `TARMOTO_FSQ_POI_REFRESH_ENABLED=true`. */
   enabled: boolean;
   /**
-   * FSQ Places Portal access token (`TARMOTO_FSQ_TOKEN`). Confined to THIS
+   * FSQ Places Portal access token (`TARMOTO_FSQ_POI_TOKEN`). Confined to THIS
    * extractor container — it never reaches the backend/worker, which read only
    * the credential-free `.fsq.jsonl` files. `null` when unset (the script fails
    * fast). Short-lived (~monthly), so an operator rotates it each refresh.
@@ -172,13 +172,13 @@ export interface FsqRefreshConfig {
   token: string | null;
   /**
    * Directory the fresh `<code>.fsq.jsonl` files are written to — the SAME
-   * `TARMOTO_FSQ_IMPORT_DIR` the importer reads. `null` when unset (the script
+   * `TARMOTO_FSQ_POI_IMPORT_DIR` the importer reads. `null` when unset (the script
    * fails fast: nowhere to write). Independent of the OSM dir.
    */
   targetDir: string | null;
   /**
    * Regions to refresh: `DEFAULT_REGIONS` narrowed by
-   * `TARMOTO_FSQ_IMPORT_REGIONS` (default all); an unknown code fails fast, like
+   * `TARMOTO_FSQ_POI_IMPORT_REGIONS` (default all); an unknown code fails fast, like
    * the importer. Independent of the OSM region list.
    */
   regions: readonly PoiImportRegion[];
@@ -187,20 +187,20 @@ export interface FsqRefreshConfig {
 /**
  * Resolve the FSQ refresh config from the environment — standalone (no Nest DI).
  * Mirrors {@link resolvePoiRefreshConfig} but for the FSQ source's own env
- * (`TARMOTO_FSQ_*`) plus the token.
+ * (`TARMOTO_FSQ_POI_*`) plus the token.
  */
 export function resolveFsqRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): FsqRefreshConfig {
-  const token = env.TARMOTO_FSQ_TOKEN?.trim();
-  const dir = env.TARMOTO_FSQ_IMPORT_DIR?.trim();
+  const token = env.TARMOTO_FSQ_POI_TOKEN?.trim();
+  const dir = env.TARMOTO_FSQ_POI_IMPORT_DIR?.trim();
   return {
-    enabled: boolEnv(env.TARMOTO_FSQ_REFRESH_ENABLED),
+    enabled: boolEnv(env.TARMOTO_FSQ_POI_REFRESH_ENABLED),
     token: token ? token : null,
     targetDir: dir ? dir : null,
     regions: parseRegions(
-      env.TARMOTO_FSQ_IMPORT_REGIONS,
-      "TARMOTO_FSQ_IMPORT_REGIONS",
+      env.TARMOTO_FSQ_POI_IMPORT_REGIONS,
+      "TARMOTO_FSQ_POI_IMPORT_REGIONS",
     ),
   };
 }
@@ -210,7 +210,7 @@ export function resolveFsqRefreshConfig(
  * quotes). The token is the only environment-derived value interpolated into the
  * SQL; escaping keeps a stray quote from breaking — or injecting into — the
  * script. The `outPath` is escaped the same way for good measure (it derives
- * from `TARMOTO_FSQ_IMPORT_DIR`).
+ * from `TARMOTO_FSQ_POI_IMPORT_DIR`).
  */
 function sqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
