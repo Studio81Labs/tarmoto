@@ -98,7 +98,10 @@ export default async function SharedTripPage({
               {share.owner_name}
             </SharePill>
             <SharePill icon={<Activity size={13} />}>
-              {t("{count} views", { count: share.view_count })}
+              {t("{count, plural, one {{n} view} other {{n} views}}", {
+                count: share.view_count,
+                n: format.integer(share.view_count),
+              })}
             </SharePill>
             {summary && (
               <SharePill icon={<CalendarDays size={13} />}>
