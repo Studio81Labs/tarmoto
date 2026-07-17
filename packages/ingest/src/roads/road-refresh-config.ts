@@ -1,0 +1,54 @@
+import { parseRegions, type PoiImportRegion } from "../poi/regions.js";
+import { DRIVABLE_HIGHWAYS } from "./road-tags.js";
+
+/**
+ * `osmium tags-filter` expression for the road-extract producer — WAYS whose
+ * `highway` is a drivable class (osmium ORs the comma-separated values within
+ * one `key=v1,v2,…`). Built from {@link DRIVABLE_HIGHWAYS} so it stays a
+ * superset of the importer's gate. `w/` = ways only.
+ */
+export const ROAD_TAGS_FILTER_EXPRESSIONS: readonly string[] = [
+  `w/highway=${DRIVABLE_HIGHWAYS.join(",")}`,
+];
+
+function boolEnv(value: string | undefined): boolean {
+  return (value ?? "false").trim().toLowerCase() === "true";
+}
+
+export interface RoadRefreshConfig {
+  /** Gate — off unless `TARMOTO_OSM_ROAD_REFRESH_ENABLED=true`. */
+  enabled: boolean;
+  /**
+   * Directory the fresh `<code>.osm` files are written to — the SAME
+   * `TARMOTO_OSM_ROAD_IMPORT_DIR` the backend importer reads. `null` when unset
+   * (the script fails fast: nowhere to write). MUST differ from the POI import
+   * dir, or POI + road `<code>.osm` files would collide.
+   */
+  targetDir: string | null;
+  /**
+   * Regions to refresh: `DEFAULT_REGIONS` narrowed by
+   * `TARMOTO_OSM_ROAD_IMPORT_REGIONS` (default all). Shares the importer's region
+   * env so refresh and import always target the same set; an unknown code fails
+   * fast rather than being silently dropped.
+   */
+  regions: readonly PoiImportRegion[];
+}
+
+/**
+ * Resolve the road refresh config from the environment — standalone (no Nest
+ * DI), so the refresh container needn't boot the app. Mirrors
+ * `resolvePoiRefreshConfig` but for the road source's env (`TARMOTO_OSM_ROAD_*`).
+ */
+export function resolveRoadRefreshConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): RoadRefreshConfig {
+  const dir = env.TARMOTO_OSM_ROAD_IMPORT_DIR?.trim();
+  return {
+    enabled: boolEnv(env.TARMOTO_OSM_ROAD_REFRESH_ENABLED),
+    targetDir: dir ? dir : null,
+    regions: parseRegions(
+      env.TARMOTO_OSM_ROAD_IMPORT_REGIONS,
+      "TARMOTO_OSM_ROAD_IMPORT_REGIONS",
+    ),
+  };
+}
