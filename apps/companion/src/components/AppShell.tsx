@@ -24,7 +24,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           gets a second scrollbar. With `min-h-0` it stays bounded to the
           shell and only this region scrolls.
         */}
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto @container">
+          {children}
+        </div>
       </main>
     </div>
   );
