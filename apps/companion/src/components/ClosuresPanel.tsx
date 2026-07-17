@@ -99,6 +99,12 @@ interface ClosuresPanelProps {
   onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
   /** Insert a via around this on-route closure and re-route. */
   onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
+  /**
+   * Draws a `border-t` divider above the panel (default). /explore composites
+   * this into a multi-block info column and places dividers between blocks
+   * itself, so it passes `false` to drop the leading divider.
+   */
+  topDivider?: boolean;
 }
 export function ClosuresPanel({
   month,
@@ -111,6 +117,7 @@ export function ClosuresPanel({
   showRegionalList = true,
   onFocusClosure,
   onRerouteClosure,
+  topDivider = true,
 }: ClosuresPanelProps) {
   if (data) {
     return (
@@ -123,6 +130,7 @@ export function ClosuresPanel({
         showRegionalList={showRegionalList}
         onFocusClosure={onFocusClosure}
         onRerouteClosure={onRerouteClosure}
+        topDivider={topDivider}
       />
     );
   }
@@ -137,6 +145,7 @@ export function ClosuresPanel({
       showRegionalList={showRegionalList}
       onFocusClosure={onFocusClosure}
       onRerouteClosure={onRerouteClosure}
+      topDivider={topDivider}
     />
   );
 }
@@ -150,6 +159,7 @@ function FetchedClosuresPanel({
   showRegionalList,
   onFocusClosure,
   onRerouteClosure,
+  topDivider = true,
 }: Omit<ClosuresPanelProps, "data">) {
   const data = useClosures(
     month,
@@ -167,6 +177,7 @@ function FetchedClosuresPanel({
       routes={routes}
       showRouteWarnings={showRouteWarnings}
       data={data}
+      topDivider={topDivider}
       onPreviewDateChange={onPreviewDateChange}
       showRegionalList={showRegionalList}
       onFocusClosure={onFocusClosure}
@@ -183,6 +194,7 @@ function ClosuresPanelBody({
   showRegionalList = true,
   onFocusClosure,
   onRerouteClosure,
+  topDivider = true,
 }: {
   month: number;
   routes: PlannerClosureRoute[];
@@ -192,6 +204,7 @@ function ClosuresPanelBody({
   showRegionalList?: boolean | undefined;
   onFocusClosure?: ((closure: PlannerClosure) => void) | undefined;
   onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
+  topDivider?: boolean;
 }) {
   const format = useFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
@@ -222,7 +235,11 @@ function ClosuresPanelBody({
   });
   const routeBoxVisible = showRouteWarnings && routes.length > 0;
   return (
-    <div className="space-y-3 pt-2 border-t border-line">
+    <div
+      className={
+        topDivider ? "space-y-3 border-t border-line pt-2" : "space-y-3"
+      }
+    >
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
         <AlertTriangle size={14} className="text-accent" />
         {t("Closures & roadworks ")}

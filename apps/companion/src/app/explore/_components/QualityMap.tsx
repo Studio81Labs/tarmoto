@@ -36,6 +36,11 @@ import {
   updateFunZoneLayerData,
 } from "@/components/map/FunZoneLayer";
 import type { FunZoneListItem } from "@/lib/discover";
+import {
+  createRegionDrawControl,
+  type RegionDrawControl,
+  type RegionDrawBbox,
+} from "@/components/map/RegionDrawControl";
 import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
 import { onHazardNew, subscribeHazards } from "@/lib/socket";
@@ -178,6 +183,11 @@ interface Props {
   selectedFunZoneId: string | null;
   /** Clicking open zone ground (no road under the cursor) opens the zone. */
   onFunZoneSelect: (zoneId: string) => void;
+  /**
+   * Fires when the rider finishes (or clears) a Fun Zone draw-region box —
+   * `null` on clear. The page constrains the zone fetch to this bbox.
+   */
+  onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
   onSegmentSelect?: (segmentId: string) => void;
   /** Segment whose detail drawer is open — painted with the highlight overlay. */
   selectedSegmentId?: string | null;
@@ -211,6 +221,12 @@ export interface QualityMapHandle {
   flyTo(target: { lng: number; lat: number; zoom: number }): void;
   /** Fly to a condition and open its shared popover (list-row → map focus). */
   openConditionPopover(ref: { kind: "closure" | "pass"; id: string }): void;
+  /** Arm the Fun Zone draw-region box (drag on the map to draw). */
+  startDrawRegion(): void;
+  /** Abort an in-progress draw without committing a box. */
+  cancelDrawRegion(): void;
+  /** Clear any drawn Fun Zone region (reverts the fetch to the viewport). */
+  clearDrawnRegion(): void;
 }
 
 export const QualityMap = forwardRef<QualityMapHandle, Props>(
@@ -239,6 +255,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       funZones,
       selectedFunZoneId,
       onFunZoneSelect,
+      onDrawnRegionChange,
       onSegmentSelect,
       selectedSegmentId,
       onViewChange,
@@ -246,6 +263,14 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     ref,
   ) {
     const handleRef = useRef<MapCanvasHandle>(null);
+    // Fun Zone draw-region control (installed once at ready). `drawnRegionCbRef`
+    // keeps the latest `onDrawnRegionChange` so the once-run control closure
+    // never fires a stale callback.
+    const drawRef = useRef<RegionDrawControl | null>(null);
+    const drawnRegionCbRef = useRef(onDrawnRegionChange);
+    useEffect(() => {
+      drawnRegionCbRef.current = onDrawnRegionChange;
+    }, [onDrawnRegionChange]);
     // Latest fetched conditions, so ready-time click handlers and the
     // imperative focus method resolve a feature id → full DTO.
     const closuresRef = useRef<readonly PlannerClosure[]>([]);
@@ -280,6 +305,15 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             zoom: target.zoom,
             essential: true,
           });
+        },
+        startDrawRegion() {
+          drawRef.current?.start();
+        },
+        cancelDrawRegion() {
+          drawRef.current?.cancel();
+        },
+        clearDrawnRegion() {
+          drawRef.current?.clearDrawn();
         },
         openConditionPopover(conditionRef) {
           const map = handleRef.current?.map;
@@ -445,6 +479,13 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       // marker/route layer added below.
       installFunZoneLayer(map);
       setFunZoneLayersVisible(map, showFunZones);
+      // Fun Zone draw-region box: the rider arms it from the sidebar
+      // ("Draw region"), then drags on the map. Its bbox constrains the
+      // zone fetch (page effect). Reuses the planner's control verbatim.
+      drawRef.current = createRegionDrawControl(map, {
+        onRegionDrawn: (bbox) => drawnRegionCbRef.current?.(bbox),
+        onRegionCleared: () => drawnRegionCbRef.current?.(null),
+      });
       ensureHazardLayers(map, { visible: showHazards });
       ensureConditionLayers(map, undefined, { includeOpenPasses: true });
       setConditionLayersVisible(map, showConditions);
