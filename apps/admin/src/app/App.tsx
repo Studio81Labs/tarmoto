@@ -79,7 +79,7 @@ export function App() {
           role={currentUser.role}
           onLogout={auth.logout}
         />
-        <main className="min-h-0 flex-1 overflow-auto p-6">
+        <main className="min-h-0 flex-1 overflow-auto p-6 @container">
           {!canViewActive ? (
             <Alert
               intent="warning"
