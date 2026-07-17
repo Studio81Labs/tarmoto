@@ -6,6 +6,7 @@ import {
   buildBestRoadsIframeCode,
   type BestRoadsWidgetVariant,
 } from "@/lib/best-roads-embed";
+import { Textarea } from "@tarmoto/ui";
 interface Props {
   origin: string;
   country: string;
@@ -65,7 +66,7 @@ export function BestRoadsEmbedPanel({
     }
   }
   return (
-    <section className="mb-8 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+    <section className="mb-8 rounded-xl border border-line bg-paper p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-accent">
@@ -75,7 +76,7 @@ export function BestRoadsEmbedPanel({
           <h2 className="mt-3 text-lg font-semibold">
             {t("Share this region as a mini-map ")}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+          <p className="mt-2 max-w-2xl text-sm text-fg-dim">
             {t(
               "Copy an iframe snippet for blogs, ride reports, newsletters, or forums. The widget stays responsive, keeps Tarmoto branding, and links back to the full road-quality page. ",
             )}
@@ -84,7 +85,7 @@ export function BestRoadsEmbedPanel({
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-accent/90"
+          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-95"
         >
           {copyState === "copied" ? <Check size={16} /> : <Copy size={16} />}
           {t("Copy embed code ")}
@@ -102,12 +103,12 @@ export function BestRoadsEmbedPanel({
               onClick={() => setVariant(option.value)}
               className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
                 active
-                  ? "border-accent bg-accent/10 text-white"
-                  : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                  ? "border-accent bg-accent/10 text-ink"
+                  : "border-line-strong bg-paper-2 text-fg-dim hover:border-ink/40"
               }`}
             >
               <span className="block font-medium">{option.label}</span>
-              <span className="mt-0.5 block text-xs text-slate-400">
+              <span className="mt-0.5 block text-xs text-fg-dim">
                 {option.description}
               </span>
             </button>
@@ -118,29 +119,27 @@ export function BestRoadsEmbedPanel({
       <div className="mt-4">
         <label
           htmlFor="best-roads-embed-code"
-          className="mb-2 block text-sm font-medium text-slate-300"
+          className="mb-2 block text-sm font-medium text-ink"
         >
           {t("Embed code ")}
         </label>
-        {/* eslint-disable-next-line no-restricted-syntax -- read-only embed
-            code on the dark-slate embed page; fieldChrome is cream-only. */}
-        <textarea
+        <Textarea
           id="best-roads-embed-code"
-          aria-label={t("Embed code")}
+          ariaLabel={t("Embed code")}
           readOnly
+          mono
           value={snippet}
           rows={7}
-          className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs text-slate-200 focus:outline-none"
         />
       </div>
 
       {copyState === "copied" && (
-        <p className="mt-3 text-sm text-emerald-300">
+        <p className="mt-3 text-sm text-emerald-700">
           {t("Embed code copied")}
         </p>
       )}
       {copyState === "error" && (
-        <p className="mt-3 text-sm text-rose-300">
+        <p className="mt-3 text-sm text-rose-700">
           {t(
             "Could not copy automatically. Select the code and copy it manually. ",
           )}

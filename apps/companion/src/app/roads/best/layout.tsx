@@ -34,7 +34,7 @@ export default async function BestRoadsLayout({
     return <AppShell>{children}</AppShell>;
   }
   return (
-    <div className="tarmoto-no-cream flex flex-col min-h-screen bg-slate-950">
+    <div className="flex flex-col min-h-screen bg-cream text-ink">
       <PublicExploreHeader callbackUrl="/roads/best" />
       <div className="flex-1">{children}</div>
     </div>

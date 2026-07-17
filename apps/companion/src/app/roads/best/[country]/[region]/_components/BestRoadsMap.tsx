@@ -75,7 +75,7 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
   }, [colorScheme, ready]);
 
   return (
-    <div className="h-[420px] w-full overflow-hidden rounded-xl border border-slate-800">
+    <div className="h-[420px] w-full overflow-hidden rounded-xl border border-line">
       <Map
         ref={mapRef}
         initialViewState={{
@@ -117,7 +117,7 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
           <Marker key={m.id} latitude={m.lat} longitude={m.lng} anchor="center">
             <a
               href={`#road-${m.id}`}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950 text-xs font-bold text-white ring-2 ring-accent"
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-xs font-bold text-cream ring-2 ring-accent"
             >
               {m.rank}
             </a>
