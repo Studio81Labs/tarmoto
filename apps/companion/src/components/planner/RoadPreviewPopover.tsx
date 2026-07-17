@@ -11,6 +11,7 @@ import {
   scoreToBand,
 } from "@/lib/planner/quality-bands";
 import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
+import type { Formatters } from "@tarmoto/shared";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
 import { useFormat } from "@/format/FormatProvider";
 
@@ -65,12 +66,14 @@ function formatCapturedMonth(isoMonth: string | undefined): string | null {
   return label ? `${label} ${year}` : null;
 }
 
-function segmentTitle(segment: RouteSegment): string {
-  const lengthKm = Math.round(segment.lengthKm * 10) / 10;
+// Takes the formatter so the heading speaks the same unit as the
+// micro-strip tooltips and scale below it (miles for imperial riders).
+function segmentTitle(segment: RouteSegment, format: Formatters): string {
+  const length = format.distanceKm(segment.lengthKm);
   if (segment.band === "no_data") {
-    return `${lengthKm} km · no rider passes yet`;
+    return `${length} · no rider passes yet`;
   }
-  return `Day ${segment.dayNumber} section · ${lengthKm} km`;
+  return `Day ${segment.dayNumber} section · ${length}`;
 }
 
 function StreetViewLink({ segment }: { segment: RouteSegment }) {
@@ -259,7 +262,7 @@ export function RoadPreviewPopover({
         </div>
 
         <div className="p-[18px]">
-          <Heading size="sm">{segmentTitle(segment)}</Heading>
+          <Heading size="sm">{segmentTitle(segment, format)}</Heading>
 
           {preview?.hasData ? (
             <>

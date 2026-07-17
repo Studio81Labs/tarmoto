@@ -107,6 +107,9 @@ describe("RoadPreviewPopover", () => {
     expect(screen.getByText("2.6 MI")).toBeInTheDocument();
     expect(screen.getByText("0 MI")).toBeInTheDocument();
     expect(screen.queryByText("4.2 KM")).not.toBeInTheDocument();
+    // The heading converts together with the strip — no "4.2 km" title
+    // above a miles-labeled chart.
+    expect(screen.getByText("Day 1 section · 2.6 mi")).toBeInTheDocument();
   });
 
   it("shows a graceful empty state when there is no imagery coverage", async () => {
