@@ -3197,8 +3197,8 @@ export default function TripPlannerPage() {
                       <Checkbox
                         checked={avoidHighways}
                         onChange={handleAvoidHighwaysChange}
-                        label={t("Highways")}
-                        ariaLabel={t("Avoid highways")}
+                        label={t("Motorways")}
+                        ariaLabel={t("Avoid motorways")}
                         className="py-1"
                       />
                       <Checkbox

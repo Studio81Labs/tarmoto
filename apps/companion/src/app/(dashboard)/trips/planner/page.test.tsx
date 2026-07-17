@@ -659,7 +659,7 @@ describe("TripPlannerPage", () => {
       target: { value: "direct" },
     });
     fireEvent.click(screen.getByLabelText("Gravel"));
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid motorways"));
     fireEvent.click(screen.getByLabelText("Avoid tolls"));
 
     const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
@@ -1149,7 +1149,7 @@ describe("TripPlannerPage", () => {
 
     // A REAL rider edit → one defaults write.
     fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
-    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    fireEvent.click(screen.getByLabelText(/avoid motorways/i));
     await waitFor(() => expect(savePrefsSpy).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
@@ -1259,7 +1259,7 @@ describe("TripPlannerPage", () => {
 
     // Rider edit → debounced write-back fires once.
     fireEvent.click(screen.getByRole("button", { name: "Route preferences" }));
-    fireEvent.click(screen.getByLabelText(/avoid highways/i));
+    fireEvent.click(screen.getByLabelText(/avoid motorways/i));
     await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
@@ -1421,7 +1421,7 @@ describe("TripPlannerPage", () => {
     expect(screen.getByLabelText("Asphalt")).toBeChecked();
     expect(screen.getByLabelText("Gravel")).toBeChecked();
     expect(screen.getByLabelText("Concrete")).not.toBeChecked();
-    expect(screen.getByLabelText("Avoid highways")).not.toBeChecked();
+    expect(screen.getByLabelText("Avoid motorways")).not.toBeChecked();
     expect(screen.getByLabelText("Avoid tolls")).toBeChecked();
     expect(screen.getByLabelText("Avoid unpaved roads")).not.toBeChecked();
   });
@@ -1468,7 +1468,7 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByLabelText("Gravel"));
     expect(window.location.search).toContain("surfaces=asphalt%2Cgravel");
 
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid motorways"));
     expect(window.location.search).toContain("avoidHighways=0");
   });
 
@@ -2580,7 +2580,7 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid motorways"));
     expect(storeState.markRouteDirty).toHaveBeenCalledTimes(1);
   });
 

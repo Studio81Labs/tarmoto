@@ -279,7 +279,7 @@ export default function PrivacyPage() {
         <div className="flex items-start justify-between gap-4 px-5 py-4">
           <div>
             <p className="text-[14px] font-semibold text-ink">
-              {t("Personalized recommendations ")}
+              {t("Personalised recommendations ")}
             </p>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
@@ -290,7 +290,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.personalizedRecommendationsConsent}
             onChange={togglePersonalized}
-            ariaLabel="Personalized recommendations consent"
+            ariaLabel="Personalised recommendations consent"
           />
         </div>
       </Card>
