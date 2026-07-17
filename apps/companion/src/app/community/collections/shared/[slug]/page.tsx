@@ -33,12 +33,12 @@ export async function generateMetadata({
   const locale = await readLocale();
   if (!detail) {
     return {
-      title: "Collection — Tarmoto",
+      title: t("Collection — Tarmoto", undefined, locale),
       robots: { index: false, follow: false },
     };
   }
   return {
-    title: `${detail.title} — Tarmoto collection`,
+    title: t("{title} — Tarmoto collection", { title: detail.title }, locale),
     description:
       detail.description ??
       t(

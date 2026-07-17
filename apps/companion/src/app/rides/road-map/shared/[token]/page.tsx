@@ -1,4 +1,5 @@
 import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -20,9 +21,10 @@ export const dynamic = "force-dynamic";
 const DEFAULT_CENTER = { lat: 50.0755, lng: 14.4378, zoom: 7 };
 
 export async function generateMetadata(): Promise<Metadata> {
+  const locale = await readLocale();
   return {
-    title: "Shared road map — Tarmoto",
-    description: "Public Tarmoto personal road map.",
+    title: t("Shared road map — Tarmoto", undefined, locale),
+    description: t("Public Tarmoto personal road map.", undefined, locale),
     // Token URLs aren't sensitive but indexing them would let bots scrape
     // every share ever generated. Match the trip-shares policy.
     robots: { index: false, follow: false },

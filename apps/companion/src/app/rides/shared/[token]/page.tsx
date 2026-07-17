@@ -1,4 +1,5 @@
 import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Activity, CalendarDays, Plus } from "lucide-react";
@@ -18,9 +19,10 @@ import { formatRideType } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
+  const locale = await readLocale();
   return {
-    title: "Shared ride — Tarmoto",
-    description: "Public Tarmoto shared ride page.",
+    title: t("Shared ride — Tarmoto", undefined, locale),
+    description: t("Public Tarmoto shared ride page.", undefined, locale),
     robots: { index: false, follow: false },
   };
 }

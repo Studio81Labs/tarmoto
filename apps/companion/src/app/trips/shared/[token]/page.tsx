@@ -1,4 +1,5 @@
 import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
@@ -29,9 +30,10 @@ import { SharedTripJoinCta } from "./SharedTripJoinCta";
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
+  const locale = await readLocale();
   return {
-    title: "Shared trip — Tarmoto",
-    description: "Public Tarmoto shared trip page.",
+    title: t("Shared trip — Tarmoto", undefined, locale),
+    description: t("Public Tarmoto shared trip page.", undefined, locale),
     robots: { index: false, follow: false },
   };
 }

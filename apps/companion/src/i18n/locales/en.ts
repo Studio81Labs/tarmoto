@@ -151,6 +151,7 @@ export const en = {
   "Collaboration tabs": "Collaboration tabs",
   "Collection not found": "Collection not found",
   "Collection not found ": "Collection not found ",
+  "Collection \u2014 Tarmoto": "Collection \u2014 Tarmoto",
   Collections: "Collections",
   "Collections ": "Collections ",
   "Collections from other riders you've saved. They show up here until you unfollow. ":
@@ -653,6 +654,9 @@ export const en = {
   "Profile visibility": "Profile visibility",
   "Profile visibility ": "Profile visibility ",
   "Propose an alternative ": "Propose an alternative ",
+  "Public Tarmoto personal road map.": "Public Tarmoto personal road map.",
+  "Public Tarmoto shared ride page.": "Public Tarmoto shared ride page.",
+  "Public Tarmoto shared trip page.": "Public Tarmoto shared trip page.",
   "Public route share ": "Public route share ",
   "Publish a branded ride preview with route stats, Tarmoto attribution, and a link back to the full shared ride page. ":
     "Publish a branded ride preview with route stats, Tarmoto attribution, and a link back to the full shared ride page. ",
@@ -800,9 +804,12 @@ export const en = {
   "Shared ride": "Shared ride",
   "Shared ride route with Tarmoto ride stats. ":
     "Shared ride route with Tarmoto ride stats. ",
+  "Shared ride \u2014 Tarmoto": "Shared ride \u2014 Tarmoto",
   "Shared rides ": "Shared rides ",
   "Shared road map": "Shared road map",
+  "Shared road map \u2014 Tarmoto": "Shared road map \u2014 Tarmoto",
   "Shared trip": "Shared trip",
+  "Shared trip \u2014 Tarmoto": "Shared trip \u2014 Tarmoto",
   "Shared via Tarmoto \u00b7": "Shared via Tarmoto \u00b7",
   "Short title (e.g. 'Scenic loop via Passo Giau')":
     "Short title (e.g. 'Scenic loop via Passo Giau')",
@@ -1134,6 +1141,7 @@ export const en = {
     "{count, plural, one {{n} ride} other {{n} rides}}",
   "{count, plural, one {{n} view} other {{n} views}}":
     "{count, plural, one {{n} view} other {{n} views}}",
+  "{title} \u2014 Tarmoto collection": "{title} \u2014 Tarmoto collection",
   "{weeks}w {days}d left": "{weeks}w {days}d left",
   "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ":
     "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
