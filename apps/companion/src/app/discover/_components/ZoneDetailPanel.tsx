@@ -8,6 +8,7 @@ import {
   type FunZoneListItem,
 } from "@/lib/discover";
 import { ElevationSparkline } from "@/components/map/ElevationSparkline";
+import { useFormat } from "@/format/FormatProvider";
 import { useDiscoverStore } from "./useDiscoverStore";
 interface Props {
   /** Matching list item so the header can render immediately from the list
@@ -19,6 +20,7 @@ interface Props {
  * per-road elevation sparklines. Driven by useDiscoverStore.selectedZoneId.
  */
 export function ZoneDetailPanel({ summary }: Props) {
+  const format = useFormat();
   const { selectedZoneId, setSelectedZoneId } = useDiscoverStore();
   const [detail, setDetail] = useState<FunZoneDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,7 +81,9 @@ export function ZoneDetailPanel({ summary }: Props) {
           </h2>
           <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
             {t("Score ")}
-            {zone?.composite_score?.toFixed(1) ?? "—"}
+            {zone?.composite_score != null
+              ? format.decimal(zone.composite_score, 1)
+              : "—"}
             {zone?.best_season ? ` · ${zone.best_season}` : ""}
           </p>
         </div>
@@ -97,16 +101,20 @@ export function ZoneDetailPanel({ summary }: Props) {
         <div className="grid grid-cols-3 gap-3 px-4 py-3 border-b border-slate-800 text-center">
           <Stat label="Roads" value={String(zone.road_count)} />
           <Stat
-            label="Curve km"
+            label={`Curve ${format.splitDistanceKm(1).unit}`}
             value={
               zone.total_curve_km != null
-                ? Math.round(zone.total_curve_km).toString()
+                ? format.splitDistanceKm(zone.total_curve_km).value
                 : "—"
             }
           />
           <Stat
             label="Quality"
-            value={zone.avg_quality != null ? zone.avg_quality.toFixed(1) : "—"}
+            value={
+              zone.avg_quality != null
+                ? format.decimal(zone.avg_quality, 1)
+                : "—"
+            }
           />
         </div>
       ) : null}
@@ -141,12 +149,12 @@ export function ZoneDetailPanel({ summary }: Props) {
                     </h3>
                     <p className="text-xs text-slate-400 tabular-nums">
                       {road.quality_score != null
-                        ? `★ ${road.quality_score.toFixed(1)} · `
+                        ? `★ ${format.decimal(road.quality_score, 1)} · `
                         : ""}
                       {t("curviness ")}
-                      {road.curviness_score.toFixed(1)} ·{" "}
-                      {(road.length_m / 1000).toFixed(1)}
-                      {t("km \u00B7")} {road.surface_type}
+                      {format.decimal(road.curviness_score, 1)} ·{" "}
+                      {format.distanceKm(road.length_m / 1000)} ·{" "}
+                      {road.surface_type}
                     </p>
                   </div>
                 </div>

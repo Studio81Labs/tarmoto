@@ -852,6 +852,15 @@ describe("TripCollaborateModal — collab tabs", () => {
     expect(screen.getByText("Eve")).toBeInTheDocument();
     expect(screen.getByText("Bob")).toBeInTheDocument();
     expect(screen.getByText("Cid")).toBeInTheDocument();
+    // Locks the per-row timestamp itself (not just the day-bucket headers
+    // above, which come from a separate, untouched `dayBucket` helper): the
+    // "a-today" row is pinned to exactly 2h before the fake system clock, so
+    // `format.relativeTime` must render "2h ago" — the migration deleted the
+    // local `formatActivityTime` helper's "Yesterday, HH:MM" 24h special case
+    // in favour of this single relative-time seam for every row regardless of
+    // bucket, and that behavior change needs a real assertion, not just a
+    // passing render.
+    expect(screen.getByText(/2h ago/)).toBeInTheDocument();
   });
 
   it("invites people by email with a role from the People tab", async () => {

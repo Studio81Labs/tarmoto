@@ -1,4 +1,4 @@
-import { haversineKm } from "@tarmoto/shared";
+import { haversineKm, type Formatters } from "@tarmoto/shared";
 import type { RoadClosure } from "./api";
 import { sampleRoutePoints } from "./route-sampling";
 import type { Trip } from "./types";
@@ -120,15 +120,19 @@ export function buildTripClosureRoutes(
   });
 }
 
-export function formatClosureWindow(closure: PlannerClosure): string {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-
-  const starts = formatter.format(new Date(closure.starts_at));
-  if (!closure.ends_at) return `${starts} onward`;
-
-  return `${starts} - ${formatter.format(new Date(closure.ends_at))}`;
+/**
+ * Closure window copy for cards/popovers. Both branches render through the
+ * UTC-pinned `calendarDate*` formatters (not `date()`/`dateRange()`) so the
+ * displayed day is the closure's calendar day, never shifted by the
+ * viewer's timezone — a closure starting at 22:30Z must still read as
+ * starting on that same UTC calendar day everywhere.
+ */
+export function formatClosureWindow(
+  closure: PlannerClosure,
+  format: Formatters,
+): string {
+  if (!closure.ends_at) {
+    return `${format.calendarDate(closure.starts_at)} onward`;
+  }
+  return format.calendarDateRange(closure.starts_at, closure.ends_at);
 }

@@ -36,10 +36,8 @@ import {
   type RideBreakdownSlice,
 } from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
-import { useNumberFormat } from "@/hooks/useNumberFormat";
-import { usePreferencesStore } from "@/stores/preferences";
-import { splitFormattedDistance } from "@/lib/utils";
-import { kmToMiles } from "@tarmoto/shared";
+import { useFormat } from "@/format/FormatProvider";
+import { kmToMiles, type Formatters } from "@tarmoto/shared";
 import {
   availableYears,
   computeAllTimeTotals,
@@ -87,8 +85,7 @@ export default function StatsPage() {
   const showLoader = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
-  const { format } = useNumberFormat();
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   // Wait for `AuthSync` to populate the access token before paginating
   // `/api/v1/rides` — otherwise the first request races AuthSync and
   // 401s. Same pattern as `useRidesQuery` and `useUserTrips`.
@@ -152,8 +149,8 @@ export default function StatsPage() {
     [ridesAcrossYears],
   );
   const series = useMemo(
-    () => computeDistanceSeries(filtered, filters.window),
-    [filtered, filters.window],
+    () => computeDistanceSeries(filtered, filters.window, format),
+    [filtered, filters.window, format],
   );
   // The heatmap is intentionally decoupled from the time window: it always
   // shows a full calendar-year grid for the latest year with data (the
@@ -174,12 +171,12 @@ export default function StatsPage() {
   // Quality trend is the last 12 months regardless of the window (ride-type
   // still applies), computed client-side from `avg_road_quality`.
   const qualityTrend = useMemo(
-    () => computeQualityTrend(ridesAcrossYears),
-    [ridesAcrossYears],
+    () => computeQualityTrend(ridesAcrossYears, format),
+    [ridesAcrossYears, format],
   );
   const yoy = useMemo(
-    () => computeYearOverYear(ridesAcrossYears, yoyYears),
-    [ridesAcrossYears, yoyYears],
+    () => computeYearOverYear(ridesAcrossYears, yoyYears, format),
+    [ridesAcrossYears, yoyYears, format],
   );
   if (loading) {
     return (
@@ -229,10 +226,12 @@ export default function StatsPage() {
   const tooltipLabel = (key: string) =>
     seriesByKey.get(key)?.tooltipLabel ?? key;
   // Charts plot in the rider's display unit so a single card never mixes km and
-  // mi. `value` is the converted distance the bars/axis/tooltip read.
-  const distanceUnit = unitSystem === "imperial" ? "mi" : "km";
+  // mi. `value` is the converted distance the bars/axis/tooltip read. The
+  // format seam already reads the account's unit preference, so `format.units`
+  // replaces a separate `unitSystem` store read.
+  const distanceUnit = format.units === "imperial" ? "mi" : "km";
   const toDisplayDistance = (km: number) =>
-    unitSystem === "imperial" ? kmToMiles(km) : km;
+    format.units === "imperial" ? kmToMiles(km) : km;
   const chartData = series.map((point) => ({
     ...point,
     value: toDisplayDistance(point.distanceKm),
@@ -240,7 +239,7 @@ export default function StatsPage() {
   // "… total" sums only the displayed buckets (not all-time), so the
   // "Last 12 months" / windowed chart and its total stay in agreement.
   const seriesTotalKm = series.reduce((acc, p) => acc + p.distanceKm, 0);
-  const chartTotal = splitFormattedDistance(seriesTotalKm, unitSystem);
+  const chartTotal = format.splitDistanceKm(seriesTotalKm);
   const distanceTooltip = (value: TooltipValueType | undefined) => {
     const n =
       typeof value === "number" ? value : Number.parseFloat(String(value));
@@ -256,8 +255,8 @@ export default function StatsPage() {
     return next;
   });
   const formatDistance = (km: number) => {
-    const d = splitFormattedDistance(km, unitSystem);
-    return `${format(d.value)} ${d.unit.toLowerCase()}`;
+    const d = format.splitDistanceKm(km);
+    return `${d.value} ${d.unit}`;
   };
   const yearColumns: DataTableColumn<YearlyTotal>[] = [
     {
@@ -271,7 +270,7 @@ export default function StatsPage() {
       label: t("Rides"),
       align: "right",
       numeric: true,
-      render: (row) => format(row.rides),
+      render: (row) => format.integer(row.rides),
     },
     {
       key: "distance",
@@ -300,7 +299,6 @@ export default function StatsPage() {
       <TotalsGrid
         totals={totals}
         windowLabel={windowLabel.toLowerCase()}
-        unitSystem={unitSystem}
         format={format}
       />
 
@@ -311,8 +309,7 @@ export default function StatsPage() {
           title={chartTitle}
           caption={
             <>
-              {format(chartTotal.value)} {chartTotal.unit.toLowerCase()}{" "}
-              {t("total")}
+              {chartTotal.value} {chartTotal.unit} {t("total")}
             </>
           }
         />
@@ -364,11 +361,19 @@ export default function StatsPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
-        <SurfaceBreakdownCard breakdown={breakdown} error={breakdownError} />
-        <CurvinessMixCard breakdown={breakdown} error={breakdownError} />
+        <SurfaceBreakdownCard
+          breakdown={breakdown}
+          error={breakdownError}
+          format={format}
+        />
+        <CurvinessMixCard
+          breakdown={breakdown}
+          error={breakdownError}
+          format={format}
+        />
       </div>
 
-      <QualityTrendCard points={qualityTrend} />
+      <QualityTrendCard points={qualityTrend} format={format} />
 
       <Card padded={false} className="p-[22px]">
         <SectionHeading
@@ -377,7 +382,7 @@ export default function StatsPage() {
           title={t("Riding days")}
           caption={t("brighter = longer ride")}
         />
-        <CalendarHeatmap days={calendar} label={heatmapLabel} />
+        <CalendarHeatmap days={calendar} label={heatmapLabel} format={format} />
       </Card>
 
       {yoyYears.length >= 2 && (
@@ -528,29 +533,19 @@ interface TotalsGridProps {
   totals: ReturnType<typeof computeAllTimeTotals>;
   /** Active window label (e.g. "all time") shown as the lead KPI's delta. */
   windowLabel: string;
-  unitSystem: Parameters<typeof splitFormattedDistance>[1];
-  format: (value: number) => string;
+  format: Formatters;
 }
 // KPI bricks (§12) — the shared `MetricTile`. Distance leads on an ink tile
 // with the accent number; the remaining four use the default cream tile.
 // Distance values are unit-aware (km/mi) so imperial users see honest numbers.
-function TotalsGrid({
-  totals,
-  windowLabel,
-  unitSystem,
-  format,
-}: TotalsGridProps) {
-  const distance = splitFormattedDistance(totals.totalDistanceKm, unitSystem);
-  const avgPerRide = splitFormattedDistance(
-    totals.avgRideDistanceKm,
-    unitSystem,
-  );
+function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
+  const distance = format.splitDistanceKm(totals.totalDistanceKm);
+  const avgPerRide = format.splitDistanceKm(totals.avgRideDistanceKm);
   const tiles: MetricTileProps[] = [
     {
       label: t("Total distance"),
       value: distance.value,
       unit: distance.unit,
-      formatValue: format,
       variant: "ink",
       accentNumber: true,
       delta: windowLabel,
@@ -558,23 +553,23 @@ function TotalsGrid({
     {
       label: t("Total rides"),
       value: totals.totalRides,
-      formatValue: format,
+      formatValue: format.integer,
     },
     {
       label: t("Total hours"),
-      value: totals.totalHours.toFixed(1),
+      value: format.decimal(totals.totalHours, 1),
       unit: "h",
     },
     {
       label: t("Riding days"),
       value: totals.ridingDays,
-      formatValue: format,
+      formatValue: format.integer,
     },
     {
       label: t("Avg per ride"),
       value: totals.totalRides === 0 ? "0" : avgPerRide.value,
       unit: avgPerRide.unit,
-      formatValue: format,
+      formatValue: format.integer,
     },
   ];
   return (
@@ -672,8 +667,13 @@ function BreakdownBody({
 interface BreakdownCardProps {
   breakdown: RideBreakdown | null;
   error: string | null;
+  format: Formatters;
 }
-function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
+function SurfaceBreakdownCard({
+  breakdown,
+  error,
+  format,
+}: BreakdownCardProps) {
   return (
     <Card padded={false} className="p-[22px]">
       <SectionHeading
@@ -699,7 +699,7 @@ function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${s.label} · ${s.pct}%`}
+                  title={`${s.label} · ${format.decimal(s.pct, 1)}%`}
                 />
               ))}
             </div>
@@ -716,7 +716,9 @@ function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
                     />
                     <span className="text-ink">{s.label}</span>
                   </span>
-                  <Mono className="text-fg-dim">{s.pct}%</Mono>
+                  <Mono className="text-fg-dim">
+                    {`${format.decimal(s.pct, 1)}%`}
+                  </Mono>
                 </li>
               ))}
             </ul>
@@ -727,7 +729,7 @@ function SurfaceBreakdownCard({ breakdown, error }: BreakdownCardProps) {
   );
 }
 
-function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
+function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
   return (
     <Card padded={false} className="p-[22px]">
       <SectionHeading
@@ -759,7 +761,9 @@ function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
                   <div key={s.key}>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-ink">{s.label}</span>
-                      <Mono className="text-fg-dim">{s.pct}%</Mono>
+                      <Mono className="text-fg-dim">
+                        {`${format.decimal(s.pct, 1)}%`}
+                      </Mono>
                     </div>
                     <div
                       className="mt-1.5 h-2 overflow-hidden rounded-full"
@@ -784,7 +788,13 @@ function CurvinessMixCard({ breakdown, error }: BreakdownCardProps) {
   );
 }
 
-function QualityTrendCard({ points }: { points: QualityPoint[] }) {
+function QualityTrendCard({
+  points,
+  format,
+}: {
+  points: QualityPoint[];
+  format: Formatters;
+}) {
   const hasData = points.some((p) => p.avgQuality !== null);
   const byKey = new Map(points.map((p) => [p.key, p]));
   return (
@@ -838,7 +848,7 @@ function QualityTrendCard({ points }: { points: QualityPoint[] }) {
                   byKey.get(String(label))?.tooltipLabel ?? String(label)
                 }
                 formatter={(value) => [
-                  typeof value === "number" ? value.toFixed(2) : "—",
+                  typeof value === "number" ? format.decimal(value, 2) : "—",
                   "Avg quality",
                 ]}
               />
@@ -869,8 +879,9 @@ interface CalendarHeatmapProps {
   }[];
   /** Period shown (year or window label) — used only for the a11y label. */
   label: string;
+  format: Formatters;
 }
-function CalendarHeatmap({ days, label }: CalendarHeatmapProps) {
+function CalendarHeatmap({ days, label, format }: CalendarHeatmapProps) {
   // Find the max so cell intensity scales relative to this filtered view
   // rather than to a hard-coded ceiling that would wash out short rides.
   const maxDistance = days.reduce((acc, d) => Math.max(acc, d.distanceKm), 0);
@@ -911,7 +922,12 @@ function CalendarHeatmap({ days, label }: CalendarHeatmapProps) {
         aria-label={`Riding calendar — ${label}`}
       >
         {cells.map((cell, index) => (
-          <CalendarCell key={index} cell={cell} maxDistance={maxDistance} />
+          <CalendarCell
+            key={index}
+            cell={cell}
+            maxDistance={maxDistance}
+            format={format}
+          />
         ))}
       </div>
       <div className="flex items-center justify-end gap-2 text-xs text-fg-dim">
@@ -935,15 +951,19 @@ interface CalendarCellProps {
     rides: number;
   } | null;
   maxDistance: number;
+  format: Formatters;
 }
-function CalendarCell({ cell, maxDistance }: CalendarCellProps) {
+function CalendarCell({ cell, maxDistance, format }: CalendarCellProps) {
   if (!cell) return <span aria-hidden className="block" />;
   const intensity =
     maxDistance > 0 && cell.distanceKm > 0 ? cell.distanceKm / maxDistance : 0;
+  // `cell.date` is a date-only "YYYY-MM-DD" string — `calendarDate` keeps it
+  // UTC-pinned so the rendered day never shifts with the viewer's timezone.
+  const dayLabel = format.calendarDate(cell.date);
   const title =
     cell.rides === 0
-      ? `${cell.date}: no rides`
-      : `${cell.date}: ${cell.rides} ride${cell.rides === 1 ? "" : "s"}, ${cell.distanceKm.toFixed(0)} km`;
+      ? `${dayLabel}: no rides`
+      : `${dayLabel}: ${cell.rides} ride${cell.rides === 1 ? "" : "s"}, ${format.distanceKm(cell.distanceKm)}`;
   // Ridden cells get a 1px ink-line outline as a secondary cue alongside
   // the fill intensity. Empty cells stay borderless so they read as the
   // paper baseline against the surrounding cream card.

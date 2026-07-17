@@ -42,6 +42,7 @@ import {
   Toggle,
 } from "@tarmoto/ui";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useFormat } from "@/format/FormatProvider";
 type Tab = "invite" | "people" | "suggestions" | "activity";
 // Progressive disclosure page sizes: both lists render newest-first and
 // grow unbounded within a session (suggestions are fetched whole because
@@ -1458,6 +1459,7 @@ function ActivityTab({
   serverTripId: string | null;
   onPromoted?: ((id: string) => void) | undefined;
 }) {
+  const format = useFormat();
   const [entries, setEntries] = useState<TripActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1564,7 +1566,16 @@ function ActivityTab({
                       dateTime={entry.created_at}
                       className="shrink-0 font-mono text-[9.5px] text-fg-mute"
                     >
-                      {formatActivityTime(entry.created_at)}
+                      {/* Bucket-aware: the section header already names the
+                          day, so Yesterday rows show the clock time (locale
+                          hour cycle) — relativeTime alone would render every
+                          yesterday entry as the same "yesterday", losing
+                          intra-day ordering. Earlier rows show the date. */}
+                      {bucket === "today"
+                        ? format.relativeTime(entry.created_at)
+                        : bucket === "yesterday"
+                          ? format.time(entry.created_at)
+                          : format.shortDate(entry.created_at)}
                     </time>
                   </li>
                 );
@@ -1751,14 +1762,6 @@ function describeActivityAction(entry: TripActivityEntry): string {
       return String(entry.action).replace(/_/g, " ");
   }
 }
-function formatRelativeTime(iso: string): string {
-  const d = new Date(iso);
-  const diff = Date.now() - d.getTime();
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return d.toLocaleDateString();
-}
 type DayBucket = "today" | "yesterday" | "earlier";
 const DAY_BUCKET_LABELS: Record<DayBucket, string> = {
   today: "Today",
@@ -1774,25 +1777,6 @@ function dayBucket(iso: string): DayBucket {
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   return "earlier";
-}
-/**
- * Timeline timestamps per the v2 design: relative within today
- * ("2h ago"), clock time for yesterday ("Yesterday, 18:40"), and a
- * short date beyond that ("2 Jul").
- */
-function formatActivityTime(iso: string): string {
-  const bucket = dayBucket(iso);
-  if (bucket === "today") return formatRelativeTime(iso);
-  const d = new Date(iso);
-  if (bucket === "yesterday") {
-    const time = d.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    return `Yesterday, ${time}`;
-  }
-  return d.toLocaleDateString([], { day: "numeric", month: "short" });
 }
 /**
  * Split a reverse-chronological entry list into contiguous day-bucket

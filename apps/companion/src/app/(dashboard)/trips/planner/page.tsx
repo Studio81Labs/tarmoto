@@ -156,7 +156,7 @@ import type {
   TripParameters,
   Waypoint,
 } from "@/lib/types";
-import { formatDistance, formatDuration } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 /**
  * TripPlannerPage — Full-screen map-based trip planner.
  *
@@ -226,6 +226,7 @@ const URL_PARAM_KEYS = {
   bbox: "bbox",
 } as const;
 export default function TripPlannerPage() {
+  const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
   // Controlled "Plan as multi-day trip" disclosure — collapsed by default
@@ -2142,7 +2143,7 @@ export default function TripPlannerPage() {
             dailyKmForSizing: dailyKmTarget,
           },
         );
-        const draftedKm = Math.round(result.summary.distanceKm);
+        const draftedDistance = format.distanceKm(result.summary.distanceKm);
         if (result.vias.length > 0) {
           // Replace existing plain vias with the drafted ones (stops like
           // fuel/stays are kept). Sequential before-finish inserts
@@ -2166,28 +2167,31 @@ export default function TripPlannerPage() {
           setDraftNote(null);
           toast.success(
             result.vias.length > 0
-              ? t("Drafted ≈{km} km through {count} Fun Zone{s} on the way.", {
-                  km: draftedKm,
-                  count: result.vias.length,
-                  s: result.vias.length === 1 ? "" : "s",
-                })
-              : t("≈{km} km — already a full day's ride, left as routed.", {
-                  km: draftedKm,
+              ? t(
+                  "Drafted ≈{distance} through {count} Fun Zone{s} on the way.",
+                  {
+                    distance: draftedDistance,
+                    count: result.vias.length,
+                    s: result.vias.length === 1 ? "" : "s",
+                  },
+                )
+              : t("≈{distance} — already a full day's ride, left as routed.", {
+                  distance: draftedDistance,
                 }),
           );
         } else if (result.reachedTargetKm) {
           setDraftNote(null);
           toast.success(
-            t("Drafted ≈{km} km through {count} Fun Zone{s}.", {
-              km: draftedKm,
+            t("Drafted ≈{distance} through {count} Fun Zone{s}.", {
+              distance: draftedDistance,
               count: result.vias.length,
               s: result.vias.length === 1 ? "" : "s",
             }),
           );
         } else {
           // Honest report — the soft target is a goal, not a contract.
-          const note = t("≈{km} km — limited fun roads nearby.", {
-            km: draftedKm,
+          const note = t("≈{distance} — limited fun roads nearby.", {
+            distance: draftedDistance,
           });
           setDraftNote(note);
           toast.success(note);
@@ -2211,6 +2215,7 @@ export default function TripPlannerPage() {
     );
   }, [
     dailyKmTarget,
+    format,
     plannerRegion,
     routeOptions,
     selectedDayIndex,
@@ -2275,13 +2280,17 @@ export default function TripPlannerPage() {
           });
         });
         fitAfterRouteRef.current = true;
-        const draftedKm = Math.round(result.summary.distanceKm);
+        const draftedDistance = format.distanceKm(result.summary.distanceKm);
         if (result.reachedTargetKm) {
           setDraftNote(null);
-          toast.success(t("Drafted a ≈{km} km roundtrip.", { km: draftedKm }));
+          toast.success(
+            t("Drafted a ≈{distance} roundtrip.", {
+              distance: draftedDistance,
+            }),
+          );
         } else {
-          const note = t("≈{km} km — limited fun roads nearby.", {
-            km: draftedKm,
+          const note = t("≈{distance} — limited fun roads nearby.", {
+            distance: draftedDistance,
           });
           setDraftNote(note);
           toast.success(note);
@@ -2297,6 +2306,7 @@ export default function TripPlannerPage() {
       }
     },
     [
+      format,
       plannerParams,
       plannerRegion,
       renameWaypoint,
@@ -2565,12 +2575,12 @@ export default function TripPlannerPage() {
                 ) : null}
                 <span className="inline-flex items-center gap-1">
                   <MapPin size={11} aria-hidden className="text-fg-faint" />
-                  {formatDistance(totalDistanceKm)}
+                  {format.distanceKm(totalDistanceKm)}
                 </span>
                 {totalTimeMin !== null ? (
                   <span className="inline-flex items-center gap-1">
                     <Clock size={11} aria-hidden className="text-fg-faint" />
-                    {`~${formatDuration(totalTimeMin)}`}
+                    {`~${format.duration(totalTimeMin)}`}
                   </span>
                 ) : null}
                 {headerMemberCount !== null ? (
@@ -3341,12 +3351,12 @@ export default function TripPlannerPage() {
                     <p className="text-[12px] leading-snug text-fg-dim">
                       <b className="block text-ink">
                         {totalTimeMin !== null
-                          ? t("Route ready — {km} km · ~{time}", {
-                              km: Math.round(totalDistanceKm),
-                              time: formatDuration(totalTimeMin),
+                          ? t("Route ready — {distance} · ~{time}", {
+                              distance: format.distanceKm(totalDistanceKm),
+                              time: format.duration(totalTimeMin),
                             })
-                          : t("Route ready — {km} km", {
-                              km: Math.round(totalDistanceKm),
+                          : t("Route ready — {distance}", {
+                              distance: format.distanceKm(totalDistanceKm),
                             })}
                       </b>
                       {t("Save it as-is, or add days below. ")}

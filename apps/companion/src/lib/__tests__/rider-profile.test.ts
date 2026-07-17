@@ -58,13 +58,13 @@ afterEach(() => {
 
 describe("formatCount", () => {
   it("locale-formats small counts", () => {
-    expect(formatCount(5)).toBe("5");
-    expect(formatCount(999)).toBe("999");
+    expect(formatCount(5, "en")).toBe("5");
+    expect(formatCount(999, "en")).toBe("999");
   });
 
   it("switches to k for larger counts", () => {
-    expect(formatCount(1_500)).toBe("1.5k");
-    expect(formatCount(25_000)).toBe("25k");
+    expect(formatCount(1_500, "en")).toBe("1.5k");
+    expect(formatCount(25_000, "en")).toBe("25k");
   });
 });
 

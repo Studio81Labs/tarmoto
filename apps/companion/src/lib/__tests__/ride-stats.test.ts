@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createFormatters } from "@tarmoto/shared";
 import {
   availableYears,
   computeAllTimeTotals,
@@ -16,6 +17,10 @@ import {
   type RideFilters,
   type RideForStats,
 } from "../ride-stats";
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
 
 function ride(overrides: Partial<RideForStats> & { id: string }): RideForStats {
   return {
@@ -216,10 +221,12 @@ describe("computeDistanceSeries", () => {
   const now = new Date("2026-06-15T10:00:00Z");
 
   it("all-time → last 12 rolling months with unambiguous labels", () => {
-    const points = computeDistanceSeries([], "all", now);
+    const points = computeDistanceSeries([], "all", format, now);
     expect(points).toHaveLength(12);
     expect(points[0]?.key).toBe("2025-07");
     expect(points[11]?.key).toBe("2026-06");
+    // Compact month on the axis, precise month+year in the tooltip —
+    // twelve "Jun 2026"-width ticks crowd at card widths (see monthPoint).
     expect(points[11]?.axisLabel).toBe("Jun");
     expect(points[11]?.tooltipLabel).toBe("Jun 2026");
     expect(points.every((p) => p.distanceKm === 0 && p.rides === 0)).toBe(true);
@@ -234,6 +241,7 @@ describe("computeDistanceSeries", () => {
         ride({ id: "4", started_at: "2024-01-01T10:00:00Z", distance_km: 999 }),
       ],
       "all",
+      format,
       now,
     );
     expect(points.find((p) => p.key === "2026-06")).toMatchObject({
@@ -251,12 +259,17 @@ describe("computeDistanceSeries", () => {
     const points = computeDistanceSeries(
       [ride({ id: "1", started_at: "2026-03-10T10:00:00Z", distance_km: 30 })],
       "year",
+      format,
       now,
     );
     expect(points).toHaveLength(12);
     expect(points[0]?.key).toBe("2026-01");
     expect(points[11]?.key).toBe("2026-12");
-    expect(points[2]).toMatchObject({ axisLabel: "Mar", distanceKm: 30 });
+    expect(points[2]).toMatchObject({
+      axisLabel: "Mar",
+      tooltipLabel: "Mar 2026",
+      distanceKm: 30,
+    });
     // December is in the future relative to `now` → stays empty.
     expect(points[11]?.distanceKm).toBe(0);
   });
@@ -265,19 +278,24 @@ describe("computeDistanceSeries", () => {
     const points = computeDistanceSeries(
       [ride({ id: "1", started_at: "2026-06-10T08:00:00Z", distance_km: 12 })],
       "30d",
+      format,
       now,
     );
     expect(points).toHaveLength(30);
     expect(points[29]?.key).toBe("2026-06-15"); // today
     expect(points.find((p) => p.key === "2026-06-10")).toMatchObject({
+      // Day axisLabel is a bare day-of-month number — locale-neutral, so it's
+      // untouched by the migration. The tooltip now goes through
+      // `format.calendarDate`, which renders month-first for "en" (was the
+      // hand-rolled "10 Jun 2026").
       axisLabel: "10",
-      tooltipLabel: "10 Jun 2026",
+      tooltipLabel: "Jun 10, 2026",
       distanceKm: 12,
     });
   });
 
   it("last-90-days → 90 daily bars", () => {
-    const points = computeDistanceSeries([], "90d", now);
+    const points = computeDistanceSeries([], "90d", format, now);
     expect(points).toHaveLength(90);
     expect(points[89]?.key).toBe("2026-06-15");
   });
@@ -287,11 +305,14 @@ describe("computeQualityTrend", () => {
   const now = new Date("2026-06-15T10:00:00Z");
 
   it("returns 12 rolling months, null for months without scored rides", () => {
-    const points = computeQualityTrend([], now);
+    const points = computeQualityTrend([], format, now);
     expect(points).toHaveLength(12);
     expect(points[0]?.key).toBe("2025-07");
     expect(points[11]?.key).toBe("2026-06");
+    // Compact month axis tick, per the QualityPoint contract; the tooltip
+    // carries the month+year (see monthPoint).
     expect(points[11]?.axisLabel).toBe("Jun");
+    expect(points[11]?.tooltipLabel).toBe("Jun 2026");
     expect(points.every((p) => p.avgQuality === null && p.rides === 0)).toBe(
       true,
     );
@@ -313,6 +334,7 @@ describe("computeQualityTrend", () => {
           avg_road_quality: 2,
         }),
       ],
+      format,
       now,
     );
     const june = points.find((p) => p.key === "2026-06");
@@ -337,6 +359,7 @@ describe("computeQualityTrend", () => {
           avg_road_quality: 4,
         }),
       ],
+      format,
       now,
     );
     const may = points.find((p) => p.key === "2026-05");
@@ -354,6 +377,7 @@ describe("computeQualityTrend", () => {
           avg_road_quality: 5,
         }),
       ],
+      format,
       now,
     );
     expect(points.every((p) => p.avgQuality === null)).toBe(true);
@@ -374,10 +398,12 @@ describe("availableYears", () => {
 
 describe("computeMonthlyDistance", () => {
   it("returns 12 buckets in calendar order even with no rides", () => {
-    const buckets = computeMonthlyDistance([], 2026);
+    const buckets = computeMonthlyDistance([], 2026, format);
     expect(buckets).toHaveLength(12);
-    expect(buckets[0]?.monthLabel).toBe("Jan");
-    expect(buckets[11]?.monthLabel).toBe("Dec");
+    // Formatters has no "month name only" primitive, so the label renders
+    // the full `monthYear` shape (accepted — see ride-stats.ts's `monthPoint`).
+    expect(buckets[0]?.monthLabel).toBe("Jan 2026");
+    expect(buckets[11]?.monthLabel).toBe("Dec 2026");
     expect(buckets.every((b) => b.distanceKm === 0 && b.rides === 0)).toBe(
       true,
     );
@@ -408,16 +434,17 @@ describe("computeMonthlyDistance", () => {
         }),
       ],
       2026,
+      format,
     );
     expect(buckets[3]).toEqual({
       monthIndex: 3,
-      monthLabel: "Apr",
+      monthLabel: "Apr 2026",
       distanceKm: 100,
       rides: 2,
     });
     expect(buckets[6]).toEqual({
       monthIndex: 6,
-      monthLabel: "Jul",
+      monthLabel: "Jul 2026",
       distanceKm: 200,
       rides: 1,
     });
@@ -524,8 +551,12 @@ describe("computeYearOverYear", () => {
         }),
       ],
       [2025, 2026],
+      format,
     );
     expect(points).toHaveLength(12);
+    // Month name only, no year — this axis compares the same month across
+    // every requested year, so a year-bearing label would misleadingly
+    // suggest the row belongs to one specific year.
     expect(points[0]).toEqual({
       monthIndex: 0,
       monthLabel: "Jan",
@@ -544,6 +575,7 @@ describe("computeYearOverYear", () => {
     const points = computeYearOverYear(
       [ride({ id: "1", started_at: "2026-01-01T00:00:00Z" })],
       [],
+      format,
     );
     expect(points).toHaveLength(12);
     expect(Object.keys(points[0] ?? {}).sort()).toEqual([

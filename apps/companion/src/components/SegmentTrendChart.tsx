@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { Minus, TrendingDown, TrendingUp, Wrench } from "lucide-react";
+import type { Formatters } from "@tarmoto/shared";
 import {
   TREND_RANGES,
   TREND_RANGE_LABEL,
@@ -24,6 +25,7 @@ import {
   filterByRange,
   summariseTrend,
 } from "@/lib/segment-trend";
+import { useFormat } from "@/format/FormatProvider";
 /**
  * Road quality trend graph (US-45). Rendered inside the expanded
  * RoadPreviewCard in the trip planner sidebar. All derivation lives in
@@ -65,19 +67,51 @@ function trendChartPalette(tone: TrendTone) {
         refStroke: "#0f172a",
       };
 }
-function formatTrendTooltipLabel(value: React.ReactNode) {
-  return typeof value === "string" || typeof value === "number" ? value : "";
+function formatTrendTooltipLabel(
+  value: React.ReactNode,
+  format: Formatters,
+): React.ReactNode {
+  // `value` is a trend point's `date` key, which is always a month bucket in
+  // production: it's populated verbatim from `TrendPointDto.month` (backend
+  // `SegmentDetailSidebar.tsx`'s `trendPoints()`), and the backend derives
+  // that column via `DATE_TRUNC('month', recorded_at)` — it can never carry
+  // a day component on the wire. Some unit-test fixtures use "YYYY-MM-DD"
+  // shorthand for readability, but that's test convenience, not a real data
+  // shape this component needs to support. Route through the same
+  // instant-based `monthYear`/`monthBucketAnchor` pair the axis ticks use
+  // (below) so the tooltip can't render a fabricated day-of-month (e.g. "Jul
+  // 1, 2026" via `calendarDate`) for what is only ever a month.
+  return typeof value === "string" || typeof value === "number"
+    ? format.monthYear(monthBucketAnchor(String(value)))
+    : "";
 }
 function formatTrendTooltipValue(
   value: TooltipValueType | undefined,
   name: React.ReactNode,
+  format: Formatters,
 ) {
   const numeric =
     typeof value === "number" ? value : Number.parseFloat(String(value));
   const label =
     typeof name === "string" || typeof name === "number" ? String(name) : "";
   if (!Number.isFinite(numeric)) return ["—", label] as const;
-  return [numeric.toFixed(2), label] as const;
+  return [format.decimal(numeric, 2), label] as const;
+}
+/**
+ * Parses a trend point's date-only string ("YYYY-MM" in production per
+ * `TrendPointDto.month`, "YYYY-MM-DD" in some test fixtures — only the
+ * year/month are used either way) into a UTC-noon anchor for the axis ticks
+ * AND the tooltip label (`formatTrendTooltipLabel` above). `format.monthYear`
+ * is an instant (viewer-timezone) formatter, so handing it the raw string —
+ * which parses as UTC MIDNIGHT on day 1 — can roll into the previous month
+ * for any viewer behind UTC (verified: a "2026-01" string renders "Dec 2025"
+ * at UTC-12). Noon UTC is >12h clear of every real IANA offset (-12..+14) in
+ * both directions, so the month can never shift. Mirrors `monthAnchor` in
+ * `lib/ride-stats.ts`.
+ */
+function monthBucketAnchor(dateStr: string): Date {
+  const [year, month] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, 1, 12));
 }
 export function SegmentTrendChart({
   segmentId,
@@ -86,6 +120,7 @@ export function SegmentTrendChart({
   now,
   tone = "dark",
 }: SegmentTrendChartProps) {
+  const format = useFormat();
   const cream = tone === "cream";
   const palette = trendChartPalette(tone);
   const [range, setRange] = useState<TrendRange>(DEFAULT_RANGE);
@@ -122,7 +157,7 @@ export function SegmentTrendChart({
     <div>
       <div className="flex items-center justify-between gap-2 mb-3">
         {hasTrend ? (
-          <TrendSummaryBadge summary={summary} cream={cream} />
+          <TrendSummaryBadge summary={summary} cream={cream} format={format} />
         ) : (
           <span />
         )}
@@ -161,7 +196,12 @@ export function SegmentTrendChart({
                   stroke={palette.axis}
                   fontSize={10}
                   tickLine={false}
-                  tickFormatter={formatDateTick}
+                  // Compact "Jan 26" ticks — full monthYear crowds or gets
+                  // minTickGap-suppressed on the 320px sidebar; the tooltip
+                  // (formatTrendTooltipLabel) keeps the full month + year.
+                  tickFormatter={(value: string) =>
+                    format.monthYearCompact(monthBucketAnchor(value))
+                  }
                   minTickGap={24}
                 />
                 <YAxis
@@ -181,8 +221,13 @@ export function SegmentTrendChart({
                     fontSize: 12,
                   }}
                   labelStyle={{ color: palette.tooltipLabel }}
-                  labelFormatter={formatTrendTooltipLabel}
-                  formatter={formatTrendTooltipValue}
+                  labelFormatter={(value: React.ReactNode) =>
+                    formatTrendTooltipLabel(value, format)
+                  }
+                  formatter={(
+                    value: TooltipValueType | undefined,
+                    name: React.ReactNode,
+                  ) => formatTrendTooltipValue(value, name, format)}
                 />
                 <Line
                   type="monotone"
@@ -279,9 +324,11 @@ function RangeSelector({
 function TrendSummaryBadge({
   summary,
   cream,
+  format,
 }: {
   summary: ReturnType<typeof summariseTrend>;
   cream: boolean;
+  format: Formatters;
 }) {
   if (!summary) return <span />;
   const { delta, direction } = summary;
@@ -306,7 +353,7 @@ function TrendSummaryBadge({
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium ${config.color}`}
-      title={`${summary.firstScore.toFixed(2)} → ${summary.latestScore.toFixed(2)}`}
+      title={`${format.decimal(summary.firstScore, 2)} → ${format.decimal(summary.latestScore, 2)}`}
     >
       {config.icon}
       {config.label}
@@ -314,7 +361,7 @@ function TrendSummaryBadge({
         className={`ml-0.5 tabular-nums ${cream ? "text-fg-mute" : "text-slate-400"}`}
       >
         ({sign}
-        {delta.toFixed(2)})
+        {format.decimal(delta, 2)})
       </span>
     </span>
   );
@@ -377,26 +424,4 @@ function ChartLegend({
       )}
     </ul>
   );
-}
-function formatDateTick(value: string): string {
-  // Compact MMM YY labels keep the axis readable at sidebar widths.
-  const [year, month] = value.split("-");
-  if (!year || !month) return value;
-  const monthIndex = Number(month) - 1;
-  const names = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  const name = names[monthIndex] ?? month;
-  return `${name} ${year.slice(2)}`;
 }

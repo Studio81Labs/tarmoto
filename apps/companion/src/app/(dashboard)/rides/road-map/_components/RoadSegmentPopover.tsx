@@ -6,13 +6,8 @@ import { X } from "lucide-react";
 import { Stamp } from "@tarmoto/ui";
 import { roadsApi, type RoadSegmentDetailResponse } from "@/lib/api";
 import type { RiddenSegment } from "@/lib/road-map-layer";
-import {
-  QUALITY_CONFIG,
-  formatDistanceFromMeters,
-  formatShortDate,
-  scoreToTier,
-} from "@/lib/utils";
-import type { UnitSystem } from "@tarmoto/shared";
+import { QUALITY_CONFIG, scoreToTier } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Cream "Road segment" detail popover anchored to the road-map corner. Opened
@@ -23,13 +18,12 @@ import type { UnitSystem } from "@tarmoto/shared";
  */
 export function RoadSegmentPopover({
   segment,
-  unitSystem,
   onClose,
 }: {
   segment: RiddenSegment;
-  unitSystem: UnitSystem;
   onClose: () => void;
 }) {
+  const format = useFormat();
   // The fetched detail, tagged with the segment id it belongs to. Tagging (vs a
   // plain `detail` + a separate reset effect) means a result from a previously-
   // selected segment can never render under the current one during the first
@@ -78,7 +72,7 @@ export function RoadSegmentPopover({
   // selected ~100 m segment, not the whole OSM way (#809).
   const distance =
     detail?.segment_length_m != null
-      ? formatDistanceFromMeters(detail.segment_length_m, unitSystem)
+      ? format.distanceM(detail.segment_length_m)
       : settled
         ? "—"
         : "…";
@@ -104,7 +98,7 @@ export function RoadSegmentPopover({
               tierInfo?.bg ?? "bg-paper"
             }`}
           >
-            {score == null ? "N/A" : score.toFixed(1)}
+            {score == null ? "N/A" : format.decimal(score, 1)}
           </div>
           <div className="min-w-0">
             <div className="truncate font-sans text-[16px] font-extrabold leading-[1.15] tracking-[-0.3px] text-ink">
@@ -123,7 +117,7 @@ export function RoadSegmentPopover({
           <Tile label={t("Distance")} value={distance} />
           <Tile
             label={t("Last ridden")}
-            value={formatShortDate(segment.last_ridden_at)}
+            value={format.shortDate(segment.last_ridden_at)}
           />
         </div>
       </div>

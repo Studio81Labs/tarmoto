@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { GripVertical, MapPin } from "lucide-react";
 import { flattenSegments, useTripStore } from "@/stores/trip";
 import { RoadPreviewCard } from "@/components/RoadPreviewCard";
-import { formatDistance } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 import { Stamp } from "@tarmoto/ui";
 /**
  * "Road preview cards" list for the trip detail panel.
@@ -13,6 +13,7 @@ import { Stamp } from "@tarmoto/ui";
  * zoom/highlight without coupling to this component.
  */
 export function SegmentSidebar() {
+  const format = useFormat();
   const activeTrip = useTripStore((s) => s.activeTrip);
   const focusedSegmentId = useTripStore((s) => s.focusedSegmentId);
   const hoveredSegmentId = useTripStore((s) => s.hoveredSegmentId);
@@ -77,7 +78,7 @@ export function SegmentSidebar() {
                       {dayNumber}
                     </h4>
                     <span className="font-mono text-[10px] tabular-nums text-fg-mute">
-                      {formatDistance(dayDistance)}
+                      {format.distanceKm(dayDistance)}
                     </span>
                   </header>
                   <div className="space-y-2">

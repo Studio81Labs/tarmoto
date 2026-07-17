@@ -15,6 +15,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters } from "@tarmoto/shared";
 import type { Badge, RiderStats } from "@/lib/types";
 
 type MeProfileDto = components["schemas"]["MeProfileDto"];
@@ -240,12 +241,27 @@ export function pickNextMilestone(
   return actionable.sort((a, b) => b.fraction - a.fraction)[0] ?? null;
 }
 
-export function formatMilestoneLabel(progress: MilestoneProgress): string {
-  const unit = MILESTONE_UNITS[progress.milestone.metric];
-  if (progress.nextThreshold === null) {
-    return `Maxed at ${formatNumber(progress.current)} ${unit}`;
+export function formatMilestoneLabel(
+  progress: MilestoneProgress,
+  format: Formatters,
+): string {
+  const metric = progress.milestone.metric;
+  if (metric === "totalKm") {
+    // Distance milestones follow the rider's unit preference — current and
+    // threshold derive from the same formatter so they share one unit
+    // (byte-identical to the old output for metric riders).
+    if (progress.nextThreshold === null) {
+      return `Maxed at ${format.distanceKm(progress.current)}`;
+    }
+    const current = format.splitDistanceKm(progress.current);
+    const target = format.splitDistanceKm(progress.nextThreshold);
+    return `${current.value} / ${target.value} ${target.unit}`;
   }
-  return `${formatNumber(progress.current)} / ${formatNumber(progress.nextThreshold)} ${unit}`;
+  const unit = MILESTONE_UNITS[metric];
+  if (progress.nextThreshold === null) {
+    return `Maxed at ${format.integer(progress.current)} ${unit}`;
+  }
+  return `${format.integer(progress.current)} / ${format.integer(progress.nextThreshold)} ${unit}`;
 }
 
 export function formatDaysRemaining(
@@ -282,10 +298,6 @@ const MILESTONE_UNITS: Record<LeaderboardMetric, string> = {
 function clamp01(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return value > 1 ? 1 : value;
-}
-
-function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString();
 }
 
 // ── Demo data ──

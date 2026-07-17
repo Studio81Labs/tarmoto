@@ -12,6 +12,7 @@ import {
   formatRoadQuality,
 } from "@/lib/best-roads-format";
 import type { BestRoad } from "@/lib/bestRoads";
+import { getServerFormatters } from "@/format/server";
 type Road = BestRoadsEmbedRoad &
   Pick<
     BestRoad,
@@ -29,7 +30,7 @@ interface Props {
   pageUrl: string;
   variant: BestRoadsWidgetVariant;
 }
-export function BestRoadsEmbedWidget({
+export async function BestRoadsEmbedWidget({
   country,
   region,
   parent,
@@ -37,6 +38,7 @@ export function BestRoadsEmbedWidget({
   pageUrl,
   variant,
 }: Props) {
+  const format = await getServerFormatters();
   const map = projectRoadsToMiniMap(roads, {
     width: variant === "landscape" ? 720 : 640,
     height: variant === "landscape" ? 240 : 180,
@@ -179,13 +181,13 @@ export function BestRoadsEmbedWidget({
                         {formatRoadLabel(road)}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        {formatRoadLength(road.length_m)} · {road.surface_type}{" "}
-                        {t("\u00B7 quality ")}
-                        {formatRoadQuality(road.quality_score)}
+                        {formatRoadLength(road.length_m, format)} ·{" "}
+                        {road.surface_type} {t("\u00B7 quality ")}
+                        {formatRoadQuality(road.quality_score, format)}
                       </p>
                     </div>
                     <p className="text-xs font-semibold text-slate-300">
-                      {road.curviness_score.toFixed(1)}
+                      {format.decimal(road.curviness_score, 1)}
                     </p>
                   </li>
                 ))}

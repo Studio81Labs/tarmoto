@@ -17,7 +17,7 @@ import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisib
 import { UserAvatar } from "@/components/UserAvatar";
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
-import { formatRelativeTime } from "@/lib/utils";
+import { getServerFormatters } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +55,7 @@ export default async function SharedCollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  const format = await getServerFormatters();
   const [detail, preview] = await Promise.all([
     fetchSharedCollection(slug),
     fetchSharedCollectionPreview(slug),
@@ -71,6 +72,11 @@ export default async function SharedCollectionPage({
     : [];
   const ownerName = detail.owner_name || "";
   const totalKm = routes.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
+  // Value + unit from the SAME split call — pairing a unit-preference-aware
+  // value with a hardcoded "KM" label would mislabel a miles figure for an
+  // imperial viewer (this anonymous share page has no unit toggle of its
+  // own, but the viewer's resolved unit preference still applies).
+  const totalDistance = format.splitDistanceKm(totalKm);
 
   return (
     <div className="flex min-h-screen flex-col bg-cream text-ink">
@@ -137,7 +143,7 @@ export default async function SharedCollectionPage({
             </MetaChip>
             <MetaChip>
               <Calendar size={13} className="text-fg-mute" aria-hidden="true" />
-              {t("Updated")} {formatRelativeTime(detail.updated_at)}
+              {t("Updated")} {format.relativeTime(detail.updated_at)}
             </MetaChip>
           </div>
         </section>
@@ -153,7 +159,7 @@ export default async function SharedCollectionPage({
           <Stamp>{t("Routes")}</Stamp>
           {routes.length > 0 && (
             <Mono className="text-[11px] text-fg-mute">
-              {Math.round(totalKm).toLocaleString()} {t("KM")}
+              {totalDistance.value} {totalDistance.unit.toUpperCase()}
             </Mono>
           )}
         </div>

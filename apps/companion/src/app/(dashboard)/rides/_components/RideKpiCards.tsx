@@ -2,9 +2,7 @@
 
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
-import { useNumberFormat } from "@/hooks/useNumberFormat";
-import { usePreferencesStore } from "@/stores/preferences";
-import { splitFormattedDistance } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 
 const DASH = "—";
 
@@ -42,16 +40,14 @@ export function RideKpiCards({
   stats: RideStats | null;
   error?: boolean;
 }) {
-  const { format } = useNumberFormat();
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const format = useFormat();
   const has = stats != null;
-  // Distance honours the rider's unit preference (km/m vs mi/ft); the unit
-  // shows km/mi even on the em-dash state so the card reads consistently.
-  const distance = has
-    ? splitFormattedDistance(stats.total_distance_km, unitSystem)
-    : null;
+  // Distance honours the rider's unit preference (km/m vs mi/ft) via the
+  // format seam; the unit shows even on the em-dash state so the card reads
+  // consistently.
+  const distance = has ? format.splitDistanceKm(stats.total_distance_km) : null;
   const distanceUnit =
-    distance?.unit ?? (unitSystem === "imperial" ? "MI" : "KM");
+    distance?.unit ?? (format.units === "imperial" ? "mi" : "km");
   const rideTime = formatRideTime(stats?.total_hours ?? 0);
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
@@ -83,10 +79,7 @@ export function RideKpiCards({
       label: "Avg quality",
       value:
         has && stats.avg_quality != null
-          ? format(stats.avg_quality, {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1,
-            })
+          ? format.decimal(stats.avg_quality, 1)
           : DASH,
       unit: "/ 5",
     },
@@ -96,7 +89,7 @@ export function RideKpiCards({
     <div className="mb-[18px]">
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
         {tiles.map((tile) => (
-          <MetricTile key={tile.label} formatValue={format} {...tile} />
+          <MetricTile key={tile.label} formatValue={format.integer} {...tile} />
         ))}
       </div>
       {error && (

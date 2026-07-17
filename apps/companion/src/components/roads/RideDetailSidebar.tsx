@@ -6,14 +6,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { components } from "@tarmoto/openapi-client";
-import {
-  formatDate,
-  formatDuration,
-  splitFormattedDistance,
-  splitFormattedElevation,
-  splitFormattedSpeed,
-} from "@/lib/utils";
-import { usePreferencesStore } from "@/stores/preferences";
+import { useFormat } from "@/format/FormatProvider";
 
 type RideDetail = components["schemas"]["RideDetailDto"];
 
@@ -128,11 +121,11 @@ export function RideDetailSidebar({
 }
 
 function RideBody({ ride }: { ride: RideDetail }) {
-  const units = usePreferencesStore((s) => s.unitSystem);
-  const distance = splitFormattedDistance(ride.distance_km ?? 0, units);
-  const avgSpeed = splitFormattedSpeed(ride.avg_speed ?? 0, units);
-  const topSpeed = splitFormattedSpeed(ride.max_speed ?? 0, units);
-  const ascent = splitFormattedElevation(ride.elevation_gain ?? 0, units);
+  const format = useFormat();
+  const distance = format.splitDistanceKm(ride.distance_km ?? 0);
+  const avgSpeed = format.splitSpeed(ride.avg_speed ?? 0);
+  const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
+  const ascent = format.splitElevation(ride.elevation_gain ?? 0);
 
   const tiles: MetricTileProps[] = [
     {
@@ -145,7 +138,7 @@ function RideBody({ ride }: { ride: RideDetail }) {
     {
       label: t("Duration"),
       value:
-        ride.duration_min != null ? formatDuration(ride.duration_min) : "—",
+        ride.duration_min != null ? format.duration(ride.duration_min) : "—",
     },
     {
       label: t("Avg speed"),
@@ -176,10 +169,10 @@ function RideBody({ ride }: { ride: RideDetail }) {
     <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
       <div>
         <h2 className="font-sans text-[19px] font-extrabold leading-tight tracking-[-0.4px] text-ink">
-          {ride.name || formatDate(ride.started_at)}
+          {ride.name || format.date(ride.started_at)}
         </h2>
         <p className="mt-1 flex items-center gap-2 text-[12.5px] text-fg-dim">
-          <span>{formatDate(ride.started_at)}</span>
+          <span>{format.date(ride.started_at)}</span>
           <span className="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[1px] text-fg-mute">
             {t(RIDE_TYPE_LABEL[ride.ride_type] ?? ride.ride_type)}
           </span>

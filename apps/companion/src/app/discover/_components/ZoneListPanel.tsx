@@ -1,5 +1,6 @@
 "use client";
 import { t } from "@/i18n";
+import { useFormat } from "@/format/FormatProvider";
 import { useDiscoverStore } from "./useDiscoverStore";
 import type { FunZoneListItem } from "@/lib/discover";
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
  * selects the zone and opens the detail panel.
  */
 export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
+  const format = useFormat();
   const { drawnBbox, selectedZoneId, setSelectedZoneId } = useDiscoverStore();
   return (
     <aside className="w-[300px] border-r border-slate-800 bg-slate-950 overflow-y-auto flex flex-col">
@@ -87,17 +89,17 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                         {zone.name ?? fallbackName(zone)}
                       </h3>
                       <span className="text-xs tabular-nums text-accent flex-shrink-0">
-                        {zone.composite_score.toFixed(1)}
+                        {format.decimal(zone.composite_score, 1)}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
                       {zone.road_count}
                       {t("roads ")}
                       {zone.total_curve_km != null
-                        ? ` · ${Math.round(zone.total_curve_km)} km curves`
+                        ? ` · ${format.distanceKm(zone.total_curve_km)} curves`
                         : ""}
                       {zone.avg_quality != null
-                        ? ` · avg ${zone.avg_quality.toFixed(1)}★`
+                        ? ` · avg ${format.decimal(zone.avg_quality, 1)}★`
                         : ""}
                     </p>
                     {zone.best_season ? (

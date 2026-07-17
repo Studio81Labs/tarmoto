@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Code2, Copy, MousePointerClick, Eye } from "lucide-react";
 import { Card, Stamp } from "@tarmoto/ui";
+import { useFormat } from "@/format/FormatProvider";
 import {
   buildRideIframeCode,
   formatRideEmbedStat,
@@ -38,6 +39,7 @@ export function RouteEmbedPanel({
   views,
   clicks,
 }: Props) {
+  const format = useFormat();
   const [variant, setVariant] = useState<RideWidgetVariant>("compact");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
@@ -89,11 +91,11 @@ export function RouteEmbedPanel({
       <div className="mt-[18px] flex flex-wrap gap-2">
         <div className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
           <Eye size={13} className="text-accent" />
-          {formatRideEmbedStat(views, "view")}
+          {formatRideEmbedStat(views, "view", format)}
         </div>
         <div className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
           <MousePointerClick size={13} className="text-accent" />
-          {formatRideEmbedStat(clicks, "click")}
+          {formatRideEmbedStat(clicks, "click", format)}
         </div>
       </div>
 

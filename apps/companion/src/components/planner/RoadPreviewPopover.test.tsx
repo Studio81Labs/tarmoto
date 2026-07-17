@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { FormatProvider } from "@/format/FormatProvider";
 import { RoadPreviewPopover } from "./RoadPreviewPopover";
 import { plannerApi } from "@/lib/planner/api";
 import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
@@ -89,6 +90,26 @@ describe("RoadPreviewPopover", () => {
     expect(
       screen.getByRole("link", { name: /Google Street View/ }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the quality-strip scale in the same unit as its tooltips for imperial riders", async () => {
+    getRoadPreviewMock.mockResolvedValue(measuredPreview());
+    render(
+      <FormatProvider formatLocale="en-US" timeZone="UTC" units="imperial">
+        <RoadPreviewPopover segment={segment()} onClose={vi.fn()} />
+      </FormatProvider>,
+    );
+
+    await screen.findByText("QUALITY ACROSS SECTION");
+    // 4.2 km ≈ 2.6 mi — the scale endpoints must convert together with the
+    // micro-segment tooltips; a raw "KM" label under mile tooltips would
+    // make the chart internally inconsistent.
+    expect(screen.getByText("2.6 MI")).toBeInTheDocument();
+    expect(screen.getByText("0 MI")).toBeInTheDocument();
+    expect(screen.queryByText("4.2 KM")).not.toBeInTheDocument();
+    // The heading converts together with the strip — no "4.2 km" title
+    // above a miles-labeled chart.
+    expect(screen.getByText("Day 1 section · 2.6 mi")).toBeInTheDocument();
   });
 
   it("shows a graceful empty state when there is no imagery coverage", async () => {

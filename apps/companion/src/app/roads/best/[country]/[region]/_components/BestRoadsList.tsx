@@ -5,6 +5,7 @@ import {
   formatRoadLength,
   formatRoadQuality,
 } from "@/lib/best-roads-format";
+import { getServerFormatters } from "@/format/server";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -19,7 +20,8 @@ type Road = Pick<
 interface Props {
   roads: Road[];
 }
-export function BestRoadsList({ roads }: Props) {
+export async function BestRoadsList({ roads }: Props) {
+  const format = await getServerFormatters();
   if (roads.length === 0) {
     return (
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-slate-400">
@@ -47,7 +49,7 @@ export function BestRoadsList({ roads }: Props) {
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold">{formatRoadLabel(r)}</h3>
               <p className="text-xs text-slate-400">
-                {formatRoadLength(r.length_m)} · {r.surface_type}
+                {formatRoadLength(r.length_m, format)} · {r.surface_type}
               </p>
             </div>
             <dl className="hidden gap-6 sm:flex">
@@ -56,7 +58,7 @@ export function BestRoadsList({ roads }: Props) {
                   {t("Quality ")}
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
-                  {formatRoadQuality(r.quality_score)}
+                  {formatRoadQuality(r.quality_score, format)}
                 </dd>
               </div>
               <div className="text-center">
@@ -64,7 +66,7 @@ export function BestRoadsList({ roads }: Props) {
                   {t("Curviness ")}
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
-                  {r.curviness_score.toFixed(1)}
+                  {format.decimal(r.curviness_score, 1)}
                 </dd>
               </div>
             </dl>
