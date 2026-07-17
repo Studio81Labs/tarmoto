@@ -2,7 +2,6 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { findSubRegions, type Country, type Region } from "@tarmoto/shared";
 import { BestRoadsMap } from "./BestRoadsMap";
-import { BestRoadsEmbedPanel } from "./BestRoadsEmbedPanel";
 import { BestRoadsList } from "./BestRoadsList";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
 import type { BestRoad } from "@/lib/bestRoads";
@@ -44,7 +43,6 @@ export function BestRoadsPageBody({
   // to its children here — otherwise those sub-region pages are only
   // reachable via the sitemap.
   const subRegions = parent ? [] : findSubRegions(country.code, region.slug);
-  const origin = new URL(pageUrl).origin;
   return (
     <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
@@ -98,14 +96,6 @@ export function BestRoadsPageBody({
           <h2 className="mb-4 text-xl font-semibold">{t("Ranked roads")}</h2>
           <BestRoadsList roads={roads} />
         </section>
-
-        <BestRoadsEmbedPanel
-          origin={origin}
-          country={country.code}
-          region={parent?.slug ?? region.slug}
-          subregion={parent ? region.slug : undefined}
-          regionName={region.name}
-        />
 
         {subRegions.length > 0 && (
           <section className="mb-8">

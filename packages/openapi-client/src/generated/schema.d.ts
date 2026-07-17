@@ -1081,23 +1081,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/rides/shared/{token}/embed-click": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Track an outbound click from an embeddable shared-ride widget */
-        post: operations["SharingController_trackEmbedClick"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/rides/community": {
         parameters: {
             query?: never;
@@ -4796,8 +4779,6 @@ export interface components {
             duration_min: number | null;
             /** @description Number of times this shared ride has been viewed via its token. Incremented on each fetch. */
             view_count: number;
-            /** @description Number of outbound clicks from embeddable route widgets into the full Tarmoto ride page. */
-            embed_click_count: number;
             route_geometry: components["schemas"]["RouteGeometryPointDto"][] | null;
         };
         CommunityRideDto: {
@@ -8715,32 +8696,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SharedRideDetailDto"];
                 };
-            };
-            /** @description Shared ride not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    SharingController_trackEmbedClick: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                token: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Shared ride not found */
             404: {

@@ -32,14 +32,6 @@ export function AppProviders({
     units: formatPrefs.units,
   };
 
-  if (pathname === "/embed" || pathname.startsWith("/embed/")) {
-    return (
-      <I18nProvider {...localeProp}>
-        <FormatProvider {...formatProps}>{children}</FormatProvider>
-      </I18nProvider>
-    );
-  }
-
   return (
     <I18nProvider {...localeProp}>
       <FormatProvider {...formatProps}>

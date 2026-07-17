@@ -80,17 +80,6 @@ export class SharingController {
     return this.sharingService.getByToken(token);
   }
 
-  @Post('shared/:token/embed-click')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({
-    summary: 'Track an outbound click from an embeddable shared-ride widget',
-  })
-  @ApiResponse({ status: 204 })
-  @ApiResponse({ status: 404, description: 'Shared ride not found' })
-  async trackEmbedClick(@Param('token') token: string): Promise<void> {
-    await this.sharingService.trackEmbedClick(token);
-  }
-
   @Get('community')
   @UseGuards(OptionalAuthGuard)
   @ApiOperation({
