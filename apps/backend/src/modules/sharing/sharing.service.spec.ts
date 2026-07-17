@@ -70,7 +70,6 @@ describe('SharingService', () => {
     share_token: 'abc123def456abc123def456abc12345',
     is_public: true,
     view_count: 7,
-    embed_click_count: 3,
     created_at: new Date('2026-04-14T11:00:00Z'),
     ride: mockRide,
     user: { display_name: 'John Rider' },
@@ -98,7 +97,6 @@ describe('SharingService', () => {
     // (e.g. `getByToken` bumps view_count, `toggleShare` flips is_public)
     // and the mock row is shared by reference across `findOne` returns.
     mockShared.view_count = 7;
-    mockShared.embed_click_count = 3;
     mockShared.is_public = true;
 
     sharedRideRepo = {
@@ -295,7 +293,6 @@ describe('SharingService', () => {
       expect(result.distance_km).toBe(42.5);
       expect(result.avg_curviness).toBe(3.1);
       expect(result.duration_min).toBe(90);
-      expect(result.embed_click_count).toBe(3);
       expect(result.route_geometry).toHaveLength(3);
       expect(result.route_geometry![0]).toEqual({ lat: 49.2, lng: 16.6 });
     });
@@ -388,63 +385,6 @@ describe('SharingService', () => {
         NotFoundException,
       );
       // The view-count side-effect must not fire for hidden rides.
-      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('trackEmbedClick', () => {
-    it('atomically increments embed_click_count for a shared ride token', async () => {
-      await service.trackEmbedClick('abc123def456abc123def456abc12345');
-
-      expect(sharedRideRepo.increment).toHaveBeenCalledWith(
-        { id: 'shared-1' },
-        'embed_click_count',
-        1,
-      );
-    });
-
-    it('throws NotFoundException when the token does not exist', async () => {
-      sharedRideRepo.findOne!.mockResolvedValueOnce(null);
-
-      await expect(service.trackEmbedClick('missing')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('hides embed-click tracking for tokens whose owner has requested deletion (US-62)', async () => {
-      // Without this gate a caller could probe `/embed-click` to
-      // side-channel whether a token belongs to a deleted owner vs an
-      // unknown share — `getByToken` already 404s, so the two paths
-      // must agree.
-      const deletedOwnerShared = {
-        ...mockShared,
-        user: {
-          ...(mockShared as { user: object }).user,
-          deleted_at: new Date(),
-        },
-      } as unknown as SharedRide;
-      sharedRideRepo.findOne!.mockResolvedValueOnce(deletedOwnerShared);
-
-      await expect(service.trackEmbedClick('abc123')).rejects.toThrow(
-        NotFoundException,
-      );
-      // The increment side-effect must not fire for hidden tokens.
-      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
-    });
-
-    it('hides embed-click tracking for tokens whose owner is private (#279)', async () => {
-      // Same gate as `getByToken` — without it a caller can probe
-      // `/embed-click` to confirm a hidden share token exists, AND
-      // we'd record engagement against content that's supposed to
-      // be hidden.
-      privacy.loadPreferences.mockResolvedValueOnce({
-        ...DEFAULT_PRIVACY_PREFERENCES,
-        profile_visibility: 'private',
-      });
-
-      await expect(
-        service.trackEmbedClick('abc123def456abc123def456abc12345'),
-      ).rejects.toThrow(NotFoundException);
       expect(sharedRideRepo.increment).not.toHaveBeenCalled();
     });
   });

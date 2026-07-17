@@ -4,13 +4,13 @@ import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
 export const revalidate = 604800;
 export default function BestRoadsHubPage() {
   return (
-    <div className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">
             {t("Best motorcycle roads ")}
           </h1>
-          <p className="mt-2 text-slate-400">
+          <p className="mt-2 text-fg-dim">
             {t(
               "Browse curated lists of top-ranked roads \u2014 scored from live road quality and curviness data. Pick a country to get started. ",
             )}
@@ -24,10 +24,10 @@ export default function BestRoadsHubPage() {
               <li key={country.code}>
                 <Link
                   href={`/roads/best/${country.code}`}
-                  className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
+                  className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
                 >
                   <h2 className="text-xl font-semibold">{country.name}</h2>
-                  <p className="mt-1 text-sm text-slate-400">
+                  <p className="mt-1 text-sm text-fg-dim">
                     {t("{count, plural, one {# region} other {# regions}}", {
                       count: regionCount,
                     })}

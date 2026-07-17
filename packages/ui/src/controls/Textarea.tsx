@@ -8,9 +8,10 @@ import { FieldHint } from "./field/FieldHint";
  * Shares `fieldChrome` with Input/Select; `resize-none` keeps panel layouts
  * stable. See Input for the `tone`/labelling rationale.
  */
-export interface TextareaProps {
+interface TextareaBaseProps {
   value: string;
-  onChange: (value: string) => void;
+  /** Monospace content — embed snippets, code, tokens. */
+  mono?: boolean;
   tone?: "paper" | "cream";
   id?: string;
   rows?: number;
@@ -24,9 +25,22 @@ export interface TextareaProps {
   className?: string;
 }
 
+/**
+ * Discriminated on `readOnly`: an editable textarea must wire `onChange`
+ * (a controlled field without one would silently reset every keystroke),
+ * while a read-only display (copyable code/links) may omit it.
+ */
+export type TextareaProps = TextareaBaseProps &
+  (
+    | { readOnly: true; onChange?: (value: string) => void }
+    | { readOnly?: false; onChange: (value: string) => void }
+  );
+
 export function Textarea({
   value,
   onChange,
+  readOnly = false,
+  mono = false,
   tone = "paper",
   id,
   rows = 3,
@@ -58,10 +72,12 @@ export function Textarea({
         aria-invalid={error || undefined}
         aria-describedby={resolvedHintId}
         maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
+        readOnly={readOnly}
+        onChange={(event) => onChange?.(event.target.value)}
         className={cn(
           fieldChrome({ tone, disabled, error }),
           "resize-none leading-relaxed",
+          mono && "font-mono text-xs",
         )}
       />
       {hint && (

@@ -1047,10 +1047,6 @@ export const en = {
     "{count, plural, one {PASS} other {PASSES}}",
   "{count, plural, one {pass} other {passes}}":
     "{count, plural, one {pass} other {passes}}",
-  "{count, plural, one {{n} click} other {{n} clicks}}":
-    "{count, plural, one {{n} click} other {{n} clicks}}",
-  "{count, plural, one {{n} embed click} other {{n} embed clicks}}":
-    "{count, plural, one {{n} embed click} other {{n} embed clicks}}",
   "{count, plural, one {{n} ride} other {{n} rides}}":
     "{count, plural, one {{n} ride} other {{n} rides}}",
   "{count, plural, one {{n} view} other {{n} views}}":

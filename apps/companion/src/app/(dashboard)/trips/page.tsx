@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
+  FileUp,
   Plus,
   Route,
   MapPin,
@@ -480,13 +481,22 @@ export default function TripListPage() {
             "Plan multi-day routes, organise them into folders, and ride them from the mobile app.",
           )}
           right={
-            <Link
-              href="/trips/planner"
-              className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-            >
-              <Plus size={14} />
-              {t("New trip")}
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/trips/planner?import=1"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+              >
+                <FileUp size={14} />
+                {t("Import GPX")}
+              </Link>
+              <Link
+                href="/trips/planner"
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+              >
+                <Plus size={14} />
+                {t("New trip")}
+              </Link>
+            </div>
           }
         />
 

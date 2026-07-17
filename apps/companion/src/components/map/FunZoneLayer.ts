@@ -34,8 +34,8 @@ export function installFunZoneLayer(map: MapLibreMap): void {
   });
 
   // Fill: opacity low so underlying quality heatmap stays visible. Color
-  // ramps from slate-800 (low score) to canonical accent (high) so the
-  // best zones pop visually.
+  // ramps from a muted warm grey (low score) to canonical accent (high) so
+  // the best zones pop visually against the light basemap.
   map.addLayer({
     id: FUN_ZONES_FILL,
     type: "fill",
@@ -88,10 +88,28 @@ export function installFunZoneLayer(map: MapLibreMap): void {
     },
     paint: {
       "text-color": "#ffffff",
-      "text-halo-color": "#0f172a",
+      "text-halo-color": "#0e0e10", // ink — reads on the light basemap
       "text-halo-width": 1.5,
     },
   });
+}
+
+const FUN_ZONE_LAYERS = [
+  FUN_ZONES_FILL,
+  FUN_ZONES_LINE,
+  FUN_ZONES_SELECTED,
+  FUN_ZONES_LABEL,
+] as const;
+
+/** Toggles all Fun Zone layers' visibility (source data stays loaded). */
+export function setFunZoneLayersVisible(
+  map: MapLibreMap,
+  visible: boolean,
+): void {
+  for (const id of FUN_ZONE_LAYERS) {
+    if (!map.getLayer(id)) continue;
+    map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+  }
 }
 
 /**
@@ -152,7 +170,7 @@ function buildCompositeScoreColor(): ExpressionSpecification {
     ["linear"],
     ["get", "composite_score"],
     0,
-    "#1e293b", // slate-800 (low score)
+    "#8a877e", // muted warm grey (low score) — legible on the light basemap
     5,
     "#FF6A1A", // canonical accent (high score)
   ];

@@ -15,6 +15,8 @@ const mockSearchParams = vi.hoisted(() => ({
 }));
 
 type MockQualityMapProps = {
+  showFunZones?: boolean;
+  selectedFunZoneId?: string | null;
   onSegmentSelect?: (segmentId: string) => void;
   onViewChange?: (view: {
     lng: number;
@@ -272,6 +274,36 @@ describe("ExplorerPage", () => {
       isAuthenticated: true,
       accessToken: "test-token",
     });
+  });
+
+  it("honours legacy /discover deep-link params: camera + zone open the Fun Zones overlay, then the params are stripped", () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/explore?lng=18.26&lat=49.82&z=10&zone=zone-42",
+    );
+    render(<ExplorerPage />);
+
+    expect(flyToMock).toHaveBeenCalledWith({
+      lng: 18.26,
+      lat: 49.82,
+      zoom: 10,
+    });
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
+    expect(props.showFunZones).toBe(true);
+    expect(props.selectedFunZoneId).toBe("zone-42");
+    // One-shot params are stripped so refresh/share doesn't replay them.
+    expect(window.location.search).not.toContain("zone");
+    expect(window.location.search).not.toContain("lng");
+    window.history.replaceState({}, "", "/explore");
+  });
+
+  it("leaves the Fun Zones overlay off on a bare /explore visit", () => {
+    window.history.replaceState({}, "", "/explore");
+    render(<ExplorerPage />);
+    const props = mockQualityMap.mock.lastCall?.[0] as MockQualityMapProps;
+    expect(props.showFunZones).toBe(false);
+    expect(flyToMock).not.toHaveBeenCalled();
   });
 
   it("T29: picking an address-search result flies the map to the place (#573)", () => {

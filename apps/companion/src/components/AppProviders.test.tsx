@@ -39,25 +39,7 @@ describe("AppProviders", () => {
     mocks.networkStatusProvider.mockClear();
   });
 
-  it("skips session and realtime providers on embed routes", () => {
-    mocks.usePathname.mockReturnValue("/embed/roads/at/tyrol");
-
-    render(
-      <AppProviders formatPrefs={mockFormatPrefs}>
-        <div>Embed child</div>
-      </AppProviders>,
-    );
-
-    expect(screen.getByText("Embed child")).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("authenticated-providers"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("network-status-provider"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps providers enabled for non-embed routes with a similar prefix", () => {
+  it("keeps providers enabled on every route (the embed opt-out is retired)", () => {
     mocks.usePathname.mockReturnValue("/embeddings");
 
     render(

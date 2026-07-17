@@ -805,7 +805,7 @@ function ConfirmDialog({
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-[2px]"
     >
       <div className="w-full max-w-sm rounded-[14px] border border-line bg-paper p-6 shadow-xl">
         <h2

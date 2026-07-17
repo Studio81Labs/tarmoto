@@ -1,10 +1,9 @@
 import { t } from "@/i18n";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Activity, CalendarDays, Plus, Sparkles } from "lucide-react";
+import { Activity, CalendarDays, Plus } from "lucide-react";
 import { Card, Stamp, MetricTile } from "@tarmoto/ui";
 import { getServerFormatters } from "@/format/server";
-import { RouteEmbedPanel } from "./_components/RouteEmbedPanel";
 import {
   PublicShareFooter,
   PublicShareHeader,
@@ -14,7 +13,6 @@ import {
 } from "@/components/public-share";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { fetchSharedRide } from "@/lib/shared-rides";
-import { siteUrl } from "@/lib/site";
 import { formatRideType } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -36,12 +34,9 @@ export default async function SharedRidePage({
   const format = await getServerFormatters();
   const ride = await fetchSharedRide(token);
   if (!ride) notFound();
-  const pageUrl = `${siteUrl()}/rides/shared/${token}`;
-  const origin = new URL(pageUrl).origin;
   // 640-unit preview matches the design's coordinate space so the route casing,
   // shadow, accent strokes, and A/B markers scale to the same proportions.
   const preview = buildRoutePreview(ride.route_geometry, 640, 48);
-  const rideLabel = `${ride.rider_name} · ${formatRideType(ride.ride_type)} ride`;
 
   const distance =
     ride.distance_km != null ? format.splitDistanceKm(ride.distance_km) : null;
@@ -65,7 +60,7 @@ export default async function SharedRidePage({
           </h1>
           <p className="mt-3 max-w-[680px] text-[15px] leading-[1.55] text-fg-dim">
             {t(
-              "Shared from Tarmoto for blogs, forums, and ride reports. Each page load counts as a view, and widget CTA clicks are tracked separately.",
+              "Shared from Tarmoto for blogs, forums, and ride reports. Each page load counts as a view.",
             )}
           </p>
           <div className="mt-[18px] flex flex-wrap gap-2.5">
@@ -77,15 +72,6 @@ export default async function SharedRidePage({
                 count: ride.view_count,
                 n: format.integer(ride.view_count),
               })}
-            </SharePill>
-            <SharePill icon={<Sparkles size={13} />}>
-              {t(
-                "{count, plural, one {{n} embed click} other {{n} embed clicks}}",
-                {
-                  count: ride.embed_click_count,
-                  n: format.integer(ride.embed_click_count),
-                },
-              )}
             </SharePill>
           </div>
         </Card>
@@ -133,15 +119,6 @@ export default async function SharedRidePage({
             }
           />
         </div>
-
-        {/* Embed widget */}
-        <RouteEmbedPanel
-          origin={origin}
-          token={token}
-          rideLabel={rideLabel}
-          views={ride.view_count}
-          clicks={ride.embed_click_count}
-        />
       </main>
 
       <PublicShareFooter

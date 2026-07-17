@@ -174,7 +174,7 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 | ----------------------- | ---------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Phase 1: MVP**        | Q3–Q4 2026 | Road Surface Intelligence, Trip Planner, Safety, Navigation | Core mobile app with surface quality sensing, basic trip planning, crash detection, turn-by-turn nav, CarPlay/AA. **Web:** Trip planner, road quality explorer, account management |
 | **Phase 2: Growth**     | Q1–Q2 2027 | Commuter Mode, Community & Social                           | Daily commute features, ride sharing, group features, road reviews. **Web:** Community hub, ride history dashboard, analytics                                                      |
-| **Phase 3: Engagement** | Q3 2027+   | Gamification, Advanced Analytics                            | Badges, challenges, personal road maps, advanced ride stats, API for 3rd parties. **Web:** Gamification dashboard, public route embeds, API docs                                   |
+| **Phase 3: Engagement** | Q3 2027+   | Gamification, Advanced Analytics                            | Badges, challenges, personal road maps, advanced ride stats, API for 3rd parties. **Web:** Gamification dashboard, API docs                                                        |
 
 ### 4.1 MVP Success Criteria
 
@@ -419,7 +419,7 @@ The community hub turns Tarmoto from a utility into a destination. Riders browse
 - ✅ **US-55:** As a rider, I want to rate and write reviews for road segments with photo uploads so that I help the community database grow beyond sensor data.
 - ✅ **US-56:** As a rider, I want to create and share route collections (e.g., "My Favorite Beskydy Loops", "Best Gravel Roads in Moravia") so that I can curate recommendations.
 - ✅ **US-57:** As a rider, I want to see a gamification dashboard with my badges, active challenges, leaderboard position, and progress toward next milestones so that I stay engaged.
-- ✅ **US-58:** As a rider, I want to embed a route or road quality widget on external sites (forums, blogs) so that I can share Tarmoto data outside the app.
+- ❌ **US-58 (retired 2026-07):** Embeddable route / road-quality widgets were built and later removed — no measurable usage, and most platforms strip iframes; the public share pages with OpenGraph cards cover external sharing. Legacy `/embed/*` URLs permanently redirect to the full share/Best-Roads pages.
 
 #### 9.2.5 WEB-EPIC 5: Account & Settings
 

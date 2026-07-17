@@ -28,6 +28,14 @@ import {
   firstSymbolLayerId,
   setAerialBasemapVisible,
 } from "@/components/map/AerialBasemap";
+import {
+  FUN_ZONES_FILL,
+  installFunZoneLayer,
+  setFunZoneLayersVisible,
+  setFunZoneSelection,
+  updateFunZoneLayerData,
+} from "@/components/map/FunZoneLayer";
+import type { FunZoneListItem } from "@/lib/discover";
 import { FSQ_ATTRIBUTION } from "@/components/map/attribution";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
 import { onHazardNew, subscribeHazards } from "@/lib/socket";
@@ -162,6 +170,14 @@ interface Props {
   rideTracks: readonly RideTrack[];
   /** Clicking a ride route opens its detail drawer. */
   onRideSelect: (rideId: string) => void;
+  /** When on, overlay public Fun Zone polygons (score-ramped fills). */
+  showFunZones: boolean;
+  /** Zones for the current viewport, sorted best-first (drives rank labels). */
+  funZones: readonly FunZoneListItem[];
+  /** Zone whose detail panel is open — painted with the highlight outline. */
+  selectedFunZoneId: string | null;
+  /** Clicking open zone ground (no road under the cursor) opens the zone. */
+  onFunZoneSelect: (zoneId: string) => void;
   onSegmentSelect?: (segmentId: string) => void;
   /** Segment whose detail drawer is open — painted with the highlight overlay. */
   selectedSegmentId?: string | null;
@@ -219,6 +235,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showMyRides,
       rideTracks,
       onRideSelect,
+      showFunZones,
+      funZones,
+      selectedFunZoneId,
+      onFunZoneSelect,
       onSegmentSelect,
       selectedSegmentId,
       onViewChange,
@@ -421,6 +441,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       // `firstSymbolLayerId` would return one of ours and slot the aerial raster
       // above our overlays instead of falling back to the quality layer.
       const baseSymbolLayerId = firstSymbolLayerId(map);
+      // Fun Zone polygons go in first: broad fills belong under every
+      // marker/route layer added below.
+      installFunZoneLayer(map);
+      setFunZoneLayersVisible(map, showFunZones);
       ensureHazardLayers(map, { visible: showHazards });
       ensureConditionLayers(map, undefined, { includeOpenPasses: true });
       setConditionLayersVisible(map, showConditions);
@@ -599,6 +623,56 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
               onRideSelect(rideId);
             },
           },
+          // Zone fills are the broadest (and lowest-priority) click target.
+          // A road under the cursor wins first, so segments inside a zone
+          // stay selectable while the overlay is on; open zone ground opens
+          // the zone panel.
+          {
+            layers: [FUN_ZONES_FILL],
+            handle: (f, e) => {
+              const {
+                showQuality: canSelectQuality,
+                showSurface: canSelectSurface,
+                onSegmentSelect: selectSegment,
+              } = segmentSelectionRef.current;
+              const segmentLayers = [
+                ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+                ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
+              ].filter((id) => map.getLayer(id));
+              if (selectSegment && segmentLayers.length > 0) {
+                const feature = pickNearestLineFeature(
+                  map,
+                  e.point,
+                  segmentLayers,
+                  SEGMENT_HIT_PADDING_PX,
+                );
+                const segmentId = readSegmentId(feature);
+                if (segmentId) {
+                  setPointMenu(null);
+                  selectSegment(segmentId);
+                  return;
+                }
+              }
+              // A named base-map POI under the cursor also wins — its place
+              // popover normally opens via `onMiss`, which this route would
+              // otherwise pre-empt inside zones.
+              const place = topBasemapPlaceAt(map, e.point, basemapPoiLayers);
+              if (place) {
+                setPointMenu({
+                  point: { kind: "place", place },
+                  lng: place.lng,
+                  lat: place.lat,
+                  x: e.originalEvent.clientX,
+                  y: e.originalEvent.clientY,
+                });
+                return;
+              }
+              const zoneId = f.properties?.id;
+              if (typeof zoneId !== "string") return;
+              setPointMenu(null);
+              onFunZoneSelect(zoneId);
+            },
+          },
         ],
         onMiss: selectSegmentAt,
       });
@@ -618,6 +692,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         PASS_MARKER_LAYER,
         TRIP_ROUTE_LAYER,
         RIDE_ROUTE_LAYER,
+        FUN_ZONES_FILL,
       ]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
@@ -948,6 +1023,23 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       if (!map || !ready) return;
       setRideRouteLayersVisible(map, showMyRides);
     }, [ready, showMyRides]);
+
+    // ── Fun Zones overlay: keep data, visibility, and selection in sync ──
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      updateFunZoneLayerData(map, [...funZones]);
+    }, [ready, funZones]);
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setFunZoneLayersVisible(map, showFunZones);
+    }, [ready, showFunZones]);
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!map || !ready) return;
+      setFunZoneSelection(map, selectedFunZoneId);
+    }, [ready, selectedFunZoneId]);
 
     // ── fetch hazards when viewport settles ──
     useEffect(() => {
