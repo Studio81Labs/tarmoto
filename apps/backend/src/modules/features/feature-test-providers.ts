@@ -1,8 +1,8 @@
-import { FEATURE_KEYS } from '@tarmoto/shared';
+import { TOGGLE_FEATURE_KEYS } from '@tarmoto/shared';
 import { FeatureResolver } from './feature-resolver.service.js';
 
 const allGranted = () =>
-  Object.fromEntries(FEATURE_KEYS.map((key) => [key, true]));
+  Object.fromEntries(TOGGLE_FEATURE_KEYS.map((key) => [key, true]));
 
 /**
  * Provider required by `FeatureGuard` in controller unit tests — the

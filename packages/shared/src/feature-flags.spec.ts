@@ -1,17 +1,21 @@
 import {
   FEATURE_DEFINITIONS,
   FEATURE_KEYS,
+  LIMIT_FEATURE_KEYS,
+  TOGGLE_FEATURE_KEYS,
   buildFeatureSnapshot,
   isFeatureEnabled,
   isFeatureKey,
   isGlobalFeatureState,
+  isLimitFeatureKey,
+  isToggleFeatureKey,
   resolveFeature,
 } from "./feature-flags";
 import { SUBSCRIPTION_TIERS } from "./constants";
 
 describe("registry", () => {
   it("every definition's tier allowlist uses known tiers only", () => {
-    for (const key of FEATURE_KEYS) {
+    for (const key of TOGGLE_FEATURE_KEYS) {
       for (const tier of FEATURE_DEFINITIONS[key].tiers) {
         expect(SUBSCRIPTION_TIERS).toContain(tier);
       }
@@ -19,7 +23,7 @@ describe("registry", () => {
   });
 
   it("free-tier grants are also granted to every paid tier (no downgrade holes)", () => {
-    for (const key of FEATURE_KEYS) {
+    for (const key of TOGGLE_FEATURE_KEYS) {
       const tiers = FEATURE_DEFINITIONS[key].tiers;
       if (tiers.includes("free")) {
         expect(tiers).toContain("pro");
@@ -33,9 +37,50 @@ describe("registry", () => {
   });
 });
 
+describe("kind-split registry", () => {
+  it("partitions FEATURE_KEYS exactly into toggle + limit keys", () => {
+    expect([...TOGGLE_FEATURE_KEYS, ...LIMIT_FEATURE_KEYS].sort()).toEqual(
+      [...FEATURE_KEYS].sort(),
+    );
+    for (const key of TOGGLE_FEATURE_KEYS) {
+      expect(FEATURE_DEFINITIONS[key].kind).toBe("toggle");
+    }
+    for (const key of LIMIT_FEATURE_KEYS) {
+      expect(FEATURE_DEFINITIONS[key].kind).toBe("limit");
+    }
+  });
+
+  it("defines max_active_trips as a limit (free=1, pro/premium unlimited)", () => {
+    expect(FEATURE_DEFINITIONS.max_active_trips).toEqual({
+      kind: "limit",
+      description: "Maximum open (draft/planned/active) trips a user may own.",
+      default: 1,
+      tiers: { free: 1, pro: null, premium: null },
+    });
+  });
+
+  it("limit values are monotone non-decreasing across the tier ladder", () => {
+    const rank = (v: number | null) => (v === null ? Infinity : v);
+    for (const key of LIMIT_FEATURE_KEYS) {
+      const { tiers } = FEATURE_DEFINITIONS[key];
+      expect(rank(tiers.free)).toBeLessThanOrEqual(rank(tiers.pro));
+      expect(rank(tiers.pro)).toBeLessThanOrEqual(rank(tiers.premium));
+    }
+  });
+
+  it("key guards discriminate by kind", () => {
+    expect(isToggleFeatureKey("gpx_export")).toBe(true);
+    expect(isToggleFeatureKey("max_active_trips")).toBe(false);
+    expect(isLimitFeatureKey("max_active_trips")).toBe(true);
+    expect(isLimitFeatureKey("gpx_export")).toBe(false);
+    expect(isFeatureKey("max_active_trips")).toBe(true);
+    expect(isLimitFeatureKey("nope")).toBe(false);
+  });
+});
+
 describe("resolveFeature precedence", () => {
   it("falls back to the registry default with no tier, override, or state", () => {
-    for (const key of FEATURE_KEYS) {
+    for (const key of TOGGLE_FEATURE_KEYS) {
       expect(resolveFeature(key, null, undefined, undefined)).toBe(
         FEATURE_DEFINITIONS[key].default,
       );
@@ -106,7 +151,9 @@ describe("resolveFeature precedence", () => {
 describe("buildFeatureSnapshot", () => {
   it("resolves every registry key", () => {
     const snapshot = buildFeatureSnapshot("pro", {}, {});
-    expect(Object.keys(snapshot).sort()).toEqual([...FEATURE_KEYS].sort());
+    expect(Object.keys(snapshot).sort()).toEqual(
+      [...TOGGLE_FEATURE_KEYS].sort(),
+    );
     expect(snapshot.gpx_export).toBe(true);
     expect(snapshot.group_rides).toBe(false);
   });
@@ -135,7 +182,9 @@ describe("buildFeatureSnapshot", () => {
       { stale_flag: true },
       { another_stale: "force_on" },
     );
-    expect(Object.keys(snapshot).sort()).toEqual([...FEATURE_KEYS].sort());
+    expect(Object.keys(snapshot).sort()).toEqual(
+      [...TOGGLE_FEATURE_KEYS].sort(),
+    );
     expect(Object.values(snapshot).every((v) => v === false)).toBe(true);
   });
 
