@@ -380,8 +380,10 @@ test.describe("rides extras", () => {
       .filter({ hasText: "Distance" })
       .last();
     await expect(statsTable).toBeVisible({ timeout: 10_000 });
-    await expect(statsTable).toContainText("80.0");
-    await expect(statsTable).toContainText("220.0");
+    // format.distanceKm renders whole km without a forced decimal
+    // ("80 km", not the retired formatter's "80.0").
+    await expect(statsTable).toContainText("80 km");
+    await expect(statsTable).toContainText("220 km");
   });
 
   // T35 — Export ride data: the ride detail page's Export menu offers

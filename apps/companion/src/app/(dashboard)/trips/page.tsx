@@ -1000,9 +1000,9 @@ function TripCard({
             {distance !== null && (
               <span>
                 <span className="font-bold text-ink">
-                  {Math.round(distance)}
+                  {format.splitDistanceKm(distance).value}
                 </span>{" "}
-                KM
+                {format.splitDistanceKm(distance).unit.toUpperCase()}
               </span>
             )}
             <span>

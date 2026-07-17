@@ -70,9 +70,11 @@ describe("RidesTable", () => {
     for (const label of [
       "DATE",
       "RIDE",
-      "KM",
+      // Anchored: the AVG header now carries the converting speed unit
+      // ("AVG KM/H"), which a bare /KM/ would also match.
+      "^KM$",
       "DURATION",
-      "AVG",
+      "AVG KM/H",
       "LEAN",
       "QUALITY",
     ]) {

@@ -96,11 +96,13 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
     },
     {
       key: "avg",
-      label: "AVG",
-      size: "70px",
+      // Header carries the converting unit ("AVG KM/H" / "AVG MPH") so the
+      // bare cell numbers can't be read in the wrong speed system.
+      label: `AVG ${format.splitSpeed(1).unit.toUpperCase()}`,
+      size: "84px",
       render: (r) => (
         <Mono className="text-ink">
-          {r.avg_speed != null ? Math.round(r.avg_speed) : "—"}
+          {r.avg_speed != null ? format.splitSpeed(r.avg_speed).value : "—"}
         </Mono>
       ),
     },
