@@ -24,31 +24,18 @@ name: Ingest Deploy
 #   COOLIFY_INGEST_UUID    the ingest app's Coolify UUID
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - "apps/ingest/**"
-      - "packages/ingest/**"
-      - "packages/poi-db/**"
-      - "packages/shared/**"
-      - "tsconfig.base.json"
-      - ".github/workflows/ingest-deploy.yml"
-      - "scripts/ci/**"
-  workflow_dispatch:
+  workflow_call:
     inputs:
       environment:
-        description: "Target environment"
+        description: "Target environment (staging | production)"
         required: true
-        type: choice
-        options: ["staging", "production"]
-        default: "staging"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ingest-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  group: ingest-deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -56,7 +43,7 @@ jobs:
     name: Deploy & verify
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+      name: ${{ inputs.environment }}
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -67,22 +54,12 @@ jobs:
 
       - name: Resolve environment
         id: env
+        # The orchestrator (deploy.yml) resolves staging vs production and
+        # passes it in as a required workflow_call input, so this step just
+        # surfaces it as a step output for the rest of the job to consume.
         env:
-          INPUT_ENV: ${{ inputs.environment || '' }}
-          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          ENV_NAME: ${{ inputs.environment }}
         run: |
-          # Explicit operator selection wins. Otherwise infer from the
-          # trigger ref: tag → production, branch → staging. If we
-          # checked $IS_TAG first, a workflow_dispatch from a `v*` tag
-          # selecting "staging" would silently deploy production despite
-          # the operator-selected target.
-          if [ -n "$INPUT_ENV" ]; then
-            ENV_NAME="$INPUT_ENV"
-          elif [ "$IS_TAG" = "true" ]; then
-            ENV_NAME="production"
-          else
-            ENV_NAME="staging"
-          fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve env-specific deploy targets
