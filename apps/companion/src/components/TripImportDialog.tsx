@@ -136,12 +136,12 @@ export function TripImportDialog({
           )}
 
           {status === "error" && (
-            <div className="space-y-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-400">
+            <div className="space-y-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-700">
               <p>{error}</p>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="text-xs font-semibold text-red-400 underline hover:text-ink"
+                className="text-xs font-semibold text-red-700 underline hover:text-ink"
               >
                 {t("Pick another file ")}
               </button>
