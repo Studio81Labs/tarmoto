@@ -6,6 +6,7 @@ import {
   type SupportedLocale,
 } from '@tarmoto/shared';
 import { FeatureSnapshotDto } from '../../features/dto/feature-snapshot.dto.js';
+import { LimitSnapshotDto } from '../../features/dto/limit-snapshot.dto.js';
 
 class LatLngResponse {
   @ApiProperty()
@@ -145,6 +146,13 @@ export class UserResponseDto {
       'gated endpoints re-check server-side.',
   })
   features!: FeatureSnapshotDto;
+
+  @ApiProperty({
+    type: LimitSnapshotDto,
+    description:
+      'Resolved numeric entitlements (null = unlimited), keyed by limit registry key.',
+  })
+  limits!: LimitSnapshotDto;
 
   @ApiProperty()
   created_at!: string;

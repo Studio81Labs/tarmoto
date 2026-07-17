@@ -87,20 +87,6 @@ export class FeatureResolver {
   }
 
   /**
-   * Fetch-free variant for callers that already hold the user row —
-   * `/users/me` and the auth responses resolve with one fewer query.
-   *
-   * @deprecated Thin delegate to `resolveEntitlementsForLoadedUser().features`,
-   * kept only for its 4 existing callers. Task 5 migrates them to the
-   * combined method and removes this one.
-   */
-  async resolveForLoadedUser(
-    user: Pick<User, 'id' | 'subscription_tier'>,
-  ): Promise<FeatureSnapshot> {
-    return (await this.resolveEntitlementsForLoadedUser(user)).features;
-  }
-
-  /**
    * Fetch-free combined variant for callers that already hold the user
    * row — `/users/me` and the auth responses resolve both snapshots with
    * four parallel indexed reads and no user query.

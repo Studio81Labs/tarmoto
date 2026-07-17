@@ -74,16 +74,6 @@ describe('FeatureResolver', () => {
     );
   });
 
-  it('resolveForLoadedUser() delegates to resolveEntitlementsForLoadedUser().features (back-compat shim kept for the 4 existing callers)', async () => {
-    const { resolver, users } = makeResolver({
-      states: [{ feature: 'gpx_export', state: 'force_on' }],
-    });
-    await expect(
-      resolver.resolveForLoadedUser({ id: 'u1', subscription_tier: 'free' }),
-    ).resolves.toMatchObject({ gpx_export: true });
-    expect(users.findOne).not.toHaveBeenCalled();
-  });
-
   it('getGlobalStates() drops rows with unknown states', async () => {
     const { resolver } = makeResolver({
       states: [
