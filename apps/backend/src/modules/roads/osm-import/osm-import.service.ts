@@ -1,8 +1,11 @@
 import { createReadStream } from 'node:fs';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
 import {
   type OsmWaySource,
@@ -18,6 +21,21 @@ import type { LatLng } from './segmentation.js';
 /** Rows per bulk upsert — keeps each statement well under PG's 65,535-param
  *  limit (each row binds ~8 columns). */
 const UPSERT_CHUNK = 500;
+
+/** Zero result — a skipped (absent / empty) region contributes nothing. */
+const EMPTY_RESULT: OsmImportResult = {
+  upserted: 0,
+  carriedOver: 0,
+  deactivated: 0,
+};
+
+/** `PoiImportRegion.bbox` is an object; the reconcile/PostGIS layer uses the
+ *  `[minLng, minLat, maxLng, maxLat]` tuple. Convert at the boundary. */
+function bboxTuple(
+  b: PoiImportRegion['bbox'],
+): [number, number, number, number] {
+  return [b.minLng, b.minLat, b.maxLng, b.maxLat];
+}
 
 /** Target table — referenced bare in the raw conflict clause to read the
  *  existing row (Postgres `DO UPDATE` refers to the target row by table name,
@@ -252,36 +270,97 @@ export class OsmImportService {
   }
 
   /**
-   * Import the configured `.osm` XML extract: stream it through the parser and
-   * way assembler into the upsert. Read-stream errors and parse errors abort the
-   * import via the generator chain; the upsert never deletes, so a partial or
-   * failed run can't wipe existing rows.
+   * Import every configured region's `<code>.osm` extract from `extractDir` in
+   * one pass (the folder model, Sub-project B). Each region reconciles against
+   * its own bbox; results aggregate. A region whose extract is absent or empty is
+   * skipped (never tombstoned — see {@link importRegion}), so one missing/broken
+   * extract can't wipe a region or abort the others.
    */
-  async importFromConfiguredFile(): Promise<OsmImportResult> {
-    const { filePath } = this.config;
-    if (!filePath) {
+  async importAll(): Promise<OsmImportResult> {
+    const { extractDir, regions } = this.config;
+    if (!extractDir) {
       throw new Error(
-        'OSM import is enabled but TARMOTO_OSM_ROAD_IMPORT_FILE is not set',
+        'OSM import is enabled but TARMOTO_OSM_ROAD_IMPORT_DIR is not set',
       );
     }
-    this.logger.log(`OSM import: reading ${filePath}`);
-    const stream = createReadStream(filePath);
-    return this.importFrom(assembleWays(parseOsmXml(stream)));
+    this.logger.log(
+      `OSM import: ${regions.length} region(s) from ${extractDir} — ` +
+        `${regions.map((r) => r.code).join(', ') || '(none)'}`,
+    );
+    const total: OsmImportResult = {
+      upserted: 0,
+      carriedOver: 0,
+      deactivated: 0,
+    };
+    for (const region of regions) {
+      const r = await this.importRegion(region, extractDir);
+      total.upserted += r.upserted;
+      total.carriedOver += r.carriedOver;
+      total.deactivated += r.deactivated;
+    }
+    return total;
   }
 
-  async importFrom(source: OsmWaySource): Promise<OsmImportResult> {
-    // Buffer the region's rows so split/merge reconciliation can compare the whole
-    // incoming snapshot against the existing rows in the same area — it can't be a
-    // pure per-chunk stream like a plain upsert. This is region-scoped by design,
-    // so the operator sizes the extract/bbox to the worker heap and tiles a large
-    // area into several sub-imports (see the module README, "Memory & scale"). A
-    // parse/read error propagates out of the buffering loop before any write, so a
-    // failed run can't touch existing rows.
+  /**
+   * Import one region's `<extractDir>/<code>.osm`. Absent file → skip (no
+   * authoritative snapshot). Present but 0 ways → skip WITH A WARNING (do not
+   * tombstone): a folder-model region is an automated whole-country extract, so
+   * an empty result signals a broken refresh, not a genuinely empty country —
+   * tombstoning the region on that would be far worse than skipping it for a
+   * cycle. (This intentionally overrides `reconcile`'s authoritative-empty
+   * behavior, which was designed for hand-supplied single-file tiles.)
+   */
+  async importRegion(
+    region: PoiImportRegion,
+    extractDir: string,
+  ): Promise<OsmImportResult> {
+    const path = join(extractDir, `${region.code.toLowerCase()}.osm`);
+    if (!(await this.fileExists(path))) {
+      this.logger.warn(
+        `OSM import (${region.code}): no extract at ${path} — skipping`,
+      );
+      return EMPTY_RESULT;
+    }
+    this.logger.log(`OSM import (${region.code}): reading ${path}`);
+    const incoming = await this.bufferRows(
+      assembleWays(parseOsmXml(createReadStream(path))),
+    );
+    if (incoming.length === 0) {
+      this.logger.warn(
+        `OSM import (${region.code}): extract parsed 0 ways — skipping ` +
+          `(treating empty as a broken refresh; NOT tombstoning the region)`,
+      );
+      return EMPTY_RESULT;
+    }
+    return this.reconcile(incoming, bboxTuple(region.bbox));
+  }
+
+  private async fileExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Buffer a way source into reconcilable rows. A parse/read error propagates
+   *  before any write, so a failed run can't touch existing rows. */
+  private async bufferRows(source: OsmWaySource): Promise<RoadSegmentRow[]> {
     const incoming: RoadSegmentRow[] = [];
     for await (const row of buildSegmentRows(source)) {
       incoming.push(row);
     }
-    return this.reconcile(incoming);
+    return incoming;
+  }
+
+  /** Import an in-memory way source against an explicit region bbox (or none).
+   *  The reconcile seam used by unit tests and by {@link importRegion}. */
+  async importFrom(
+    source: OsmWaySource,
+    region: [number, number, number, number] | null = null,
+  ): Promise<OsmImportResult> {
+    return this.reconcile(await this.bufferRows(source), region);
   }
 
   /**
@@ -294,6 +373,7 @@ export class OsmImportService {
    */
   private async reconcile(
     rawIncoming: RoadSegmentRow[],
+    region: [number, number, number, number] | null,
   ): Promise<OsmImportResult> {
     // `osmium extract -b` does NOT clip geometries — it emits every COMPLETE way
     // that crosses the bbox, so a boundary-crossing way yields full-length rows
@@ -303,7 +383,6 @@ export class OsmImportService {
     // then see those keys as unchanged and tombstone the old rows, orphaning
     // history. A segment straddling the edge is kept by both tiles — the upsert is
     // idempotent on identical geometry.
-    const region = this.config.bbox;
     const incoming = region
       ? rawIncoming.filter((r) => this.intersectsRegion(r, region))
       : rawIncoming;
@@ -319,9 +398,10 @@ export class OsmImportService {
     }
 
     // Stale detection is only sound over an EXPLICIT region (the extract's
-    // boundary, TARMOTO_OSM_ROAD_IMPORT_BBOX): a data-derived bbox (the extent of the
-    // incoming roads) would tombstone existing rows that fall in the rectangle but
-    // outside this extract, and miss removed roads beyond the current extrema.
+    // authoritative boundary, the region's bbox parameter): a data-derived bbox
+    // (the extent of the incoming roads) would tombstone existing rows that fall
+    // in the rectangle but outside this extract, and miss removed roads beyond
+    // the current extrema.
     // With a region we load every existing row inside it (so edge-removed roads
     // are candidates) and may tombstone; without one we load only the incoming
     // extent for carry-over matching and never tombstone.

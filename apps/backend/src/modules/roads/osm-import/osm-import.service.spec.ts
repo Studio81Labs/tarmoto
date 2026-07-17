@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import type { PoiImportRegion } from '@tarmoto/ingest';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
 import {
   OsmImportService,
@@ -145,8 +146,8 @@ describe('OsmImportService', () => {
   let managerQuery: jest.Mock;
   let osmConfig: {
     enabled: boolean;
-    filePath: string | null;
-    bbox: [number, number, number, number] | null;
+    extractDir: string | null;
+    regions: PoiImportRegion[];
   };
 
   /** Rows passed to `.values()` on the Nth (0-based) insert statement. */
@@ -154,7 +155,7 @@ describe('OsmImportService', () => {
     (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
 
   beforeEach(async () => {
-    osmConfig = { enabled: false, filePath: null, bbox: null };
+    osmConfig = { enabled: false, extractDir: null, regions: [] };
     qb = {
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -325,7 +326,6 @@ describe('OsmImportService', () => {
       // row's history onto the downstream geometry. With a region, the key match is
       // routed to geometry reassignment instead: the downstream row carries the
       // key, the upstream row is tombstoned.
-      osmConfig.bbox = [-1, -1, 20, 20];
       loadExisting.mockResolvedValueOnce([
         existingRow('upstream', '100', 0, [
           [0, 0],
@@ -346,7 +346,10 @@ describe('OsmImportService', () => {
         ],
       };
 
-      const result = await service.importFrom([incomingDownstream]);
+      const result = await service.importFrom(
+        [incomingDownstream],
+        [-1, -1, 20, 20],
+      );
 
       expect(result).toMatchObject({ carriedOver: 1, deactivated: 1 });
       const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
@@ -369,7 +372,6 @@ describe('OsmImportService', () => {
       // upstream row. Downstream carries the key; the upstream keeps living but its
       // now-reused identity is nulled (we don't tombstone by absence without a
       // region).
-      osmConfig.bbox = null;
       loadExisting.mockResolvedValueOnce([
         existingRow('upstream', '100', 0, [
           [0, 0],
@@ -415,14 +417,13 @@ describe('OsmImportService', () => {
       // owns the incoming key (a segment split across the boundary). It isn't in the
       // bbox load, so the upsert would overwrite it in place. It is tombstoned (not
       // identity-nulled, which would orphan it) so the incoming inserts fresh.
-      osmConfig.bbox = [-1, -1, 1, 1];
       // call 1: loadExistingInBbox → none in-bbox; call 2: loadOutOfBboxKeyOwners
       // → an out-of-tile live row owns the incoming key.
       loadExisting
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: 'out-of-tile' }]);
 
-      const result = await service.importFrom([straightWay(1)]);
+      const result = await service.importFrom([straightWay(1)], [-1, -1, 1, 1]);
 
       expect(result).toMatchObject({
         upserted: 1,
@@ -441,7 +442,6 @@ describe('OsmImportService', () => {
     it('tombstones every existing row when a configured region imports empty', async () => {
       // A configured region with zero drivable rows is authoritative: the region
       // was cleared, so its existing rows must be deactivated (not left live).
-      osmConfig.bbox = [-1, -1, 20, 20];
       loadExisting.mockResolvedValueOnce([
         existingRow('cleared', '7', 0, [
           [0, 0],
@@ -449,7 +449,7 @@ describe('OsmImportService', () => {
         ]),
       ]);
 
-      const result = await service.importFrom([]);
+      const result = await service.importFrom([], [-1, -1, 20, 20]);
 
       expect(result.deactivated).toBe(1);
       const deactivate = (
@@ -461,7 +461,6 @@ describe('OsmImportService', () => {
     it('tombstones an existing row nothing matches — only with an explicit region', async () => {
       // Stale detection is region-authoritative: set a bbox so an unmatched row is
       // tombstoned. Existing row lives far from the incoming way → no match.
-      osmConfig.bbox = [-1, -1, 20, 20];
       loadExisting.mockResolvedValueOnce([
         existingRow('gone-uuid', '5', 0, [
           [10, 10],
@@ -469,7 +468,10 @@ describe('OsmImportService', () => {
         ]),
       ]);
 
-      const result = await service.importFrom([straightWay(2)]);
+      const result = await service.importFrom(
+        [straightWay(2)],
+        [-1, -1, 20, 20],
+      );
 
       expect(result).toMatchObject({
         upserted: 1, // the incoming way inserted fresh
@@ -491,9 +493,10 @@ describe('OsmImportService', () => {
       // region; the importer must constrain to the bbox or a neighbouring tile
       // would later tombstone their old rows. straightWay sits at (0,0); the region
       // is far away, so the row is filtered out and nothing is written.
-      osmConfig.bbox = [100, 100, 101, 101];
-
-      const result = await service.importFrom([straightWay(1)]);
+      const result = await service.importFrom(
+        [straightWay(1)],
+        [100, 100, 101, 101],
+      );
 
       expect(result).toMatchObject({
         upserted: 0,
@@ -507,7 +510,6 @@ describe('OsmImportService', () => {
     it('does NOT tombstone when no region is configured (data bbox is not authoritative)', async () => {
       // Without an explicit region a data-derived bbox can't distinguish "removed"
       // from "outside this extract", so an unmatched row is left active.
-      osmConfig.bbox = null;
       loadExisting.mockResolvedValueOnce([
         existingRow('outside-uuid', '5', 0, [
           [10, 10],
@@ -525,38 +527,100 @@ describe('OsmImportService', () => {
     });
   });
 
-  describe('importFromConfiguredFile', () => {
-    it('reflects the enabled flag', () => {
-      expect(service.enabled).toBe(false);
-      osmConfig.enabled = true;
-      expect(service.enabled).toBe(true);
+  it('reflects the enabled flag', () => {
+    expect(service.enabled).toBe(false);
+    osmConfig.enabled = true;
+    expect(service.enabled).toBe(true);
+  });
+
+  // A minimal valid <osm> XML extract with one drivable way, at `(lat, lng)`
+  // (default 50.0N, 14.0E — inside the CZ test region below). The second node
+  // offsets LATITUDE by ~0.0009° (matching `straightWay` above) for a single
+  // ~100 m segment — longitude degrees shrink with cos(lat), so the same delta
+  // there would span several hundred metres and segmentation would cut it into
+  // multiple ~100 m rows. The default covers every CZ-only call site verbatim;
+  // `importAll`'s cross-region test overrides the coordinates for its second
+  // (SK) region so the way actually falls inside SK's bbox rather than
+  // colliding with CZ's.
+  function wayXml(id: number, lat = 50.0, lng = 14.0): string {
+    return (
+      `<osm version="0.6">` +
+      `<node id="${id}0" lat="${lat}" lon="${lng}"/>` +
+      `<node id="${id}1" lat="${lat + 0.0009}" lon="${lng}"/>` +
+      `<way id="${id}"><nd ref="${id}0"/><nd ref="${id}1"/>` +
+      `<tag k="highway" v="residential"/></way></osm>`
+    );
+  }
+
+  describe('importRegion', () => {
+    let dir: string;
+    const CZ: PoiImportRegion = {
+      code: 'CZ',
+      bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+    };
+    beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'road-import-test-'));
     });
-
-    it('throws when enabled without a configured file path', async () => {
-      osmConfig.filePath = null;
-      await expect(service.importFromConfiguredFile()).rejects.toThrow(
-        /TARMOTO_OSM_ROAD_IMPORT_FILE/,
-      );
-    });
-
-    it('reads + imports a configured .osm file end-to-end', async () => {
-      const dir = await mkdtemp(join(tmpdir(), 'osm-import-'));
-      const file = join(dir, 'region.osm');
-      await writeFile(
-        file,
-        `<osm>
-           <node id="1" lat="0" lon="0"/>
-           <node id="2" lat="0.0009" lon="0"/>
-           <way id="100"><nd ref="1"/><nd ref="2"/><tag k="highway" v="residential"/></way>
-         </osm>`,
-      );
-      osmConfig.filePath = file;
-
-      const result = await service.importFromConfiguredFile();
-
-      expect(result.upserted).toBe(1); // the way → one ~100 m segment
-      expect(qb.onConflict).toHaveBeenCalledWith(ROAD_SEGMENT_ON_CONFLICT);
+    afterEach(async () => {
       await rm(dir, { recursive: true, force: true });
+    });
+
+    it('skips a region whose extract file is absent (no tombstone)', async () => {
+      const result = await service.importRegion(CZ, dir);
+      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      // reconcile never ran → no load/transaction
+      expect(loadExisting).not.toHaveBeenCalled();
+    });
+
+    it('skips a present-but-empty extract with a warning (no tombstone)', async () => {
+      await writeFile(join(dir, 'cz.osm'), '<osm version="0.6"></osm>');
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importRegion(CZ, dir);
+      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      expect(loadExisting).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+    });
+
+    it('reconciles a non-empty extract scoped to the region bbox', async () => {
+      await writeFile(join(dir, 'cz.osm'), wayXml(1));
+      loadExisting.mockResolvedValue([]); // no existing rows
+      const result = await service.importRegion(CZ, dir);
+      expect(result.upserted).toBe(1);
+      // loadExistingInBbox called with the CZ tuple
+      expect(loadExisting).toHaveBeenCalled();
+    });
+  });
+
+  describe('importAll', () => {
+    it('loops the configured regions and aggregates upserts', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'road-import-all-'));
+      await writeFile(join(dir, 'cz.osm'), wayXml(1));
+      // SK's way must actually sit inside SK's bbox (16.83–22.57E, 47.73–49.61N),
+      // not CZ's — otherwise reconcile's own intersectsRegion filter drops it and
+      // the aggregate would silently undercount.
+      await writeFile(join(dir, 'sk.osm'), wayXml(2, 48.5, 19.5));
+      osmConfig.extractDir = dir;
+      osmConfig.regions = [
+        {
+          code: 'CZ',
+          bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+        },
+        {
+          code: 'SK',
+          bbox: { minLng: 16.83, minLat: 47.73, maxLng: 22.57, maxLat: 49.61 },
+        },
+      ];
+      loadExisting.mockResolvedValue([]);
+      const result = await service.importAll();
+      expect(result.upserted).toBe(2);
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    it('throws when extractDir is unset', async () => {
+      osmConfig.extractDir = null;
+      await expect(service.importAll()).rejects.toThrow(
+        /TARMOTO_OSM_ROAD_IMPORT_DIR/,
+      );
     });
   });
 });
