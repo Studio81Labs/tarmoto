@@ -10,7 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   bboxArg,
+  roadTileFileName,
   ROAD_TAGS_FILTER_EXPRESSIONS,
+  subdivideRegion,
   type PoiImportRegion,
 } from "@tarmoto/ingest";
 import {
@@ -27,6 +29,12 @@ const SK: PoiImportRegion = {
   code: "SK",
   bbox: { minLng: 16.83, minLat: 47.73, maxLng: 22.57, maxLat: 49.61 },
 };
+// CZ + SK are each ≤ 6.77° wide / 2.51° tall — a 10° span keeps both a single
+// 1×1 tile (== the region bbox), for tests that don't care about tiling itself.
+const SINGLE_TILE_SPAN = 10;
+// CZ (6.77°×2.51°) subdivides into 2 tiles (cols=2, rows=1) at this span — used
+// by the producer's own multi-tile happy-path test.
+const MULTI_TILE_SPAN = 5;
 
 function fakeOsmium(): jest.Mock<Promise<void>, [readonly string[]]> {
   return jest.fn(async (args: readonly string[]) => {
@@ -55,30 +63,66 @@ describe("refresh-road-extracts", () => {
   });
 
   describe("refreshRegion", () => {
-    it("downloads, road-filters, clips, and atomically writes <code>.osm", async () => {
+    it("downloads, road-filters ONCE, then clips + atomically writes one extract per tile", async () => {
       const download = fakeDownload();
       const osmium = fakeOsmium();
-      await refreshRegion(CZ, targetDir, workDir, { download, osmium });
+      const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
+      expect(tiles.length).toBeGreaterThan(1); // this test exercises real tiling
 
-      expect(await readFile(join(targetDir, "cz.osm"), "utf8")).toBe(
-        "built:extract",
-      );
+      await refreshRegion(CZ, targetDir, workDir, tiles, {
+        download,
+        osmium,
+      });
+
+      expect(download).toHaveBeenCalledTimes(1);
       expect(download).toHaveBeenCalledWith(
         expect.stringContaining("czech-republic-latest.osm.pbf"),
         expect.any(String),
       );
+
       const calls = osmium.mock.calls.map((c) => c[0]);
-      expect(calls[0]?.[0]).toBe("tags-filter");
-      expect(calls[0]).toContain(ROAD_TAGS_FILTER_EXPRESSIONS[0]);
-      expect(calls[1]?.[0]).toBe("extract");
-      expect(calls[1]).toContain(bboxArg(CZ.bbox));
-      expect(calls[1]).toEqual(expect.arrayContaining(["-f", "osm"]));
+      const filterCalls = calls.filter((c) => c[0] === "tags-filter");
+      const extractCalls = calls.filter((c) => c[0] === "extract");
+      expect(filterCalls).toHaveLength(1); // filter runs ONCE, not per tile
+      expect(filterCalls[0]).toContain(ROAD_TAGS_FILTER_EXPRESSIONS[0]);
+      expect(extractCalls).toHaveLength(tiles.length); // one extract per tile
+
+      // Every extract clips the FILTERED pbf (tags-filter's own "-o" output),
+      // never the raw downloaded pbf — i.e. the tag filter really is applied
+      // upstream of every tile's clip, not bypassed for some/all tiles.
+      const pbfPath = download.mock.calls[0]?.[1];
+      const filteredPath = filterCalls[0]?.[filterCalls[0].indexOf("-o") + 1];
+      expect(filteredPath).toEqual(expect.any(String));
+      expect(filteredPath).not.toBe(pbfPath);
+      for (const call of extractCalls) {
+        expect(call).toContain(filteredPath);
+        expect(call).not.toContain(pbfPath);
+      }
+
+      for (const tile of tiles) {
+        expect(extractCalls.some((c) => c.includes(bboxArg(tile.bbox)))).toBe(
+          true,
+        );
+        expect(
+          await readFile(join(targetDir, roadTileFileName(tile)), "utf8"),
+        ).toBe("built:extract");
+      }
+      expect(
+        extractCalls.every(
+          (c) => c.includes("-f") && c[c.indexOf("-f") + 1] === "osm",
+        ),
+      ).toBe(true);
+
       expect(await readdir(workDir)).toEqual([]);
-      expect(await readdir(targetDir)).toEqual(["cz.osm"]);
+      expect((await readdir(targetDir)).sort()).toEqual(
+        tiles.map((t) => roadTileFileName(t)).sort(),
+      );
     });
 
-    it("keeps the previous extract when a step fails", async () => {
-      await writeFile(join(targetDir, "cz.osm"), "OLD-GOOD");
+    it("keeps the previous tile extract when a step fails", async () => {
+      const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
+      const firstTile = roadTileFileName(tiles[0]!);
+      await writeFile(join(targetDir, firstTile), "OLD-GOOD");
       const download = fakeDownload();
       const osmium = jest.fn(async (args: readonly string[]) => {
         if (args[0] === "extract") throw new Error("osmium extract boom");
@@ -86,16 +130,58 @@ describe("refresh-road-extracts", () => {
         if (out) await writeFile(out, "filtered");
       });
       await expect(
-        refreshRegion(CZ, targetDir, workDir, { download, osmium }),
+        refreshRegion(CZ, targetDir, workDir, tiles, {
+          download,
+          osmium,
+        }),
       ).rejects.toThrow("osmium extract boom");
-      expect(await readFile(join(targetDir, "cz.osm"), "utf8")).toBe(
+      expect(await readFile(join(targetDir, firstTile), "utf8")).toBe(
         "OLD-GOOD",
       );
       expect(await readdir(workDir)).toEqual([]);
     });
 
+    it("keeps tile 1's fresh extract but leaves tile 2 unchanged when only tile 2's clip fails (per-tile atomicity)", async () => {
+      const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
+      expect(tiles.length).toBeGreaterThanOrEqual(2); // exercises mixed tile state
+      const tile1 = tiles[0]!;
+      const tile2 = tiles[1]!;
+      const tile1File = roadTileFileName(tile1);
+      const tile2File = roadTileFileName(tile2);
+      await writeFile(join(targetDir, tile2File), "OLD-TILE-2");
+
+      const download = fakeDownload();
+      const osmium = jest.fn(async (args: readonly string[]) => {
+        if (args[0] === "extract" && args.includes(bboxArg(tile2.bbox))) {
+          throw new Error("tile 2 clip boom");
+        }
+        const out = args[args.indexOf("-o") + 1];
+        if (out) await writeFile(out, `built:${args[0]}`);
+      });
+
+      await expect(
+        refreshRegion(CZ, targetDir, workDir, tiles, {
+          download,
+          osmium,
+        }),
+      ).rejects.toThrow("tile 2 clip boom");
+
+      // Tile 1's clip succeeded and was renamed before tile 2's clip failed —
+      // its fresh extract is kept, not rolled back by the later failure.
+      expect(await readFile(join(targetDir, tile1File), "utf8")).toBe(
+        "built:extract",
+      );
+      // Tile 2 never reached its atomic rename — the previous file survives.
+      expect(await readFile(join(targetDir, tile2File), "utf8")).toBe(
+        "OLD-TILE-2",
+      );
+      expect(await readdir(workDir)).toEqual([]);
+    });
+
     it("leaves everything untouched and skips osmium when the download fails", async () => {
-      await writeFile(join(targetDir, "cz.osm"), "OLD");
+      const tiles = subdivideRegion(CZ, SINGLE_TILE_SPAN);
+      const firstTile = roadTileFileName(tiles[0]!);
+      await writeFile(join(targetDir, firstTile), "OLD");
       const download = jest.fn(
         (): Promise<void> =>
           Promise.reject(new Error("download failed (404 Not Found)")),
@@ -103,11 +189,14 @@ describe("refresh-road-extracts", () => {
       const osmium = fakeOsmium();
 
       await expect(
-        refreshRegion(CZ, targetDir, workDir, { download, osmium }),
+        refreshRegion(CZ, targetDir, workDir, tiles, {
+          download,
+          osmium,
+        }),
       ).rejects.toThrow("404");
 
       expect(osmium).not.toHaveBeenCalled();
-      expect(await readFile(join(targetDir, "cz.osm"), "utf8")).toBe("OLD");
+      expect(await readFile(join(targetDir, firstTile), "utf8")).toBe("OLD");
     });
 
     it("throws for a region with no Geofabrik slug", async () => {
@@ -115,7 +204,8 @@ describe("refresh-road-extracts", () => {
       const deps: RefreshDeps = { download: jest.fn(), osmium: jest.fn() };
 
       await expect(
-        refreshRegion(unknown, targetDir, workDir, deps),
+        // Tiles are never touched — the slug check throws before any tile work.
+        refreshRegion(unknown, targetDir, workDir, [], deps),
       ).rejects.toThrow(/no Geofabrik slug/);
       expect(deps.download).not.toHaveBeenCalled();
     });
@@ -125,7 +215,8 @@ describe("refresh-road-extracts", () => {
     it("isolates a per-region failure, continues, and surfaces it in the summary", async () => {
       const download = fakeDownload();
       const osmium = jest.fn(async (args: readonly string[]) => {
-        // Fail only SK's clip; CZ's succeeds.
+        // Fail only SK's clip; CZ's succeeds. At SINGLE_TILE_SPAN each region
+        // is exactly one tile == its own bbox, so this still targets SK only.
         if (args[0] === "extract" && args.includes(bboxArg(SK.bbox))) {
           throw new Error("SK clip boom");
         }
@@ -134,7 +225,12 @@ describe("refresh-road-extracts", () => {
       });
 
       const summary = await refreshAll(
-        { enabled: true, targetDir, regions: [CZ, SK] },
+        {
+          enabled: true,
+          targetDir,
+          regions: [CZ, SK],
+          tileSpanDeg: SINGLE_TILE_SPAN,
+        },
         workDir,
         { download, osmium },
         () => undefined, // silence logs
@@ -144,8 +240,10 @@ describe("refresh-road-extracts", () => {
       expect(summary.failed).toHaveLength(1);
       expect(summary.failed[0]?.code).toBe("SK");
       expect(summary.failed[0]?.error).toContain("SK clip boom");
-      // Only CZ's extract landed; SK kept nothing (it had none) — no sk.osm.
-      expect(await readdir(targetDir)).toEqual(["cz.osm"]);
+      // Only CZ's tile landed; SK kept nothing (it had none) — no sk tile file.
+      expect(await readdir(targetDir)).toEqual([
+        roadTileFileName(subdivideRegion(CZ, SINGLE_TILE_SPAN)[0]!),
+      ]);
     });
   });
 });

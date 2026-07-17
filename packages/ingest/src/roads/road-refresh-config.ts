@@ -1,5 +1,6 @@
 import { parseRegions, type PoiImportRegion } from "../poi/regions.js";
 import { DRIVABLE_HIGHWAYS } from "./road-tags.js";
+import { resolveTileSpanDeg } from "./road-tiles.js";
 
 /**
  * `osmium tags-filter` expression for the road-extract producer — WAYS whose
@@ -32,6 +33,13 @@ export interface RoadRefreshConfig {
    * fast rather than being silently dropped.
    */
   regions: readonly PoiImportRegion[];
+  /**
+   * Max tile span in degrees, from `TARMOTO_OSM_ROAD_TILE_SPAN_DEG` (default
+   * `TILE_MAX_SPAN_DEG_DEFAULT`). Shared with the importer so both sides derive
+   * the identical `subdivideRegion` grid — the producer needs it to know how to
+   * split each region into per-tile extracts.
+   */
+  tileSpanDeg: number;
 }
 
 /**
@@ -50,5 +58,6 @@ export function resolveRoadRefreshConfig(
       env.TARMOTO_OSM_ROAD_IMPORT_REGIONS,
       "TARMOTO_OSM_ROAD_IMPORT_REGIONS",
     ),
+    tileSpanDeg: resolveTileSpanDeg(env),
   };
 }
