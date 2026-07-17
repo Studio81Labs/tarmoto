@@ -104,9 +104,10 @@ export default async function SharedRoadMapPage({
             )}
             <MetaChip>
               <Eye size={13} className="text-fg-mute" aria-hidden="true" />
-              {share.view_count === 1
-                ? t("1 view")
-                : t("{count} views", { count: share.view_count })}
+              {t("{count, plural, one {{n} view} other {{n} views}}", {
+                count: share.view_count,
+                n: format.integer(share.view_count),
+              })}
             </MetaChip>
             {snapshot && (
               <>

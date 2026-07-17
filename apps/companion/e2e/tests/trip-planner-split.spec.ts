@@ -49,7 +49,7 @@ test.describe("trip planner — split into days", () => {
     // Route preferences collapsed to a summary row in revision 3 —
     // expand it before reaching for the avoid checkboxes.
     await page.getByRole("button", { name: "Route preferences" }).click();
-    await page.getByLabel(/avoid highways/i).click({ force: true });
+    await page.getByLabel(/avoid motorways/i).click({ force: true });
     await expect(page.getByText(/Route changed/).first()).toBeVisible();
 
     // Re-split refreshes the days. Two equivalent re-split buttons exist
@@ -61,7 +61,7 @@ test.describe("trip planner — split into days", () => {
     });
 
     // Save persists the materialized days; wait for live routing to settle
-    // first (the avoid-highways toggle re-fires it).
+    // first (the avoid-motorways toggle re-fires it).
     const saveRouteBtn = page.getByRole("button", { name: /save route/i });
     await expect(saveRouteBtn).toBeEnabled({ timeout: 10_000 });
     await saveRouteBtn.click();

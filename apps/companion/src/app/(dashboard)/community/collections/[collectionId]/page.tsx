@@ -427,9 +427,9 @@ export default function CollectionDetailPage() {
             <div>
               <Stamp>{t("Routes")}</Stamp>
               <div className="mt-0.5 font-sans text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-                {collection!.itemCount === 1
-                  ? t("1 route")
-                  : t("{count} routes", { count: collection!.itemCount })}
+                {t("{count, plural, one {# route} other {# routes}}", {
+                  count: collection!.itemCount,
+                })}
               </div>
             </div>
           </div>

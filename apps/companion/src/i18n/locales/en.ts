@@ -14,10 +14,7 @@ export const en = {
     ". You can view this trip without a Tarmoto account. ",
   ". Your shared rides and account settings stay intact, while ":
     ". Your shared rides and account settings stay intact, while ",
-  "1 collection": "1 collection",
   "1 day": "1 day",
-  "1 embed click": "1 embed click",
-  "1 route": "1 route",
   "3 stars or better": "3 stars or better",
   "4 stars or better": "4 stars or better",
   "5 stars only": "5 stars only",
@@ -69,7 +66,7 @@ export const en = {
   "Avg quality": "Avg quality",
   "Avg road quality": "Avg road quality",
   "Avg speed ": "Avg speed ",
-  "Avoid highways ": "Avoid highways ",
+  "Avoid motorways": "Avoid motorways",
   "Avoid tolls ": "Avoid tolls ",
   "Avoid unpaved roads ": "Avoid unpaved roads ",
   "Back to planner ": "Back to planner ",
@@ -114,8 +111,8 @@ export const en = {
   "Cancel subscription": "Cancel subscription",
   "Cancel subscription ": "Cancel subscription ",
   "Cancellation options ": "Cancellation options ",
-  "Center on me": "Center on me",
-  "Center on me ": "Center on me ",
+  "Centre on me": "Centre on me",
+  "Centre on me ": "Centre on me ",
   "Check the local weather forecast on the morning of the ride \u2014 Alpine and coastal sections can swing from sun to thunderstorms in a few hours. If high winds, ice, or heavy rain are forecast, reconsider the route. ":
     "Check the local weather forecast on the morning of the ride \u2014 Alpine and coastal sections can swing from sun to thunderstorms in a few hours. If high winds, ice, or heavy rain are forecast, reconsider the route. ",
   "Check your email": "Check your email",
@@ -205,8 +202,11 @@ export const en = {
   "Create your first trip to discover the best roads.":
     "Create your first trip to discover the best roads.",
   "Current plan ": "Current plan ",
-  "Current trip crosses {count} active {closureLabel}.":
-    "Current trip crosses {count} active {closureLabel}.",
+  "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.":
+    "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.",
+  "Current trip crosses {first} and {second}.":
+    "Current trip crosses {first} and {second}.",
+  "Current trip crosses {summary}.": "Current trip crosses {summary}.",
   Curves: "Curves",
   "Curviness ": "Curviness ",
   "Daily km target ": "Daily km target ",
@@ -228,8 +228,6 @@ export const en = {
   "Delete your review": "Delete your review",
   "Delete your review ": "Delete your review ",
   "Deleting\u2026 ": "Deleting\u2026 ",
-  "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ":
-    "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ",
   Description: "Description",
   "Description ": "Description ",
   "Detour approx. {distance}": "Detour approx. {distance}",
@@ -249,6 +247,10 @@ export const en = {
   "Download my data ": "Download my data ",
   "Download your data (link expires in 7 days) ":
     "Download your data (link expires in 7 days) ",
+  "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}} on the way.":
+    "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}} on the way.",
+  "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.":
+    "Drafted ≈{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.",
   "Drag via points to reorder them. Start and finish stay pinned. ":
     "Drag via points to reorder them. Start and finish stay pinned. ",
   "Draw region ": "Draw region ",
@@ -273,6 +275,9 @@ export const en = {
   "Embed code copied": "Embed code copied",
   "Embed route ": "Embed route ",
   "Embed widget ": "Embed widget ",
+  Ended: "Ended",
+  "Ends today": "Ends today",
+  "Ends tomorrow": "Ends tomorrow",
   "Enter your email and we'll send a reset link":
     "Enter your email and we'll send a reset link",
   "Estimated from road surface": "Estimated from road surface",
@@ -353,10 +358,18 @@ export const en = {
   "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ":
     "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ",
   "Invoice unavailable ": "Invoice unavailable ",
+  "Itinerary · {count, plural, one {# day} other {# days}}":
+    "Itinerary · {count, plural, one {# day} other {# days}}",
   "JPEG, PNG, or WebP photos (max": "JPEG, PNG, or WebP photos (max",
   "Join the Tarmoto rider community": "Join the Tarmoto rider community",
   Joined: "Joined",
   "Joined ": "Joined ",
+  "Joined recently": "Joined recently",
+  "Joined this month": "Joined this month",
+  "Joined {count, plural, one {# month} other {# months}} ago":
+    "Joined {count, plural, one {# month} other {# months}} ago",
+  "Joined {count, plural, one {# year} other {# years}} ago":
+    "Joined {count, plural, one {# year} other {# years}} ago",
   "Joining\u2026": "Joining\u2026",
   "Joining\u2026 ": "Joining\u2026 ",
   "Know the road before you ride it.": "Know the road before you ride it.",
@@ -427,6 +440,7 @@ export const en = {
   "Minimum stay rating ": "Minimum stay rating ",
   "Mixed (balanced)": "Mixed (balanced)",
   More: "More",
+  Motorways: "Motorways",
   "My Bikes": "My Bikes",
   "My Road Map": "My Road Map",
   "My Trips": "My Trips",
@@ -459,6 +473,8 @@ export const en = {
   "No badges yet": "No badges yet",
   "No bikes in your garage yet ": "No bikes in your garage yet ",
   "No challenges to join yet": "No challenges to join yet",
+  "No closed or unknown passes on your route.":
+    "No closed or unknown passes on your route.",
   "No closed or unknown passes on your route. ":
     "No closed or unknown passes on your route. ",
   "No collections match your filters": "No collections match your filters",
@@ -513,6 +529,7 @@ export const en = {
   Notifications: "Notifications",
   "Notifications ": "Notifications ",
   "Number of days ": "Number of days ",
+  Ongoing: "Ongoing",
   "Opacity fades as reports age ": "Opacity fades as reports age ",
   "Open billing portal ": "Open billing portal ",
   "Open collaboration panel ": "Open collaboration panel ",
@@ -543,7 +560,7 @@ export const en = {
   "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ":
     "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
   "Personal road map ": "Personal road map ",
-  "Personalized recommendations ": "Personalized recommendations ",
+  "Personalised recommendations ": "Personalised recommendations ",
   "Photo uploaded. ": "Photo uploaded. ",
   Photos: "Photos",
   "Pick another file ": "Pick another file ",
@@ -890,11 +907,14 @@ export const en = {
   "Your rides from the mobile app will appear here.":
     "Your rides from the mobile app will appear here.",
   "Your trips": "Your trips",
+  "a Tarmoto rider": "a Tarmoto rider",
   "active hazard ": "active hazard ",
   "and add their routes to your own library. ":
     "and add their routes to your own library. ",
   "armoto ": "armoto ",
   "away ": "away ",
+  "based on {count, plural, one {# rider pass} other {# rider passes}}":
+    "based on {count, plural, one {# rider pass} other {# rider passes}}",
   "below. ": "below. ",
   "by ": "by ",
   closed: "closed",
@@ -902,7 +922,6 @@ export const en = {
   "collection ": "collection ",
   "conditions on ": "conditions on ",
   "confirmations ": "confirmations ",
-  "curated region": "curated region",
   "curviness ": "curviness ",
   day: "day",
   "day ": "day ",
@@ -933,7 +952,6 @@ export const en = {
   "or continue with ": "or continue with ",
   photo: "photo",
   "ranked roads": "ranked roads",
-  region: "region",
   repair: "repair",
   "ridden ": "ridden ",
   "ride \u00b7": "ride \u00b7",
@@ -956,21 +974,12 @@ export const en = {
   "your dashboard ": "your dashboard ",
   "{count} advisory": "{count} advisory",
   "{count} closed": "{count} closed",
-  "{count} collections": "{count} collections",
-  "{count} day": "{count} day",
-  "{count} days": "{count} days",
-  "{count} embed clicks": "{count} embed clicks",
   "{count} folder": "{count} folder",
   "{count} folders": "{count} folders",
   "{count} full": "{count} full",
-  "{count} member": "{count} member",
-  "{count} members": "{count} members",
   "{count} of {total}": "{count} of {total}",
-  "{count} photo": "{count} photo",
-  "{count} photos": "{count} photos",
   "{count} open": "{count} open",
   "{count} partial": "{count} partial",
-  "{count} routes": "{count} routes",
   "{count} rider": "{count} rider",
   "{count} riders": "{count} riders",
   "{count} selected": "{count} selected",
@@ -980,13 +989,10 @@ export const en = {
   "{count} to go": "{count} to go",
   "{count} trip": "{count} trip",
   "{count} trips": "{count} trips",
-  "{count} repair": "{count} repair",
-  "{count} repairs": "{count} repairs",
-  "{count} deterioration": "{count} deterioration",
-  "{count} deteriorations": "{count} deteriorations",
   "{count} unknown": "{count} unknown",
-  "{count} views": "{count} views",
-  "{count} {waypointLabel}": "{count} {waypointLabel}",
+  "{date}: no rides": "{date}: no rides",
+  "{date}: {count, plural, one {# ride} other {# rides}}, {distance}":
+    "{date}: {count, plural, one {# ride} other {# rides}}, {distance}",
   "{distance} away": "{distance} away",
   "{distance} km total": "{distance} km total",
   "{distance} ridden": "{distance} ridden",
@@ -995,6 +1001,57 @@ export const en = {
   "{percent}% explored": "{percent}% explored",
   "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
   "{rideType} ride": "{rideType} ride",
+  "{count, plural, one {# PASS} other {# PASSES}}":
+    "{count, plural, one {# PASS} other {# PASSES}}",
+  "{count, plural, one {# closed pass} other {# closed passes}}":
+    "{count, plural, one {# closed pass} other {# closed passes}}",
+  "{count, plural, one {# curated region} other {# curated regions}}":
+    "{count, plural, one {# curated region} other {# curated regions}}",
+  "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}":
+    "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
+  "{count, plural, one {# day} other {# days}}":
+    "{count, plural, one {# day} other {# days}}",
+  "{count, plural, one {# day} other {# days}} left":
+    "{count, plural, one {# day} other {# days}} left",
+  "{count, plural, one {# deterioration} other {# deteriorations}}":
+    "{count, plural, one {# deterioration} other {# deteriorations}}",
+  "{count, plural, one {# member} other {# members}}":
+    "{count, plural, one {# member} other {# members}}",
+  "{count, plural, one {# month} other {# months}} left":
+    "{count, plural, one {# month} other {# months}} left",
+  "{count, plural, one {# photo} other {# photos}}":
+    "{count, plural, one {# photo} other {# photos}}",
+  "{count, plural, one {# region} other {# regions}}":
+    "{count, plural, one {# region} other {# regions}}",
+  "{count, plural, one {# repair} other {# repairs}}":
+    "{count, plural, one {# repair} other {# repairs}}",
+  "{count, plural, one {# review} other {# reviews}}":
+    "{count, plural, one {# review} other {# reviews}}",
+  "{count, plural, one {# ride} other {# rides}}":
+    "{count, plural, one {# ride} other {# rides}}",
+  "{count, plural, one {# route} other {# routes}}":
+    "{count, plural, one {# route} other {# routes}}",
+  "{count, plural, one {# route traced} other {# routes traced}}":
+    "{count, plural, one {# route traced} other {# routes traced}}",
+  "{count, plural, one {# star} other {# stars}}":
+    "{count, plural, one {# star} other {# stars}}",
+  "{count, plural, one {# unknown pass} other {# unknown passes}}":
+    "{count, plural, one {# unknown pass} other {# unknown passes}}",
+  "{count, plural, one {# waypoint} other {# waypoints}}":
+    "{count, plural, one {# waypoint} other {# waypoints}}",
+  "{count, plural, one {# week} other {# weeks}} left":
+    "{count, plural, one {# week} other {# weeks}} left",
+  "{count, plural, one {DAY} other {DAYS}}":
+    "{count, plural, one {DAY} other {DAYS}}",
+  "{count, plural, one {PASS} other {PASSES}}":
+    "{count, plural, one {PASS} other {PASSES}}",
+  "{count, plural, one {pass} other {passes}}":
+    "{count, plural, one {pass} other {passes}}",
+  "{count, plural, one {{n} ride} other {{n} rides}}":
+    "{count, plural, one {{n} ride} other {{n} rides}}",
+  "{count, plural, one {{n} view} other {{n} views}}":
+    "{count, plural, one {{n} view} other {{n} views}}",
+  "{weeks}w {days}d left": "{weeks}w {days}d left",
   "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ":
     "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
   "Found {count} collections saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ":

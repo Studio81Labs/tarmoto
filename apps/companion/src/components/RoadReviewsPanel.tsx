@@ -433,9 +433,9 @@ export function RoadReviewsPanel({
             </p>
             {!loading && canLoadReviews && (
               <p className={`text-sm ${tc.textBody}`}>
-                {reviews.length === 1
-                  ? "1 review"
-                  : `${reviews.length} reviews`}
+                {t("{count, plural, one {# review} other {# reviews}}", {
+                  count: reviews.length,
+                })}
               </p>
             )}
           </div>
@@ -710,7 +710,9 @@ function ReviewEditor({
               <button
                 key={rating}
                 type="button"
-                aria-label={`${rating} ${rating === 1 ? "star" : "stars"}`}
+                aria-label={t("{count, plural, one {# star} other {# stars}}", {
+                  count: rating,
+                })}
                 aria-pressed={draft.rating === rating}
                 disabled={disabled}
                 onClick={() => onRatingChange(rating)}
@@ -983,7 +985,7 @@ function ReviewCard({
         {photos.length > 0 && (
           <span className="inline-flex items-center gap-1">
             <Images size={12} />
-            {t(photos.length === 1 ? "{count} photo" : "{count} photos", {
+            {t("{count, plural, one {# photo} other {# photos}}", {
               count: photos.length,
             })}
           </span>

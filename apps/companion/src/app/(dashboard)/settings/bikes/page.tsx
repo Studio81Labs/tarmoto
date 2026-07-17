@@ -243,7 +243,10 @@ function BikeRow({
   const isActive = bike.isActive;
   const ridesLabel =
     typeof bike.totalRides === "number"
-      ? `${format.integer(bike.totalRides)} ride${bike.totalRides === 1 ? "" : "s"}`
+      ? t("{count, plural, one {{n} ride} other {{n} rides}}", {
+          count: bike.totalRides,
+          n: format.integer(bike.totalRides),
+        })
       : null;
   return (
     <li

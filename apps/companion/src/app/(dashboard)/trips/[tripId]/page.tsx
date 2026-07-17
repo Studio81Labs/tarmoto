@@ -438,7 +438,9 @@ export default function TripDetailPage() {
               {trip.days.length > 1 && (
                 <span className="inline-flex items-center gap-1">
                   <Layers size={11} aria-hidden className="text-fg-faint" />
-                  {t("{count} days", { count: trip.days.length })}
+                  {t("{count, plural, one {# day} other {# days}}", {
+                    count: trip.days.length,
+                  })}
                 </span>
               )}
               <span className="inline-flex items-center gap-1">
@@ -453,14 +455,9 @@ export default function TripDetailPage() {
               )}
               <span className="inline-flex items-center gap-1">
                 <Users size={11} aria-hidden className="text-fg-faint" />{" "}
-                {t(
-                  loaded.members.length === 1
-                    ? "{count} member"
-                    : "{count} members",
-                  {
-                    count: loaded.members.length,
-                  },
-                )}
+                {t("{count, plural, one {# member} other {# members}}", {
+                  count: loaded.members.length,
+                })}
               </span>
             </div>
           </div>

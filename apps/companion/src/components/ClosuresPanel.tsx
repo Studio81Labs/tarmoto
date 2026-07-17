@@ -273,11 +273,10 @@ function ClosuresPanelBody({
           ) : hasRouteClosures ? (
             <>
               <p className="text-xs text-fg-dim">
-                {t("Current trip crosses {count} active {closureLabel}.", {
-                  count: routeCounts.total,
-                  closureLabel:
-                    routeCounts.total === 1 ? "closure" : "closures",
-                })}
+                {t(
+                  "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.",
+                  { count: routeCounts.total },
+                )}
               </p>
               {hasRouteFailure && (
                 <p className="text-xs text-amber-600">{routeError}</p>

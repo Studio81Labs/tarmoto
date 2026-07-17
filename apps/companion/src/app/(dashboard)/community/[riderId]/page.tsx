@@ -248,7 +248,7 @@ function Header({
               </span>
             )}
             {profile.home_region && <span className="text-fg-mute">·</span>}
-            <span>{formatJoinedLabel(profile.created_at)}</span>
+            <span>{formatJoinedLabel(profile.created_at, new Date(), t)}</span>
           </div>
           {profile.bio && (
             <p className="mt-3 max-w-[560px] text-[15px] leading-[1.5] text-ink">

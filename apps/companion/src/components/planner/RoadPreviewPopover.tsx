@@ -295,14 +295,18 @@ export function RoadPreviewPopover({
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-quality-q2/60 bg-quality-q2/15 px-2.5 py-1">
                     <span className="h-[7px] w-[7px] rounded-full bg-quality-q2" />
                     <Mono className="text-[9.5px] font-bold tracking-[0.4px] text-[#A9762A]">
-                      {t("LOW CONFIDENCE ")}· {preview.passes}{" "}
-                      {preview.passes === 1 ? t("PASS ") : t("PASSES ")}
+                      {t("LOW CONFIDENCE ")}·{" "}
+                      {t("{count, plural, one {# PASS} other {# PASSES}}", {
+                        count: preview.passes ?? 0,
+                      })}
                     </Mono>
                   </span>
                 ) : (
                   <span className="text-[11.5px] text-fg-mute">
-                    {t("based on ")}
-                    {preview.passes} {t("rider passes ")}
+                    {t(
+                      "based on {count, plural, one {# rider pass} other {# rider passes}}",
+                      { count: preview.passes ?? 0 },
+                    )}
                   </span>
                 )}
               </div>

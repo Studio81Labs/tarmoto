@@ -144,7 +144,7 @@ function RoadMapPageInner() {
   const showLoader = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   // `center` is the live view/query centre: it tracks the rider's geolocated
-  // position (auto-center + explicit "Center on me"/"Use my location") so the
+  // position (auto-center + explicit "Centre on me"/"Use my location") so the
   // map camera, the "Nearby unridden" query, and the coordinate inputs all stay
   // pointed at the same place. The public share coarsens it (see `handleShare`).
   const [center, setCenter] = useState(FALLBACK_CENTER);
@@ -152,7 +152,7 @@ function RoadMapPageInner() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   // Geolocation failure, kept separate from `nearbyError` (a coverage-only
-  // card): the "Center on me" button lives on the map in both views, so its
+  // card): the "Centre on me" button lives on the map in both views, so its
   // error must be visible from Routes too.
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -305,7 +305,7 @@ function RoadMapPageInner() {
     [nearby],
   );
   // Shared between the sidebar's "Use my location" and the map's
-  // "Center on me" so denial messaging, coordinate rounding, and the
+  // "Centre on me" so denial messaging, coordinate rounding, and the
   // 10s timeout stay in lockstep across the two entry points.
   const requestUserLocation = useCallback(
     (
@@ -359,7 +359,7 @@ function RoadMapPageInner() {
   }, []);
   // Locate the rider and point the live view at them: write `center` (drives the
   // "Nearby unridden" query + coordinate inputs) and fly the camera. Shared by
-  // the map's "Center on me" button, the sidebar's "Use my location", and the
+  // the map's "Centre on me" button, the sidebar's "Use my location", and the
   // load-time auto-center so denial messaging, coordinate rounding, and the 10 s
   // timeout stay in lockstep. The share coarsens `center` to a region grid
   // (`handleShare`), so a located position never leaks at street precision.
@@ -381,7 +381,7 @@ function RoadMapPageInner() {
   // page is loading/errored, or when the rider has no content (the empty state),
   // `<PersonalRoadMap>` never mounts — requesting geolocation there would prompt
   // for a screen the rider can't see. `hasContent` flips true once stats show a
-  // ridden segment or the tracks fetch resolves a route; explicit "Center on me"
+  // ridden segment or the tracks fetch resolves a route; explicit "Centre on me"
   // stays available on the rendered map regardless.
   const centeredOnLoadRef = useRef(false);
   const hasContent = stats
@@ -564,7 +564,7 @@ function RoadMapPageInner() {
               onClose={() => setSelectedRideId(null)}
             />
           )}
-          {/* Geolocation failed for an explicit "Center on me" — surface it by
+          {/* Geolocation failed for an explicit "Centre on me" — surface it by
               the button so it isn't hidden with the Coverage-only nearby card. */}
           {locationError && (
             <div
@@ -578,10 +578,10 @@ function RoadMapPageInner() {
             type="button"
             onClick={() => locateAndCenter()}
             className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-paper/85 border border-line backdrop-blur text-xs text-ink hover:bg-cream transition"
-            title={t("Center on me")}
+            title={t("Centre on me")}
           >
             <Crosshair size={12} />
-            {t("Center on me ")}
+            {t("Centre on me ")}
           </button>
         </div>
 

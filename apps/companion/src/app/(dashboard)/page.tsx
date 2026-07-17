@@ -601,13 +601,17 @@ function TripDraftCard({
           {trip.num_days > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">{trip.num_days}</span>{" "}
-              {trip.num_days === 1 ? t("DAY") : t("DAYS")}
+              {t("{count, plural, one {DAY} other {DAYS}}", {
+                count: trip.num_days,
+              })}
             </Mono>
           )}
           {trip.passes_count != null && trip.passes_count > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
-              {trip.passes_count === 1 ? t("PASS") : t("PASSES")}
+              {t("{count, plural, one {PASS} other {PASSES}}", {
+                count: trip.passes_count,
+              })}
             </Mono>
           )}
         </div>

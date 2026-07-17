@@ -60,9 +60,10 @@ export default async function BestRoadsCountryPage({
             {c.name}
           </h1>
           <p className="mt-2 text-fg-dim">
-            {regions.length}
-            {t("curated region")}
-            {regions.length === 1 ? "" : "s"}
+            {t(
+              "{count, plural, one {# curated region} other {# curated regions}}",
+              { count: regions.length },
+            )}
             {t(
               "\u2014 tap through for ranked roads, quality scores and a map preview. ",
             )}

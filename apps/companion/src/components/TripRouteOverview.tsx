@@ -35,7 +35,7 @@ export function TripRouteOverview({
 
   const stats = [
     distanceKm != null ? format.distanceKm(distanceKm) : null,
-    dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount }),
+    t("{count, plural, one {# day} other {# days}}", { count: dayCount }),
     region || null,
   ].filter((s): s is string => Boolean(s));
 

@@ -168,7 +168,9 @@ function SegmentDetailContent({
     segment.quality_source ?? null,
     segment.reading_count ?? 0,
   );
-  const passLabel = segment.reading_count === 1 ? t("pass") : t("passes");
+  const passLabel = t("{count, plural, one {pass} other {passes}}", {
+    count: segment.reading_count ?? 0,
+  });
   const qualityHistory = trendPoints(segment.quality_history);
   const regionalHistory = trendPoints(segment.regional_quality_history);
   const hasTrend = qualityHistory.length > 1;
@@ -378,9 +380,9 @@ function SegmentDetailContent({
         <div className="flex items-center justify-between gap-3">
           <Stamp>{t("Reviews & photos")}</Stamp>
           <Mono className="text-[11px] text-fg-mute">
-            {reviewCount === 1
-              ? t("1 review")
-              : t("{count} reviews", { count: reviewCount })}
+            {t("{count, plural, one {# review} other {# reviews}}", {
+              count: reviewCount,
+            })}
           </Mono>
         </div>
         <div className="mt-3.5">
