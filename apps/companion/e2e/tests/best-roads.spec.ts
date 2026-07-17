@@ -43,50 +43,29 @@ test.describe("best roads", () => {
     }
   });
 
-  // T24 — Embed widget: `/embed/roads/:country/:region` renders a
-  // chrome-less variant intended for iframe inclusion on third-party
-  // sites. The embed layout is opted out of the app's `bg-cream` so it
-  // ships a self-contained dark widget — and `robots: noindex,nofollow`
-  // is set per the embed layout's metadata.
-  test("T24: /embed/roads/:country/:region renders a chrome-less widget", async ({
-    browser,
-    mockApi,
+  // T24 — Legacy embed redirects: the iframe embed widgets were retired
+  // (US-58); the permanent redirects are now the only compatibility path
+  // for pages that already embedded a widget, so a route/config change
+  // must not silently turn them into 404s. `maxRedirects: 0` exposes the
+  // raw 308 + Location instead of following it.
+  test("T24: retired /embed/* URLs permanently redirect to their full pages", async ({
+    request,
   }) => {
-    await mockApi.reset();
-    const context = await browser.newContext();
-    try {
-      const page = await context.newPage();
-      await page.goto("/embed/roads/cz/beskydy");
+    const rides = await request.get("/embed/rides/some-token", {
+      maxRedirects: 0,
+    });
+    expect(rides.status()).toBe(308);
+    expect(rides.headers()["location"]).toBe("/rides/shared/some-token");
 
-      // Embed pages tag themselves as noindex/nofollow so search engines
-      // don't crawl the bare widget URL. Both directives appear in the
-      // robots meta tag.
-      const robots = await page
-        .locator('meta[name="robots"]')
-        .getAttribute("content");
-      expect(robots ?? "").toMatch(/noindex/i);
-      expect(robots ?? "").toMatch(/nofollow/i);
+    const roads = await request.get("/embed/roads/cz/beskydy/moravka", {
+      maxRedirects: 0,
+    });
+    expect(roads.status()).toBe(308);
+    expect(roads.headers()["location"]).toBe("/roads/best/cz/beskydy/moravka");
 
-      // Widget heading mirrors "Best roads in <region>"; the ranked
-      // roads from the mock backend render below it.
-      await expect(
-        page.getByRole("heading", { level: 1, name: /best roads in beskydy/i }),
-      ).toBeVisible();
-      await expect(page.getByText(/Mock Ridge Road/i)).toBeVisible();
-
-      // No app chrome: the dashboard topbar and sidebar nav don't ship
-      // inside the embed layout, so the "Trips" / "Road Explorer"
-      // top-nav links should be absent. The Web App v2 sidebar prefixes
-      // labels with a numeric stamp ("01 Trips", "02 Road Explorer") so
-      // the absence regex tolerates either form.
-      await expect(
-        page.getByRole("link", { name: /^(\d+\s*)?trips$/i }),
-      ).toHaveCount(0);
-      await expect(
-        page.getByRole("link", { name: /^(\d+\s*)?road explorer$/i }),
-      ).toHaveCount(0);
-    } finally {
-      await context.close();
-    }
+    // The retired /discover page rides the same mechanism (#1025).
+    const discover = await request.get("/discover", { maxRedirects: 0 });
+    expect(discover.status()).toBe(308);
+    expect(discover.headers()["location"]).toBe("/explore");
   });
 });

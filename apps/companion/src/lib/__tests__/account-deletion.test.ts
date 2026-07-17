@@ -27,11 +27,11 @@ describe("isDeletionConfirmed", () => {
 
   it("returns false on any mismatch", () => {
     expect(isDeletionConfirmed("", "rider@example.com")).toBe(false);
-    expect(
-      isDeletionConfirmed("rider@example.co", "rider@example.com"),
-    ).toBe(false);
-    expect(
-      isDeletionConfirmed("other@example.com", "rider@example.com"),
-    ).toBe(false);
+    expect(isDeletionConfirmed("rider@example.co", "rider@example.com")).toBe(
+      false,
+    );
+    expect(isDeletionConfirmed("other@example.com", "rider@example.com")).toBe(
+      false,
+    );
   });
 });

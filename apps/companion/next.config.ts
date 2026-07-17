@@ -13,6 +13,18 @@ const nextConfig: NextConfig = {
         destination: "/explore",
         permanent: true,
       },
+      // The embed widgets were retired with the dark theme; any iframe
+      // still out in the wild degrades into the full public page.
+      {
+        source: "/embed/rides/:token",
+        destination: "/rides/shared/:token",
+        permanent: true,
+      },
+      {
+        source: "/embed/roads/:path*",
+        destination: "/roads/best/:path*",
+        permanent: true,
+      },
     ];
   },
   transpilePackages: ["@tarmoto/shared", "@tarmoto/openapi-client"],

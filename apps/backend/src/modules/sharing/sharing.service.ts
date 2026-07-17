@@ -142,35 +142,6 @@ export class SharingService {
     return this.toDetailResponse(shared);
   }
 
-  async trackEmbedClick(token: string): Promise<void> {
-    const shared = await this.sharedRideRepo.findOne({
-      where: { share_token: token },
-      relations: ['user'],
-    });
-    // Same deleted-owner gate as `getByToken` (US-62) — without it a
-    // caller can probe `/embed-click` to side-channel whether a token
-    // belongs to a deleted owner vs. an unknown share.
-    if (!shared || shared.user?.deleted_at != null) {
-      throw new NotFoundException('Shared ride not found');
-    }
-
-    // #279: same private-profile gate as `getByToken`. Without it a
-    // caller could probe `/embed-click` to confirm that a hidden
-    // share token exists, AND we'd record engagement against content
-    // that's supposed to be hidden — both are inconsistent with the
-    // 404 the read path returns for the same token.
-    const ownerPrefs = await this.privacy.loadPreferences(shared.user_id);
-    if (ownerPrefs.profile_visibility === 'private') {
-      throw new NotFoundException('Shared ride not found');
-    }
-
-    await this.sharedRideRepo.increment(
-      { id: shared.id },
-      'embed_click_count',
-      1,
-    );
-  }
-
   /**
    * Browse the public community feed (US-53).
    *
@@ -616,7 +587,6 @@ export class SharingService {
       avg_curviness: ride.avg_curviness ?? null,
       duration_min: durationMin,
       view_count: shared.view_count ?? 0,
-      embed_click_count: shared.embed_click_count ?? 0,
       route_geometry: routeGeometry,
     };
   }

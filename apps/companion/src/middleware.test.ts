@@ -36,12 +36,12 @@ async function runMiddleware(
 }
 
 describe("companion middleware", () => {
-  it.each([
-    "/embed/roads/CZ/Moravskoslezsky",
-    "/community/collections/shared/alpine-weekend",
-  ])("allows logged-out visitors to public route %s", async (pathname) => {
-    expect(await runMiddleware(pathname)).toBeUndefined();
-  });
+  it.each(["/community/collections/shared/alpine-weekend"])(
+    "allows logged-out visitors to public route %s",
+    async (pathname) => {
+      expect(await runMiddleware(pathname)).toBeUndefined();
+    },
+  );
 
   it.each([
     "/explore",
@@ -49,7 +49,6 @@ describe("companion middleware", () => {
     "/rides/shared/share-token",
     "/rides/road-map/shared/map-token",
     "/trips/shared/trip-token",
-    "/embed/rides/ride-token",
   ])(
     "keeps existing public route %s accessible without auth",
     async (pathname) => {

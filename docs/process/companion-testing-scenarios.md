@@ -34,22 +34,22 @@
 
 ## WEB-EPIC 2: Road Quality Explorer (P0)
 
-| #   | Scenario               | Steps                                    | Expected Result                                            |
-| --- | ---------------------- | ---------------------------------------- | ---------------------------------------------------------- |
-| T15 | Public explorer        | Open `/explore` in incognito             | Full-screen heatmap loads, no auth gate                    |
-| T16 | Click segment          | Click colored road segment               | Sidebar opens with quality score, surface type, confidence |
-| T17 | Segment trend chart    | Expand trend section                     | Line chart showing quality over time                       |
-| T18 | Filter by quality      | Toggle quality tiers                     | Map updates to show only matching segments                 |
-| T19 | Filter by surface type | Select "Gravel" filter                   | Only gravel roads highlighted                              |
-| T20 | Filter by curviness    | Set curviness slider                     | Only matching segments shown                               |
-| T21 | URL-synced filters     | Apply filters, copy URL, open in new tab | Filters restored from URL params                           |
-| T22 | Hazard markers         | Enable hazard layer, click marker        | Hazard type, reporter, time, confirmations                 |
-| T23 | Best Roads page        | Navigate to `/roads/best/CZ`             | SSR page with curated list, SEO metadata                   |
-| T24 | Embed widget           | Open `/embed/roads/CZ/Moravskoslezsky`   | Minimal embed view, no app chrome                          |
-| T25 | Road reviews           | Open segment sidebar, Reviews tab        | User reviews with ratings and photos                       |
-| T26 | Submit review          | Write review, upload photo, submit       | Review appears, count increments                           |
-| T27 | Closures panel         | Open for region                          | Seasonal closures and construction zones listed            |
-| T28 | Passes panel           | Open for alpine region                   | Pass status with elevation data                            |
+| #   | Scenario               | Steps                                    | Expected Result                                                     |
+| --- | ---------------------- | ---------------------------------------- | ------------------------------------------------------------------- |
+| T15 | Public explorer        | Open `/explore` in incognito             | Full-screen heatmap loads, no auth gate                             |
+| T16 | Click segment          | Click colored road segment               | Sidebar opens with quality score, surface type, confidence          |
+| T17 | Segment trend chart    | Expand trend section                     | Line chart showing quality over time                                |
+| T18 | Filter by quality      | Toggle quality tiers                     | Map updates to show only matching segments                          |
+| T19 | Filter by surface type | Select "Gravel" filter                   | Only gravel roads highlighted                                       |
+| T20 | Filter by curviness    | Set curviness slider                     | Only matching segments shown                                        |
+| T21 | URL-synced filters     | Apply filters, copy URL, open in new tab | Filters restored from URL params                                    |
+| T22 | Hazard markers         | Enable hazard layer, click marker        | Hazard type, reporter, time, confirmations                          |
+| T23 | Best Roads page        | Navigate to `/roads/best/CZ`             | SSR page with curated list, SEO metadata                            |
+| T24 | Legacy embed redirect  | Open `/embed/roads/cz/beskydy`           | 308 permanent redirect to `/roads/best/cz/beskydy` (embeds retired) |
+| T25 | Road reviews           | Open segment sidebar, Reviews tab        | User reviews with ratings and photos                                |
+| T26 | Submit review          | Write review, upload photo, submit       | Review appears, count increments                                    |
+| T27 | Closures panel         | Open for region                          | Seasonal closures and construction zones listed                     |
+| T28 | Passes panel           | Open for alpine region                   | Pass status with elevation data                                     |
 
 ## WEB-EPIC 3: Ride History & Analytics (P1)
 
