@@ -3,6 +3,7 @@ import {
   PageLoadingBar,
   Skeleton,
   SkeletonDashboard,
+  SkeletonForm,
   SkeletonGrid,
   SkeletonList,
 } from "../Skeleton";
@@ -41,6 +42,17 @@ test("grid composition renders the requested cards", () => {
   expect(
     root.querySelectorAll(':scope > div[aria-hidden="true"]'),
   ).toHaveLength(5);
+});
+
+test("form composition renders the requested section cards", () => {
+  const { container } = render(
+    <SkeletonForm sections={3} label="Loading settings…" />,
+  );
+  expect(screen.getByRole("status")).toHaveTextContent("Loading settings…");
+  const root = container.firstElementChild!;
+  expect(
+    root.querySelectorAll(':scope > div[aria-hidden="true"]'),
+  ).toHaveLength(3);
 });
 
 test("dashboard composition renders KPI tiles and chart cards", () => {

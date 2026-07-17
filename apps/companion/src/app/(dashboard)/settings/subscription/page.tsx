@@ -8,14 +8,13 @@ import {
   Check,
   CreditCard,
   ExternalLink,
-  Loader2,
   Receipt,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { Button, Card, Heading, Stamp } from "@tarmoto/ui";
+import { Button, Card, Heading, SkeletonForm, Stamp } from "@tarmoto/ui";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   buildFallbackSubscriptionSnapshot,
@@ -690,11 +689,6 @@ function LoadingState() {
   const showLoader = useDelayedLoading(true);
   if (!showLoader) return null;
   return (
-    <Card padded={false} className="p-8">
-      <div className="inline-flex items-center gap-2 text-[14px] text-fg-dim">
-        <Loader2 size={16} className="animate-spin" />
-        {t("Loading subscription settings… ")}
-      </div>
-    </Card>
+    <SkeletonForm sections={2} label={t("Loading subscription settings… ")} />
   );
 }

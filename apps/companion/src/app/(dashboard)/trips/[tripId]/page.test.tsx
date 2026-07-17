@@ -74,6 +74,12 @@ vi.mock("@/hooks/useTripCollabSession", () => ({
   useTripCollabSession: vi.fn(),
 }));
 
+// Pass-through: the real hook debounces the loading skeleton by 250ms,
+// which would force timer juggling in every loading-state assertion.
+vi.mock("@/hooks/useDelayedLoading", () => ({
+  useDelayedLoading: (loading: boolean) => loading,
+}));
+
 vi.mock("@/lib/closures-summary", async () => {
   const actual = await vi.importActual<typeof import("@/lib/closures-summary")>(
     "@/lib/closures-summary",

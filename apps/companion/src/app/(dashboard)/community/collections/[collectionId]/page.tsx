@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { notFound as renderNotFound, useParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Button,
@@ -14,6 +15,8 @@ import {
   Mono,
   QualityBars,
   SegmentedControl,
+  SkeletonDashboard,
+  SkeletonPageHeader,
   Stamp,
   Tooltip,
 } from "@tarmoto/ui";
@@ -134,6 +137,7 @@ export default function CollectionDetailPage() {
     void reload(collectionId);
   }, [collectionId, authReady, reload]);
   const collection = load.phase === "ready" ? load.collection : null;
+  const showLoader = useDelayedLoading(load.phase === "loading");
   // Per-item route geometry (simplified polylines) for the row thumbnails,
   // keyed by collection item id. Fetched from the owner-only preview endpoint
   // and refreshed whenever the item set changes (add/remove bumps the
@@ -267,12 +271,15 @@ export default function CollectionDetailPage() {
     }
   };
   if (load.phase === "loading") {
+    // Debounced skeleton: warm loads render a blank shell, never a flash.
     return (
-      <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
-        <div className="flex items-center gap-2 text-fg-dim text-sm">
-          <Loader2 size={16} className="animate-spin" />
-          {t("Loading collection\u2026")}
-        </div>
+      <div className="mx-auto w-full max-w-page p-4 md:p-7">
+        {showLoader && (
+          <>
+            <SkeletonPageHeader />
+            <SkeletonDashboard label={t("Loading collection\u2026")} />
+          </>
+        )}
       </div>
     );
   }
