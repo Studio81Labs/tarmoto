@@ -51,6 +51,7 @@ import {
   type ChallengeMeta,
   type GamificationSnapshot,
   type LeaderboardDimensionKey,
+  type LeaderboardMetric,
   type MilestoneProgress,
   type RegionalDimensionLeaderboard,
   type RegionalLeaderboardEntry,
@@ -1204,6 +1205,7 @@ function MilestoneCard({
       <TierTrack
         thresholds={[...progress.milestone.thresholds].sort((a, b) => a - b)}
         current={progress.current}
+        metric={progress.milestone.metric}
         format={format}
       />
     </div>
@@ -1212,10 +1214,12 @@ function MilestoneCard({
 function TierTrack({
   thresholds,
   current,
+  metric,
   format,
 }: {
   thresholds: number[];
   current: number;
+  metric: LeaderboardMetric;
   format: Formatters;
 }) {
   if (thresholds.length === 0) return null;
@@ -1233,7 +1237,12 @@ function TierTrack({
                 : "border-line-strong bg-cream text-fg-dim",
             )}
           >
-            {format.integer(tier)}
+            {/* Distance tiers convert with the milestone label above them
+                (a raw 10,000 chip under a "6,214 mi" label misleads);
+                count tiers stay plain integers. */}
+            {metric === "totalKm"
+              ? format.splitDistanceKm(tier).value
+              : format.integer(tier)}
           </li>
         );
       })}
