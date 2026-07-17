@@ -969,10 +969,10 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           scope === "region" && homeRegion
             ? t("Top riders in {region}, ranked by {dimension}.", {
                 region: homeRegion,
-                dimension: labelForDimension(dimension).toLowerCase(),
+                dimension: labelForDimension(dimension, t).toLowerCase(),
               })
             : t("Top riders worldwide, ranked by {dimension}.", {
-                dimension: labelForDimension(dimension).toLowerCase(),
+                dimension: labelForDimension(dimension, t).toLowerCase(),
               })
         }
       />
@@ -995,7 +995,7 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           onChange={setDimension}
           options={LEADERBOARD_DIMENSION_KEYS.map((dim) => ({
             value: dim,
-            label: labelForDimension(dim),
+            label: labelForDimension(dim, t),
           }))}
         />
       </div>
@@ -1166,7 +1166,7 @@ function MilestoneCard({
   progress: MilestoneProgress;
   format: Formatters;
 }) {
-  const label = formatMilestoneLabel(progress, format);
+  const label = formatMilestoneLabel(progress, format, t);
   return (
     <div className="rounded-[14px] border border-line bg-cream p-5">
       <div className="flex items-start justify-between gap-4">

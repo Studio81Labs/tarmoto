@@ -244,6 +244,7 @@ export function pickNextMilestone(
 export function formatMilestoneLabel(
   progress: MilestoneProgress,
   format: Formatters,
+  t: LooseTranslate,
 ): string {
   const metric = progress.milestone.metric;
   if (metric === "totalKm") {
@@ -251,17 +252,30 @@ export function formatMilestoneLabel(
     // threshold derive from the same formatter so they share one unit
     // (byte-identical to the old output for metric riders).
     if (progress.nextThreshold === null) {
-      return `Maxed at ${format.distanceKm(progress.current)}`;
+      return t("Maxed at {value}", {
+        value: format.distanceKm(progress.current),
+      });
     }
     const current = format.splitDistanceKm(progress.current);
     const target = format.splitDistanceKm(progress.nextThreshold);
-    return `${current.value} / ${target.value} ${target.unit}`;
+    return t("{current} / {target} {unit}", {
+      current: current.value,
+      target: target.value,
+      unit: target.unit,
+    });
   }
-  const unit = MILESTONE_UNITS[metric];
+  const unit = t(MILESTONE_UNITS[metric]);
   if (progress.nextThreshold === null) {
-    return `Maxed at ${format.integer(progress.current)} ${unit}`;
+    return t("Maxed at {value} {unit}", {
+      value: format.integer(progress.current),
+      unit,
+    });
   }
-  return `${format.integer(progress.current)} / ${format.integer(progress.nextThreshold)} ${unit}`;
+  return t("{current} / {target} {unit}", {
+    current: format.integer(progress.current),
+    target: format.integer(progress.nextThreshold),
+    unit,
+  });
 }
 
 export function formatDaysRemaining(
@@ -531,8 +545,11 @@ const UNIT_BY_METRIC: Record<string, string> = {
   rides_shared: "rides",
 };
 
-export function unitForChallengeMetric(metric: string): string {
-  return UNIT_BY_METRIC[metric] ?? "units";
+export function unitForChallengeMetric(
+  metric: string,
+  t: LooseTranslate,
+): string {
+  return t(UNIT_BY_METRIC[metric] ?? "units");
 }
 
 /**
@@ -559,7 +576,8 @@ export function humanizeRewardBadgeKey(key: string): string {
  */
 export function mapChallengeDto(
   dto: ChallengeDto,
-  myProgress?: number | null,
+  myProgress: number | null | undefined,
+  t: LooseTranslate,
 ): Challenge {
   return {
     id: dto.id,
@@ -568,7 +586,7 @@ export function mapChallengeDto(
     category: categoryForChallengeMetric(dto.metric),
     current: typeof myProgress === "number" ? myProgress : 0,
     target: dto.target,
-    unit: unitForChallengeMetric(dto.metric),
+    unit: unitForChallengeMetric(dto.metric, t),
     endsAt: dto.ends_at,
     reward: dto.reward_badge_key
       ? humanizeRewardBadgeKey(dto.reward_badge_key)
@@ -632,14 +650,17 @@ export function riderStatsFromMeProfile(me: MeProfileDto): RiderStats {
  * interactive) and is therefore not part of the snapshot — see
  * `fetchRegionalLeaderboards` and `mapRegionalLeaderboards`.
  */
-export function buildLiveSnapshot(input: {
-  badges: readonly BadgeDto[];
-  challengeDetails: readonly ChallengeDetailDto[];
-  meProfile?: MeProfileDto | null;
-}): GamificationSnapshot {
+export function buildLiveSnapshot(
+  input: {
+    badges: readonly BadgeDto[];
+    challengeDetails: readonly ChallengeDetailDto[];
+    meProfile?: MeProfileDto | null;
+  },
+  t: LooseTranslate,
+): GamificationSnapshot {
   const badges = input.badges.map(mapBadgeDto);
   const challenges = input.challengeDetails.map((d) =>
-    mapChallengeDto(d, d.my_progress),
+    mapChallengeDto(d, d.my_progress, t),
   );
   const challengeMeta: Record<string, ChallengeMeta> = {};
   for (const d of input.challengeDetails) {
@@ -652,7 +673,14 @@ export function buildLiveSnapshot(input: {
     badges,
     challenges,
     challengeMeta,
-    milestones: DEFAULT_MILESTONES,
+    // DEFAULT_MILESTONES stays canonical English data (also shared by the
+    // buildDemoSnapshot test fixture); this is the one live render path, so
+    // it's the read site that translates name/description for display.
+    milestones: DEFAULT_MILESTONES.map((m) => ({
+      ...m,
+      name: t(m.name),
+      description: t(m.description),
+    })),
     seasonal: null,
     stats: input.meProfile
       ? riderStatsFromMeProfile(input.meProfile)
@@ -675,8 +703,11 @@ const DIMENSION_LABELS: Record<LeaderboardDimensionKey, string> = {
   hazards_reported: "Hazards reported",
 };
 
-export function labelForDimension(dim: LeaderboardDimensionKey): string {
-  return DIMENSION_LABELS[dim];
+export function labelForDimension(
+  dim: LeaderboardDimensionKey,
+  t: LooseTranslate,
+): string {
+  return t(DIMENSION_LABELS[dim]);
 }
 
 export function mapRegionalLeaderboardEntry(

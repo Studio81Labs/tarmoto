@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "@tarmoto/openapi-client";
-import { createFormatters } from "@tarmoto/shared";
+import { createFormatters, makeTranslator } from "@tarmoto/shared";
 import { t } from "@/i18n";
 import type { RiderStats } from "../types";
 import {
@@ -224,12 +224,16 @@ describe("formatMilestoneLabel", () => {
 
   it("shows current / next with the metric unit", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 12_345 }));
-    expect(formatMilestoneLabel(progress, format)).toBe("12,345 / 25,000 km");
+    expect(formatMilestoneLabel(progress, format, t)).toBe(
+      "12,345 / 25,000 km",
+    );
   });
 
   it("labels maxed milestones", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 30_000 }));
-    expect(formatMilestoneLabel(progress, format)).toBe("Maxed at 30,000 km");
+    expect(formatMilestoneLabel(progress, format, t)).toBe(
+      "Maxed at 30,000 km",
+    );
   });
 });
 
@@ -374,28 +378,30 @@ describe("categoryForChallengeMetric", () => {
 
 describe("unitForChallengeMetric", () => {
   it("returns the unit label by metric", () => {
-    expect(unitForChallengeMetric("total_distance")).toBe("km");
-    expect(unitForChallengeMetric("ride_count")).toBe("rides");
-    expect(unitForChallengeMetric("roads_discovered")).toBe("roads");
-    expect(unitForChallengeMetric("hazards_reported")).toBe("reports");
+    expect(unitForChallengeMetric("total_distance", t)).toBe("km");
+    expect(unitForChallengeMetric("ride_count", t)).toBe("rides");
+    expect(unitForChallengeMetric("roads_discovered", t)).toBe("roads");
+    expect(unitForChallengeMetric("hazards_reported", t)).toBe("reports");
   });
 });
 
 describe("mapChallengeDto", () => {
   it("treats null my_progress as not-yet-joined (current = 0)", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), null);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), null, t);
     expect(c.current).toBe(0);
     expect(c.target).toBe(10);
   });
 
   it("uses my_progress when the rider has joined", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), 4);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), 4, t);
     expect(c.current).toBe(4);
   });
 
   it("renames title → name and forwards endsAt", () => {
     const c = mapChallengeDto(
       challengeDto({ title: "Spring", ends_at: "2026-05-01T00:00:00Z" }),
+      undefined,
+      t,
     );
     expect(c.name).toBe("Spring");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
@@ -404,12 +410,18 @@ describe("mapChallengeDto", () => {
   it("humanises a reward badge key into user-facing copy", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: "spring_explorer" }),
+      undefined,
+      t,
     );
     expect(c.reward).toBe("Spring explorer");
   });
 
   it("leaves reward undefined when no badge key is set", () => {
-    const c = mapChallengeDto(challengeDto({ reward_badge_key: null }));
+    const c = mapChallengeDto(
+      challengeDto({ reward_badge_key: null }),
+      undefined,
+      t,
+    );
     expect(c.reward).toBeUndefined();
   });
 });
@@ -576,14 +588,45 @@ describe("regional leaderboard mappers", () => {
 describe("labelForDimension", () => {
   it("returns a human-readable label per dimension", () => {
     for (const dim of LEADERBOARD_DIMENSION_KEYS) {
-      expect(labelForDimension(dim)).toBeTruthy();
+      expect(labelForDimension(dim, t)).toBeTruthy();
     }
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) to prove `labelForDimension`/`unitForChallengeMetric`
+// actually route their return value through the supplied translator, rather
+// than just happening to still return the hardcoded English constant.
+describe("gamification translator wiring", () => {
+  const t = makeTranslator<string>({
+    en: {
+      Distance: "Distance",
+      "Roads discovered": "Roads discovered",
+      "Hazards reported": "Hazards reported",
+      km: "km",
+      roads: "roads",
+      reports: "reports",
+      rides: "rides",
+      reviews: "reviews",
+      units: "units",
+      "{current} / {target} {unit}": "{current} / {target} {unit}",
+      "Maxed at {value}": "Maxed at {value}",
+      "Maxed at {value} {unit}": "Maxed at {value} {unit}",
+    },
+  });
+
+  it("labelForDimension returns English via the translator", () => {
+    expect(labelForDimension("total_distance_km", t)).toBe("Distance");
+  });
+
+  it("unitForChallengeMetric returns English via the translator", () => {
+    expect(unitForChallengeMetric("total_distance", t)).toBe("km");
   });
 });
 
 describe("buildLiveSnapshot", () => {
   it("produces an empty snapshot when no data is available", () => {
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] });
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
     expect(snap.badges).toEqual([]);
     expect(snap.challenges).toEqual([]);
     expect(snap.seasonal).toBeNull();
@@ -596,7 +639,10 @@ describe("buildLiveSnapshot", () => {
       participant_count: 7,
       my_progress: 3,
     });
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [detail] });
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [detail] },
+      t,
+    );
     expect(snap.challengeMeta["ch-1"]).toEqual({
       joined: true,
       participantCount: 7,
@@ -610,56 +656,65 @@ describe("buildLiveSnapshot", () => {
       participant_count: 0,
       my_progress: null,
     });
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [detail] });
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [detail] },
+      t,
+    );
     expect(snap.challengeMeta["ch-1"]?.joined).toBe(false);
     expect(snap.challenges[0]?.current).toBe(0);
   });
 
   it("derives stats from the badges payload", () => {
-    const snap = buildLiveSnapshot({
-      badges: [
-        badgeDto({
-          key: "total_distance",
-          progress: {
-            current: 8_000,
-            bronze: 100,
-            silver: 1_000,
-            gold: 10_000,
-          },
-        }),
-      ],
-      challengeDetails: [],
-    });
+    const snap = buildLiveSnapshot(
+      {
+        badges: [
+          badgeDto({
+            key: "total_distance",
+            progress: {
+              current: 8_000,
+              bronze: 100,
+              silver: 1_000,
+              gold: 10_000,
+            },
+          }),
+        ],
+        challengeDetails: [],
+      },
+      t,
+    );
     expect(snap.stats.totalKm).toBe(8_000);
   });
 
   it("prefers the me-profile summary for stats when supplied (totalHours / joinedAt only available there)", () => {
-    const snap = buildLiveSnapshot({
-      badges: [
-        badgeDto({
-          key: "total_distance",
-          // Stale badge value — me-profile should win.
-          progress: {
-            current: 100,
-            bronze: 100,
-            silver: 1_000,
-            gold: 10_000,
-          },
-        }),
-      ],
-      challengeDetails: [],
-      meProfile: {
-        joined_at: "2024-01-15T10:00:00.000Z",
-        total_hours: 120.5,
-        total_rides: 18,
-        total_distance_km: 1_234.5,
-        roads_discovered: 73,
-        hazards_reported: 6,
-        follower_count: 11,
-        following_count: 7,
-        badges_earned: 3,
+    const snap = buildLiveSnapshot(
+      {
+        badges: [
+          badgeDto({
+            key: "total_distance",
+            // Stale badge value — me-profile should win.
+            progress: {
+              current: 100,
+              bronze: 100,
+              silver: 1_000,
+              gold: 10_000,
+            },
+          }),
+        ],
+        challengeDetails: [],
+        meProfile: {
+          joined_at: "2024-01-15T10:00:00.000Z",
+          total_hours: 120.5,
+          total_rides: 18,
+          total_distance_km: 1_234.5,
+          roads_discovered: 73,
+          hazards_reported: 6,
+          follower_count: 11,
+          following_count: 7,
+          badges_earned: 3,
+        },
       },
-    });
+      t,
+    );
 
     expect(snap.stats.totalKm).toBe(1_234.5);
     expect(snap.stats.totalHours).toBe(120.5);
