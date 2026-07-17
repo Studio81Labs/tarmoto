@@ -38,6 +38,7 @@ import {
   DensitySection,
   DoDontSection,
   LayoutsSection,
+  LoadingSection,
   SystemStatesSection,
 } from "./sections/Patterns";
 
@@ -86,6 +87,7 @@ export function App() {
         <DensitySection />
         <DoDontSection />
         <SystemStatesSection />
+        <LoadingSection />
 
         <DesignMapFooter />
       </main>

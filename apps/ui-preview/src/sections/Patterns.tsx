@@ -5,8 +5,13 @@ import {
   ErrorState,
   LayoutShell,
   Mono,
+  PageLoadingBar,
   QualityBars,
   RoadPreviewCard,
+  SkeletonDashboard,
+  SkeletonGrid,
+  SkeletonList,
+  SkeletonPageHeader,
   Stamp,
 } from "@tarmoto/ui";
 import { CK, CN, CodeBlock, TokenTable } from "./_shared";
@@ -432,6 +437,64 @@ export function SystemStatesSection() {
               </div>
             </Card>
           ))}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/* -------- 28 · LOADING -------- */
+
+export function LoadingSection() {
+  return (
+    <Section
+      id="loading"
+      num="28 · Loading"
+      title="Shimmer skeletons + the accent progress bar."
+      tone="tinted"
+      intro={
+        <>
+          Content loaders mirror the layout they replace — list rows, card grid,
+          dashboard — under a 3px indeterminate accent bar. Always gate them
+          behind <CN>useDelayedLoading</CN> so warm responses never flash.
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 gap-6">
+        <Card padded className="relative overflow-hidden !p-6">
+          <PageLoadingBar />
+          <SubStamp>List · rides &amp; trips</SubStamp>
+          <div className="mt-3">
+            <SkeletonPageHeader />
+            <SkeletonList rows={2} />
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-2 gap-6">
+          <Card padded className="!p-6">
+            <SubStamp>Grid · community</SubStamp>
+            <div className="mt-3">
+              <SkeletonGrid cards={4} className="!grid-cols-2" />
+            </div>
+          </Card>
+          <Card padded className="!p-6">
+            <SubStamp>Dashboard · stats</SubStamp>
+            <div className="mt-3">
+              <SkeletonDashboard />
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <CodeBlock>
+            {`shimmer: `}
+            <CN>animate-skeleton</CN>
+            {` · ink 5.5→11% sweep · 1.5s linear\n`}
+            {`bar: `}
+            <CN>PageLoadingBar</CN>
+            {` · 30% accent segment · 1.1s ease-in-out\n`}
+            {`a11y: blocks aria-hidden · sr-only role=status label · motion-reduce safe`}
+          </CodeBlock>
         </div>
       </div>
     </Section>
