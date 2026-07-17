@@ -5,6 +5,7 @@ import {
   ErrorState,
   LayoutShell,
   Mono,
+  PageHeader,
   PageLoadingBar,
   QualityBars,
   RoadPreviewCard,
@@ -502,6 +503,63 @@ export function LoadingSection() {
             <CN>PageLoadingBar</CN>
             {` · 30% accent segment · 1.1s ease-in-out\n`}
             {`a11y: blocks aria-hidden · sr-only role=status label · motion-reduce safe`}
+          </CodeBlock>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/* -------- 29 · STICKY HEADER -------- */
+
+export function StickyHeaderSection() {
+  return (
+    <Section
+      id="sticky-header"
+      num="29 · Sticky header"
+      title="Large title condenses on scroll."
+      tone="tinted"
+      intro={
+        <>
+          <CN>PageHeader</CN> watches itself with an IntersectionObserver: once
+          the large title scrolls out of view, a slim floating bar — icon,
+          title, and the <CN>right</CN> actions — pins to the top of the scroll
+          container. On by default; opt out with{" "}
+          <CN>sticky=&#123;false&#125;</CN>.
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 gap-6">
+        <Card padded className="!p-0">
+          <div className="h-[300px] overflow-y-auto p-6">
+            <PageHeader
+              stamp="Ride history"
+              title="Ride History"
+              sub="Scroll this panel — the header condenses into a floating bar."
+              right={
+                <Button variant="accent" size="sm" uppercase>
+                  Record ride
+                </Button>
+              }
+            />
+            {Array.from({ length: 8 }, (_, i) => (
+              <div
+                key={i}
+                className="mb-3 h-16 rounded-[14px] border border-line bg-paper-2"
+              />
+            ))}
+          </div>
+        </Card>
+
+        <div>
+          <CodeBlock>
+            {`trigger: IntersectionObserver · threshold 0 · condenses only once fully out of view
+`}
+            {`bar: sticky top-3 in a zero-height slot · paper/90 + backdrop-blur · `}
+            <CN>animate-header-in</CN>
+            {`
+`}
+            {`a11y: bar mounts only while condensed · title stays a single h1 · motion-reduce safe`}
           </CodeBlock>
         </div>
       </div>

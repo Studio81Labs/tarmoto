@@ -39,6 +39,7 @@ import {
   DoDontSection,
   LayoutsSection,
   LoadingSection,
+  StickyHeaderSection,
   SystemStatesSection,
 } from "./sections/Patterns";
 
@@ -82,12 +83,13 @@ export function App() {
         <MapModesSection />
         <MapOverlaysSection />
 
-        {/* Patterns · 24–27 */}
+        {/* Patterns · 24–29 */}
         <LayoutsSection />
         <DensitySection />
         <DoDontSection />
         <SystemStatesSection />
         <LoadingSection />
+        <StickyHeaderSection />
 
         <DesignMapFooter />
       </main>
