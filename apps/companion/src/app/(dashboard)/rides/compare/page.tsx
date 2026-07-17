@@ -455,7 +455,21 @@ function MetricTable({
     if (!row) return "—";
     const v = side === "a" ? row.a : row.b;
     if (v == null) return "—";
-    return `${formatNumber(v, row.digits, format)}${row.unit ? ` ${row.unit}` : ""}`;
+    // Unit-bearing metrics convert with the rider's preference (value and
+    // unit from one formatter); dimensionless rows (quality, curves, lean)
+    // keep their fixed suffixes from STAT_DEFS.
+    switch (row.key) {
+      case "distance_km":
+        return format.distanceKm(v);
+      case "avg_speed":
+      case "max_speed":
+        return format.speed(v);
+      case "elevation_gain":
+      case "elevation_loss":
+        return format.elevation(v);
+      default:
+        return `${formatNumber(v, row.digits, format)}${row.unit ? ` ${row.unit}` : ""}`;
+    }
   };
   const durationLabel = (min: number | null): string =>
     min != null ? format.durationCompact(min) : "—";
