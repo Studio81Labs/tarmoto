@@ -1,4 +1,5 @@
 import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -29,6 +30,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const detail = await fetchSharedCollection(slug);
+  const locale = await readLocale();
   if (!detail) {
     return {
       title: "Collection — Tarmoto",
@@ -39,7 +41,14 @@ export async function generateMetadata({
     title: `${detail.title} — Tarmoto collection`,
     description:
       detail.description ??
-      `${detail.item_count} curated route${detail.item_count === 1 ? "" : "s"} shared by ${detail.owner_name || "a Tarmoto rider"}`,
+      t(
+        "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
+        {
+          count: detail.item_count,
+          owner: detail.owner_name || t("a Tarmoto rider"),
+        },
+        locale,
+      ),
     // Public collections are indexable; unlisted ones must stay out of the
     // index. We branch on the resolved visibility.
     robots:
@@ -138,8 +147,9 @@ export default async function SharedCollectionPage({
             )}
             <MetaChip>
               <Shuffle size={13} className="text-fg-mute" aria-hidden="true" />
-              {detail.item_count}{" "}
-              {detail.item_count === 1 ? t("route") : t("routes")}
+              {t("{count, plural, one {# route} other {# routes}}", {
+                count: detail.item_count,
+              })}
             </MetaChip>
             <MetaChip>
               <Calendar size={13} className="text-fg-mute" aria-hidden="true" />

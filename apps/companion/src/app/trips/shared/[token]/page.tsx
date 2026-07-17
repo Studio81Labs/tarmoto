@@ -102,9 +102,9 @@ export default async function SharedTripPage({
             </SharePill>
             {summary && (
               <SharePill icon={<CalendarDays size={13} />}>
-                {summary.dayCount === 1
-                  ? t("1 day")
-                  : t("{count} days", { count: summary.dayCount })}
+                {t("{count, plural, one {# day} other {# days}}", {
+                  count: summary.dayCount,
+                })}
               </SharePill>
             )}
           </div>

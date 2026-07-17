@@ -381,9 +381,9 @@ function SegmentDetailContent({
         <div className="flex items-center justify-between gap-3">
           <Stamp>{t("Reviews & photos")}</Stamp>
           <Mono className="text-[11px] text-fg-mute">
-            {reviewCount === 1
-              ? t("1 review")
-              : t("{count} reviews", { count: reviewCount })}
+            {t("{count, plural, one {# review} other {# reviews}}", {
+              count: reviewCount,
+            })}
           </Mono>
         </div>
         <div className="mt-3.5">

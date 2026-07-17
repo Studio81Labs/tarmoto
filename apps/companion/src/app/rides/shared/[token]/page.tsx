@@ -73,12 +73,19 @@ export default async function SharedRidePage({
               {format.relativeTime(ride.started_at)}
             </SharePill>
             <SharePill icon={<Activity size={13} />}>
-              {t("{count} views", { count: ride.view_count })}
+              {t("{count, plural, one {{n} view} other {{n} views}}", {
+                count: ride.view_count,
+                n: format.integer(ride.view_count),
+              })}
             </SharePill>
             <SharePill icon={<Sparkles size={13} />}>
-              {ride.embed_click_count === 1
-                ? t("1 embed click")
-                : t("{count} embed clicks", { count: ride.embed_click_count })}
+              {t(
+                "{count, plural, one {{n} embed click} other {{n} embed clicks}}",
+                {
+                  count: ride.embed_click_count,
+                  n: format.integer(ride.embed_click_count),
+                },
+              )}
             </SharePill>
           </div>
         </Card>

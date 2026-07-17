@@ -2586,12 +2586,9 @@ export default function TripPlannerPage() {
                 {headerMemberCount !== null ? (
                   <span className="inline-flex items-center gap-1">
                     <Users size={11} aria-hidden className="text-fg-faint" />
-                    {t(
-                      headerMemberCount === 1
-                        ? "{count} member"
-                        : "{count} members",
-                      { count: headerMemberCount },
-                    )}
+                    {t("{count, plural, one {# member} other {# members}}", {
+                      count: headerMemberCount,
+                    })}
                   </span>
                 ) : null}
               </div>

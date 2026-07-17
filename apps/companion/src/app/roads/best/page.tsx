@@ -28,9 +28,9 @@ export default function BestRoadsHubPage() {
                 >
                   <h2 className="text-xl font-semibold">{country.name}</h2>
                   <p className="mt-1 text-sm text-slate-400">
-                    {regionCount}
-                    {t("region")}
-                    {regionCount === 1 ? "" : "s"}
+                    {t("{count, plural, one {# region} other {# regions}}", {
+                      count: regionCount,
+                    })}
                   </p>
                 </Link>
               </li>

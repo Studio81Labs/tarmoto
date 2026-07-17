@@ -457,9 +457,9 @@ export function RoadReviewsPanel({
             </p>
             {!loading && canLoadReviews && (
               <p className={`text-sm ${tc.textBody}`}>
-                {reviews.length === 1
-                  ? "1 review"
-                  : `${reviews.length} reviews`}
+                {t("{count, plural, one {# review} other {# reviews}}", {
+                  count: reviews.length,
+                })}
               </p>
             )}
           </div>

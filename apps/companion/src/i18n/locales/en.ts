@@ -14,10 +14,7 @@ export const en = {
     ". You can view this trip without a Tarmoto account. ",
   ". Your shared rides and account settings stay intact, while ":
     ". Your shared rides and account settings stay intact, while ",
-  "1 collection": "1 collection",
   "1 day": "1 day",
-  "1 embed click": "1 embed click",
-  "1 route": "1 route",
   "3 stars or better": "3 stars or better",
   "4 stars or better": "4 stars or better",
   "5 stars only": "5 stars only",
@@ -911,6 +908,7 @@ export const en = {
   "Your rides from the mobile app will appear here.":
     "Your rides from the mobile app will appear here.",
   "Your trips": "Your trips",
+  "a Tarmoto rider": "a Tarmoto rider",
   "active hazard ": "active hazard ",
   "and add their routes to your own library. ":
     "and add their routes to your own library. ",
@@ -925,7 +923,6 @@ export const en = {
   "collection ": "collection ",
   "conditions on ": "conditions on ",
   "confirmations ": "confirmations ",
-  "curated region": "curated region",
   "curviness ": "curviness ",
   day: "day",
   "day ": "day ",
@@ -956,7 +953,6 @@ export const en = {
   "or continue with ": "or continue with ",
   photo: "photo",
   "ranked roads": "ranked roads",
-  region: "region",
   repair: "repair",
   "ridden ": "ridden ",
   "ride \u00b7": "ride \u00b7",
@@ -979,19 +975,12 @@ export const en = {
   "your dashboard ": "your dashboard ",
   "{count} advisory": "{count} advisory",
   "{count} closed": "{count} closed",
-  "{count} collections": "{count} collections",
-  "{count} day": "{count} day",
-  "{count} days": "{count} days",
-  "{count} embed clicks": "{count} embed clicks",
   "{count} folder": "{count} folder",
   "{count} folders": "{count} folders",
   "{count} full": "{count} full",
-  "{count} member": "{count} member",
-  "{count} members": "{count} members",
   "{count} of {total}": "{count} of {total}",
   "{count} open": "{count} open",
   "{count} partial": "{count} partial",
-  "{count} routes": "{count} routes",
   "{count} rider": "{count} rider",
   "{count} riders": "{count} riders",
   "{count} selected": "{count} selected",
@@ -1004,6 +993,9 @@ export const en = {
   "{count} unknown": "{count} unknown",
   "{count} views": "{count} views",
   "{count} {waypointLabel}": "{count} {waypointLabel}",
+  "{date}: no rides": "{date}: no rides",
+  "{date}: {count, plural, one {# ride} other {# rides}}, {distance}":
+    "{date}: {count, plural, one {# ride} other {# rides}}, {distance}",
   "{distance} away": "{distance} away",
   "{distance} km total": "{distance} km total",
   "{distance} ridden": "{distance} ridden",
@@ -1016,6 +1008,10 @@ export const en = {
     "{count, plural, one {# PASS} other {# PASSES}}",
   "{count, plural, one {# closed pass} other {# closed passes}}":
     "{count, plural, one {# closed pass} other {# closed passes}}",
+  "{count, plural, one {# curated region} other {# curated regions}}":
+    "{count, plural, one {# curated region} other {# curated regions}}",
+  "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}":
+    "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
   "{count, plural, one {# day} other {# days}}":
     "{count, plural, one {# day} other {# days}}",
   "{count, plural, one {# day} other {# days}} left":
@@ -1028,8 +1024,16 @@ export const en = {
     "{count, plural, one {# month} other {# months}} left",
   "{count, plural, one {# photo} other {# photos}}":
     "{count, plural, one {# photo} other {# photos}}",
+  "{count, plural, one {# region} other {# regions}}":
+    "{count, plural, one {# region} other {# regions}}",
   "{count, plural, one {# repair} other {# repairs}}":
     "{count, plural, one {# repair} other {# repairs}}",
+  "{count, plural, one {# review} other {# reviews}}":
+    "{count, plural, one {# review} other {# reviews}}",
+  "{count, plural, one {# ride} other {# rides}}":
+    "{count, plural, one {# ride} other {# rides}}",
+  "{count, plural, one {# route} other {# routes}}":
+    "{count, plural, one {# route} other {# routes}}",
   "{count, plural, one {# route traced} other {# routes traced}}":
     "{count, plural, one {# route traced} other {# routes traced}}",
   "{count, plural, one {# star} other {# stars}}":
@@ -1040,10 +1044,18 @@ export const en = {
     "{count, plural, one {# waypoint} other {# waypoints}}",
   "{count, plural, one {# week} other {# weeks}} left":
     "{count, plural, one {# week} other {# weeks}} left",
+  "{count, plural, one {DAY} other {DAYS}}":
+    "{count, plural, one {DAY} other {DAYS}}",
+  "{count, plural, one {PASS} other {PASSES}}":
+    "{count, plural, one {PASS} other {PASSES}}",
   "{count, plural, one {pass} other {passes}}":
     "{count, plural, one {pass} other {passes}}",
   "{count, plural, one {{n} click} other {{n} clicks}}":
     "{count, plural, one {{n} click} other {{n} clicks}}",
+  "{count, plural, one {{n} embed click} other {{n} embed clicks}}":
+    "{count, plural, one {{n} embed click} other {{n} embed clicks}}",
+  "{count, plural, one {{n} ride} other {{n} rides}}":
+    "{count, plural, one {{n} ride} other {{n} rides}}",
   "{count, plural, one {{n} view} other {{n} views}}":
     "{count, plural, one {{n} view} other {{n} views}}",
   "{weeks}w {days}d left": "{weeks}w {days}d left",

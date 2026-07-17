@@ -374,9 +374,9 @@ function CollectionCard({
         <div className="flex items-center gap-2 text-sm text-fg-dim">
           <RouteIcon size={13} />
           <span>
-            {collection.itemCount === 1
-              ? t("1 route")
-              : t("{count} routes", { count: collection.itemCount })}
+            {t("{count, plural, one {# route} other {# routes}}", {
+              count: collection.itemCount,
+            })}
           </span>
         </div>
 
@@ -461,9 +461,9 @@ function FollowedCollectionCard({
           <span className="inline-flex items-center gap-1">
             <RouteIcon size={13} />
             <span>
-              {collection.itemCount === 1
-                ? t("1 route")
-                : t("{count} routes", { count: collection.itemCount })}
+              {t("{count, plural, one {# route} other {# routes}}", {
+                count: collection.itemCount,
+              })}
             </span>
           </span>
           {collection.ownerName && (
