@@ -4,12 +4,16 @@ import {
   LIMIT_FEATURE_KEYS,
   TOGGLE_FEATURE_KEYS,
   buildFeatureSnapshot,
+  buildLimitSnapshot,
+  getFeatureLimit,
   isFeatureEnabled,
   isFeatureKey,
   isGlobalFeatureState,
   isLimitFeatureKey,
   isToggleFeatureKey,
+  isWithinLimit,
   resolveFeature,
+  resolveLimit,
 } from "./feature-flags";
 import { SUBSCRIPTION_TIERS } from "./constants";
 
@@ -244,5 +248,112 @@ describe("isFeatureEnabled", () => {
 
   it("returns the own value when a prototype-named key is explicitly set", () => {
     expect(isFeatureEnabled({ toString: true }, "toString")).toBe(true);
+  });
+});
+
+describe("resolveLimit precedence", () => {
+  it("uses the tier value; registry default for unknown tiers", () => {
+    expect(resolveLimit("max_active_trips", "free", undefined, undefined)).toBe(
+      1,
+    );
+    expect(
+      resolveLimit("max_active_trips", "pro", undefined, undefined),
+    ).toBeNull();
+    expect(
+      resolveLimit("max_active_trips", "premium", undefined, undefined),
+    ).toBeNull();
+    expect(resolveLimit("max_active_trips", null, undefined, undefined)).toBe(
+      1,
+    );
+    expect(
+      resolveLimit("max_active_trips", "hacked", undefined, undefined),
+    ).toBe(1);
+  });
+
+  it("per-user override replaces the tier value in both directions", () => {
+    expect(resolveLimit("max_active_trips", "free", 10, undefined)).toBe(10);
+    expect(resolveLimit("max_active_trips", "pro", 0, undefined)).toBe(0);
+    expect(
+      resolveLimit("max_active_trips", "free", null, undefined),
+    ).toBeNull();
+  });
+
+  it("global override replaces the tier layer for users without an override", () => {
+    expect(
+      resolveLimit("max_active_trips", "free", undefined, null),
+    ).toBeNull();
+    expect(resolveLimit("max_active_trips", "pro", undefined, 3)).toBe(3);
+  });
+
+  it("an explicit per-user restriction survives a global raise (min wins)", () => {
+    // launch mode (global null = unlimited) must not disarm "this spammer gets 0"
+    expect(resolveLimit("max_active_trips", "free", 0, null)).toBe(0);
+  });
+
+  it("a global clamp beats a support-raised user (min wins)", () => {
+    expect(resolveLimit("max_active_trips", "free", 10, 3)).toBe(3);
+    expect(resolveLimit("max_active_trips", "free", null, 3)).toBe(3);
+  });
+});
+
+describe("buildLimitSnapshot", () => {
+  it("resolves every limit key", () => {
+    const snapshot = buildLimitSnapshot("free", {}, {});
+    expect(Object.keys(snapshot).sort()).toEqual(
+      [...LIMIT_FEATURE_KEYS].sort(),
+    );
+    expect(snapshot.max_active_trips).toBe(1);
+  });
+
+  it("ignores unknown keys in override maps (stale rows never widen the set)", () => {
+    const snapshot = buildLimitSnapshot(
+      "free",
+      { ghost_limit: null },
+      { other_ghost: null },
+    );
+    expect(snapshot).toEqual({ max_active_trips: 1 });
+  });
+
+  it("combines all layers", () => {
+    expect(
+      buildLimitSnapshot(
+        "free",
+        { max_active_trips: 5 },
+        { max_active_trips: 2 },
+      ).max_active_trips,
+    ).toBe(2);
+  });
+});
+
+describe("getFeatureLimit", () => {
+  it("reads a present value including null (unlimited)", () => {
+    expect(getFeatureLimit({ max_active_trips: 4 }, "max_active_trips")).toBe(
+      4,
+    );
+    expect(
+      getFeatureLimit({ max_active_trips: null }, "max_active_trips"),
+    ).toBeNull();
+  });
+
+  it("missing keys return the most-restrictive fallback, never unlimited", () => {
+    expect(getFeatureLimit({}, "max_active_trips")).toBe(0);
+    expect(getFeatureLimit({}, "max_active_trips", 1)).toBe(1);
+  });
+
+  it("prototype-collision keys fall back", () => {
+    expect(getFeatureLimit({}, "toString")).toBe(0);
+    expect(getFeatureLimit({}, "constructor")).toBe(0);
+  });
+});
+
+describe("isWithinLimit", () => {
+  it("null is always within (unlimited)", () => {
+    expect(isWithinLimit(null, 10_000)).toBe(true);
+  });
+  it("true strictly below the limit, false at or above it", () => {
+    expect(isWithinLimit(1, 0)).toBe(true);
+    expect(isWithinLimit(1, 1)).toBe(false);
+    expect(isWithinLimit(1, 2)).toBe(false);
+    expect(isWithinLimit(0, 0)).toBe(false);
   });
 });

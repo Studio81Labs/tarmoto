@@ -286,3 +286,92 @@ export function isFeatureEnabled(
 ): boolean {
   return Object.hasOwn(flags, key) ? (flags[key] ?? fallback) : fallback;
 }
+
+/**
+ * Global limit overrides currently in force, keyed by feature — the
+ * response of `GET /api/v1/config/limits`. `null` = unlimited. Clients
+ * may apply a value from this map only as a DOWNWARD clamp
+ * (`effective = min(snapshot, global)`, null = ∞); raising is resolved
+ * only by the authenticated `/users/me` snapshot.
+ */
+export type GlobalLimitOverrides = Partial<Record<string, number | null>>;
+
+/** min() with `null` = unlimited (∞). */
+function minLimit(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
+/**
+ * Resolve one numeric limit for one user. Pure. Precedence:
+ *   1. registry tier value (or `default` for unknown tiers)
+ *   2. per-user override — replaces (support can raise or restrict)
+ *   3. global override — replaces the tier layer; where a per-user
+ *      override also exists, the more restrictive of the two wins.
+ * `undefined` = no override; `null` = unlimited.
+ */
+export function resolveLimit(
+  key: LimitFeatureKey,
+  tier: string | null,
+  override: number | null | undefined,
+  globalOverride: number | null | undefined,
+): number | null {
+  const def = FEATURE_DEFINITIONS[key];
+  let value: number | null = isSubscriptionTier(tier)
+    ? def.tiers[tier]
+    : def.default;
+  if (override !== undefined) {
+    value = override;
+  }
+  if (globalOverride !== undefined) {
+    value =
+      override !== undefined
+        ? minLimit(override, globalOverride)
+        : globalOverride;
+  }
+  return value;
+}
+
+/** Resolve every registry limit into a snapshot. Unknown keys in the
+ * override maps are ignored — stale DB rows can never widen the set. */
+export function buildLimitSnapshot(
+  tier: string | null,
+  overrides: Readonly<Partial<Record<string, number | null>>>,
+  globalOverrides: Readonly<Partial<Record<string, number | null>>>,
+): LimitSnapshot {
+  const snapshot = {} as LimitSnapshot;
+  for (const key of LIMIT_FEATURE_KEYS) {
+    snapshot[key] = resolveLimit(
+      key,
+      tier,
+      overrides[key],
+      globalOverrides[key],
+    );
+  }
+  return snapshot;
+}
+
+/**
+ * Read a resolved limit safely from an untyped map (e.g. a cached
+ * snapshot). Missing keys return `fallback` (default 0 — the most
+ * restrictive value), never unlimited. Own-property guarded so
+ * inherited prototype keys can't leak a value.
+ */
+export function getFeatureLimit(
+  limits: Readonly<Partial<Record<string, number | null>>>,
+  key: string,
+  fallback: number | null = 0,
+): number | null {
+  if (!Object.hasOwn(limits, key)) return fallback;
+  const value = limits[key];
+  return value === undefined ? fallback : value;
+}
+
+/** True when `currentCount` leaves room for one more (`null` = unlimited). */
+export function isWithinLimit(
+  limit: number | null,
+  currentCount: number,
+): boolean {
+  return limit === null || currentCount < limit;
+}
