@@ -967,7 +967,7 @@ function CalendarCell({ cell, maxDistance, format }: CalendarCellProps) {
   const title =
     cell.rides === 0
       ? `${dayLabel}: no rides`
-      : `${dayLabel}: ${cell.rides} ride${cell.rides === 1 ? "" : "s"}, ${format.decimal(cell.distanceKm, 0)} km`;
+      : `${dayLabel}: ${cell.rides} ride${cell.rides === 1 ? "" : "s"}, ${format.distanceKm(cell.distanceKm)}`;
   // Ridden cells get a 1px ink-line outline as a secondary cue alongside
   // the fill intensity. Empty cells stay borderless so they read as the
   // paper baseline against the surrounding cream card.

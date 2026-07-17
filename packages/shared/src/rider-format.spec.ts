@@ -14,4 +14,11 @@ describe("formatCount", () => {
   it("keeps the compact k form", () => {
     expect(formatCount(12600, "en-US")).toBe("13k");
   });
+  it("localizes the compact decimal when a locale is supplied", () => {
+    expect(formatCount(1500, "de-DE")).toBe("1,5k");
+    expect(formatCount(1500, "en-US")).toBe("1.5k");
+  });
+  it("keeps the legacy period form for the compact decimal when locale is omitted (mobile contract)", () => {
+    expect(formatCount(1500)).toBe("1.5k");
+  });
 });

@@ -49,7 +49,14 @@ export function formatCount(value: number, locale?: string): string {
   if (value < 1_000) return Math.round(value).toLocaleString(locale);
   const k = value / 1000;
   if (k >= 9.95) return `${Math.round(k).toLocaleString(locale)}k`;
-  return `${k.toFixed(1)}k`;
+  // Localize the compact decimal when a locale is supplied ("1,5k" for
+  // de-DE). An omitted locale keeps the legacy `toFixed` period form
+  // byte-identical — mobile's existing contract.
+  if (locale === undefined) return `${k.toFixed(1)}k`;
+  return `${k.toLocaleString(locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })}k`;
 }
 
 /**

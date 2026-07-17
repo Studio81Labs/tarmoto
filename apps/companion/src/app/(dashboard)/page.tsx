@@ -378,8 +378,8 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
         variant="ink"
         accentNumber
         label={t("This month")}
-        value={format.integer(stats.this_month_km)}
-        unit="KM"
+        value={format.splitDistanceKm(stats.this_month_km).value}
+        unit={format.splitDistanceKm(stats.this_month_km).unit.toUpperCase()}
         delta={kmDelta}
       />
       <MetricTile
@@ -547,6 +547,7 @@ function TripDraftCard({
   };
   seed: number;
 }) {
+  const format = useFormat();
   const status =
     (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";
   // MiniRouteSvg and QualityBars are visually coupled — both take this one
@@ -589,9 +590,9 @@ function TripDraftCard({
           {trip.distance_km != null && trip.distance_km > 0 && (
             <Mono className="uppercase">
               <span className="font-bold text-ink">
-                {Math.round(trip.distance_km)}
+                {format.splitDistanceKm(trip.distance_km).value}
               </span>{" "}
-              {t("KM")}
+              {format.splitDistanceKm(trip.distance_km).unit}
             </Mono>
           )}
           {trip.num_days > 0 && (

@@ -39,11 +39,15 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
     },
     {
       key: "km",
-      label: "KM",
+      // Header speaks the same unit as the converting cells below —
+      // same derivation as the ride-history table.
+      label: format.splitDistanceKm(1).unit.toUpperCase(),
       size: "80px",
       render: (r) => (
         <Mono className="font-bold text-ink">
-          {r.distance_km != null ? Math.round(r.distance_km) : "—"}
+          {r.distance_km != null
+            ? format.splitDistanceKm(r.distance_km).value
+            : "—"}
         </Mono>
       ),
     },
