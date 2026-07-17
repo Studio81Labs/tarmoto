@@ -522,10 +522,10 @@ export function StickyHeaderSection() {
       intro={
         <>
           <CN>PageHeader</CN> watches itself with an IntersectionObserver: once
-          the large title scrolls out of view, a slim floating bar — icon,
+          the large title scrolls out of view, a slim full-width bar — icon,
           title, and the <CN>right</CN> actions — pins to the top of the scroll
-          container. On by default; opt out with{" "}
-          <CN>sticky=&#123;false&#125;</CN>.
+          container, which must be a Tailwind <CN>@container</CN>. On by
+          default; opt out with <CN>sticky=&#123;false&#125;</CN>.
         </>
       }
     >
@@ -555,11 +555,11 @@ export function StickyHeaderSection() {
           <CodeBlock>
             {`trigger: IntersectionObserver · threshold 0 · condenses only once fully out of view
 `}
-            {`bar: sticky top-3 in a zero-height slot · paper/90 + backdrop-blur · `}
+            {`bar: sticky zero-height slot · 100cqw full-bleed + border-b · paper/90 blur · `}
             <CN>animate-header-in</CN>
             {`
 `}
-            {`a11y: bar mounts only while condensed · title stays a single h1 · motion-reduce safe`}
+            {`a11y: bar mounts only while condensed · single h1 · original actions go inert · motion-reduce safe`}
           </CodeBlock>
         </div>
       </div>

@@ -16,11 +16,16 @@ import { Stamp } from "../atoms/Stamp";
  *   right  (optional) · CTA slot on the right; flex-shrink-0
  *
  * Once the header scrolls out of view a condensed sticky bar (icon +
- * title + the `right` actions) floats in at the top of the scroll
- * container, so context and primary actions stay reachable on long
- * pages. Opt out with `sticky={false}`. The bar only mounts while
- * condensed — environments without IntersectionObserver (jsdom) simply
- * never show it, and the page's single h1 stays unique.
+ * title + the `right` actions) pins to the top of the scroll container,
+ * spanning its full width with a bottom border, so context and primary
+ * actions stay reachable on long pages. The nearest scroll container
+ * must be an inline-size query container (Tailwind `@container`) — the
+ * bar's `100cqw` width reads it to escape the page column. Opt out with
+ * `sticky={false}`. The bar only mounts while condensed — environments
+ * without IntersectionObserver (jsdom) simply never show it, and the
+ * page's single h1 stays unique. While the bar is up, the original
+ * header's action slot goes `inert` so its actions keep a single
+ * focusable instance.
  *
  * The companion's prior local `<PageHeader>` (apps/companion/src/components)
  * lacked the stamp / icon-beside-title pattern and used a 24 px h1 — both
@@ -73,8 +78,10 @@ export function PageHeader({
           Placed before the header: its natural position is the top of the
           page, so it is already "stuck" whenever the bar mounts. */}
       {sticky && condensed && (
-        <div className="pointer-events-none sticky top-3 z-30 h-0">
-          <div className="pointer-events-auto flex animate-header-in items-center gap-3 rounded-[14px] border border-line bg-paper/90 px-4 py-2 shadow-[0_10px_28px_rgba(14,14,16,0.12)] backdrop-blur-md motion-reduce:animate-none">
+        <div className="pointer-events-none sticky top-0 z-30 h-0">
+          {/* left/width in cqw (not translate) — the entry animation
+              animates transform and would override a translate-x. */}
+          <div className="pointer-events-auto absolute left-[calc(50%-50cqw)] flex w-[100cqw] animate-header-in items-center gap-3 border-b border-line bg-paper/90 px-4 py-2 backdrop-blur-md motion-reduce:animate-none md:px-7">
             {icon && (
               <span className="shrink-0 text-accent" aria-hidden="true">
                 {icon}
@@ -109,7 +116,13 @@ export function PageHeader({
             </p>
           )}
         </div>
-        {right && <div className="shrink-0">{right}</div>}
+        {right && (
+          // While the condensed bar carries the live copy of the actions,
+          // the off-screen originals go inert — one focusable instance.
+          <div className="shrink-0" inert={condensed || undefined}>
+            {right}
+          </div>
+        )}
       </div>
     </>
   );

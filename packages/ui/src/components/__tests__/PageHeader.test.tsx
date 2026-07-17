@@ -73,12 +73,21 @@ test("condensed bar appears when the header leaves the viewport and hides on ret
   // and the action slot is duplicated so it stays reachable.
   expect(screen.getAllByText("Trips")).toHaveLength(2);
   expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-  expect(screen.getAllByRole("button", { name: "New trip" })).toHaveLength(2);
+  const buttons = screen.getAllByRole("button", { name: "New trip" });
+  expect(buttons).toHaveLength(2);
+  // …but only the bar's copy is live: the off-screen original goes inert.
+  const inertCopies = buttons.filter((b) =>
+    b.parentElement?.hasAttribute("inert"),
+  );
+  expect(inertCopies).toHaveLength(1);
 
   act(() => {
     ioCallback?.([{ isIntersecting: true }]);
   });
   expect(screen.getAllByText("Trips")).toHaveLength(1);
+  expect(
+    screen.getByRole("button", { name: "New trip" }).parentElement,
+  ).not.toHaveAttribute("inert");
 });
 
 test("sticky={false} never observes or mounts the bar", () => {
