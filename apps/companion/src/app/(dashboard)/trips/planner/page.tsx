@@ -1087,6 +1087,18 @@ export default function TripPlannerPage() {
     onTripDeleted: handleRemoteTripDeleted,
   });
   useEffect(() => {
+    // `?import=1` is the /trips "Import GPX" entry point: open the import
+    // dialog on arrival and strip the param so a reload (or the planner's
+    // own URL sync) doesn't re-trigger it. Same client-only pattern as the
+    // `?tripId=` effect below.
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("import") !== "1") return;
+    setImportOpen(true);
+    url.searchParams.delete("import");
+    window.history.replaceState(window.history.state, "", url);
+  }, []);
+  useEffect(() => {
     // Read `?tripId=` in a client-only effect to keep the planner page
     // statically prerenderable. `useSearchParams` would pull the whole
     // tree into the dynamic render path.
