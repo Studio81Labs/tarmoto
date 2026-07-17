@@ -357,6 +357,12 @@ export const en = {
   "Join the Tarmoto rider community": "Join the Tarmoto rider community",
   Joined: "Joined",
   "Joined ": "Joined ",
+  "Joined recently": "Joined recently",
+  "Joined this month": "Joined this month",
+  "Joined {count, plural, one {# month} other {# months}} ago":
+    "Joined {count, plural, one {# month} other {# months}} ago",
+  "Joined {count, plural, one {# year} other {# years}} ago":
+    "Joined {count, plural, one {# year} other {# years}} ago",
   "Joining\u2026": "Joining\u2026",
   "Joining\u2026 ": "Joining\u2026 ",
   "Know the road before you ride it.": "Know the road before you ride it.",
