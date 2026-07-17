@@ -117,7 +117,7 @@ export function TripImportDialog({
             type="button"
             onClick={onClose}
             aria-label={t("Close import dialog")}
-            className="text-fg-mute transition hover:text-ink"
+            className="text-fg-dim transition hover:text-ink"
           >
             <X size={16} />
           </button>
@@ -196,12 +196,12 @@ function IdlePicker({ onPick }: { onPick: () => void }) {
     >
       <FileUp
         size={32}
-        className="mx-auto mb-3 text-fg-mute group-hover:text-accent"
+        className="mx-auto mb-3 text-fg-dim group-hover:text-accent"
       />
       <p className="text-sm font-medium text-ink">
         {t("Choose a GPX or KML file ")}
       </p>
-      <p className="mt-1 text-xs text-fg-mute">
+      <p className="mt-1 text-xs text-fg-dim">
         {t("Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ")}
       </p>
     </button>
@@ -223,7 +223,7 @@ function RoutePreview({
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-line bg-paper-2 p-4">
-        <p className="mb-1 text-xs uppercase tracking-wider text-fg-mute">
+        <p className="mb-1 text-xs uppercase tracking-wider text-fg-dim">
           {t("Route ")}
         </p>
         <p className="truncate text-base font-semibold text-ink">
@@ -240,7 +240,7 @@ function RoutePreview({
             value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}
           />
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-fg-mute">
+        <p className="mt-3 text-[11px] leading-relaxed text-fg-dim">
           {t(
             "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay. ",
           )}
@@ -248,7 +248,7 @@ function RoutePreview({
       </div>
 
       <div>
-        <p className="mb-2 text-xs uppercase tracking-wider text-fg-mute">
+        <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
           {t("Segment quality (")}
           {segmentCount})
         </p>
@@ -270,7 +270,7 @@ function RoutePreview({
                     aria-label={`${cfg.label} • ${format.distanceKm(seg.distanceKm)}`}
                   />
                 </div>
-                <span className="w-14 text-right tabular-nums text-fg-mute">
+                <span className="w-14 text-right tabular-nums text-fg-dim">
                   {format.distanceKm(seg.distanceKm)}
                 </span>
                 <span
@@ -286,18 +286,18 @@ function RoutePreview({
 
       {route.waypoints.length > 0 && (
         <div>
-          <p className="mb-2 text-xs uppercase tracking-wider text-fg-mute">
+          <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
             {t("Waypoints (")}
             {route.waypoints.length})
           </p>
           <ul className="max-h-28 space-y-1 overflow-y-auto pr-1 text-xs text-fg-dim">
             {route.waypoints.map((wp, i) => (
               <li key={i} className="flex items-center gap-2 truncate">
-                <MapPin size={12} className="shrink-0 text-fg-mute" />
+                <MapPin size={12} className="shrink-0 text-fg-dim" />
                 <span className="truncate">
                   {wp.name ?? `Waypoint ${i + 1}`}
                 </span>
-                <span className="tabular-nums text-fg-faint">
+                <span className="tabular-nums text-fg-dim">
                   {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
                 </span>
               </li>
@@ -311,7 +311,7 @@ function RoutePreview({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wider text-fg-mute">
+      <p className="text-[11px] uppercase tracking-wider text-fg-dim">
         {label}
       </p>
       <p className="font-semibold tabular-nums text-ink">{value}</p>
