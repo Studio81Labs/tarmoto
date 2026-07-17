@@ -10,7 +10,12 @@ import { FieldHint } from "./field/FieldHint";
  */
 export interface TextareaProps {
   value: string;
-  onChange: (value: string) => void;
+  /** Optional for `readOnly` fields (e.g. copyable embed snippets). */
+  onChange?: (value: string) => void;
+  /** Read-only display (copyable code/links); pairs with `mono`. */
+  readOnly?: boolean;
+  /** Monospace content — embed snippets, code, tokens. */
+  mono?: boolean;
   tone?: "paper" | "cream";
   id?: string;
   rows?: number;
@@ -27,6 +32,8 @@ export interface TextareaProps {
 export function Textarea({
   value,
   onChange,
+  readOnly = false,
+  mono = false,
   tone = "paper",
   id,
   rows = 3,
@@ -58,10 +65,12 @@ export function Textarea({
         aria-invalid={error || undefined}
         aria-describedby={resolvedHintId}
         maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
+        readOnly={readOnly}
+        onChange={(event) => onChange?.(event.target.value)}
         className={cn(
           fieldChrome({ tone, disabled, error }),
           "resize-none leading-relaxed",
+          mono && "font-mono text-xs",
         )}
       />
       {hint && (

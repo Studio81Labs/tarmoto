@@ -44,10 +44,10 @@ export default async function BestRoadsCountryPage({
   if (!c) notFound();
   const regions = findCountryRegions(c.code);
   return (
-    <div className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
-        <nav className="mb-4 text-sm text-slate-400">
-          <Link href="/roads/best" className="hover:text-white">
+        <nav className="mb-4 text-sm text-fg-dim">
+          <Link href="/roads/best" className="hover:text-ink">
             {t("Best roads ")}
           </Link>
           <span className="mx-2">/</span>
@@ -59,7 +59,7 @@ export default async function BestRoadsCountryPage({
             {t("Best motorcycle roads in ")}
             {c.name}
           </h1>
-          <p className="mt-2 text-slate-400">
+          <p className="mt-2 text-fg-dim">
             {regions.length}
             {t("curated region")}
             {regions.length === 1 ? "" : "s"}
@@ -74,14 +74,14 @@ export default async function BestRoadsCountryPage({
             <li key={r.slug}>
               <Link
                 href={`/roads/best/${c.code}/${r.slug}`}
-                className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
+                className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
               >
                 <h2 className="text-xl font-semibold">{r.name}</h2>
-                <p className="mt-1 text-sm text-slate-400 line-clamp-2">
+                <p className="mt-1 text-sm text-fg-dim line-clamp-2">
                   {r.description}
                 </p>
                 {r.bestSeason && (
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-fg-dim">
                     {t("Best season: ")}
                     {r.bestSeason}
                   </p>
