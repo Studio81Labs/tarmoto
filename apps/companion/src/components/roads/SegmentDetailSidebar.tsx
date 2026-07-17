@@ -168,7 +168,9 @@ function SegmentDetailContent({
     segment.quality_source ?? null,
     segment.reading_count ?? 0,
   );
-  const passLabel = segment.reading_count === 1 ? t("pass") : t("passes");
+  const passLabel = t("{count, plural, one {pass} other {passes}}", {
+    count: segment.reading_count ?? 0,
+  });
   const qualityHistory = trendPoints(segment.quality_history);
   const regionalHistory = trendPoints(segment.regional_quality_history);
   const hasTrend = qualityHistory.length > 1;

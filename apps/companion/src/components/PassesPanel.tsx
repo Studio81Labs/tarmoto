@@ -18,6 +18,7 @@ import {
   type PassStatus,
 } from "@/lib/passes-summary";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
+import type { LooseTranslate } from "@tarmoto/shared";
 interface PassesPanelProps {
   month?: number;
   onMonthChange?: (month: number) => void;
@@ -191,7 +192,11 @@ function PassesPanelBody({
   const counts = useMemo(() => countByStatus(passes), [passes]);
   const groups = useMemo(() => partitionByStatus(passes), [passes]);
   const hasRouteWarnings = routeClosedCount > 0 || routeUnknownCount > 0;
-  const routeSummary = buildRouteSummary(routeClosedCount, routeUnknownCount);
+  const routeSummary = buildRouteSummary(
+    routeClosedCount,
+    routeUnknownCount,
+    t,
+  );
   // ONE data-state-aware status (revision 6): no pass data = UNKNOWN
   // (grey, like the legend), never a green all-clear.
   const status = deriveConditionStatus({
@@ -459,23 +464,34 @@ function OnRoutePassCard({
   );
 }
 
-function buildRouteSummary(closedCount: number, unknownCount: number): string {
+function buildRouteSummary(
+  closedCount: number,
+  unknownCount: number,
+  t: LooseTranslate,
+): string {
   const parts: string[] = [];
   if (closedCount > 0) {
     parts.push(
-      `${closedCount} closed ${closedCount === 1 ? "pass" : "passes"}`,
+      t("{count, plural, one {# closed pass} other {# closed passes}}", {
+        count: closedCount,
+      }),
     );
   }
   if (unknownCount > 0) {
     parts.push(
-      `${unknownCount} unknown ${unknownCount === 1 ? "pass" : "passes"}`,
+      t("{count, plural, one {# unknown pass} other {# unknown passes}}", {
+        count: unknownCount,
+      }),
     );
   }
   if (parts.length === 0) {
-    return "No closed or unknown passes on your route.";
+    return t("No closed or unknown passes on your route.");
   }
   if (parts.length === 1) {
-    return `Current trip crosses ${parts[0]}.`;
+    return t("Current trip crosses {summary}.", { summary: parts[0] ?? "" });
   }
-  return `Current trip crosses ${parts[0]} and ${parts[1]}.`;
+  return t("Current trip crosses {first} and {second}.", {
+    first: parts[0] ?? "",
+    second: parts[1] ?? "",
+  });
 }

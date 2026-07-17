@@ -205,8 +205,11 @@ export const en = {
   "Create your first trip to discover the best roads.":
     "Create your first trip to discover the best roads.",
   "Current plan ": "Current plan ",
-  "Current trip crosses {count} active {closureLabel}.":
-    "Current trip crosses {count} active {closureLabel}.",
+  "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.":
+    "Current trip crosses {count, plural, one {# active closure} other {# active closures}}.",
+  "Current trip crosses {first} and {second}.":
+    "Current trip crosses {first} and {second}.",
+  "Current trip crosses {summary}.": "Current trip crosses {summary}.",
   Curves: "Curves",
   "Curviness ": "Curviness ",
   "Daily km target ": "Daily km target ",
@@ -474,6 +477,8 @@ export const en = {
   "No badges yet": "No badges yet",
   "No bikes in your garage yet ": "No bikes in your garage yet ",
   "No challenges to join yet": "No challenges to join yet",
+  "No closed or unknown passes on your route.":
+    "No closed or unknown passes on your route.",
   "No closed or unknown passes on your route. ":
     "No closed or unknown passes on your route. ",
   "No collections match your filters": "No collections match your filters",
@@ -911,6 +916,8 @@ export const en = {
     "and add their routes to your own library. ",
   "armoto ": "armoto ",
   "away ": "away ",
+  "based on {count, plural, one {# rider pass} other {# rider passes}}":
+    "based on {count, plural, one {# rider pass} other {# rider passes}}",
   "below. ": "below. ",
   "by ": "by ",
   closed: "closed",
@@ -982,8 +989,6 @@ export const en = {
   "{count} member": "{count} member",
   "{count} members": "{count} members",
   "{count} of {total}": "{count} of {total}",
-  "{count} photo": "{count} photo",
-  "{count} photos": "{count} photos",
   "{count} open": "{count} open",
   "{count} partial": "{count} partial",
   "{count} routes": "{count} routes",
@@ -996,10 +1001,6 @@ export const en = {
   "{count} to go": "{count} to go",
   "{count} trip": "{count} trip",
   "{count} trips": "{count} trips",
-  "{count} repair": "{count} repair",
-  "{count} repairs": "{count} repairs",
-  "{count} deterioration": "{count} deterioration",
-  "{count} deteriorations": "{count} deteriorations",
   "{count} unknown": "{count} unknown",
   "{count} views": "{count} views",
   "{count} {waypointLabel}": "{count} {waypointLabel}",
@@ -1011,14 +1012,36 @@ export const en = {
   "{percent}% explored": "{percent}% explored",
   "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
   "{rideType} ride": "{rideType} ride",
+  "{count, plural, one {# PASS} other {# PASSES}}":
+    "{count, plural, one {# PASS} other {# PASSES}}",
+  "{count, plural, one {# closed pass} other {# closed passes}}":
+    "{count, plural, one {# closed pass} other {# closed passes}}",
   "{count, plural, one {# day} other {# days}}":
     "{count, plural, one {# day} other {# days}}",
   "{count, plural, one {# day} other {# days}} left":
     "{count, plural, one {# day} other {# days}} left",
+  "{count, plural, one {# deterioration} other {# deteriorations}}":
+    "{count, plural, one {# deterioration} other {# deteriorations}}",
+  "{count, plural, one {# member} other {# members}}":
+    "{count, plural, one {# member} other {# members}}",
   "{count, plural, one {# month} other {# months}} left":
     "{count, plural, one {# month} other {# months}} left",
+  "{count, plural, one {# photo} other {# photos}}":
+    "{count, plural, one {# photo} other {# photos}}",
+  "{count, plural, one {# repair} other {# repairs}}":
+    "{count, plural, one {# repair} other {# repairs}}",
+  "{count, plural, one {# route traced} other {# routes traced}}":
+    "{count, plural, one {# route traced} other {# routes traced}}",
+  "{count, plural, one {# star} other {# stars}}":
+    "{count, plural, one {# star} other {# stars}}",
+  "{count, plural, one {# unknown pass} other {# unknown passes}}":
+    "{count, plural, one {# unknown pass} other {# unknown passes}}",
+  "{count, plural, one {# waypoint} other {# waypoints}}":
+    "{count, plural, one {# waypoint} other {# waypoints}}",
   "{count, plural, one {# week} other {# weeks}} left":
     "{count, plural, one {# week} other {# weeks}} left",
+  "{count, plural, one {pass} other {passes}}":
+    "{count, plural, one {pass} other {passes}}",
   "{count, plural, one {{n} click} other {{n} clicks}}":
     "{count, plural, one {{n} click} other {{n} clicks}}",
   "{count, plural, one {{n} view} other {{n} views}}":
