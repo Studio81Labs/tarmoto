@@ -14,13 +14,13 @@ Two environments per service (staging + production). Both are driven **entirely 
 | How CI deploys             | authenticated Coolify deploy API (`GET {COOLIFY_API_BASE_URL}/api/v1/deploy?uuid=<COOLIFY_BACKEND_UUID>`, `Bearer COOLIFY_API_TOKEN`) | same call, `production`-scoped UUID |
 | Healthcheck + smoke target | `api-staging.tarmoto.app`                                                                                                             | `api.tarmoto.app`                   |
 
-`workflow_dispatch` on `backend-deploy.yml` lets an operator pick either environment (the input is checked **before** the tag ref, so a dispatch from a `v*` tag selecting "staging" still deploys staging).
+`workflow_dispatch` on the **`Deploy`** workflow (`deploy.yml`) lets an operator pick either environment (the input is checked **before** the tag ref, so a dispatch from a `v*` tag selecting "staging" still deploys staging) — the manual dispatch button no longer lives on `backend-deploy.yml` or `ingest-deploy.yml` directly; both are reusable `workflow_call` workflows that `deploy.yml` invokes with the resolved `environment`, running `apps/ingest` first and then the backend.
 
 ### What a backend deploy does
 
-`backend-deploy.yml` (single "Deploy & verify" job, `environment:` = the resolved env):
+`deploy.yml` resolves the environment (`main` push → `staging`, `v*` tag → `production`, else the `workflow_dispatch` input) and, once `apps/ingest` has deployed successfully, calls `backend-deploy.yml` (single "Deploy & verify" job, `environment:` = the resolved env) as a reusable `workflow_call` workflow:
 
-1. **Resolve environment** — `main` push → `staging`, `v*` tag → `production`, else the dispatch input.
+1. **Resolve environment** — surface the `environment` input the `deploy.yml` orchestrator resolved and passed in.
 2. **Resolve targets** — read env-scoped `vars.BACKEND_URL` + `vars.COOLIFY_BACKEND_UUID`.
 3. **Stamp version** — `scripts/ci/resolve-app-version.sh` → upsert `TARMOTO_APP_VERSION` + `TARMOTO_SENTRY_RELEASE` into the Coolify app env (`PATCH /api/v1/applications/<uuid>/envs/bulk`).
 4. **Trigger deploy** — authenticated `GET /api/v1/deploy?uuid=<uuid>`; capture the deployment id.
@@ -37,8 +37,8 @@ Two environments per service (staging + production). Both are driven **entirely 
    git tag -a v0.X.Y origin/main -m "Release v0.X.Y"
    git push origin v0.X.Y
    ```
-3. The tag push runs `backend-deploy.yml` with the `production` environment → stamps the version → triggers the Coolify deploy API → tracks the deployment to `finished` → healthcheck against `api.tarmoto.app` → `scripts/smoke/smoke.sh`.
-4. The same `v*` tag fans out to every surface: `companion-deploy.yml` and `marketing-deploy.yml` resolve the `production` target on `v*`, and `mobile-release.yml` builds + submits the app to TestFlight / Play Internal (deriving the version from the tag). One tag ships backend, companion, marketing, and mobile at the same commit. Accepted tradeoff: a `v*` tag rebuilds mobile too — for a server-only hotfix, use `workflow_dispatch` on the specific deploy instead of cutting a tag.
+3. The tag push runs the `deploy.yml` orchestrator, which resolves `production`, deploys `apps/ingest` first, then — only if ingest succeeds — calls `backend-deploy.yml` for `production`: stamps the version → triggers the Coolify deploy API → tracks the deployment to `finished` → healthcheck against `api.tarmoto.app` → `scripts/smoke/smoke.sh`.
+4. The same `v*` tag fans out to every surface: `companion-deploy.yml` and `marketing-deploy.yml` resolve the `production` target on `v*`, and `mobile-release.yml` builds + submits the app to TestFlight / Play Internal (deriving the version from the tag). One tag ships ingest, backend, companion, marketing, and mobile at the same commit. Accepted tradeoff: a `v*` tag rebuilds mobile too — for a server-only hotfix, use `workflow_dispatch` on the **`Deploy`** workflow (which redeploys only `apps/ingest` + backend, not mobile/companion/marketing) instead of cutting a tag.
 
 ### Verifying the staging/production split
 
@@ -84,7 +84,7 @@ Per `.github/workflows/backend-deploy.yml`:
 
 `apps/ingest` (`@tarmoto/ingest-service`) is a separate NestJS deployable — the always-on POI-import BullMQ worker + weekly/monthly extract-refresh target + the **sole owner of the POI-database migrations** (`migrationsRun: true`). See "Schema ownership" under POI database topology below for the resulting deploy-order constraint. It deploys through the **same** authenticated Coolify API mechanism as the backend (Auto Deploy OFF, CI-triggered), with its own per-environment `INGEST_URL` / `COOLIFY_INGEST_UUID` GitHub variables mirroring `BACKEND_URL` / `COOLIFY_BACKEND_UUID`.
 
-**Ops-enablement pending.** `apps/ingest` now has its own `ingest-deploy.yml`, mirroring `backend-deploy.yml` exactly: same trigger model (push `main` → staging, tag `v*` → production, `workflow_dispatch`), same Coolify API mechanism, same version-stamping step (`TARMOTO_APP_VERSION` + `TARMOTO_SENTRY_RELEASE` only — `TARMOTO_DEPLOY_ENV` is a static per-environment Coolify var, not stamped), and the same manual-rollback-instructions-on-failure step. Two deltas: the post-deploy check hits `/healthz` (not `/api/v1/healthz`), and there is no smoke-test step — no ingest-specific smoke script exists yet. It does not deploy anywhere yet: the workflow fails fast on its missing-value guards until the Coolify `apps/ingest` application (staging + production) is provisioned and its `INGEST_URL` / `COOLIFY_INGEST_UUID` GitHub Environment variables are set. `ingest-ci.yml` continues to build/lint/test it on every push regardless.
+**Ops-enablement pending.** `apps/ingest` now has its own `ingest-deploy.yml`, mirroring `backend-deploy.yml` exactly: both are reusable `workflow_call` workflows invoked by the `deploy.yml` orchestrator, which resolves staging vs production (push `main` → staging, tag `v*` → production, or the `workflow_dispatch` choice) and always deploys `apps/ingest` before the backend — same Coolify API mechanism, same version-stamping step (`TARMOTO_APP_VERSION` + `TARMOTO_SENTRY_RELEASE` only — `TARMOTO_DEPLOY_ENV` is a static per-environment Coolify var, not stamped), and the same manual-rollback-instructions-on-failure step. Two deltas: the post-deploy check hits `/healthz` (not `/api/v1/healthz`), and there is no smoke-test step — no ingest-specific smoke script exists yet. It does not deploy anywhere yet: the workflow fails fast on its missing-value guards until the Coolify `apps/ingest` application (staging + production) is provisioned and its `INGEST_URL` / `COOLIFY_INGEST_UUID` GitHub Environment variables are set. `ingest-ci.yml` continues to build/lint/test it on every push regardless.
 
 **Deploy order at cutover is load-bearing.** Once ops-enablement above lands and the workflow runs its first real deploy, deploy `apps/ingest` **first** — it applies any pending POI-database migrations on boot — **then** the slimmed backend. The backend's `'poi'` connection runs `migrationsRun: false` (a tolerant reader of a schema that may already be ahead of what it shipped with): deploying the backend before `apps/ingest` never fails its boot, but it won't see new POI columns/tables until `apps/ingest` has actually migrated them.
 

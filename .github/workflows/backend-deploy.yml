@@ -1,9 +1,10 @@
 name: Backend Deploy
 
-# Deploy model:
-#   push to main  → staging    (CI triggers the Coolify deploy API)
-#   push tag v*   → production  (CI triggers the Coolify deploy API)
-#   workflow_dispatch → choose staging or production
+# Reusable workflow (`workflow_call`), invoked by deploy.yml — the single
+# entry point for Coolify deploys. deploy.yml resolves staging vs
+# production (push to main, tag v*, or a workflow_dispatch choice) and
+# passes it in as the `environment` input below; this workflow has no
+# push/tag/workflow_dispatch triggers of its own.
 #
 # Deploy target: self-hosted Coolify PaaS. Staging and production are
 # triggered by the SAME authenticated Coolify API call — Coolify "Auto
