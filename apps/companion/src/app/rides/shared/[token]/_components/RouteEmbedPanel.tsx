@@ -91,11 +91,11 @@ export function RouteEmbedPanel({
       <div className="mt-[18px] flex flex-wrap gap-2">
         <div className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
           <Eye size={13} className="text-accent" />
-          {formatRideEmbedStat(views, "view", format)}
+          {formatRideEmbedStat(views, "view", format, t)}
         </div>
         <div className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-cream px-[13px] py-[7px] text-[12.5px] font-semibold text-fg-dim">
           <MousePointerClick size={13} className="text-accent" />
-          {formatRideEmbedStat(clicks, "click", format)}
+          {formatRideEmbedStat(clicks, "click", format, t)}
         </div>
       </div>
 

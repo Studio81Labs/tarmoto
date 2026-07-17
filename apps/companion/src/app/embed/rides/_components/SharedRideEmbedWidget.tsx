@@ -102,9 +102,14 @@ export function SharedRideEmbedWidget({
                 </p>
               </div>
               <div className="text-right text-xs text-slate-500">
-                <p>{formatRideEmbedStat(ride.view_count, "view", format)}</p>
+                <p>{formatRideEmbedStat(ride.view_count, "view", format, t)}</p>
                 <p>
-                  {formatRideEmbedStat(ride.embed_click_count, "click", format)}
+                  {formatRideEmbedStat(
+                    ride.embed_click_count,
+                    "click",
+                    format,
+                    t,
+                  )}
                 </p>
               </div>
             </div>
@@ -182,7 +187,7 @@ export function SharedRideEmbedWidget({
               <StatTile
                 icon={<Eye size={14} />}
                 label="Views"
-                value={formatRideEmbedStat(ride.view_count, "view", format)}
+                value={formatRideEmbedStat(ride.view_count, "view", format, t)}
               />
               <StatTile
                 icon={<MousePointerClick size={14} />}
@@ -191,6 +196,7 @@ export function SharedRideEmbedWidget({
                   ride.embed_click_count,
                   "click",
                   format,
+                  t,
                 )}
               />
             </div>

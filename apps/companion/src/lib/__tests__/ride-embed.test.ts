@@ -1,4 +1,5 @@
 import { createFormatters } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import {
   buildRideEmbedUrl,
   buildRideIframeCode,
@@ -37,7 +38,7 @@ describe("ride-embed", () => {
   });
 
   it("formats compact analytics stats for the embed panel", () => {
-    expect(formatRideEmbedStat(1, "view", format)).toBe("1 view");
-    expect(formatRideEmbedStat(2450, "click", format)).toBe("2,450 clicks");
+    expect(formatRideEmbedStat(1, "view", format, t)).toBe("1 view");
+    expect(formatRideEmbedStat(2450, "click", format, t)).toBe("2,450 clicks");
   });
 });

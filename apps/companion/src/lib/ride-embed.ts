@@ -1,4 +1,4 @@
-import type { Formatters } from "@tarmoto/shared";
+import type { Formatters, LooseTranslate } from "@tarmoto/shared";
 import { escapeHtmlAttribute } from "@/lib/embed-utils";
 
 export type RideWidgetVariant = "compact" | "landscape";
@@ -45,9 +45,15 @@ export function formatRideEmbedStat(
   value: number,
   noun: "view" | "click",
   format: Formatters,
+  t: LooseTranslate,
 ): string {
-  const label = value === 1 ? noun : `${noun}s`;
-  return `${format.integer(value)} ${label}`;
+  // View/click totals are unbounded, so the visible number comes
+  // pre-formatted via the rider's format locale; the raw count only drives
+  // plural selection.
+  const values = { count: value, n: format.integer(value) };
+  return noun === "view"
+    ? t("{count, plural, one {{n} view} other {{n} views}}", values)
+    : t("{count, plural, one {{n} click} other {{n} clicks}}", values);
 }
 
 function widgetDimensions(variant: RideWidgetVariant): WidgetDimensions {

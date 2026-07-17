@@ -259,6 +259,9 @@ export const en = {
   "Edit profile ": "Edit profile ",
   "Edit your review": "Edit your review",
   "Edit your review ": "Edit your review ",
+  Ended: "Ended",
+  "Ends today": "Ends today",
+  "Ends tomorrow": "Ends tomorrow",
   Elevation: "Elevation",
   "Elevation profile": "Elevation profile",
   "Elevation \u00b7 ": "Elevation \u00b7 ",
@@ -519,6 +522,7 @@ export const en = {
   Notifications: "Notifications",
   "Notifications ": "Notifications ",
   "Number of days ": "Number of days ",
+  Ongoing: "Ongoing",
   "Opacity fades as reports age ": "Opacity fades as reports age ",
   "Open billing portal ": "Open billing portal ",
   "Open collaboration panel ": "Open collaboration panel ",
@@ -1001,6 +1005,17 @@ export const en = {
   "{percent}% explored": "{percent}% explored",
   "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
   "{rideType} ride": "{rideType} ride",
+  "{count, plural, one {# day} other {# days}} left":
+    "{count, plural, one {# day} other {# days}} left",
+  "{count, plural, one {# month} other {# months}} left":
+    "{count, plural, one {# month} other {# months}} left",
+  "{count, plural, one {# week} other {# weeks}} left":
+    "{count, plural, one {# week} other {# weeks}} left",
+  "{count, plural, one {{n} click} other {{n} clicks}}":
+    "{count, plural, one {{n} click} other {{n} clicks}}",
+  "{count, plural, one {{n} view} other {{n} views}}":
+    "{count, plural, one {{n} view} other {{n} views}}",
+  "{weeks}w {days}d left": "{weeks}w {days}d left",
   "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ":
     "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
   "Found {count} collections saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ":
