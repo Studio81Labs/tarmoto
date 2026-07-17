@@ -111,14 +111,14 @@ export const QUEUE_NAMES = {
 
   /**
    * Recurring (weekly). Imports the configured OSM `.osm` extract into
-   * `road_segments` (#781). Dormant until `TARMOTO_OSM_IMPORT_ENABLED=true`.
+   * `road_segments` (#781). Dormant until `TARMOTO_OSM_ROAD_IMPORT_ENABLED=true`.
    * Runs before the POI import and the fun-zone recompute so the road graph is
    * fresh for both.
    */
-  OSM_IMPORT: 'osm.import',
+  ROAD_IMPORT: 'road.import',
 
   /**
-   * Success-continuation of `osm.import` (not independently scheduled).
+   * Success-continuation of `road.import` (not independently scheduled).
    * Conflates `road_segments` quality into a derived `.osm` extract by injecting
    * an OSM `smoothness` tag per way (#779, ADR-0005) so GraphHopper can weight
    * quality-aware routes. Enqueued by the OSM import processor only after a
@@ -152,7 +152,7 @@ export const JOB_NAMES = {
   MODEL_EVAL_RECONCILE_RUN: 'run',
   MODEL_EVAL_AGREEMENT_RUN: 'run',
   NAP_CLOSURE_POLL_RUN: 'run',
-  OSM_IMPORT_RUN: 'run',
+  ROAD_IMPORT_RUN: 'run',
   QUALITY_CONFLATION_RUN: 'run',
 } as const;
 

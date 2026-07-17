@@ -73,8 +73,8 @@ export class QueueHealthService {
     private readonly modelEvalAgreement: Queue,
     @InjectQueue(QUEUE_NAMES.NAP_CLOSURE_POLL)
     private readonly napClosurePoll: Queue,
-    @InjectQueue(QUEUE_NAMES.OSM_IMPORT)
-    private readonly osmImport: Queue,
+    @InjectQueue(QUEUE_NAMES.ROAD_IMPORT)
+    private readonly roadImport: Queue,
     @InjectQueue(QUEUE_NAMES.QUALITY_CONFLATION)
     private readonly qualityConflation: Queue,
   ) {}
@@ -93,7 +93,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.MODEL_EVAL_RECONCILE]: this.modelEvalReconcile,
       [QUEUE_NAMES.MODEL_EVAL_AGREEMENT]: this.modelEvalAgreement,
       [QUEUE_NAMES.NAP_CLOSURE_POLL]: this.napClosurePoll,
-      [QUEUE_NAMES.OSM_IMPORT]: this.osmImport,
+      [QUEUE_NAMES.ROAD_IMPORT]: this.roadImport,
       [QUEUE_NAMES.QUALITY_CONFLATION]: this.qualityConflation,
     };
   }

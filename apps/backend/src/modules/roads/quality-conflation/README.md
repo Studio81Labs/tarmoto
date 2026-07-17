@@ -49,7 +49,7 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
   [Re-import orchestration hook](#re-import-orchestration-hook)). No-op when
   unconfigured; throws on a failed webhook so the job retries.
 - **`*.config.ts`** — `TARMOTO_QUALITY_CONFLATION_ENABLED` (default off) +
-  input/output `.osm` paths (region reuses `TARMOTO_OSM_IMPORT_BBOX`), and the
+  input/output `.osm` paths (region reuses `TARMOTO_OSM_ROAD_IMPORT_BBOX`), and the
   `TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_*` webhook settings.
 - Wired as the **`quality.conflation` BullMQ queue** (`jobs.constants.ts`),
   processed by `QualityConflationProcessor` (which runs the conflation then fires
@@ -72,7 +72,7 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
 - **Atomic output.** The derived extract is written to a temp sibling and
   renamed on success, so a failed/partial run never truncates the last good
   extract GraphHopper imports.
-- **Region-bounded.** When `TARMOTO_OSM_IMPORT_BBOX` is set the job only conflates
+- **Region-bounded.** When `TARMOTO_OSM_ROAD_IMPORT_BBOX` is set the job only conflates
   ways intersecting that rectangle — the same region the OSM extract and the
   GraphHopper graph cover. Unset → the whole live network.
 - **Idempotent.** Reads current aggregates only; re-running yields the same
@@ -94,7 +94,7 @@ and a derived output path on a volume GraphHopper can read, and enable it:
 TARMOTO_QUALITY_CONFLATION_ENABLED=true
 TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/czech.osm       # osmium-produced .osm XML
 TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/czech.quality.osm
-# region reuses TARMOTO_OSM_IMPORT_BBOX
+# region reuses TARMOTO_OSM_ROAD_IMPORT_BBOX
 ```
 
 The job writes `…/czech.quality.osm` after each successful OSM import; point the

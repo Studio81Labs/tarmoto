@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import type { Repository } from 'typeorm';
 import type { ConfigType } from '@nestjs/config';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
-import type { osmImportConfig } from '../osm-import/osm-import.config.js';
+import type { osmRoadImportConfig } from '../osm-import/osm-import.config.js';
 import type { qualityConflationConfig } from './quality-conflation.config.js';
 import { QualityConflationService } from './quality-conflation.service.js';
 
-type Config = ConfigType<typeof osmImportConfig>;
+type Config = ConfigType<typeof osmRoadImportConfig>;
 type ConflationConfig = ConfigType<typeof qualityConflationConfig>;
 
 const CONFLATION_OFF: ConflationConfig = {

@@ -34,11 +34,11 @@ osmium cat czech-republic-latest.osm.pbf -o /data/czech.osm
 
 ### Set a region for stale detection
 
-To let the importer **tombstone** removed roads, set `TARMOTO_OSM_IMPORT_BBOX` and
+To let the importer **tombstone** removed roads, set `TARMOTO_OSM_ROAD_IMPORT_BBOX` and
 prepare the extract for the SAME rectangle:
 
 ```bash
-# minLng,minLat,maxLng,maxLat — identical to TARMOTO_OSM_IMPORT_BBOX
+# minLng,minLat,maxLng,maxLat — identical to TARMOTO_OSM_ROAD_IMPORT_BBOX
 osmium extract -b 12.09,48.55,18.86,51.06 \
   czech-republic-latest.osm.pbf -o /data/czech.osm
 ```
@@ -58,11 +58,11 @@ bbox guess.
 
 ## Config
 
-| env                          | default | meaning                                                                                     |
-| ---------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `TARMOTO_OSM_IMPORT_ENABLED` | `false` | turn the weekly job on                                                                      |
-| `TARMOTO_OSM_IMPORT_FILE`    | —       | absolute path to the prepared `.osm` file (required when enabled)                           |
-| `TARMOTO_OSM_IMPORT_BBOX`    | —       | `minLng,minLat,maxLng,maxLat` region for stale detection; the extract must be clipped to it |
+| env                               | default | meaning                                                                                     |
+| --------------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `TARMOTO_OSM_ROAD_IMPORT_ENABLED` | `false` | turn the weekly job on                                                                      |
+| `TARMOTO_OSM_ROAD_IMPORT_FILE`    | —       | absolute path to the prepared `.osm` file (required when enabled)                           |
+| `TARMOTO_OSM_ROAD_IMPORT_BBOX`    | —       | `minLng,minLat,maxLng,maxLat` region for stale detection; the extract must be clipped to it |
 
 Dormant by default: an off tick is a cheap no-op.
 
@@ -75,7 +75,7 @@ segment rows and loads the matching existing rows into memory (it can't be a pur
 per-chunk stream like a plain upsert). Size the region to fit the worker heap.
 
 For a large area, **tile it into several bbox-clipped sub-imports** rather than one
-country-sized file — each `(TARMOTO_OSM_IMPORT_FILE, TARMOTO_OSM_IMPORT_BBOX)` pair
+country-sized file — each `(TARMOTO_OSM_ROAD_IMPORT_FILE, TARMOTO_OSM_ROAD_IMPORT_BBOX)` pair
 is a self-contained region, so N adjacent tiles reconcile independently and bound
 memory to one tile. (A way split exactly across a tile edge loses history only at
 that seam; keep tiles comfortably larger than a single way. In-engine auto-tiling
@@ -83,9 +83,9 @@ is a possible future enhancement.)
 
 ## Cadence & manual runs
 
-Recurring weekly (Sunday 01:00 UTC, `osm.import` queue) — before the POI import
+Recurring weekly (Sunday 01:00 UTC, `road.import` queue) — before the POI import
 (Sun 03:00) and the fun-zone recompute (Mon 04:00) so the road graph is fresh
-for both. A manual run is an ops enqueue on the `osm.import` queue (job name
+for both. A manual run is an ops enqueue on the `road.import` queue (job name
 `run`), mirroring the other recurring jobs.
 
 ## Safety

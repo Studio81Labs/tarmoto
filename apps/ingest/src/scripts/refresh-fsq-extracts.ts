@@ -8,7 +8,7 @@
  * DuckDB script that attaches Foursquare's OS Places Iceberg catalog with the
  * operator's token, filters to the region's country + `DEFAULT_REGIONS` bbox +
  * POI categories, and ATOMICALLY writes `<code>.fsq.jsonl` to
- * `TARMOTO_FSQ_IMPORT_DIR` — the same shared volume the import cron reads, so the
+ * `TARMOTO_FSQ_POI_IMPORT_DIR` — the same shared volume the import cron reads, so the
  * store mirrors the CURRENT monthly OS Places drop instead of a static file.
  *
  * Guarantees mirror the OSM refresh (see that file):
@@ -16,9 +16,9 @@
  *    that is only renamed onto `<code>.fsq.jsonl` after DuckDB exits 0; any
  *    failure leaves the previous good extract untouched, and the run continues.
  *  - **Observable:** a partial failure exits non-zero; every region is logged.
- *  - **Env-gated:** a no-op unless `TARMOTO_FSQ_REFRESH_ENABLED=true`.
+ *  - **Env-gated:** a no-op unless `TARMOTO_FSQ_POI_REFRESH_ENABLED=true`.
  *
- * Credential boundary: the FSQ token (`TARMOTO_FSQ_TOKEN`) lives ONLY in this
+ * Credential boundary: the FSQ token (`TARMOTO_FSQ_POI_TOKEN`) lives ONLY in this
  * container and is fed to DuckDB on STDIN (never argv), so it never reaches the
  * backend/worker — they read only the credential-free `.fsq.jsonl` files. FSQ's
  * refresh cadence is monthly (the token + the OS Places drop are), so it runs on
@@ -144,12 +144,12 @@ export async function refreshAll(
 ): Promise<RefreshSummary> {
   if (config.targetDir === null) {
     throw new Error(
-      "TARMOTO_FSQ_IMPORT_DIR is not set — nowhere to write refreshed extracts",
+      "TARMOTO_FSQ_POI_IMPORT_DIR is not set — nowhere to write refreshed extracts",
     );
   }
   if (config.token === null) {
     throw new Error(
-      "TARMOTO_FSQ_TOKEN is not set — cannot authenticate to the OS Places catalog",
+      "TARMOTO_FSQ_POI_TOKEN is not set — cannot authenticate to the OS Places catalog",
     );
   }
   // Reclaim orphans from a previously killed run before writing new temps.
@@ -189,7 +189,7 @@ async function main(): Promise<void> {
   const config = resolveFsqRefreshConfig();
   if (!config.enabled) {
     console.log(
-      "FSQ refresh: TARMOTO_FSQ_REFRESH_ENABLED is not true — skipping.",
+      "FSQ refresh: TARMOTO_FSQ_POI_REFRESH_ENABLED is not true — skipping.",
     );
     return;
   }
