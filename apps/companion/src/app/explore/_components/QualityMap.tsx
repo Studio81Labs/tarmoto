@@ -653,6 +653,20 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
                   return;
                 }
               }
+              // A named base-map POI under the cursor also wins — its place
+              // popover normally opens via `onMiss`, which this route would
+              // otherwise pre-empt inside zones.
+              const place = topBasemapPlaceAt(map, e.point, basemapPoiLayers);
+              if (place) {
+                setPointMenu({
+                  point: { kind: "place", place },
+                  lng: place.lng,
+                  lat: place.lat,
+                  x: e.originalEvent.clientX,
+                  y: e.originalEvent.clientY,
+                });
+                return;
+              }
               const zoneId = f.properties?.id;
               if (typeof zoneId !== "string") return;
               setPointMenu(null);
