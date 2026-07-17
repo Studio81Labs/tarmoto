@@ -69,7 +69,7 @@ test.describe("format preferences autodetection", () => {
     // load — filter for the toggle's PATCH by its `units` payload.
     //
     // The radio is a real `<input type="radio" class="sr-only">` nested in
-    // a clickable `<label>` (same pattern as the "avoid highways" checkbox
+    // a clickable `<label>` (same pattern as the "avoid motorways" checkbox
     // in trip-planner.spec.ts) — the visually-hidden input's hit box sits
     // under the label's painted content, so a plain `.click()` times out
     // with "<label> intercepts pointer events". `force: true` is this
