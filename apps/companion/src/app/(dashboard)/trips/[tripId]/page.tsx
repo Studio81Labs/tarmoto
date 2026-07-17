@@ -13,7 +13,6 @@ import {
   Edit,
   Layers,
   Lightbulb,
-  Loader2,
   LogOut,
   MapPin,
   Maximize2,
@@ -29,6 +28,7 @@ import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
+import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import {
   TripPlannerMap,
   type TripPlannerMapHandle,
@@ -57,7 +57,14 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { formatDistance, formatDuration } from "@/lib/utils";
-import { Button, Heading, QualityBars, Stamp, Tooltip } from "@tarmoto/ui";
+import {
+  Button,
+  Heading,
+  QualityBars,
+  Skeleton,
+  Stamp,
+  Tooltip,
+} from "@tarmoto/ui";
 type RightTab = "route" | "inspect" | "conditions";
 interface LoadedTrip {
   detail: TripDetailResponse;
@@ -300,6 +307,7 @@ export default function TripDetailPage() {
     };
   }, [tripId, router, authReady]);
   const collabSession = useTripCollabSession(loaded ? loaded.detail.id : null);
+  const showLoader = useDelayedLoading(loading);
   // Deleting confirms through the app dialog — system dialogs are
   // disallowed.
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -323,10 +331,46 @@ export default function TripDetailPage() {
     }
   }, [loaded, router]);
   if (loading) {
+    // Debounced skeleton mirroring the page chrome (toolbar / map / panel);
+    // warm loads render a blank shell instead of flashing it.
     return (
-      <div className="flex h-full items-center justify-center text-fg-dim">
-        <Loader2 size={20} className="mr-2 animate-spin" />
-        {t("Loading trip\u2026 ")}
+      <div className="flex h-full flex-col">
+        {showLoader && (
+          <>
+            <span role="status" className="sr-only">
+              {t("Loading trip\u2026 ")}
+            </span>
+            <div
+              aria-hidden="true"
+              className="flex items-center justify-between gap-3 border-b border-line bg-paper/90 px-4 py-2"
+            >
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-8 w-8 rounded-[10px]" />
+                <span className="h-[22px] w-px shrink-0 bg-line" />
+                <div className="flex flex-col gap-1.5">
+                  <Skeleton className="h-3.5 w-44" />
+                  <Skeleton className="h-2.5 w-60" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-8 w-24 rounded-[10px]" />
+                <Skeleton className="h-8 w-8 rounded-[10px]" />
+              </div>
+            </div>
+            <div aria-hidden="true" className="flex flex-1 overflow-hidden">
+              <div className="relative flex-1 bg-cream">
+                <Skeleton className="absolute inset-0 rounded-none" />
+              </div>
+              <div className="hidden w-[370px] shrink-0 flex-col gap-3 border-l border-line bg-paper px-5 pt-4 lg:flex">
+                <Skeleton className="h-[9px] w-[70px] rounded-[4px]" />
+                <Skeleton className="h-5 w-2/3" />
+                <Skeleton className="h-2.5 w-full" />
+                <Skeleton className="mt-2 h-[72px] w-full rounded-[10px]" />
+                <Skeleton className="h-[72px] w-full rounded-[10px]" />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   }

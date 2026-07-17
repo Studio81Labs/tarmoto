@@ -9,6 +9,7 @@ import {
   QualityBars,
   RoadPreviewCard,
   SkeletonDashboard,
+  SkeletonForm,
   SkeletonGrid,
   SkeletonList,
   SkeletonPageHeader,
@@ -484,6 +485,13 @@ export function LoadingSection() {
             </div>
           </Card>
         </div>
+
+        <Card padded className="!p-6">
+          <SubStamp>Form · settings</SubStamp>
+          <div className="mt-3">
+            <SkeletonForm sections={2} />
+          </div>
+        </Card>
 
         <div>
           <CodeBlock>
