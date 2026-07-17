@@ -598,11 +598,12 @@ function ExplorerPageInner() {
           onClearRegion={() => mapRef.current?.clearDrawnRegion()}
         />
       )}
-      {showFunZones && showConditionsLayer && (
-        <div aria-hidden="true" className="h-px w-full bg-line" />
-      )}
       {showConditionsLayer && (
         <InfoPanelContent
+          // A leading divider only when a Fun Zones block sits above — same
+          // `border-t` the Closures/Passes sections use, so the between-blocks
+          // rule reads consistently (a 1px bg div could sub-pixel away).
+          topDivider={showFunZones}
           conditionsMonth={conditionsMonth}
           setConditionsMonth={setConditionsMonth}
           conditionsDate={conditionsDate}
@@ -1102,6 +1103,7 @@ const EXPLORE_SEARCH_RESULT_ZOOM = 12;
 // and PassesPanel only get described once. `onFocusClosure`/`onFocusPass`
 // fly the map to a list-row's marker and open its shared popover.
 function InfoPanelContent({
+  topDivider = false,
   conditionsMonth,
   setConditionsMonth,
   conditionsDate,
@@ -1110,6 +1112,8 @@ function InfoPanelContent({
   onFocusClosure,
   onFocusPass,
 }: {
+  /** Divider above the first section — set when another block sits above. */
+  topDivider?: boolean;
   conditionsMonth: number;
   setConditionsMonth: (month: number) => void;
   conditionsDate: Date;
@@ -1129,8 +1133,9 @@ function InfoPanelContent({
           bbox={conditionBbox}
           showRouteWarnings={false}
           onFocusClosure={onFocusClosure}
-          // The composited column owns block dividers; drop the panel's own.
-          topDivider={false}
+          // Leading divider only when a block sits above (Fun Zones); when
+          // Conditions is the first/only block the panel top stays clean.
+          topDivider={topDivider}
         />
       ) : (
         <p className="text-xs text-fg-dim">
