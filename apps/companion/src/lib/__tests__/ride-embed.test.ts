@@ -1,8 +1,13 @@
+import { createFormatters } from "@tarmoto/shared";
 import {
   buildRideEmbedUrl,
   buildRideIframeCode,
   formatRideEmbedStat,
 } from "../ride-embed";
+
+// Deterministic en/UTC/metric context — mirrors the component-test default
+// (no FormatProvider) so lib-level assertions stay locale-neutral.
+const format = createFormatters({ locale: "en", units: "metric" });
 
 describe("ride-embed", () => {
   it("builds the route widget url for a shared ride token", () => {
@@ -32,7 +37,7 @@ describe("ride-embed", () => {
   });
 
   it("formats compact analytics stats for the embed panel", () => {
-    expect(formatRideEmbedStat(1, "view")).toBe("1 view");
-    expect(formatRideEmbedStat(2450, "click")).toBe("2,450 clicks");
+    expect(formatRideEmbedStat(1, "view", format)).toBe("1 view");
+    expect(formatRideEmbedStat(2450, "click", format)).toBe("2,450 clicks");
   });
 });

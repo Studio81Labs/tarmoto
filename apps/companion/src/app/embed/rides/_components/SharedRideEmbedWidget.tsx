@@ -10,16 +10,12 @@ import {
   Route as RouteIcon,
   Wind,
 } from "lucide-react";
+import { useFormat } from "@/format/FormatProvider";
 import { api } from "@/lib/api";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { formatRideEmbedStat, type RideWidgetVariant } from "@/lib/ride-embed";
 import type { SharedRideDetail } from "@/lib/shared-rides";
-import {
-  formatDistance,
-  formatDuration,
-  formatRelativeTime,
-  formatRideType,
-} from "@/lib/utils";
+import { formatRideType } from "@/lib/utils";
 type SharedRideWidgetData = Pick<
   SharedRideDetail,
   | "rider_name"
@@ -45,6 +41,7 @@ export function SharedRideEmbedWidget({
   pageUrl,
   variant,
 }: Props) {
+  const format = useFormat();
   const preview = buildRoutePreview(
     ride.route_geometry,
     variant === "landscape" ? 720 : 640,
@@ -72,7 +69,7 @@ export function SharedRideEmbedWidget({
               </h1>
               <p className="mt-1 text-sm text-slate-300">
                 {formatRideType(ride.ride_type)}
-                {t("ride \u00B7")} {formatRelativeTime(ride.started_at)}
+                {t("ride \u00B7")} {format.relativeTime(ride.started_at)}
               </p>
             </div>
             <Link
@@ -105,8 +102,10 @@ export function SharedRideEmbedWidget({
                 </p>
               </div>
               <div className="text-right text-xs text-slate-500">
-                <p>{formatRideEmbedStat(ride.view_count, "view")}</p>
-                <p>{formatRideEmbedStat(ride.embed_click_count, "click")}</p>
+                <p>{formatRideEmbedStat(ride.view_count, "view", format)}</p>
+                <p>
+                  {formatRideEmbedStat(ride.embed_click_count, "click", format)}
+                </p>
               </div>
             </div>
 
@@ -149,21 +148,25 @@ export function SharedRideEmbedWidget({
                 label="Distance"
                 value={
                   ride.distance_km != null
-                    ? formatDistance(ride.distance_km)
+                    ? format.distanceKm(ride.distance_km)
                     : "—"
                 }
               />
               <StatTile
                 icon={<Clock3 size={14} />}
                 label="Duration"
-                value={formatDuration(ride.duration_min)}
+                value={
+                  ride.duration_min != null
+                    ? format.duration(ride.duration_min)
+                    : "—"
+                }
               />
               <StatTile
                 icon={<Gauge size={14} />}
                 label="Quality"
                 value={
                   ride.avg_road_quality != null
-                    ? `${ride.avg_road_quality.toFixed(1)}/5`
+                    ? `${format.decimal(ride.avg_road_quality, 1)}/5`
                     : "—"
                 }
               />
@@ -172,19 +175,23 @@ export function SharedRideEmbedWidget({
                 label="Curviness"
                 value={
                   ride.avg_curviness != null
-                    ? ride.avg_curviness.toFixed(1)
+                    ? format.decimal(ride.avg_curviness, 1)
                     : "—"
                 }
               />
               <StatTile
                 icon={<Eye size={14} />}
                 label="Views"
-                value={formatRideEmbedStat(ride.view_count, "view")}
+                value={formatRideEmbedStat(ride.view_count, "view", format)}
               />
               <StatTile
                 icon={<MousePointerClick size={14} />}
                 label="Clicks"
-                value={formatRideEmbedStat(ride.embed_click_count, "click")}
+                value={formatRideEmbedStat(
+                  ride.embed_click_count,
+                  "click",
+                  format,
+                )}
               />
             </div>
           </section>

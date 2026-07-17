@@ -38,9 +38,6 @@ export async function BestRoadsEmbedWidget({
   pageUrl,
   variant,
 }: Props) {
-  // Minimal compile-fix for the best-roads-format signature change (Task 6)
-  // — this widget's own full migration (curviness_score.toFixed, etc.)
-  // stays in Task 7.
   const format = await getServerFormatters();
   const map = projectRoadsToMiniMap(roads, {
     width: variant === "landscape" ? 720 : 640,
@@ -190,7 +187,7 @@ export async function BestRoadsEmbedWidget({
                       </p>
                     </div>
                     <p className="text-xs font-semibold text-slate-300">
-                      {road.curviness_score.toFixed(1)}
+                      {format.decimal(road.curviness_score, 1)}
                     </p>
                   </li>
                 ))}

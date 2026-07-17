@@ -4,6 +4,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArrowUpRight, Eye, MapPin, Route as RouteIcon } from "lucide-react";
 import { MetricTile, Mono, Stamp } from "@tarmoto/ui";
+import type { Formatters } from "@tarmoto/shared";
+import { getServerFormatters } from "@/format/server";
 import { UserAvatar } from "@/components/UserAvatar";
 import { fetchSharedMap } from "@/lib/map-share";
 import {
@@ -11,7 +13,6 @@ import {
   type MapShareSnapshot,
 } from "@/lib/road-map-layer";
 import { TIME_PERIOD_LABELS } from "@/lib/exploration";
-import { formatDistance } from "@/lib/utils";
 import { SharedMap } from "./SharedMap.client";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export default async function SharedRoadMapPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+  const format = await getServerFormatters();
   const share = await fetchSharedMap(token);
   if (!share) notFound();
   const snapshot = parseMapShareSnapshot(share.snapshot);
@@ -88,7 +90,7 @@ export default async function SharedRoadMapPage({
             </div>
             {snapshot && (
               <span className="shrink-0 rounded-full bg-accent px-2.5 py-1.5 text-[11px] font-bold tracking-[0.2px] text-ink">
-                {snapshot.stats.percent_explored}
+                {format.integer(snapshot.stats.percent_explored)}
                 {t("% explored")}
               </span>
             )}
@@ -114,7 +116,7 @@ export default async function SharedRoadMapPage({
                     className="text-fg-mute"
                     aria-hidden="true"
                   />
-                  {snapshot.segments.length.toLocaleString()}{" "}
+                  {format.integer(snapshot.segments.length)}{" "}
                   {t("segments highlighted")}
                 </MetaChip>
                 <MetaChip>
@@ -123,7 +125,7 @@ export default async function SharedRoadMapPage({
                     className="text-fg-mute"
                     aria-hidden="true"
                   />
-                  {formatDistance(snapshot.stats.total_distance_km)}{" "}
+                  {format.distanceKm(snapshot.stats.total_distance_km)}{" "}
                   {/* `total_distance_km` is a lifetime total even on a period
                       share, so flag the scope next to the period-filtered
                       "segments highlighted" chip. */}
@@ -144,7 +146,7 @@ export default async function SharedRoadMapPage({
                 initialCenter={initialCenter}
                 segments={snapshot.segments}
               />
-              <SnapshotLegend snapshot={snapshot} />
+              <SnapshotLegend snapshot={snapshot} format={format} />
             </div>
 
             {/* stats — no region field in the snapshot, so 3 tiles. On a
@@ -155,6 +157,7 @@ export default async function SharedRoadMapPage({
               <MetricTile
                 variant="ink"
                 accentNumber
+                formatValue={format.integer}
                 label={t("Segments ridden")}
                 // The highlighted (period-filtered) count, matching the map,
                 // legend, and the "segments highlighted" hero chip.
@@ -167,12 +170,13 @@ export default async function SharedRoadMapPage({
               />
               <MetricTile
                 label={t("Distance ridden")}
-                value={formatDistance(snapshot.stats.total_distance_km)}
+                value={format.distanceKm(snapshot.stats.total_distance_km)}
                 delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
               <MetricTile
                 label={t("Coverage")}
-                value={`${snapshot.stats.percent_explored}%`}
+                value={format.integer(snapshot.stats.percent_explored)}
+                unit="%"
                 delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
             </section>
@@ -239,13 +243,19 @@ function MetaChip({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SnapshotLegend({ snapshot }: { snapshot: MapShareSnapshot }) {
+function SnapshotLegend({
+  snapshot,
+  format,
+}: {
+  snapshot: MapShareSnapshot;
+  format: Formatters;
+}) {
   return (
     <div className="pointer-events-none absolute left-4 top-4 z-10 space-y-1.5 rounded-[10px] border border-line-strong bg-cream px-3.5 py-3 text-[12px] font-semibold text-ink shadow-[0_6px_16px_rgba(14,14,16,0.08)]">
       <div className="flex items-center gap-2">
         <span className="inline-block h-1 w-[22px] rounded-sm bg-accent" />
         {t("Ridden ({count} segments)", {
-          count: snapshot.segments.length.toLocaleString(),
+          count: format.integer(snapshot.segments.length),
         })}
       </div>
       <div className="flex items-center gap-2">

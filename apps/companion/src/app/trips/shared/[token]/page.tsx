@@ -8,6 +8,7 @@ import {
   Route as RouteIcon,
 } from "lucide-react";
 import { Card, Stamp, MetricTile } from "@tarmoto/ui";
+import { getServerFormatters } from "@/format/server";
 import {
   PublicShareFooter,
   PublicShareHeader,
@@ -23,7 +24,6 @@ import {
   tripStops,
   tripSummary,
 } from "@/lib/trip-share";
-import { splitFormattedDistance } from "@/lib/utils";
 import { SharedTripJoinCta } from "./SharedTripJoinCta";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +42,7 @@ export default async function SharedTripPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+  const format = await getServerFormatters();
   const share = await fetchSharedTrip(token);
   if (!share) notFound();
   const trip = parseTripSnapshot(share.snapshot);
@@ -55,9 +56,7 @@ export default async function SharedTripPage({
     : null;
 
   const distance =
-    summary != null
-      ? splitFormattedDistance(summary.totalDistanceKm, "metric")
-      : null;
+    summary != null ? format.splitDistanceKm(summary.totalDistanceKm) : null;
   // A trip is a plan, so its time is an estimate: prefer the snapshot's
   // per-day durations, and fall back to a 55 km/h heuristic with a 30-minute
   // floor (matching the backend GPX/from-share import) when the planner didn't
@@ -70,7 +69,7 @@ export default async function SharedTripPage({
         : summary.totalDistanceKm > 0
           ? Math.max(30, Math.round((summary.totalDistanceKm / 55) * 60))
           : null;
-  const duration = splitDuration(estMinutes);
+  const duration = splitDuration(estMinutes, format);
 
   return (
     <div className="min-h-screen bg-cream text-ink">

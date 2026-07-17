@@ -10,8 +10,6 @@ import {
   scoreToTier,
   formatDistance,
   formatDistanceFromMeters,
-  formatDuration,
-  formatRelativeTime,
   confidenceLabel,
 } from "../utils";
 
@@ -103,66 +101,6 @@ describe("formatDistanceFromMeters", () => {
     expect(formatDistanceFromMeters(161, "imperial")).toMatch(/mi$/);
     expect(formatDistance(0.16, "imperial")).toMatch(/ft$/);
     expect(formatDistance(0.161, "imperial")).toMatch(/mi$/);
-  });
-});
-
-describe("formatDuration", () => {
-  it("uses minutes-only format under an hour", () => {
-    expect(formatDuration(45)).toBe("45 min");
-    expect(formatDuration(0)).toBe("0 min");
-  });
-
-  it("uses hours and minutes over an hour", () => {
-    expect(formatDuration(60)).toBe("1h 0m");
-    expect(formatDuration(90)).toBe("1h 30m");
-    expect(formatDuration(125)).toBe("2h 5m");
-  });
-
-  it("returns an em-dash for missing or invalid input", () => {
-    expect(formatDuration(null)).toBe("—");
-    expect(formatDuration(undefined)).toBe("—");
-    expect(formatDuration(Number.NaN)).toBe("—");
-    expect(formatDuration(-5)).toBe("—");
-  });
-});
-
-describe("formatRelativeTime", () => {
-  const REFERENCE_NOW = new Date("2026-04-17T12:00:00Z").getTime();
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(REFERENCE_NOW);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('returns "just now" for <1 minute ago', () => {
-    const iso = new Date(REFERENCE_NOW - 30_000).toISOString();
-    expect(formatRelativeTime(iso)).toBe("just now");
-  });
-
-  it("returns minutes for <1 hour ago", () => {
-    const iso = new Date(REFERENCE_NOW - 5 * 60_000).toISOString();
-    expect(formatRelativeTime(iso)).toBe("5m ago");
-  });
-
-  it("returns hours for <24 hours ago", () => {
-    const iso = new Date(REFERENCE_NOW - 3 * 60 * 60_000).toISOString();
-    expect(formatRelativeTime(iso)).toBe("3h ago");
-  });
-
-  it("returns days for <7 days ago", () => {
-    const iso = new Date(REFERENCE_NOW - 2 * 24 * 60 * 60_000).toISOString();
-    expect(formatRelativeTime(iso)).toBe("2d ago");
-  });
-
-  it("falls back to an absolute date for >=7 days ago", () => {
-    const iso = new Date(REFERENCE_NOW - 10 * 24 * 60 * 60_000).toISOString();
-    const out = formatRelativeTime(iso);
-    expect(out).not.toMatch(/ago$/);
-    expect(out).toMatch(/20\d{2}/);
   });
 });
 

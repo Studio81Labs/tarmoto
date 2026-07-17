@@ -191,24 +191,6 @@ export function formatDistance(
 }
 
 /**
- * `formatDistance` split into a numeric value + uppercased unit, for KPI tiles
- * that format the number themselves (locale grouping) and render the unit in a
- * separate slot. Honours the rider's unit preference (km/m vs mi/ft) so the
- * tile converts at display time instead of leaking metric totals.
- */
-export function splitFormattedDistance(
-  km: number,
-  units: UnitSystem = "metric",
-): { value: number; unit: string } {
-  const formatted = formatDistance(km, units);
-  const i = formatted.lastIndexOf(" ");
-  return {
-    value: Number(i > 0 ? formatted.slice(0, i) : formatted),
-    unit: (i > 0 ? formatted.slice(i + 1) : "").toUpperCase(),
-  };
-}
-
-/**
  * Speed (backend km/h) as a rounded value + uppercased unit, honouring the
  * rider's unit preference (km/h vs mph). For MetricTile-style displays that
  * format the number themselves.
@@ -256,42 +238,6 @@ export function formatDistanceFromMeters(
   return formatDistance(meters / 1000, units);
 }
 
-export function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null || Number.isNaN(minutes) || minutes < 0) return "—";
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  if (h === 0) return `${m} min`;
-  return `${h}h ${m}m`;
-}
-
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-/**
- * Compact ride-duration label for dense dashboard tables: "4h 12m" / "52m".
- * Intentionally distinct from `formatDuration` ("52 min") — the home and
- * recent-rides tables use the tight no-space form per the v2 design.
- */
-export function formatDurationCompact(min: number | null | undefined): string {
-  if (min == null) return "—";
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-/** Compact day label without year for dashboard tables: "18 Apr" (en-GB). */
-export function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-  });
-}
-
 /**
  * Round a backend road-quality score (0–5 scale) to a 1–5 QualityBars tier,
  * or null when there's no score. Canonical home for this clamp — new code
@@ -302,18 +248,6 @@ export function scoreToQualityTier(
 ): 1 | 2 | 3 | 4 | 5 | null {
   if (q == null) return null;
   return Math.min(5, Math.max(1, Math.round(q))) as 1 | 2 | 3 | 4 | 5;
-}
-
-export function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return formatDate(iso);
 }
 
 export function roundCoordinate(value: number): number {

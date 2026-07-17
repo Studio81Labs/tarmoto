@@ -1,6 +1,7 @@
 import {
   formatSubscriptionAmountLabel,
   formatSubscriptionPriceLabel,
+  type Formatters,
   type SubscriptionTier,
 } from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
@@ -207,8 +208,11 @@ export function planActionLabel(
     : "Downgrade";
 }
 
-export function describeRenewal(plan: CurrentSubscriptionPlan): string {
-  const date = plan.renewsAt ? formatDate(plan.renewsAt) : null;
+export function describeRenewal(
+  plan: CurrentSubscriptionPlan,
+  format: Formatters,
+): string {
+  const date = plan.renewsAt ? format.date(plan.renewsAt) : null;
   if (plan.cancelAtPeriodEnd && date) {
     return `Downgrades ${date}`;
   }
@@ -233,8 +237,8 @@ export function formatPaymentMethodExpiry(
   return `Expires ${String(paymentMethod.expMonth).padStart(2, "0")}/${paymentMethod.expYear}`;
 }
 
-export function formatInvoiceDate(date: string): string {
-  return formatDate(date);
+export function formatInvoiceDate(date: string, format: Formatters): string {
+  return format.date(date);
 }
 
 export function invoiceStatusLabel(status: InvoiceStatus): string {
@@ -357,17 +361,6 @@ function sortPlans(
   plans: SubscriptionPlanSummary[],
 ): SubscriptionPlanSummary[] {
   return [...plans].sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "soon";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
 }
 
 function titleCase(value: string): string {
