@@ -225,10 +225,9 @@ describe("computeDistanceSeries", () => {
     expect(points).toHaveLength(12);
     expect(points[0]?.key).toBe("2025-07");
     expect(points[11]?.key).toBe("2026-06");
-    // Formatters has no "month name only" primitive, so both the axis tick
-    // and the tooltip render the full `monthYear` shape (accepted — see
-    // ride-stats.ts's `monthPoint`).
-    expect(points[11]?.axisLabel).toBe("Jun 2026");
+    // Compact month on the axis, precise month+year in the tooltip —
+    // twelve "Jun 2026"-width ticks crowd at card widths (see monthPoint).
+    expect(points[11]?.axisLabel).toBe("Jun");
     expect(points[11]?.tooltipLabel).toBe("Jun 2026");
     expect(points.every((p) => p.distanceKm === 0 && p.rides === 0)).toBe(true);
   });
@@ -266,7 +265,11 @@ describe("computeDistanceSeries", () => {
     expect(points).toHaveLength(12);
     expect(points[0]?.key).toBe("2026-01");
     expect(points[11]?.key).toBe("2026-12");
-    expect(points[2]).toMatchObject({ axisLabel: "Mar 2026", distanceKm: 30 });
+    expect(points[2]).toMatchObject({
+      axisLabel: "Mar",
+      tooltipLabel: "Mar 2026",
+      distanceKm: 30,
+    });
     // December is in the future relative to `now` → stays empty.
     expect(points[11]?.distanceKm).toBe(0);
   });
@@ -306,9 +309,10 @@ describe("computeQualityTrend", () => {
     expect(points).toHaveLength(12);
     expect(points[0]?.key).toBe("2025-07");
     expect(points[11]?.key).toBe("2026-06");
-    // Formatters has no "month name only" primitive, so the axis tick renders
-    // the full `monthYear` shape (accepted — see ride-stats.ts's `monthPoint`).
-    expect(points[11]?.axisLabel).toBe("Jun 2026");
+    // Compact month axis tick, per the QualityPoint contract; the tooltip
+    // carries the month+year (see monthPoint).
+    expect(points[11]?.axisLabel).toBe("Jun");
+    expect(points[11]?.tooltipLabel).toBe("Jun 2026");
     expect(points.every((p) => p.avgQuality === null && p.rides === 0)).toBe(
       true,
     );

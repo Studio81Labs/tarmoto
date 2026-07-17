@@ -248,11 +248,14 @@ function monthPoint(
   monthIndex: number,
   format: Formatters,
 ): DistancePoint {
-  const label = format.monthYear(monthAnchor(year, monthIndex));
+  const anchor = monthAnchor(year, monthIndex);
   return {
     key: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
-    axisLabel: label,
-    tooltipLabel: label,
+    // Compact month on the axis — twelve "Jan 2026"-width ticks crowd or
+    // get minTickGap-suppressed at card widths. The tooltip keeps the
+    // precise month + year (a 12-month window spans a year boundary).
+    axisLabel: format.month(anchor),
+    tooltipLabel: format.monthYear(anchor),
     distanceKm: 0,
     rides: 0,
   };
