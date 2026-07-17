@@ -1097,7 +1097,6 @@ export default function TripPlannerPage() {
     setImportOpen(true);
     url.searchParams.delete("import");
     window.history.replaceState(window.history.state, "", url);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only URL read
   }, []);
   useEffect(() => {
     // Read `?tripId=` in a client-only effect to keep the planner page
