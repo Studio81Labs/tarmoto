@@ -45,7 +45,6 @@ describe("companion middleware", () => {
 
   it.each([
     "/explore",
-    "/discover",
     "/roads/best/AT/Tyrol",
     "/rides/shared/share-token",
     "/rides/road-map/shared/map-token",

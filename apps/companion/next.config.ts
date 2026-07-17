@@ -4,6 +4,17 @@ import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // /discover was retired; its Fun Zones capability lives in the Road
+  // Explorer now. Permanent redirect so indexed links keep working.
+  async redirects() {
+    return [
+      {
+        source: "/discover",
+        destination: "/explore",
+        permanent: true,
+      },
+    ];
+  },
   transpilePackages: ["@tarmoto/shared", "@tarmoto/openapi-client"],
   // Allow loopback hosts for local development and Playwright E2E. Next 16
   // tightens cross-origin asset requests in dev mode and blocks anything
