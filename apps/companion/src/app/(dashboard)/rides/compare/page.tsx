@@ -218,6 +218,7 @@ function ABCard({
   format: Formatters;
 }) {
   const selected = options.find((o) => o.id === value) ?? null;
+  const slotLabel = t(SLOT_LABEL[slot]);
   const quality = ride ? scoreToQualityTier(ride.avg_road_quality) : null;
   const geometry = ride?.route_geometry ?? null;
   const hasGeometry = geometry != null && geometry.length >= 2;
@@ -242,7 +243,7 @@ function ABCard({
         )}
       </div>
       <Combobox
-        ariaLabel={`${SLOT_LABEL[slot]} selector`}
+        ariaLabel={`${slotLabel} selector`}
         value={value ?? ""}
         onChange={onChange}
         options={options.map((opt) => ({
@@ -257,13 +258,13 @@ function ABCard({
         <RideRouteMap
           geometry={geometry}
           color={slot === "a" ? "#0ED3CF" : "#F472B6"}
-          label={`${SLOT_LABEL[slot]} route map`}
+          label={`${slotLabel} route map`}
           containerClassName="h-[120px]"
         />
       ) : (
         <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-line bg-paper text-center text-[11px] text-fg-dim">
           {ride
-            ? t("{label} has no GPS track.", { label: SLOT_LABEL[slot] })
+            ? t("{label} has no GPS track.", { label: slotLabel })
             : t("Select a ride to preview its route.")}
         </div>
       )}

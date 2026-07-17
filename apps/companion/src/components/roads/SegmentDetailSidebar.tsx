@@ -203,7 +203,7 @@ function SegmentDetailContent({
             {format.distanceM(segment.length_m)}
           </Mono>
           <div className="mt-[9px] flex flex-wrap gap-1.5">
-            <Pill>{tier?.label ?? t("Unrated")}</Pill>
+            <Pill>{tier ? t(tier.label) : t("Unrated")}</Pill>
             <Pill>{formatSurface(segment.surface_type)}</Pill>
           </div>
           {provenance ? (

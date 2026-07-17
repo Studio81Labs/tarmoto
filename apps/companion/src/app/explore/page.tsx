@@ -674,7 +674,7 @@ function ExplorerPageInner() {
                         className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
                       />
                     }
-                    label={opt.label}
+                    label={t(opt.label)}
                   />
                 ))}
               </div>
@@ -696,7 +696,7 @@ function ExplorerPageInner() {
                         className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
                       />
                     }
-                    label={opt.label}
+                    label={t(opt.label)}
                   />
                 ))}
               </div>
@@ -719,7 +719,7 @@ function ExplorerPageInner() {
                         style={{ backgroundColor: opt.hex }}
                       />
                     }
-                    label={opt.label}
+                    label={t(opt.label)}
                   />
                 ))}
               </div>

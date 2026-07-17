@@ -1,5 +1,6 @@
 "use client";
 
+import { t } from "@/i18n";
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
@@ -74,7 +75,7 @@ export function TimeWindowPills() {
       ariaLabel="Time window"
       value={value}
       onChange={onChange}
-      options={OPTIONS}
+      options={OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}
     />
   );
 }

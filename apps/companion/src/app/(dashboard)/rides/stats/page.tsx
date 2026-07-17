@@ -210,13 +210,15 @@ export default function StatsPage() {
       </div>
     );
   }
-  const windowLabel =
-    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time";
+  const windowLabel = t(
+    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time",
+  );
   // The chart switches from monthly to daily bars on the short windows; the
   // header copy follows so "Distance by day" reads honestly for 90/30 days.
   const isDayView = filters.window === "30d" || filters.window === "90d";
   const chartStamp = isDayView ? "Distance by day" : "Distance by month";
-  const chartTitle = filters.window === "all" ? "Last 12 months" : windowLabel;
+  const chartTitle =
+    filters.window === "all" ? t("Last 12 months") : windowLabel;
   // The heatmap is always the focus calendar year (window-independent).
   const heatmapLabel = String(focusYear);
   // `key` is unique per bar, so the axis tick + tooltip both resolve their
@@ -513,7 +515,7 @@ function FilterBar({ filters, onChange }: FilterBarProps) {
         ariaLabel={t("Time window")}
         value={filters.window}
         onChange={(window) => onChange({ ...filters, window })}
-        options={WINDOW_OPTIONS}
+        options={WINDOW_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}
       />
       <SegmentedControl
         ariaLabel={t("Ride type filter")}
@@ -524,7 +526,10 @@ function FilterBar({ filters, onChange }: FilterBarProps) {
             rideType: next === "all" ? "all" : (next as RideType),
           })
         }
-        options={RIDE_TYPE_OPTIONS}
+        options={RIDE_TYPE_OPTIONS.map((opt) => ({
+          ...opt,
+          label: t(opt.label),
+        }))}
       />
     </div>
   );

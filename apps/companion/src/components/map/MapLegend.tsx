@@ -8,6 +8,18 @@ const SURFACE_KEYS = Object.keys(
   SURFACE_COLORS,
 ) as (keyof typeof SURFACE_COLORS)[];
 
+// Display labels for the surface legend — the map/paint layers key surfaces by
+// lowercase enum value (SURFACE_COLORS' keys), which isn't itself renderable
+// copy. Canonical English text; translated at the render site below.
+const SURFACE_LABELS: Record<keyof typeof SURFACE_COLORS, string> = {
+  asphalt: "Asphalt",
+  concrete: "Concrete",
+  cobblestone: "Cobblestone",
+  gravel: "Gravel",
+  dirt: "Dirt",
+  unknown: "Unknown",
+};
+
 /**
  * One legend for every map (explorer, planner, preview). Each active overlay is
  * its OWN cream card, stacked in the bottom-left (matching the planner's split
@@ -122,7 +134,7 @@ export function MapLegend({
             <LineSwatch
               key={entry.label}
               color={entry.color}
-              label={entry.label}
+              label={t(entry.label)}
             />
           ))}
         </LegendCard>
@@ -135,8 +147,7 @@ export function MapLegend({
             <LineSwatch
               key={surfaceKey}
               color={SURFACE_COLORS[surfaceKey]}
-              label={surfaceKey}
-              capitalize
+              label={t(SURFACE_LABELS[surfaceKey])}
             />
           ))}
         </LegendCard>
@@ -154,7 +165,7 @@ export function MapLegend({
             <DiamondSwatch
               key={type}
               color={HAZARD_CONFIG[type].hex}
-              label={HAZARD_CONFIG[type].label}
+              label={t(HAZARD_CONFIG[type].label)}
               emoji={HAZARD_CONFIG[type].emoji}
             />
           ))}

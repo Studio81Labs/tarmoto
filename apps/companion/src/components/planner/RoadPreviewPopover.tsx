@@ -275,7 +275,7 @@ export function RoadPreviewPopover({
                   className="text-[28px] font-extrabold tracking-[-0.8px]"
                   style={{ color: scoreColor }}
                 >
-                  {QUALITY_BAND_LABELS_SHORT[segment.band]}
+                  {t(QUALITY_BAND_LABELS_SHORT[segment.band])}
                 </span>
                 <span
                   className="text-xl font-extrabold tracking-[-0.5px]"
