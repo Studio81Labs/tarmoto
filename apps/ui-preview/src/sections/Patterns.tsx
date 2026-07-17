@@ -531,7 +531,7 @@ export function StickyHeaderSection() {
     >
       <div className="grid grid-cols-1 gap-6">
         <Card padded className="!p-0">
-          <div className="h-[300px] overflow-y-auto p-6">
+          <div className="h-[300px] overflow-y-auto p-6 @container">
             <PageHeader
               stamp="Ride history"
               title="Ride History"
