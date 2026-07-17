@@ -161,20 +161,21 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 - **Endpoint naming:** resolved entitlements ride on `GET /users/me` as `features` + `limits` (not a dedicated `GET /me/entitlements`; the `features` field name is retained for contract stability). Global override maps: `GET /api/v1/config/flags` and `GET /api/v1/config/limits`.
 - **Operator settings precedent:** the generic `app_settings` key/value store (backs `launch_tier` today) is the sibling operator-config pattern; system switches stay in `feature_states` rather than `app_settings` so they share the entitlement kill-switch tooling and audit log.
 
-### 6.2 What ships today (v1)
+### 6.2 What ships today
 
-- **Flags (11):** `basic_navigation`, `road_quality_overlay`, `hazard_alerts` (Free); `full_road_quality_zoom`, `offline_maps`, `gpx_export`, `commuter_mode` (Pro); `group_rides`, `priority_hazard_alerts`, `advanced_analytics` (Premium). _(Note: `full_road_quality_zoom` is renamed to `road_quality_full_zoom` in this catalog — a pending rename.)_
-- **Limits (1):** `max_active_trips` (Free = 1). Enforced across every trip mint + completed→open promotion path.
-- Ships **dark** via a launch-mode global seed (`max_active_trips = NULL`; several Pro/Premium flags seeded `force_on`) until monetization goes live. Clients do not yet consume the snapshot for gating — that is the next workstream.
+**Phase 1 (this branch) — all §1 flags + §2 limits are in the registry:**
 
-### 6.3 Delta to reach this catalog
+- **Flags (22):** the full §1 vocabulary — 11 Free, 6 Pro, 5 Premium. `full_road_quality_zoom` renamed to `road_quality_full_zoom`; `unlimited_trip_planning` retired (superseded by the `max_active_trips` limit).
+- **Limits (6):** the full §2 set. Only `max_active_trips` (Free = 1) is **enforced** today — across every trip mint + completed→open promotion path. The other five are defined vocabulary with no enforcement yet.
+- Migration `1814-AlignFeatureFlagCatalog` renames the launch-mode override row for the renamed flag and drops the retired flag's rows. The newly-added flags/limits carry **no override rows and no launch seed** — they are inert registry vocabulary until a feature is wired to them.
+- Existing launch-mode dark-ship posture is unchanged (`max_active_trips = NULL`; several Pro/Premium flags seeded `force_on`) until monetization goes live. Clients still do not consume the snapshot for gating — that remains the next workstream.
 
-- **Add 11 flags:** `ride_tracking`, `hazard_reporting`, `crash_detection`, `weather_alerts`, `trip_planning`, `gpx_import`, `community_access`, `carplay_android_auto` (Free); `advanced_ride_stats`, `collaborative_trips` (Pro); `api_access`, `garmin_export` (Premium).
-- **Rename 1 flag:** `full_road_quality_zoom` → `road_quality_full_zoom`.
-- **Remove 1 flag:** `unlimited_trip_planning` (superseded by `max_active_trips`).
-- **Add 5 limits:** `max_trip_collaborators`, `max_group_ride_members`, `road_quality_max_zoom`, `max_offline_regions`, `hazard_reports_per_day`.
-- **Add the system-switch kind + 14 `sys_*` switches (§3).**
-- Each addition ripples into the `FeatureSnapshotDto` / `LimitSnapshotDto` shape guards, the launch-mode seed, the marketing pricing card + `PLAN_CATALOG` copy, the admin console, and per-feature enforcement (enforcement is a per-feature follow-up; defining a flag does not gate a feature until wired).
+### 6.3 Remaining to reach this catalog
+
+- **System switches (§3):** the `kind: "system"` mechanism + the 14 `sys_*` switches — a separate follow-up (Phase 2).
+- **Per-feature enforcement:** defining a flag does not gate a feature until a guard/limit check is wired. Most §1 flags gate features that are currently ungated (e.g. `crash_detection`, `carplay_android_auto`); wiring each is a per-feature follow-up. Among limits, only `max_active_trips` is enforced.
+- **Client consumption:** UI gating/upsell reading the `features`/`limits` snapshot (+ the `/config/*` kill-switch fast path).
+- **Marketing / `PLAN_CATALOG` copy** and any launch-mode seeding decisions land with the enforcement PR for the relevant capability.
 
 ---
 
