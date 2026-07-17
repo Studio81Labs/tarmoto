@@ -27,6 +27,9 @@ vi.mock("../data/useAdminUsers.js", () => ({
 const mockSetOverrideMutate = vi.fn();
 const mockRemoveOverrideMutate = vi.fn();
 const mockUseAdminUserFeatureFlags = vi.fn();
+const mockSetLimitOverrideMutate = vi.fn();
+const mockRemoveLimitOverrideMutate = vi.fn();
+const mockUseAdminUserFeatureLimits = vi.fn();
 
 vi.mock("../data/useAdminFlags.js", () => ({
   useAdminUserFeatureFlags: (userId: unknown) =>
@@ -37,6 +40,16 @@ vi.mock("../data/useAdminFlags.js", () => ({
   }),
   useRemoveFeatureOverride: () => ({
     mutate: mockRemoveOverrideMutate,
+    isPending: false,
+  }),
+  useAdminUserFeatureLimits: (userId: unknown) =>
+    mockUseAdminUserFeatureLimits(userId),
+  useSetLimitOverride: () => ({
+    mutate: mockSetLimitOverrideMutate,
+    isPending: false,
+  }),
+  useRemoveLimitOverride: () => ({
+    mutate: mockRemoveLimitOverrideMutate,
     isPending: false,
   }),
 }));
@@ -87,6 +100,9 @@ describe("UsersScreen", () => {
     mockSetOverrideMutate.mockClear();
     mockRemoveOverrideMutate.mockClear();
     mockUseAdminUserFeatureFlags.mockClear();
+    mockSetLimitOverrideMutate.mockClear();
+    mockRemoveLimitOverrideMutate.mockClear();
+    mockUseAdminUserFeatureLimits.mockClear();
     mockUseAdminUserNotificationPrefs.mockClear();
     mockUpdatePrefsMutate.mockClear();
 
@@ -97,6 +113,12 @@ describe("UsersScreen", () => {
       error: null,
     });
     mockUseAdminUserFeatureFlags.mockReturnValue({
+      data: null,
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseAdminUserFeatureLimits.mockReturnValue({
       data: null,
       isPending: false,
       error: null,
@@ -424,6 +446,252 @@ describe("UsersScreen", () => {
       { params: { path: { userId: "u1", feature: "gpx_export" } } },
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
+  });
+
+  // ── Feature limits card ───────────────────────────────────────────────────
+
+  it("renders the selected user's feature limits with the resolved value (∞ for null) and no override controls when inactive", async () => {
+    mockUseAdminUserFeatureLimits.mockReturnValue({
+      data: {
+        user_id: "u1",
+        limits: [
+          {
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: null,
+            override_active: false,
+            override_value: null,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    expect(mockUseAdminUserFeatureLimits).toHaveBeenLastCalledWith("u1");
+    expect(screen.getByText("Feature limits")).toBeInTheDocument();
+    expect(screen.getByText("max_active_trips")).toBeInTheDocument();
+    expect(screen.getByText("∞")).toBeInTheDocument();
+
+    // No active override yet → no "Remove override" action offered.
+    expect(
+      screen.queryByRole("button", { name: "Remove override" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the override value in a Pill and offers Remove override when an override is active", async () => {
+    mockUseAdminUserFeatureLimits.mockReturnValue({
+      data: {
+        user_id: "u1",
+        limits: [
+          {
+            // resolved (3) intentionally differs from override_value (5): a
+            // stricter tier/global layer can still bind even though this
+            // user has a more generous per-user override on record.
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: 3,
+            override_active: true,
+            override_value: 5,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove override" }),
+    ).toBeInTheDocument();
+  });
+
+  it("Set fires the set-limit-override mutation with the parsed integer value", async () => {
+    mockUseAdminUserFeatureLimits.mockReturnValue({
+      data: {
+        user_id: "u1",
+        limits: [
+          {
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: 1,
+            override_active: false,
+            override_value: null,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /max_active_trips/i }),
+      "5",
+    );
+    await user.click(screen.getByRole("button", { name: "Set" }));
+
+    expect(mockSetLimitOverrideMutate).toHaveBeenCalledWith(
+      {
+        params: { path: { userId: "u1", feature: "max_active_trips" } },
+        body: { value: 5 },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("Unlimited fires the set-limit-override mutation with value: null", async () => {
+    mockUseAdminUserFeatureLimits.mockReturnValue({
+      data: {
+        user_id: "u1",
+        limits: [
+          {
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: 1,
+            override_active: false,
+            override_value: null,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    await user.click(screen.getByRole("button", { name: "Unlimited" }));
+
+    expect(mockSetLimitOverrideMutate).toHaveBeenCalledWith(
+      {
+        params: { path: { userId: "u1", feature: "max_active_trips" } },
+        body: { value: null },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("Remove override fires the remove-limit-override mutation", async () => {
+    mockUseAdminUserFeatureLimits.mockReturnValue({
+      data: {
+        user_id: "u1",
+        limits: [
+          {
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: 5,
+            override_active: true,
+            override_value: 5,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    await user.click(screen.getByRole("button", { name: "Remove override" }));
+
+    expect(mockRemoveLimitOverrideMutate).toHaveBeenCalledWith(
+      { params: { path: { userId: "u1", feature: "max_active_trips" } } },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("clears an unsubmitted draft override value when switching directly to a different user", async () => {
+    mockUseAdminUserFeatureLimits.mockImplementation((userId: unknown) => ({
+      data: {
+        user_id: userId,
+        limits: [
+          {
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: 1,
+            override_active: false,
+            override_value: null,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+
+    // Open u1's detail pane and type a draft value without submitting it.
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+    await user.type(
+      screen.getByRole("textbox", { name: /max_active_trips/i }),
+      "7",
+    );
+    expect(
+      screen.getByRole("textbox", { name: /max_active_trips/i }),
+    ).toHaveValue("7");
+
+    // Switch directly to u2 (u1's row now reads "Close"; only u2's row
+    // still reads "View") without closing u1 first.
+    await user.click(screen.getByRole("button", { name: "View" }));
+
+    // The card must have fully remounted for u2 — the leftover "7" typed
+    // for u1 must not still be sitting in the input, ready to be applied
+    // to the wrong user's account.
+    expect(
+      screen.getByRole("textbox", { name: /max_active_trips/i }),
+    ).toHaveValue("");
+  });
+
+  it("does not submit a limit override when the value input is left blank", async () => {
+    mockUseAdminUserFeatureLimits.mockReturnValue({
+      data: {
+        user_id: "u1",
+        limits: [
+          {
+            feature: "max_active_trips",
+            description: "Maximum concurrent active trips",
+            resolved: 1,
+            override_active: false,
+            override_value: null,
+          },
+        ],
+      },
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    render(<UsersScreen />);
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+
+    // No input typed — "Set" must not submit a bare 0.
+    await user.click(screen.getByRole("button", { name: "Set" }));
+
+    expect(mockSetLimitOverrideMutate).not.toHaveBeenCalled();
   });
 
   // ── Fix 4: Subscription filter ────────────────────────────────────────────

@@ -62,7 +62,10 @@ describe('TripGeneratorService', () => {
   let memberRepo: jest.Mocked<Repository<TripMember>>;
   let dataSource: { query: jest.Mock; transaction: jest.Mock };
   let routingProvider: { getAlternatives: jest.Mock };
-  let tripsService: { getDetail: jest.Mock };
+  let tripsService: {
+    getDetail: jest.Mock;
+    assertCanMintOpenTrip: jest.Mock;
+  };
   let events: { emitToTrip: jest.Mock };
   let activity: { recordSafe: jest.Mock };
   // Hoisted so persistence tests can inspect the calls the bulk-save
@@ -171,6 +174,11 @@ describe('TripGeneratorService', () => {
         days: [],
         members: [],
       }),
+      // Regenerating a completed trip promotes it back to open, so it
+      // routes through the shared max_active_trips gate; default to
+      // unlimited (no-op) so the existing (draft-trip) generate tests are
+      // unaffected — the check only fires for a completed source trip.
+      assertCanMintOpenTrip: jest.fn().mockResolvedValue(undefined),
     };
 
     events = { emitToTrip: jest.fn() };
@@ -233,6 +241,37 @@ describe('TripGeneratorService', () => {
           start_location: { lat: 47.0, lng: 11.5 },
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects at the max_active_trips cap when regenerating a completed trip, before routing', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({} as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeTrip({ status: 'completed' }));
+      // Owner is at cap — promoting the completed trip back to open is blocked.
+      tripsService.assertCanMintOpenTrip.mockRejectedValueOnce(
+        new ForbiddenException({ code: 'FEATURE_LIMIT_EXCEEDED' }),
+      );
+
+      await expect(
+        service.generate(USER_ID, TRIP_ID, {
+          start_location: { lat: 47.0, lng: 11.5 },
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tripsService.assertCanMintOpenTrip).toHaveBeenCalledWith(USER_ID);
+      // Fail-fast: no expensive routing work before the cap rejection.
+      expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
+    });
+
+    it('does NOT check the cap when regenerating an already-open trip', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({} as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeTrip({ status: 'planned' }));
+
+      await service
+        .generate(USER_ID, TRIP_ID, {
+          start_location: { lat: 47.0, lng: 11.5 },
+        })
+        .catch(() => undefined);
+
+      expect(tripsService.assertCanMintOpenTrip).not.toHaveBeenCalled();
     });
   });
 

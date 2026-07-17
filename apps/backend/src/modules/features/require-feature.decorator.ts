@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import type { FeatureKey } from '@tarmoto/shared';
+import type { ToggleFeatureKey } from '@tarmoto/shared';
 
 export const REQUIRED_FEATURE_KEY = 'required_feature';
 
@@ -11,5 +11,5 @@ export const REQUIRED_FEATURE_KEY = 'required_feature';
  *   @UseGuards(AuthGuard, FeatureGuard)
  *   @RequireFeature('gpx_export')
  */
-export const RequireFeature = (feature: FeatureKey) =>
+export const RequireFeature = (feature: ToggleFeatureKey) =>
   SetMetadata(REQUIRED_FEATURE_KEY, feature);

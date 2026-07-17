@@ -160,6 +160,15 @@ export class TripGeneratorService {
     const trip = await this.tripRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Trip not found');
 
+    // Regenerating a completed trip flips it back to `planned`
+    // (`persistSelected`), a net-new open trip against the owner's cap.
+    // Gate it before the expensive routing work so an over-cap owner
+    // fails fast, mirroring the reopen/import promotion checks. Owner's
+    // cap governs, not the (possibly collaborator) caller's.
+    if (trip.status === 'completed') {
+      await this.tripsService.assertCanMintOpenTrip(trip.owner_id);
+    }
+
     const start = dto.start_location;
     const bbox = resolveBBox(dto.bbox, trip.region, start);
 

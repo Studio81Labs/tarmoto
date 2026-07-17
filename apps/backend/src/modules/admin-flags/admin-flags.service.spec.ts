@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { FEATURE_KEYS, buildFeatureSnapshot } from '@tarmoto/shared';
+import { TOGGLE_FEATURE_KEYS, buildFeatureSnapshot } from '@tarmoto/shared';
 import { AdminFlagsService } from './admin-flags.service.js';
 
 const NOW = new Date('2026-01-01T00:00:00Z');
@@ -105,7 +105,7 @@ describe('AdminFlagsService', () => {
     const { svc } = makeService();
     const { flags } = await svc.listFlags();
     expect(flags.map((f) => f.feature).sort()).toEqual(
-      [...FEATURE_KEYS].sort(),
+      [...TOGGLE_FEATURE_KEYS].sort(),
     );
     const gpx = flags.find((f) => f.feature === 'gpx_export')!;
     expect(gpx).toMatchObject({

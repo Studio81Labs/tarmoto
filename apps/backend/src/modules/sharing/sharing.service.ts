@@ -434,6 +434,10 @@ export class SharingService {
     }
 
     const title = ride.name?.trim() || 'Cloned route';
+    // Cloning mints a new open (`draft`) trip owned by the caller, so it
+    // counts against `max_active_trips` exactly like create/import/
+    // duplicate. Pre-check before opening the transaction.
+    await this.tripsService.assertCanMintOpenTrip(userId);
     // Atomic: the trip, its owner membership, the day, and the clone-count
     // bump all commit together — a mid-sequence failure leaves no orphan or
     // half-built trip (mirrors the trip create/duplicate paths).
