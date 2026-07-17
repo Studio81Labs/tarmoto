@@ -990,7 +990,6 @@ export const en = {
   "{count} trip": "{count} trip",
   "{count} trips": "{count} trips",
   "{count} unknown": "{count} unknown",
-  "{count} {waypointLabel}": "{count} {waypointLabel}",
   "{date}: no rides": "{date}: no rides",
   "{date}: {count, plural, one {# ride} other {# rides}}, {distance}":
     "{date}: {count, plural, one {# ride} other {# rides}}, {distance}",
