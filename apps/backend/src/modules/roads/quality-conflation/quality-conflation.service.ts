@@ -6,7 +6,6 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
-import { osmRoadImportConfig } from '../osm-import/osm-import.config.js';
 import { qualityConflationConfig } from './quality-conflation.config.js';
 import { injectSmoothnessTags } from './smoothness-injection.js';
 import {
@@ -59,10 +58,12 @@ interface WayQualityRow {
  * ways at segment boundaries for full resolution is a possible future refinement
  * once the per-way loss is measured on a real region.
  *
- * **Region-bounding:** when `TARMOTO_OSM_ROAD_IMPORT_BBOX` is set, only ways with
- * geometry intersecting that rectangle are conflated — the same region the OSM
- * extract (and therefore the GraphHopper graph) covers. Unset → the whole live
- * network, matching the importer's own gating.
+ * **Whole network:** conflation always scores every live, scored way — the
+ * import now spans multiple independently-refreshed regions (the folder model,
+ * Sub-project B), so no single import bbox describes the covered area anymore.
+ * The operator-provided conflation INPUT extract (`inputFilePath`) bounds which
+ * ways actually get tagged, so pulling all scored ways here is correct and
+ * harmless.
  *
  * Tombstoned segments (`deactivated_at IS NOT NULL`, #835) are excluded, so a
  * road removed from OSM stops contributing its stale quality to the graph.
@@ -74,8 +75,6 @@ export class QualityConflationService {
   constructor(
     @InjectRepository(RoadSegment)
     private readonly repo: Repository<RoadSegment>,
-    @Inject(osmRoadImportConfig.KEY)
-    private readonly config: ConfigType<typeof osmRoadImportConfig>,
     @Inject(qualityConflationConfig.KEY)
     private readonly conflationConfig: ConfigType<
       typeof qualityConflationConfig
@@ -150,26 +149,18 @@ export class QualityConflationService {
   }
 
   /**
-   * Build the per-way `smoothness` assignments for the configured region.
+   * Build the per-way `smoothness` assignments over the whole live network.
    *
    * The result is deterministic (ordered by way id) and idempotent — it reads
    * current aggregates only, so re-running produces the same artifact until the
    * underlying `quality_score`s change.
    */
   async buildConflation(): Promise<WaySmoothnessAssignment[]> {
-    const bbox = this.config.bbox;
-    // Length-weighted mean quality per way over live, scored segments. Ways with
-    // no scored segment never appear (the quality_score IS NOT NULL filter), so
-    // they get no tag and stay neutral. NULLIF guards a degenerate all-zero
-    // length way from a divide-by-zero (yields NULL → dropped by the mapping).
-    const params: unknown[] = [];
-    let regionClause = '';
-    if (bbox) {
-      regionClause =
-        'AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)\n' +
-        '        AND ST_Intersects(geom, ST_MakeEnvelope($1, $2, $3, $4, 4326))';
-      params.push(bbox[0], bbox[1], bbox[2], bbox[3]);
-    }
+    // Whole live network (see the class doc comment). Length-weighted mean
+    // quality per way over live, scored segments. Ways with no scored segment
+    // never appear (the quality_score IS NOT NULL filter), so they get no tag
+    // and stay neutral. NULLIF guards a degenerate all-zero length way from a
+    // divide-by-zero (yields NULL → dropped by the mapping).
     const sql = `
       SELECT osm_way_id::text AS "osmWayId",
              SUM(quality_score * length_m)
@@ -179,7 +170,6 @@ export class QualityConflationService {
       WHERE deactivated_at IS NULL
         AND osm_way_id IS NOT NULL
         AND quality_score IS NOT NULL
-        ${regionClause}
       GROUP BY osm_way_id
       ORDER BY osm_way_id
     `;
@@ -187,7 +177,7 @@ export class QualityConflationService {
     // linter would strip) so both the normal and strict OpenAPI-gen builds type
     // the rows. `COUNT(*)::int` and `float8` division come back as JS numbers;
     // `osm_way_id::text` as a string.
-    const rows: WayQualityRow[] = await this.repo.query(sql, params);
+    const rows: WayQualityRow[] = await this.repo.query(sql);
 
     const assignments: WaySmoothnessAssignment[] = [];
     for (const row of rows) {
@@ -203,8 +193,7 @@ export class QualityConflationService {
       });
     }
     this.logger.log(
-      `Quality conflation: ${assignments.length} way(s) tagged` +
-        (bbox ? ` within region [${bbox.join(', ')}]` : ' (whole network)'),
+      `Quality conflation: ${assignments.length} way(s) tagged (whole network)`,
     );
     return assignments;
   }

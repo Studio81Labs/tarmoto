@@ -1,4 +1,5 @@
 import type { SurfaceType } from '@tarmoto/shared';
+import { DRIVABLE_HIGHWAYS } from '@tarmoto/ingest';
 
 /**
  * OSM tag → `road_segments` field mapping for the importer (#781). Pure, so
@@ -14,23 +15,9 @@ export type OsmTags = Record<string, string | undefined>;
  * paths, etc. `track` is included (forest/agri roads riders use) but can be
  * dropped by the caller via a surface/quality filter later.
  */
-const DRIVABLE_HIGHWAYS = new Set([
-  'motorway',
-  'motorway_link',
-  'trunk',
-  'trunk_link',
-  'primary',
-  'primary_link',
-  'secondary',
-  'secondary_link',
-  'tertiary',
-  'tertiary_link',
-  'unclassified',
-  'residential',
-  'living_street',
-  'service',
-  'track',
-]);
+/** Set for O(1) membership — the canonical list lives in `@tarmoto/ingest`
+ *  (`DRIVABLE_HIGHWAYS`) so the extract producer's tag filter can't drift. */
+const DRIVABLE_HIGHWAY_SET = new Set<string>(DRIVABLE_HIGHWAYS);
 
 /**
  * OSM access keys for a motorcycle, **most-specific → least-specific**.
@@ -77,7 +64,7 @@ const NON_PUBLIC_SERVICE = new Set([
 /** Whether a way should be imported as a road segment. */
 export function isDrivableHighway(tags: OsmTags): boolean {
   const hw = tags.highway;
-  if (!hw || !DRIVABLE_HIGHWAYS.has(hw)) return false;
+  if (!hw || !DRIVABLE_HIGHWAY_SET.has(hw)) return false;
 
   // Effective access from the most-specific key present (OSM precedence), so
   // `motorcycle=yes` re-opens a way broadly tagged `access=no`.

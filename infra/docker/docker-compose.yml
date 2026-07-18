@@ -184,6 +184,18 @@ services:
       - "0.0.0.0"
     restart: unless-stopped
 
+# Note: apps/backend and apps/ingest are NOT services in this file — local dev
+# runs them as host processes (`pnpm backend:dev`, `pnpm --filter
+# @tarmoto/ingest-service dev`), not containers. Their OSM/FSQ POI extract dirs
+# (TARMOTO_OSM_POI_IMPORT_DIR / TARMOTO_FSQ_POI_IMPORT_DIR) and the OSM road
+# extract dir (TARMOTO_OSM_ROAD_IMPORT_DIR, Sub-project B) are therefore plain
+# host paths configured per-app in .env, not Compose volumes here — set the
+# SAME path in both apps/ingest/.env.example and apps/backend/.env.example
+# for whichever of these dirs each app reads/writes. In deployed environments
+# those same paths are Coolify-managed persistent volumes shared between the
+# apps/ingest and backend Coolify applications (outside this compose file) —
+# see docs/process/runbook.md's extract-refresh sections for the shared-volume
+# + uid-100-ownership contract.
 volumes:
   pgdata:
   redisdata:

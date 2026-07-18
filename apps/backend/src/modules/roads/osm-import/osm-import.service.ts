@@ -1,8 +1,16 @@
 import { createReadStream } from 'node:fs';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import {
+  roadTileFileName,
+  subdivideRegion,
+  type PoiImportRegion,
+  type RoadTile,
+} from '@tarmoto/ingest';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
 import {
   type OsmWaySource,
@@ -12,12 +20,53 @@ import {
 import { assembleWays } from './osm-assemble.js';
 import { parseOsmXml } from './osm-xml-source.js';
 import { osmRoadImportConfig } from './osm-import.config.js';
+import { regionPolygon } from './region-polygons.js';
 import { planReassignment, type ExistingSegment } from './split-merge.js';
 import type { LatLng } from './segmentation.js';
 
 /** Rows per bulk upsert — keeps each statement well under PG's 65,535-param
  *  limit (each row binds ~8 columns). */
 const UPSERT_CHUNK = 500;
+
+/** Incoming geometries per region-filter query. A national extract can carry
+ *  hundreds of thousands of ways; batching the `unnest … WITH ORDINALITY`
+ *  intersect keeps each statement's text-array bind bounded (2 binds/query, so
+ *  the param limit is irrelevant — this bounds the array payload size instead). */
+const REGION_FILTER_CHUNK = 2000;
+
+/** Zero result — a skipped (absent-file) tile contributes nothing. Frozen:
+ *  used by the single skip path, and its immediate caller (`importRegion`)
+ *  only ever reads its fields into a fresh accumulator, so a stray in-place
+ *  mutation would otherwise leak across calls. */
+const EMPTY_RESULT: OsmImportResult = Object.freeze({
+  upserted: 0,
+  carriedOver: 0,
+  deactivated: 0,
+});
+
+/**
+ * Tombstone safety-valve (mirrors the POI importer's `MAX_TOMBSTONE_FRACTION`):
+ * withhold a run that would stale-by-absence tombstone MORE than this fraction of
+ * a tile's in-scope existing rows. A present extract is authoritative, so a genuine
+ * partial removal (below this share) still propagates; but a mis-produced / empty /
+ * misnamed extract that would deactivate MOST of a tile in one run is far more
+ * likely broken than a whole cell truly emptied — so those by-absence tombstones
+ * are WITHHELD (rows kept live + a warn to rebuild), never applied. Definitive
+ * tombstones (a reused key, an out-of-scope owner) are NOT gated by this.
+ */
+const MAX_TOMBSTONE_FRACTION = 0.5;
+
+/**
+ * Row floor for the tombstone wipe-guard (mirrors POI's
+ * `MIN_REGION_FOR_TOMBSTONE_GUARD`, same value + intent): the
+ * {@link MAX_TOMBSTONE_FRACTION} withhold only arms on a tile that already holds at
+ * least this many in-scope rows. A sparse tile has a noisy churn ratio and a tiny
+ * blast radius, so a genuine majority removal there (e.g. 2 of 3 roads deleted from
+ * OSM) must PROPAGATE — not be withheld every run and warn indefinitely against a
+ * correct-but-small extract that no "rebuild" can ever clear. Below the floor,
+ * stale-by-absence removals apply freely; at/above it the fraction guard engages.
+ */
+const MIN_ROWS_FOR_TOMBSTONE_GUARD = 50;
 
 /** Target table — referenced bare in the raw conflict clause to read the
  *  existing row (Postgres `DO UPDATE` refers to the target row by table name,
@@ -165,46 +214,6 @@ const CARRY_OVER_UPDATE = `
   WHERE id = $9
 `;
 
-/**
- * Does the line segment (x0,y0)-(x1,y1) intersect the axis-aligned rectangle
- * [xmin,ymin,xmax,ymax]? Liang–Barsky parametric clip: the segment enters the rect
- * iff its clipped [t0,t1] range is non-empty. Matches PostGIS `ST_Intersects` for a
- * linestring vs an envelope, so the incoming-row filter agrees exactly with the
- * existing-row load (a corner-clipping segment is kept/dropped the same way).
- */
-function segmentIntersectsRect(
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  xmin: number,
-  ymin: number,
-  xmax: number,
-  ymax: number,
-): boolean {
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const p = [-dx, dx, -dy, dy];
-  const q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0];
-  let t0 = 0;
-  let t1 = 1;
-  for (let i = 0; i < 4; i++) {
-    if (p[i] === 0) {
-      if (q[i]! < 0) return false; // parallel and outside this edge
-    } else {
-      const t = q[i]! / p[i]!;
-      if (p[i]! < 0) {
-        if (t > t1) return false;
-        if (t > t0) t0 = t;
-      } else {
-        if (t < t0) return false;
-        if (t < t1) t1 = t;
-      }
-    }
-  }
-  return t0 <= t1;
-}
-
 export interface OsmImportResult {
   /** Rows inserted or updated in place through the conflict upsert. */
   upserted: number;
@@ -213,6 +222,29 @@ export interface OsmImportResult {
   carriedOver: number;
   /** Existing rows nothing in the snapshot matched — tombstoned, not deleted. */
   deactivated: number;
+}
+
+/**
+ * The authoritative reconcile scope for ONE tile: the region's country
+ * `polygon` (GeoJSON string for `ST_GeomFromGeoJSON`) intersected with the tile's
+ * `bbox` (`[minLng, minLat, maxLng, maxLat]` for `ST_MakeEnvelope`). Both the
+ * incoming filter ({@link OsmImportService.filterToRegion}) and the existing-row
+ * load ({@link OsmImportService.loadExistingInRegion}) apply the IDENTICAL
+ * combined test — a row is in-scope iff it intersects BOTH — so a border/tile-seam
+ * row is judged the same on both sides (the #1033 invariant, now extended to the
+ * tile bbox). Scoping to the polygon ALONE would let a tile's import tombstone the
+ * region's roads that live in OTHER tiles; scoping to the bbox ALONE would let a
+ * region tombstone a neighbour's roads in the overlapping strip (#1033).
+ */
+export interface RegionScope {
+  polygon: string;
+  bbox: [number, number, number, number];
+}
+
+/** A tile's `{minLng,minLat,maxLng,maxLat}` bbox as the `[minLng, minLat, maxLng,
+ *  maxLat]` tuple the scope + `ST_MakeEnvelope` binds expect. */
+function bboxTuple(bbox: RoadTile['bbox']): [number, number, number, number] {
+  return [bbox.minLng, bbox.minLat, bbox.maxLng, bbox.maxLat];
 }
 
 /**
@@ -229,11 +261,14 @@ export interface OsmImportResult {
  * it once readings exist), nulls the geometry-derived `elevation_*` columns when
  * the geometry changes, and skips unchanged rows.
  *
- * Split/merge reconciliation (#835, ADR-0006): the whole regional snapshot is
- * buffered and matched against the existing rows in its bbox, so a way that was
- * split or merged carries its `id` + history onto the incoming geometry by
- * geometry overlap, and a row nothing matches is tombstoned (`deactivated_at`),
- * never hard-deleted (the history tables FK it).
+ * Split/merge reconciliation (#835, ADR-0006): one tile's snapshot is buffered
+ * and matched against the existing rows in its country polygon ∩ tile bbox (the
+ * {@link RegionScope}), so a way that was split or merged carries its `id` +
+ * history onto the incoming geometry by geometry overlap, and a row nothing
+ * matches is tombstoned (`deactivated_at`), never hard-deleted (the history
+ * tables FK it). Each region is subdivided into a deterministic tile grid
+ * (`subdivideRegion`, shared with the producer) and imported tile-by-tile, so
+ * peak memory is bounded to one tile regardless of the country's size.
  */
 @Injectable()
 export class OsmImportService {
@@ -252,82 +287,407 @@ export class OsmImportService {
   }
 
   /**
-   * Import the configured `.osm` XML extract: stream it through the parser and
-   * way assembler into the upsert. Read-stream errors and parse errors abort the
-   * import via the generator chain; the upsert never deletes, so a partial or
-   * failed run can't wipe existing rows.
+   * Import every configured region's per-tile extracts from `extractDir` in one
+   * pass (the folder model, Sub-project B). Each region is subdivided into a tile
+   * grid and imported tile-by-tile ({@link importRegion}); results aggregate. A
+   * tile whose extract is ABSENT is skipped (a partial/failed refresh — never
+   * tombstoned); a PRESENT extract is authoritative and reconciled even when empty
+   * (removals propagate, guarded by reconcile's mass-wipe fraction — see
+   * {@link importTile}), so one missing extract can't abort the others and no single
+   * extract can wipe most of a tile.
+   *
+   * Whole-run safety valve (Codex P2): each region also reports how many of its
+   * tiles were actually PRESENT on disk ({@link importRegion}'s `tilesPresent`),
+   * summed here into `totalTilesPresent`. The per-tile "absent is not a failure"
+   * tolerance above means an empty or mis-mounted `extractDir` — every configured
+   * tile absent-skips — would otherwise resolve a silent `{0,0,0}`, indistinguishable
+   * from a genuinely quiet run. `OsmImportProcessor` treats any resolved result as
+   * success and chains quality conflation, which would then rebuild routing from an
+   * empty/stale snapshot. So when regions ARE configured but NOT ONE of their tiles
+   * was found anywhere, this THROWS instead of returning — failing the job (BullMQ
+   * retries + alerts) before conflation is ever reached. A present-but-empty tile
+   * still counts as present (this guard is about presence on disk, not content) and
+   * never trips it; the public return shape is unchanged on the success path.
    */
-  async importFromConfiguredFile(): Promise<OsmImportResult> {
-    const { filePath } = this.config;
-    if (!filePath) {
+  async importAll(): Promise<OsmImportResult> {
+    const { extractDir, regions } = this.config;
+    if (!extractDir) {
       throw new Error(
-        'OSM import is enabled but TARMOTO_OSM_ROAD_IMPORT_FILE is not set',
+        'OSM import is enabled but TARMOTO_OSM_ROAD_IMPORT_DIR is not set',
       );
     }
-    this.logger.log(`OSM import: reading ${filePath}`);
-    const stream = createReadStream(filePath);
-    return this.importFrom(assembleWays(parseOsmXml(stream)));
+    this.logger.log(
+      `OSM import: ${regions.length} region(s) from ${extractDir} ` +
+        `(tile span ${this.config.tileSpanDeg}°) — ` +
+        `${regions.map((r) => r.code).join(', ') || '(none)'}`,
+    );
+    const total: OsmImportResult = {
+      upserted: 0,
+      carriedOver: 0,
+      deactivated: 0,
+    };
+    let totalTilesPresent = 0;
+    for (const region of regions) {
+      const { result: r, tilesPresent } = await this.importRegion(
+        region,
+        extractDir,
+      );
+      total.upserted += r.upserted;
+      total.carriedOver += r.carriedOver;
+      total.deactivated += r.deactivated;
+      totalTilesPresent += tilesPresent;
+    }
+    if (this.config.regions.length > 0 && totalTilesPresent === 0) {
+      throw new Error(
+        `OSM road import is enabled with ${this.config.regions.length} region(s) configured, ` +
+          `but no tile extracts were found in ${extractDir} — check the shared volume mount ` +
+          `or that the refresh has produced tiles. Refusing to run conflation on an empty snapshot.`,
+      );
+    }
+    return total;
   }
 
-  async importFrom(source: OsmWaySource): Promise<OsmImportResult> {
-    // Buffer the region's rows so split/merge reconciliation can compare the whole
-    // incoming snapshot against the existing rows in the same area — it can't be a
-    // pure per-chunk stream like a plain upsert. This is region-scoped by design,
-    // so the operator sizes the extract/bbox to the worker heap and tiles a large
-    // area into several sub-imports (see the module README, "Memory & scale"). A
-    // parse/read error propagates out of the buffering loop before any write, so a
-    // failed run can't touch existing rows.
+  /**
+   * Import one region tile-by-tile. The region is subdivided into a deterministic
+   * grid of `<= tileSpanDeg` cells ({@link subdivideRegion}, the SAME grid the
+   * producer clips), and each tile's `roadTileFileName(tile, tileSpanDeg)`
+   * extract is imported against the country polygon ∩ that tile's bbox
+   * ({@link importTile}). Peak memory is therefore bounded to one tile no
+   * matter how large the country is — a whole-country buffer could otherwise
+   * OOM the import worker. Results aggregate across the region's tiles, alongside
+   * a `tilesPresent` count of how many of those tiles actually had an extract file
+   * on disk (an absent tile does not increment it) — {@link importAll}'s empty-dir
+   * guard sums this across regions to tell "every configured tile was genuinely
+   * absent" apart from "every tile resolved to nothing to import".
+   *
+   * Partial-snapshot guard (Codex P2): the producer publishes a region's tile grid
+   * ATOMICALLY — every cell, including empty ones, as a present XML file — so a
+   * region whose expected tiles are SOME present / SOME absent is never a normal
+   * partial refresh (that's every tile absent, below, and is unaffected); it is a
+   * genuine anomaly — a mount glitch, a partial copy, or a `tileSpanDeg` mismatch
+   * against the producer. Importing the present siblings while the absent cells
+   * keep their stale rows would corrupt identity for any way crossing into a
+   * missing cell (split/merge would reconcile the fresh cells against this
+   * region's OLD rows in the missing ones). So a lightweight presence-only scan
+   * (`fileExists` per expected tile — no parsing, no row buffering) runs BEFORE
+   * anything imports and classifies the region: all-present falls into the loop
+   * below as normal; all-absent also falls into the loop below, where each tile's
+   * own `fileExists` check (in {@link importTile}) resolves it to `EMPTY_RESULT` /
+   * `present: false` exactly as before; some-present-some-absent THROWS — before
+   * the region transaction even opens — failing this region (and `importAll`)
+   * loudly instead of partially importing it.
+   *
+   * Empty-region producer-error guard (Codex P2): after the tile loop, still
+   * INSIDE the region transaction below, if any of the region's tiles were present
+   * but NONE of them contributed even one in-scope row (summed from
+   * {@link importTile}'s `inScopeRows`), the transaction THROWS instead of
+   * committing. A country never legitimately has zero drivable roads, so "tiles
+   * present but zero in-scope rows everywhere in the region" means the producer
+   * emitted no roads for it (a wrong Geofabrik slug/source, or a tag filter that
+   * matched no drivable ways) — a producer error, not the genuine per-tile empty
+   * state (SOME tiles in a region empty, others not — unaffected, still
+   * authoritative). Throwing here rolls back every tile's writes for this region,
+   * including any authoritative-empty tombstones the tile loop already staged
+   * against this region's existing rows, and rejects `importAll` so quality
+   * conflation is never chained onto the resulting empty/stale network. A region
+   * with >= 1 in-scope row anywhere (even one sparse tile) never trips this.
+   */
+  async importRegion(
+    region: PoiImportRegion,
+    extractDir: string,
+  ): Promise<{ result: OsmImportResult; tilesPresent: number }> {
+    const tiles = subdivideRegion(region, this.config.tileSpanDeg);
+    this.logger.log(
+      `OSM import (${region.code}): ${tiles.length} tile(s) from ${extractDir}`,
+    );
+    // Presence-only pre-scan — see the partial-snapshot guard above. A bare
+    // `fs.access` per expected tile (no XML parsing, no row buffering), so it
+    // never touches the per-tile heap bound the transaction loop below preserves
+    // — even a large-country tile count is cheap to just stat.
+    let tilesFound = 0;
+    for (const tile of tiles) {
+      const path = join(
+        extractDir,
+        roadTileFileName(tile, this.config.tileSpanDeg),
+      );
+      if (await this.fileExists(path)) tilesFound++;
+    }
+    if (tilesFound > 0 && tilesFound < tiles.length) {
+      throw new Error(
+        `OSM road import: region ${region.code} has an incomplete tile ` +
+          `snapshot — ${tilesFound}/${tiles.length} expected tiles present in ` +
+          `${extractDir}. Refusing to partially import (check the volume mount ` +
+          `/ that TARMOTO_OSM_ROAD_TILE_SPAN_DEG matches the producer).`,
+      );
+    }
+    // One transaction for the WHOLE region (#835 identity safety, Codex P1): a
+    // region's tiles reconcile as a UNIT. A mid-region tile failure (a parse/read
+    // error on a present-but-malformed extract, or a DB error) propagates out of
+    // the callback → TypeORM rolls back EVERY earlier tile, instead of leaving a
+    // half-new / half-old snapshot that would corrupt identity + crowd history for
+    // a way crossing a tile seam (the same class the producer-side atomic publish
+    // already closes). Each tile still buffers ONE tile's rows at a time
+    // ({@link importTile}), so peak heap stays bounded to a single tile — only the
+    // DB transaction, not the row buffer, spans the region — and a later tile's
+    // existing-row reads see earlier tiles' in-transaction writes. An ABSENT tile
+    // returns EMPTY_RESULT WITHOUT throwing (a missing extract is not a failure and
+    // must not roll the region back) — but it also does NOT count toward
+    // `tilesPresent`, so a region whose every tile is absent reports 0 present
+    // tiles even though it resolves cleanly (the presence pre-scan above has
+    // already ruled out the some-absent/some-present case by this point, so every
+    // tile reaching this loop is on the same side of that split). `importAll`
+    // loops regions, each its own transaction, so cross-region imports stay
+    // independent; a region that throws still rejects `importAll` and skips
+    // conflation, as before.
+    return this.repo.manager.transaction(async (tx) => {
+      const total: OsmImportResult = {
+        upserted: 0,
+        carriedOver: 0,
+        deactivated: 0,
+      };
+      let tilesPresent = 0;
+      let regionInScopeRows = 0;
+      for (const tile of tiles) {
+        const {
+          result: r,
+          present,
+          inScopeRows,
+        } = await this.importTile(region, tile, extractDir, tx);
+        total.upserted += r.upserted;
+        total.carriedOver += r.carriedOver;
+        total.deactivated += r.deactivated;
+        if (present) tilesPresent++;
+        regionInScopeRows += inScopeRows;
+      }
+      // Producer-error guard (Codex P2) — see the method doc. Still inside the
+      // region transaction, so throwing here rolls back every tile's writes
+      // above, including any authoritative-empty tombstones already staged
+      // against this region's existing rows.
+      if (tilesPresent > 0 && regionInScopeRows === 0) {
+        throw new Error(
+          `OSM road import: region ${region.code} has ${tilesPresent} tile(s) ` +
+            `present but zero drivable road segments in scope — the producer ` +
+            `likely emitted no roads (wrong Geofabrik slug/source or tag ` +
+            `filter). Refusing to import an empty region (would wipe existing ` +
+            `roads + run conflation on nothing).`,
+        );
+      }
+      return { result: total, tilesPresent };
+    });
+  }
+
+  /**
+   * Import one tile's `<extractDir>/roadTileFileName(tile, tileSpanDeg)`
+   * (`<code>-r<row>c<col>-s<span>.osm`). The span is a grid-identity
+   * discriminator (#4): it comes from `this.config.tileSpanDeg`, NEVER parsed
+   * back out of an on-disk filename, so a retuned span simply looks for
+   * differently-named files — a stale-grid leftover from a previous span is
+   * just "absent" (skipped below), never mis-reconciled against the wrong scope.
+   *
+   * A **present** extract is AUTHORITATIVE — the producer's refresh is atomic
+   * keep-last-good (a failed refresh keeps the previous extract and NEVER writes an
+   * empty one), so a present 0-way / all-out-of-scope extract genuinely means "this
+   * tile's in-scope roads are gone" and flows through to {@link reconcile}, which
+   * tombstones the now-absent in-scope rows (removals propagate) under its mass-wipe
+   * fraction guard. The ONLY skip is an **absent** file (WARN + `EMPTY_RESULT`): the
+   * producer writes a file for every grid cell, so a missing one is a partial/failed
+   * refresh — not authoritative — and must not tombstone the cell. An empty-in-scope
+   * reconcile logs at info (expected; a truly-empty cell with no in-scope rows is a
+   * no-op), while a suspicious mass-wipe warns from inside reconcile.
+   *
+   * The tile is scoped by its region's actual country POLYGON (bundled boundary)
+   * intersected with the tile bbox — NOT the bbox alone (adjacent countries'
+   * rectangles overlap, so a bare-bbox scope would let this region tombstone a
+   * neighbour's roads in the shared strip, #1033) and NOT the polygon alone (that
+   * would let this tile's import tombstone the region's roads in OTHER tiles). The
+   * incoming filter ({@link filterToRegion}) and the existing-row load
+   * ({@link loadExistingInRegion}) run the SAME combined PostGIS `ST_Intersects`
+   * pair, so a border/tile-seam row is judged identically on both sides.
+   *
+   * The return's `present` flag mirrors the absent-vs-everything-else distinction
+   * above exactly: `false` ONLY on the absent-file skip, `true` on every other path
+   * (including a present-but-empty or present-but-all-out-of-scope extract, both of
+   * which still reconcile). It carries no content signal by itself — {@link
+   * importRegion} sums it into `tilesPresent`, and {@link importAll} uses the
+   * region-wide total to tell "found nothing to import" apart from "found no
+   * extract at all" across a whole run. The return's `inScopeRows` (Codex P2) is
+   * `inScope.length` — 0 on the absent-file skip and on a present-but-all-out-of-
+   * scope extract, >0 whenever at least one incoming row passed {@link
+   * filterToRegion}. {@link importRegion} sums it across the region's tiles to tell
+   * a genuine empty cell (some OTHER tile in the region has in-scope rows) apart
+   * from a producer error (EVERY tile in the region has zero in-scope rows despite
+   * tiles being present) — see its doc for the region-level guard this feeds.
+   */
+  async importTile(
+    region: PoiImportRegion,
+    tile: RoadTile,
+    extractDir: string,
+    manager?: EntityManager,
+  ): Promise<{
+    result: OsmImportResult;
+    present: boolean;
+    inScopeRows: number;
+  }> {
+    const label = `${region.code} r${tile.row}c${tile.col}`;
+    const path = join(
+      extractDir,
+      roadTileFileName(tile, this.config.tileSpanDeg),
+    );
+    if (!(await this.fileExists(path))) {
+      this.logger.warn(
+        `OSM import (${label}): no extract at ${path} — skipping`,
+      );
+      return { result: EMPTY_RESULT, present: false, inScopeRows: 0 };
+    }
+    this.logger.log(`OSM import (${label}): reading ${path}`);
+    const incoming = await this.bufferRows(
+      assembleWays(parseOsmXml(createReadStream(path))),
+    );
+    // Scope the incoming set to the country polygon ∩ tile bbox. `osmium extract`
+    // ships COMPLETE ways, so a tile extract carries a bit of neighbouring
+    // (adjacent-tile / adjacent-country) geometry that must be dropped before
+    // reconcile. (An empty extract short-circuits filterToRegion to an empty set
+    // with no DB round-trip.)
+    const scope: RegionScope = {
+      polygon: regionPolygon(region.code),
+      bbox: bboxTuple(tile.bbox),
+    };
+    // Filter + reconcile run on the region transaction when importRegion drives us
+    // (`manager` set), so the whole region commits or rolls back atomically and a
+    // later tile sees earlier tiles' writes. A direct caller (a single importTile,
+    // the reconcile e2e) passes none → the filter reads on the repo's default
+    // manager and reconcile opens its own transaction, exactly as before.
+    const inScope = await this.filterToRegion(
+      incoming,
+      scope,
+      manager ?? this.repo.manager,
+    );
+    if (inScope.length === 0) {
+      // AUTHORITATIVE empty (see the method doc): a present extract with no in-scope
+      // ways means the tile's in-scope roads are gone (or it's an empty sea/border
+      // cell). Do NOT skip — reconcile so those removals PROPAGATE (its now-absent
+      // in-scope rows are tombstoned), guarded against an implausible mass-wipe by
+      // reconcile's fraction guard; a truly-empty cell with no in-scope existing
+      // rows is a harmless no-op. Info, not warn: this is expected — the genuinely
+      // suspicious mass-wipe warns from inside reconcile.
+      this.logger.log(
+        `OSM import (${label}): ${incoming.length} parsed way(s), none in scope ` +
+          `(country polygon ∩ tile bbox) — reconciling authoritatively ` +
+          `(removals propagate; mass-wipe guarded)`,
+      );
+    }
+    const result = await this.reconcile(inScope, scope, manager);
+    return { result, present: true, inScopeRows: inScope.length };
+  }
+
+  private async fileExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+      return true;
+    } catch (err) {
+      // ENOENT (genuinely absent) is the only case that means "skip this
+      // region". Anything else (permission/IO error on the shared volume) is a
+      // real failure that must surface — not be silently reported as "absent" —
+      // so it can page/alert and let BullMQ retry.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw err;
+    }
+  }
+
+  /** Buffer a way source into reconcilable rows. A parse/read error propagates
+   *  before any write, so a failed run can't touch existing rows. */
+  private async bufferRows(source: OsmWaySource): Promise<RoadSegmentRow[]> {
     const incoming: RoadSegmentRow[] = [];
     for await (const row of buildSegmentRows(source)) {
       incoming.push(row);
     }
-    return this.reconcile(incoming);
+    return incoming;
+  }
+
+  /** Import an in-memory way source against an explicit {@link RegionScope} (the
+   *  country polygon + tile bbox, or none). The source is assumed already scoped
+   *  (as {@link importTile} scopes it via {@link filterToRegion}); reconcile does
+   *  not re-filter. The reconcile seam used by unit tests and by
+   *  {@link importTile}. */
+  async importFrom(
+    source: OsmWaySource,
+    scope: RegionScope | null = null,
+  ): Promise<OsmImportResult> {
+    return this.reconcile(await this.bufferRows(source), scope);
   }
 
   /**
-   * Reconcile the incoming snapshot against the existing rows in its bbox (#835,
-   * ADR-0006). Rows whose stable `(osm_way_id, segment_index)` is unchanged upsert
-   * in place (ids preserved, #751); the leftovers on each side are matched by
-   * geometry so history follows the road across a split/merge — carry-over as an
-   * id-preserving UPDATE, no match as a fresh insert, and an unmatched existing row
-   * as a tombstone (`deactivated_at`), never a delete.
+   * Reconcile the incoming snapshot against the existing rows in its scope (#835,
+   * ADR-0006). `incoming` is assumed already scoped by the caller
+   * ({@link importTile} via {@link filterToRegion}; direct callers pass an
+   * already-in-scope set), so reconcile does NOT re-filter — `scope` (the country
+   * polygon + tile bbox, or null) is used only to choose the existing-row load
+   * and gate stale-by-absence tombstoning. Rows whose stable `(osm_way_id,
+   * segment_index)` is unchanged upsert in place (ids preserved, #751); the
+   * leftovers on each side are matched by geometry so history follows the road
+   * across a split/merge — carry-over as an id-preserving UPDATE, no match as a
+   * fresh insert, and an unmatched existing row as a tombstone (`deactivated_at`),
+   * never a delete. On a tile dense enough for it to be implausible (at least
+   * {@link MIN_ROWS_FOR_TOMBSTONE_GUARD} in-scope rows), a mass stale-by-absence
+   * wipe (more than {@link MAX_TOMBSTONE_FRACTION} of them) is WITHHELD as a safety
+   * valve against a broken/empty/misnamed extract — those rows stay live and a warn
+   * is logged; a sparse tile propagates its removals freely. Definitive reused-key /
+   * out-of-scope-owner tombstones always apply either way.
    */
   private async reconcile(
-    rawIncoming: RoadSegmentRow[],
+    incoming: RoadSegmentRow[],
+    scope: RegionScope | null,
+    manager?: EntityManager,
   ): Promise<OsmImportResult> {
-    // `osmium extract -b` does NOT clip geometries — it emits every COMPLETE way
-    // that crosses the bbox, so a boundary-crossing way yields full-length rows
-    // outside the configured region. Constrain the incoming set to the region:
-    // otherwise one tile would upsert out-of-tile keys whose old out-of-tile rows
-    // (loaded only from THIS bbox) can't carry over, and an adjacent tile would
-    // then see those keys as unchanged and tombstone the old rows, orphaning
-    // history. A segment straddling the edge is kept by both tiles — the upsert is
-    // idempotent on identical geometry.
-    const region = this.config.bbox;
-    const incoming = region
-      ? rawIncoming.filter((r) => this.intersectsRegion(r, region))
-      : rawIncoming;
+    // Driven by importRegion (via importTile within its per-region transaction) →
+    // run on that transaction (`manager`) so all of a region's tiles commit or roll
+    // back as a unit (Codex P1), and a later tile's reads see earlier tiles' writes.
+    // Called directly (importFrom, or a single importTile with no region tx) → open
+    // our own transaction, so a standalone reconcile's result is byte-identical to
+    // before (its reads + ordered writes just run inside one fresh transaction).
+    if (manager) return this.reconcileOn(incoming, scope, manager);
+    return this.repo.manager.transaction((tx) =>
+      this.reconcileOn(incoming, scope, tx),
+    );
+  }
 
-    // With a configured region an EMPTY tile is still authoritative — every road
-    // in it was removed / reclassified non-drivable, so its existing rows must be
-    // tombstoned. Only short-circuit the no-region case (nothing to compare, and
-    // we never tombstone without a region). A parse error would have thrown before
-    // reaching here, so an empty snapshot here is a genuine empty region.
-    if (incoming.length === 0 && !region) {
-      this.logger.log('OSM import: empty snapshot, no region — nothing to do');
+  /**
+   * The reconcile body, run on a single {@link EntityManager} `m` — the region
+   * transaction (importRegion) or a fresh one (the {@link reconcile} dispatcher's
+   * direct path). EVERY read (existing-row load, out-of-bbox owner load) and EVERY
+   * write (tombstone, carry-over, upsert) runs on `m`, so the whole reconcile is
+   * one atomic unit and the matching/tombstone logic below is unchanged — only the
+   * query executor moved from `this.repo` to `m`.
+   */
+  private async reconcileOn(
+    incoming: RoadSegmentRow[],
+    scope: RegionScope | null,
+    m: EntityManager,
+  ): Promise<OsmImportResult> {
+    // With a configured scope an EMPTY tile is still authoritative — every road in
+    // it was removed / reclassified non-drivable, so its existing rows are
+    // tombstoned (subject to the mass-wipe fraction guard below). Only short-circuit
+    // the no-scope case (nothing to compare, and we never tombstone without a
+    // scope). A parse error would have thrown before reaching here, so an empty
+    // snapshot here is a genuine empty cell.
+    if (incoming.length === 0 && !scope) {
+      this.logger.log('OSM import: empty snapshot, no scope — nothing to do');
       return { upserted: 0, carriedOver: 0, deactivated: 0 };
     }
 
-    // Stale detection is only sound over an EXPLICIT region (the extract's
-    // boundary, TARMOTO_OSM_ROAD_IMPORT_BBOX): a data-derived bbox (the extent of the
-    // incoming roads) would tombstone existing rows that fall in the rectangle but
-    // outside this extract, and miss removed roads beyond the current extrema.
-    // With a region we load every existing row inside it (so edge-removed roads
-    // are candidates) and may tombstone; without one we load only the incoming
+    // Stale detection is only sound over an EXPLICIT scope (the extract's
+    // authoritative boundary — the country polygon ∩ tile bbox): a data-derived
+    // bbox (the extent of the incoming roads) would tombstone existing rows that
+    // fall in the rectangle but outside this extract, and miss removed roads
+    // beyond the current extrema.
+    // With a scope we load every existing row inside the POLYGON ∩ tile bbox (so
+    // edge-removed roads in this cell are candidates, while neighbouring countries'
+    // roads in the overlapping bbox strip — #1033 — and this region's roads in
+    // OTHER tiles are NOT) and may tombstone; without one we load only the incoming
     // extent for carry-over matching and never tombstone.
-    const existing = await this.loadExistingInBbox(
-      region ?? this.dataBbox(incoming),
-    );
+    const existing = scope
+      ? await this.loadExistingInRegion(scope, m)
+      : await this.loadExistingInBbox(this.dataBbox(incoming), m);
     const existingByKey = new Map(
       existing.map((e) => [this.identityKey(e.osm_way_id, e.segment_index), e]),
     );
@@ -384,13 +744,13 @@ export class OsmImportService {
     // vacated so the re-key/insert doesn't collide. We TOMBSTONE those holders
     // (rather than null their identity): a reused key is definitive proof the old
     // holder lost that identity, and nulling `osm_way_id` would orphan the row —
-    // `loadExistingInBbox` skips NULL osm ids, so no later tile could ever
+    // the existing-row load skips NULL osm ids, so no later region could ever
     // reconcile it and it would linger live as a phantom crowd row. Two sources:
-    //  - in-bbox stale rows whose key the snapshot reassigned (always, even with
+    //  - in-scope stale rows whose key the snapshot reassigned (always, even with
     //    no region — this is key reuse, not stale-by-absence);
-    //  - out-of-bbox LIVE owners of a claimed key: the ON CONFLICT arbiter is
-    //    global but `existingByKey` is bbox-scoped, so a key owned by a live row
-    //    just outside this tile (a segment split/moved across the boundary) would
+    //  - out-of-scope LIVE owners of a claimed key: the ON CONFLICT arbiter is
+    //    global but `existingByKey` is region-scoped, so a key owned by a live row
+    //    just outside this region (a segment split/moved across the boundary) would
     //    otherwise be silently overwritten in place.
     const inBboxReusedIds = leftoverExisting
       .filter(
@@ -402,70 +762,105 @@ export class OsmImportService {
     const outOfBboxOwnerIds = await this.loadOutOfBboxKeyOwners(
       newIncoming,
       new Set(existing.map((e) => e.id)),
+      m,
     );
-    // Tombstone: stale-by-absence (region only) + reused-key holders (always).
+    // Split the scoped stale set into its two kinds. `inBboxReusedIds` is a SUBSET
+    // of `plan.stale` (the stale rows whose key the snapshot reassigned); the rest
+    // are pure stale-by-absence. Only the pure by-absence set is gated by the
+    // mass-wipe guard — a reused-key (or out-of-scope-owner) tombstone is DEFINITIVE
+    // proof the old holder lost that identity and is always applied.
+    const inBboxReusedSet = new Set(inBboxReusedIds);
+    const byAbsenceIds = scope
+      ? plan.stale.filter((id) => !inBboxReusedSet.has(id))
+      : [];
+    // Withhold an implausible mass by-absence wipe (a mis-produced / empty /
+    // misnamed extract, or a whole cell genuinely emptied): keep those rows live +
+    // warn to rebuild, rather than deactivate most of a tile off one extract. Only
+    // arms on a tile dense enough for a mass-wipe to be implausible (at least
+    // MIN_ROWS_FOR_TOMBSTONE_GUARD in-scope rows) — a sparse tile has a noisy ratio
+    // and a tiny blast radius, so its genuine removals propagate freely instead of
+    // being withheld (and warned) forever against a correct-but-small extract. The
+    // denominator is the in-scope existing rows. Mirrors POI's `wouldWipeTooMuch`
+    // (row floor + fraction; withhold, not abort).
+    const wouldWipeTooMuch =
+      scope !== null &&
+      existing.length >= MIN_ROWS_FOR_TOMBSTONE_GUARD &&
+      byAbsenceIds.length > existing.length * MAX_TOMBSTONE_FRACTION;
+
+    // Tombstone: pure stale-by-absence (scope only, unless withheld) + the
+    // definitive reused-key / out-of-scope-owner holders (always).
     const deactivateIds = [
       ...new Set([
-        ...(region ? plan.stale : []),
+        ...(wouldWipeTooMuch ? [] : byAbsenceIds),
         ...inBboxReusedIds,
         ...outOfBboxOwnerIds,
       ]),
     ];
+    if (wouldWipeTooMuch) {
+      this.logger.warn(
+        `OSM import: withheld ${byAbsenceIds.length}/${existing.length} ` +
+          `stale-by-absence tombstones ` +
+          `(> ${Math.round(MAX_TOMBSTONE_FRACTION * 100)}%) — extract looks ` +
+          `incomplete; rebuild it. Upserts + definitive re-key tombstones still ` +
+          `applied.`,
+      );
+    }
 
-    await this.repo.manager.transaction(async (tx) => {
-      // Apply order matters — a split/merge can move an `(osm_way_id,
-      // segment_index)` key from one live row to another, so free every key that's
-      // being reassigned BEFORE anything claims it, or the partial unique index
-      // rejects the re-key.
-      // 1. Tombstone stale + reused-key rows: the partial index then drops their
-      //    keys, preserving the row (and its history FKs) rather than orphaning it.
-      if (deactivateIds.length > 0) {
-        await tx.query(
-          `UPDATE ${TABLE} SET deactivated_at = NOW()
+    // Ordered writes on the reconcile manager `m` (the region transaction, or the
+    // dispatcher's own — see {@link reconcile}). No inner transaction here: we are
+    // ALREADY inside `m`, so wrapping again would either nest pointlessly or, worse,
+    // commit a tile mid-region and defeat the per-region atomicity.
+    // Apply order matters — a split/merge can move an `(osm_way_id, segment_index)`
+    // key from one live row to another, so free every key that's being reassigned
+    // BEFORE anything claims it, or the partial unique index rejects the re-key.
+    // 1. Tombstone stale + reused-key rows: the partial index then drops their
+    //    keys, preserving the row (and its history FKs) rather than orphaning it.
+    if (deactivateIds.length > 0) {
+      await m.query(
+        `UPDATE ${TABLE} SET deactivated_at = NOW()
            WHERE id = ANY($1) AND deactivated_at IS NULL`,
-          [deactivateIds],
-        );
-      }
-      // 2. Null the carry-over targets' OLD identity (they're immediately re-keyed
-      //    in step 3) so a rotation swapping keys between live rows can't collide.
-      if (carryTargetIds.length > 0) {
-        await tx.query(
-          `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
+        [deactivateIds],
+      );
+    }
+    // 2. Null the carry-over targets' OLD identity (they're immediately re-keyed in
+    //    step 3) so a rotation swapping keys between live rows can't collide.
+    if (carryTargetIds.length > 0) {
+      await m.query(
+        `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
            WHERE id = ANY($1)`,
-          [carryTargetIds],
-        );
-      }
-      // 3. Carry-over: set the new identity + geometry on each freed row.
-      for (const c of plan.carryOver) {
-        const row = newIncoming[c.incomingIndex]!;
-        await tx.query(CARRY_OVER_UPDATE, [
-          row.osm_way_id,
-          row.segment_index,
-          JSON.stringify(row.geom),
-          row.length_m,
-          row.curviness_score,
-          row.road_name,
-          row.road_number,
-          row.surface_type,
-          c.existingId,
-          row.osm_quality_seed,
-          row.quality_source,
-        ]);
-      }
-      // 4. Upsert unchanged + fresh inserts — the keys they need are free now.
-      for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
-        await this.flush(tx, upsertRows.slice(i, i + UPSERT_CHUNK));
-      }
-    });
+        [carryTargetIds],
+      );
+    }
+    // 3. Carry-over: set the new identity + geometry on each freed row.
+    for (const c of plan.carryOver) {
+      const row = newIncoming[c.incomingIndex]!;
+      await m.query(CARRY_OVER_UPDATE, [
+        row.osm_way_id,
+        row.segment_index,
+        JSON.stringify(row.geom),
+        row.length_m,
+        row.curviness_score,
+        row.road_name,
+        row.road_number,
+        row.surface_type,
+        c.existingId,
+        row.osm_quality_seed,
+        row.quality_source,
+      ]);
+    }
+    // 4. Upsert unchanged + fresh inserts — the keys they need are free now.
+    for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
+      await this.flush(m, upsertRows.slice(i, i + UPSERT_CHUNK));
+    }
 
-    const byAbsenceSkipped = region
+    const byAbsenceSkipped = scope
       ? 0
       : plan.stale.length - inBboxReusedIds.length;
     this.logger.log(
       `OSM import: upserted ${upsertRows.length}, carried over ` +
         `${plan.carryOver.length}, deactivated ${deactivateIds.length} ` +
         `(${existing.length} existing / ${incoming.length} incoming; ` +
-        `region ${region ? 'configured' : 'UNSET → ' + byAbsenceSkipped + ' by-absence rows left active'})`,
+        `scope ${scope ? 'configured' : 'UNSET → ' + byAbsenceSkipped + ' by-absence rows left active'})`,
     );
     return {
       upserted: upsertRows.length,
@@ -481,12 +876,13 @@ export class OsmImportService {
   private async loadOutOfBboxKeyOwners(
     newIncoming: RoadSegmentRow[],
     bboxIds: Set<string>,
+    m: EntityManager,
   ): Promise<string[]> {
     if (newIncoming.length === 0) return [];
     // Annotate the binding (not an `as` cast) so `r` is typed under both the local
     // and strict OpenAPI-gen tsconfigs, which disagree on whether a cast is
     // redundant.
-    const rows: Array<{ id: string }> = await this.repo.query(
+    const rows: Array<{ id: string }> = await m.query(
       `SELECT rs.id
        FROM ${TABLE} rs
        JOIN unnest($1::bigint[], $2::int[]) AS k(w, i)
@@ -535,39 +931,6 @@ export class OsmImportService {
     return `${osmWayId}:${segmentIndex}`;
   }
 
-  /** Whether the segment's geometry actually intersects the rectangle `[minLng,
-   *  minLat, maxLng, maxLat]` — the SAME exact test `loadExistingInBbox` runs in
-   *  Postgres (`ST_Intersects`), so a segment clipping a tile corner is judged
-   *  identically on both sides. A bbox-overlap check would over-keep such a
-   *  segment on the incoming side only, leaking out-of-region rows. Each leg is
-   *  clipped against the rectangle (Liang–Barsky); any leg that survives means the
-   *  polyline enters it. */
-  private intersectsRegion(
-    row: RoadSegmentRow,
-    [minLng, minLat, maxLng, maxLat]: [number, number, number, number],
-  ): boolean {
-    const coords = row.geom.coordinates;
-    for (let i = 1; i < coords.length; i++) {
-      const [x0, y0] = coords[i - 1]!;
-      const [x1, y1] = coords[i]!;
-      if (
-        segmentIntersectsRect(
-          x0!,
-          y0!,
-          x1!,
-          y1!,
-          minLng,
-          minLat,
-          maxLng,
-          maxLat,
-        )
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private toLatLngs(line: GeoJSON.LineString): LatLng[] {
     return line.coordinates.map(([lng, lat]) => ({ lat: lat!, lng: lng! }));
   }
@@ -601,6 +964,7 @@ export class OsmImportService {
    */
   private async loadExistingInBbox(
     bbox: [number, number, number, number],
+    m: EntityManager,
   ): Promise<
     Array<{
       id: string;
@@ -617,7 +981,7 @@ export class OsmImportService {
       osm_way_id: string;
       segment_index: number;
       geom: GeoJSON.LineString;
-    }> = await this.repo.query(
+    }> = await m.query(
       // `&&` (bbox overlap) is only the GiST prefilter — a curved/L-shaped segment
       // OUTSIDE the region can still have a bounding box that clips the envelope.
       // `ST_Intersects` is the exact test, so a row is a stale candidate only when
@@ -637,6 +1001,106 @@ export class OsmImportService {
       segment_index: r.segment_index,
       coords: this.toLatLngs(r.geom),
     }));
+  }
+
+  /**
+   * Existing ACTIVE, OSM-imported rows whose geometry intersects BOTH the region
+   * POLYGON and the tile bbox (the {@link RegionScope}) — the reassignment
+   * candidate pool for a configured tile. Applies the SAME combined
+   * `ST_Intersects(geom, ST_GeomFromGeoJSON())` + `ST_Intersects(geom,
+   * ST_MakeEnvelope())` test as {@link filterToRegion}, so a border/tile-seam row
+   * is loaded here iff the incoming filter would keep it — the reconcile invariant
+   * that stops a kept-incoming row's owner from being tombstoned (#1033, now
+   * extended to the tile bbox). Crowd-sourced rows (null `osm_way_id`) are
+   * excluded: they aren't part of the OSM network, so the importer never
+   * reassigns or tombstones them.
+   */
+  private async loadExistingInRegion(
+    scope: RegionScope,
+    m: EntityManager,
+  ): Promise<
+    Array<{
+      id: string;
+      osm_way_id: string;
+      segment_index: number;
+      coords: LatLng[];
+    }>
+  > {
+    // Annotate the binding (rather than an `as` cast) so `r` is typed under both
+    // the local and strict OpenAPI-gen tsconfigs, which disagree on whether a cast
+    // is redundant.
+    const rows: Array<{
+      id: string;
+      osm_way_id: string;
+      segment_index: number;
+      geom: GeoJSON.LineString;
+    }> = await m.query(
+      // The two `&&` (bbox-overlap) clauses are only the GiST prefilter; the two
+      // `ST_Intersects` are the exact test — a row is a stale candidate only when
+      // its geometry genuinely lies inside the country polygon (not merely its
+      // bounding rectangle, which overlaps neighbouring countries, #1033) AND
+      // inside this tile's bbox (not the region's other tiles). Kept byte-for-byte
+      // parallel with `filterToRegion` so both sides judge a seam row identically.
+      `SELECT id, osm_way_id::text AS osm_way_id, segment_index,
+              ST_AsGeoJSON(geom)::json AS geom
+       FROM ${TABLE}
+       WHERE deactivated_at IS NULL
+         AND osm_way_id IS NOT NULL
+         AND geom && ST_GeomFromGeoJSON($1)
+         AND ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+         AND geom && ST_MakeEnvelope($2, $3, $4, $5, 4326)
+         AND ST_Intersects(geom, ST_MakeEnvelope($2, $3, $4, $5, 4326))`,
+      [scope.polygon, ...scope.bbox],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      osm_way_id: r.osm_way_id,
+      segment_index: r.segment_index,
+      coords: this.toLatLngs(r.geom),
+    }));
+  }
+
+  /**
+   * The subset of `rows` whose geometry intersects BOTH the region POLYGON and the
+   * tile bbox (the {@link RegionScope}) — the incoming-side counterpart of
+   * {@link loadExistingInRegion}, running the SAME combined PostGIS `ST_Intersects`
+   * pair (NOT a JS approximation, which would disagree at the border and
+   * reintroduce id loss, #1033). A national extract can carry hundreds of
+   * thousands of ways, so the intersect is batched ({@link REGION_FILTER_CHUNK}
+   * geometries/query) and the 1-based `WITH ORDINALITY` positions are mapped back
+   * to the chunk's rows.
+   */
+  private async filterToRegion(
+    rows: RoadSegmentRow[],
+    scope: RegionScope,
+    m: EntityManager,
+  ): Promise<RoadSegmentRow[]> {
+    if (rows.length === 0) return [];
+    const kept: RoadSegmentRow[] = [];
+    for (let start = 0; start < rows.length; start += REGION_FILTER_CHUNK) {
+      const chunk = rows.slice(start, start + REGION_FILTER_CHUNK);
+      // Annotate the binding (not an `as` cast) so `o` is typed under both the
+      // local and strict OpenAPI-gen tsconfigs.
+      const ords: Array<{ ord: number }> = await m.query(
+        // The SAME combined test as loadExistingInRegion: a row is kept iff it
+        // intersects the country polygon AND the tile envelope — kept byte-for-byte
+        // parallel so a seam row is judged identically on both sides (#1033).
+        `SELECT g.ord::int AS ord
+         FROM unnest($1::text[]) WITH ORDINALITY AS g(gj, ord)
+         WHERE ST_Intersects(ST_GeomFromGeoJSON(g.gj), ST_GeomFromGeoJSON($2))
+           AND ST_Intersects(ST_GeomFromGeoJSON(g.gj), ST_MakeEnvelope($3, $4, $5, $6, 4326))`,
+        [
+          chunk.map((r) => JSON.stringify(r.geom)),
+          scope.polygon,
+          ...scope.bbox,
+        ],
+      );
+      for (const o of ords) {
+        // `ord` is 1-based over the chunk.
+        kept.push(chunk[o.ord - 1]!);
+      }
+    }
+    return kept;
   }
 
   private async flush(

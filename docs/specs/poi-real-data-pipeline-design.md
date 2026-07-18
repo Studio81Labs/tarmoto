@@ -135,7 +135,7 @@ New/changed backend queries over `pois` (PostGIS), mirroring the proven `ST_DWit
 
 ### 5.1 Bulk import at continent scale — Geofabrik, not Overpass
 
-The current importer calls Overpass with a single bbox. That works for one small CZ box; it **will not** survive full-country POI pulls for 15+ countries (Overpass public API time/memory limits). The repo already solved this for roads: **Geofabrik `.osm.pbf` → `osmium` extract → local parse** (`apps/backend/src/modules/roads/osm-import/osm-import.config.ts`, `TARMOTO_OSM_ROAD_IMPORT_FILE/BBOX`). We mirror it for POIs:
+The current importer calls Overpass with a single bbox. That works for one small CZ box; it **will not** survive full-country POI pulls for 15+ countries (Overpass public API time/memory limits). The repo already solved this for roads: **Geofabrik `.osm.pbf` → `osmium` extract → local parse** (`apps/backend/src/modules/roads/osm-import/osm-import.config.ts`, `TARMOTO_OSM_ROAD_IMPORT_DIR/REGIONS`). We mirror it for POIs:
 
 1. Operator downloads Geofabrik per-country `.osm.pbf`.
 2. `osmium tags-filter` to our POI tag set (amenity=fuel/restaurant/cafe/fast_food/ice_cream, tourism=hotel|guest_house|…|viewpoint, highway=rest_area|services) → small per-country extract.
