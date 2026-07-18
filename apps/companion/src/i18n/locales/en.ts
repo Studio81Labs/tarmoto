@@ -484,6 +484,8 @@ export const en = {
   "Followed collections": "Followed collections",
   "Followed collections ": "Followed collections ",
   "Food & drinks": "Food & drinks",
+  "For group organisers and power users.":
+    "For group organisers and power users.",
   "Force {count, plural, one {# day} other {# days}}":
     "Force {count, plural, one {# day} other {# days}}",
   "Forgot password?": "Forgot password?",

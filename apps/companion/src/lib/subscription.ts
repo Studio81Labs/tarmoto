@@ -302,6 +302,11 @@ function normalizePlans(
               // today, localized once a locale ships; unknown strings fall back).
               .map((feature) => t(feature))
           : DEFAULT_PLAN_FEATURES[tier].map((feature) => t(feature));
+      // Backend-provided plan descriptions are English (e.g. the Premium
+      // catalog copy) — translate at this boundary like the name/features
+      // (English-identical today, localized once a locale ships; unknown
+      // strings fall back to the raw English).
+      const description = optionalString(rawPlan.description);
       return {
         tier,
         name: planNameFrom(rawPlan.name, tier, t),
@@ -310,7 +315,7 @@ function normalizePlans(
           formatSubscriptionPriceLabel(tier),
         ),
         features,
-        description: optionalString(rawPlan.description) ?? undefined,
+        description: description ? t(description) : undefined,
         highlighted: Boolean(rawPlan.highlighted),
       } as SubscriptionPlanSummary;
     })

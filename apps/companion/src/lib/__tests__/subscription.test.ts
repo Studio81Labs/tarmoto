@@ -498,6 +498,7 @@ describe("subscription translator wiring", () => {
             name: "Premium",
             price_label: "€1",
             features: ["Pro", "Premium"],
+            description: "Pro",
           },
         ],
       },
@@ -506,6 +507,10 @@ describe("subscription translator wiring", () => {
     const premiumPlan = snapshot.plans.find((p) => p.tier === "premium");
     expect(premiumPlan?.name).toBe("XX-Premium");
     expect(premiumPlan?.features).toEqual(["XX-Pro", "XX-Premium"]);
+    // The backend Premium plan carries an English description too — reuse the
+    // registered "Pro" sentinel key as the wire description to prove it's
+    // translated at the boundary (Codex P2 follow-up).
+    expect(premiumPlan?.description).toBe("XX-Pro");
   });
 
   it("normalizeSubscriptionSnapshot routes the missing-amount-label invoice fallback through the translator", () => {
