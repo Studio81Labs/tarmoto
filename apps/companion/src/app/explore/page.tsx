@@ -330,6 +330,13 @@ function ExplorerPageInner() {
   // Zones (list + draw region) and/or Conditions (closures + passes). It docks
   // in whenever either is on.
   const rightPanelOpen = showFunZones || showConditionsLayer;
+  // Narrow viewports render the info panel as an absolute overlay. While it's
+  // up, drop the map's floating controls (POI/search row, basemap toggle) below
+  // it so they don't paint over its edge — but the panel stays below the
+  // condition popover (z-30) that a Closures/Passes row opens, so focusing a
+  // row still shows the popover without disabling the layer.
+  const narrowInfoPanelOverlay =
+    rightPanelOpen && !isWideViewport && !narrowDrawing;
   // Imperative handle to the MapLibre camera. `MapCanvas` reads
   // its initial center/zoom only at mount (to avoid yanking user
   // pans), so search-pick flows need this narrow opt-in channel
@@ -640,23 +647,18 @@ function ExplorerPageInner() {
           conditionsDate={conditionsDate}
           setConditionsDate={setConditionsDate}
           conditionBbox={conditionBbox}
-          onFocusClosure={(closure) => {
+          onFocusClosure={(closure) =>
             mapRef.current?.openConditionPopover({
               kind: "closure",
               id: closure.id,
-            });
-            // Narrow: the panel overlays the map (z-40) and would hide the
-            // popover it just opened — close it so the focused closure is
-            // visible on the map. Wide keeps the panel (a side rail, no overlap).
-            if (!isWideViewport) closeRightPanel();
-          }}
-          onFocusPass={(pass) => {
+            })
+          }
+          onFocusPass={(pass) =>
             mapRef.current?.openConditionPopover({
               kind: "pass",
               id: pass.id,
-            });
-            if (!isWideViewport) closeRightPanel();
-          }}
+            })
+          }
         />
       )}
     </div>
@@ -907,7 +909,11 @@ function ExplorerPageInner() {
               signed-in only (the `/api/v1/geocode` endpoint sits behind
               AuthGuard); the chips browse the public `/poi/in-bbox` store so
               they show for everyone. Mirrors the planner/preview MapToolbar. */}
-          <div className="absolute left-3 right-14 top-3 z-30 flex items-center gap-2">
+          <div
+            className={`absolute left-3 right-14 top-3 flex items-center gap-2 ${
+              narrowInfoPanelOverlay ? "z-10" : "z-30"
+            }`}
+          >
             {isAuthenticated ? (
               <div className="relative w-[240px] shrink-0 rounded-[10px] border border-line-strong bg-cream/95 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.10)]">
                 <GeocodeSearchField
@@ -1100,7 +1106,11 @@ function ExplorerPageInner() {
               can drag on the exposed map. A floating chip keeps a cancel out
               (which restores the panel via `startDrawRegion`'s counterpart). */}
           {!isWideViewport && narrowDrawing && (
-            <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+            <div
+              className={`absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm ${
+                narrowInfoPanelOverlay ? "z-10" : "z-30"
+              }`}
+            >
               <Square size={12} className="shrink-0 text-accent" aria-hidden />
               {t("Drag on the map to draw a region")}
               <button
@@ -1121,12 +1131,14 @@ function ExplorerPageInner() {
             underneath. Hidden while a draw is armed (above). Close button
             toggles off whichever info layer is active (mirrors how toggling
             the pill in the top overlay dismisses the panel). */}
-          {rightPanelOpen && !isWideViewport && !narrowDrawing && (
+          {narrowInfoPanelOverlay && (
             <aside
-              // z-40 to sit above the map's floating controls — the POI/search
-              // row and basemap toggle are z-30; at z-20 they painted over this
-              // overlay panel's right edge.
-              className="absolute inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
+              // z-20: above the map controls (which drop to z-10 while this
+              // overlay is open, so they don't paint over its edge) but below
+              // the condition popover (z-30) a Closures/Passes row opens and
+              // below modals (z-40/z-50) — so focusing a row shows the popover
+              // above the panel without disabling the conditions layer.
+              className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
               aria-label={t("Info layers")}
             >
               <button
