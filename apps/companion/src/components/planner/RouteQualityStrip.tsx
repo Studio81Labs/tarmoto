@@ -38,7 +38,10 @@ export function RouteQualityStrip({
           <button
             key={segment.id}
             type="button"
-            aria-label={`Preview ${t(QUALITY_BAND_LABELS[segment.band])} section, ${Math.round(segment.lengthKm * 10) / 10} km`}
+            aria-label={t("Preview {label} section, {km} km", {
+              label: t(QUALITY_BAND_LABELS[segment.band]),
+              km: Math.round(segment.lengthKm * 10) / 10,
+            })}
             title={t(QUALITY_BAND_LABELS[segment.band])}
             onClick={() => onSegmentClick?.(segment.id)}
             className="h-full border-r border-ink/20 transition last:border-r-0 hover:brightness-95"

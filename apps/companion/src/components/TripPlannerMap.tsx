@@ -2750,7 +2750,7 @@ const TripPlannerMapContent = forwardRef<
         {/* Basemap toggle — swaps the map UNDER the line (independent of coloring). */}
         <div
           role="group"
-          aria-label="Basemap"
+          aria-label={t("Basemap")}
           className="inline-flex self-start rounded-[10px] border border-line-strong bg-cream/80 p-[3px] shadow-[0_4px_12px_rgba(14,14,16,0.10)] backdrop-blur-sm"
         >
           {(
@@ -2779,7 +2779,7 @@ const TripPlannerMapContent = forwardRef<
           <button
             type="button"
             aria-pressed={lineColorMode === "quality"}
-            aria-label="Colour the route line by road quality"
+            aria-label={t("Colour the route line by road quality")}
             onClick={() =>
               setLineColorMode((mode) =>
                 mode === "quality" ? null : "quality",
@@ -2793,7 +2793,7 @@ const TripPlannerMapContent = forwardRef<
           <button
             type="button"
             aria-pressed={lineColorMode === "surface"}
-            aria-label="Colour the route line by surface"
+            aria-label={t("Colour the route line by surface")}
             onClick={() =>
               setLineColorMode((mode) =>
                 mode === "surface" ? null : "surface",

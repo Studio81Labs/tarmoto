@@ -103,6 +103,7 @@ export const en = {
     "Badges, challenges, leaderboards, and milestones for your riding region. ",
   "Bars share a scale so gain/loss are visually comparable across both rides. ":
     "Bars share a scale so gain/loss are visually comparable across both rides. ",
+  Basemap: "Basemap",
   "Basic navigation": "Basic navigation",
   "Best Motorcycle Roads \u2014 Tarmoto":
     "Best Motorcycle Roads \u2014 Tarmoto",
@@ -164,6 +165,7 @@ export const en = {
   Close: "Close",
   "Close dialog": "Close dialog",
   "Close import dialog": "Close import dialog",
+  "Close road preview": "Close road preview",
   "Close zone details": "Close zone details",
   "Closures ": "Closures ",
   "Closures & roadworks ": "Closures & roadworks ",
@@ -181,6 +183,9 @@ export const en = {
   "Collections ": "Collections ",
   "Collections from other riders you've saved. They show up here until you unfollow. ":
     "Collections from other riders you've saved. They show up here until you unfollow. ",
+  "Colour the route line by road quality":
+    "Colour the route line by road quality",
+  "Colour the route line by surface": "Colour the route line by surface",
   Comment: "Comment",
   "Comment ": "Comment ",
   Community: "Community",
@@ -332,6 +337,8 @@ export const en = {
   "Elevation gain": "Elevation gain",
   "Elevation loss": "Elevation loss",
   "Elevation profile": "Elevation profile",
+  "Elevation profile from {min} to {max}":
+    "Elevation profile from {min} to {max}",
   "Elevation \u00b7 ": "Elevation \u00b7 ",
   Email: "Email",
   "Email ": "Email ",
@@ -389,9 +396,12 @@ export const en = {
   "Folders ": "Folders ",
   "Focus day": "Focus day",
   "Focus selected day": "Focus selected day",
+  "Focus segment {name} on the map": "Focus segment {name} on the map",
   "Followed collections": "Followed collections",
   "Followed collections ": "Followed collections ",
   "Food & drinks": "Food & drinks",
+  "Force {count, plural, one {# day} other {# days}}":
+    "Force {count, plural, one {# day} other {# days}}",
   "Forgot password?": "Forgot password?",
   "Forgot password? ": "Forgot password? ",
   "Found ": "Found ",
@@ -452,6 +462,7 @@ export const en = {
     "Imported routes need at least two route points before saving.",
   "In ": "In ",
   "Included right now ": "Included right now ",
+  "Inspect flagged section: {label}": "Inspect flagged section: {label}",
   "Invite link ": "Invite link ",
   "Invite riders": "Invite riders",
   "Invite riders, propose route tweaks, vote on suggestions, and follow the activity log \u2014 all in one place. ":
@@ -708,6 +719,7 @@ export const en = {
   "Plan new trip ": "Plan new trip ",
   "Plan your own trip ": "Plan your own trip ",
   "Planner map ": "Planner map ",
+  "Planner sections": "Planner sections",
   Police: "Police",
   Poor: "Poor",
   "Position ": "Position ",
@@ -717,6 +729,8 @@ export const en = {
   Premium: "Premium",
   "Preview data shown while live billing management is still being wired up. ":
     "Preview data shown while live billing management is still being wired up. ",
+  "Preview flagged section: {label}": "Preview flagged section: {label}",
+  "Preview {label} section, {km} km": "Preview {label} section, {km} km",
   "Preview unavailable ": "Preview unavailable ",
   "Previewing ": "Previewing ",
   "Previewing {month} conditions on {previewDay}.":
@@ -749,6 +763,7 @@ export const en = {
   "Quality ": "Quality ",
   "Quality {quality}": "Quality {quality}",
   "Quality (min \u2192 max)": "Quality (min \u2192 max)",
+  "Quality score {score} of 5": "Quality score {score} of 5",
   "Quality trend ": "Quality trend ",
   RIDE: "RIDE",
   "Ranked by the current quality and curviness model. ":
@@ -785,6 +800,8 @@ export const en = {
   "Renews {date}": "Renews {date}",
   Reorder: "Reorder",
   "Request export ": "Request export ",
+  "Reroute around flagged section: {label}":
+    "Reroute around flagged section: {label}",
   "Reset ": "Reset ",
   "Reset password": "Reset password",
   Retry: "Retry",
@@ -811,6 +828,7 @@ export const en = {
   "Road Quality Explorer \u2014 Tarmoto":
     "Road Quality Explorer \u2014 Tarmoto",
   "Road preference ": "Road preference ",
+  "Road preview": "Road preview",
   "Road preview cards": "Road preview cards",
   "Road preview cards \u00b7 top ": "Road preview cards \u00b7 top ",
   "Road quality": "Road quality",
@@ -853,6 +871,10 @@ export const en = {
   "Search by name, description, or rider\u2026":
     "Search by name, description, or rider\u2026",
   "Search collections\u2026": "Search collections\u2026",
+  "Search location for a new via point": "Search location for a new via point",
+  "Search location for finish waypoint": "Search location for finish waypoint",
+  "Search location for start waypoint": "Search location for start waypoint",
+  "Search location for {role} waypoint": "Search location for {role} waypoint",
   "Search name": "Search name",
   "Search roads, regions...": "Search roads, regions...",
   "Searching\u2026": "Searching\u2026",
@@ -936,6 +958,8 @@ export const en = {
   "Stats overlay": "Stats overlay",
   "Stop following": "Stop following",
   Straight: "Straight",
+  "Street-level preview of this road section":
+    "Street-level preview of this road section",
   "Sub-regions": "Sub-regions",
   "Submitting\u2026 ": "Submitting\u2026 ",
   Subscription: "Subscription",
@@ -1256,6 +1280,8 @@ export const en = {
   "Ridden ({count} segments)": "Ridden ({count} segments)",
   "{rating} \u2605 average": "{rating} \u2605 average",
   "{status} \u00b7 {elevation} m": "{status} \u00b7 {elevation} m",
+  "{label} results": "{label} results",
+  "{tier} \u2022 {distance}": "{tier} \u2022 {distance}",
   "\u00b7 crowdsourced road-quality ranking ":
     "\u00b7 crowdsourced road-quality ranking ",
   "\u00b7 quality ": "\u00b7 quality ",

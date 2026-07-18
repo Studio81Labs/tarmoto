@@ -267,7 +267,10 @@ function RoutePreview({
                   <div
                     className={`${cfg.bg} h-full`}
                     style={{ width: `${widthPct}%` }}
-                    aria-label={`${cfg.label} • ${format.distanceKm(seg.distanceKm)}`}
+                    aria-label={t("{tier} • {distance}", {
+                      tier: t(cfg.label),
+                      distance: format.distanceKm(seg.distanceKm),
+                    })}
                   />
                 </div>
                 <span className="w-14 text-right tabular-nums text-fg-dim">

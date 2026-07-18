@@ -77,7 +77,9 @@ export function RoadPreviewCard({
         type="button"
         onClick={onFocus}
         aria-pressed={isFocused}
-        aria-label={`Focus segment ${segment.name ?? segment.id} on the map`}
+        aria-label={t("Focus segment {name} on the map", {
+          name: segment.name ?? segment.id,
+        })}
         className="flex w-full items-center gap-3 p-3 text-left"
       >
         <span className="w-[18px] shrink-0 text-center font-mono text-xs font-extrabold text-fg-mute">
@@ -112,7 +114,9 @@ export function RoadPreviewCard({
           q={tierOf(segment.qualityScore)}
           size={4}
           className="shrink-0"
-          ariaLabel={`Quality score ${format.decimal(segment.qualityScore, 1)} of 5`}
+          ariaLabel={t("Quality score {score} of 5", {
+            score: format.decimal(segment.qualityScore, 1),
+          })}
         />
       </button>
 

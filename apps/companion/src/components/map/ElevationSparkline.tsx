@@ -1,7 +1,10 @@
 import { t } from "@/i18n";
 import { buildSparklinePath, profileExtrema } from "@/lib/segment-preview";
+import type { Formatters } from "@tarmoto/shared";
 interface Props {
   profile: number[] | null;
+  /** Elevation formatter — honours the rider's metric/imperial preference. */
+  format: Formatters;
   width?: number;
   height?: number;
   stroke?: string;
@@ -17,6 +20,7 @@ interface Props {
  */
 export function ElevationSparkline({
   profile,
+  format,
   width = 180,
   height = 40,
   stroke = "#FF6A1A",
@@ -33,7 +37,10 @@ export function ElevationSparkline({
       width={width}
       height={height}
       className={className}
-      aria-label={`Elevation profile from ${Math.round(ext.min)}m to ${Math.round(ext.max)}m`}
+      aria-label={t("Elevation profile from {min} to {max}", {
+        min: format.elevation(ext.min),
+        max: format.elevation(ext.max),
+      })}
     >
       <path
         d={d}

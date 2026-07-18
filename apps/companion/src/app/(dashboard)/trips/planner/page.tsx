@@ -3470,7 +3470,10 @@ export default function TripPlannerPage() {
                           setForcedDays(n);
                           setDays(n);
                         }}
-                        aria-label={`Force ${n} days`}
+                        aria-label={t(
+                          "Force {count, plural, one {# day} other {# days}}",
+                          { count: n },
+                        )}
                         className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
                           forcedDays === n
                             ? "border-ink bg-ink text-cream"
@@ -4193,7 +4196,7 @@ function WaypointEditor({
             </span>
             <GeocodeSearchField
               placeholder={t("Type a place or click the map… ")}
-              ariaLabel="Search location for start waypoint"
+              ariaLabel={t("Search location for start waypoint")}
               onSelect={(result) => onCreateEndpoint("start", result)}
               clearOnSelect
             />
@@ -4253,7 +4256,9 @@ function WaypointEditor({
                   <GeocodeSearchField
                     variant="spine"
                     placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
-                    ariaLabel={`Search location for ${role} waypoint`}
+                    ariaLabel={t("Search location for {role} waypoint", {
+                      role,
+                    })}
                     onSelect={(result) => onRelocate(waypoint.id, result)}
                   />
                 ) : (
@@ -4374,7 +4379,7 @@ function WaypointEditor({
             </span>
             <GeocodeSearchField
               placeholder={t("Type a place or click the map… ")}
-              ariaLabel="Search location for finish waypoint"
+              ariaLabel={t("Search location for finish waypoint")}
               onSelect={(result) => onCreateEndpoint("end", result)}
               clearOnSelect
             />
@@ -4391,7 +4396,7 @@ function WaypointEditor({
             />
             <GeocodeSearchField
               placeholder={t("Search a place… ")}
-              ariaLabel="Search location for a new via point"
+              ariaLabel={t("Search location for a new via point")}
               autoFocus
               clearOnSelect
               onSelect={(result) => {

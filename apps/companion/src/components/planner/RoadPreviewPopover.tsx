@@ -119,7 +119,7 @@ function StreetLevelThumb({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={preview.imageUrl}
-          alt="Street-level preview of this road section"
+          alt={t("Street-level preview of this road section")}
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
@@ -236,7 +236,7 @@ export function RoadPreviewPopover({
     >
       <div
         role="dialog"
-        aria-label="Road preview"
+        aria-label={t("Road preview")}
         onClick={(event) => event.stopPropagation()}
         className="max-h-full w-[380px] max-w-full overflow-y-auto rounded-2xl border border-line-strong bg-cream shadow-[0_24px_60px_rgba(20,17,14,0.32)]"
       >
@@ -253,7 +253,7 @@ export function RoadPreviewPopover({
           </div>
           <button
             type="button"
-            aria-label="Close road preview"
+            aria-label={t("Close road preview")}
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-lg border border-line-strong text-fg-dim transition hover:text-ink"
           >

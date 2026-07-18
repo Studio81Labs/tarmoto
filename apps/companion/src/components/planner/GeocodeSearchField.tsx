@@ -168,7 +168,7 @@ export function GeocodeSearchField({
       {open ? (
         <ul
           role="listbox"
-          aria-label={`${ariaLabel} results`}
+          aria-label={t("{label} results", { label: ariaLabel })}
           className={`absolute left-0 top-full z-30 mt-[5px] overflow-hidden rounded-[10px] border border-line-strong bg-cream shadow-[0_8px_24px_rgba(14,14,16,0.16)] ${
             widenDropdown ? "w-[calc(100%+100px)] max-w-[92vw]" : "right-0"
           }`}

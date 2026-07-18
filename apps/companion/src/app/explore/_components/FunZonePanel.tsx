@@ -159,7 +159,10 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                 </div>
                 {road.elevation_profile ? (
                   <div className="mt-2">
-                    <ElevationSparkline profile={road.elevation_profile} />
+                    <ElevationSparkline
+                      profile={road.elevation_profile}
+                      format={format}
+                    />
                   </div>
                 ) : (
                   <p className="mt-2 text-[10px] text-fg-dim">
