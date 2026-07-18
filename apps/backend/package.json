@@ -26,6 +26,7 @@
     "openapi:export": "nest build --config nest-cli.openapi.json && node dist/scripts/export-openapi.js",
     "cluster:fun-zones": "node dist/scripts/cluster-fun-zones.js",
     "road:import": "node dist/scripts/road-import.js",
+    "quality:conflation": "node dist/scripts/quality-conflation.js",
     "seed:demo": "node dist/scripts/seed-demo-data.js",
     "create-admin": "node dist/scripts/create-admin.js"
   },
