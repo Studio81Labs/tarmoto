@@ -677,15 +677,11 @@ export class ReviewsService {
     userId: string,
     reviewId: string,
   ): Promise<ReviewVoteResultDto> {
-    // Operator kill switch: a write can't degrade to empty, so a clean 503 is
-    // the honest response instead of silently dropping the vote clear.
-    if (
-      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
-    ) {
-      throw new ServiceUnavailableException(
-        'Reviews are temporarily unavailable',
-      );
-    }
+    // NOT gated by sys_poi_ratings: clearing a vote is a withdrawal, and a
+    // kill switch must never trap user content (same rule as `delete`). A
+    // rider who voted must still be able to retract it during an incident;
+    // gating it would keep the vote in the aggregates until the switch is
+    // restored. `castVote` (the additive write) stays gated.
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId, moderation_status: 'visible' },
     });

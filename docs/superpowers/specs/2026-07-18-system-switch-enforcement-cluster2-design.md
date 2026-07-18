@@ -45,7 +45,8 @@ The personal library and community browse are **distinct methods** (not one para
 - **Reads → degrade to empty:**
   - `ReviewsService.listForSegment(segmentId, viewerUserId)` (`reviews.service.ts:200`, `GET /roads/:segmentId/reviews`) → `[]`.
   - `RoadsService.findById(segmentId)` (`roads.service.ts:355`, `GET /roads/:segmentId`) → zero the embedded review aggregate: `review_count: 0`, `avg_review_rating: null`, `recent_reviews: []` (skip the review sub-query when off, or zero its output — match the method's real structure). **This is the leak-fix: without it, ratings survive on the road page after the reviews panel is killed.**
-- **Writes → clean 503** (`ServiceUnavailableException('Reviews are temporarily unavailable')`): `create` (`:249`), `update` (`:328`), `castVote` (`:589`), `clearVote` (`:629`), `uploadPhotos` (`:443`). **`delete` (`:385`) stays allowed** (withdrawal).
+- **Writes → clean 503** (`ServiceUnavailableException('Reviews are temporarily unavailable')`): `create` (`:249`), `update` (`:328`), `castVote` (`:589`), `uploadPhotos` (`:443`). **`delete` (`:385`) and `clearVote` stay allowed** — both are withdrawals, and per decision 2 a kill must never trap user content. `castVote` (the additive write) is gated; `clearVote` (retracting your own vote) is not, so a rider can still remove a vote during an incident instead of leaving it stuck in the aggregates.
+- **`uploadPhotos` also rejects before multipart parsing** via a `SystemSwitchGuard` (`@RequireSystemSwitch('sys_poi_ratings')`) on the route, ordered before `AuthGuard`. Guards run before interceptors, so the 503 fires before `FilesInterceptor` buffers the payload — the kill switch sheds the exact upload load during a photo-spam incident. The service-level gate stays as the authoritative guarantee.
 - **Modules:** `reviews` adds `FeaturesModule`; **`roads` also adds `FeaturesModule`** (it doesn't import it today) and `RoadsService` injects `FeatureResolver`.
 
 ### 3.4 Testing
@@ -53,7 +54,7 @@ The personal library and community browse are **distinct methods** (not one para
 - **Per gated method**: off ⇒ the degraded shape (private/empty/zeroed) or the 503 for writes; on/absent ⇒ existing behavior unchanged; the provider/repo write is not persisted when off. Each off-case asserts `toHaveBeenCalledWith('<key>')`.
 - **Directional (ride_publishing):** off + `is_public=true` ⇒ result is private; off + `is_public=false` ⇒ still unpublishes; `applyDefaultRideSharing` off ⇒ no share row created.
 - **Scope guards:** a personal-library method (`listMine`) is NOT gated by `sys_community_collections`; `RoadsService.findById` on ⇒ real aggregate, off ⇒ zeroed (the leak test).
-- **Writes:** `create`/`castVote` off ⇒ 503; `delete` off ⇒ allowed.
+- **Writes:** `create`/`castVote`/`uploadPhotos` off ⇒ 503; `delete`/`clearVote` off ⇒ allowed (withdrawals — switch not consulted). `uploadPhotos` off ⇒ rejected in the guard phase before Multer parses the payload.
 - Existing suites stay green — each module's new `FeatureResolver` stub defaults `isSystemSwitchEnabled` → `true`.
 
 ### 3.5 Contract

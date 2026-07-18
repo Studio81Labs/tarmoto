@@ -1554,18 +1554,32 @@ describe('ReviewsService', () => {
       expect(voteRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('throws 503 when sys_poi_ratings is off', async () => {
+    it('still works when sys_poi_ratings is off (withdrawal always allowed)', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        id: 'review-2',
+        user_id: 'author-2',
+      } as unknown as RoadReview);
+      voteGroupRows = [
+        {
+          road_review_id: 'review-2',
+          helpful_count: 3,
+          not_helpful_count: 1,
+        },
+      ];
+      viewerVotes = [];
 
       await expect(
         service.clearVote('viewer-1', 'review-2'),
-      ).rejects.toBeInstanceOf(ServiceUnavailableException);
-      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
-        'sys_poi_ratings',
-      );
-      // Gate is the first statement — no lookup, no vote row deleted.
-      expect(reviewRepo.findOne).not.toHaveBeenCalled();
-      expect(voteRepo.delete).not.toHaveBeenCalled();
+      ).resolves.not.toThrow();
+
+      // The vote is retracted regardless of the switch...
+      expect(voteRepo.delete).toHaveBeenCalledWith({
+        user_id: 'viewer-1',
+        road_review_id: 'review-2',
+      });
+      // ...and, like `delete`, the switch isn't even consulted.
+      expect(featureResolver.isSystemSwitchEnabled).not.toHaveBeenCalled();
     });
   });
 
