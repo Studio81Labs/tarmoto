@@ -176,6 +176,46 @@ language ships.
   into per-domain modules, flip `t()` to typed keys + `tDynamic`, fix everything the
   compiler then finds. After this PR, an unregistered UI string cannot compile.
 
+### 8a. PR 3 execution addendum (post-PR 2, ratified 2026-07-18)
+
+PR 2 (#1035) registered only the strings it _wrapped_, so the pre-existing legacy
+raw-key-fallback surface remains. Measured current state: `en.ts` = 1,271 keys / 1,523
+lines. A one-shot **typed-flip experiment** (temporarily narrow `translate` to
+`EnglishMessageKey`, run `tsc`) is the definitive worklist: **922 errors across 58 files
+(839 src + 83 test)**, in three fallout classes —
+
+1. **Unregistered literals → register** (the bulk, ~800). `TS2345` quotes the exact
+   missing literal, so the backfill is a compiler-driven loop (narrow → collect literals
+   → add key===value alphabetically, `\uXXXX`-escaped → repeat to zero), not a manual hunt.
+2. **Dynamic string keys → `tDynamic`** (handful). `t(challenge.unit)`,
+   `t(SURFACE_LABELS[key])`, `t(role)` — runtime key, not a literal.
+3. **Narrowed `t` not assignable to `LooseTranslate`** (few files). Companion-owned pure
+   libs adopt a companion-local typed `Translate` type (so their internal literal calls
+   are checked too); the shared `formatJoinedLabel` (mobile/backend consumers) keeps
+   `LooseTranslate` and receives `tDynamic` at the companion call site.
+
+**PR 3 ships as two PRs** to keep each review tractable — a ~800-key additive diff is
+eyeball-reviewable as "all key===value English"; the signature flip is small and
+high-signal once the backfill is done:
+
+- **PR 3a — catalog completion + `en.ts` split.** Register the ~800 unregistered literals
+  and split `en.ts` into per-domain modules under `apps/companion/src/i18n/locales/en/`
+  (barrel `index.ts` + cross-module duplicate-key test). Loose `translate(key: string)`
+  signature is **unchanged**; English output byte-identical; purely additive.
+- **PR 3b — typed enforcement.** Flip `translate()`/`t()` to `EnglishMessageKey`, add
+  `tDynamic`, resolve classes 2–3, fix the 83 test-file keys. Plus two enforcement
+  additions beyond the original §4 scope (ratified):
+  - **ESLint guard** banning raw string literals on `label`/`title`/`aria-*`-class props
+    of shared UI components — the structural complement to the flip, which cannot catch
+    strings that never reach `t()` (PR 2's whole-branch review found 106 such bypass
+    strings). Scoped to the shared `@tarmoto/ui` render props + companion label/title/aria
+    JSX attributes.
+  - **Server-locale default**: server-side `t()` defaults its locale to
+    `getServerLocale()` so every awaiting server component is request-locale-safe, not
+    just the 4 public-share pages already patched in PR 2 — closes the module-global
+    `activeLocale` Suspense race app-wide. Client components stay on the
+    `I18nProvider`-set `activeLocale` (per-render, exempt).
+
 ## Out of scope
 
 - Shipping an actual second language (content/product decision — which language, who
