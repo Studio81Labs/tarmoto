@@ -1,0 +1,96 @@
+export const map = {
+  "Add as stop": "Add as stop",
+  "Add as via": "Add as via",
+  "Affects your route": "Affects your route",
+  "Best Motorcycle Roads \u2014 Tarmoto":
+    "Best Motorcycle Roads \u2014 Tarmoto",
+  "Best motorcycle roads ": "Best motorcycle roads ",
+  "Best motorcycle roads in ": "Best motorcycle roads in ",
+  "Best motorcycle roads in {name}": "Best motorcycle roads in {name}",
+  "Best motorcycle roads in {name} \u2014 Tarmoto":
+    "Best motorcycle roads in {name} \u2014 Tarmoto",
+  "Best roads ": "Best roads ",
+  "Best season: ": "Best season: ",
+  Clear: "Clear",
+  "Close details": "Close details",
+  "Close info panel": "Close info panel",
+  "Close zone details": "Close zone details",
+  "Couldn't refresh Fun Zones for this area ":
+    "Couldn't refresh Fun Zones for this area ",
+  "Couldn't refresh Fun Zones for this area.":
+    "Couldn't refresh Fun Zones for this area.",
+  "Create account ": "Create account ",
+  "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.":
+    "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.",
+  "Curve {unit}": "Curve {unit}",
+  "Curviness ": "Curviness ",
+  "Day {dayNumber}": "Day {dayNumber}",
+  "Day {dayNumber} \u00b7 {title}": "Day {dayNumber} \u00b7 {title}",
+  "Drag on the map to draw a region": "Drag on the map to draw a region",
+  "Draw region": "Draw region",
+  "Elevation profile from {min} to {max}":
+    "Elevation profile from {min} to {max}",
+  "Explore crowdsourced road surface quality and active hazards on an interactive map. Find the best riding roads before you head out.":
+    "Explore crowdsourced road surface quality and active hazards on an interactive map. Find the best riding roads before you head out.",
+  Filter: "Filter",
+  Filters: "Filters",
+  "Fun Zone details": "Fun Zone details",
+  "Fun Zones": "Fun Zones",
+  "Fun Zones ": "Fun Zones ",
+  "Hazard photo": "Hazard photo",
+  "Hazard type": "Hazard type",
+  "Info layers": "Info layers",
+  "Map point details": "Map point details",
+  "My rides": "My rides",
+  "My trips": "My trips",
+  "No Fun Zones in the drawn region \u2014 redraw a larger area.":
+    "No Fun Zones in the drawn region \u2014 redraw a larger area.",
+  "No Fun Zones in view \u2014 zoom out or pan the map.":
+    "No Fun Zones in view \u2014 zoom out or pan the map.",
+  "No contributing roads available yet. ":
+    "No contributing roads available yet. ",
+  "No elevation data ": "No elevation data ",
+  "Not enough data yet": "Not enough data yet",
+  "Pan the map to load closures for this area.":
+    "Pan the map to load closures for this area.",
+  "Pan the map to load passes for this area.":
+    "Pan the map to load passes for this area.",
+  "Plan a trip with these roads ": "Plan a trip with these roads ",
+  "Pre-load this list into your trip planner to build a multi-day ride around them. ":
+    "Pre-load this list into your trip planner to build a multi-day ride around them. ",
+  "Quality ": "Quality ",
+  "Ranked lists of the top-rated motorcycle roads in {name}, scored by quality and curviness.":
+    "Ranked lists of the top-rated motorcycle roads in {name}, scored by quality and curviness.",
+  "Ranked roads": "Ranked roads",
+  "Redraw region": "Redraw region",
+  "Remove from route": "Remove from route",
+  "Road Explorer": "Road Explorer",
+  "Road Quality Explorer \u2014 Tarmoto":
+    "Road Quality Explorer \u2014 Tarmoto",
+  "Score ": "Score ",
+  "Seasonal pass": "Seasonal pass",
+  "Set as finish": "Set as finish",
+  "Set as start": "Set as start",
+  "Showing your {count} most recent routes":
+    "Showing your {count} most recent routes",
+  "Sign in ": "Sign in ",
+  "Sub-regions": "Sub-regions",
+  "Surface type": "Surface type",
+  "This region needs more rides before we can rank its roads. Take a ride through and help build the map. ":
+    "This region needs more rides before we can rank its roads. Take a ride through and help build the map. ",
+  "Unnamed zone": "Unnamed zone",
+  "View on Google Maps": "View on Google Maps",
+  "Zone near {lat}, {lng}": "Zone near {lat}, {lng}",
+  avg: "avg",
+  curves: "curves",
+  "curviness ": "curviness ",
+  "drawn region": "drawn region",
+  view: "view",
+  "{count, plural, one {# curated region} other {# curated regions}}":
+    "{count, plural, one {# curated region} other {# curated regions}}",
+  "{count, plural, one {# region} other {# regions}}":
+    "{count, plural, one {# region} other {# regions}}",
+  "{count} in {scope}": "{count} in {scope}",
+  "{count} roads": "{count} roads",
+  "{date} onward": "{date} onward",
+} as const;
