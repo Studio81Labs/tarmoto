@@ -56,7 +56,7 @@ ENV NODE_ENV=production \
     PATH=/pnpm:$PATH
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 RUN apk add --no-cache curl tini \
- && addgroup -S tarmoto && adduser -S tarmoto -G tarmoto
+ && addgroup -g 101 -S tarmoto && adduser -u 100 -S tarmoto -G tarmoto
 WORKDIR /app
 
 COPY --from=build /workspace/pnpm-workspace.yaml /workspace/package.json /workspace/pnpm-lock.yaml ./
@@ -78,22 +78,31 @@ COPY docs/database/ docs/database/
 # source's admin upload writes its extract to that source's OWN configured dir
 # and the import reads it back — OSM under TARMOTO_OSM_POI_IMPORT_DIR, FSQ under
 # its independent TARMOTO_FSQ_POI_IMPORT_DIR (#869) — so BOTH must be writable
-# volumes. Create + chown each while still root so a FRESH named volume mounted
-# there inherits that ownership (Docker copies an empty volume's owner from the
-# image mount point on first mount) and the non-root runtime user can write —
-# otherwise the volume comes up root-owned and uploads fail with EACCES.
+# volumes. Also seed the OSM ROAD-extract dir (TARMOTO_OSM_ROAD_IMPORT_DIR,
+# #781 Sub-project B): this image only READS it (apps/ingest's
+# refresh-road-extracts, uid 100, is the writer), but the shared volume can be
+# mounted by EITHER container first, so it needs the identical pre-seeded
+# ownership here too — otherwise a backend-first mount leaves it root-owned and
+# the ingest producer's writes fail with EACCES. Create + chown each while
+# still root so a FRESH named volume mounted there inherits that ownership
+# (Docker copies an empty volume's owner from the image mount point on first
+# mount) and the non-root runtime user can read/write — otherwise the volume
+# comes up root-owned and uploads/writes fail with EACCES.
 #
 # Seed the exact paths the deployment configures: the PaaS injects every app env
 # var as a build ARG (see the base-image note above), so TARMOTO_*_POI_IMPORT_DIR
-# reach this stage. The defaults preserve the prior single-dir behaviour for a
-# local `docker build`; an unset/empty FSQ dir falls back to the OSM dir (the
-# common single-shared-volume topology, so seeding it twice is a harmless no-op).
-# If a volume already exists root-owned, recreate it (or chown it once).
+# and TARMOTO_OSM_ROAD_IMPORT_DIR reach this stage. The defaults preserve the
+# prior single-dir behaviour for a local `docker build`; an unset/empty FSQ dir
+# falls back to the OSM dir (the common single-shared-volume topology, so
+# seeding it twice is a harmless no-op). If a volume already exists root-owned,
+# recreate it (or chown it once).
 ARG TARMOTO_OSM_POI_IMPORT_DIR=/data/poi-extracts
 ARG TARMOTO_FSQ_POI_IMPORT_DIR=""
+ARG TARMOTO_OSM_ROAD_IMPORT_DIR=/data/road-extracts
 RUN poi_dir="${TARMOTO_OSM_POI_IMPORT_DIR:-/data/poi-extracts}"; \
     fsq_dir="${TARMOTO_FSQ_POI_IMPORT_DIR:-$poi_dir}"; \
-    mkdir -p "$poi_dir" "$fsq_dir" && chown tarmoto:tarmoto "$poi_dir" "$fsq_dir"
+    road_dir="${TARMOTO_OSM_ROAD_IMPORT_DIR:-/data/road-extracts}"; \
+    mkdir -p "$poi_dir" "$fsq_dir" "$road_dir" && chown tarmoto:tarmoto "$poi_dir" "$fsq_dir" "$road_dir"
 
 USER tarmoto
 EXPOSE 3000

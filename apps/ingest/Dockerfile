@@ -84,13 +84,18 @@ COPY --from=build /workspace/packages/poi-db/dist packages/poi-db/dist
 
 # Seed the extract-volume mount points owned by uid 100 so a FRESH named volume
 # comes up writable (Docker copies the empty volume's owner from the image mount
-# point on first mount). Both the OSM dir and the FSQ dir (may be one shared path).
+# point on first mount). The OSM POI dir and the FSQ dir may be one shared path;
+# the OSM ROAD dir (Sub-project B) MUST be a separate path from the POI one —
+# both write per-region `<code>.osm` files, so sharing a dir would let the two
+# refreshes clobber each other's extracts.
 ARG TARMOTO_OSM_POI_IMPORT_DIR=/data/poi-extracts
 ARG TARMOTO_FSQ_POI_IMPORT_DIR=/data/poi-extracts
+ARG TARMOTO_OSM_ROAD_IMPORT_DIR=/data/road-extracts
 RUN osm="${TARMOTO_OSM_POI_IMPORT_DIR:-/data/poi-extracts}" \
  && fsq="${TARMOTO_FSQ_POI_IMPORT_DIR:-/data/poi-extracts}" \
- && mkdir -p "$osm" "$fsq" \
- && chown tarmoto:tarmoto "$osm" "$fsq"
+ && road="${TARMOTO_OSM_ROAD_IMPORT_DIR:-/data/road-extracts}" \
+ && mkdir -p "$osm" "$fsq" "$road" \
+ && chown tarmoto:tarmoto "$osm" "$fsq" "$road"
 
 ENV HOME=/home/tarmoto
 USER tarmoto
@@ -104,4 +109,6 @@ ENTRYPOINT ["/usr/bin/tini", "--"]
 # The heavy EXTRACT is a scheduled `docker exec` of dist/scripts/refresh-*.js:
 #   OSM (weekly):  node apps/ingest/dist/scripts/refresh-poi-extracts.js
 #   FSQ (monthly): node apps/ingest/dist/scripts/refresh-fsq-extracts.js
+#   Road (weekly, staggered from the POI OSM refresh):
+#                  node apps/ingest/dist/scripts/refresh-road-extracts.js
 CMD ["node", "apps/ingest/dist/main.js"]

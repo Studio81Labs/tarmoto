@@ -1,76 +1,82 @@
 import { registerAs } from '@nestjs/config';
+import {
+  parseRegions,
+  resolveTileSpanDeg,
+  type PoiImportRegion,
+} from '@tarmoto/ingest';
 
 /**
- * Config for the scheduled OSM → `road_segments` import (#781).
+ * Config for the scheduled OSM → `road_segments` import (#781, folder model in
+ * Sub-project B).
  *
  * `enabled` defaults to **false** so the weekly job is dormant until a
- * deployment opts in — running a full-region import in dev / CI is undesirable,
- * and (until #809 lands) imported ways would surface in best-roads / fun-zone
- * detail via a representative id.
+ * deployment opts in.
  *
- * `filePath` points at an `.osm` XML extract the operator has prepared from a
- * Geofabrik `.osm.pbf` (`osmium cat region.osm.pbf -o region.osm`). Required when
- * enabled; the import throws a clear error rather than silently importing nothing.
+ * `extractDir` (`TARMOTO_OSM_ROAD_IMPORT_DIR`) is the folder of per-tile
+ * `<code>-r<row>c<col>-s<span>.osm` extracts the ingest producer
+ * (`refresh-road-extracts`) writes — the SAME shared volume, read here. `null`
+ * when unset; the importer skips (nothing to read). The importer subdivides each
+ * region into the same tile grid and reads
+ * `<extractDir>/roadTileFileName(tile, tileSpanDeg)` per tile. The `-s<span>`
+ * suffix is a grid-identity discriminator (encodes `tileSpanDeg` so a retuned
+ * span can't collide with a stale-grid file of the same row/col) — the importer
+ * always derives the span from ITS OWN config below, never from the filename.
  *
- * `bbox` is the extract's authoritative boundary `[minLng, minLat, maxLng, maxLat]`
- * (TARMOTO_OSM_ROAD_IMPORT_BBOX="minLng,minLat,maxLng,maxLat"). It gates
- * **stale-by-absence** tombstoning (#835): a data-derived bbox (the extent of the
- * incoming roads) would wrongly tombstone existing rows that fall in the rectangle
- * but outside the extract, and miss removed roads beyond the current roads'
- * extrema. When it is unset the importer does NOT tombstone rows just for being
- * absent from the snapshot — it can't tell "removed" from "outside this extract".
- * (A row whose exact `(osm_way_id, segment_index)` the snapshot reassigns to a
- * DIFFERENT road is still deactivated even without a region: that's definitive key
- * reuse, not a bbox heuristic.)
+ * `regions` (`TARMOTO_OSM_ROAD_IMPORT_REGIONS`, default all `DEFAULT_REGIONS`)
+ * is the coverage list. Each region's authoritative scope is its **country
+ * polygon** (the bundled `import-region-boundaries.geojson`) intersected with the
+ * **tile bbox** currently being imported, which bounds **stale-by-absence**
+ * tombstoning to that tile's cell of that region (a re-import may tombstone rows
+ * inside the polygon ∩ tile bbox that are absent from that tile's extract, never
+ * rows outside). The region bbox drives the producer's clip + the tile grid;
+ * import scoping is polygon-∩-bbox, because adjacent countries' bboxes overlap and
+ * a bare-bbox scope would let a region tombstone a neighbour's roads (#1033).
+ * Shared with the producer's region env so refresh + import target the same set;
+ * an unknown code fails fast rather than being silently dropped.
  *
- * IMPORTANT: the `.osm` extract MUST be **bbox-clipped to exactly this rectangle**
- * (`osmium extract -b minLng,minLat,maxLng,maxLat …`), so the extract's coverage
- * equals the region. A polygon (e.g. raw Geofabrik) extract whose shape is smaller
- * than the rectangle would leave neighbouring roads inside the bbox but absent
- * from the file, and stale detection would wrongly tombstone them. See the module
- * README.
+ * Extract contract: each region's coverage is produced as a grid of per-tile
+ * `<code>-r<row>c<col>-s<span>.osm` files (`subdivideRegion`, shared with the
+ * producer), each an `osmium extract -b` output using the default
+ * `complete_ways` strategy — boundary-crossing ways are emitted COMPLETE
+ * (extending beyond the tile bbox). The producer's clip bbox is additionally
+ * PADDED (`TILE_EXTRACT_PAD_DEG`) so a way with no node inside the exact tile
+ * is still captured; the importer still reconciles to the EXACT tile bbox
+ * below, so that overhang is filtered out and never double-counted.
+ * `importRegion` subdivides the region into the SAME tiles and, per tile, filters
+ * incoming rows to the country POLYGON ∩ the tile bbox (`filterToRegion`, a PostGIS
+ * `ST_Intersects` pair) and reconcile tombstones only within that same
+ * polygon-∩-bbox scope, so a way straddling two adjacent regions (or tiles) is
+ * scoped to whichever country/tile actually contains each part and its shared
+ * segment upserts idempotently. (This replaces the old single-file "clip to
+ * exactly this rectangle" contract.)
+ *
+ * `tileSpanDeg` (`TARMOTO_OSM_ROAD_TILE_SPAN_DEG`, default 2.5) is the max tile
+ * span the importer subdivides each region by. It MUST match the producer's value
+ * (both call `subdivideRegion` with it), or the importer would look for tile files
+ * the producer never wrote.
  */
 export interface RoadImportConfig {
   enabled: boolean;
-  filePath: string | null;
-  bbox: [number, number, number, number] | null;
-}
-
-function parseBbox(
-  raw: string | undefined,
-): [number, number, number, number] | null {
-  if (!raw?.trim()) return null;
-  const parts = raw.split(',').map((p) => Number(p.trim()));
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
-    throw new Error(
-      `TARMOTO_OSM_ROAD_IMPORT_BBOX must be "minLng,minLat,maxLng,maxLat", got "${raw}"`,
-    );
-  }
-  const [minLng, minLat, maxLng, maxLat] = parts as [
-    number,
-    number,
-    number,
-    number,
-  ];
-  if (minLng > maxLng || minLat > maxLat) {
-    throw new Error(
-      `TARMOTO_OSM_ROAD_IMPORT_BBOX min must not exceed max, got "${raw}"`,
-    );
-  }
-  return [minLng, minLat, maxLng, maxLat];
+  extractDir: string | null;
+  regions: PoiImportRegion[];
+  tileSpanDeg: number;
 }
 
 export const osmRoadImportConfig = registerAs(
   'osmRoadImport',
   (): RoadImportConfig => {
-    const filePath = process.env.TARMOTO_OSM_ROAD_IMPORT_FILE?.trim();
+    const extractDir = process.env.TARMOTO_OSM_ROAD_IMPORT_DIR?.trim();
     return {
       enabled:
         (process.env.TARMOTO_OSM_ROAD_IMPORT_ENABLED ?? 'false')
           .trim()
           .toLowerCase() === 'true',
-      filePath: filePath ? filePath : null,
-      bbox: parseBbox(process.env.TARMOTO_OSM_ROAD_IMPORT_BBOX),
+      extractDir: extractDir ? extractDir : null,
+      regions: parseRegions(
+        process.env.TARMOTO_OSM_ROAD_IMPORT_REGIONS,
+        'TARMOTO_OSM_ROAD_IMPORT_REGIONS',
+      ),
+      tileSpanDeg: resolveTileSpanDeg(process.env),
     };
   },
 );

@@ -22,38 +22,34 @@ describe('OsmImportProcessor', () => {
   const job = { id: 'job-1' } as Job;
 
   it('skips (no file read, no conflation) when the import is disabled', async () => {
-    const importFromConfiguredFile = jest.fn();
+    const importAll = jest.fn();
     const { processor, enqueueQualityConflation } = build({
       enabled: false,
-      importFromConfiguredFile,
+      importAll,
     });
 
     await expect(processor.process(job)).resolves.toEqual({ skipped: true });
-    expect(importFromConfiguredFile).not.toHaveBeenCalled();
+    expect(importAll).not.toHaveBeenCalled();
     expect(enqueueQualityConflation).not.toHaveBeenCalled();
   });
 
   it('runs the import, chains the conflation, and returns its result', async () => {
-    const importFromConfiguredFile = jest
-      .fn()
-      .mockResolvedValue({ upserted: 42 });
+    const importAll = jest.fn().mockResolvedValue({ upserted: 42 });
     const { processor, enqueueQualityConflation } = build({
       enabled: true,
-      importFromConfiguredFile,
+      importAll,
     });
 
     await expect(processor.process(job)).resolves.toEqual({ upserted: 42 });
-    expect(importFromConfiguredFile).toHaveBeenCalledTimes(1);
+    expect(importAll).toHaveBeenCalledTimes(1);
     expect(enqueueQualityConflation).toHaveBeenCalledTimes(1);
   });
 
   it('does not chain the conflation when the import fails', async () => {
-    const importFromConfiguredFile = jest
-      .fn()
-      .mockRejectedValue(new Error('read failed'));
+    const importAll = jest.fn().mockRejectedValue(new Error('read failed'));
     const { processor, enqueueQualityConflation } = build({
       enabled: true,
-      importFromConfiguredFile,
+      importAll,
     });
 
     await expect(processor.process(job)).rejects.toThrow('read failed');
