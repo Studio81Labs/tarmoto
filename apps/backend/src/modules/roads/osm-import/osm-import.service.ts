@@ -339,18 +339,34 @@ export class OsmImportService {
     this.logger.log(
       `OSM import (${region.code}): ${tiles.length} tile(s) from ${extractDir}`,
     );
-    const total: OsmImportResult = {
-      upserted: 0,
-      carriedOver: 0,
-      deactivated: 0,
-    };
-    for (const tile of tiles) {
-      const r = await this.importTile(region, tile, extractDir);
-      total.upserted += r.upserted;
-      total.carriedOver += r.carriedOver;
-      total.deactivated += r.deactivated;
-    }
-    return total;
+    // One transaction for the WHOLE region (#835 identity safety, Codex P1): a
+    // region's tiles reconcile as a UNIT. A mid-region tile failure (a parse/read
+    // error on a present-but-malformed extract, or a DB error) propagates out of
+    // the callback → TypeORM rolls back EVERY earlier tile, instead of leaving a
+    // half-new / half-old snapshot that would corrupt identity + crowd history for
+    // a way crossing a tile seam (the same class the producer-side atomic publish
+    // already closes). Each tile still buffers ONE tile's rows at a time
+    // ({@link importTile}), so peak heap stays bounded to a single tile — only the
+    // DB transaction, not the row buffer, spans the region — and a later tile's
+    // existing-row reads see earlier tiles' in-transaction writes. An ABSENT tile
+    // returns EMPTY_RESULT WITHOUT throwing (a missing extract is not a failure and
+    // must not roll the region back). `importAll` loops regions, each its own
+    // transaction, so cross-region imports stay independent; a region that throws
+    // still rejects `importAll` and skips conflation, as before.
+    return this.repo.manager.transaction(async (tx) => {
+      const total: OsmImportResult = {
+        upserted: 0,
+        carriedOver: 0,
+        deactivated: 0,
+      };
+      for (const tile of tiles) {
+        const r = await this.importTile(region, tile, extractDir, tx);
+        total.upserted += r.upserted;
+        total.carriedOver += r.carriedOver;
+        total.deactivated += r.deactivated;
+      }
+      return total;
+    });
   }
 
   /**
@@ -385,6 +401,7 @@ export class OsmImportService {
     region: PoiImportRegion,
     tile: RoadTile,
     extractDir: string,
+    manager?: EntityManager,
   ): Promise<OsmImportResult> {
     const label = `${region.code} r${tile.row}c${tile.col}`;
     const path = join(
@@ -410,7 +427,16 @@ export class OsmImportService {
       polygon: regionPolygon(region.code),
       bbox: bboxTuple(tile.bbox),
     };
-    const inScope = await this.filterToRegion(incoming, scope);
+    // Filter + reconcile run on the region transaction when importRegion drives us
+    // (`manager` set), so the whole region commits or rolls back atomically and a
+    // later tile sees earlier tiles' writes. A direct caller (a single importTile,
+    // the reconcile e2e) passes none → the filter reads on the repo's default
+    // manager and reconcile opens its own transaction, exactly as before.
+    const inScope = await this.filterToRegion(
+      incoming,
+      scope,
+      manager ?? this.repo.manager,
+    );
     if (inScope.length === 0) {
       // AUTHORITATIVE empty (see the method doc): a present extract with no in-scope
       // ways means the tile's in-scope roads are gone (or it's an empty sea/border
@@ -425,7 +451,7 @@ export class OsmImportService {
           `(removals propagate; mass-wipe guarded)`,
       );
     }
-    return this.reconcile(inScope, scope);
+    return this.reconcile(inScope, scope, manager);
   }
 
   private async fileExists(path: string): Promise<boolean> {
@@ -485,6 +511,32 @@ export class OsmImportService {
   private async reconcile(
     incoming: RoadSegmentRow[],
     scope: RegionScope | null,
+    manager?: EntityManager,
+  ): Promise<OsmImportResult> {
+    // Driven by importRegion (via importTile within its per-region transaction) →
+    // run on that transaction (`manager`) so all of a region's tiles commit or roll
+    // back as a unit (Codex P1), and a later tile's reads see earlier tiles' writes.
+    // Called directly (importFrom, or a single importTile with no region tx) → open
+    // our own transaction, so a standalone reconcile's result is byte-identical to
+    // before (its reads + ordered writes just run inside one fresh transaction).
+    if (manager) return this.reconcileOn(incoming, scope, manager);
+    return this.repo.manager.transaction((tx) =>
+      this.reconcileOn(incoming, scope, tx),
+    );
+  }
+
+  /**
+   * The reconcile body, run on a single {@link EntityManager} `m` — the region
+   * transaction (importRegion) or a fresh one (the {@link reconcile} dispatcher's
+   * direct path). EVERY read (existing-row load, out-of-bbox owner load) and EVERY
+   * write (tombstone, carry-over, upsert) runs on `m`, so the whole reconcile is
+   * one atomic unit and the matching/tombstone logic below is unchanged — only the
+   * query executor moved from `this.repo` to `m`.
+   */
+  private async reconcileOn(
+    incoming: RoadSegmentRow[],
+    scope: RegionScope | null,
+    m: EntityManager,
   ): Promise<OsmImportResult> {
     // With a configured scope an EMPTY tile is still authoritative — every road in
     // it was removed / reclassified non-drivable, so its existing rows are
@@ -508,8 +560,8 @@ export class OsmImportService {
     // OTHER tiles are NOT) and may tombstone; without one we load only the incoming
     // extent for carry-over matching and never tombstone.
     const existing = scope
-      ? await this.loadExistingInRegion(scope)
-      : await this.loadExistingInBbox(this.dataBbox(incoming));
+      ? await this.loadExistingInRegion(scope, m)
+      : await this.loadExistingInBbox(this.dataBbox(incoming), m);
     const existingByKey = new Map(
       existing.map((e) => [this.identityKey(e.osm_way_id, e.segment_index), e]),
     );
@@ -584,6 +636,7 @@ export class OsmImportService {
     const outOfBboxOwnerIds = await this.loadOutOfBboxKeyOwners(
       newIncoming,
       new Set(existing.map((e) => e.id)),
+      m,
     );
     // Split the scoped stale set into its two kinds. `inBboxReusedIds` is a SUBSET
     // of `plan.stale` (the stale rows whose key the snapshot reassigned); the rest
@@ -627,51 +680,52 @@ export class OsmImportService {
       );
     }
 
-    await this.repo.manager.transaction(async (tx) => {
-      // Apply order matters — a split/merge can move an `(osm_way_id,
-      // segment_index)` key from one live row to another, so free every key that's
-      // being reassigned BEFORE anything claims it, or the partial unique index
-      // rejects the re-key.
-      // 1. Tombstone stale + reused-key rows: the partial index then drops their
-      //    keys, preserving the row (and its history FKs) rather than orphaning it.
-      if (deactivateIds.length > 0) {
-        await tx.query(
-          `UPDATE ${TABLE} SET deactivated_at = NOW()
+    // Ordered writes on the reconcile manager `m` (the region transaction, or the
+    // dispatcher's own — see {@link reconcile}). No inner transaction here: we are
+    // ALREADY inside `m`, so wrapping again would either nest pointlessly or, worse,
+    // commit a tile mid-region and defeat the per-region atomicity.
+    // Apply order matters — a split/merge can move an `(osm_way_id, segment_index)`
+    // key from one live row to another, so free every key that's being reassigned
+    // BEFORE anything claims it, or the partial unique index rejects the re-key.
+    // 1. Tombstone stale + reused-key rows: the partial index then drops their
+    //    keys, preserving the row (and its history FKs) rather than orphaning it.
+    if (deactivateIds.length > 0) {
+      await m.query(
+        `UPDATE ${TABLE} SET deactivated_at = NOW()
            WHERE id = ANY($1) AND deactivated_at IS NULL`,
-          [deactivateIds],
-        );
-      }
-      // 2. Null the carry-over targets' OLD identity (they're immediately re-keyed
-      //    in step 3) so a rotation swapping keys between live rows can't collide.
-      if (carryTargetIds.length > 0) {
-        await tx.query(
-          `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
+        [deactivateIds],
+      );
+    }
+    // 2. Null the carry-over targets' OLD identity (they're immediately re-keyed in
+    //    step 3) so a rotation swapping keys between live rows can't collide.
+    if (carryTargetIds.length > 0) {
+      await m.query(
+        `UPDATE ${TABLE} SET osm_way_id = NULL, segment_index = NULL
            WHERE id = ANY($1)`,
-          [carryTargetIds],
-        );
-      }
-      // 3. Carry-over: set the new identity + geometry on each freed row.
-      for (const c of plan.carryOver) {
-        const row = newIncoming[c.incomingIndex]!;
-        await tx.query(CARRY_OVER_UPDATE, [
-          row.osm_way_id,
-          row.segment_index,
-          JSON.stringify(row.geom),
-          row.length_m,
-          row.curviness_score,
-          row.road_name,
-          row.road_number,
-          row.surface_type,
-          c.existingId,
-          row.osm_quality_seed,
-          row.quality_source,
-        ]);
-      }
-      // 4. Upsert unchanged + fresh inserts — the keys they need are free now.
-      for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
-        await this.flush(tx, upsertRows.slice(i, i + UPSERT_CHUNK));
-      }
-    });
+        [carryTargetIds],
+      );
+    }
+    // 3. Carry-over: set the new identity + geometry on each freed row.
+    for (const c of plan.carryOver) {
+      const row = newIncoming[c.incomingIndex]!;
+      await m.query(CARRY_OVER_UPDATE, [
+        row.osm_way_id,
+        row.segment_index,
+        JSON.stringify(row.geom),
+        row.length_m,
+        row.curviness_score,
+        row.road_name,
+        row.road_number,
+        row.surface_type,
+        c.existingId,
+        row.osm_quality_seed,
+        row.quality_source,
+      ]);
+    }
+    // 4. Upsert unchanged + fresh inserts — the keys they need are free now.
+    for (let i = 0; i < upsertRows.length; i += UPSERT_CHUNK) {
+      await this.flush(m, upsertRows.slice(i, i + UPSERT_CHUNK));
+    }
 
     const byAbsenceSkipped = scope
       ? 0
@@ -696,12 +750,13 @@ export class OsmImportService {
   private async loadOutOfBboxKeyOwners(
     newIncoming: RoadSegmentRow[],
     bboxIds: Set<string>,
+    m: EntityManager,
   ): Promise<string[]> {
     if (newIncoming.length === 0) return [];
     // Annotate the binding (not an `as` cast) so `r` is typed under both the local
     // and strict OpenAPI-gen tsconfigs, which disagree on whether a cast is
     // redundant.
-    const rows: Array<{ id: string }> = await this.repo.query(
+    const rows: Array<{ id: string }> = await m.query(
       `SELECT rs.id
        FROM ${TABLE} rs
        JOIN unnest($1::bigint[], $2::int[]) AS k(w, i)
@@ -783,6 +838,7 @@ export class OsmImportService {
    */
   private async loadExistingInBbox(
     bbox: [number, number, number, number],
+    m: EntityManager,
   ): Promise<
     Array<{
       id: string;
@@ -799,7 +855,7 @@ export class OsmImportService {
       osm_way_id: string;
       segment_index: number;
       geom: GeoJSON.LineString;
-    }> = await this.repo.query(
+    }> = await m.query(
       // `&&` (bbox overlap) is only the GiST prefilter — a curved/L-shaped segment
       // OUTSIDE the region can still have a bounding box that clips the envelope.
       // `ST_Intersects` is the exact test, so a row is a stale candidate only when
@@ -833,7 +889,10 @@ export class OsmImportService {
    * excluded: they aren't part of the OSM network, so the importer never
    * reassigns or tombstones them.
    */
-  private async loadExistingInRegion(scope: RegionScope): Promise<
+  private async loadExistingInRegion(
+    scope: RegionScope,
+    m: EntityManager,
+  ): Promise<
     Array<{
       id: string;
       osm_way_id: string;
@@ -849,7 +908,7 @@ export class OsmImportService {
       osm_way_id: string;
       segment_index: number;
       geom: GeoJSON.LineString;
-    }> = await this.repo.query(
+    }> = await m.query(
       // The two `&&` (bbox-overlap) clauses are only the GiST prefilter; the two
       // `ST_Intersects` are the exact test — a row is a stale candidate only when
       // its geometry genuinely lies inside the country polygon (not merely its
@@ -888,6 +947,7 @@ export class OsmImportService {
   private async filterToRegion(
     rows: RoadSegmentRow[],
     scope: RegionScope,
+    m: EntityManager,
   ): Promise<RoadSegmentRow[]> {
     if (rows.length === 0) return [];
     const kept: RoadSegmentRow[] = [];
@@ -895,7 +955,7 @@ export class OsmImportService {
       const chunk = rows.slice(start, start + REGION_FILTER_CHUNK);
       // Annotate the binding (not an `as` cast) so `o` is typed under both the
       // local and strict OpenAPI-gen tsconfigs.
-      const ords: Array<{ ord: number }> = await this.repo.query(
+      const ords: Array<{ ord: number }> = await m.query(
         // The SAME combined test as loadExistingInRegion: a row is kept iff it
         // intersects the country polygon AND the tile envelope — kept byte-for-byte
         // parallel so a seam row is judged identically on both sides (#1033).

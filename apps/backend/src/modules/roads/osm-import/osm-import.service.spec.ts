@@ -233,6 +233,7 @@ describe('OsmImportService', () => {
   let loadExisting: jest.Mock;
   let filterRegion: jest.Mock;
   let managerQuery: jest.Mock;
+  let managerTransaction: jest.Mock;
   let osmConfig: {
     enabled: boolean;
     extractDir: string | null;
@@ -272,27 +273,41 @@ describe('OsmImportService', () => {
     filterRegion = jest.fn((_sql: string, params: unknown[]) =>
       Promise.resolve((params[0] as string[]).map((_g, i) => ({ ord: i + 1 }))),
     );
-    managerQuery = jest.fn().mockResolvedValue(undefined);
-    const manager = { createQueryBuilder, query: managerQuery };
-    // `repo.query` serves three raw queries; dispatch by SQL: the combined-test
-    // region filter (`unnest … WITH ORDINALITY`, the only one that carries it) vs
-    // the existing-row load + out-of-bbox owner load (both hit `road_segments`,
-    // driven by `loadExisting`'s call order). The filter + the load now BOTH also
-    // reference `ST_MakeEnvelope` (the tile-bbox half of the scope), so
-    // `WITH ORDINALITY` — not `ST_MakeEnvelope` — is what separates them.
-    const repoQuery = jest.fn((sql: string, params: unknown[]): unknown =>
-      sql.includes('WITH ORDINALITY')
-        ? (filterRegion(sql, params) as unknown)
-        : (loadExisting(sql, params) as unknown),
+    // Reads AND writes now run on the transaction's EntityManager (the region tx
+    // when importRegion drives, else the reconcile dispatcher's own) — never on
+    // `repo` directly — so ONE mock manager serves as both `repo.manager` (a direct
+    // importTile's filter reads on it; the dispatcher opens `.transaction` on it)
+    // AND the manager handed to every transaction callback. Its `query` dispatches
+    // by SQL:
+    //  - the incoming filter (`unnest … WITH ORDINALITY`, the only one carrying it),
+    //  - the ordered writes (any `UPDATE …` — rows-affected is unused → undefined),
+    //  - the existing-row + out-of-bbox owner loads (the remaining SELECTs, driven
+    //    by `loadExisting`'s call order).
+    // The filter + the loads BOTH reference `ST_MakeEnvelope` now (the tile-bbox
+    // half of the scope), so `WITH ORDINALITY` / the `UPDATE` prefix — not
+    // `ST_MakeEnvelope` — is what separates the three.
+    managerQuery = jest.fn((sql: string, params: unknown[]): unknown => {
+      if (sql.includes('WITH ORDINALITY')) {
+        return filterRegion(sql, params) as unknown;
+      }
+      if (sql.trimStart().toUpperCase().startsWith('UPDATE')) return undefined;
+      return loadExisting(sql, params) as unknown;
+    });
+    const manager: {
+      createQueryBuilder: jest.Mock;
+      query: jest.Mock;
+      transaction: jest.Mock;
+    } = { createQueryBuilder, query: managerQuery, transaction: jest.fn() };
+    // Run the callback against the SAME manager (so its reads/writes reach
+    // `managerQuery` + `qb`), mirroring a real `EntityManager.transaction`. Both
+    // importRegion's per-region tx and the dispatcher's direct tx resolve here, so
+    // a rejecting callback rejects the returned promise — the atomic-region test
+    // asserts exactly ONE such tx wraps every tile.
+    manager.transaction.mockImplementation(
+      (cb: (m: typeof manager) => Promise<unknown>) => cb(manager),
     );
-    const repo = {
-      query: repoQuery,
-      manager: {
-        transaction: jest.fn((cb: (m: typeof manager) => Promise<unknown>) =>
-          cb(manager),
-        ),
-      },
-    } as unknown as Repository<RoadSegment>;
+    managerTransaction = manager.transaction;
+    const repo = { manager } as unknown as Repository<RoadSegment>;
     const moduleRef = await Test.createTestingModule({
       providers: [
         OsmImportService,
@@ -976,6 +991,35 @@ describe('OsmImportService', () => {
       loadExisting.mockResolvedValue([]);
       const result = await service.importRegion(CZ, dir);
       expect(result.upserted).toBe(1);
+      expect(qb.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs every tile of a region in ONE transaction and rejects when a later tile fails (atomic per-region, Codex P1)', async () => {
+      // span 4° → 2 tiles (r0c0 + r0c1). r0c0 is a valid extract (one way → one
+      // flush issued on the region tx); r0c1 is MALFORMED XML, so its parse throws
+      // mid-region. The region must run under a SINGLE manager.transaction and
+      // REJECT — the atomic-per-region guarantee. The mock can't model rollback, so
+      // it proves one-tx-for-all-tiles + rejection here; the e2e proves the earlier
+      // tile's write actually rolls back against real PostGIS.
+      osmConfig.tileSpanDeg = 4;
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        wayXml(1),
+      );
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE_R0C1, osmConfig.tileSpanDeg)),
+        // A present-but-malformed extract (mismatched close tag → sax rejects) — a
+        // genuine parse failure, NOT an absent file, so importTile throws and the
+        // region rejects (an absent tile would skip without throwing).
+        '<osm version="0.6"><node id="1" lat="50" lon="14"></nope></osm>',
+      );
+      loadExisting.mockResolvedValue([]);
+
+      await expect(service.importRegion(CZ, dir)).rejects.toThrow();
+      // ONE transaction wrapped BOTH tiles (not one-per-tile), so the later tile's
+      // failure rolls the earlier tile's writes back with it.
+      expect(managerTransaction).toHaveBeenCalledTimes(1);
+      // The earlier tile's upsert DID run — on that same (now-failed) region tx.
       expect(qb.execute).toHaveBeenCalledTimes(1);
     });
   });
