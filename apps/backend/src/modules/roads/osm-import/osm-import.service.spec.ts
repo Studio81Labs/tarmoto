@@ -847,6 +847,7 @@ describe('OsmImportService', () => {
       expect(result).toEqual({
         result: { upserted: 0, carriedOver: 0, deactivated: 0 },
         present: false, // the ONLY path that reports absent
+        inScopeRows: 0, // Codex P2: absent tile contributes nothing either way
       });
       // reconcile never ran → no load/transaction
       expect(loadExisting).not.toHaveBeenCalled();
@@ -870,6 +871,7 @@ describe('OsmImportService', () => {
       expect(result).toEqual({
         result: { upserted: 0, carriedOver: 0, deactivated: 0 },
         present: true, // a present extract, even 0-way, still counts as present
+        inScopeRows: 0, // Codex P2: 0 ways parsed → 0 in-scope, despite present
       });
       expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
       expect(warn).not.toHaveBeenCalled();
@@ -898,6 +900,7 @@ describe('OsmImportService', () => {
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
       expect(result.present).toBe(true);
+      expect(result.inScopeRows).toBe(0); // 0-way extract → 0 in-scope rows
       expect(result.result.deactivated).toBe(1); // the now-absent row propagates
       expect(warn).not.toHaveBeenCalled(); // below the floor → no withhold warn
     });
@@ -924,6 +927,7 @@ describe('OsmImportService', () => {
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
       expect(result.present).toBe(true);
+      expect(result.inScopeRows).toBe(0); // filterToRegion kept nothing
       expect(result.result.deactivated).toBe(1); // the now-absent row propagates
       expect(warn).not.toHaveBeenCalled(); // below the floor → no withhold warn
     });
@@ -936,6 +940,7 @@ describe('OsmImportService', () => {
       loadExisting.mockResolvedValue([]); // no existing rows
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result.present).toBe(true);
+      expect(result.inScopeRows).toBe(1); // the one way passed filterToRegion
       expect(result.result.upserted).toBe(1);
       // loadExistingInRegion is called with the CZ country polygon AND the tile
       // bbox tuple — the SAME combined scope filterToRegion filtered the incoming
@@ -1063,6 +1068,84 @@ describe('OsmImportService', () => {
       // The earlier tile's upsert DID run — on that same (now-failed) region tx.
       expect(qb.execute).toHaveBeenCalledTimes(1);
     });
+
+    it('rejects a region whose tiles are present but contribute zero in-scope roads anywhere (producer error, Codex P2)', async () => {
+      // A present, non-empty extract whose way falls entirely outside the country
+      // polygon ∩ tile bbox — exactly what a wrong Geofabrik slug/source, or a tag
+      // filter that matched no drivable ways, would look like: content on disk,
+      // nothing ever in scope. A country never legitimately has zero drivable
+      // roads, so a region where EVERY tile is like this must reject rather than
+      // silently commit — unlike the genuinely empty SINGLE cell within an
+      // otherwise normal region (the next test).
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        wayXml(1, 60, 30), // parses, but filterRegion below keeps nothing
+      );
+      filterRegion.mockResolvedValueOnce([]); // nothing inside the polygon ∩ bbox
+      // Seed an existing in-scope row: without the guard, this tile's
+      // authoritative-empty reconcile would tombstone it (a single sub-floor row
+      // propagates freely) — the exact hazard the guard exists to roll back.
+      loadExisting.mockResolvedValueOnce([
+        existingRow('seed-uuid', '999', 0, [
+          [14, 50],
+          [14, 50.0009],
+        ]),
+      ]);
+
+      await expect(service.importRegion(CZ, dir)).rejects.toThrow(
+        /zero drivable road segments in scope/,
+      );
+
+      // The tombstone reconcile staged for the seeded row ran on the SAME single
+      // manager.transaction that then threw — not a separate, already-committed
+      // one — so a real Postgres transaction rolls it back with everything else
+      // (proven against real PostGIS by the identical single-tx-then-throw
+      // mechanism in osm-region-atomic-reconcile.e2e-spec.ts; this guard is just
+      // one more throw condition inside that same wrapper). The mock can't replay
+      // a post-rollback DB read, but it does prove the write was never committed
+      // on its own — only staged on the transaction this test asserts rejected:
+      const calls = managerQuery.mock.calls as Array<[string, unknown[]]>;
+      const deactivate = calls.find(([sql]) =>
+        sql.includes('deactivated_at = NOW()'),
+      );
+      expect(deactivate).toBeDefined();
+      expect(deactivate![1]).toEqual([['seed-uuid']]);
+      expect(managerTransaction).toHaveBeenCalledTimes(1); // one region tx, not per-tile
+      expect(qb.execute).not.toHaveBeenCalled(); // nothing in scope to insert
+    });
+
+    it('does NOT throw when one tile is authoritative-empty but another tile in the region has in-scope roads (per-tile empty unaffected)', async () => {
+      // span 4° → 2 tiles (r0c0 + r0c1, imported row-major). r0c0 is present but
+      // 0-way (authoritative empty — still tombstones its own seeded row exactly
+      // as before); r0c1 carries a real in-scope way. The REGION's total in-scope
+      // rows (0 + 1 = 1) is > 0, so the producer-error guard never arms — it only
+      // rejects when EVERY tile in the region contributes zero in-scope rows.
+      osmConfig.tileSpanDeg = 4;
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        '<osm version="0.6"></osm>',
+      );
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE_R0C1, osmConfig.tileSpanDeg)),
+        wayXml(2),
+      );
+      // r0c0's reconcile (first, row-major) sees this seeded row; r0c1's sees none.
+      loadExisting
+        .mockResolvedValueOnce([
+          existingRow('live', '7', 0, [
+            [14, 50],
+            [14, 50.0009],
+          ]),
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.importRegion(CZ, dir);
+
+      expect(result.tilesPresent).toBe(2);
+      expect(result.result.deactivated).toBe(1); // r0c0's authoritative-empty tombstone still applies
+      expect(result.result.upserted).toBe(1); // r0c1's way still inserts
+      expect(qb.execute).toHaveBeenCalledTimes(1); // only r0c1 had rows to flush
+    });
   });
 
   describe('importAll', () => {
@@ -1135,10 +1218,15 @@ describe('OsmImportService', () => {
       );
     });
 
-    it('does NOT throw when at least one configured tile is present, even if it parses to zero ways', async () => {
-      // CZ's tile is present but 0-way — still counts as PRESENT (the guard is
-      // about presence on disk, not content). SK's tile is entirely absent. The
-      // whole-run total (1) is > 0, so the guard never arms.
+    it('rejects when the only present tile parses to zero ways (region producer-error guard, not the whole-run empty-dir guard, Codex P2)', async () => {
+      // CZ's tile is present but 0-way. It still counts as PRESENT for
+      // `tilesPresent` (presence-on-disk, not content) — so this used to be
+      // lenient at the WHOLE-RUN level ("at least one tile present anywhere" was
+      // enough to dodge the empty-dir guard below). The region-level producer-
+      // error guard now looks past mere presence: CZ contributes zero in-scope
+      // rows, so CZ's OWN region rejects outright — a country never legitimately
+      // has zero drivable roads. CZ is first in `regions`, so it rejects before
+      // importAll's loop ever reaches SK (whose tile stays entirely absent).
       await writeFile(
         join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
         '<osm version="0.6"></osm>',
@@ -1155,8 +1243,9 @@ describe('OsmImportService', () => {
         },
       ];
       loadExisting.mockResolvedValue([]);
-      const result = await service.importAll();
-      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      await expect(service.importAll()).rejects.toThrow(
+        /zero drivable road segments in scope/,
+      );
     });
 
     it('does NOT throw when zero regions are configured (nothing to import is not "everything absent")', async () => {

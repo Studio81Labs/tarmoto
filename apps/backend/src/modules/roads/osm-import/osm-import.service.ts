@@ -376,6 +376,21 @@ export class OsmImportService {
    * `present: false` exactly as before; some-present-some-absent THROWS — before
    * the region transaction even opens — failing this region (and `importAll`)
    * loudly instead of partially importing it.
+   *
+   * Empty-region producer-error guard (Codex P2): after the tile loop, still
+   * INSIDE the region transaction below, if any of the region's tiles were present
+   * but NONE of them contributed even one in-scope row (summed from
+   * {@link importTile}'s `inScopeRows`), the transaction THROWS instead of
+   * committing. A country never legitimately has zero drivable roads, so "tiles
+   * present but zero in-scope rows everywhere in the region" means the producer
+   * emitted no roads for it (a wrong Geofabrik slug/source, or a tag filter that
+   * matched no drivable ways) — a producer error, not the genuine per-tile empty
+   * state (SOME tiles in a region empty, others not — unaffected, still
+   * authoritative). Throwing here rolls back every tile's writes for this region,
+   * including any authoritative-empty tombstones the tile loop already staged
+   * against this region's existing rows, and rejects `importAll` so quality
+   * conflation is never chained onto the resulting empty/stale network. A region
+   * with >= 1 in-scope row anywhere (even one sparse tile) never trips this.
    */
   async importRegion(
     region: PoiImportRegion,
@@ -431,17 +446,31 @@ export class OsmImportService {
         deactivated: 0,
       };
       let tilesPresent = 0;
+      let regionInScopeRows = 0;
       for (const tile of tiles) {
-        const { result: r, present } = await this.importTile(
-          region,
-          tile,
-          extractDir,
-          tx,
-        );
+        const {
+          result: r,
+          present,
+          inScopeRows,
+        } = await this.importTile(region, tile, extractDir, tx);
         total.upserted += r.upserted;
         total.carriedOver += r.carriedOver;
         total.deactivated += r.deactivated;
         if (present) tilesPresent++;
+        regionInScopeRows += inScopeRows;
+      }
+      // Producer-error guard (Codex P2) — see the method doc. Still inside the
+      // region transaction, so throwing here rolls back every tile's writes
+      // above, including any authoritative-empty tombstones already staged
+      // against this region's existing rows.
+      if (tilesPresent > 0 && regionInScopeRows === 0) {
+        throw new Error(
+          `OSM road import: region ${region.code} has ${tilesPresent} tile(s) ` +
+            `present but zero drivable road segments in scope — the producer ` +
+            `likely emitted no roads (wrong Geofabrik slug/source or tag ` +
+            `filter). Refusing to import an empty region (would wipe existing ` +
+            `roads + run conflation on nothing).`,
+        );
       }
       return { result: total, tilesPresent };
     });
@@ -481,14 +510,24 @@ export class OsmImportService {
    * which still reconcile). It carries no content signal by itself — {@link
    * importRegion} sums it into `tilesPresent`, and {@link importAll} uses the
    * region-wide total to tell "found nothing to import" apart from "found no
-   * extract at all" across a whole run.
+   * extract at all" across a whole run. The return's `inScopeRows` (Codex P2) is
+   * `inScope.length` — 0 on the absent-file skip and on a present-but-all-out-of-
+   * scope extract, >0 whenever at least one incoming row passed {@link
+   * filterToRegion}. {@link importRegion} sums it across the region's tiles to tell
+   * a genuine empty cell (some OTHER tile in the region has in-scope rows) apart
+   * from a producer error (EVERY tile in the region has zero in-scope rows despite
+   * tiles being present) — see its doc for the region-level guard this feeds.
    */
   async importTile(
     region: PoiImportRegion,
     tile: RoadTile,
     extractDir: string,
     manager?: EntityManager,
-  ): Promise<{ result: OsmImportResult; present: boolean }> {
+  ): Promise<{
+    result: OsmImportResult;
+    present: boolean;
+    inScopeRows: number;
+  }> {
     const label = `${region.code} r${tile.row}c${tile.col}`;
     const path = join(
       extractDir,
@@ -498,7 +537,7 @@ export class OsmImportService {
       this.logger.warn(
         `OSM import (${label}): no extract at ${path} — skipping`,
       );
-      return { result: EMPTY_RESULT, present: false };
+      return { result: EMPTY_RESULT, present: false, inScopeRows: 0 };
     }
     this.logger.log(`OSM import (${label}): reading ${path}`);
     const incoming = await this.bufferRows(
@@ -538,7 +577,7 @@ export class OsmImportService {
       );
     }
     const result = await this.reconcile(inScope, scope, manager);
-    return { result, present: true };
+    return { result, present: true, inScopeRows: inScope.length };
   }
 
   private async fileExists(path: string): Promise<boolean> {
