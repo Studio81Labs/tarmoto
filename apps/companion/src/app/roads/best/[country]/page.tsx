@@ -1,5 +1,4 @@
-import { t } from "@/i18n";
-import { readLocale } from "@/i18n/server";
+import { readLocale, t } from "@/i18n/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";

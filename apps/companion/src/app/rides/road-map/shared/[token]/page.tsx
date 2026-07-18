@@ -1,5 +1,5 @@
-import { t, type SupportedLocale } from "@/i18n";
-import { getServerLocale, readLocale } from "@/i18n/server";
+import type { SupportedLocale } from "@/i18n";
+import { getServerLocale, readLocale, t } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -40,10 +40,10 @@ export default async function SharedRoadMapPage({
   const format = await getServerFormatters();
   const share = await fetchSharedMap(token);
   if (!share) notFound();
-  // This server component awaits before rendering, so resolve the request
-  // locale from the per-request store and thread it explicitly into every
-  // t() call below — the module-global t() default can be stomped by a
-  // concurrent request at the await/Suspense boundary (see i18n/server.ts).
+  // `t` here is the server-bound translator from `@/i18n/server`, so every
+  // direct call below already defaults to the per-request `getServerLocale()`.
+  // `SnapshotLegend` is a plain helper (not itself bound to the server `t`),
+  // so `locale` is still resolved here and threaded to it as an explicit prop.
   const locale = getServerLocale();
   const snapshot = parseMapShareSnapshot(share.snapshot);
   const initialCenter = snapshot?.initial_center ?? DEFAULT_CENTER;
@@ -71,7 +71,7 @@ export default async function SharedRoadMapPage({
               </span>
               <span className="text-fg-mute">/</span>
               <Mono className="truncate text-[11px] text-fg-dim">
-                {t("Shared road map", undefined, locale)}
+                {t("Shared road map")}
               </Mono>
             </span>
           </Link>
@@ -80,7 +80,7 @@ export default async function SharedRoadMapPage({
             className="inline-flex shrink-0 items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
           >
             <ArrowUpRight size={14} aria-hidden="true" />
-            {t("Open in Tarmoto", undefined, locale)}
+            {t("Open in Tarmoto")}
           </Link>
         </div>
       </header>
@@ -90,9 +90,7 @@ export default async function SharedRoadMapPage({
         <section className="mb-6 rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <Stamp tone="accent">
-                {t("Personal road map", undefined, locale)}
-              </Stamp>
+              <Stamp tone="accent">{t("Personal road map")}</Stamp>
               <h1 className="mt-2 font-sans text-[40px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
                 {share.title}
               </h1>
@@ -100,7 +98,7 @@ export default async function SharedRoadMapPage({
             {snapshot && (
               <span className="shrink-0 rounded-full bg-accent px-2.5 py-1.5 text-[11px] font-bold tracking-[0.2px] text-ink">
                 {format.integer(snapshot.stats.percent_explored)}
-                {t("% explored", undefined, locale)}
+                {t("% explored")}
               </span>
             )}
           </div>
@@ -113,14 +111,10 @@ export default async function SharedRoadMapPage({
             )}
             <MetaChip>
               <Eye size={13} className="text-fg-mute" aria-hidden="true" />
-              {t(
-                "{count, plural, one {{n} view} other {{n} views}}",
-                {
-                  count: share.view_count,
-                  n: format.integer(share.view_count),
-                },
-                locale,
-              )}
+              {t("{count, plural, one {{n} view} other {{n} views}}", {
+                count: share.view_count,
+                n: format.integer(share.view_count),
+              })}
             </MetaChip>
             {snapshot && (
               <>
@@ -131,7 +125,7 @@ export default async function SharedRoadMapPage({
                     aria-hidden="true"
                   />
                   {format.integer(snapshot.segments.length)}{" "}
-                  {t("segments highlighted", undefined, locale)}
+                  {t("segments highlighted")}
                 </MetaChip>
                 <MetaChip>
                   <RouteIcon
@@ -144,8 +138,8 @@ export default async function SharedRoadMapPage({
                       share, so flag the scope next to the period-filtered
                       "segments highlighted" chip. */}
                   {snapshot.period === "all"
-                    ? t("ridden", undefined, locale)
-                    : t("ridden all-time", undefined, locale)}
+                    ? t("ridden")
+                    : t("ridden all-time")}
                 </MetaChip>
               </>
             )}
@@ -176,34 +170,26 @@ export default async function SharedRoadMapPage({
                 variant="ink"
                 accentNumber
                 formatValue={format.integer}
-                label={t("Segments ridden", undefined, locale)}
+                label={t("Segments ridden")}
                 // The highlighted (period-filtered) count, matching the map,
                 // legend, and the "segments highlighted" hero chip.
                 value={snapshot.segments.length}
                 delta={
                   snapshot.period === "all"
                     ? undefined
-                    : t(TIME_PERIOD_LABELS[snapshot.period], undefined, locale)
+                    : t(TIME_PERIOD_LABELS[snapshot.period])
                 }
               />
               <MetricTile
-                label={t("Distance ridden", undefined, locale)}
+                label={t("Distance ridden")}
                 value={format.distanceKm(snapshot.stats.total_distance_km)}
-                delta={
-                  snapshot.period === "all"
-                    ? undefined
-                    : t("All-time", undefined, locale)
-                }
+                delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
               <MetricTile
-                label={t("Coverage", undefined, locale)}
+                label={t("Coverage")}
                 value={format.integer(snapshot.stats.percent_explored)}
                 unit="%"
-                delta={
-                  snapshot.period === "all"
-                    ? undefined
-                    : t("All-time", undefined, locale)
-                }
+                delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
             </section>
           </>
@@ -211,8 +197,6 @@ export default async function SharedRoadMapPage({
           <div className="mb-6 rounded-[14px] border border-dashed border-line bg-cream p-8 text-center text-sm text-fg-dim">
             {t(
               "This shared road map's snapshot is in an unexpected format — the owner may have generated it with a newer version of the companion. Ask them to regenerate the share link.",
-              undefined,
-              locale,
             )}
           </div>
         )}
@@ -224,16 +208,14 @@ export default async function SharedRoadMapPage({
                 the only coral token is the quality scale's `q1` (flagged
                 "avoid" for non-quality use), so spell the stamp out here. */}
             <span className="font-mono text-[11px] font-bold uppercase leading-none tracking-[1.6px] text-[#E05A3C]">
-              {t("Every road you ride", undefined, locale)}
+              {t("Every road you ride")}
             </span>
             <div className="mt-1.5 text-[20px] font-extrabold">
-              {t("Start your own road map", undefined, locale)}
+              {t("Start your own road map")}
             </div>
             <p className="mt-1 max-w-xl text-[13px] text-cream/70">
               {t(
                 "Tarmoto layers every ride onto a regional map so you can see — and chase — the roads you haven't ridden yet.",
-                undefined,
-                locale,
               )}
             </p>
           </div>
@@ -241,7 +223,7 @@ export default async function SharedRoadMapPage({
             href="/"
             className="inline-flex shrink-0 items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
           >
-            {t("Get Tarmoto", undefined, locale)}
+            {t("Get Tarmoto")}
           </Link>
         </div>
       </main>
@@ -250,14 +232,14 @@ export default async function SharedRoadMapPage({
       <footer className="border-t border-line bg-paper">
         <div className="mx-auto flex max-w-[980px] flex-wrap items-center justify-between gap-4 px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
-            {t("TARMOTO · SHARED VIA PUBLIC LINK ·", undefined, locale)}{" "}
+            {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
             {new Date().getUTCFullYear()}
           </Mono>
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
           >
-            {t("Build your road map", undefined, locale)}
+            {t("Build your road map")}
           </Link>
         </div>
       </footer>
