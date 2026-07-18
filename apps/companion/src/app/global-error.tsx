@@ -30,7 +30,13 @@ export default function GlobalError({
           className="min-h-screen"
           kind="server"
           code="500"
+          /* eslint-disable-next-line no-restricted-syntax -- see file-level
+             comment: this boundary may be recovering from a crashed i18n
+             bootstrap, so it deliberately avoids importing `t()`. */
           label="Server error"
+          /* eslint-disable-next-line no-restricted-syntax -- see file-level
+             comment: this boundary may be recovering from a crashed i18n
+             bootstrap, so it deliberately avoids importing `t()`. */
           title="Something skidded out"
           body="A problem on our end interrupted the request. We’ve logged it — give it another go in a moment."
           actions={

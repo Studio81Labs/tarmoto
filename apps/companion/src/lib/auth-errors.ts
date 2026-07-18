@@ -1,4 +1,4 @@
-import type { LooseTranslate } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 
 export const SOCIAL_ACCOUNT_CONFLICT_ERROR = "social_account_conflict";
 export const SOCIAL_SIGNIN_FAILED_ERROR = "social_signin_failed";
@@ -13,7 +13,7 @@ export const SOCIAL_ACCOUNT_CONFLICT_MESSAGE =
 
 export function getLoginErrorMessage(
   errorCode: string | null,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   if (errorCode === SOCIAL_ACCOUNT_CONFLICT_ERROR) {
     return t(SOCIAL_ACCOUNT_CONFLICT_MESSAGE);

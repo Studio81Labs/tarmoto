@@ -50,6 +50,7 @@ export const rides = {
     "Every road you ride gets layered onto the regional basemap. Take your first ride to start filling it in.",
   Export: "Export",
   "Export failed": "Export failed",
+  "Free ride": "Free ride",
   "From ": "From ",
   "From date": "From date",
   "Fuel estimate": "Fuel estimate",
@@ -191,6 +192,7 @@ export const rides = {
   "Total rides": "Total rides",
   "Track at least two rides on mobile, then pick any pair to see them side by side.":
     "Track at least two rides on mobile, then pick any pair to see them side by side.",
+  "Tracked ride": "Tracked ride",
   Type: "Type",
   "Unnamed road": "Unnamed road",
   Unridden: "Unridden",

@@ -41,6 +41,9 @@ describe("SharedTripJoinCta", () => {
     render(
       <SharedTripJoinCta
         token="share-token"
+        /* eslint-disable-next-line no-restricted-syntax -- `title` is the
+           shared trip's dynamic display name (see share.title in
+           app/trips/shared/[token]/page.tsx), not translatable UI copy. */
         title="Dolomites weekend"
         tripId="trip-1"
       />,
@@ -79,6 +82,9 @@ describe("SharedTripJoinCta", () => {
     render(
       <SharedTripJoinCta
         token="share-token"
+        /* eslint-disable-next-line no-restricted-syntax -- `title` is the
+           shared trip's dynamic display name (see share.title in
+           app/trips/shared/[token]/page.tsx), not translatable UI copy. */
         title="Dolomites weekend"
         tripId="trip-1"
       />,
@@ -96,6 +102,9 @@ describe("SharedTripJoinCta", () => {
     render(
       <SharedTripJoinCta
         token="legacy-token"
+        /* eslint-disable-next-line no-restricted-syntax -- `title` is the
+           shared trip's dynamic display name (see share.title in
+           app/trips/shared/[token]/page.tsx), not translatable UI copy. */
         title="Legacy share"
         tripId={null}
       />,

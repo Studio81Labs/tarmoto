@@ -15,7 +15,8 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
-import type { Formatters, LooseTranslate } from "@tarmoto/shared";
+import type { Formatters } from "@tarmoto/shared";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 import type { Badge, RiderStats } from "@/lib/types";
 
 type MeProfileDto = components["schemas"]["MeProfileDto"];
@@ -244,7 +245,7 @@ export function pickNextMilestone(
 export function formatMilestoneLabel(
   progress: MilestoneProgress,
   format: Formatters,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   const metric = progress.milestone.metric;
   if (metric === "totalKm") {
@@ -281,7 +282,7 @@ export function formatMilestoneLabel(
 export function formatDaysRemaining(
   endsAt: string,
   now: Date,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   const end = new Date(endsAt).getTime();
   if (!Number.isFinite(end)) return t("Ongoing");
@@ -312,7 +313,7 @@ export function formatDaysRemaining(
   });
 }
 
-const MILESTONE_UNITS: Record<LeaderboardMetric, string> = {
+const MILESTONE_UNITS: Record<LeaderboardMetric, EnglishMessageKey> = {
   totalKm: "km",
   roadsDiscovered: "roads",
   hazardsReported: "reports",
@@ -325,7 +326,12 @@ function clamp01(value: number): number {
 
 // ── Demo data ──
 
-const DEFAULT_MILESTONES: Milestone[] = [
+const DEFAULT_MILESTONES: Array<
+  Omit<Milestone, "name" | "description"> & {
+    name: EnglishMessageKey;
+    description: EnglishMessageKey;
+  }
+> = [
   {
     id: "distance-traveller",
     name: "Distance Traveller",
@@ -660,7 +666,7 @@ export function buildLiveSnapshot(
     challengeDetails: readonly ChallengeDetailDto[];
     meProfile?: MeProfileDto | null;
   },
-  t: LooseTranslate,
+  t: Translate,
 ): GamificationSnapshot {
   const badges = input.badges.map(mapBadgeDto);
   const challenges = input.challengeDetails.map((d) =>
@@ -701,7 +707,7 @@ type RegionalDimensionLeaderboardDto =
 type RegionalLeaderboardEntryDto =
   components["schemas"]["RegionalLeaderboardEntryDto"];
 
-const DIMENSION_LABELS: Record<LeaderboardDimensionKey, string> = {
+const DIMENSION_LABELS: Record<LeaderboardDimensionKey, EnglishMessageKey> = {
   total_distance_km: "Distance",
   roads_discovered: "Roads discovered",
   hazards_reported: "Hazards reported",
@@ -709,7 +715,7 @@ const DIMENSION_LABELS: Record<LeaderboardDimensionKey, string> = {
 
 export function labelForDimension(
   dim: LeaderboardDimensionKey,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   return t(DIMENSION_LABELS[dim]);
 }

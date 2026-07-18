@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import { QUALITY_BAND_COLORS } from "@/lib/planner/quality-bands";
 import type { FlaggedSection } from "@/lib/planner/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 /**
  * Flagged-section card (design: Inspect § 03): rough sections carry a
@@ -16,7 +17,7 @@ interface FlaggedSectionCardProps {
   onReroute?: ((segmentId: string) => void) | undefined;
 }
 
-const FLAG_COPY: Record<FlaggedSection["kind"], string> = {
+const FLAG_COPY: Record<FlaggedSection["kind"], EnglishMessageKey> = {
   rough: "below your Good-or-better floor",
   no_data: "no rider passes — verify before you commit",
 };

@@ -3,24 +3,31 @@
 import { createContext, useContext, useMemo } from "react";
 import {
   DEFAULT_LOCALE,
+  type EnglishMessageKey,
   LOCALES,
   type SupportedLocale,
   type TranslationValues,
   resolveLocale,
   setActiveLocale,
-  translate,
+  tDynamic,
 } from ".";
 
 type I18nContextValue = {
   locale: SupportedLocale;
   localeLabel: string;
-  t: (key: string, values?: TranslationValues) => string;
+  // Enforcement (PR 3b): narrowed to the same registered-key contract as the
+  // module `t()` — this hook is otherwise a second loose entry point that
+  // would let an unregistered string bypass the compiler check entirely.
+  // The implementation still delegates to `tDynamic` internally (it needs to
+  // stay generic over the resolved locale); only the consumer-facing type
+  // narrows.
+  t: (key: EnglishMessageKey, values?: TranslationValues) => string;
 };
 
 const I18nContext = createContext<I18nContextValue>({
   locale: DEFAULT_LOCALE,
   localeLabel: LOCALES[DEFAULT_LOCALE].label,
-  t: (key, values) => translate(key, values, DEFAULT_LOCALE),
+  t: (key, values) => tDynamic(key, values, DEFAULT_LOCALE),
 });
 
 export function I18nProvider({
@@ -36,7 +43,7 @@ export function I18nProvider({
     () => ({
       locale: resolvedLocale,
       localeLabel: LOCALES[resolvedLocale].label,
-      t: (key, values) => translate(key, values, resolvedLocale),
+      t: (key, values) => tDynamic(key, values, resolvedLocale),
     }),
     [resolvedLocale],
   );

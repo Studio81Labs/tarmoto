@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import {
   Fragment,
   useCallback,
@@ -167,7 +167,7 @@ import { useFormat } from "@/format/FormatProvider";
  */
 const SURFACE_OPTIONS: {
   value: SurfaceType;
-  label: string;
+  label: EnglishMessageKey;
 }[] = [
   { value: "asphalt", label: "Asphalt" },
   { value: "concrete", label: "Concrete" },
@@ -4142,6 +4142,19 @@ const SPINE_ROLE_COLORS: Record<string, string> = {
   end: "#FF6A1A",
 };
 
+// Fixed 7-member Waypoint["type"] union — typed so `t()` enforces every
+// role label is a registered catalog key (was a `tDynamic(role)` escape
+// hatch that hid "fuel"/"rest"/"accommodation" from the compiler).
+const WAYPOINT_ROLE_LABEL = {
+  start: "start",
+  via: "via",
+  end: "finish",
+  fuel: "fuel",
+  rest: "rest",
+  photo: "photo",
+  accommodation: "accommodation",
+} satisfies Record<Waypoint["type"], EnglishMessageKey>;
+
 function WaypointEditor({
   waypoints,
   legPrefs = [],
@@ -4156,7 +4169,7 @@ function WaypointEditor({
   waypoints: Array<{
     id: string;
     name?: string | undefined;
-    type: string;
+    type: Waypoint["type"];
   }>;
   /** Per-leg road filters (revision 3 §C), keyed by waypoint identity. */
   legPrefs?: LegPref[];
@@ -4208,7 +4221,7 @@ function WaypointEditor({
         </div>
       ) : null}
       {waypoints.map((waypoint, index) => {
-        const role = waypoint.type === "end" ? "finish" : waypoint.type;
+        const role = WAYPOINT_ROLE_LABEL[waypoint.type];
         const dotColor = SPINE_ROLE_COLORS[waypoint.type] ?? "#A89D8B";
         // Thin LEG row between consecutive routing waypoints (revision 3
         // §C): its road-type control overrides the trip-wide preference
@@ -4259,7 +4272,9 @@ function WaypointEditor({
                   // until the rider types a new place.
                   <GeocodeSearchField
                     variant="spine"
-                    placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
+                    placeholder={
+                      waypoint.name ?? t("Waypoint {n}", { n: index + 1 })
+                    }
                     ariaLabel={t("Search location for {role} waypoint", {
                       role: t(role),
                     })}
@@ -4267,7 +4282,7 @@ function WaypointEditor({
                   />
                 ) : (
                   <span className="block truncate text-[13px] font-bold text-ink">
-                    {waypoint.name ?? `Waypoint ${index + 1}`}
+                    {waypoint.name ?? t("Waypoint {n}", { n: index + 1 })}
                   </span>
                 )}
               </div>
@@ -4275,7 +4290,7 @@ function WaypointEditor({
                 <button
                   type="button"
                   aria-label={t("Remove {name}", {
-                    name: waypoint.name ?? `waypoint ${index + 1}`,
+                    name: waypoint.name ?? t("waypoint {n}", { n: index + 1 }),
                   })}
                   onClick={() => onRemove(waypoint.id)}
                   className="shrink-0 rounded p-0.5 text-fg-mute transition hover:text-quality-q1"

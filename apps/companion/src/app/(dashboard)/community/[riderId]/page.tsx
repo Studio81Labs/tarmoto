@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound as renderNotFound, useParams } from "next/navigation";
 import Link from "next/link";
@@ -248,7 +248,9 @@ function Header({
               </span>
             )}
             {profile.home_region && <span className="text-fg-mute">·</span>}
-            <span>{formatJoinedLabel(profile.created_at, new Date(), t)}</span>
+            <span>
+              {formatJoinedLabel(profile.created_at, new Date(), tDynamic)}
+            </span>
           </div>
           {profile.bio && (
             <p className="mt-3 max-w-[560px] text-[15px] leading-[1.5] text-ink">

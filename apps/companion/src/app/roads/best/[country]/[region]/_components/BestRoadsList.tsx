@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { t } from "@/i18n/server";
 import type { BestRoad } from "@/lib/bestRoads";
 import {
   formatRoadLabel,

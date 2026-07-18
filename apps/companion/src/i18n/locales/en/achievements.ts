@@ -7,6 +7,7 @@ export const achievements = {
   "Could not load achievements": "Could not load achievements",
   "Could not load leaderboards": "Could not load leaderboards",
   "Current tier": "Current tier",
+  "Earned {date}": "Earned {date}",
   Ended: "Ended",
   "Ends tomorrow": "Ends tomorrow",
   "Join challenge": "Join challenge",

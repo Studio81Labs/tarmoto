@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "@/i18n";
+import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, X } from "lucide-react";
@@ -23,7 +23,7 @@ interface RideDetailSidebarProps {
   anchor?: "container" | "viewport";
 }
 
-const RIDE_TYPE_LABEL: Partial<Record<string, string>> = {
+const RIDE_TYPE_LABEL: Partial<Record<string, EnglishMessageKey>> = {
   free: "Free ride",
   commute: "Commute",
   trip: "Trip",
@@ -126,6 +126,10 @@ function RideBody({ ride }: { ride: RideDetail }) {
   const avgSpeed = format.splitSpeed(ride.avg_speed ?? 0);
   const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
   const ascent = format.splitElevation(ride.elevation_gain ?? 0);
+  // Fixed 4-way ride-type map goes through the typed `t()`; only the
+  // genuinely-open fallback (an unrecognized ride_type value) is dynamic.
+  const rideTypeKey = RIDE_TYPE_LABEL[ride.ride_type];
+  const rideTypeLabel = rideTypeKey ? t(rideTypeKey) : tDynamic(ride.ride_type);
 
   const tiles: MetricTileProps[] = [
     {
@@ -174,7 +178,7 @@ function RideBody({ ride }: { ride: RideDetail }) {
         <p className="mt-1 flex items-center gap-2 text-[12.5px] text-fg-dim">
           <span>{format.date(ride.started_at)}</span>
           <span className="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[1px] text-fg-mute">
-            {t(RIDE_TYPE_LABEL[ride.ride_type] ?? ride.ride_type)}
+            {rideTypeLabel}
           </span>
         </p>
       </div>
