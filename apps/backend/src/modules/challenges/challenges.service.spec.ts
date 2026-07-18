@@ -5,16 +5,19 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ChallengesService } from './challenges.service.js';
 import { Challenge } from '../../entities/challenge.entity.js';
 import { ChallengeEntry } from '../../entities/challenge-entry.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('ChallengesService', () => {
   let service: ChallengesService;
   let challengeRepo: Partial<jest.Mocked<Repository<Challenge>>>;
   let entryRepo: Partial<jest.Mocked<Repository<ChallengeEntry>>>;
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
   const now = new Date();
   const mockChallenge = {
@@ -59,6 +62,9 @@ describe('ChallengesService', () => {
         }),
       ),
     };
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,6 +74,7 @@ describe('ChallengesService', () => {
           provide: getRepositoryToken(ChallengeEntry),
           useValue: entryRepo,
         },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -93,6 +100,16 @@ describe('ChallengesService', () => {
       const result = await service.listActive();
 
       expect(result).toHaveLength(0);
+    });
+
+    it('returns [] without querying when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.listActive();
+      expect(result).toEqual([]);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(challengeRepo.find).not.toHaveBeenCalled();
     });
   });
 
@@ -127,6 +144,17 @@ describe('ChallengesService', () => {
       await expect(service.getDetail('missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('getDetail 404s when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      await expect(service.getDetail('ch-1', 'user-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(challengeRepo.findOne).not.toHaveBeenCalled();
     });
   });
 
@@ -195,6 +223,17 @@ describe('ChallengesService', () => {
         'connection lost',
       );
     });
+
+    it('join throws 503 when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      await expect(service.join('user-1', 'ch-1')).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(entryRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   describe('getProgress', () => {
@@ -240,6 +279,16 @@ describe('ChallengesService', () => {
 
       await expect(service.getProgress('user-1', 'ch-1')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('getProgress 404s when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      await expect(
+        service.getProgress('user-1', 'ch-1'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
       );
     });
   });

@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WeatherAlertDispatch } from '../../entities/weather-alert-dispatch.entity.js';
 import { HazardsModule } from '../hazards/index.js';
 import { BadgesModule } from '../badges/index.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { AccountModule } from '../account/index.js';
 import { DataExportModule } from '../account/data-export/data-export.module.js';
 import { RoadsModule } from '../roads/index.js';
@@ -103,6 +104,7 @@ export class JobsModule {
         TypeOrmModule.forFeature([WeatherAlertDispatch]),
         HazardsModule,
         BadgesModule,
+        FeaturesModule,
         AccountModule,
         DataExportModule,
         RoadsModule,

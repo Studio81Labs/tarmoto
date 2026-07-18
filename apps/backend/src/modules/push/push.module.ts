@@ -12,6 +12,7 @@ import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
 import { UserNotification } from '../../entities/user-notification.entity.js';
 import { AuthModule } from '../auth/index.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { DevicesController } from './devices.controller.js';
 import { DeviceTokensService } from './device-tokens.service.js';
 import { InAppNotificationsController } from './in-app-notifications.controller.js';
@@ -161,6 +162,7 @@ function walkAndShutdown(provider: PushProvider): void {
   imports: [
     ConfigModule,
     AuthModule,
+    FeaturesModule,
     TypeOrmModule.forFeature([
       DeviceToken,
       NotificationPreferencesRow,

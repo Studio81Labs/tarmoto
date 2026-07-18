@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { UserBadge } from '../../entities/user-badge.entity.js';
@@ -11,6 +11,7 @@ import { BADGE_DEFINITIONS, computeTier } from './badge-definitions.js';
 import { deriveProgression } from './progression-definitions.js';
 import { BadgeDto, CheckBadgesResponseDto } from './dto/badges.dto.js';
 import { ProgressionDto } from './dto/progression.dto.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 @Injectable()
 export class BadgesService {
@@ -28,9 +29,16 @@ export class BadgesService {
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
     private readonly dataSource: DataSource,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async listBadges(userId: string): Promise<BadgeDto[]> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return [];
+    }
+
     const [earned, stats] = await Promise.all([
       this.userBadgeRepo.find({ where: { user_id: userId } }),
       this.computeStats(userId),
@@ -60,6 +68,14 @@ export class BadgesService {
   }
 
   async checkAndAward(userId: string): Promise<CheckBadgesResponseDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Gamification is temporarily unavailable',
+      );
+    }
+
     const stats = await this.computeStats(userId);
 
     const newlyEarned = await this.dataSource.transaction(async (manager) => {
@@ -107,6 +123,12 @@ export class BadgesService {
    * achievements (see `progression-definitions.ts`).
    */
   async computeProgression(userId: string): Promise<ProgressionDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return deriveProgression({});
+    }
+
     const stats = await this.computeStats(userId);
     return deriveProgression(stats);
   }

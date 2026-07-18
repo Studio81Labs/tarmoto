@@ -6,6 +6,7 @@ import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   ExplorationStatsDto,
   UnriddenSegmentDto,
@@ -24,9 +25,25 @@ export class ExplorationService {
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async getStats(userId: string): Promise<ExplorationStatsDto> {
+    // Operator kill switch: the personal road map (stats, nearby-unridden,
+    // ridden ids/segments) is gamification surface — short-circuit to
+    // zeroed/empty before any repo or query-builder call so a disable
+    // takes effect immediately.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return {
+        ridden_segments: 0,
+        total_segments: 0,
+        percent_explored: 0,
+        total_distance_km: 0,
+      };
+    }
+
     const [riddenResult, totalResult, distanceResult] = await Promise.all([
       // Numerator: distinct LIVE road segments the rider has completed. Join
       // road_segments so a segment tombstoned after being ridden (#835) drops out
@@ -71,6 +88,12 @@ export class ExplorationService {
     radiusKm: number,
     limit: number,
   ): Promise<UnriddenSegmentDto[]> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return [];
+    }
+
     // #279 / #501 — `nearby-unridden` is genuinely personalised: the
     // result set is filtered against the rider's completed-ride history.
     // When the rider has opted out of personalised recommendations there
@@ -133,6 +156,12 @@ export class ExplorationService {
   }
 
   async getRiddenIds(userId: string): Promise<RiddenSegmentIdsDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return { segment_ids: [] };
+    }
+
     const results = await this.rideSegmentRepo
       .createQueryBuilder('rs')
       .select('DISTINCT rs.road_segment_id', 'id')
@@ -177,6 +206,12 @@ export class ExplorationService {
    * quality" value would flap between concurrent reads.
    */
   async getRiddenSegments(userId: string): Promise<RiddenSegmentsListDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return { segments: [] };
+    }
+
     const lastTouchExpr =
       'COALESCE(rs2.exited_at, rs2.entered_at, r2.started_at)';
     const rows = await this.rideSegmentRepo.manager

@@ -107,14 +107,16 @@ export class ReviewsController {
     );
   }
 
-  // `SystemSwitchGuard` runs first (guard phase, before `FilesInterceptor`)
-  // so that when `sys_poi_ratings` is off the request is rejected with 503
-  // BEFORE Multer parses and buffers the photo payload — the kill switch has
-  // to shed exactly this upload load during a photo-spam incident. It needs
-  // no auth (a system switch is global), so it may precede `AuthGuard`. The
-  // service-level gate in `uploadPhotos` stays as the authoritative guarantee.
+  // AuthGuard runs BEFORE SystemSwitchGuard so an unauthenticated request is
+  // rejected (401) without the `feature_states` read the switch guard would do
+  // — no DB amplification and no 503-vs-401 switch-state leak for anonymous
+  // probes. Both guards still run in the guard phase (before `FilesInterceptor`),
+  // so when `sys_poi_ratings` is off an authenticated request is 503'd BEFORE
+  // Multer parses and buffers the photo payload — the kill switch still sheds
+  // that upload load during a spam incident. The service-level gate in
+  // `uploadPhotos` stays as the authoritative guarantee.
   @Post(':segmentId/reviews/photos')
-  @UseGuards(SystemSwitchGuard, AuthGuard)
+  @UseGuards(AuthGuard, SystemSwitchGuard)
   @RequireSystemSwitch('sys_poi_ratings')
   @ApiBearerAuth()
   @UseInterceptors(
