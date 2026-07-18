@@ -11,6 +11,7 @@ import type {
   WeatherAlertDto,
 } from './dto/weather.dto.js';
 import { haversineKm } from '@tarmoto/shared';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 /** Sample points every ~20km along the route */
 const ROUTE_SAMPLE_INTERVAL_KM = 20;
@@ -30,6 +31,7 @@ export class WeatherService {
   constructor(
     @Inject(WEATHER_PROVIDER)
     private readonly provider: WeatherProvider,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async getCurrentWeather(
@@ -43,6 +45,19 @@ export class WeatherService {
   async getRouteWeather(
     route: Array<{ lat: number; lng: number }>,
   ): Promise<RouteWeatherResponseDto> {
+    // Operator kill switch: short-circuit before sampling/provider calls so
+    // a disable takes effect immediately. This gates ONLY the user-facing
+    // weather-along-route feature — getCurrentWeather stays ungated because
+    // it is shared with the severe-weather alert sweep and commute, and
+    // safety alerts must never be operator-silenced.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_weather_provider',
+      ))
+    ) {
+      return { points: [], has_alerts: false, alerts: [], typed_alerts: [] };
+    }
+
     // Sample points along the route at regular intervals
     const samplePoints = this.sampleRoute(route, ROUTE_SAMPLE_INTERVAL_KM);
     const sampleDistancesKm = this.distancesAlongRoute(route, samplePoints);

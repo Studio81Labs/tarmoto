@@ -6,10 +6,14 @@ import {
   type WeatherProvider,
   type WeatherData,
 } from './weather-provider.interface.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('WeatherService', () => {
   let service: WeatherService;
   let provider: jest.Mocked<WeatherProvider>;
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+  >;
 
   const mockWeather: WeatherData = {
     temperature_c: 14,
@@ -23,11 +27,17 @@ describe('WeatherService', () => {
     provider = {
       getCurrentWeather: jest.fn().mockResolvedValue(mockWeather),
     };
+    // Defaults the switch ON so every pre-existing test below is
+    // unaffected; the off-case test sets its own mock resolving `false`.
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WeatherService,
         { provide: WEATHER_PROVIDER, useValue: provider },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -173,6 +183,24 @@ describe('WeatherService', () => {
       expect(result.points).toHaveLength(0);
       expect(result.has_alerts).toBe(false);
       expect(result.typed_alerts).toHaveLength(0);
+    });
+
+    it('should return an empty result without hitting the provider when sys_weather_provider is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const route = [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.5, lng: 10.41 },
+      ];
+      const result = await service.getRouteWeather(route);
+
+      expect(result).toEqual({
+        points: [],
+        has_alerts: false,
+        alerts: [],
+        typed_alerts: [],
+      });
+      expect(provider.getCurrentWeather).not.toHaveBeenCalled();
     });
   });
 
