@@ -87,3 +87,15 @@ export function useRemoveLimitOverride() {
     "/admin/users/{userId}/feature-limits/{feature}",
   );
 }
+
+export function useAdminSystemSwitches() {
+  return $api.useQuery("get", "/admin/system-switches");
+}
+
+export function useDisableSystemSwitch() {
+  return $api.useMutation("put", "/admin/system-switches/{key}/disable");
+}
+
+export function useEnableSystemSwitch() {
+  return $api.useMutation("delete", "/admin/system-switches/{key}/disable");
+}

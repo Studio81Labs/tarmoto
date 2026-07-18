@@ -47,6 +47,8 @@ import { AdminFlagsController } from '../admin-flags/admin-flags.controller.js';
 import { AdminFlagsService } from '../admin-flags/admin-flags.service.js';
 import { AdminLimitsController } from '../admin-flags/admin-limits.controller.js';
 import { AdminLimitsService } from '../admin-flags/admin-limits.service.js';
+import { AdminSystemSwitchesController } from '../admin-flags/admin-system-switches.controller.js';
+import { AdminSystemSwitchesService } from '../admin-flags/admin-system-switches.service.js';
 import { AdminContentController } from '../admin-content/admin-content.controller.js';
 import { AdminContentService } from '../admin-content/admin-content.service.js';
 import { AdminEmailController } from '../admin-email/admin-email.controller.js';
@@ -106,6 +108,7 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
     AdminAdminsController,
     AdminFlagsController,
     AdminLimitsController,
+    AdminSystemSwitchesController,
     AdminContentController,
     AdminAppSettingsController,
     AdminEmailController,
@@ -119,6 +122,7 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
     AdminAdminsService,
     AdminFlagsService,
     AdminLimitsService,
+    AdminSystemSwitchesService,
     AdminContentService,
     AdminEmailService,
     AdminEmailTemplateService,

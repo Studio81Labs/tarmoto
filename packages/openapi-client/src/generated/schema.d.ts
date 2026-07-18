@@ -3465,6 +3465,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/system-switches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the system switches with resolved state */
+        get: operations["AdminSystemSwitchesController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/system-switches/{key}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Disable a subsystem (operator kill switch) */
+        put: operations["AdminSystemSwitchesController_disable"];
+        post?: never;
+        /** Re-enable a subsystem (clear the kill switch) */
+        delete: operations["AdminSystemSwitchesController_enable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/content": {
         parameters: {
             query?: never;
@@ -6680,6 +6715,24 @@ export interface components {
             /** @description Override value; null = unlimited. */
             value: number | null;
         };
+        AdminSystemSwitchDto: {
+            /** @description Registry system-switch key. */
+            key: string;
+            description: string;
+            /** @description Resolved state — false when disabled. */
+            enabled: boolean;
+            /** @description Why it was disabled (only when disabled). */
+            disabled_reason: string | null;
+            disabled_by: string | null;
+            disabled_at: string | null;
+        };
+        AdminSystemSwitchesResponseDto: {
+            switches: components["schemas"]["AdminSystemSwitchDto"][];
+        };
+        SetSystemSwitchDisabledDto: {
+            /** @description Why the subsystem is being disabled — always required (a kill switch must carry incident context). Stored on the row, not audited. */
+            reason: string;
+        };
         ContentLocationDto: {
             lat: number;
             lng: number;
@@ -7136,6 +7189,9 @@ export type SchemaSetLimitGlobalValueDto = components['schemas']['SetLimitGlobal
 export type SchemaAdminUserFeatureLimitDto = components['schemas']['AdminUserFeatureLimitDto'];
 export type SchemaAdminUserFeatureLimitsResponseDto = components['schemas']['AdminUserFeatureLimitsResponseDto'];
 export type SchemaSetUserLimitOverrideDto = components['schemas']['SetUserLimitOverrideDto'];
+export type SchemaAdminSystemSwitchDto = components['schemas']['AdminSystemSwitchDto'];
+export type SchemaAdminSystemSwitchesResponseDto = components['schemas']['AdminSystemSwitchesResponseDto'];
+export type SchemaSetSystemSwitchDisabledDto = components['schemas']['SetSystemSwitchDisabledDto'];
 export type SchemaContentLocationDto = components['schemas']['ContentLocationDto'];
 export type SchemaContentItemDto = components['schemas']['ContentItemDto'];
 export type SchemaContentListResponseDto = components['schemas']['ContentListResponseDto'];
@@ -13249,6 +13305,69 @@ export interface operations {
             path: {
                 userId: string;
                 feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminSystemSwitchesController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSystemSwitchesResponseDto"];
+                };
+            };
+        };
+    };
+    AdminSystemSwitchesController_disable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSystemSwitchDisabledDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSystemSwitchDto"];
+                };
+            };
+        };
+    };
+    AdminSystemSwitchesController_enable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
             };
             cookie?: never;
         };

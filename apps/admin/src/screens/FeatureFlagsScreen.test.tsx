@@ -14,6 +14,11 @@ const mockClearLimitGlobal = vi.fn();
 const mockLimitsRefetch = vi.fn();
 const mockUseAdminFeatureLimits = vi.fn();
 
+const mockDisableSwitch = vi.fn();
+const mockEnableSwitch = vi.fn();
+const mockSwitchesRefetch = vi.fn();
+const mockUseAdminSystemSwitches = vi.fn();
+
 vi.mock("../data/useAdminFlags.js", () => ({
   useAdminFeatureFlags: () => mockUseAdminFeatureFlags(),
   useSetFeatureGlobal: () => ({ mutate: mockSetGlobal, isPending: false }),
@@ -27,6 +32,15 @@ vi.mock("../data/useAdminFlags.js", () => ({
   useSetLimitGlobal: () => ({ mutate: mockSetLimitGlobal, isPending: false }),
   useClearLimitGlobal: () => ({
     mutate: mockClearLimitGlobal,
+    isPending: false,
+  }),
+  useAdminSystemSwitches: () => mockUseAdminSystemSwitches(),
+  useDisableSystemSwitch: () => ({
+    mutate: mockDisableSwitch,
+    isPending: false,
+  }),
+  useEnableSystemSwitch: () => ({
+    mutate: mockEnableSwitch,
     isPending: false,
   }),
 }));
@@ -99,6 +113,34 @@ function defaultLimitsReturn() {
   };
 }
 
+const SWITCHES = [
+  {
+    key: "sys_weather_provider",
+    description: "Weather-along-route data.",
+    enabled: true,
+    disabled_reason: null,
+    disabled_by: null,
+    disabled_at: null,
+  },
+  {
+    key: "sys_nap_routing_avoidance",
+    description: "Closures injected as Valhalla exclude_polygons.",
+    enabled: false,
+    disabled_reason: "Valhalla polygon regression",
+    disabled_by: "admin-1",
+    disabled_at: "2026-06-10T00:00:00Z",
+  },
+];
+
+function defaultSwitchesReturn() {
+  return {
+    data: { switches: SWITCHES },
+    isPending: false,
+    error: null,
+    refetch: mockSwitchesRefetch,
+  };
+}
+
 describe("FeatureFlagsScreen", () => {
   beforeEach(() => {
     mockSetGlobal.mockClear();
@@ -116,6 +158,11 @@ describe("FeatureFlagsScreen", () => {
     mockLimitsRefetch.mockClear();
     mockUseAdminFeatureLimits.mockClear();
 
+    mockDisableSwitch.mockClear();
+    mockEnableSwitch.mockClear();
+    mockSwitchesRefetch.mockClear();
+    mockUseAdminSystemSwitches.mockClear();
+
     mockUseAdminFeatureFlags.mockReturnValue(defaultListReturn());
     mockUseAdminFeatureFlagUsers.mockReturnValue({
       data: { rows: [], total: 0, page: 1, pageSize: 25 },
@@ -129,6 +176,7 @@ describe("FeatureFlagsScreen", () => {
       refetch: mockLaunchRefetch,
     });
     mockUseAdminFeatureLimits.mockReturnValue(defaultLimitsReturn());
+    mockUseAdminSystemSwitches.mockReturnValue(defaultSwitchesReturn());
   });
 
   it("shows the loading placeholder while pending", () => {
@@ -673,6 +721,141 @@ describe("FeatureFlagsScreen", () => {
     render(<FeatureFlagsScreen />);
     expect(
       screen.getByText("Failed to load feature limits."),
+    ).toBeInTheDocument();
+  });
+
+  // ── System switches card ───────────────────────────────────────────────────
+
+  it("renders the system switches card with resolved state and disabled reason", () => {
+    render(<FeatureFlagsScreen />);
+    expect(screen.getByText("System switches")).toBeInTheDocument();
+    expect(screen.getByText("sys_weather_provider")).toBeInTheDocument();
+    expect(screen.getByText("Weather-along-route data.")).toBeInTheDocument();
+    expect(screen.getByText("On")).toBeInTheDocument();
+    expect(screen.getByText("sys_nap_routing_avoidance")).toBeInTheDocument();
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+    expect(screen.getByText("Valhalla polygon regression")).toBeInTheDocument();
+  });
+
+  it("does not offer switch creation or deletion", () => {
+    render(<FeatureFlagsScreen />);
+    expect(
+      screen.queryByRole("button", { name: /new switch/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^delete$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disable requires a reason before submitting", async () => {
+    const user = userEvent.setup();
+    render(<FeatureFlagsScreen />);
+
+    // Only sys_weather_provider (currently on) offers Disable.
+    await user.click(screen.getByRole("button", { name: "Disable" }));
+    const dialog = screen.getByRole("dialog");
+
+    // Submitting without a reason blocks the mutation and shows an error.
+    await user.click(within(dialog).getByRole("button", { name: "Disable" }));
+    expect(mockDisableSwitch).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("A reason is required to disable a system switch."),
+    ).toBeInTheDocument();
+
+    // With a reason the kill switch submits.
+    await user.type(
+      within(dialog).getByRole("textbox", { name: /reason/i }),
+      "Provider outage",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Disable" }));
+    expect(mockDisableSwitch).toHaveBeenCalledWith(
+      {
+        params: { path: { key: "sys_weather_provider" } },
+        body: { reason: "Provider outage" },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    // Success closes the dialog and refetches.
+    const [, options] = mockDisableSwitch.mock.calls[0] as [
+      unknown,
+      { onSuccess: () => void },
+    ];
+    act(() => {
+      options.onSuccess();
+    });
+    expect(mockSwitchesRefetch).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("disable dialog surfaces a server error without closing", async () => {
+    const user = userEvent.setup();
+    render(<FeatureFlagsScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Disable" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: /reason/i }),
+      "Provider outage",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Disable" }));
+
+    const [, options] = mockDisableSwitch.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void },
+    ];
+    act(() => {
+      options.onError({ statusCode: 500, message: "Registry unavailable." });
+    });
+    expect(screen.getByText("Registry unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("enable fires the clear mutation for a disabled switch and refetches", async () => {
+    render(<FeatureFlagsScreen />);
+    // Only sys_nap_routing_avoidance (currently disabled) offers Enable.
+    await userEvent.click(screen.getByRole("button", { name: "Enable" }));
+
+    expect(mockEnableSwitch).toHaveBeenCalledWith(
+      { params: { path: { key: "sys_nap_routing_avoidance" } } },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+
+    const [, options] = mockEnableSwitch.mock.calls[0] as [
+      unknown,
+      { onSuccess: () => void },
+    ];
+    act(() => {
+      options.onSuccess();
+    });
+    expect(mockSwitchesRefetch).toHaveBeenCalled();
+  });
+
+  it("surfaces enable mutation errors in an alert", async () => {
+    render(<FeatureFlagsScreen />);
+    await userEvent.click(screen.getByRole("button", { name: "Enable" }));
+
+    const [, options] = mockEnableSwitch.mock.calls[0] as [
+      unknown,
+      { onError: (err: unknown) => void; onSettled: () => void },
+    ];
+    act(() => {
+      options.onError({ statusCode: 500, message: "Registry unavailable." });
+      options.onSettled();
+    });
+    expect(screen.getByText("Registry unavailable.")).toBeInTheDocument();
+  });
+
+  it("shows a switches load error alert", () => {
+    mockUseAdminSystemSwitches.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      error: new Error("boom"),
+      refetch: mockSwitchesRefetch,
+    });
+    render(<FeatureFlagsScreen />);
+    expect(
+      screen.getByText("Failed to load system switches."),
     ).toBeInTheDocument();
   });
 });
