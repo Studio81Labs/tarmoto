@@ -89,30 +89,34 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    const [
-      stats,
-      hoursRow,
-      followerCount,
-      followingCount,
-      badgesEarned,
-      gamificationOn,
-    ] = await Promise.all([
-      this.badges.computeStats(userId),
-      this.rideRepo
-        .createQueryBuilder('r')
-        .select(
-          'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
-          'hours',
-        )
-        .where('r.user_id = :userId', { userId })
-        .andWhere("r.status = 'completed'")
-        .andWhere('r.ended_at IS NOT NULL')
-        .getRawOne<{ hours: string }>(),
-      this.userFollowRepo.count({ where: { following_id: userId } }),
-      this.userFollowRepo.count({ where: { follower_id: userId } }),
-      this.userBadgeRepo.count({ where: { user_id: userId } }),
-      this.featureResolver.isSystemSwitchEnabled('sys_gamification'),
-    ]);
+    // Resolve the gamification kill switch first so the user_badges query is
+    // SKIPPED entirely when off — an operator disabling sys_gamification is
+    // often doing so BECAUSE that subsystem is degraded, so this endpoint must
+    // not still block/500 on the badge count; the rest of the profile stays
+    // live with badges_earned: 0. (computeStats reads only generic ride tables,
+    // never user_badges, so it stays in the parallel batch.)
+    const gamificationOn =
+      await this.featureResolver.isSystemSwitchEnabled('sys_gamification');
+
+    const [stats, hoursRow, followerCount, followingCount, badgesEarned] =
+      await Promise.all([
+        this.badges.computeStats(userId),
+        this.rideRepo
+          .createQueryBuilder('r')
+          .select(
+            'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
+            'hours',
+          )
+          .where('r.user_id = :userId', { userId })
+          .andWhere("r.status = 'completed'")
+          .andWhere('r.ended_at IS NOT NULL')
+          .getRawOne<{ hours: string }>(),
+        this.userFollowRepo.count({ where: { following_id: userId } }),
+        this.userFollowRepo.count({ where: { follower_id: userId } }),
+        gamificationOn
+          ? this.userBadgeRepo.count({ where: { user_id: userId } })
+          : Promise.resolve(0),
+      ]);
 
     return {
       joined_at: user.created_at.toISOString(),
@@ -123,7 +127,7 @@ export class UsersService {
       hazards_reported: stats.hazards_reported ?? 0,
       follower_count: followerCount,
       following_count: followingCount,
-      badges_earned: gamificationOn ? badgesEarned : 0,
+      badges_earned: badgesEarned,
     };
   }
 

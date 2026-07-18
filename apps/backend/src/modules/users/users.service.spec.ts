@@ -484,6 +484,11 @@ describe('UsersService', () => {
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
         'sys_gamification',
       );
+      // The switch is resolved BEFORE the batch, so the user_badges query is
+      // SKIPPED entirely (not run-then-masked) — the profile degrades
+      // gracefully even if that subsystem is failing/slow. The mock above
+      // returns 5, so a 0 result proves the value came from the skip, not a query.
+      expect(userBadgeRepo.count).not.toHaveBeenCalled();
     });
   });
 
