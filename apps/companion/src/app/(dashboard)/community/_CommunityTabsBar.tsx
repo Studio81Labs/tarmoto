@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { t } from "@/i18n";
 import { SubRouteTabs } from "@/components/SubRouteTabs";
 
 /**
@@ -30,7 +31,7 @@ export function CommunityTabsBar({
   if (!show) return null;
   return (
     <SubRouteTabs
-      ariaLabel="Community sections"
+      ariaLabel={t("Community sections")}
       tabs={[
         { href: "/community/feed", label: "Feed", badge: feedBadge },
         {

@@ -192,6 +192,7 @@ export const en = {
   "Community ": "Community ",
   "Community reviews become available when this segment maps to a saved Tarmoto road. ":
     "Community reviews become available when this segment maps to a saved Tarmoto road. ",
+  "Community sections": "Community sections",
   Commute: "Commute",
   "Compare rides ": "Compare rides ",
   Concrete: "Concrete",
@@ -819,6 +820,7 @@ export const en = {
   "Ride A": "Ride A",
   "Ride B": "Ride B",
   "Ride History": "Ride History",
+  "Ride history sections": "Ride history sections",
   "Ride not found": "Ride not found",
   "Ride route preview": "Ride route preview",
   "Ride stats": "Ride stats",
@@ -827,6 +829,8 @@ export const en = {
   "Rider not found": "Rider not found",
   "Rider photos ": "Rider photos ",
   Rides: "Rides",
+  "Rides in this collection. Drag handle to reorder.":
+    "Rides in this collection. Drag handle to reorder.",
   Road: "Road",
   "Road Cartographer": "Road Cartographer",
   "Road Preview Cards ": "Road Preview Cards ",
@@ -1010,6 +1014,7 @@ export const en = {
   "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ":
     "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ",
   "This year": "This year",
+  "Time window": "Time window",
   "To ": "To ",
   "To confirm, type your email address": "To confirm, type your email address",
   "Top roads": "Top roads",
@@ -1288,6 +1293,7 @@ export const en = {
   "Page {currentPage} of {pageCount}": "Page {currentPage} of {pageCount}",
   "Ridden ({count} segments)": "Ridden ({count} segments)",
   "{rating} \u2605 average": "{rating} \u2605 average",
+  "{slot} selector": "{slot} selector",
   "{status} \u00b7 {elevation} m": "{status} \u00b7 {elevation} m",
   "{label} results": "{label} results",
   "{tier} \u2022 {distance}": "{tier} \u2022 {distance}",

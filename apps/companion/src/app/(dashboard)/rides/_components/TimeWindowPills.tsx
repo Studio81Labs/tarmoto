@@ -72,7 +72,7 @@ export function TimeWindowPills() {
 
   return (
     <SegmentedControl
-      ariaLabel="Time window"
+      ariaLabel={t("Time window")}
       value={value}
       onChange={onChange}
       options={OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}

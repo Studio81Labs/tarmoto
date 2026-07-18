@@ -243,7 +243,7 @@ function ABCard({
         )}
       </div>
       <Combobox
-        ariaLabel={`${slotLabel} selector`}
+        ariaLabel={t("{slot} selector", { slot: slotLabel })}
         value={value ?? ""}
         onChange={onChange}
         options={options.map((opt) => ({

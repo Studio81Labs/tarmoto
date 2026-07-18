@@ -97,7 +97,7 @@ export function RecentRidesTable({ rides }: { rides: UserRide[] }) {
   const columns = useMemo(() => buildColumns(format), [format]);
   return (
     <DataTable<UserRide>
-      ariaLabel="Recent rides"
+      ariaLabel={t("Recent rides")}
       columns={columns}
       rows={rides}
       rowKey={(r) => r.id}

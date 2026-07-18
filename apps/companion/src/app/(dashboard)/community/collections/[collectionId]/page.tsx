@@ -468,7 +468,7 @@ export default function CollectionDetailPage() {
           </div>
         ) : (
           <SortableItemList
-            ariaLabel="Rides in this collection. Drag handle to reorder."
+            ariaLabel={t("Rides in this collection. Drag handle to reorder.")}
             ids={collection!.rideRefs.map((r) => r.itemId)}
             disabled={busy || collection!.rideRefs.length < 2}
             onReorder={(from, to) => void handleReorder(from, to)}

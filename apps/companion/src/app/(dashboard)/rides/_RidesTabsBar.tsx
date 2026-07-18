@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { t } from "@/i18n";
 import { SubRouteTabs } from "@/components/SubRouteTabs";
 import {
   TimeWindowPills,
@@ -40,7 +41,7 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <SubRouteTabs
-        ariaLabel="Ride history sections"
+        ariaLabel={t("Ride history sections")}
         tabs={[
           {
             href: `/rides${qs}`,
