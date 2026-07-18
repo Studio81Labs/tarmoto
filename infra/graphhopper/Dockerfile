@@ -10,11 +10,13 @@
 # `-c config-example.yml` with no `-i`/`-o`, so the stock image can't be pointed
 # at our extract. This makes it work two ways, robust to whether Coolify honours
 # the ENTRYPOINT below:
-#   1. config.yml carries `datareader.file` + `graph.location` (deploy defaults)
-#      and is copied OVER the stock `config-example.yml`, so even the stock
-#      entrypoint (`graphhopper.sh -c config-example.yml`) imports our extract.
-#   2. start.sh is set as ENTRYPOINT — when honoured it additionally clears the
-#      graph cache each start so a redeploy re-imports the fresh conflated extract.
+#   1. config.yml carries `datareader.file` (a deploy default) and is copied OVER
+#      the stock `config-example.yml`, so even the stock entrypoint
+#      (`graphhopper.sh -c config-example.yml`) imports our extract. The graph
+#      lands in `/data/default-gh` — graphhopper.sh forces that (its `GRAPH`
+#      default) whenever no `-o` is passed, so we don't set graph.location.
+#   2. start.sh is set as ENTRYPOINT — when honoured it additionally clears
+#      `/data/default-gh` each start so a redeploy re-imports the fresh extract.
 #
 # Build context is THIS directory (infra/graphhopper), which also holds
 # config.yml + start.sh. Local dev still uses the plain image + `command:` in
@@ -25,7 +27,7 @@ FROM israelhikingmap/graphhopper:10.2
 # Bake our config at non-/data paths (the runtime /data mount can't hide them):
 # BOTH the path start.sh reads (config.yml) AND the stock `config-example.yml`
 # the image's own entrypoint reads — so whichever entrypoint runs, GraphHopper
-# gets our config (smoothness encoded value + datareader.file/graph.location).
+# gets our config (the smoothness encoded value + the datareader.file default).
 COPY config.yml /graphhopper/config.yml
 COPY config.yml /graphhopper/config-example.yml
 COPY start.sh /graphhopper/tarmoto-start.sh

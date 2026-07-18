@@ -10,23 +10,27 @@
 #   - future road-quality / curvy weighting → will use `surface` + an
 #                      imported custom encoded value (the moat work, ADR-0004)
 #
-# `datareader.file` (input OSM) + `graph.location` (graph cache) are set below as
-# DEPLOY DEFAULTS. The deployed Coolify image (infra/graphhopper/Dockerfile) runs
-# the stock entrypoint `graphhopper.sh -c config-example.yml` with NO `-i` / `-o`
-# (Coolify image apps can't set entrypoint/command), so the paths must live in
-# the config or GraphHopper aborts with "no graph.location / specify an OSM file".
-# Local dev (the compose `-i`/`-o` flags) and the image's start.sh still pass
-# them on the command line, which OVERRIDE these — so the CZ paths below are used
-# only by the deployed stock-entrypoint path.
+# `datareader.file` (input OSM) is set below as a DEPLOY DEFAULT. The deployed
+# Coolify image (infra/graphhopper/Dockerfile) runs the stock entrypoint
+# `graphhopper.sh -c config-example.yml` with NO `-i`, and that script only sets
+# datareader.file from `-i` — so without this the container aborts with
+# "If no graph.location is provided you need to specify an OSM file." Local dev +
+# start.sh still pass `-i`, which overrides this.
+#
+# `graph.location` is deliberately NOT set here: the image's `graphhopper.sh`
+# ALWAYS forces it to its `GRAPH` default `/data/default-gh` when no `-o` is given
+# (it passes `-Ddw.graphhopper.graph.location` unconditionally), so a value here
+# is silently ignored. The deployed graph therefore lives at `/data/default-gh` —
+# which is what start.sh and the runbook clear to force a re-import. (Local dev
+# passes `-o`, so the graph is at the compose `-o` path there.)
 #
 # Config schema changes between GraphHopper majors — if the container fails to
 # start after a version bump, diff this against the `config-example.yml` shipped
 # with the new image tag.
 graphhopper:
-  # Deploy defaults (see the note above; overridden by `-i`/`-o`). The conflation
-  # output on the shared /data volume, and GraphHopper's own graph cache.
+  # Deploy default (overridden by `-i` locally): the conflation output on the
+  # shared /data volume.
   datareader.file: /data/routing/cz.quality.osm
-  graph.location: /data/graph-cache
 
   # Encoded values exposed to custom models. `car_access` + `car_average_speed`
   # power the base car weighting (below); the rest are what Tarmoto's
