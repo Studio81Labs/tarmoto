@@ -1,5 +1,6 @@
-import { pointToLatLng, type FeatureSnapshot } from '@tarmoto/shared';
+import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
+import type { UserEntitlements } from '../features/feature-resolver.service.js';
 import { UserResponseDto } from './dto/user-response.dto.js';
 
 /**
@@ -10,13 +11,13 @@ import { UserResponseDto } from './dto/user-response.dto.js';
  * from each other's user shape — adding a column to `User` only needs
  * one update site to reach every endpoint that hands the client a user.
  *
- * `features` is resolved by the caller (via
- * `FeatureResolver.resolveForLoadedUser`) because resolution is async DB
- * work the mapper deliberately stays free of.
+ * `entitlements` (features + limits) is resolved by the caller (via
+ * `FeatureResolver.resolveEntitlementsForLoadedUser`) because resolution
+ * is async DB work the mapper deliberately stays free of.
  */
 export function toUserResponse(
   user: User,
-  features: FeatureSnapshot,
+  entitlements: UserEntitlements,
 ): UserResponseDto {
   return {
     id: user.id,
@@ -31,7 +32,8 @@ export function toUserResponse(
     work_location: pointToLatLng(user.work_location),
     preferences: user.preferences,
     subscription_tier: user.subscription_tier,
-    features,
+    features: entitlements.features,
+    limits: entitlements.limits,
     created_at: user.created_at.toISOString(),
   };
 }

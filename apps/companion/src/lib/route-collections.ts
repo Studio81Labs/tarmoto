@@ -7,6 +7,7 @@
  * `RouteCollectionView` shape consumed by the pages and hook.
  */
 
+import type { LooseTranslate } from "@tarmoto/shared";
 import {
   type RouteCollectionDetail,
   type RouteCollectionSummary,
@@ -62,23 +63,27 @@ export const MAX_COLLECTION_DESCRIPTION_LENGTH = 500;
 export function validateCollectionName(
   name: string,
   collections: readonly { id: string; title: string }[],
+  t: LooseTranslate,
   excludeId?: string,
 ): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return "Collection name is required";
+  if (!trimmed) return t("Collection name is required");
   if (trimmed.length > MAX_COLLECTION_NAME_LENGTH) {
-    return `Collection name must be ${MAX_COLLECTION_NAME_LENGTH} characters or fewer`;
+    return t("Collection name must be {max} characters or fewer", {
+      max: MAX_COLLECTION_NAME_LENGTH,
+    });
   }
   const lower = trimmed.toLowerCase();
   const clash = collections.some(
     (c) => c.id !== excludeId && c.title.trim().toLowerCase() === lower,
   );
-  if (clash) return "A collection with that name already exists";
+  if (clash) return t("A collection with that name already exists");
   return null;
 }
 
 export function validateCollectionDescription(
   description: string | undefined,
+  t: LooseTranslate,
 ): string | null {
   if (description === undefined) return null;
   // Trim to match what `createCollection`/`updateCollection` actually store —
@@ -87,7 +92,9 @@ export function validateCollectionDescription(
   const trimmed = description.trim();
   if (trimmed === "") return null;
   if (trimmed.length > MAX_COLLECTION_DESCRIPTION_LENGTH) {
-    return `Description must be ${MAX_COLLECTION_DESCRIPTION_LENGTH} characters or fewer`;
+    return t("Description must be {max} characters or fewer", {
+      max: MAX_COLLECTION_DESCRIPTION_LENGTH,
+    });
   }
   return null;
 }

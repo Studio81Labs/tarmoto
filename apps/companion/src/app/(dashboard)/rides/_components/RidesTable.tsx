@@ -43,7 +43,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
   return [
     {
       key: "started_at",
-      label: "DATE",
+      label: t("DATE"),
       size: "90px",
       sortable: true,
       render: (r) => (
@@ -52,7 +52,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
     },
     {
       key: "ride",
-      label: "RIDE",
+      label: t("RIDE"),
       primary: true,
       // Honest data gaps (per the v2 plan): the per-ride region subtext and the
       // ⚠ hazard badge have no backing on the summary, so the RIDE cell shows
@@ -83,7 +83,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
     },
     {
       key: "duration_min",
-      label: "DURATION",
+      label: t("DURATION"),
       size: "90px",
       sortable: true,
       render: (r) => (
@@ -98,7 +98,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
       key: "avg",
       // Header carries the converting unit ("AVG KM/H" / "AVG MPH") so the
       // bare cell numbers can't be read in the wrong speed system.
-      label: `AVG ${format.splitSpeed(1).unit.toUpperCase()}`,
+      label: t("AVG {unit}", { unit: format.splitSpeed(1).unit.toUpperCase() }),
       size: "84px",
       render: (r) => (
         <Mono className="text-ink">
@@ -108,7 +108,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
     },
     {
       key: "lean",
-      label: "LEAN",
+      label: t("LEAN"),
       size: "70px",
       render: (r) => (
         <Mono className="text-ink">
@@ -118,7 +118,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
     },
     {
       key: "avg_road_quality",
-      label: "QUALITY",
+      label: t("QUALITY"),
       size: "110px",
       sortable: true,
       render: (r) => {

@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SharingService } from './sharing.service.js';
@@ -31,7 +35,10 @@ describe('SharingService', () => {
   let tripDayRepo: Partial<jest.Mocked<Repository<TripDay>>>;
   let tripMemberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
   let txManager: { save: jest.Mock; increment: jest.Mock; findOne: jest.Mock };
-  let tripsService: { withTripTransaction: jest.Mock };
+  let tripsService: {
+    withTripTransaction: jest.Mock;
+    assertCanMintOpenTrip: jest.Mock;
+  };
   let privacy: { loadPreferences: jest.Mock };
 
   const mockOwner = {
@@ -165,6 +172,9 @@ describe('SharingService', () => {
         .mockImplementation((cb: (m: typeof txManager) => unknown) =>
           cb(txManager),
         ),
+      // Cloning routes through the shared max_active_trips gate; default to
+      // unlimited (no-op) so existing clone tests are unaffected.
+      assertCanMintOpenTrip: jest.fn().mockResolvedValue(undefined),
     };
     privacy = {
       loadPreferences: jest
@@ -963,6 +973,23 @@ describe('SharingService', () => {
       await expect(service.cloneRide('viewer-2', 'ride-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('rejects at the max_active_trips cap and never opens the transaction', async () => {
+      // A clone mints a new open trip owned by the caller, so it routes
+      // through the shared cap gate. Simulate the caller being at cap.
+      tripsService.assertCanMintOpenTrip.mockRejectedValueOnce(
+        new ForbiddenException({ code: 'FEATURE_LIMIT_EXCEEDED' }),
+      );
+
+      await expect(
+        service.cloneRide('viewer-2', 'ride-1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tripsService.assertCanMintOpenTrip).toHaveBeenCalledWith(
+        'viewer-2',
+      );
+      // Rejected before any write — the transaction wrapper never runs.
+      expect(tripsService.withTripTransaction).not.toHaveBeenCalled();
     });
   });
 });

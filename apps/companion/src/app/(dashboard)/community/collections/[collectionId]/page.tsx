@@ -468,7 +468,7 @@ export default function CollectionDetailPage() {
           </div>
         ) : (
           <SortableItemList
-            ariaLabel="Rides in this collection. Drag handle to reorder."
+            ariaLabel={t("Rides in this collection. Drag handle to reorder.")}
             ids={collection!.rideRefs.map((r) => r.itemId)}
             disabled={busy || collection!.rideRefs.length < 2}
             onReorder={(from, to) => void handleReorder(from, to)}
@@ -543,9 +543,9 @@ function VisibilitySelector({
           value={value}
           onChange={onChange}
           options={[
-            { value: "private", label: "Private" },
-            { value: "unlisted", label: "Unlisted" },
-            { value: "public", label: "Public" },
+            { value: "private", label: t("Private") },
+            { value: "unlisted", label: t("Unlisted") },
+            { value: "public", label: t("Public") },
           ]}
         />
       </div>
@@ -819,7 +819,7 @@ function RideRow({
       <StatusPill status={ride.status} />
       <RemoveRouteButton
         onClick={onRemove}
-        label={`Remove ${displayName} from collection`}
+        label={t("Remove {name} from collection", { name: displayName })}
       />
     </div>
   );

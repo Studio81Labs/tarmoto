@@ -47,7 +47,7 @@ export function PlannerPanel({
         </p>
         <div
           role="tablist"
-          aria-label="Planner sections"
+          aria-label={t("Planner sections")}
           className="mt-4 flex gap-0.5 border-b border-line"
         >
           {PLANNER_TABS.map((name) => {

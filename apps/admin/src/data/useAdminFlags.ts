@@ -52,3 +52,50 @@ export function useRemoveFeatureOverride() {
     "/admin/users/{userId}/feature-flags/{feature}",
   );
 }
+
+export function useAdminFeatureLimits() {
+  return $api.useQuery("get", "/admin/feature-limits");
+}
+
+export function useSetLimitGlobal() {
+  return $api.useMutation("put", "/admin/feature-limits/{feature}/global");
+}
+
+export function useClearLimitGlobal() {
+  return $api.useMutation("delete", "/admin/feature-limits/{feature}/global");
+}
+
+export function useAdminUserFeatureLimits(userId: string | null) {
+  return $api.useQuery(
+    "get",
+    "/admin/users/{userId}/feature-limits",
+    { params: { path: { userId: userId ?? "" } } },
+    { enabled: !!userId },
+  );
+}
+
+export function useSetLimitOverride() {
+  return $api.useMutation(
+    "put",
+    "/admin/users/{userId}/feature-limits/{feature}",
+  );
+}
+
+export function useRemoveLimitOverride() {
+  return $api.useMutation(
+    "delete",
+    "/admin/users/{userId}/feature-limits/{feature}",
+  );
+}
+
+export function useAdminSystemSwitches() {
+  return $api.useQuery("get", "/admin/system-switches");
+}
+
+export function useDisableSystemSwitch() {
+  return $api.useMutation("put", "/admin/system-switches/{key}/disable");
+}
+
+export function useEnableSystemSwitch() {
+  return $api.useMutation("delete", "/admin/system-switches/{key}/disable");
+}

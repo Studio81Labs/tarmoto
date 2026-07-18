@@ -781,7 +781,7 @@ function ExplorerPageInner() {
                         className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
                       />
                     }
-                    label={opt.label}
+                    label={t(opt.label)}
                   />
                 ))}
               </div>
@@ -803,7 +803,7 @@ function ExplorerPageInner() {
                         className={`h-2.5 w-2.5 rounded-full ${opt.color}`}
                       />
                     }
-                    label={opt.label}
+                    label={t(opt.label)}
                   />
                 ))}
               </div>
@@ -826,7 +826,7 @@ function ExplorerPageInner() {
                         style={{ backgroundColor: opt.hex }}
                       />
                     }
-                    label={opt.label}
+                    label={t(opt.label)}
                   />
                 ))}
               </div>
@@ -1350,10 +1350,13 @@ function funZoneFallbackName(zone: FunZoneListItem): string {
     lat: number;
     lng: number;
   }>;
-  if (!points || points.length === 0) return "Unnamed zone";
+  if (!points || points.length === 0) return t("Unnamed zone");
   const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
   const lng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
-  return `Zone near ${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+  return t("Zone near {lat}, {lng}", {
+    lat: lat.toFixed(2),
+    lng: lng.toFixed(2),
+  });
 }
 
 // Spec-styled filter checkbox: 16 × 16 rounded-4 ink-bordered

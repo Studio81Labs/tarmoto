@@ -8,6 +8,11 @@ import { SUBSCRIPTION_TIERS } from "./constants.js";
  * Operators cannot invent keys at runtime; they can only set per-user
  * overrides (`user_features`) and global overrides (`feature_states`).
  *
+ * Registry entries are a discriminated union by `kind`: `toggle` (a
+ * boolean gate, resolved below) or `limit` (a numeric per-tier
+ * entitlement where `null` means unlimited — resolution lands in a later
+ * task).
+ *
  * Resolution precedence (low → high), implemented in `resolveFeature`:
  *   1. registry default
  *   2. subscription-tier grant (allowlist — only ever flips a flag ON)
@@ -17,102 +22,331 @@ import { SUBSCRIPTION_TIERS } from "./constants.js";
  *      force-off.
  */
 
-export const FEATURE_KEYS = [
-  // Free tier (granted to every tier — flagged so operators keep a kill
-  // switch over each pricing-card line item)
-  "basic_navigation",
-  "road_quality_overlay",
-  "hazard_alerts",
-  // Pro tier (€29.99/yr mid tier)
-  "unlimited_trip_planning",
-  "full_road_quality_zoom",
-  "offline_maps",
-  "gpx_export",
-  "commuter_mode",
-  // Premium tier (€49.99/yr top tier)
-  "group_rides",
-  "priority_hazard_alerts",
-  "advanced_analytics",
-] as const;
-
-export type FeatureKey = (typeof FEATURE_KEYS)[number];
-
-export interface FeatureDefinition {
+export interface ToggleFeatureDefinition {
+  kind: "toggle";
   /** Operator-facing description shown in the admin console. */
   description: string;
   /** Baseline value before tier grants and overrides apply. */
   default: boolean;
-  /** Tiers that are granted the feature (see product spec §Monetization
-   * and the marketing pricing card — one flag per card line item). */
+  /** Tiers granted the feature (allowlist — only ever flips a flag ON). */
   tiers: readonly SubscriptionTier[];
 }
+
+export interface LimitFeatureDefinition {
+  kind: "limit";
+  description: string;
+  /** Value applied when the tier is unknown/invalid. `null` = unlimited. */
+  default: number | null;
+  /** Explicit per-tier values — no allowlist ambiguity for numbers. */
+  tiers: Readonly<Record<SubscriptionTier, number | null>>;
+}
+
+export interface SystemFeatureDefinition {
+  kind: "system";
+  description: string;
+  /** System switches default ON; an operator force_off is the only way off. */
+  default: true;
+}
+
+export type FeatureDefinition =
+  | ToggleFeatureDefinition
+  | LimitFeatureDefinition
+  | SystemFeatureDefinition;
 
 const ALL_TIERS = ["free", "pro", "premium"] as const;
 const PRO_AND_UP = ["pro", "premium"] as const;
 const PREMIUM_ONLY = ["premium"] as const;
 
-export const FEATURE_DEFINITIONS: Record<FeatureKey, FeatureDefinition> = {
-  // ── Free ──
+export const FEATURE_DEFINITIONS = {
+  // ── Free flags (granted to every tier; exist for the kill switch) ──
   basic_navigation: {
-    description: "Basic turn-by-turn navigation.",
+    kind: "toggle",
+    description: "Turn-by-turn navigation.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  ride_tracking: {
+    kind: "toggle",
+    description: "Ride recording and basic stats.",
     default: false,
     tiers: ALL_TIERS,
   },
   road_quality_overlay: {
-    description: "Road quality overlay (limited zoom on the free tier).",
+    kind: "toggle",
+    description:
+      "Quality-colored road overlay (zoom-limited on the free tier via road_quality_max_zoom).",
     default: false,
     tiers: ALL_TIERS,
   },
   hazard_alerts: {
-    description: "Community hazard alerts.",
+    kind: "toggle",
+    description: "Receiving community hazard alerts.",
     default: false,
     tiers: ALL_TIERS,
   },
-  // ── Pro (€29.99/yr) ──
-  unlimited_trip_planning: {
-    description:
-      "Unlimited trip planning (the free tier is capped at 1 active trip).",
+  hazard_reporting: {
+    kind: "toggle",
+    description: "Submitting one-tap hazard reports.",
     default: false,
-    tiers: PRO_AND_UP,
+    tiers: ALL_TIERS,
   },
-  full_road_quality_zoom: {
+  crash_detection: {
+    kind: "toggle",
+    description: "Crash detection and emergency-contact SOS.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  weather_alerts: {
+    kind: "toggle",
+    description: "Severe weather alerts along the route.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  trip_planning: {
+    kind: "toggle",
+    description:
+      "Trip planner (count-limited on the free tier via max_active_trips).",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  gpx_import: {
+    kind: "toggle",
+    description: "Import GPX from other platforms.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  community_access: {
+    kind: "toggle",
+    description: "Browse published rides and collections.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  carplay_android_auto: {
+    kind: "toggle",
+    description: "CarPlay / Android Auto projection.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  // ── Pro flags (€29.99/yr) ──
+  road_quality_full_zoom: {
+    kind: "toggle",
     description: "Full-depth road quality zoom.",
     default: false,
     tiers: PRO_AND_UP,
   },
   offline_maps: {
-    description: "Offline map downloads.",
+    kind: "toggle",
+    description: "Offline map region downloads.",
     default: false,
     tiers: PRO_AND_UP,
   },
   gpx_export: {
-    description: "GPX export of recorded rides.",
+    kind: "toggle",
+    description: "GPX export of rides and planned routes.",
     default: false,
     tiers: PRO_AND_UP,
   },
   commuter_mode: {
+    kind: "toggle",
     description:
-      "Commuter mode — saved commute routes, status and alternatives.",
+      "Commuter mode — saved commutes, one-tap commute nav, alternatives, weekly summary.",
     default: false,
     tiers: PRO_AND_UP,
   },
-  // ── Premium (€49.99/yr) ──
+  advanced_ride_stats: {
+    kind: "toggle",
+    description:
+      "Advanced ride stats — lean angles, elevation profile, detailed per-ride stats.",
+    default: false,
+    tiers: PRO_AND_UP,
+  },
+  collaborative_trips: {
+    kind: "toggle",
+    description:
+      "Shared trip planning (collaborator count via max_trip_collaborators).",
+    default: false,
+    tiers: PRO_AND_UP,
+  },
+  // ── Premium flags (€49.99/yr) ──
   group_rides: {
-    description: "Real-time group rides (unlimited).",
+    kind: "toggle",
+    description: "Real-time group location sharing (US-26).",
     default: false,
     tiers: PREMIUM_ONLY,
   },
   priority_hazard_alerts: {
-    description: "Priority hazard alert delivery.",
+    kind: "toggle",
+    description: "Priority delivery of hazard alerts.",
     default: false,
     tiers: PREMIUM_ONLY,
   },
   advanced_analytics: {
-    description: "Advanced riding analytics dashboard.",
+    kind: "toggle",
+    description: "Riding analytics dashboard.",
     default: false,
     tiers: PREMIUM_ONLY,
   },
-};
+  api_access: {
+    kind: "toggle",
+    description: "Personal API token for ride/route data.",
+    default: false,
+    tiers: PREMIUM_ONLY,
+  },
+  garmin_export: {
+    kind: "toggle",
+    description: "Direct route export to Garmin.",
+    default: false,
+    tiers: PREMIUM_ONLY,
+  },
+  // ── Limits (numeric entitlements; null = unlimited, 0 = kill switch) ──
+  max_active_trips: {
+    kind: "limit",
+    description: "Maximum open (draft/planned/active) trips a user may own.",
+    default: 1,
+    tiers: { free: 1, pro: null, premium: null },
+  },
+  max_trip_collaborators: {
+    kind: "limit",
+    description: "Collaborators per trip, excluding the owner.",
+    default: 0,
+    tiers: { free: 0, pro: 5, premium: null },
+  },
+  max_group_ride_members: {
+    kind: "limit",
+    description: "Live group-ride size.",
+    default: 0,
+    tiers: { free: 0, pro: 0, premium: null },
+  },
+  road_quality_max_zoom: {
+    kind: "limit",
+    description:
+      "Maximum zoom level at which the road quality overlay renders.",
+    default: 12,
+    tiers: { free: 12, pro: null, premium: null },
+  },
+  max_offline_regions: {
+    kind: "limit",
+    description: "Offline map regions a user may download.",
+    default: 0,
+    tiers: { free: 0, pro: null, premium: null },
+  },
+  hazard_reports_per_day: {
+    kind: "limit",
+    description: "Anti-abuse cap on hazard reports submitted per day.",
+    default: 50,
+    tiers: { free: 50, pro: 50, premium: 50 },
+  },
+  // ── System switches (operator-only, default ON, no tier) ──
+  sys_accel_collection: {
+    kind: "system",
+    description: "Background accelerometer/gyro sampling (50Hz).",
+    default: true,
+  },
+  sys_surface_upload: {
+    kind: "system",
+    description: "Batch upload of surface data to the backend.",
+    default: true,
+  },
+  sys_surface_ml_classification: {
+    kind: "system",
+    description: "On-device TF Lite surface classification.",
+    default: true,
+  },
+  sys_nap_conditions: {
+    kind: "system",
+    description: "NAP/DATEX II closure display (CONDITIONS tab + map).",
+    default: true,
+  },
+  sys_nap_routing_avoidance: {
+    kind: "system",
+    description: "Closures injected as Valhalla exclude_polygons.",
+    default: true,
+  },
+  sys_weather_provider: {
+    kind: "system",
+    description: "Weather-along-route data.",
+    default: true,
+  },
+  sys_mapillary_previews: {
+    kind: "system",
+    description: "Mapillary imagery in Road Preview Cards.",
+    default: true,
+  },
+  sys_aerial_basemap: {
+    kind: "system",
+    description: "ČÚZK orthophoto basemap toggle.",
+    default: true,
+  },
+  sys_booking_affiliate: {
+    kind: "system",
+    description: "Booking.com deep links on hotel POIs.",
+    default: true,
+  },
+  sys_ride_publishing: {
+    kind: "system",
+    description: "Publishing rides (public/members).",
+    default: true,
+  },
+  sys_community_collections: {
+    kind: "system",
+    description: "Community collections browsing.",
+    default: true,
+  },
+  sys_poi_ratings: {
+    kind: "system",
+    description: "Rider ratings & stop reviews (US-25).",
+    default: true,
+  },
+  sys_gamification: {
+    kind: "system",
+    description: "Badges, challenges, personal road map (Epic 7).",
+    default: true,
+  },
+  sys_push_notifications: {
+    kind: "system",
+    description:
+      "Non-critical push (marketing, engagement). Safety alerts are not behind this.",
+    default: true,
+  },
+} as const satisfies Record<string, FeatureDefinition>;
+
+export type FeatureKey = keyof typeof FEATURE_DEFINITIONS;
+
+export type ToggleFeatureKey = {
+  [K in FeatureKey]: (typeof FEATURE_DEFINITIONS)[K]["kind"] extends "toggle"
+    ? K
+    : never;
+}[FeatureKey];
+
+export type LimitFeatureKey = {
+  [K in FeatureKey]: (typeof FEATURE_DEFINITIONS)[K]["kind"] extends "limit"
+    ? K
+    : never;
+}[FeatureKey];
+
+export const FEATURE_KEYS = Object.keys(
+  FEATURE_DEFINITIONS,
+) as readonly FeatureKey[];
+
+export const TOGGLE_FEATURE_KEYS = FEATURE_KEYS.filter(
+  (key): key is ToggleFeatureKey => FEATURE_DEFINITIONS[key].kind === "toggle",
+);
+
+export const LIMIT_FEATURE_KEYS = FEATURE_KEYS.filter(
+  (key): key is LimitFeatureKey => FEATURE_DEFINITIONS[key].kind === "limit",
+);
+
+export type SystemFeatureKey = {
+  [K in FeatureKey]: (typeof FEATURE_DEFINITIONS)[K]["kind"] extends "system"
+    ? K
+    : never;
+}[FeatureKey];
+
+export const SYSTEM_FEATURE_KEYS = FEATURE_KEYS.filter(
+  (key): key is SystemFeatureKey => FEATURE_DEFINITIONS[key].kind === "system",
+);
+
+export type SystemSwitchSnapshot = Record<SystemFeatureKey, boolean>;
 
 /** Global override states stored in `feature_states` (absence = normal). */
 export const GLOBAL_FEATURE_STATES = ["force_off", "force_on"] as const;
@@ -129,7 +363,10 @@ export const FEATURE_OVERRIDE_STATES = [
 export type FeatureOverrideState = (typeof FEATURE_OVERRIDE_STATES)[number];
 
 /** Fully-resolved flag values for one user — the wire shape on `/users/me`. */
-export type FeatureSnapshot = Record<FeatureKey, boolean>;
+export type FeatureSnapshot = Record<ToggleFeatureKey, boolean>;
+
+/** Fully-resolved limit values for one user. `null` = unlimited. */
+export type LimitSnapshot = Record<LimitFeatureKey, number | null>;
 
 /**
  * Global overrides currently in force, keyed by feature. Mirrors the
@@ -145,6 +382,18 @@ export function isFeatureKey(value: unknown): value is FeatureKey {
     typeof value === "string" &&
     (FEATURE_KEYS as readonly string[]).includes(value)
   );
+}
+
+export function isToggleFeatureKey(value: unknown): value is ToggleFeatureKey {
+  return isFeatureKey(value) && FEATURE_DEFINITIONS[value].kind === "toggle";
+}
+
+export function isLimitFeatureKey(value: unknown): value is LimitFeatureKey {
+  return isFeatureKey(value) && FEATURE_DEFINITIONS[value].kind === "limit";
+}
+
+export function isSystemFeatureKey(value: unknown): value is SystemFeatureKey {
+  return isFeatureKey(value) && FEATURE_DEFINITIONS[value].kind === "system";
 }
 
 export function isSubscriptionTier(value: unknown): value is SubscriptionTier {
@@ -175,14 +424,20 @@ export function isGlobalFeatureState(
  *                    undefined when no override is in force
  */
 export function resolveFeature(
-  key: FeatureKey,
+  key: ToggleFeatureKey,
   tier: string | null,
   override: boolean | undefined,
   globalState: GlobalFeatureState | undefined,
 ): boolean {
   const def = FEATURE_DEFINITIONS[key];
-  let value = def.default;
-  if (isSubscriptionTier(tier) && def.tiers.includes(tier)) {
+  // Widened the same way as `grantTiers` below: every toggle entry in the
+  // registry currently hardcodes `default: false`, so `def.default` infers
+  // as the literal `false` (not `boolean`) under `as const satisfies` —
+  // without this annotation, the `true`/`override` assignments below
+  // wouldn't type-check.
+  let value: boolean = def.default;
+  const grantTiers: readonly SubscriptionTier[] = def.tiers;
+  if (isSubscriptionTier(tier) && grantTiers.includes(tier)) {
     value = true;
   }
   if (override !== undefined) {
@@ -206,7 +461,7 @@ export function buildFeatureSnapshot(
   globalStates: Readonly<Partial<Record<string, GlobalFeatureState>>>,
 ): FeatureSnapshot {
   const snapshot = {} as FeatureSnapshot;
-  for (const key of FEATURE_KEYS) {
+  for (const key of TOGGLE_FEATURE_KEYS) {
     snapshot[key] = resolveFeature(
       key,
       tier,
@@ -230,4 +485,117 @@ export function isFeatureEnabled(
   fallback = false,
 ): boolean {
   return Object.hasOwn(flags, key) ? (flags[key] ?? fallback) : fallback;
+}
+
+/**
+ * Global limit overrides currently in force, keyed by feature — the
+ * response of `GET /api/v1/config/limits`. `null` = unlimited. Clients
+ * may apply a value from this map only as a DOWNWARD clamp
+ * (`effective = min(snapshot, global)`, null = ∞); raising is resolved
+ * only by the authenticated `/users/me` snapshot.
+ */
+export type GlobalLimitOverrides = Partial<Record<string, number | null>>;
+
+/** min() with `null` = unlimited (∞). */
+function minLimit(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
+/**
+ * Resolve one numeric limit for one user. Pure. Precedence:
+ *   1. registry tier value (or `default` for unknown tiers)
+ *   2. per-user override — replaces (support can raise or restrict)
+ *   3. global override — replaces the tier layer; where a per-user
+ *      override also exists, the more restrictive of the two wins.
+ * `undefined` = no override; `null` = unlimited.
+ */
+export function resolveLimit(
+  key: LimitFeatureKey,
+  tier: string | null,
+  override: number | null | undefined,
+  globalOverride: number | null | undefined,
+): number | null {
+  const def = FEATURE_DEFINITIONS[key];
+  let value: number | null = isSubscriptionTier(tier)
+    ? def.tiers[tier]
+    : def.default;
+  if (override !== undefined) {
+    value = override;
+  }
+  if (globalOverride !== undefined) {
+    value =
+      override !== undefined
+        ? minLimit(override, globalOverride)
+        : globalOverride;
+  }
+  return value;
+}
+
+/** Resolve every registry limit into a snapshot. Unknown keys in the
+ * override maps are ignored — stale DB rows can never widen the set. */
+export function buildLimitSnapshot(
+  tier: string | null,
+  overrides: Readonly<Partial<Record<string, number | null>>>,
+  globalOverrides: Readonly<Partial<Record<string, number | null>>>,
+): LimitSnapshot {
+  const snapshot = {} as LimitSnapshot;
+  for (const key of LIMIT_FEATURE_KEYS) {
+    snapshot[key] = resolveLimit(
+      key,
+      tier,
+      overrides[key],
+      globalOverrides[key],
+    );
+  }
+  return snapshot;
+}
+
+/**
+ * Resolve one system switch. Pure. On by default; an operator `force_off`
+ * is the only way off. `force_on`/absent resolve on.
+ */
+export function resolveSystemSwitch(
+  key: SystemFeatureKey,
+  globalState: GlobalFeatureState | undefined,
+): boolean {
+  void key; // key kept for signature symmetry; the default is always ON
+  return globalState !== "force_off";
+}
+
+/** Resolve every registry system switch. Unknown keys in the state map are
+ * ignored — only registry keys are iterated. */
+export function buildSystemSwitchSnapshot(
+  globalStates: Readonly<Partial<Record<string, GlobalFeatureState>>>,
+): SystemSwitchSnapshot {
+  const snapshot = {} as SystemSwitchSnapshot;
+  for (const key of SYSTEM_FEATURE_KEYS) {
+    snapshot[key] = resolveSystemSwitch(key, globalStates[key]);
+  }
+  return snapshot;
+}
+
+/**
+ * Read a resolved limit safely from an untyped map (e.g. a cached
+ * snapshot). Missing keys return `fallback` (default 0 — the most
+ * restrictive value), never unlimited. Own-property guarded so
+ * inherited prototype keys can't leak a value.
+ */
+export function getFeatureLimit(
+  limits: Readonly<Partial<Record<string, number | null>>>,
+  key: string,
+  fallback: number | null = 0,
+): number | null {
+  if (!Object.hasOwn(limits, key)) return fallback;
+  const value = limits[key];
+  return value === undefined ? fallback : value;
+}
+
+/** True when `currentCount` leaves room for one more (`null` = unlimited). */
+export function isWithinLimit(
+  limit: number | null,
+  currentCount: number,
+): boolean {
+  return limit === null || currentCount < limit;
 }

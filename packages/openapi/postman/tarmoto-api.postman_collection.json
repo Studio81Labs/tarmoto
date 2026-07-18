@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "5b562ee8-53e3-40c9-9827-0f36b4aaf4f5",
+    "_postman_id": "b60aa67b-15c0-4ba2-8302-06b0c60f40f0",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -6461,6 +6461,248 @@
           }
         },
         {
+          "name": "List the limit registry with overrides",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-limits"]
+            }
+          }
+        },
+        {
+          "name": "Set a global limit override (launch mode / promo raise)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-limits/:feature/global",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-limits", ":feature", "global"],
+              "variable": [
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": 0,\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Clear a global limit override (back to normal)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/feature-limits/:feature/global",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "feature-limits", ":feature", "global"],
+              "variable": [
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "A user's resolved limits + override states",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", ":userId", "feature-limits"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set a per-user limit override (raise or restrict)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-limits/:feature",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-limits",
+                ":feature"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                },
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove a per-user limit override",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/:userId/feature-limits/:feature",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "admin",
+                "users",
+                ":userId",
+                "feature-limits",
+                ":feature"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                },
+                {
+                  "key": "feature",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List the system switches with resolved state",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/system-switches",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "system-switches"]
+            }
+          }
+        },
+        {
+          "name": "Disable a subsystem (operator kill switch)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/system-switches/:key/disable",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "system-switches", ":key", "disable"],
+              "variable": [
+                {
+                  "key": "key",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Re-enable a subsystem (clear the kill switch)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/system-switches/:key/disable",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "system-switches", ":key", "disable"],
+              "variable": [
+                {
+                  "key": "key",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Browse user-generated content for moderation",
           "request": {
             "method": "GET",
@@ -7189,6 +7431,23 @@
               "raw": "{{baseUrl}}/api/v1/config/flags",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "config", "flags"]
+            }
+          }
+        },
+        {
+          "name": "Global limit-override map (feature → value, null = unlimited)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/config/limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "config", "limits"]
             }
           }
         }

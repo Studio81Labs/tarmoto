@@ -1,4 +1,5 @@
-import { t } from "@/i18n";
+import { t, type SupportedLocale } from "@/i18n";
+import { getServerLocale, readLocale } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -20,9 +21,10 @@ export const dynamic = "force-dynamic";
 const DEFAULT_CENTER = { lat: 50.0755, lng: 14.4378, zoom: 7 };
 
 export async function generateMetadata(): Promise<Metadata> {
+  const locale = await readLocale();
   return {
-    title: "Shared road map — Tarmoto",
-    description: "Public Tarmoto personal road map.",
+    title: t("Shared road map — Tarmoto", undefined, locale),
+    description: t("Public Tarmoto personal road map.", undefined, locale),
     // Token URLs aren't sensitive but indexing them would let bots scrape
     // every share ever generated. Match the trip-shares policy.
     robots: { index: false, follow: false },
@@ -38,6 +40,11 @@ export default async function SharedRoadMapPage({
   const format = await getServerFormatters();
   const share = await fetchSharedMap(token);
   if (!share) notFound();
+  // This server component awaits before rendering, so resolve the request
+  // locale from the per-request store and thread it explicitly into every
+  // t() call below — the module-global t() default can be stomped by a
+  // concurrent request at the await/Suspense boundary (see i18n/server.ts).
+  const locale = getServerLocale();
   const snapshot = parseMapShareSnapshot(share.snapshot);
   const initialCenter = snapshot?.initial_center ?? DEFAULT_CENTER;
   const ownerName = share.owner_name || "";
@@ -64,7 +71,7 @@ export default async function SharedRoadMapPage({
               </span>
               <span className="text-fg-mute">/</span>
               <Mono className="truncate text-[11px] text-fg-dim">
-                {t("Shared road map")}
+                {t("Shared road map", undefined, locale)}
               </Mono>
             </span>
           </Link>
@@ -73,7 +80,7 @@ export default async function SharedRoadMapPage({
             className="inline-flex shrink-0 items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
           >
             <ArrowUpRight size={14} aria-hidden="true" />
-            {t("Open in Tarmoto")}
+            {t("Open in Tarmoto", undefined, locale)}
           </Link>
         </div>
       </header>
@@ -83,7 +90,9 @@ export default async function SharedRoadMapPage({
         <section className="mb-6 rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <Stamp tone="accent">{t("Personal road map")}</Stamp>
+              <Stamp tone="accent">
+                {t("Personal road map", undefined, locale)}
+              </Stamp>
               <h1 className="mt-2 font-sans text-[40px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
                 {share.title}
               </h1>
@@ -91,7 +100,7 @@ export default async function SharedRoadMapPage({
             {snapshot && (
               <span className="shrink-0 rounded-full bg-accent px-2.5 py-1.5 text-[11px] font-bold tracking-[0.2px] text-ink">
                 {format.integer(snapshot.stats.percent_explored)}
-                {t("% explored")}
+                {t("% explored", undefined, locale)}
               </span>
             )}
           </div>
@@ -104,10 +113,14 @@ export default async function SharedRoadMapPage({
             )}
             <MetaChip>
               <Eye size={13} className="text-fg-mute" aria-hidden="true" />
-              {t("{count, plural, one {{n} view} other {{n} views}}", {
-                count: share.view_count,
-                n: format.integer(share.view_count),
-              })}
+              {t(
+                "{count, plural, one {{n} view} other {{n} views}}",
+                {
+                  count: share.view_count,
+                  n: format.integer(share.view_count),
+                },
+                locale,
+              )}
             </MetaChip>
             {snapshot && (
               <>
@@ -118,7 +131,7 @@ export default async function SharedRoadMapPage({
                     aria-hidden="true"
                   />
                   {format.integer(snapshot.segments.length)}{" "}
-                  {t("segments highlighted")}
+                  {t("segments highlighted", undefined, locale)}
                 </MetaChip>
                 <MetaChip>
                   <RouteIcon
@@ -131,8 +144,8 @@ export default async function SharedRoadMapPage({
                       share, so flag the scope next to the period-filtered
                       "segments highlighted" chip. */}
                   {snapshot.period === "all"
-                    ? t("ridden")
-                    : t("ridden all-time")}
+                    ? t("ridden", undefined, locale)
+                    : t("ridden all-time", undefined, locale)}
                 </MetaChip>
               </>
             )}
@@ -147,7 +160,11 @@ export default async function SharedRoadMapPage({
                 initialCenter={initialCenter}
                 segments={snapshot.segments}
               />
-              <SnapshotLegend snapshot={snapshot} format={format} />
+              <SnapshotLegend
+                snapshot={snapshot}
+                format={format}
+                locale={locale}
+              />
             </div>
 
             {/* stats — no region field in the snapshot, so 3 tiles. On a
@@ -159,26 +176,34 @@ export default async function SharedRoadMapPage({
                 variant="ink"
                 accentNumber
                 formatValue={format.integer}
-                label={t("Segments ridden")}
+                label={t("Segments ridden", undefined, locale)}
                 // The highlighted (period-filtered) count, matching the map,
                 // legend, and the "segments highlighted" hero chip.
                 value={snapshot.segments.length}
                 delta={
                   snapshot.period === "all"
                     ? undefined
-                    : TIME_PERIOD_LABELS[snapshot.period]
+                    : t(TIME_PERIOD_LABELS[snapshot.period], undefined, locale)
                 }
               />
               <MetricTile
-                label={t("Distance ridden")}
+                label={t("Distance ridden", undefined, locale)}
                 value={format.distanceKm(snapshot.stats.total_distance_km)}
-                delta={snapshot.period === "all" ? undefined : t("All-time")}
+                delta={
+                  snapshot.period === "all"
+                    ? undefined
+                    : t("All-time", undefined, locale)
+                }
               />
               <MetricTile
-                label={t("Coverage")}
+                label={t("Coverage", undefined, locale)}
                 value={format.integer(snapshot.stats.percent_explored)}
                 unit="%"
-                delta={snapshot.period === "all" ? undefined : t("All-time")}
+                delta={
+                  snapshot.period === "all"
+                    ? undefined
+                    : t("All-time", undefined, locale)
+                }
               />
             </section>
           </>
@@ -186,6 +211,8 @@ export default async function SharedRoadMapPage({
           <div className="mb-6 rounded-[14px] border border-dashed border-line bg-cream p-8 text-center text-sm text-fg-dim">
             {t(
               "This shared road map's snapshot is in an unexpected format — the owner may have generated it with a newer version of the companion. Ask them to regenerate the share link.",
+              undefined,
+              locale,
             )}
           </div>
         )}
@@ -197,14 +224,16 @@ export default async function SharedRoadMapPage({
                 the only coral token is the quality scale's `q1` (flagged
                 "avoid" for non-quality use), so spell the stamp out here. */}
             <span className="font-mono text-[11px] font-bold uppercase leading-none tracking-[1.6px] text-[#E05A3C]">
-              {t("Every road you ride")}
+              {t("Every road you ride", undefined, locale)}
             </span>
             <div className="mt-1.5 text-[20px] font-extrabold">
-              {t("Start your own road map")}
+              {t("Start your own road map", undefined, locale)}
             </div>
             <p className="mt-1 max-w-xl text-[13px] text-cream/70">
               {t(
                 "Tarmoto layers every ride onto a regional map so you can see — and chase — the roads you haven't ridden yet.",
+                undefined,
+                locale,
               )}
             </p>
           </div>
@@ -212,7 +241,7 @@ export default async function SharedRoadMapPage({
             href="/"
             className="inline-flex shrink-0 items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
           >
-            {t("Get Tarmoto")}
+            {t("Get Tarmoto", undefined, locale)}
           </Link>
         </div>
       </main>
@@ -221,14 +250,14 @@ export default async function SharedRoadMapPage({
       <footer className="border-t border-line bg-paper">
         <div className="mx-auto flex max-w-[980px] flex-wrap items-center justify-between gap-4 px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
-            {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
+            {t("TARMOTO · SHARED VIA PUBLIC LINK ·", undefined, locale)}{" "}
             {new Date().getUTCFullYear()}
           </Mono>
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
           >
-            {t("Build your road map")}
+            {t("Build your road map", undefined, locale)}
           </Link>
         </div>
       </footer>
@@ -247,21 +276,27 @@ function MetaChip({ children }: { children: React.ReactNode }) {
 function SnapshotLegend({
   snapshot,
   format,
+  locale,
 }: {
   snapshot: MapShareSnapshot;
   format: Formatters;
+  locale: SupportedLocale;
 }) {
   return (
     <div className="pointer-events-none absolute left-4 top-4 z-10 space-y-1.5 rounded-[10px] border border-line-strong bg-cream px-3.5 py-3 text-[12px] font-semibold text-ink shadow-[0_6px_16px_rgba(14,14,16,0.08)]">
       <div className="flex items-center gap-2">
         <span className="inline-block h-1 w-[22px] rounded-sm bg-accent" />
-        {t("Ridden ({count} segments)", {
-          count: format.integer(snapshot.segments.length),
-        })}
+        {t(
+          "Ridden ({count} segments)",
+          {
+            count: format.integer(snapshot.segments.length),
+          },
+          locale,
+        )}
       </div>
       <div className="flex items-center gap-2">
         <span className="inline-block h-1 w-[22px] rounded-sm bg-[#C4BBA8]" />
-        {t("Unridden")}
+        {t("Unridden", undefined, locale)}
       </div>
     </div>
   );

@@ -117,11 +117,11 @@ export function DayByDayList({
                 </div>
                 <div className="grid grid-cols-3 gap-2.5">
                   <TileStat
-                    label="Distance"
+                    label={t("Distance")}
                     value={format.distanceKm(day.distanceKm)}
                   />
                   <TileStat
-                    label="Ride time"
+                    label={t("Ride time")}
                     value={
                       day.durationMinutes > 0
                         ? format.duration(day.durationMinutes)
@@ -129,7 +129,7 @@ export function DayByDayList({
                     }
                   />
                   <TileStat
-                    label="Elevation"
+                    label={t("Elevation")}
                     value={
                       day.elevationGain > 0
                         ? format.elevation(day.elevationGain)

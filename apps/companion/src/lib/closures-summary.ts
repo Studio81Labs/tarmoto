@@ -1,4 +1,8 @@
-import { haversineKm, type Formatters } from "@tarmoto/shared";
+import {
+  haversineKm,
+  type Formatters,
+  type LooseTranslate,
+} from "@tarmoto/shared";
 import type { RoadClosure } from "./api";
 import { sampleRoutePoints } from "./route-sampling";
 import type { Trip } from "./types";
@@ -96,6 +100,7 @@ export function detourLengthKm(closure: PlannerClosure): number | null {
 
 export function buildTripClosureRoutes(
   trip: Trip | null,
+  t: LooseTranslate,
 ): PlannerClosureRoute[] {
   if (!trip) return [];
 
@@ -107,8 +112,11 @@ export function buildTripClosureRoutes(
       {
         id: `day-${day.dayNumber}`,
         label: day.title
-          ? `Day ${day.dayNumber} · ${day.title}`
-          : `Day ${day.dayNumber}`,
+          ? t("Day {dayNumber} · {title}", {
+              dayNumber: day.dayNumber,
+              title: day.title,
+            })
+          : t("Day {dayNumber}", { dayNumber: day.dayNumber }),
         // Downsampled: the closures/passes checks buffer the route by
         // hundreds of metres+, and the full live-routed polyline can
         // exceed the backend's JSON body limit.
@@ -130,9 +138,12 @@ export function buildTripClosureRoutes(
 export function formatClosureWindow(
   closure: PlannerClosure,
   format: Formatters,
+  t: LooseTranslate,
 ): string {
   if (!closure.ends_at) {
-    return `${format.calendarDate(closure.starts_at)} onward`;
+    return t("{date} onward", {
+      date: format.calendarDate(closure.starts_at),
+    });
   }
   return format.calendarDateRange(closure.starts_at, closure.ends_at);
 }

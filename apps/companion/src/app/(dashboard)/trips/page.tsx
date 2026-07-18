@@ -215,9 +215,10 @@ export default function TripListPage() {
           if (cancelled) return;
           setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
           toast.success(
-            result.succeeded === 1
-              ? "Moved 1 folder to your Tarmoto account."
-              : `Moved ${result.succeeded} folders to your Tarmoto account.`,
+            t(
+              "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
+              { count: result.succeeded },
+            ),
           );
         }
       } catch {
@@ -794,7 +795,7 @@ function FolderChip({
             type="button"
             data-menu-trigger
             onClick={handleToggleMenu}
-            aria-label={`Folder actions for ${label}`}
+            aria-label={t("Folder actions for {label}", { label })}
             className="absolute right-2 rounded p-0.5 text-fg-dim opacity-60 transition hover:bg-paper hover:text-ink hover:opacity-100 focus:opacity-100"
           >
             <MoreVertical size={11} />
@@ -803,7 +804,7 @@ function FolderChip({
             <Menu onClose={() => setOpen(false)} align={menuAlign}>
               <MenuItem
                 icon={<Pencil size={13} />}
-                label="Rename"
+                label={t("Rename")}
                 onClick={() => {
                   setOpen(false);
                   onRename?.();
@@ -811,7 +812,7 @@ function FolderChip({
               />
               <MenuItem
                 icon={<Trash2 size={13} />}
-                label="Delete folder"
+                label={t("Delete folder")}
                 tone="danger"
                 onClick={() => {
                   setOpen(false);
@@ -1051,7 +1052,7 @@ function TripCard({
         <button
           type="button"
           data-menu-trigger
-          aria-label={`Trip actions for ${trip.name}`}
+          aria-label={t("Trip actions for {name}", { name: trip.name })}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1075,7 +1076,7 @@ function TripCard({
           >
             <MenuItem
               icon={<Copy size={13} />}
-              label="Duplicate"
+              label={t("Duplicate")}
               onClick={() => {
                 setMenuOpen(false);
                 onDuplicate();
@@ -1083,18 +1084,18 @@ function TripCard({
             />
             <MenuItem
               icon={<FolderInput size={13} />}
-              label="Move to folder"
+              label={t("Move to folder")}
               onClick={() => setMoveOpen((v) => !v)}
               trailing={
                 <span className="text-[10px] text-fg-dim">
-                  {currentFolder?.name ?? "Unfiled"}
+                  {currentFolder?.name ?? t("Unfiled")}
                 </span>
               }
             />
             {moveOpen && (
               <div className="max-h-48 overflow-y-auto border-t border-line py-1 pl-3 pr-1">
                 <MoveItem
-                  label="Unfiled"
+                  label={t("Unfiled")}
                   active={!trip.folder_id}
                   onClick={() => {
                     setMenuOpen(false);
@@ -1123,7 +1124,7 @@ function TripCard({
             )}
             <MenuItem
               icon={<Trash2 size={13} />}
-              label="Delete"
+              label={t("Delete")}
               tone="danger"
               onClick={() => {
                 setMenuOpen(false);
@@ -1232,7 +1233,7 @@ function FolderModal({
   }, []);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const validationError = validateFolderName(value, folders, excludeId);
+    const validationError = validateFolderName(value, folders, t, excludeId);
     if (validationError) {
       setError(validationError);
       return;

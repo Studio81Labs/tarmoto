@@ -23,6 +23,7 @@ import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import { ROUTING_PROVIDER } from '../commute/routing-provider.interface.js';
@@ -178,6 +179,9 @@ describe('TripsService', () => {
     version: string;
   };
   let enrichment: { aggregate: jest.Mock };
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'resolveLimitsForUser'>
+  >;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -233,6 +237,11 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
+      // Backs `assertCanMintOpenTrip`'s open-trip count. Defaults to 0;
+      // only the max_active_trips enforcement tests care about this and
+      // override it per-case. Unlimited-limit tests assert this is never
+      // called at all.
+      count: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<Repository<Trip>>;
 
     // The trip-summary rollup query in `list` runs on `tripDayRepo`. Default
@@ -310,6 +319,17 @@ describe('TripsService', () => {
       }),
     };
 
+    // Unlimited by default so every pre-existing test in this file (none
+    // of which know about `max_active_trips`) keeps passing unchanged —
+    // `assertCanMintOpenTrip` short-circuits before ever touching
+    // `tripRepo.count`. Only the enforcement tests below override this
+    // with a finite limit.
+    featureResolver = {
+      resolveLimitsForUser: jest
+        .fn()
+        .mockResolvedValue({ max_active_trips: null }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripsService,
@@ -326,6 +346,7 @@ describe('TripsService', () => {
         { provide: ConfigService, useValue: config },
         { provide: ROUTING_PROVIDER, useValue: routingProvider },
         { provide: RouteEnrichmentService, useValue: enrichment },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -1613,6 +1634,335 @@ describe('TripsService', () => {
         { id: TRIP_ID },
         { folder_id: null },
       );
+    });
+  });
+
+  describe('max_active_trips enforcement', () => {
+    const importDto = {
+      title: 'Cap test import',
+      source_format: 'gpx' as const,
+      geometry: [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.5, lng: 10.41 },
+      ],
+    };
+
+    it('create: rejects with a 403 FEATURE_LIMIT_EXCEEDED body when the owner is at cap', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .create(OWNER_ID, { title: 'One too many', num_days: 2 })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toEqual({
+        statusCode: 403,
+        error: 'Forbidden',
+        message: expect.any(String),
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+      // Rejected before any write.
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('create: allows under cap and counts open trips by owner_id + status In(draft,planned,active)', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 2,
+      });
+      tripRepo.count.mockResolvedValueOnce(0);
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.create(OWNER_ID, { title: 'Room to spare', num_days: 2 });
+
+      expect(tripRepo.count).toHaveBeenCalledWith({
+        where: {
+          owner_id: OWNER_ID,
+          status: In(['draft', 'planned', 'active']),
+        },
+      });
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('create: skips the open-trip count entirely when the resolved limit is unlimited (null)', async () => {
+      // The outer beforeEach's default stub already resolves
+      // `{ max_active_trips: null }` — this test asserts the launch-mode
+      // fast path explicitly: zero extra queries when unlimited.
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.create(OWNER_ID, { title: 'Unlimited', num_days: 2 });
+
+      expect(tripRepo.count).not.toHaveBeenCalled();
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('importFromRoute: rejects with FEATURE_LIMIT_EXCEEDED at cap', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .importFromRoute(OWNER_ID, importDto)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('duplicate: rejects with FEATURE_LIMIT_EXCEEDED at cap, checked after the source-trip authorization', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // source, owner === caller
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .duplicate(OWNER_ID, TRIP_ID)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('duplicate: 404s a bad tripId before ever resolving the cap', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(null);
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+
+      await expect(service.duplicate(OWNER_ID, 'nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+    });
+
+    it('update (reopen): rejects with FEATURE_LIMIT_EXCEEDED when completed -> non-completed and the owner is at cap', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .update(OWNER_ID, TRIP_ID, { status: 'planned' })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it("update (reopen): gates on the trip owner's cap, not the caller's, when a privileged editor reopens", async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'editor',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed', owner_id: OWNER_ID }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .update(OTHER_ID, TRIP_ID, { status: 'planned' })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
+        OWNER_ID,
+      );
+      expect(tripRepo.count).toHaveBeenCalledWith({
+        where: {
+          owner_id: OWNER_ID,
+          status: In(['draft', 'planned', 'active']),
+        },
+      });
+    });
+
+    it('update: does not check the cap when the PATCH does not touch status', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      mockGetDetailReturns(
+        makeOwnedTrip({ title: 'Renamed', status: 'completed' }),
+      );
+
+      await service.update(OWNER_ID, TRIP_ID, { title: 'Renamed' });
+
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+    });
+
+    it('update: does not check the cap when status is supplied but unchanged (stays completed)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'completed' }));
+
+      await service.update(OWNER_ID, TRIP_ID, { status: 'completed' });
+
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+    });
+
+    it('update: does not check the cap for a non-reopen status transition (draft -> planned)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip({ status: 'draft' }));
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+
+      await service.update(OWNER_ID, TRIP_ID, { status: 'planned' });
+
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+    });
+
+    it('replaceWithImportedRoute (reopen): rejects at cap when a completed trip is promoted to planned', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .replaceWithImportedRoute(OWNER_ID, TRIP_ID, importDto)
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
+      // Rejected before promoting the trip.
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('replaceWithImportedRoute: does NOT check the cap when the trip is already open (editing, not promoting)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'planned' }),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+
+      await service.replaceWithImportedRoute(OWNER_ID, TRIP_ID, importDto);
+
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+    });
+
+    it("replaceWithImportedRoute (reopen): gates on the trip owner's cap, not the caller's", async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'editor',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed', owner_id: OWNER_ID }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      await service
+        .replaceWithImportedRoute(OTHER_ID, TRIP_ID, importDto)
+        .catch((e: unknown) => e);
+
+      expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
+        OWNER_ID,
+      );
+    });
+
+    it('saveManualRoute (reopen): rejects at cap when a completed trip is promoted to planned', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      routingProvider.route.mockResolvedValueOnce({
+        distance_km: 88.9,
+        duration_min: 124,
+        geometry: [
+          { lat: 50.08, lng: 14.42 },
+          { lat: 50.1, lng: 14.5 },
+        ],
+      });
+      enrichment.aggregate.mockResolvedValueOnce({
+        avgQuality: 4,
+        curvinessScore: 6,
+        scenicScore: 3,
+        elevationGain: 540,
+        elevationLoss: 540,
+        hazardCount: 0,
+        surfaceMixMetres: {},
+      });
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ status: 'completed' }),
+      );
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: 1,
+      });
+      tripRepo.count.mockResolvedValueOnce(1);
+
+      const err = await service
+        .saveManualRoute(OWNER_ID, TRIP_ID, {
+          days: [
+            {
+              dayNumber: 1,
+              startLinked: false,
+              waypoints: [
+                { lat: 50.08, lng: 14.42, type: 'start' },
+                { lat: 50.1, lng: 14.5, type: 'end' },
+              ],
+            },
+          ],
+        })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).getResponse()).toMatchObject({
+        code: 'FEATURE_LIMIT_EXCEEDED',
+        feature: 'max_active_trips',
+        limit: 1,
+        current: 1,
+      });
     });
   });
 

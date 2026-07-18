@@ -106,7 +106,7 @@ export function RoadSegmentPopover({
             </div>
             <div className="mt-0.5 text-[12px] text-fg-dim">
               {tierInfo
-                ? t("{label} surface", { label: tierInfo.label })
+                ? t("{label} surface", { label: t(tierInfo.label) })
                 : t("Surface unrated")}
             </div>
           </div>

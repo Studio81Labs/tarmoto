@@ -173,7 +173,7 @@ export function RoundtripDialog({
           ariaLabel={t("Road preference")}
           options={PREFERENCE_OPTIONS.map((option) => ({
             value: option,
-            label: ROAD_PREFERENCE_LABELS[option],
+            label: t(ROAD_PREFERENCE_LABELS[option]),
           }))}
         />
 

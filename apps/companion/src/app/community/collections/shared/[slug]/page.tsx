@@ -1,5 +1,5 @@
 import { t } from "@/i18n";
-import { readLocale } from "@/i18n/server";
+import { getServerLocale, readLocale } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -33,12 +33,12 @@ export async function generateMetadata({
   const locale = await readLocale();
   if (!detail) {
     return {
-      title: "Collection — Tarmoto",
+      title: t("Collection — Tarmoto", undefined, locale),
       robots: { index: false, follow: false },
     };
   }
   return {
-    title: `${detail.title} — Tarmoto collection`,
+    title: t("{title} — Tarmoto collection", { title: detail.title }, locale),
     description:
       detail.description ??
       t(
@@ -70,6 +70,11 @@ export default async function SharedCollectionPage({
     fetchSharedCollectionPreview(slug),
   ]);
   if (!detail) notFound();
+  // This server component awaits before rendering, so resolve the request
+  // locale from the per-request store and thread it explicitly into every
+  // t() call below — the module-global t() default can be stomped by a
+  // concurrent request at the await/Suspense boundary (see i18n/server.ts).
+  const locale = getServerLocale();
 
   // Preview carries the per-item summaries (#689), one entry per item; keep
   // collection (position) order. `preview === null` means the preview fetch
@@ -109,7 +114,7 @@ export default async function SharedCollectionPage({
               </span>
               <span className="text-fg-mute">/</span>
               <Mono className="truncate text-[11px] text-fg-dim">
-                {t("Shared collection")}
+                {t("Shared collection", undefined, locale)}
               </Mono>
             </span>
           </Link>
@@ -118,7 +123,7 @@ export default async function SharedCollectionPage({
             className="inline-flex shrink-0 items-center gap-2 rounded-[10px] border border-line-strong px-4 py-2.5 text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper"
           >
             <ArrowUpRight size={14} aria-hidden="true" />
-            {t("Open in Tarmoto")}
+            {t("Open in Tarmoto", undefined, locale)}
           </Link>
         </div>
       </header>
@@ -127,7 +132,7 @@ export default async function SharedCollectionPage({
         {/* hero */}
         <section className="mb-[26px] rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="mb-2.5 flex items-center gap-3">
-            <Stamp>{t("Route collection")}</Stamp>
+            <Stamp>{t("Route collection", undefined, locale)}</Stamp>
             <RouteCollectionVisibilityPill visibility={detail.visibility} />
           </div>
           <h1 className="font-sans text-[42px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
@@ -147,26 +152,33 @@ export default async function SharedCollectionPage({
             )}
             <MetaChip>
               <Shuffle size={13} className="text-fg-mute" aria-hidden="true" />
-              {t("{count, plural, one {# route} other {# routes}}", {
-                count: detail.item_count,
-              })}
+              {t(
+                "{count, plural, one {# route} other {# routes}}",
+                {
+                  count: detail.item_count,
+                },
+                locale,
+              )}
             </MetaChip>
             <MetaChip>
               <Calendar size={13} className="text-fg-mute" aria-hidden="true" />
-              {t("Updated")} {format.relativeTime(detail.updated_at)}
+              {t("Updated", undefined, locale)}{" "}
+              {format.relativeTime(detail.updated_at)}
             </MetaChip>
           </div>
         </section>
 
         {/* map preview */}
-        <Stamp className="mb-2.5 block">{t("Map preview")}</Stamp>
+        <Stamp className="mb-2.5 block">
+          {t("Map preview", undefined, locale)}
+        </Stamp>
         <div className="mb-[30px]">
           <CollectionPreviewMap routes={routes} />
         </div>
 
         {/* routes */}
         <div className="mb-3 flex items-baseline justify-between">
-          <Stamp>{t("Routes")}</Stamp>
+          <Stamp>{t("Routes", undefined, locale)}</Stamp>
           {routes.length > 0 && (
             <Mono className="text-[11px] text-fg-mute">
               {totalDistance.value} {totalDistance.unit.toUpperCase()}
@@ -180,6 +192,8 @@ export default async function SharedCollectionPage({
           >
             {t(
               "Couldn't load the routes in this collection right now. Try refreshing in a moment.",
+              undefined,
+              locale,
             )}
           </div>
         ) : routes.length === 0 ? (
@@ -189,7 +203,11 @@ export default async function SharedCollectionPage({
               className="mx-auto mb-2 text-fg-mute"
               aria-hidden="true"
             />
-            {t("The owner hasn't added any routes to this collection yet.")}
+            {t(
+              "The owner hasn't added any routes to this collection yet.",
+              undefined,
+              locale,
+            )}
           </div>
         ) : (
           <ul className="mb-[30px] flex flex-col gap-2.5">
@@ -220,7 +238,7 @@ export default async function SharedCollectionPage({
       <footer className="border-t border-line bg-paper">
         <div className="mx-auto flex max-w-[980px] items-center px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
-            {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
+            {t("TARMOTO · SHARED VIA PUBLIC LINK ·", undefined, locale)}{" "}
             {new Date().getUTCFullYear()}
           </Mono>
         </div>

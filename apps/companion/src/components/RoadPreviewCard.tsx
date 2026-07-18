@@ -77,7 +77,9 @@ export function RoadPreviewCard({
         type="button"
         onClick={onFocus}
         aria-pressed={isFocused}
-        aria-label={`Focus segment ${segment.name ?? segment.id} on the map`}
+        aria-label={t("Focus segment {name} on the map", {
+          name: segment.name ?? segment.id,
+        })}
         className="flex w-full items-center gap-3 p-3 text-left"
       >
         <span className="w-[18px] shrink-0 text-center font-mono text-xs font-extrabold text-fg-mute">
@@ -92,11 +94,12 @@ export function RoadPreviewCard({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13.5px] font-bold text-ink">
-            {segment.name ?? `Segment ${segment.orderInDay + 1}`}
+            {segment.name ?? t("Segment {n}", { n: segment.orderInDay + 1 })}
           </span>
           <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.3px] text-fg-mute">
-            {format.distanceKm(segment.distanceKm)} · {segment.surfaceType} ·{" "}
-            {curvinessLabel(segment.curvinessScore)}
+            {format.distanceKm(segment.distanceKm)} ·{" "}
+            {t(segment.surfaceType.replace(/\b\w/g, (c) => c.toUpperCase()))} ·{" "}
+            {t(curvinessLabel(segment.curvinessScore))}
           </span>
         </span>
         {segment.activeHazards.length > 0 && (
@@ -112,7 +115,9 @@ export function RoadPreviewCard({
           q={tierOf(segment.qualityScore)}
           size={4}
           className="shrink-0"
-          ariaLabel={`Quality score ${format.decimal(segment.qualityScore, 1)} of 5`}
+          ariaLabel={t("Quality score {score} of 5", {
+            score: format.decimal(segment.qualityScore, 1),
+          })}
         />
       </button>
 
@@ -124,7 +129,7 @@ export function RoadPreviewCard({
           aria-controls={detailId}
           className="flex items-center gap-1 text-xs text-fg-dim transition hover:text-ink"
         >
-          {isExpanded ? "Hide details" : "Show details"}
+          {isExpanded ? t("Hide details") : t("Show details")}
           <ChevronDown
             size={12}
             className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
@@ -139,22 +144,22 @@ export function RoadPreviewCard({
         >
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <Stat
-              label="Quality score"
-              value={`${format.decimal(segment.qualityScore, 1)} · ${tier.label}`}
+              label={t("Quality score")}
+              value={`${format.decimal(segment.qualityScore, 1)} · ${t(tier.label)}`}
               valueClass={tier.color}
             />
             <Stat
-              label="Surface"
-              value={segment.surfaceType.replace(/\b\w/g, (c) =>
-                c.toUpperCase(),
+              label={t("Surface")}
+              value={t(
+                segment.surfaceType.replace(/\b\w/g, (c) => c.toUpperCase()),
               )}
             />
             <Stat
-              label="Curviness"
-              value={`${segment.curvinessScore} · ${curvinessLabel(segment.curvinessScore)}`}
+              label={t("Curviness")}
+              value={`${segment.curvinessScore} · ${t(curvinessLabel(segment.curvinessScore))}`}
             />
             <Stat
-              label="Distance"
+              label={t("Distance")}
               value={format.distanceKm(segment.distanceKm)}
             />
           </div>
@@ -214,7 +219,7 @@ export function RoadPreviewCard({
                       <span aria-hidden="true">{cfg.emoji}</span>
                       <div className="flex-1">
                         <p className="text-ink">
-                          {cfg.label}
+                          {t(cfg.label)}
                           <span
                             className={`ml-2 text-[10px] uppercase tracking-wider ${SEVERITY_COLOR[hazard.severity]}`}
                           >

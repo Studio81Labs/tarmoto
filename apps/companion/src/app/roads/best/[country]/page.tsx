@@ -1,4 +1,5 @@
 import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,13 +23,27 @@ export async function generateMetadata({
   const country = normalizeCountryParam(rawCountry);
   const c = findCountry(country);
   if (!c) return {};
-  const title = `Best motorcycle roads in ${c.name} — Tarmoto`;
-  const description = `Ranked lists of the top-rated motorcycle roads in ${c.name}, scored by quality and curviness.`;
+  // This page runs under weekly ISR (`revalidate` above). Background
+  // regeneration has no request context, so `readLocale()` falls back to
+  // `DEFAULT_LOCALE` and this metadata is served in English regardless of
+  // visitor locale until locale-segmented routing exists. Acceptable today
+  // (English-only, per the i18n readiness spec) and out of scope to fix here.
+  const locale = await readLocale();
+  const title = t(
+    "Best motorcycle roads in {name} — Tarmoto",
+    { name: c.name },
+    locale,
+  );
+  const description = t(
+    "Ranked lists of the top-rated motorcycle roads in {name}, scored by quality and curviness.",
+    { name: c.name },
+    locale,
+  );
   return buildBestRoadsMetadata({
     title,
     description,
     canonicalPath: `/roads/best/${c.code}`,
-    imageAlt: `Best motorcycle roads in ${c.name}`,
+    imageAlt: t("Best motorcycle roads in {name}", { name: c.name }, locale),
   });
 }
 export default async function BestRoadsCountryPage({

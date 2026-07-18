@@ -16,6 +16,8 @@ import { TripMessage } from '../../entities/trip-message.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
 import { FeatureState } from '../../entities/feature-state.entity.js';
+import { UserLimit } from '../../entities/user-limit.entity.js';
+import { LimitState } from '../../entities/limit-state.entity.js';
 import { EmailLog } from '../../entities/email-log.entity.js';
 import { EmailTemplate } from '../../entities/email-template.entity.js';
 import { HazardsModule } from '../hazards/hazards.module.js';
@@ -43,6 +45,10 @@ import { AdminAdminsController } from '../admin-admins/admin-admins.controller.j
 import { AdminAdminsService } from '../admin-admins/admin-admins.service.js';
 import { AdminFlagsController } from '../admin-flags/admin-flags.controller.js';
 import { AdminFlagsService } from '../admin-flags/admin-flags.service.js';
+import { AdminLimitsController } from '../admin-flags/admin-limits.controller.js';
+import { AdminLimitsService } from '../admin-flags/admin-limits.service.js';
+import { AdminSystemSwitchesController } from '../admin-flags/admin-system-switches.controller.js';
+import { AdminSystemSwitchesService } from '../admin-flags/admin-system-switches.service.js';
 import { AdminContentController } from '../admin-content/admin-content.controller.js';
 import { AdminContentService } from '../admin-content/admin-content.service.js';
 import { AdminEmailController } from '../admin-email/admin-email.controller.js';
@@ -67,6 +73,8 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
       CommuteRoute,
       UserFeature,
       FeatureState,
+      UserLimit,
+      LimitState,
       EmailLog,
       EmailTemplate,
     ]),
@@ -99,6 +107,8 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
     AdminUsersController,
     AdminAdminsController,
     AdminFlagsController,
+    AdminLimitsController,
+    AdminSystemSwitchesController,
     AdminContentController,
     AdminAppSettingsController,
     AdminEmailController,
@@ -111,6 +121,8 @@ import { AdminEmailTemplateService } from '../admin-email/admin-email-template.s
     AdminUsersService,
     AdminAdminsService,
     AdminFlagsService,
+    AdminLimitsService,
+    AdminSystemSwitchesService,
     AdminContentService,
     AdminEmailService,
     AdminEmailTemplateService,

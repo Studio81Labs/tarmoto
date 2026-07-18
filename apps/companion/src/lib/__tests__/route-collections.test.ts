@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { makeTranslator } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import {
+  MAX_COLLECTION_DESCRIPTION_LENGTH,
+  MAX_COLLECTION_NAME_LENGTH,
   mapDetailToView,
   mapSummaryToView,
   moveItem,
   reorderPayload,
+  validateCollectionDescription,
+  validateCollectionName,
 } from "@/lib/route-collections";
 import type {
   RouteCollectionDetail,
@@ -175,5 +181,123 @@ describe("mapSummaryToView", () => {
     // The list endpoint doesn't return per-item rows, so the count is the
     // only signal we have for "non-empty" badges. Verify it round-trips.
     expect(view.itemCount).toBe(4);
+  });
+});
+
+describe("validateCollectionName", () => {
+  it("rejects empty names", () => {
+    expect(validateCollectionName("   ", [], t)).toMatch(/required/i);
+  });
+
+  it("rejects names over the length limit", () => {
+    expect(
+      validateCollectionName("a".repeat(MAX_COLLECTION_NAME_LENGTH + 1), [], t),
+    ).toMatch(/characters or fewer/);
+  });
+
+  it("rejects duplicate names case-insensitively", () => {
+    const existing = [{ id: "c-1", title: "Beskydy Loops" }];
+    expect(validateCollectionName("beskydy loops", existing, t)).toMatch(
+      /already exists/,
+    );
+  });
+
+  it("allows re-saving the same collection when excludeId is set", () => {
+    const existing = [{ id: "c-1", title: "Beskydy Loops" }];
+    expect(
+      validateCollectionName("beskydy loops", existing, t, "c-1"),
+    ).toBeNull();
+  });
+
+  it("accepts a valid, unique name", () => {
+    expect(validateCollectionName("Alps 2026", [], t)).toBeNull();
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…") rather
+// than an identity map. An identity map can't tell a real `t()` call apart
+// from a regression that bypasses `t()` and returns the raw canonical
+// English string directly — both would produce the same string. With
+// sentinel values, a bypass regression returns the untranslated English text
+// and these assertions fail.
+describe("validateCollectionName translator wiring", () => {
+  const sentinelT = makeTranslator<string>({
+    en: {
+      "Collection name is required": "XX-collection-required",
+      "Collection name must be {max} characters or fewer":
+        "XX-collection-max-{max}",
+      "A collection with that name already exists": "XX-collection-exists",
+    },
+  });
+
+  it("routes the required-name message through the translator", () => {
+    expect(validateCollectionName("   ", [], sentinelT)).toBe(
+      "XX-collection-required",
+    );
+  });
+
+  it("routes the length-limit message through the translator with max interpolated", () => {
+    expect(
+      validateCollectionName(
+        "a".repeat(MAX_COLLECTION_NAME_LENGTH + 1),
+        [],
+        sentinelT,
+      ),
+    ).toBe(`XX-collection-max-${MAX_COLLECTION_NAME_LENGTH}`);
+  });
+
+  it("routes the duplicate-name message through the translator", () => {
+    const existing = [{ id: "c-1", title: "Beskydy Loops" }];
+    expect(validateCollectionName("beskydy loops", existing, sentinelT)).toBe(
+      "XX-collection-exists",
+    );
+  });
+});
+
+describe("validateCollectionDescription", () => {
+  it("accepts an undefined description", () => {
+    expect(validateCollectionDescription(undefined, t)).toBeNull();
+  });
+
+  it("accepts an empty or whitespace-only description", () => {
+    expect(validateCollectionDescription("", t)).toBeNull();
+    expect(validateCollectionDescription("   ", t)).toBeNull();
+  });
+
+  it("rejects a description over the length limit", () => {
+    expect(
+      validateCollectionDescription(
+        "a".repeat(MAX_COLLECTION_DESCRIPTION_LENGTH + 1),
+        t,
+      ),
+    ).toMatch(/characters or fewer/);
+  });
+
+  it("accepts a description at the length limit", () => {
+    expect(
+      validateCollectionDescription(
+        "a".repeat(MAX_COLLECTION_DESCRIPTION_LENGTH),
+        t,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("validateCollectionDescription translator wiring", () => {
+  const sentinelT = makeTranslator<string>({
+    en: {
+      "Description must be {max} characters or fewer":
+        "XX-description-max-{max}",
+    },
+  });
+
+  it("routes the length-limit message through the translator with max interpolated", () => {
+    expect(
+      validateCollectionDescription(
+        "a".repeat(MAX_COLLECTION_DESCRIPTION_LENGTH + 1),
+        sentinelT,
+      ),
+    ).toBe(`XX-description-max-${MAX_COLLECTION_DESCRIPTION_LENGTH}`);
   });
 });

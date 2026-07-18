@@ -131,7 +131,7 @@ describe("deriveFlaggedSections", () => {
         segmentId: "run:d1-s1:d1-s1",
         kind: "rough",
         lengthKm: 4.2,
-        label: "Rough · gravel, 4.2 km",
+        label: "Rough · Gravel, 4.2 km",
       },
       {
         segmentId: "run:d1-s2:d1-s2",
@@ -171,7 +171,7 @@ describe("deriveFlaggedSections", () => {
         segmentId: "run:d1-s1:d1-s2",
         kind: "rough",
         lengthKm: 5,
-        label: "Rough · gravel, 5 km",
+        label: "Rough · Gravel, 5 km",
       },
       {
         segmentId: "run:d1-s3:d1-s4",

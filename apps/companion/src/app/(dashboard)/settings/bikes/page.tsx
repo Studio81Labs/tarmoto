@@ -311,7 +311,9 @@ function BikeRow({
             loading={pending}
             leftIcon={<Star size={12} />}
             onClick={onSetActive}
-            aria-label={`Set ${formatBikeTitle(bike)} as active`}
+            aria-label={t("Set {bike} as active", {
+              bike: formatBikeTitle(bike),
+            })}
           >
             {t("Make active")}
           </Button>
@@ -325,7 +327,7 @@ function BikeRow({
               ? "rounded-md p-2 text-cream/65 transition hover:bg-cream/10 hover:text-cream disabled:opacity-50"
               : "rounded-md p-2 text-fg-dim transition hover:bg-paper hover:text-ink disabled:opacity-50"
           }
-          aria-label={`Edit ${formatBikeTitle(bike)}`}
+          aria-label={t("Edit {bike}", { bike: formatBikeTitle(bike) })}
         >
           <Pencil size={16} />
         </button>
@@ -338,7 +340,7 @@ function BikeRow({
               ? "rounded-md p-2 text-cream/65 transition hover:bg-cream/10 hover:text-quality-q1 disabled:opacity-50"
               : "rounded-md p-2 text-fg-dim transition hover:bg-paper hover:text-quality-q1 disabled:opacity-50"
           }
-          aria-label={`Delete ${formatBikeTitle(bike)}`}
+          aria-label={t("Delete {bike}", { bike: formatBikeTitle(bike) })}
         >
           <Trash2 size={16} />
         </button>

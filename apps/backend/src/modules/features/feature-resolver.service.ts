@@ -3,25 +3,39 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   buildFeatureSnapshot,
+  buildLimitSnapshot,
+  buildSystemSwitchSnapshot,
   isGlobalFeatureState,
   type FeatureSnapshot,
   type GlobalFeatureState,
   type GlobalFeatureStates,
+  type GlobalLimitOverrides,
+  type LimitSnapshot,
+  type SystemSwitchSnapshot,
 } from '@tarmoto/shared';
 import { FeatureState } from '../../entities/feature-state.entity.js';
+import { LimitState } from '../../entities/limit-state.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
+import { UserLimit } from '../../entities/user-limit.entity.js';
 import { User } from '../../entities/user.entity.js';
 
+/** Combined tier-resolved entitlements — flags and limits — for one user. */
+export interface UserEntitlements {
+  features: FeatureSnapshot;
+  limits: LimitSnapshot;
+}
+
 /**
- * Live tier-aware flag resolution (sibling nexcue/tabletap pattern).
+ * Live tier-aware flag and limit resolution (sibling nexcue/tabletap pattern).
  *
- * The flag vocabulary and tier policy are code-defined in
+ * The flag/limit vocabulary and tier policy are code-defined in
  * `FEATURE_DEFINITIONS` (`@tarmoto/shared`); this service only loads the
  * mutable state — the user's subscription tier, per-user overrides, and
- * global overrides — and folds them through the pure `resolveFeature`
- * precedence. There is deliberately no in-memory cache: gated endpoints
- * re-resolve on every request (three small indexed reads in parallel) so
- * an operator kill switch takes effect immediately at the API.
+ * global overrides — and folds them through the pure `resolveFeature` /
+ * `resolveLimit` precedence. There is deliberately no in-memory cache: gated
+ * endpoints re-resolve on every request (a handful of small indexed reads in
+ * parallel) so an operator kill switch or a global limit change takes effect
+ * immediately at the API.
  */
 @Injectable()
 export class FeatureResolver {
@@ -32,6 +46,10 @@ export class FeatureResolver {
     private readonly userFeatures: Repository<UserFeature>,
     @InjectRepository(FeatureState)
     private readonly featureStates: Repository<FeatureState>,
+    @InjectRepository(UserLimit)
+    private readonly userLimits: Repository<UserLimit>,
+    @InjectRepository(LimitState)
+    private readonly limitStates: Repository<LimitState>,
   ) {}
 
   /** Resolve every registry flag for one user. */
@@ -52,22 +70,51 @@ export class FeatureResolver {
     );
   }
 
-  /**
-   * Fetch-free variant for callers that already hold the user row —
-   * `/users/me` and the auth responses resolve with one fewer query.
-   */
-  async resolveForLoadedUser(
-    user: Pick<User, 'id' | 'subscription_tier'>,
-  ): Promise<FeatureSnapshot> {
-    const [overrides, globalStates] = await Promise.all([
-      this.loadOverrides(user.id),
-      this.getGlobalStates(),
+  /** Resolve every registry limit for one user (3 indexed reads). */
+  async resolveLimitsForUser(userId: string): Promise<LimitSnapshot> {
+    const [user, overrides, globalOverrides] = await Promise.all([
+      this.users.findOne({
+        where: { id: userId },
+        select: { id: true, subscription_tier: true },
+      }),
+      this.loadLimitOverrides(userId),
+      this.getGlobalLimitOverrides(),
     ]);
-    return buildFeatureSnapshot(
+    if (!user) throw new NotFoundException('User not found');
+    return buildLimitSnapshot(
       user.subscription_tier,
       overrides,
-      globalStates,
+      globalOverrides,
     );
+  }
+
+  /**
+   * Fetch-free combined variant for callers that already hold the user
+   * row — `/users/me` and the auth responses resolve both snapshots with
+   * four parallel indexed reads and no user query.
+   */
+  async resolveEntitlementsForLoadedUser(
+    user: Pick<User, 'id' | 'subscription_tier'>,
+  ): Promise<UserEntitlements> {
+    const [overrides, globalStates, limitOverrides, globalLimits] =
+      await Promise.all([
+        this.loadOverrides(user.id),
+        this.getGlobalStates(),
+        this.loadLimitOverrides(user.id),
+        this.getGlobalLimitOverrides(),
+      ]);
+    return {
+      features: buildFeatureSnapshot(
+        user.subscription_tier,
+        overrides,
+        globalStates,
+      ),
+      limits: buildLimitSnapshot(
+        user.subscription_tier,
+        limitOverrides,
+        globalLimits,
+      ),
+    };
   }
 
   /**
@@ -86,6 +133,32 @@ export class FeatureResolver {
     return states;
   }
 
+  /**
+   * Global limit overrides currently in force. Rows with invalid values
+   * (negative / non-integer) are dropped defensively — a bad row can
+   * never widen an entitlement.
+   */
+  async getGlobalLimitOverrides(): Promise<GlobalLimitOverrides> {
+    const rows = await this.limitStates.find({
+      select: { feature: true, value: true },
+    });
+    const overrides: Partial<Record<string, number | null>> = {};
+    for (const row of rows) {
+      if (isValidLimitValue(row.value)) overrides[row.feature] = row.value;
+    }
+    return overrides;
+  }
+
+  /**
+   * Resolved system switches (operator kill toggles, default ON). Reads the
+   * same global `feature_states` rows as `getGlobalStates` and folds them
+   * through the pure `buildSystemSwitchSnapshot`. For the backend's own use
+   * (and future per-subsystem enforcement) — not gated by any guard yet.
+   */
+  async getSystemSwitches(): Promise<SystemSwitchSnapshot> {
+    return buildSystemSwitchSnapshot(await this.getGlobalStates());
+  }
+
   private async loadOverrides(
     userId: string,
   ): Promise<Partial<Record<string, boolean>>> {
@@ -97,4 +170,27 @@ export class FeatureResolver {
     for (const row of rows) overrides[row.feature] = row.enabled;
     return overrides;
   }
+
+  private async loadLimitOverrides(
+    userId: string,
+  ): Promise<Partial<Record<string, number | null>>> {
+    const rows = await this.userLimits.find({
+      where: { user_id: userId },
+      select: { feature: true, value: true },
+    });
+    const overrides: Partial<Record<string, number | null>> = {};
+    for (const row of rows) {
+      if (isValidLimitValue(row.value)) overrides[row.feature] = row.value;
+    }
+    return overrides;
+  }
+}
+
+/**
+ * True for a well-formed limit value: `null` (unlimited) or a non-negative
+ * integer. Guards both override layers against a corrupted row widening
+ * (or nonsensically shaping) an entitlement.
+ */
+function isValidLimitValue(value: number | null): boolean {
+  return value === null || (Number.isInteger(value) && value >= 0);
 }
