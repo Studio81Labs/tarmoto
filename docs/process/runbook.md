@@ -594,3 +594,118 @@ On a successful import, the backend automatically chains the road-quality →
 GraphHopper conflation (`quality.conflation`, whole-network as of Sub-project
 B) — see
 [`apps/backend/src/modules/roads/quality-conflation/README.md`](../../apps/backend/src/modules/roads/quality-conflation/README.md).
+
+### Enabling quality-aware routing (GraphHopper + conflation) on staging
+
+Turns the imported `road_segments.quality_score` into **routes that prefer
+good-surface roads** (#779, [ADR-0005](../decisions/0005-road-quality-routing-via-smoothness.md)).
+The chain: the conflation job injects an OSM `smoothness` tag (derived from our
+score) into a whole-network `.osm`, GraphHopper re-imports it, and the
+request-time `preferQuality` custom model de-weights the poor tiers. **This is a
+routing-infra step, not a flag** — it needs a running GraphHopper. The
+road-quality **display** (map + segment cards) already works from `road_segments`
+without any of this; conflation only adds the routing-preference layer. Deep
+detail: the conflation README (above) and
+[`infra/graphhopper/README.md`](../../infra/graphhopper/README.md).
+
+Starts **CZ-only** (GraphHopper imports the Czech extract). Extending to cz/sk/at
+means importing a **merged** extract (`osmium merge`) — the same one-merged-file
+rule as Valhalla — and is a later step.
+
+**Prerequisites**
+
+- The road import is live and `road_segments` is populated (above).
+- A **shared volume** both the backend (writer) and the GraphHopper app (reader)
+  mount — the conflation output has to land where GraphHopper reads it. Same
+  pattern as the road-extract volume between `apps/ingest` and the backend.
+- Coolify **"Connect To Predefined Network"** on both apps so the backend reaches
+  GraphHopper by network alias (see the ingest networking note above).
+
+**1. Prepare the CZ source extract (`.osm`).** The conflation INPUT is the
+**whole-network** `.osm` GraphHopper imports — the full routable network, **not**
+the drivable-filtered road tiles the importer uses. Conflation reads `.osm` XML
+(not `.pbf`), so convert once:
+
+```bash
+curl -L -o cz.osm.pbf https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+osmium cat cz.osm.pbf -o cz.osm            # XML form the conflation job reads
+cp cz.osm cz.quality.osm                   # seed: GraphHopper imports the TAGGED file;
+                                           # the first conflation overwrites it with tags
+```
+
+Place both on the shared volume, e.g. `/data/routing/cz.osm` (input) and
+`/data/routing/cz.quality.osm` (output GraphHopper imports).
+
+**2. Stand up the GraphHopper Coolify app.**
+
+- **Image** `israelhikingmap/graphhopper:10.2` (multi-arch; its config schema
+  matches the repo's `config.yml`, which **already lists `smoothness` in
+  `graph.encoded_values`** — no engine change).
+- **Persistent storage**: the shared volume at `/data` (holds `config.yml`, the
+  extract, and `graph-cache`). Copy `infra/graphhopper/config.yml` there.
+- **Port** 8989. **Env** `JAVA_OPTS=-Xms1g -Xmx4g` (a CZ import peaks ~4–5 GB —
+  size the app + swap accordingly).
+- **Start command** — the args mirror the compose service's `command:`, but the
+  start MUST clear `graph-cache` first so a redeploy re-imports the fresh extract
+  (this is the re-import receiver — see step 4):
+
+  ```sh
+  sh -c 'rm -rf /data/graph-cache && exec <image-entrypoint> \
+    -i /data/routing/cz.quality.osm -c /data/config.yml -o /data/graph-cache --host 0.0.0.0'
+  ```
+
+  The first start imports (slow, one-time); every restart re-imports (acceptable
+  at the weekly cadence). Network alias e.g. `tarmoto-graphhopper`.
+
+**3. Wire the backend (Coolify env), then redeploy.**
+
+```bash
+TARMOTO_GRAPHHOPPER_BASE_URL=http://tarmoto-graphhopper:8989   # route via staging GH
+TARMOTO_QUALITY_CONFLATION_ENABLED=true
+TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/routing/cz.osm
+TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/routing/cz.quality.osm
+TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_URL=<the GraphHopper app's Coolify deploy webhook>
+TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_METHOD=GET                # Coolify deploy hook
+TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_TOKEN=<if the hook needs one>
+TARMOTO_GRAPHHOPPER_QUALITY_ENABLED=true                       # request-time: USE the smoothness
+```
+
+The backend must mount the **same** shared volume at the path holding
+`cz.osm`/`cz.quality.osm`.
+
+**4. The re-import receiver.** GraphHopper has no reload API and reuses
+`graph-cache` on restart, so after a conflation the webhook must clear the cache
+and restart it. With GraphHopper as a Coolify app the receiver is just its
+**Coolify redeploy webhook** (`METHOD=GET`) + the cache-clearing start command in
+step 2 — no sidecar. A non-2xx/unreachable webhook makes the conflation job throw
+(BullMQ retries), so a broken hook is visible, not silent.
+
+**5. Enablement order + first run.**
+
+1. Shared volume on both apps; `cz.osm` + seeded `cz.quality.osm` present.
+2. GraphHopper app up and imported (`GET http://…:8989/health` green).
+3. Backend env set + redeployed.
+4. Produce the first **tagged** extract on demand rather than waiting for the
+   Sunday import tick:
+   ```bash
+   docker exec <backend-staging> node dist/scripts/quality-conflation.js
+   ```
+   It tags `cz.quality.osm`, then fires the webhook → GraphHopper redeploys and
+   re-imports the quality-weighted graph. (Every subsequent road import chains it
+   automatically.)
+
+**6. Validate — [ADR-0005](../decisions/0005-road-quality-routing-via-smoothness.md)
+acceptance.** Find a low-quality road on a routable corridor:
+
+```sql
+SELECT osm_way_id, quality_score FROM road_segments
+WHERE osm_way_id IS NOT NULL AND quality_score < 2 ORDER BY reading_count DESC LIMIT 20;
+```
+
+Route a path that would otherwise use it, once with `preferQuality` **off**
+(baseline) and once **on** — the `preferQuality` route should **detour around**
+the low-quality road. That divergence is the proof the whole chain — conflation →
+GraphHopper re-import → request-time weighting — is live.
+
+**Not before production.** Enabling this for a live **prod** region waits on
+**#809** (aggregate-safe road detail); dev/staging may enable it freely.
