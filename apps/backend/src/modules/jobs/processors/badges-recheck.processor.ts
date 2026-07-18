@@ -91,6 +91,15 @@ export class BadgesRecheckProcessor extends WorkerHost {
   }
 
   private async recheckUser(job: Job): Promise<BadgesRecheckUserResult> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      this.logger.log(
+        `[${job.id ?? 'no-id'}] gamification disabled — skipping badge recheck for user`,
+      );
+      return { badges_awarded: [] };
+    }
+
     const data = job.data as { user_id?: string };
     if (!data.user_id) {
       throw new Error('badges-recheck-user job missing user_id');

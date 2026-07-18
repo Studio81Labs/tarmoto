@@ -125,6 +125,18 @@ describe('BadgesRecheckProcessor', () => {
       'sys_gamification',
     );
   });
+
+  it('recheck-user: skips and does not call checkAndAward when sys_gamification is off', async () => {
+    featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.BADGES_RECHECK_USER, { user_id: 'u1' }) as never,
+    );
+    expect(result).toEqual({ badges_awarded: [] });
+    expect(badges.checkAndAward).not.toHaveBeenCalled();
+    expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+      'sys_gamification',
+    );
+  });
 });
 
 describe('DigestWeeklyProcessor', () => {
