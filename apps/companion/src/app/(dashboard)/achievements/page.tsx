@@ -450,7 +450,7 @@ function Dashboard({
             id="milestone-heading"
             icon={<Heart size={16} />}
             title={t("Next milestone")}
-            subtitle="What you're working toward right now."
+            subtitle={t("What you're working toward right now.")}
           />
           <MilestoneCard progress={nextMilestone} format={format} />
         </section>

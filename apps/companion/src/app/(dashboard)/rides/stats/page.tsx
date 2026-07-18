@@ -216,7 +216,7 @@ export default function StatsPage() {
   // The chart switches from monthly to daily bars on the short windows; the
   // header copy follows so "Distance by day" reads honestly for 90/30 days.
   const isDayView = filters.window === "30d" || filters.window === "90d";
-  const chartStamp = isDayView ? "Distance by day" : "Distance by month";
+  const chartStamp = isDayView ? t("Distance by day") : t("Distance by month");
   const chartTitle =
     filters.window === "all" ? t("Last 12 months") : windowLabel;
   // The heatmap is always the focus calendar year (window-independent).
@@ -307,7 +307,7 @@ export default function StatsPage() {
       <Card padded={false} className="p-[22px]">
         <SectionHeading
           className="mb-[18px]"
-          stamp={t(chartStamp)}
+          stamp={chartStamp}
           title={chartTitle}
           caption={
             <>

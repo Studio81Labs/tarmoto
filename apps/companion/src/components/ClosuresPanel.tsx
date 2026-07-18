@@ -242,7 +242,7 @@ function ClosuresPanelBody({
       ) : (
         <p className="text-xs text-fg-mute">
           {t("Previewing {month} conditions on {previewDay}.", {
-            month: monthText || "this month",
+            month: monthText || t("this month"),
             previewDay,
           })}
         </p>

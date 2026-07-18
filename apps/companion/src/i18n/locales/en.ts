@@ -220,6 +220,7 @@ export const en = {
   "Could not copy your email. Please copy it manually. ":
     "Could not copy your email. Please copy it manually. ",
   "Could not generate GPX": "Could not generate GPX",
+  "Could not generate share link": "Could not generate share link",
   "Could not join this shared trip. Ask the owner for a fresh link.":
     "Could not join this shared trip. Ask the owner for a fresh link.",
   "Could not load achievements": "Could not load achievements",
@@ -312,6 +313,8 @@ export const en = {
   Distance: "Distance",
   "Distance ": "Distance ",
   "Distance Traveller": "Distance Traveller",
+  "Distance by day": "Distance by day",
+  "Distance by month": "Distance by month",
   "Don't have an account?": "Don't have an account?",
   Downgrade: "Downgrade",
   "Downgrade to Free at the end of your current billing period. ":
@@ -815,6 +818,7 @@ export const en = {
   "Reset password": "Reset password",
   Retry: "Retry",
   "Retry ": "Retry ",
+  "Review photo {n}": "Review photo {n}",
   "Reward: ": "Reward: ",
   "Reward: {reward}": "Reward: {reward}",
   "Ridden (": "Ridden (",
@@ -1078,6 +1082,7 @@ export const en = {
     "Use your riding history to suggest routes, roads, and riders you may enjoy. ",
   "Usually takes under a minute. ": "Usually takes under a minute. ",
   "Very Poor": "Very Poor",
+  "Very poor": "Very poor",
   "Very twisty": "Very twisty",
   "View all ": "View all ",
   "View full map ": "View full map ",
@@ -1097,6 +1102,8 @@ export const en = {
   "What makes this collection special?": "What makes this collection special?",
   "What should other riders know about this road?":
     "What should other riders know about this road?",
+  "What you're working toward right now.":
+    "What you're working toward right now.",
   "Who can see your profile, stats, and shared rides. ":
     "Who can see your profile, stats, and shared rides. ",
   "Write a review ": "Write a review ",
@@ -1118,6 +1125,8 @@ export const en = {
   "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ":
     "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ",
   "You own this collection ": "You own this collection ",
+  "Your browser doesn't support sharing or clipboard access — try a different browser.":
+    "Your browser doesn't support sharing or clipboard access — try a different browser.",
   "Your email address ": "Your email address ",
   "Your garage is synced with the Tarmoto mobile app. ":
     "Your garage is synced with the Tarmoto mobile app. ",
@@ -1196,6 +1205,7 @@ export const en = {
   "segments) ": "segments) ",
   selected: "selected",
   soon: "soon",
+  "this month": "this month",
   "to discover ": "to discover ",
   "to go ": "to go ",
   trip: "trip",
@@ -1234,6 +1244,7 @@ export const en = {
   "{label} email": "{label} email",
   "{label} no longer available": "{label} no longer available",
   "{label} push": "{label} push",
+  "{name} review photo {n}": "{name} review photo {n}",
   "{name}: {pct} complete": "{name}: {pct} complete",
   "{pct} complete": "{pct} complete",
   "{percent}% explored": "{percent}% explored",

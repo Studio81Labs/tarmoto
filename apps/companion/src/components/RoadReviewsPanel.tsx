@@ -844,7 +844,7 @@ function ReviewEditor({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={photo}
-                  alt={`Review photo ${index + 1}`}
+                  alt={t("Review photo {n}", { n: index + 1 })}
                   className="h-full w-full object-cover"
                 />
                 <button
@@ -1052,7 +1052,10 @@ function ReviewCard({
             <img
               key={`${photo}-${index}`}
               src={photo}
-              alt={`${review.user_display_name} review photo ${index + 1}`}
+              alt={t("{name} review photo {n}", {
+                name: review.user_display_name,
+                n: index + 1,
+              })}
               className="aspect-[4/3] rounded-lg object-cover"
             />
           ))}

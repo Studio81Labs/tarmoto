@@ -81,7 +81,7 @@ export default async function SharedRidePage({
         {/* Route preview */}
         <SharedRoutePreviewCard
           preview={preview}
-          label={`${ride.rider_name} route preview`}
+          label={t("{label} route preview", { label: ride.rider_name })}
           title={t("Route preview")}
           subtitle={t(
             "Snapshot of the shared route and its current ride metrics.",

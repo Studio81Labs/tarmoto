@@ -279,7 +279,7 @@ function SegmentDetailContent({
                       active ? "text-ink" : "text-fg-mute"
                     }`}
                   >
-                    {row.label}
+                    {t(row.label)}
                   </span>
                 </div>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper-2">

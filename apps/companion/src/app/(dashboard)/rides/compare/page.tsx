@@ -587,14 +587,14 @@ function ElevationCompareSection({
           variants for the bar fill (≥3:1 on paper for the UI cue).
         */}
         <ElevationBars
-          label="Ride A"
+          label={t("Ride A")}
           color="#0E7A75"
           gain={rideA.elevation_gain}
           loss={rideA.elevation_loss}
           max={max}
         />
         <ElevationBars
-          label="Ride B"
+          label={t("Ride B")}
           color="#9D2C5C"
           gain={rideB.elevation_gain}
           loss={rideB.elevation_loss}
@@ -718,7 +718,7 @@ function QualityDiffSection({
                     className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: row.color }}
                   />
-                  {QUALITY_CONFIG[row.tier].label}
+                  {t(QUALITY_CONFIG[row.tier].label)}
                 </div>
                 <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
                   <span className="sr-only">{nameA}</span>
