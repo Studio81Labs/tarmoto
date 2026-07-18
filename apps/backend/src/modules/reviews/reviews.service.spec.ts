@@ -1554,12 +1554,14 @@ describe('ReviewsService', () => {
       expect(voteRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('still works when sys_poi_ratings is off (withdrawal always allowed)', async () => {
+    it('retracts the vote but returns neutral counts when sys_poi_ratings is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
       reviewRepo.findOne!.mockResolvedValueOnce({
         id: 'review-2',
         user_id: 'author-2',
       } as unknown as RoadReview);
+      // Non-zero aggregate: if the switch-off path read it back, the result
+      // would surface 3/1 and leak the hidden counts through this DELETE.
       voteGroupRows = [
         {
           road_review_id: 'review-2',
@@ -1569,17 +1571,23 @@ describe('ReviewsService', () => {
       ];
       viewerVotes = [];
 
-      await expect(
-        service.clearVote('viewer-1', 'review-2'),
-      ).resolves.not.toThrow();
+      const result = await service.clearVote('viewer-1', 'review-2');
 
-      // The vote is retracted regardless of the switch...
+      // The withdrawal still happens — a kill never traps user content...
       expect(voteRepo.delete).toHaveBeenCalledWith({
         user_id: 'viewer-1',
         road_review_id: 'review-2',
       });
-      // ...and, like `delete`, the switch isn't even consulted.
-      expect(featureResolver.isSystemSwitchEnabled).not.toHaveBeenCalled();
+      // ...but the aggregate is display data: skipped, neutral counts back,
+      // so the DELETE can't be used to read the hidden vote counts.
+      expect(result).toEqual({
+        helpful_count: 0,
+        not_helpful_count: 0,
+        my_vote: null,
+      });
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
     });
   });
 

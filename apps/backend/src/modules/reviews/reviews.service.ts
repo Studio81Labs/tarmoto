@@ -677,11 +677,10 @@ export class ReviewsService {
     userId: string,
     reviewId: string,
   ): Promise<ReviewVoteResultDto> {
-    // NOT gated by sys_poi_ratings: clearing a vote is a withdrawal, and a
-    // kill switch must never trap user content (same rule as `delete`). A
-    // rider who voted must still be able to retract it during an incident;
-    // gating it would keep the vote in the aggregates until the switch is
-    // restored. `castVote` (the additive write) stays gated.
+    // The withdrawal itself is NOT gated by sys_poi_ratings: clearing a vote
+    // is like `delete`, and a kill switch must never trap user content — a
+    // rider must be able to retract a vote mid-incident. `castVote` (the
+    // additive write) stays gated.
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId, moderation_status: 'visible' },
     });
@@ -692,6 +691,16 @@ export class ReviewsService {
       user_id: userId,
       road_review_id: reviewId,
     });
+    // The RESPONSE aggregate is display data, though, and `voteRepo.delete`
+    // is idempotent — so without this gate any caller could use this DELETE
+    // as a read endpoint for the hidden vote counts while the switch is off
+    // and `listForSegment`/road detail are zeroed. Skip the aggregate read
+    // and return neutral counts, matching those degraded reads.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      return { helpful_count: 0, not_helpful_count: 0, my_vote: null };
+    }
     const voteMap = await this.aggregateVotes([reviewId], userId);
     const agg = voteMap.get(reviewId) ?? {
       helpful_count: 0,
