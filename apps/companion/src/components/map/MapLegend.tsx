@@ -2,23 +2,11 @@
 import { t } from "@/i18n";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import { CONDITION_COLORS } from "@/lib/conditions-visual";
-import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
+import { HAZARD_CONFIG, HAZARD_TYPES_UI, SURFACE_LABELS } from "@/lib/utils";
 
 const SURFACE_KEYS = Object.keys(
   SURFACE_COLORS,
 ) as (keyof typeof SURFACE_COLORS)[];
-
-// Display labels for the surface legend — the map/paint layers key surfaces by
-// lowercase enum value (SURFACE_COLORS' keys), which isn't itself renderable
-// copy. Canonical English text; translated at the render site below.
-const SURFACE_LABELS: Record<keyof typeof SURFACE_COLORS, string> = {
-  asphalt: "Asphalt",
-  concrete: "Concrete",
-  cobblestone: "Cobblestone",
-  gravel: "Gravel",
-  dirt: "Dirt",
-  unknown: "Unknown",
-};
 
 /**
  * One legend for every map (explorer, planner, preview). Each active overlay is

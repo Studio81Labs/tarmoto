@@ -4247,7 +4247,7 @@ function WaypointEditor({
               />
               <div className="min-w-0 flex-1">
                 <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-                  {role}
+                  {t(role)}
                 </span>
                 {onRelocate ? (
                   // The name line is a typed geocode search: the current
@@ -4257,7 +4257,7 @@ function WaypointEditor({
                     variant="spine"
                     placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
                     ariaLabel={t("Search location for {role} waypoint", {
-                      role,
+                      role: t(role),
                     })}
                     onSelect={(result) => onRelocate(waypoint.id, result)}
                   />
