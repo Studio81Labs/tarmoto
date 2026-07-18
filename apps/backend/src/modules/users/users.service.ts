@@ -89,23 +89,30 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    const [stats, hoursRow, followerCount, followingCount, badgesEarned] =
-      await Promise.all([
-        this.badges.computeStats(userId),
-        this.rideRepo
-          .createQueryBuilder('r')
-          .select(
-            'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
-            'hours',
-          )
-          .where('r.user_id = :userId', { userId })
-          .andWhere("r.status = 'completed'")
-          .andWhere('r.ended_at IS NOT NULL')
-          .getRawOne<{ hours: string }>(),
-        this.userFollowRepo.count({ where: { following_id: userId } }),
-        this.userFollowRepo.count({ where: { follower_id: userId } }),
-        this.userBadgeRepo.count({ where: { user_id: userId } }),
-      ]);
+    const [
+      stats,
+      hoursRow,
+      followerCount,
+      followingCount,
+      badgesEarned,
+      gamificationOn,
+    ] = await Promise.all([
+      this.badges.computeStats(userId),
+      this.rideRepo
+        .createQueryBuilder('r')
+        .select(
+          'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
+          'hours',
+        )
+        .where('r.user_id = :userId', { userId })
+        .andWhere("r.status = 'completed'")
+        .andWhere('r.ended_at IS NOT NULL')
+        .getRawOne<{ hours: string }>(),
+      this.userFollowRepo.count({ where: { following_id: userId } }),
+      this.userFollowRepo.count({ where: { follower_id: userId } }),
+      this.userBadgeRepo.count({ where: { user_id: userId } }),
+      this.featureResolver.isSystemSwitchEnabled('sys_gamification'),
+    ]);
 
     return {
       joined_at: user.created_at.toISOString(),
@@ -116,7 +123,7 @@ export class UsersService {
       hazards_reported: stats.hazards_reported ?? 0,
       follower_count: followerCount,
       following_count: followingCount,
-      badges_earned: badgesEarned,
+      badges_earned: gamificationOn ? badgesEarned : 0,
     };
   }
 

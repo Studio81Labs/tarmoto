@@ -4,6 +4,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import type { DataSource } from 'typeorm';
 import { BadgesService } from '../../badges/badges.service.js';
+import { FeatureResolver } from '../../features/feature-resolver.service.js';
 import { JobsProducer } from '../jobs.producer.js';
 import { JOB_NAMES, QUEUE_NAMES } from '../jobs.constants.js';
 
@@ -42,6 +43,7 @@ export class BadgesRecheckProcessor extends WorkerHost {
     private readonly dataSource: DataSource,
     private readonly badges: BadgesService,
     private readonly producer: JobsProducer,
+    private readonly featureResolver: FeatureResolver,
   ) {
     super();
   }
@@ -59,6 +61,15 @@ export class BadgesRecheckProcessor extends WorkerHost {
   }
 
   private async dispatch(job: Job): Promise<BadgesRecheckDispatchResult> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      this.logger.log(
+        `[${job.id ?? 'no-id'}] gamification disabled — skipping badge recheck`,
+      );
+      return { users_enqueued: 0 };
+    }
+
     // Window is 36h: covers a "nightly" cron that runs once a day
     // with comfortable overlap so a worker outage of <12h doesn't
     // skip any users.
