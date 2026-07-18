@@ -966,9 +966,15 @@ function ExplorerPageInner() {
           </div>
 
           {/* Rows 2 & 3 — basemap toggle + layer pills, styled like the
-              planner's map controls. Sits below row 1 (search + POI chips),
-              which always renders. */}
-          <div className="absolute left-3 top-[60px] z-20 flex flex-col gap-2">
+              planner's map controls. Sits below row 1 (search + POI chips).
+              Hidden with the other map controls while the narrow info panel
+              overlays the map, so keyboard users can't tab into the Map/Aerial
+              and layer buttons hidden behind the full-width panel. */}
+          <div
+            className={`absolute left-3 top-[60px] flex-col gap-2 ${
+              narrowInfoPanelOverlay ? "hidden" : "z-20 flex"
+            }`}
+          >
             {/* Row 2 — Map / Aerial basemap (swaps what's under the overlays). */}
             <div
               role="group"
@@ -1107,11 +1113,7 @@ function ExplorerPageInner() {
               can drag on the exposed map. A floating chip keeps a cancel out
               (which restores the panel via `startDrawRegion`'s counterpart). */}
           {!isWideViewport && narrowDrawing && (
-            <div
-              className={`absolute bottom-8 left-1/2 -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm ${
-                narrowInfoPanelOverlay ? "hidden" : "z-30 flex"
-              }`}
-            >
+            <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
               <Square size={12} className="shrink-0 text-accent" aria-hidden />
               {t("Drag on the map to draw a region")}
               <button
