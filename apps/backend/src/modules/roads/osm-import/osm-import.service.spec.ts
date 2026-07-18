@@ -73,6 +73,47 @@ function scope(
   };
 }
 
+/** A drivable ~100 m N–S way at latitude `lat` (longitude fixed at 0). Distinct
+ *  `lat`s are far enough apart that the reassignment matcher never carries one
+ *  over another; a longitude offset would shrink with cos(lat) and segment into
+ *  several rows, so the offset is on latitude. */
+function wayAtLat(id: number, lat: number): OsmWay {
+  return {
+    id,
+    tags: { highway: 'residential' },
+    coords: [
+      { lat, lng: 0 },
+      { lat: lat + 0.0009, lng: 0 },
+    ],
+  };
+}
+
+/** An existing row shaped like `loadExistingInRegion`'s raw query result (the
+ *  service maps `geom` → `coords`). `coords` are `[lng, lat]` pairs. */
+function existingRow(
+  id: string,
+  osmWayId: string,
+  segmentIndex: number,
+  coords: Array<[number, number]>, // [lng, lat]
+) {
+  return {
+    id,
+    osm_way_id: osmWayId,
+    segment_index: segmentIndex,
+    geom: { type: 'LineString', coordinates: coords },
+  };
+}
+
+/** An existing ~100 m N–S row at latitude `lat`, key `(wayId, 0)` — the
+ *  existing-side counterpart of {@link wayAtLat}, so a matching pair is judged
+ *  "unchanged" and distinct `lat`s never carry over onto each other. */
+function existingAtLat(id: string, wayId: string, lat: number) {
+  return existingRow(id, wayId, 0, [
+    [0, lat],
+    [0, lat + 0.0009],
+  ]);
+}
+
 describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
   it('targets the (osm_way_id, segment_index) identity', () => {
     // Partial-index arbiter: the conflict target carries the live-row predicate.
@@ -342,21 +383,6 @@ describe('OsmImportService', () => {
   });
 
   describe('split/merge reconciliation (#835)', () => {
-    /** An existing row shaped like `loadExistingInBbox`'s raw query result. */
-    function existingRow(
-      id: string,
-      osmWayId: string,
-      segmentIndex: number,
-      coords: Array<[number, number]>, // [lng, lat]
-    ) {
-      return {
-        id,
-        osm_way_id: osmWayId,
-        segment_index: segmentIndex,
-        geom: { type: 'LineString', coordinates: coords },
-      };
-    }
-
     it('carries an existing id onto a re-keyed incoming segment (same geometry)', async () => {
       // The way's id changed (1 → 2) but the geometry is identical, so the old
       // row's id + history must follow it rather than being inserted fresh.
@@ -516,9 +542,12 @@ describe('OsmImportService', () => {
       expect(qb.execute).toHaveBeenCalledTimes(1);
     });
 
-    it('tombstones every existing row when a configured region imports empty', async () => {
-      // A configured region with zero drivable rows is authoritative: the region
-      // was cleared, so its existing rows must be deactivated (not left live).
+    it('tombstones every existing row when a small configured region imports empty (below the guard floor)', async () => {
+      // A configured region that imports to ZERO in-scope rows is authoritative —
+      // its rows are deactivated. With a single in-scope row the tile is below the
+      // wipe-guard's row floor (MIN_ROWS_FOR_TOMBSTONE_GUARD), so the removal
+      // propagates freely (a sparse tile's small blast radius is never withheld);
+      // the ≥50-row authoritative-empty WITHHOLD is covered in the guard describe.
       loadExisting.mockResolvedValueOnce([
         existingRow('cleared', '7', 0, [
           [0, 0],
@@ -536,8 +565,10 @@ describe('OsmImportService', () => {
     });
 
     it('tombstones an existing row nothing matches — only with an explicit region', async () => {
-      // Stale detection is region-authoritative: set a bbox so an unmatched row is
-      // tombstoned. Existing row lives far from the incoming way → no match.
+      // Stale detection is region-authoritative: with a scope an unmatched row is
+      // tombstoned. A single sub-floor row propagates freely (the wipe-guard only
+      // arms at MIN_ROWS_FOR_TOMBSTONE_GUARD in-scope rows). The absent row lives far
+      // from the incoming way → no match.
       loadExisting.mockResolvedValueOnce([
         existingRow('gone-uuid', '5', 0, [
           [10, 10],
@@ -604,6 +635,147 @@ describe('OsmImportService', () => {
     });
   });
 
+  describe('stale-by-absence tombstone-fraction guard (authoritative empty)', () => {
+    // `n` in-scope existing rows at distinct latitudes (far enough apart that the
+    // reassignment matcher never carries one over another), keys
+    // (1000,0)…(1000+n-1,0).
+    const manyExisting = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        existingAtLat(`e${i}`, String(1000 + i), i),
+      );
+
+    /** The tombstone UPDATE among the transaction's statements, if any. */
+    const deactivateCall = () =>
+      (managerQuery.mock.calls as Array<[string, unknown[]]>).find(([sql]) =>
+        sql.includes('deactivated_at = NOW()'),
+      );
+
+    it('propagates a sub-floor removal even above 50% (a sparse tile is never withheld)', async () => {
+      // 3 in-scope rows, incoming keeps 1 → 2 absent (67% > 50%), but the tile is
+      // below the wipe-guard's row floor (MIN_ROWS_FOR_TOMBSTONE_GUARD = 50), so the
+      // removal PROPAGATES — a sparse tile's small blast radius is never withheld
+      // (else a correct-but-small extract would withhold + warn every run forever).
+      loadExisting.mockResolvedValueOnce(manyExisting(3));
+
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importFrom(
+        [wayAtLat(1000, 0)],
+        scope(-1, -1, 20, 20),
+      );
+
+      expect(result).toMatchObject({
+        upserted: 1,
+        carriedOver: 0,
+        deactivated: 2,
+      });
+      expect(warn).not.toHaveBeenCalled();
+      // Both absent rows (e1, e2) tombstoned — never the kept e0.
+      const deactivate = deactivateCall();
+      expect(deactivate).toBeDefined();
+      expect(new Set(deactivate![1][0] as string[])).toEqual(
+        new Set(['e1', 'e2']),
+      );
+    });
+
+    it('propagates a partial (<50%) removal on a dense (≥50-row) tile', async () => {
+      // 60 in-scope rows (above the floor); incoming re-sends 40 unchanged → the
+      // other 20 (33% < 50%) are genuinely absent and tombstoned. Below the fraction,
+      // so a real deletion still propagates rather than being withheld.
+      loadExisting.mockResolvedValueOnce(manyExisting(60));
+      const incoming = Array.from({ length: 40 }, (_, i) =>
+        wayAtLat(1000 + i, i),
+      );
+
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importFrom(incoming, scope(-1, -1, 20, 20));
+
+      expect(result).toMatchObject({
+        upserted: 40,
+        carriedOver: 0,
+        deactivated: 20,
+      });
+      expect(warn).not.toHaveBeenCalled();
+      // The 20 absent rows (e40…e59) are tombstoned — never a kept row (e0…e39).
+      const deactivate = deactivateCall();
+      expect(deactivate).toBeDefined();
+      const ids = deactivate![1][0] as string[];
+      expect(ids).toHaveLength(20);
+      expect(ids).not.toContain('e0');
+    });
+
+    it('withholds a mass (>50%) wipe on a dense tile (warn) but still applies the definitive reused-key tombstone', async () => {
+      // 60 in-scope rows (above the floor). Incoming keeps e0 unchanged and re-keys
+      // e1's identity (1001,0) onto a DIFFERENT road (empty lat 80, no overlap) → e1
+      // is a definitive reused-key tombstone. The remaining 58 (e2…e59) are pure
+      // stale-by-absence (≈97% > 50%), an implausible mass wipe that must be WITHHELD
+      // (rows kept live + warn), while the reused-key tombstone + upserts still apply.
+      loadExisting.mockResolvedValueOnce(manyExisting(60));
+      const incoming = [
+        wayAtLat(1000, 0), // e0 unchanged
+        wayAtLat(1001, 80), // reuses e1's key on a different road (empty latitude)
+      ];
+
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importFrom(incoming, scope(-1, -1, 20, 20));
+
+      // e0 upserts unchanged, the re-keyed road inserts fresh (2 upserts); only the
+      // definitive reused-key row is deactivated — the 58 by-absence rows withheld.
+      expect(result).toMatchObject({
+        upserted: 2,
+        carriedOver: 0,
+        deactivated: 1,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('withheld 58/60 stale-by-absence'),
+      );
+      const deactivate = deactivateCall();
+      expect(deactivate).toBeDefined();
+      expect(deactivate![1]).toEqual([['e1']]); // ONLY the reused-key row
+      expect(qb.execute).toHaveBeenCalledTimes(1); // incoming still upserted
+    });
+
+    it('withholds an authoritative-empty wipe on a dense tile: importFrom([], scope) keeps all rows live + warns', async () => {
+      // 60 in-scope rows (above the floor); a present tile that reconciles to zero
+      // in-scope rows would tombstone 100% of the cell — the guard withholds it
+      // entirely (keeps every row live + warn) rather than deactivating a whole tile
+      // off one possibly-mis-produced extract.
+      loadExisting.mockResolvedValueOnce(manyExisting(60));
+
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importFrom([], scope(-1, -1, 20, 20));
+
+      expect(result).toMatchObject({
+        upserted: 0,
+        carriedOver: 0,
+        deactivated: 0,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('withheld 60/60 stale-by-absence'),
+      );
+      // deactivateIds is empty → the tombstone UPDATE is skipped entirely.
+      expect(deactivateCall()).toBeUndefined();
+      expect(qb.execute).not.toHaveBeenCalled();
+    });
+
+    it('no-ops an empty sea cell (0 existing, empty incoming) without warning', async () => {
+      // The guard is gated on the in-scope existing rows (both the row floor and the
+      // fraction), so a genuinely empty cell (no roads on either side) is a harmless
+      // no-op — NOT a false mass-wipe warning.
+      loadExisting.mockResolvedValueOnce([]); // no existing rows in scope
+
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importFrom([], scope(-1, -1, 20, 20));
+
+      expect(result).toMatchObject({
+        upserted: 0,
+        carriedOver: 0,
+        deactivated: 0,
+      });
+      expect(warn).not.toHaveBeenCalled();
+      expect(deactivateCall()).toBeUndefined();
+    });
+  });
+
   it('reflects the enabled flag', () => {
     expect(service.enabled).toBe(false);
     osmConfig.enabled = true;
@@ -655,39 +827,71 @@ describe('OsmImportService', () => {
       expect(warn).toHaveBeenCalled();
     });
 
-    it('skips a present-but-empty tile extract at info, NOT warn (empty grid cell is expected)', async () => {
-      // Sea-only / border cells are header-only extracts on every weekly run, so a
-      // 0-way tile is logged at info — not warn — to keep the genuinely suspicious
-      // skips (absent file, out-of-scope) visible. Still skips, never tombstones.
+    it('reconciles a present-but-empty tile at info (no existing rows → harmless no-op, no warn)', async () => {
+      // A present 0-way extract is AUTHORITATIVE (the producer's refresh is atomic
+      // keep-last-good — it never writes an empty file on failure), so it now
+      // REACHES reconcile instead of being pre-empted. With no existing in-scope
+      // rows it's a harmless no-op: an info log (empty cell is expected), never a
+      // warn, and reconcile ran (the existing-row load WAS issued).
       await writeFile(
         join(dir, roadTileFileName(CZ_TILE)),
         '<osm version="0.6"></osm>',
       );
+      loadExisting.mockResolvedValue([]); // empty sea/border cell
       const warn = jest.spyOn(service['logger'], 'warn');
       const log = jest.spyOn(service['logger'], 'log');
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
-      expect(loadExisting).not.toHaveBeenCalled();
+      expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
       expect(warn).not.toHaveBeenCalled();
       expect(log).toHaveBeenCalledWith(
-        expect.stringContaining('extract parsed 0 ways'),
+        expect.stringContaining('reconciling authoritatively'),
       );
     });
 
-    it('skips a tile whose ways are all outside the polygon ∩ bbox (no tombstone)', async () => {
-      // A present, non-empty extract that landed in the wrong tile file —
-      // filterToRegion finds NONE of its ways inside the CZ polygon ∩ this tile's
-      // bbox. Must NOT reach `reconcile`: a post-filter-empty set WITH a scope
-      // would otherwise tombstone every live row in the cell. (filterToRegion is
-      // the DB `unnest … WITH ORDINALITY` query; here it returns no ordinals.)
-      await writeFile(join(dir, roadTileFileName(CZ_TILE)), wayXml(1, 60, 30));
-      filterRegion.mockResolvedValueOnce([]); // nothing inside the polygon ∩ bbox
+    it('reaches reconcile for a present-but-empty tile WITH existing rows and tombstones the now-absent row (sub-floor)', async () => {
+      // The behavior Change 1 unlocks: a present 0-way tile whose cell still holds a
+      // live row is no longer skipped — it reconciles, and the row (now absent from
+      // the authoritative extract) is tombstoned so the removal propagates. This
+      // single-row cell is below the wipe-guard's row floor, so it deactivates freely
+      // (no warn); the ≥50-row withhold is covered in the guard describe.
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE)),
+        '<osm version="0.6"></osm>',
+      );
+      loadExisting.mockResolvedValueOnce([
+        existingRow('live', '7', 0, [
+          [14, 50],
+          [14, 50.0009],
+        ]),
+      ]);
       const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importTile(CZ, CZ_TILE, dir);
-      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
-      // reconcile never ran → the existing-row load was never issued.
-      expect(loadExisting).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalled();
+      expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
+      expect(result.deactivated).toBe(1); // the now-absent row propagates
+      expect(warn).not.toHaveBeenCalled(); // below the floor → no withhold warn
+    });
+
+    it('reconciles a present tile whose ways are all out-of-scope authoritatively (reaches reconcile)', async () => {
+      // A present, non-empty extract whose ways ALL fall outside the polygon ∩ bbox
+      // is no longer pre-empted with a skip: it reaches reconcile, and a genuine
+      // removal within the cell propagates (this single-row cell is below the
+      // wipe-guard's floor, so the now-absent row is tombstoned). The guard — not a
+      // pre-reconcile skip — is what would withhold a mass wipe on a dense tile.
+      // (filterToRegion returns no ordinals → inScope empty → authoritative empty.)
+      await writeFile(join(dir, roadTileFileName(CZ_TILE)), wayXml(1, 60, 30));
+      filterRegion.mockResolvedValueOnce([]); // nothing inside the polygon ∩ bbox
+      loadExisting.mockResolvedValueOnce([
+        existingRow('live', '7', 0, [
+          [14, 50],
+          [14, 50.0009],
+        ]),
+      ]);
+      const warn = jest.spyOn(service['logger'], 'warn');
+      const result = await service.importTile(CZ, CZ_TILE, dir);
+      expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
+      expect(result.deactivated).toBe(1); // the now-absent row propagates
+      expect(warn).not.toHaveBeenCalled(); // below the floor → no withhold warn
     });
 
     it('reconciles a non-empty tile scoped to the country polygon ∩ tile bbox', async () => {

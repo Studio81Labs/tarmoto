@@ -68,14 +68,23 @@ per-region, per-tile extracts, mirroring the POI importer's model:
 - **`OsmImportService.importAll()`** loops the configured regions and calls
   `importRegion()` for each; `importRegion()` subdivides the region into its tile
   grid and calls `importTile()` per tile, all aggregating the
-  upsert/carry-over/deactivate counts. A tile whose extract is **absent, or parses
-  to zero ways, is skipped — not tombstoned**: a tile extract is automated, so an
-  empty result more likely signals a broken refresh than a genuinely road-less
-  cell, and tombstoning the cell on that would be far worse than skipping it for
-  one cycle. (This intentionally overrides `reconcile()`'s
-  authoritative-empty-snapshot behavior, which exists for direct-source
-  callers/tests that hand-supply a single tile — see the `importTile` /
-  `reconcile` doc comments.)
+  upsert/carry-over/deactivate counts. Only a tile whose extract is **absent** is
+  skipped — never tombstoned (the producer writes a file for every cell, so a
+  missing one is a partial/failed refresh, not authoritative). A **present** extract
+  IS authoritative: the producer's refresh is atomic **keep-last-good** (a failed
+  refresh keeps the previous extract and never writes an empty one), so a present
+  zero-way / all-out-of-scope extract flows through to `reconcile()`, which
+  tombstones the tile's now-absent in-scope rows — **OSM removals propagate** rather
+  than lingering live as stale seed. To stay safe against a mis-produced / empty /
+  misnamed extract, on a **dense tile** (at least `MIN_ROWS_FOR_TOMBSTONE_GUARD` =
+  50 in-scope rows) a **stale-by-absence wipe of more than `MAX_TOMBSTONE_FRACTION`
+  (50%) of them is WITHHELD** (rows kept live + a warn to rebuild), mirroring the POI
+  importer's wipe-guard (row floor + fraction); definitive reused-key /
+  out-of-scope-owner tombstones always apply. A **sparse tile** (below the row floor)
+  has a tiny blast radius and a noisy ratio, so it propagates its removals freely
+  even past 50% — otherwise a correct-but-small extract would withhold + warn every
+  run forever. So a genuine partial removal (a few roads deleted/retagged) always
+  propagates; only a dense cell "emptied" by a broken extract is held back.
 
 ### The `complete_ways` contract
 
@@ -184,6 +193,16 @@ loses history only at that seam; adjacent tiles/regions still reconcile
 independently — a seam way is emitted COMPLETE into both tiles by `complete_ways`
 and upserts idempotently.)
 
+A present-but-empty (or shrunken) tile is **authoritative**: its removed roads are
+tombstoned so OSM deletions propagate — but on a **dense** cell (at least
+`MIN_ROWS_FOR_TOMBSTONE_GUARD` = 50 in-scope rows) a stale-by-absence wipe of more
+than `MAX_TOMBSTONE_FRACTION` (50%) of them is **withheld** (kept live + a warn), so
+one mis-produced / empty / misnamed extract can't deactivate most of a cell in a
+single run (mirrors the POI importer's row-floor + fraction wipe-guard). A **sparse**
+cell (below the floor) has a tiny blast radius, so it propagates removals freely even
+past 50% — never withheld/warned forever against a correct-but-small extract. Only an
+**absent** file still skips outright.
+
 ## Cadence & manual runs
 
 Recurring weekly (Sunday 01:00 UTC, `road.import` queue) — before the POI
@@ -201,8 +220,11 @@ committed before `importAll()` moves to the next region — so a region that
 throws (a read/parse error) leaves every earlier region's import committed and
 simply aborts the regions after it for that cycle; the whole job then fails and
 BullMQ retries (safe: re-running is idempotent, so an already-succeeded region
-just re-upserts its unchanged rows). An absent extract, or one that parses to
-zero ways, is not an error — see the folder-model skip behavior above.
+just re-upserts its unchanged rows). An **absent** extract is skipped (not an
+error — a partial refresh); a **present** extract is authoritative and reconciled
+even when empty, so its removed roads are tombstoned, with the wipe-guard (a 50-row
+floor + a 50% stale-by-absence fraction) withholding an implausible mass-wipe on a
+dense cell — see the folder-model behavior above.
 
 ## Not yet wired for a live prod region
 

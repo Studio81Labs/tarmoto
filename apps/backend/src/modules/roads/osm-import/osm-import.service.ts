@@ -34,8 +34,8 @@ const UPSERT_CHUNK = 500;
  *  the param limit is irrelevant — this bounds the array payload size instead). */
 const REGION_FILTER_CHUNK = 2000;
 
-/** Zero result — a skipped (absent / empty) region contributes nothing. Frozen:
- *  shared across every skip path, and `importAll` only ever reads its fields
+/** Zero result — a skipped (absent-file) tile contributes nothing. Frozen:
+ *  used by the single skip path, and `importAll` only ever reads its fields
  *  into a fresh accumulator, so a stray in-place mutation would otherwise leak
  *  across calls. */
 const EMPTY_RESULT: OsmImportResult = Object.freeze({
@@ -43,6 +43,30 @@ const EMPTY_RESULT: OsmImportResult = Object.freeze({
   carriedOver: 0,
   deactivated: 0,
 });
+
+/**
+ * Tombstone safety-valve (mirrors the POI importer's `MAX_TOMBSTONE_FRACTION`):
+ * withhold a run that would stale-by-absence tombstone MORE than this fraction of
+ * a tile's in-scope existing rows. A present extract is authoritative, so a genuine
+ * partial removal (below this share) still propagates; but a mis-produced / empty /
+ * misnamed extract that would deactivate MOST of a tile in one run is far more
+ * likely broken than a whole cell truly emptied — so those by-absence tombstones
+ * are WITHHELD (rows kept live + a warn to rebuild), never applied. Definitive
+ * tombstones (a reused key, an out-of-scope owner) are NOT gated by this.
+ */
+const MAX_TOMBSTONE_FRACTION = 0.5;
+
+/**
+ * Row floor for the tombstone wipe-guard (mirrors POI's
+ * `MIN_REGION_FOR_TOMBSTONE_GUARD`, same value + intent): the
+ * {@link MAX_TOMBSTONE_FRACTION} withhold only arms on a tile that already holds at
+ * least this many in-scope rows. A sparse tile has a noisy churn ratio and a tiny
+ * blast radius, so a genuine majority removal there (e.g. 2 of 3 roads deleted from
+ * OSM) must PROPAGATE — not be withheld every run and warn indefinitely against a
+ * correct-but-small extract that no "rebuild" can ever clear. Below the floor,
+ * stale-by-absence removals apply freely; at/above it the fraction guard engages.
+ */
+const MIN_ROWS_FOR_TOMBSTONE_GUARD = 50;
 
 /** Target table — referenced bare in the raw conflict clause to read the
  *  existing row (Postgres `DO UPDATE` refers to the target row by table name,
@@ -266,9 +290,11 @@ export class OsmImportService {
    * Import every configured region's per-tile extracts from `extractDir` in one
    * pass (the folder model, Sub-project B). Each region is subdivided into a tile
    * grid and imported tile-by-tile ({@link importRegion}); results aggregate. A
-   * tile whose extract is absent or empty is skipped (never tombstoned — see
-   * {@link importTile}), so one missing/broken extract can't wipe a tile or abort
-   * the others.
+   * tile whose extract is ABSENT is skipped (a partial/failed refresh — never
+   * tombstoned); a PRESENT extract is authoritative and reconciled even when empty
+   * (removals propagate, guarded by reconcile's mass-wipe fraction — see
+   * {@link importTile}), so one missing extract can't abort the others and no single
+   * extract can wipe most of a tile.
    */
   async importAll(): Promise<OsmImportResult> {
     const { extractDir, regions } = this.config;
@@ -328,17 +354,18 @@ export class OsmImportService {
   }
 
   /**
-   * Import one tile's `<extractDir>/<code>-r<row>c<col>.osm`. Three skip paths, all
-   * of which return `EMPTY_RESULT` and NEVER tombstone (this intentionally
-   * overrides `reconcile`'s authoritative-empty behavior, designed for
-   * hand-supplied single-file tiles):
-   *  - **Absent file → WARN.** The producer writes a file for every grid cell, so
-   *    a missing tile means a partial/failed refresh — worth flagging.
-   *  - **Present but 0 ways → LOG (info).** A grid cell entirely outside the
-   *    country (sea-only / border cell) is a header-only extract on EVERY weekly
-   *    run — expected, not suspicious, so it must not drown the real WARNs.
-   *  - **Present with ways but NONE inside the country POLYGON ∩ tile bbox → WARN.**
-   *    A mis-produced or misnamed extract (e.g. the wrong tile's data).
+   * Import one tile's `<extractDir>/<code>-r<row>c<col>.osm`.
+   *
+   * A **present** extract is AUTHORITATIVE — the producer's refresh is atomic
+   * keep-last-good (a failed refresh keeps the previous extract and NEVER writes an
+   * empty one), so a present 0-way / all-out-of-scope extract genuinely means "this
+   * tile's in-scope roads are gone" and flows through to {@link reconcile}, which
+   * tombstones the now-absent in-scope rows (removals propagate) under its mass-wipe
+   * fraction guard. The ONLY skip is an **absent** file (WARN + `EMPTY_RESULT`): the
+   * producer writes a file for every grid cell, so a missing one is a partial/failed
+   * refresh — not authoritative — and must not tombstone the cell. An empty-in-scope
+   * reconcile logs at info (expected; a truly-empty cell with no in-scope rows is a
+   * no-op), while a suspicious mass-wipe warns from inside reconcile.
    *
    * The tile is scoped by its region's actual country POLYGON (bundled boundary)
    * intersected with the tile bbox — NOT the bbox alone (adjacent countries'
@@ -366,35 +393,29 @@ export class OsmImportService {
     const incoming = await this.bufferRows(
       assembleWays(parseOsmXml(createReadStream(path))),
     );
-    if (incoming.length === 0) {
-      // Expected for a grid cell outside the country (sea-only / border cell): the
-      // producer writes a header-only extract for it every run. Info, not warn, so
-      // the genuinely suspicious skips (absent file, out-of-scope) stay visible.
-      this.logger.log(
-        `OSM import (${label}): extract parsed 0 ways — skipping ` +
-          `(empty grid cell; NOT tombstoning the tile)`,
-      );
-      return EMPTY_RESULT;
-    }
     // Scope the incoming set to the country polygon ∩ tile bbox. `osmium extract`
     // ships COMPLETE ways, so a tile extract carries a bit of neighbouring
     // (adjacent-tile / adjacent-country) geometry that must be dropped before
-    // reconcile. A present, non-empty extract can also be entirely OUTSIDE the
-    // scope — a mis-produced or misnamed extract (e.g. the wrong tile's data).
-    // Left unguarded, reconcile would see a post-filter EMPTY set WITH a scope,
-    // which it correctly treats as "the cell was cleared" and tombstones every
-    // live row in it. Catch that here — before reconcile — so a bad extract skips
-    // instead of wiping the cell.
+    // reconcile. (An empty extract short-circuits filterToRegion to an empty set
+    // with no DB round-trip.)
     const scope: RegionScope = {
       polygon: regionPolygon(region.code),
       bbox: bboxTuple(tile.bbox),
     };
     const inScope = await this.filterToRegion(incoming, scope);
     if (inScope.length === 0) {
-      this.logger.warn(
-        `OSM import (${label}): extract has ${incoming.length} way(s) but none intersect the country polygon ∩ tile bbox — skipping (likely a mis-produced or misnamed extract; NOT tombstoning the tile)`,
+      // AUTHORITATIVE empty (see the method doc): a present extract with no in-scope
+      // ways means the tile's in-scope roads are gone (or it's an empty sea/border
+      // cell). Do NOT skip — reconcile so those removals PROPAGATE (its now-absent
+      // in-scope rows are tombstoned), guarded against an implausible mass-wipe by
+      // reconcile's fraction guard; a truly-empty cell with no in-scope existing
+      // rows is a harmless no-op. Info, not warn: this is expected — the genuinely
+      // suspicious mass-wipe warns from inside reconcile.
+      this.logger.log(
+        `OSM import (${label}): ${incoming.length} parsed way(s), none in scope ` +
+          `(country polygon ∩ tile bbox) — reconciling authoritatively ` +
+          `(removals propagate; mass-wipe guarded)`,
       );
-      return EMPTY_RESULT;
     }
     return this.reconcile(inScope, scope);
   }
@@ -446,17 +467,23 @@ export class OsmImportService {
    * leftovers on each side are matched by geometry so history follows the road
    * across a split/merge — carry-over as an id-preserving UPDATE, no match as a
    * fresh insert, and an unmatched existing row as a tombstone (`deactivated_at`),
-   * never a delete.
+   * never a delete. On a tile dense enough for it to be implausible (at least
+   * {@link MIN_ROWS_FOR_TOMBSTONE_GUARD} in-scope rows), a mass stale-by-absence
+   * wipe (more than {@link MAX_TOMBSTONE_FRACTION} of them) is WITHHELD as a safety
+   * valve against a broken/empty/misnamed extract — those rows stay live and a warn
+   * is logged; a sparse tile propagates its removals freely. Definitive reused-key /
+   * out-of-scope-owner tombstones always apply either way.
    */
   private async reconcile(
     incoming: RoadSegmentRow[],
     scope: RegionScope | null,
   ): Promise<OsmImportResult> {
     // With a configured scope an EMPTY tile is still authoritative — every road in
-    // it was removed / reclassified non-drivable, so its existing rows must be
-    // tombstoned. Only short-circuit the no-scope case (nothing to compare, and we
-    // never tombstone without a scope). A parse error would have thrown before
-    // reaching here, so an empty snapshot here is a genuine empty cell.
+    // it was removed / reclassified non-drivable, so its existing rows are
+    // tombstoned (subject to the mass-wipe fraction guard below). Only short-circuit
+    // the no-scope case (nothing to compare, and we never tombstone without a
+    // scope). A parse error would have thrown before reaching here, so an empty
+    // snapshot here is a genuine empty cell.
     if (incoming.length === 0 && !scope) {
       this.logger.log('OSM import: empty snapshot, no scope — nothing to do');
       return { upserted: 0, carriedOver: 0, deactivated: 0 };
@@ -550,14 +577,47 @@ export class OsmImportService {
       newIncoming,
       new Set(existing.map((e) => e.id)),
     );
-    // Tombstone: stale-by-absence (scope only) + reused-key holders (always).
+    // Split the scoped stale set into its two kinds. `inBboxReusedIds` is a SUBSET
+    // of `plan.stale` (the stale rows whose key the snapshot reassigned); the rest
+    // are pure stale-by-absence. Only the pure by-absence set is gated by the
+    // mass-wipe guard — a reused-key (or out-of-scope-owner) tombstone is DEFINITIVE
+    // proof the old holder lost that identity and is always applied.
+    const inBboxReusedSet = new Set(inBboxReusedIds);
+    const byAbsenceIds = scope
+      ? plan.stale.filter((id) => !inBboxReusedSet.has(id))
+      : [];
+    // Withhold an implausible mass by-absence wipe (a mis-produced / empty /
+    // misnamed extract, or a whole cell genuinely emptied): keep those rows live +
+    // warn to rebuild, rather than deactivate most of a tile off one extract. Only
+    // arms on a tile dense enough for a mass-wipe to be implausible (at least
+    // MIN_ROWS_FOR_TOMBSTONE_GUARD in-scope rows) — a sparse tile has a noisy ratio
+    // and a tiny blast radius, so its genuine removals propagate freely instead of
+    // being withheld (and warned) forever against a correct-but-small extract. The
+    // denominator is the in-scope existing rows. Mirrors POI's `wouldWipeTooMuch`
+    // (row floor + fraction; withhold, not abort).
+    const wouldWipeTooMuch =
+      scope !== null &&
+      existing.length >= MIN_ROWS_FOR_TOMBSTONE_GUARD &&
+      byAbsenceIds.length > existing.length * MAX_TOMBSTONE_FRACTION;
+
+    // Tombstone: pure stale-by-absence (scope only, unless withheld) + the
+    // definitive reused-key / out-of-scope-owner holders (always).
     const deactivateIds = [
       ...new Set([
-        ...(scope ? plan.stale : []),
+        ...(wouldWipeTooMuch ? [] : byAbsenceIds),
         ...inBboxReusedIds,
         ...outOfBboxOwnerIds,
       ]),
     ];
+    if (wouldWipeTooMuch) {
+      this.logger.warn(
+        `OSM import: withheld ${byAbsenceIds.length}/${existing.length} ` +
+          `stale-by-absence tombstones ` +
+          `(> ${Math.round(MAX_TOMBSTONE_FRACTION * 100)}%) — extract looks ` +
+          `incomplete; rebuild it. Upserts + definitive re-key tombstones still ` +
+          `applied.`,
+      );
+    }
 
     await this.repo.manager.transaction(async (tx) => {
       // Apply order matters — a split/merge can move an `(osm_way_id,
