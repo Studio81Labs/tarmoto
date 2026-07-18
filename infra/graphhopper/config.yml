@@ -10,14 +10,24 @@
 #   - future road-quality / curvy weighting → will use `surface` + an
 #                      imported custom encoded value (the moat work, ADR-0004)
 #
-# Input (`datareader.file`) and graph cache (`graph.location`) are NOT set here:
-# the image entrypoint supplies them from the compose command's `-i` / `-o`
-# flags (and overrides any values set here), so they live in one place.
+# `datareader.file` (input OSM) + `graph.location` (graph cache) are set below as
+# DEPLOY DEFAULTS. The deployed Coolify image (infra/graphhopper/Dockerfile) runs
+# the stock entrypoint `graphhopper.sh -c config-example.yml` with NO `-i` / `-o`
+# (Coolify image apps can't set entrypoint/command), so the paths must live in
+# the config or GraphHopper aborts with "no graph.location / specify an OSM file".
+# Local dev (the compose `-i`/`-o` flags) and the image's start.sh still pass
+# them on the command line, which OVERRIDE these — so the CZ paths below are used
+# only by the deployed stock-entrypoint path.
 #
 # Config schema changes between GraphHopper majors — if the container fails to
 # start after a version bump, diff this against the `config-example.yml` shipped
 # with the new image tag.
 graphhopper:
+  # Deploy defaults (see the note above; overridden by `-i`/`-o`). The conflation
+  # output on the shared /data volume, and GraphHopper's own graph cache.
+  datareader.file: /data/routing/cz.quality.osm
+  graph.location: /data/graph-cache
+
   # Encoded values exposed to custom models. `car_access` + `car_average_speed`
   # power the base car weighting (below); the rest are what Tarmoto's
   # avoidances + weighting reference. `smoothness` carries our conflated road
