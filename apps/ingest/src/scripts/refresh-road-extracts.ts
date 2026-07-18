@@ -9,15 +9,20 @@
  * ONCE, then for each tile of `subdivideRegion(region, tileSpanDeg)`
  * (`TARMOTO_OSM_ROAD_TILE_SPAN_DEG`) `osmium extract -b`s the filtered PBF to
  * that tile's bbox (default `complete_ways` — boundary-crossing ways stay
- * whole) and ATOMICALLY writes `roadTileFileName(tile)` to
- * `TARMOTO_OSM_ROAD_IMPORT_DIR` — the shared volume the backend `road.import`
- * cron reads. Tiling bounds one extract's road count (and, in the importer, its
- * node map) regardless of the region's overall size — a whole-country extract
- * could otherwise OOM the import worker.
+ * whole) and writes `roadTileFileName(tile)` to `TARMOTO_OSM_ROAD_IMPORT_DIR`
+ * — the shared volume the backend `road.import` cron reads. Tiling bounds one
+ * extract's road count (and, in the importer, its node map) regardless of the
+ * region's overall size — a whole-country extract could otherwise OOM the
+ * import worker.
  *
- * Guarantees mirror `refresh-poi-extracts`: atomic keep-last-good (`.part` then
- * rename, now per tile), a partial failure exits non-zero, bounded disk
- * (sequential regions), env-gated on `TARMOTO_OSM_ROAD_REFRESH_ENABLED`.
+ * Guarantees mirror `refresh-poi-extracts`, extended across a region's whole
+ * tile set: every tile is extracted to a `.part` sibling first, and the batch
+ * is only published (renamed onto its final `roadTileFileName`s) after ALL of
+ * the region's tiles clip cleanly — so a partial failure keeps the region's
+ * ENTIRE previous snapshot, never a mix of fresh and stale tiles (see
+ * `refreshRegion`). A partial failure exits non-zero, disk is bounded
+ * (sequential regions), and the whole script is env-gated on
+ * `TARMOTO_OSM_ROAD_REFRESH_ENABLED`.
  */
 
 import { createWriteStream } from "node:fs";
@@ -81,12 +86,27 @@ async function runOsmium(args: readonly string[]): Promise<void> {
  * step's and (Part 2) the importer's per-extract memory regardless of the
  * region's overall size. `tiles` is the caller's `subdivideRegion(region,
  * spanDeg)` result — computed by the caller (not here) so a caller looping
- * regions computes each region's grid exactly once. Each tile is built at a
- * unique sibling `.part` file and only renamed onto its `roadTileFileName`
- * after that tile's clip succeeds, so a failure never truncates an already-live
- * tile extract (tiles written before a later tile's failure keep their fresh
- * copy; the failed tile and any not yet reached keep their previous one).
- * Always cleans up the (multi-GB) intermediates and any leftover `.part`s.
+ * regions computes each region's grid exactly once.
+ *
+ * Publishes the region atomically-ish, in two phases:
+ *  1. **Extract** — every tile is clipped to a unique sibling `.part` file;
+ *     none are published yet.
+ *  2. **Publish** — only once ALL tiles have clipped successfully, every
+ *     `.part` is renamed onto its `roadTileFileName` in a tight loop.
+ * A failure anywhere in phase 1 (the common case — one bad/oversized tile)
+ * throws before any rename runs, so `finally` removes every accumulated
+ * `.part` and the region's previous final tiles are left completely
+ * untouched — never a mix of fresh and stale tiles from the same run. That
+ * mix mattered because the importer treats each tile file as authoritative:
+ * a way crossing a tile seam could be tombstoned by the fresh tile and
+ * reinserted from the stale tile with a new id, corrupting segment identity.
+ * The residual risk is a process crash *during* the phase-2 rename loop:
+ * each `rename` is atomic per file, but the batch itself isn't transactional,
+ * so a hard kill between two renames could still leave a partial publish.
+ * That window is far smaller than an extract failure (now fully safe), and
+ * closing it too would need a per-region manifest or directory swap — a
+ * possible future hardening, not built here. Always cleans up the (multi-GB)
+ * intermediates and any leftover `.part`s.
  */
 export async function refreshRegion(
   region: PoiImportRegion,
@@ -113,6 +133,8 @@ export async function refreshRegion(
       filtered,
       "--overwrite",
     ]);
+    // Phase 1 — extract every tile to its `.part` sibling; publish NONE yet.
+    const parts: { tmpOut: string; finalOut: string }[] = [];
     for (const tile of tiles) {
       const finalOut = join(targetDir, roadTileFileName(tile));
       const tmpOut = refreshTmpPath(finalOut);
@@ -130,6 +152,12 @@ export async function refreshRegion(
         tmpOut,
         "--overwrite",
       ]);
+      parts.push({ tmpOut, finalOut });
+    }
+    // Phase 2 — every tile in the region clipped cleanly; publish the whole
+    // batch now. See the doc comment above for the residual mid-loop-crash
+    // window this leaves.
+    for (const { tmpOut, finalOut } of parts) {
       await rename(tmpOut, finalOut);
     }
   } finally {
@@ -143,9 +171,10 @@ export async function refreshRegion(
 
 /**
  * Refresh every region in `config`, isolating failures: one region's error is
- * logged and recorded, and the loop moves on (its live tile extracts stay
- * as-is — a partially-refreshed region may mix fresh and previous tiles if a
- * later tile in its loop failed).
+ * logged and recorded, and the loop moves on. `refreshRegion` now publishes a
+ * region's tiles atomically (all tiles or none), so a failed region's
+ * previous tile extracts are left completely intact — never a mix of fresh
+ * and stale tiles.
  */
 export async function refreshAll(
   config: RoadRefreshConfig,

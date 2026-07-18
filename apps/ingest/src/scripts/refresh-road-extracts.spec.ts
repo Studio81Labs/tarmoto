@@ -63,11 +63,24 @@ describe("refresh-road-extracts", () => {
   });
 
   describe("refreshRegion", () => {
-    it("downloads, road-filters ONCE, then clips + atomically writes one extract per tile", async () => {
+    it("downloads, road-filters ONCE, then clips all tiles and publishes them only after every extract succeeds", async () => {
       const download = fakeDownload();
-      const osmium = fakeOsmium();
       const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
       expect(tiles.length).toBeGreaterThan(1); // this test exercises real tiling
+      const finalNames = tiles.map((t) => roadTileFileName(t));
+
+      const osmium = jest.fn(async (args: readonly string[]) => {
+        if (args[0] === "extract") {
+          // Two-phase publish: while ANY tile is still being extracted, NONE
+          // of the region's final tile files may exist yet — renames only
+          // happen in a batch after every tile in the region has cleared its
+          // extract, i.e. strictly after the LAST extract call too.
+          const present = await readdir(targetDir);
+          expect(present.some((name) => finalNames.includes(name))).toBe(false);
+        }
+        const out = args[args.indexOf("-o") + 1];
+        if (out) await writeFile(out, `built:${args[0]}`);
+      });
 
       await refreshRegion(CZ, targetDir, workDir, tiles, {
         download,
@@ -141,13 +154,14 @@ describe("refresh-road-extracts", () => {
       expect(await readdir(workDir)).toEqual([]);
     });
 
-    it("keeps tile 1's fresh extract but leaves tile 2 unchanged when only tile 2's clip fails (per-tile atomicity)", async () => {
+    it("publishes NEITHER tile when only tile 2's clip fails (atomic per-region publish)", async () => {
       const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
       expect(tiles.length).toBeGreaterThanOrEqual(2); // exercises mixed tile state
       const tile1 = tiles[0]!;
       const tile2 = tiles[1]!;
       const tile1File = roadTileFileName(tile1);
       const tile2File = roadTileFileName(tile2);
+      await writeFile(join(targetDir, tile1File), "OLD-TILE-1");
       await writeFile(join(targetDir, tile2File), "OLD-TILE-2");
 
       const download = fakeDownload();
@@ -166,14 +180,19 @@ describe("refresh-road-extracts", () => {
         }),
       ).rejects.toThrow("tile 2 clip boom");
 
-      // Tile 1's clip succeeded and was renamed before tile 2's clip failed —
-      // its fresh extract is kept, not rolled back by the later failure.
+      // Tile 1's clip succeeded but publish is all-or-nothing per region — a
+      // later tile's extract failure means NEITHER tile is republished this
+      // run. Both keep their pre-seeded OLD content byte-for-byte.
       expect(await readFile(join(targetDir, tile1File), "utf8")).toBe(
-        "built:extract",
+        "OLD-TILE-1",
       );
-      // Tile 2 never reached its atomic rename — the previous file survives.
       expect(await readFile(join(targetDir, tile2File), "utf8")).toBe(
         "OLD-TILE-2",
+      );
+      // No stray `.part` left behind either — the region's dir holds exactly
+      // the two OLD final files, nothing else.
+      expect((await readdir(targetDir)).sort()).toEqual(
+        [tile1File, tile2File].sort(),
       );
       expect(await readdir(workDir)).toEqual([]);
     });
