@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic } from "@/i18n";
+import { t, tDynamic, type Translate } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Loader2, Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -18,7 +18,6 @@ import {
   type PassStatus,
 } from "@/lib/passes-summary";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
-import type { LooseTranslate } from "@tarmoto/shared";
 interface PassesPanelProps {
   month?: number;
   onMonthChange?: (month: number) => void;
@@ -467,7 +466,7 @@ function OnRoutePassCard({
 function buildRouteSummary(
   closedCount: number,
   unknownCount: number,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   const parts: string[] = [];
   if (closedCount > 0) {

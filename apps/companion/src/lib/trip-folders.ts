@@ -10,9 +10,9 @@
 
 import {
   MAX_TRIP_FOLDER_NAME_LENGTH,
-  type LooseTranslate,
   type TripFolder as SharedTripFolder,
 } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 import { tripFoldersApi } from "@/lib/api";
 
 // Re-export the shared wire shape so components import a single
@@ -56,7 +56,7 @@ export function sortFoldersForDisplay(
 export function validateFolderName(
   name: string,
   folders: readonly TripFolder[],
-  t: LooseTranslate,
+  t: Translate,
   excludeId?: string,
 ): string | null {
   const trimmed = name.trim();

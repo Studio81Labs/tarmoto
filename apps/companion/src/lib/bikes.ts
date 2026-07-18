@@ -1,4 +1,4 @@
-import type { LooseTranslate } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 import type { CreateBikeInput } from "@/lib/api";
 import type { Bike } from "@/lib/types";
 
@@ -41,7 +41,7 @@ export function bikeToFormValues(bike: Bike): BikeFormValues {
 export function validateBikeForm(
   values: BikeFormValues,
   now: Date,
-  t: LooseTranslate,
+  t: Translate,
 ): BikeFormErrors {
   const errors: BikeFormErrors = {};
 
