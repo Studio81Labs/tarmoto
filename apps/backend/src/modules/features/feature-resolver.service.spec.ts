@@ -144,4 +144,13 @@ describe('FeatureResolver', () => {
     });
     expect(users.findOne).not.toHaveBeenCalled();
   });
+
+  it('getSystemSwitches resolves force_off to disabled and everything else on', async () => {
+    const { resolver } = makeResolver({
+      states: [{ feature: 'sys_weather_provider', state: 'force_off' }],
+    });
+    const switches = await resolver.getSystemSwitches();
+    expect(switches.sys_weather_provider).toBe(false);
+    expect(switches.sys_mapillary_previews).toBe(true);
+  });
 });
