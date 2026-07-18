@@ -154,6 +154,17 @@ export function RidesFilters({ state, update, reset }: Props) {
   };
   const labelClass =
     "font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim";
+  // Only the "any" sentinel is a translatable word — the 1-5 star options are
+  // numerals, left as-is (translating them would be meaningless noise).
+  // SelectOption's `label` is typed ReactNode (it also renders JSX elsewhere
+  // in the app); this array's own literals are always plain strings.
+  const qualityOptions = QUALITY_OPTIONS.map((opt) =>
+    opt.value === "any" ? { ...opt, label: t(opt.label as string) } : opt,
+  );
+  const typeOptions = TYPE_OPTIONS.map((opt) => ({
+    ...opt,
+    label: t(opt.label),
+  }));
   return (
     <div className="rounded-2xl bg-cream border border-line p-[18px] mb-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -210,7 +221,7 @@ export function RidesFilters({ state, update, reset }: Props) {
                   minQuality: next === "any" ? undefined : Number(next),
                 })
               }
-              options={QUALITY_OPTIONS}
+              options={qualityOptions}
               className="w-24"
             />
             <span className="text-fg-mute">–</span>
@@ -224,7 +235,7 @@ export function RidesFilters({ state, update, reset }: Props) {
                   maxQuality: next === "any" ? undefined : Number(next),
                 })
               }
-              options={QUALITY_OPTIONS}
+              options={qualityOptions}
               className="w-24"
             />
           </div>
@@ -238,7 +249,7 @@ export function RidesFilters({ state, update, reset }: Props) {
             onChange={(next) =>
               update({ type: next === "all" ? undefined : next })
             }
-            options={TYPE_OPTIONS}
+            options={typeOptions}
           />
         </div>
 

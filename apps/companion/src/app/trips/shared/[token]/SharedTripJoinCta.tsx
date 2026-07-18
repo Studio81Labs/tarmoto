@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Route } from "lucide-react";
 import { Button } from "@tarmoto/ui";
+import { t } from "@/i18n";
 import { tripSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
@@ -99,7 +100,9 @@ export function SharedTripJoinCta({
       toast.error(
         err instanceof Error
           ? err.message
-          : "Could not join this shared trip. Ask the owner for a fresh link.",
+          : t(
+              "Could not join this shared trip. Ask the owner for a fresh link.",
+            ),
         { durationMs: null },
       );
     } finally {

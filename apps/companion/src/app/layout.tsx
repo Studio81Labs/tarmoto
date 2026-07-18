@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
+import { t } from "@/i18n";
 import { readLocale } from "@/i18n/server";
 import { readFormatPrefs } from "@/format/server";
 import "./globals.css";
@@ -24,10 +25,13 @@ const fraunces = Fraunces({
   variable: "--font-serif",
 });
 
-export const metadata: Metadata = {
-  title: "Tarmoto",
-  description: "Know the road before you ride it",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await readLocale();
+  return {
+    title: t("Tarmoto", undefined, locale),
+    description: t("Know the road before you ride it", undefined, locale),
+  };
+}
 
 export default async function RootLayout({
   children,

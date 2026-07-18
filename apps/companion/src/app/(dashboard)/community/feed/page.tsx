@@ -142,7 +142,7 @@ export default function CommunityFeedPage() {
         className="mb-6 grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3"
       >
         <Select
-          label="Sort feed"
+          label={t("Sort feed")}
           value={sort}
           onChange={(value) => {
             setSort(value as CommunityRideSort);
@@ -150,15 +150,16 @@ export default function CommunityFeedPage() {
           }}
           // "Nearest" needs a reference point — keep it visible but
           // unselectable until a place is picked below.
-          options={SORT_OPTIONS.map((option) =>
-            option.value === "nearest" && !location
-              ? { ...option, disabled: true }
-              : option,
-          )}
+          options={SORT_OPTIONS.map((option) => {
+            const translated = { ...option, label: t(option.label) };
+            return option.value === "nearest" && !location
+              ? { ...translated, disabled: true }
+              : translated;
+          })}
         />
 
         <Select
-          label="Ride type"
+          label={t("Ride type")}
           value={rideType}
           onChange={(value) => {
             // Select emits a bare string; the options are exactly
@@ -167,52 +168,52 @@ export default function CommunityFeedPage() {
             setOffset(0);
           }}
           options={[
-            { value: "all", label: "All rides" },
+            { value: "all", label: t("All rides") },
             ...RIDE_TYPES.map((type) => ({
               value: type,
-              label: type.charAt(0).toUpperCase() + type.slice(1),
+              label: t(type.charAt(0).toUpperCase() + type.slice(1)),
             })),
           ]}
         />
 
         <Select
-          label="Minimum quality"
+          label={t("Minimum quality")}
           value={minQuality}
           onChange={(value) => {
             setMinQuality(value);
             setOffset(0);
           }}
           options={[
-            { value: "all", label: "Any condition" },
+            { value: "all", label: t("Any condition") },
             { value: "3", label: "3.0+/5" },
             { value: "4", label: "4.0+/5" },
           ]}
         />
 
         <Select
-          label="Minimum popularity"
+          label={t("Minimum popularity")}
           value={minPopularity}
           onChange={(value) => {
             setMinPopularity(value);
             setOffset(0);
           }}
           options={[
-            { value: "all", label: "Any reach" },
-            { value: "100", label: "100+ views" },
-            { value: "250", label: "250+ views" },
-            { value: "500", label: "500+ views" },
+            { value: "all", label: t("Any reach") },
+            { value: "100", label: t("100+ views") },
+            { value: "250", label: t("250+ views") },
+            { value: "500", label: t("500+ views") },
           ]}
         />
 
         <Select
-          label="Minimum curviness"
+          label={t("Minimum curviness")}
           value={minCurviness}
           onChange={(value) => {
             setMinCurviness(value);
             setOffset(0);
           }}
           options={[
-            { value: "all", label: "Any road" },
+            { value: "all", label: t("Any road") },
             { value: "4", label: "4.0+" },
             { value: "6", label: "6.0+" },
           ]}
@@ -261,7 +262,7 @@ export default function CommunityFeedPage() {
             }
             setOffset(0);
           }}
-          label="Region or place"
+          label={t("Region or place")}
           placeholder={t("Brno, Tyrol, Tatra Mountains\u2026")}
         />
       </Card>

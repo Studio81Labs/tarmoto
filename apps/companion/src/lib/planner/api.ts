@@ -1,3 +1,5 @@
+import { t } from "@/i18n";
+import { SURFACE_LABELS } from "@/lib/utils";
 import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
 import {
   api,
@@ -220,14 +222,14 @@ export function deriveFlaggedSections(
         segmentId: run.id,
         kind: "rough",
         lengthKm,
-        label: `${QUALITY_BAND_LABELS_SHORT.rough} · ${run.surface}, ${lengthKm} km`,
+        label: `${t(QUALITY_BAND_LABELS_SHORT.rough)} · ${t(SURFACE_LABELS[run.surface])}, ${lengthKm} km`,
       });
     } else if (run.band === "no_data") {
       flagged.push({
         segmentId: run.id,
         kind: "no_data",
         lengthKm,
-        label: `No data yet · ${lengthKm} km`,
+        label: `${t("No data yet")} · ${lengthKm} km`,
       });
     }
   }

@@ -796,7 +796,7 @@ function ReviewEditor({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={photo}
-                  alt={`Review photo ${index + 1}`}
+                  alt={t("Review photo {n}", { n: index + 1 })}
                   className="h-full w-full object-cover"
                 />
                 <button
@@ -804,7 +804,7 @@ function ReviewEditor({
                   onClick={() => onRemovePhoto(index)}
                   disabled={disabled || uploading}
                   className="absolute right-1 top-1 rounded-full bg-ink/80 p-1 text-cream transition hover:bg-rose-500/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={`Remove photo ${index + 1}`}
+                  aria-label={t("Remove photo {n}", { n: index + 1 })}
                 >
                   <X size={12} />
                 </button>
@@ -930,7 +930,7 @@ function ReviewCard({
     } catch (err) {
       onChange(previous);
       toast.error(
-        err instanceof Error ? err.message : "Could not submit vote.",
+        err instanceof Error ? err.message : t("Could not submit vote."),
       );
     } finally {
       setPendingVote(null);
@@ -958,7 +958,9 @@ function ReviewCard({
         </div>
         <div
           className="flex shrink-0 items-center gap-0.5"
-          aria-label={`${Math.round(review.rating)} out of 5`}
+          aria-label={t("{rating} out of 5", {
+            rating: Math.round(review.rating),
+          })}
         >
           {[1, 2, 3, 4, 5].map((n) => {
             const filled = n <= Math.round(review.rating);
@@ -1001,7 +1003,10 @@ function ReviewCard({
             <img
               key={`${photo}-${index}`}
               src={photo}
-              alt={`${review.user_display_name} review photo ${index + 1}`}
+              alt={t("{name} review photo {n}", {
+                name: review.user_display_name,
+                n: index + 1,
+              })}
               className="aspect-[4/3] rounded-lg object-cover"
             />
           ))}

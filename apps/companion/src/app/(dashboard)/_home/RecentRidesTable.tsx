@@ -1,4 +1,5 @@
 "use client";
+import { t } from "@/i18n";
 import Link from "next/link";
 import { useMemo } from "react";
 import {
@@ -21,7 +22,7 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
   return [
     {
       key: "date",
-      label: "DATE",
+      label: t("DATE"),
       size: "90px",
       render: (r) => (
         <Mono className="text-fg-dim">{format.shortDate(r.started_at)}</Mono>
@@ -29,7 +30,7 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
     },
     {
       key: "ride",
-      label: "RIDE",
+      label: t("RIDE"),
       primary: true,
       render: (r) => (
         <span className="block truncate font-bold text-ink">
@@ -53,7 +54,7 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
     },
     {
       key: "duration",
-      label: "DURATION",
+      label: t("DURATION"),
       size: "90px",
       render: (r) => (
         <Mono className="text-fg-dim">
@@ -67,7 +68,7 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
       key: "avg",
       // Header carries the converting unit so the bare cell numbers can't
       // be read in the wrong speed system — same as the ride-history table.
-      label: `AVG ${format.splitSpeed(1).unit.toUpperCase()}`,
+      label: t("AVG {unit}", { unit: format.splitSpeed(1).unit.toUpperCase() }),
       size: "84px",
       render: (r) => (
         <Mono className="text-ink">
@@ -77,7 +78,7 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
     },
     {
       key: "quality",
-      label: "QUALITY",
+      label: t("QUALITY"),
       size: "90px",
       render: (r) => {
         const tier = scoreToQualityTier(r.avg_road_quality);
@@ -96,7 +97,7 @@ export function RecentRidesTable({ rides }: { rides: UserRide[] }) {
   const columns = useMemo(() => buildColumns(format), [format]);
   return (
     <DataTable<UserRide>
-      ariaLabel="Recent rides"
+      ariaLabel={t("Recent rides")}
       columns={columns}
       rows={rides}
       rowKey={(r) => r.id}

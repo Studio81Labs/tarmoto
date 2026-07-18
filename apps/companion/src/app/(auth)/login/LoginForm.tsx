@@ -28,7 +28,7 @@ export function LoginForm({
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const urlError = getLoginErrorMessage(searchParams.get("error"));
+  const urlError = getLoginErrorMessage(searchParams.get("error"), t);
   const [error, setError] = useState(urlError);
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
   useEffect(() => {

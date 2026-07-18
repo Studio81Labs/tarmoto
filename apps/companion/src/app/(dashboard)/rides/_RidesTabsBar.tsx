@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { t } from "@/i18n";
 import { SubRouteTabs } from "@/components/SubRouteTabs";
 import {
   TimeWindowPills,
@@ -40,11 +41,11 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <SubRouteTabs
-        ariaLabel="Ride history sections"
+        ariaLabel={t("Ride history sections")}
         tabs={[
           {
             href: `/rides${qs}`,
-            label: "All rides",
+            label: t("All rides"),
             badge: allRidesBadge,
             matchPrefixes: ["/rides"],
             // `/rides/road-map` and `/rides/compare` share the
@@ -55,12 +56,12 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
           },
           {
             href: `/rides/road-map${qs}`,
-            label: "Road map",
+            label: t("Road map"),
             matchPrefixes: ["/rides/road-map"],
           },
           {
             href: `/rides/compare${qs}`,
-            label: "Compare rides",
+            label: t("Compare rides"),
             matchPrefixes: ["/rides/compare"],
           },
         ]}

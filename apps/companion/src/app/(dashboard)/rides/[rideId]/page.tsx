@@ -241,32 +241,32 @@ export default function RideDetailPage() {
   // Distance / Duration / Avg / Top / Max lean / Ascent — the design's 2×3 grid.
   const tiles: MetricTileProps[] = [
     {
-      label: "Distance",
+      label: t("Distance"),
       value: ride.distance_km != null ? distance.value : "—",
       unit: distance.unit,
       variant: "ink",
       accentNumber: true,
     },
-    { label: "Duration", value: duration.value, unit: duration.unit },
+    { label: t("Duration"), value: duration.value, unit: duration.unit },
     {
-      label: "Avg speed",
+      label: t("Avg speed"),
       value: ride.avg_speed != null ? avgSpeed.value : "—",
       unit: speedUnit,
     },
     {
-      label: "Top speed",
+      label: t("Top speed"),
       value: ride.max_speed != null ? topSpeed.value : "—",
       unit: speedUnit,
     },
     {
-      label: "Max lean",
+      label: t("Max lean"),
       value:
         ride.max_lean_angle != null
           ? `${Math.round(ride.max_lean_angle)}°`
           : "—",
     },
     {
-      label: "Ascent",
+      label: t("Ascent"),
       value: ride.elevation_gain != null ? ascent.value : "—",
       unit: ascent.unit,
       accentNumber: true,
@@ -694,7 +694,7 @@ function RoadSegments({
     },
     {
       key: "segment",
-      label: "SEGMENT",
+      label: t("SEGMENT"),
       primary: true,
       render: (s) => (
         <span className="truncate font-bold text-ink">
@@ -704,7 +704,7 @@ function RoadSegments({
     },
     {
       key: "avg",
-      label: `AVG ${speedUnit}`,
+      label: t("AVG {unit}", { unit: speedUnit }),
       size: "100px",
       render: (s) => (
         <Mono className="text-ink">
@@ -714,7 +714,7 @@ function RoadSegments({
     },
     {
       key: "max",
-      label: `MAX ${speedUnit}`,
+      label: t("MAX {unit}", { unit: speedUnit }),
       size: "100px",
       render: (s) => (
         <Mono className="text-ink">
@@ -724,7 +724,7 @@ function RoadSegments({
     },
     {
       key: "lean",
-      label: "LEAN",
+      label: t("LEAN"),
       size: "70px",
       render: (s) => (
         <Mono className="text-ink">
@@ -734,7 +734,7 @@ function RoadSegments({
     },
     {
       key: "quality",
-      label: "QUALITY",
+      label: t("QUALITY"),
       size: "110px",
       render: (s) => {
         const tier = scoreToQualityTier(s.quality_reading);

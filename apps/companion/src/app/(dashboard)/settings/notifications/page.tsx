@@ -233,7 +233,11 @@ export default function NotificationsPage() {
           className="grid grid-cols-3 gap-2"
           value={prefs.email_digest}
           onChange={setDigest}
-          options={EMAIL_DIGEST_OPTIONS}
+          options={EMAIL_DIGEST_OPTIONS.map((option) => ({
+            ...option,
+            label: t(option.label),
+            description: t(option.description),
+          }))}
         />
       </Card>
 
@@ -259,22 +263,22 @@ export default function NotificationsPage() {
             <div key={category} className="flex items-center gap-4 px-5 py-4">
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-semibold text-ink">
-                  {meta.label}
+                  {t(meta.label)}
                 </p>
                 <p className="mt-0.5 text-[12px] text-fg-dim">
-                  {meta.description}
+                  {t(meta.description)}
                 </p>
               </div>
               <div className="flex items-center gap-6">
                 <Toggle
                   checked={toggles.email}
                   onChange={() => toggleChannel(category, "email")}
-                  ariaLabel={`${meta.label} email`}
+                  ariaLabel={t("{label} email", { label: t(meta.label) })}
                 />
                 <Toggle
                   checked={toggles.push}
                   onChange={() => toggleChannel(category, "push")}
-                  ariaLabel={`${meta.label} push`}
+                  ariaLabel={t("{label} push", { label: t(meta.label) })}
                 />
               </div>
             </div>
@@ -298,7 +302,7 @@ export default function NotificationsPage() {
           <Toggle
             checked={prefs.marketing_emails}
             onChange={toggleMarketing}
-            ariaLabel="Marketing emails"
+            ariaLabel={t("Marketing emails")}
           />
         </div>
       </Card>

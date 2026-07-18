@@ -36,7 +36,7 @@ export function FlaggedSectionCard({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Preview flagged section: ${flag.label}`}
+      aria-label={t("Preview flagged section: {label}", { label: flag.label })}
       onClick={() => onOpen(flag.segmentId)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -62,7 +62,13 @@ export function FlaggedSectionCard({
       </div>
       <button
         type="button"
-        aria-label={`${action === "REROUTE" ? "Reroute around" : "Inspect"} flagged section: ${flag.label}`}
+        aria-label={
+          action === "REROUTE"
+            ? t("Reroute around flagged section: {label}", {
+                label: flag.label,
+              })
+            : t("Inspect flagged section: {label}", { label: flag.label })
+        }
         onClick={(event) => {
           event.stopPropagation();
           if (action === "REROUTE" && onReroute) onReroute(flag.segmentId);
@@ -70,7 +76,7 @@ export function FlaggedSectionCard({
         }}
         className="shrink-0 rounded-lg border border-accent bg-transparent px-3 py-[7px] font-mono text-[10.5px] font-bold tracking-[0.5px] text-accent transition hover:bg-accent/10"
       >
-        {action}
+        {t(action)}
       </button>
     </div>
   );

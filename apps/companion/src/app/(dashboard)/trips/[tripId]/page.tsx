@@ -222,7 +222,7 @@ export default function TripDetailPage() {
       setLeaving(false);
     }
   }, [loaded, router]);
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip, t), [trip]);
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   // Activate the trip in the store so the map's store-driven overlays
@@ -644,19 +644,19 @@ export default function TripDetailPage() {
             >
               <TabButton
                 id="route"
-                label="Route"
+                label={t("Route")}
                 active={activeTab === "route"}
                 onSelect={setActiveTab}
               />
               <TabButton
                 id="inspect"
-                label="Inspect"
+                label={t("Inspect")}
                 active={activeTab === "inspect"}
                 onSelect={setActiveTab}
               />
               <TabButton
                 id="conditions"
-                label="Conditions"
+                label={t("Conditions")}
                 active={activeTab === "conditions"}
                 onSelect={setActiveTab}
               />
@@ -878,14 +878,17 @@ function TripSummaryCard({
         {t("Trip summary ")}
       </Stamp>
       <div className="grid grid-cols-2 gap-3">
-        <TileStat label="Distance" value={format.distanceKm(totalDistance)} />
         <TileStat
-          label="Ride time"
+          label={t("Distance")}
+          value={format.distanceKm(totalDistance)}
+        />
+        <TileStat
+          label={t("Ride time")}
           value={totalDuration > 0 ? format.duration(totalDuration) : "—"}
         />
-        <TileStat label="Days" value={String(trip.days.length)} />
+        <TileStat label={t("Days")} value={String(trip.days.length)} />
         <TileStat
-          label="Elevation"
+          label={t("Elevation")}
           value={totalElevation > 0 ? format.elevation(totalElevation) : "—"}
           accent
         />

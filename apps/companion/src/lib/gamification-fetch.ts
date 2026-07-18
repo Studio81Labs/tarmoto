@@ -15,6 +15,7 @@
 
 import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
+import { t } from "@/i18n";
 import {
   buildLiveSnapshot,
   mapRegionalLeaderboards,
@@ -194,7 +195,7 @@ export async function fetchGamificationSnapshot(
   const challengeDetails = await Promise.all(
     challenges.map((c) => fetchChallengeDetail(c.id, { signal })),
   );
-  return buildLiveSnapshot({ badges, challengeDetails, meProfile });
+  return buildLiveSnapshot({ badges, challengeDetails, meProfile }, t);
 }
 
 export interface FetchRegionalLeaderboardsOptions extends FetchOptions {

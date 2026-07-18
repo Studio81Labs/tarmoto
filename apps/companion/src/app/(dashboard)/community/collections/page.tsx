@@ -90,7 +90,7 @@ export default function RouteCollectionsPage() {
       await unfollowCollection(collection.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to unfollow collection",
+        err instanceof Error ? err.message : t("Failed to unfollow collection"),
       );
     }
   };
@@ -124,7 +124,7 @@ export default function RouteCollectionsPage() {
       await removeCollection(collection.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to delete collection",
+        err instanceof Error ? err.message : t("Failed to delete collection"),
       );
     }
   };
@@ -389,7 +389,7 @@ function CollectionCard({
       <button
         type="button"
         data-menu-trigger
-        aria-label={`Actions for ${collection.title}`}
+        aria-label={t("Actions for {title}", { title: collection.title })}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -404,7 +404,7 @@ function CollectionCard({
         <CardMenu onClose={() => setMenuOpen(false)}>
           <CardMenuItem
             icon={<Pencil size={13} />}
-            label="Edit"
+            label={t("Edit")}
             onClick={() => {
               setMenuOpen(false);
               onEdit();
@@ -412,7 +412,7 @@ function CollectionCard({
           />
           <CardMenuItem
             icon={<Trash2 size={13} />}
-            label="Delete"
+            label={t("Delete")}
             tone="danger"
             onClick={() => {
               setMenuOpen(false);
@@ -487,7 +487,7 @@ function FollowedCollectionCard({
           e.stopPropagation();
           onUnfollow();
         }}
-        aria-label={`Unfollow ${collection.title}`}
+        aria-label={t("Unfollow {title}", { title: collection.title })}
         className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-red-800 hover:bg-paper transition"
       >
         <Trash2 size={16} />
@@ -531,12 +531,12 @@ function CollectionModal({
   }, []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const nameError = validateCollectionName(title, collections, excludeId);
+    const nameError = validateCollectionName(title, collections, t, excludeId);
     if (nameError) {
       setError(nameError);
       return;
     }
-    const descError = validateCollectionDescription(description);
+    const descError = validateCollectionDescription(description, t);
     if (descError) {
       setError(descError);
       return;
@@ -621,18 +621,20 @@ function CollectionModal({
               options={[
                 {
                   value: "private",
-                  label: "Private",
-                  help: "Only you can see this collection.",
+                  label: t("Private"),
+                  help: t("Only you can see this collection."),
                 },
                 {
                   value: "unlisted",
-                  label: "Unlisted",
-                  help: "Anyone with the link can view. Not listed publicly.",
+                  label: t("Unlisted"),
+                  help: t(
+                    "Anyone with the link can view. Not listed publicly.",
+                  ),
                 },
                 {
                   value: "public",
-                  label: "Public",
-                  help: "Anyone can find and view this collection.",
+                  label: t("Public"),
+                  help: t("Anyone can find and view this collection."),
                 },
               ]}
             />

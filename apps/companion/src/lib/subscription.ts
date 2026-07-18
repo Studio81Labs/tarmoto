@@ -2,6 +2,7 @@ import {
   formatSubscriptionAmountLabel,
   formatSubscriptionPriceLabel,
   type Formatters,
+  type LooseTranslate,
   type SubscriptionTier,
 } from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
@@ -71,11 +72,13 @@ const TIER_ORDER: Record<SubscriptionTier, number> = {
   premium: 2,
 };
 
-export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
+export function buildFallbackSubscriptionSnapshot(
+  t: LooseTranslate,
+): SubscriptionSnapshot {
   return {
     currentPlan: {
       tier: "pro",
-      name: "Pro",
+      name: tierLabel("pro", t),
       status: "active",
       priceLabel: formatSubscriptionPriceLabel("pro"),
       renewsAt: "2026-11-15T00:00:00.000Z",
@@ -85,36 +88,36 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
     plans: [
       {
         tier: "free",
-        name: "Free",
+        name: tierLabel("free", t),
         priceLabel: formatSubscriptionPriceLabel("free"),
         features: [
-          "Basic navigation",
-          "Road quality overlay (limited)",
-          "Hazard alerts",
-          "1 active trip",
+          t("Basic navigation"),
+          t("Road quality overlay (limited)"),
+          t("Hazard alerts"),
+          t("1 active trip"),
         ],
       },
       {
         tier: "pro",
-        name: "Pro",
+        name: tierLabel("pro", t),
         priceLabel: formatSubscriptionPriceLabel("pro"),
         highlighted: true,
         features: [
-          "Unlimited trip planning",
-          "Full road quality zoom",
-          "Offline maps",
-          "GPX export",
+          t("Unlimited trip planning"),
+          t("Full road quality zoom"),
+          t("Offline maps"),
+          t("GPX export"),
         ],
       },
       {
         tier: "premium",
-        name: "Premium",
+        name: tierLabel("premium", t),
         priceLabel: formatSubscriptionPriceLabel("premium"),
         features: [
-          "Everything in Pro",
-          "Unlimited group rides",
-          "Priority hazard alerts",
-          "Advanced analytics",
+          t("Everything in Pro"),
+          t("Unlimited group rides"),
+          t("Priority hazard alerts"),
+          t("Advanced analytics"),
         ],
       },
     ],
@@ -147,8 +150,9 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
 
 export function normalizeSubscriptionSnapshot(
   raw: unknown,
+  t: LooseTranslate,
 ): SubscriptionSnapshot {
-  const fallback = buildFallbackSubscriptionSnapshot();
+  const fallback = buildFallbackSubscriptionSnapshot(t);
   const root = asRecord(raw);
 
   const currentPlanRaw = asRecord(root.current_plan);
@@ -162,7 +166,7 @@ export function normalizeSubscriptionSnapshot(
   const currentTier = normalizedTier ?? fallback.currentPlan.tier;
   const currentPlan: CurrentSubscriptionPlan = {
     tier: currentTier,
-    name: stringOr(currentPlanRaw.name, tierLabel(currentTier)),
+    name: planNameFrom(currentPlanRaw.name, currentTier, t),
     status: normalizedStatus ?? fallback.currentPlan.status,
     priceLabel: normalizedPriceLabel ?? fallback.currentPlan.priceLabel,
     renewsAt: optionalString(currentPlanRaw.renews_at),
@@ -170,16 +174,16 @@ export function normalizeSubscriptionSnapshot(
     manageUrl: normalizeUrl(currentPlanRaw.manage_url),
   };
 
-  const plans = normalizePlans(root.plans, fallback.plans);
+  const plans = normalizePlans(root.plans, fallback.plans, t);
   const currentInPlans = plans.some((plan) => plan.tier === currentPlan.tier);
 
   return {
     currentPlan,
     plans: currentInPlans
       ? plans
-      : sortPlans([...plans, buildPlanFromCurrent(currentPlan)]),
+      : sortPlans([...plans, buildPlanFromCurrent(currentPlan, t)]),
     paymentMethod: normalizePaymentMethod(root.payment_method),
-    billingHistory: normalizeInvoices(root.billing_history),
+    billingHistory: normalizeInvoices(root.billing_history, t),
     portalAvailable:
       Boolean(root.portal_available) || currentPlan.manageUrl !== null,
     preview,
@@ -192,54 +196,66 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
   );
 }
 
-export function tierLabel(tier: SubscriptionTier): string {
-  if (tier === "pro") return "Pro";
-  if (tier === "premium") return "Premium";
-  return "Free";
+export function tierLabel(tier: SubscriptionTier, t: LooseTranslate): string {
+  if (tier === "pro") return t("Pro");
+  if (tier === "premium") return t("Premium");
+  return t("Free");
 }
 
 export function planActionLabel(
   planTier: SubscriptionTier,
   currentTier: SubscriptionTier,
+  t: LooseTranslate,
 ): string {
-  if (planTier === currentTier) return "Current plan";
+  if (planTier === currentTier) return t("Current plan");
   return TIER_ORDER[planTier] > TIER_ORDER[currentTier]
-    ? "Upgrade"
-    : "Downgrade";
+    ? t("Upgrade")
+    : t("Downgrade");
 }
 
 export function describeRenewal(
   plan: CurrentSubscriptionPlan,
   format: Formatters,
+  t: LooseTranslate,
 ): string {
   // `format.date()` renders "" for an unparseable timestamp; without the
   // "soon" fallback a malformed (but present) `renews_at` would silently
   // reroute an active plan to the portal copy / a trial to no end-date —
   // misleading during malformed or partially migrated billing data. This
   // preserves the retired helper's "Renews soon"-class behavior.
-  const date = plan.renewsAt ? format.date(plan.renewsAt) || "soon" : null;
+  const date = plan.renewsAt ? format.date(plan.renewsAt) || t("soon") : null;
   if (plan.cancelAtPeriodEnd && date) {
-    return `Downgrades ${date}`;
+    return t("Downgrades {date}", { date });
   }
   if (plan.status === "trialing" && date) {
-    return `Trial ends ${date}`;
+    return t("Trial ends {date}", { date });
   }
   if (plan.status === "canceled") {
-    return date ? `Access ends ${date}` : "Canceled";
+    return date ? t("Access ends {date}", { date }) : t("Canceled");
   }
-  return date ? `Renews ${date}` : "Billing cycle managed in the portal";
+  return date
+    ? t("Renews {date}", { date })
+    : t("Billing cycle managed in the portal");
 }
 
 export function formatPaymentMethodLabel(
   paymentMethod: SubscriptionPaymentMethod,
+  t: LooseTranslate,
 ): string {
-  return `${titleCase(paymentMethod.brand)} ending in ${paymentMethod.last4}`;
+  return t("{brand} ending in {last4}", {
+    brand: titleCase(paymentMethod.brand, t),
+    last4: paymentMethod.last4,
+  });
 }
 
 export function formatPaymentMethodExpiry(
   paymentMethod: SubscriptionPaymentMethod,
+  t: LooseTranslate,
 ): string {
-  return `Expires ${String(paymentMethod.expMonth).padStart(2, "0")}/${paymentMethod.expYear}`;
+  return t("Expires {mm}/{yyyy}", {
+    mm: String(paymentMethod.expMonth).padStart(2, "0"),
+    yyyy: paymentMethod.expYear,
+  });
 }
 
 export function formatInvoiceDate(date: string, format: Formatters): string {
@@ -251,15 +267,19 @@ export function formatInvoiceDate(date: string, format: Formatters): string {
   return format.date(date) || "—";
 }
 
-export function invoiceStatusLabel(status: InvoiceStatus): string {
-  if (status === "open") return "Open";
-  if (status === "refunded") return "Refunded";
-  return "Paid";
+export function invoiceStatusLabel(
+  status: InvoiceStatus,
+  t: LooseTranslate,
+): string {
+  if (status === "open") return t("Open");
+  if (status === "refunded") return t("Refunded");
+  return t("Paid");
 }
 
 function normalizePlans(
   rawPlans: unknown,
   fallbackPlans: SubscriptionPlanSummary[],
+  t: LooseTranslate,
 ): SubscriptionPlanSummary[] {
   if (!Array.isArray(rawPlans) || rawPlans.length === 0) {
     return fallbackPlans;
@@ -277,16 +297,25 @@ function normalizePlans(
                 typeof feature === "string" ? feature.trim() : "",
               )
               .filter(Boolean)
-          : DEFAULT_PLAN_FEATURES[tier];
+              // Backend feature strings mirror the registered DEFAULT_PLAN_FEATURES
+              // catalog keys — translate them at this boundary (English-identical
+              // today, localized once a locale ships; unknown strings fall back).
+              .map((feature) => t(feature))
+          : DEFAULT_PLAN_FEATURES[tier].map((feature) => t(feature));
+      // Backend-provided plan descriptions are English (e.g. the Premium
+      // catalog copy) — translate at this boundary like the name/features
+      // (English-identical today, localized once a locale ships; unknown
+      // strings fall back to the raw English).
+      const description = optionalString(rawPlan.description);
       return {
         tier,
-        name: stringOr(rawPlan.name, tierLabel(tier)),
+        name: planNameFrom(rawPlan.name, tier, t),
         priceLabel: stringOr(
           rawPlan.price_label,
           formatSubscriptionPriceLabel(tier),
         ),
         features,
-        description: optionalString(rawPlan.description) ?? undefined,
+        description: description ? t(description) : undefined,
         highlighted: Boolean(rawPlan.highlighted),
       } as SubscriptionPlanSummary;
     })
@@ -314,14 +343,17 @@ function normalizePaymentMethod(
   };
 }
 
-function normalizeInvoices(raw: unknown): SubscriptionInvoice[] {
+function normalizeInvoices(
+  raw: unknown,
+  t: LooseTranslate,
+): SubscriptionInvoice[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry, index) => {
       const invoice = asRecord(entry);
       const id = stringOr(invoice.id, `invoice-${index + 1}`);
       const date = optionalString(invoice.date);
-      const amountLabel = stringOr(invoice.amount_label, "Unavailable");
+      const amountLabel = stringOr(invoice.amount_label, t("Unavailable"));
       const status = normalizeInvoiceStatus(invoice.status) ?? "paid";
       if (!date) return null;
       return {
@@ -358,12 +390,15 @@ function normalizeInvoiceStatus(value: unknown): InvoiceStatus | null {
 
 function buildPlanFromCurrent(
   currentPlan: CurrentSubscriptionPlan,
+  t: LooseTranslate,
 ): SubscriptionPlanSummary {
   return {
     tier: currentPlan.tier,
     name: currentPlan.name,
     priceLabel: currentPlan.priceLabel,
-    features: DEFAULT_PLAN_FEATURES[currentPlan.tier],
+    features: DEFAULT_PLAN_FEATURES[currentPlan.tier].map((feature) =>
+      t(feature),
+    ),
   };
 }
 
@@ -373,8 +408,8 @@ function sortPlans(
   return [...plans].sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
 }
 
-function titleCase(value: string): string {
-  if (!value) return "Card";
+function titleCase(value: string, t: LooseTranslate): string {
+  if (!value) return t("Card");
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
@@ -386,6 +421,23 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/**
+ * Resolve a plan's display name. The backend `PLAN_CATALOG` sends the name in
+ * English (`Free`/`Pro`/`Premium`), which mirrors the registered catalog keys,
+ * so a wire-provided name is routed through the translator (English-identical
+ * today, localized once a locale ships; unknown strings fall back to English).
+ * When the wire omits a name we use the already-translated tier label.
+ */
+function planNameFrom(
+  rawName: unknown,
+  tier: SubscriptionTier,
+  t: LooseTranslate,
+): string {
+  return typeof rawName === "string" && rawName.trim()
+    ? t(rawName.trim())
+    : tierLabel(tier, t);
 }
 
 function optionalString(value: unknown): string | null {

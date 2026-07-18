@@ -218,6 +218,7 @@ function ABCard({
   format: Formatters;
 }) {
   const selected = options.find((o) => o.id === value) ?? null;
+  const slotLabel = t(SLOT_LABEL[slot]);
   const quality = ride ? scoreToQualityTier(ride.avg_road_quality) : null;
   const geometry = ride?.route_geometry ?? null;
   const hasGeometry = geometry != null && geometry.length >= 2;
@@ -242,7 +243,7 @@ function ABCard({
         )}
       </div>
       <Combobox
-        ariaLabel={`${SLOT_LABEL[slot]} selector`}
+        ariaLabel={t("{slot} selector", { slot: slotLabel })}
         value={value ?? ""}
         onChange={onChange}
         options={options.map((opt) => ({
@@ -257,13 +258,13 @@ function ABCard({
         <RideRouteMap
           geometry={geometry}
           color={slot === "a" ? "#0ED3CF" : "#F472B6"}
-          label={`${SLOT_LABEL[slot]} route map`}
+          label={t("{label} route map", { label: slotLabel })}
           containerClassName="h-[120px]"
         />
       ) : (
         <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-line bg-paper text-center text-[11px] text-fg-dim">
           {ride
-            ? t("{label} has no GPS track.", { label: SLOT_LABEL[slot] })
+            ? t("{label} has no GPS track.", { label: slotLabel })
             : t("Select a ride to preview its route.")}
         </div>
       )}
@@ -360,7 +361,7 @@ function ComparisonView({
 
   const statRows = useMemo(() => {
     if (!rideA || !rideB) return [];
-    return computeStatRows(rideA, rideB);
+    return computeStatRows(rideA, rideB, t);
   }, [rideA, rideB]);
   const qualityDiff = useMemo(() => {
     if (!rideA || !rideB) return [];
@@ -549,7 +550,7 @@ function MetricTable({
             i % 2 === 1 ? { backgroundColor: "rgba(14,14,16,0.02)" } : undefined
           }
         >
-          <span className="text-fg-dim">{row.label}</span>
+          <span className="text-fg-dim">{t(row.label)}</span>
           <Mono className="text-ink">{row.a}</Mono>
           <Mono className="text-ink">{row.b}</Mono>
         </div>
@@ -586,14 +587,14 @@ function ElevationCompareSection({
           variants for the bar fill (≥3:1 on paper for the UI cue).
         */}
         <ElevationBars
-          label="Ride A"
+          label={t("Ride A")}
           color="#0E7A75"
           gain={rideA.elevation_gain}
           loss={rideA.elevation_loss}
           max={max}
         />
         <ElevationBars
-          label="Ride B"
+          label={t("Ride B")}
           color="#9D2C5C"
           gain={rideB.elevation_gain}
           loss={rideB.elevation_loss}
@@ -717,7 +718,7 @@ function QualityDiffSection({
                     className="h-2.5 w-2.5 rounded-full"
                     style={{ backgroundColor: row.color }}
                   />
-                  {QUALITY_CONFIG[row.tier].label}
+                  {t(QUALITY_CONFIG[row.tier].label)}
                 </div>
                 <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
                   <span className="sr-only">{nameA}</span>
