@@ -58,8 +58,7 @@ export function ElevationSparkline({
         textAnchor="end"
         className="tabular-nums"
       >
-        {Math.round(ext.max)}
-        {t("m ")}
+        {format.elevation(ext.max)}
       </text>
       <text
         x={labelX}
@@ -69,8 +68,7 @@ export function ElevationSparkline({
         textAnchor="end"
         className="tabular-nums"
       >
-        {Math.round(ext.min)}
-        {t("m ")}
+        {format.elevation(ext.min)}
       </text>
     </svg>
   );
