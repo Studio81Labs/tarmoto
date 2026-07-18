@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, act, cleanup } from "@testing-library/react";
-import { useMediaQuery } from "./index";
+import { useMediaQuery, usePersistentState } from "./index";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 // Renders a probe that records `useMediaQuery`'s value on EVERY render, so a
@@ -89,5 +90,69 @@ describe("useMediaQuery", () => {
     // instead of throwing on the missing `addEventListener`.
     expect(values[0]).toBe(true);
     expect(addListener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("usePersistentState", () => {
+  // Records the value on every render and exposes the setter, so a test can
+  // assert what the FIRST render carried (the anti-flash property) and drive
+  // updates.
+  function recordPersistentRenders<T extends string | number | boolean | null>(
+    key: string,
+    fallback: T,
+  ) {
+    const values: T[] = [];
+    let setter: ((value: T) => void) | null = null;
+    function Probe() {
+      const [value, setValue] = usePersistentState(key, fallback);
+      setter = setValue;
+      values.push(value);
+      return null;
+    }
+    render(<Probe />);
+    return {
+      values,
+      set: (value: T) => act(() => setter?.(value)),
+    };
+  }
+
+  it("reads a stored value on the FIRST render — no post-mount flip (anti-flash)", () => {
+    // A rider who collapsed the sidebar earlier: the preference is already in
+    // storage before the (re)mount.
+    localStorage.setItem("tarmoto:sidebar-collapsed", "true");
+
+    const { values } = recordPersistentRenders<boolean | null>(
+      "tarmoto:sidebar-collapsed",
+      null,
+    );
+
+    // useLocalStorage would emit `null` (fallback) first and flip after the
+    // read-effect — the sidebar's expand→collapse flash. Here it's `true` from
+    // the first commit.
+    expect(values[0]).toBe(true);
+    expect(values.every((v) => v === true)).toBe(true);
+  });
+
+  it("returns the fallback when nothing is stored", () => {
+    const { values } = recordPersistentRenders<boolean | null>(
+      "tarmoto:sidebar-collapsed",
+      null,
+    );
+    expect(values[0]).toBeNull();
+  });
+
+  it("persists and reactively updates same-tab subscribers on setValue", () => {
+    const { values, set } = recordPersistentRenders<boolean | null>(
+      "tarmoto:sidebar-collapsed",
+      null,
+    );
+
+    set(true);
+    expect(localStorage.getItem("tarmoto:sidebar-collapsed")).toBe("true");
+    expect(values[values.length - 1]).toBe(true);
+
+    set(false);
+    expect(localStorage.getItem("tarmoto:sidebar-collapsed")).toBe("false");
+    expect(values[values.length - 1]).toBe(false);
   });
 });

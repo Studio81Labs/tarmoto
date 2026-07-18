@@ -26,7 +26,7 @@ import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useContribution } from "@/hooks/useContribution";
-import { useDropdown, useLocalStorage, useMediaQuery } from "@/hooks";
+import { useDropdown, useMediaQuery, usePersistentState } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
@@ -165,7 +165,11 @@ export function Sidebar() {
   // The rider's explicit choice, persisted. `null` = never toggled, so the
   // sidebar follows the viewport default below. Once they collapse/expand it
   // by hand, that preference sticks (and wins over the viewport) until cleared.
-  const [userCollapsed, setUserCollapsed] = useLocalStorage<boolean | null>(
+  // Read synchronously (usePersistentState, not useLocalStorage) so a manually
+  // saved preference is present on the first commit — otherwise the sidebar
+  // remounting across a route-group boundary would paint the viewport default
+  // for one frame before the stored value lands, flashing expand→collapse.
+  const [userCollapsed, setUserCollapsed] = usePersistentState<boolean | null>(
     COLLAPSED_STORAGE_KEY,
     null,
   );

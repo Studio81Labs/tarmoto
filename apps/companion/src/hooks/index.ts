@@ -165,3 +165,79 @@ export function useLocalStorage<T>(key: string, initial: T) {
 
   return [value, setValue] as const;
 }
+
+// Same-tab notification channel for `usePersistentState`. The native `storage`
+// event only fires in OTHER tabs, so a write dispatches this so subscribers in
+// the writing tab re-read too.
+const PERSISTENT_STATE_EVENT = "tarmoto:persistent-state";
+
+/**
+ * Persisted primitive backed by localStorage, read *synchronously* on the
+ * client via `useSyncExternalStore`. Unlike `useLocalStorage` (which reads in a
+ * post-mount effect and so flickers for one frame), a component that
+ * (re)mounts — like the sidebar when navigation crosses a route-group boundary
+ * and rebuilds its `AppShell` — lands on the stored value on its FIRST commit,
+ * with no flash. `getServerSnapshot` returns `fallback` on the server and
+ * during hydration so SSR markup still matches; the genuine first page load
+ * still settles once (localStorage isn't readable server-side), but every
+ * client-side navigation after that is flash-free.
+ *
+ * Values must be JSON primitives (`string | number | boolean | null`): the
+ * snapshot is compared by value, so there's none of the "getSnapshot must be
+ * cached" infinite-loop risk a freshly-parsed object would carry. For object
+ * values, or where a clean-hydration async read is preferable, use
+ * `useLocalStorage`.
+ */
+export function usePersistentState<T extends string | number | boolean | null>(
+  key: string,
+  fallback: T,
+): readonly [T, (value: T) => void] {
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (typeof window === "undefined") return () => {};
+      const onLocal = (event: Event) => {
+        if ((event as CustomEvent<string>).detail === key) onStoreChange();
+      };
+      const onStorage = (event: StorageEvent) => {
+        if (event.key === key) onStoreChange();
+      };
+      window.addEventListener(PERSISTENT_STATE_EVENT, onLocal);
+      window.addEventListener("storage", onStorage);
+      return () => {
+        window.removeEventListener(PERSISTENT_STATE_EVENT, onLocal);
+        window.removeEventListener("storage", onStorage);
+      };
+    },
+    [key],
+  );
+
+  const getSnapshot = (): T => {
+    if (typeof window === "undefined") return fallback;
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : (JSON.parse(raw) as T);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const value = useSyncExternalStore(subscribe, getSnapshot, () => fallback);
+
+  const setValue = useCallback(
+    (next: T) => {
+      if (typeof window === "undefined") return;
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {
+        // Quota / private mode — best-effort persistence.
+      }
+      // Nudge same-tab subscribers (the `storage` event won't).
+      window.dispatchEvent(
+        new CustomEvent(PERSISTENT_STATE_EVENT, { detail: key }),
+      );
+    },
+    [key],
+  );
+
+  return [value, setValue] as const;
+}
