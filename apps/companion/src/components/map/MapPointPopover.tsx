@@ -174,7 +174,7 @@ function PoiBody({
       <PopoverHeader
         onClose={onClose}
         title={poi.name}
-        subtitle={`${meta.label} · ${poi.source}`}
+        subtitle={`${t(meta.label)} · ${poi.source}`}
         badge={
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">
             <MetaIcon size={16} />
