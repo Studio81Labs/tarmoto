@@ -1284,7 +1284,7 @@ export default function TripPlannerPage() {
     setDraftPlannerParameters(plannerParams);
   }, [plannerParams, setDraftPlannerParameters]);
   const closureRoutes = useMemo(
-    () => buildTripClosureRoutes(displayedTrip),
+    () => buildTripClosureRoutes(displayedTrip, t),
     [displayedTrip],
   );
   const currentGenerationSignature = useMemo(
@@ -1420,7 +1420,7 @@ export default function TripPlannerPage() {
       const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
       if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
         toast.error(
-          "Imported routes need at least two route points before saving.",
+          t("Imported routes need at least two route points before saving."),
         );
         setSaving(false);
         return;
@@ -1450,7 +1450,9 @@ export default function TripPlannerPage() {
         generationSurfaces(p).length === 0
       ) {
         toast.error(
-          "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+          t(
+            "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+          ),
         );
         setSaving(false);
         return;
@@ -1459,7 +1461,7 @@ export default function TripPlannerPage() {
       const firstDay = displayedTrip.days[0];
       const startWp = firstDay?.waypoints[0];
       if (!startWp) {
-        toast.error("Add a start waypoint before saving this trip.");
+        toast.error(t("Add a start waypoint before saving this trip."));
         setSaving(false);
         return;
       }
@@ -1512,7 +1514,7 @@ export default function TripPlannerPage() {
       }
       router.push(`/trips/${tripId}`);
     } catch (err) {
-      toast.error("Could not save this trip. Please try again.");
+      toast.error(t("Could not save this trip. Please try again."));
       console.warn("Failed to save trip", err);
       setSaving(false);
     }
@@ -2348,7 +2350,7 @@ export default function TripPlannerPage() {
       const latestTrip = activeTripRef.current;
       const startWaypoint = findStartWaypoint(latestTrip);
       if (!latestTrip || !startWaypoint) {
-        toast.error("Add a start waypoint before selecting this route.");
+        toast.error(t("Add a start waypoint before selecting this route."));
         return;
       }
       const requestToken = requestTokenRef.current + 1;
@@ -2389,7 +2391,7 @@ export default function TripPlannerPage() {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
-        toast.error("Could not select this route option. Please try again.");
+        toast.error(t("Could not select this route option. Please try again."));
       } finally {
         if (requestTokenRef.current === requestToken) {
           generationLockRef.current = false;
@@ -3190,8 +3192,8 @@ export default function TripPlannerPage() {
                           key={surface.value}
                           checked={surfacePreference.includes(surface.value)}
                           onChange={() => handleSurfaceToggle(surface.value)}
-                          label={surface.label}
-                          ariaLabel={surface.label}
+                          label={t(surface.label)}
+                          ariaLabel={t(surface.label)}
                           className="py-1"
                         />
                       ))}
@@ -3468,7 +3470,10 @@ export default function TripPlannerPage() {
                           setForcedDays(n);
                           setDays(n);
                         }}
-                        aria-label={`Force ${n} days`}
+                        aria-label={t(
+                          "Force {count, plural, one {# day} other {# days}}",
+                          { count: n },
+                        )}
                         className={`rounded-[6px] border py-2 text-center font-mono text-[12px] font-bold transition ${
                           forcedDays === n
                             ? "border-ink bg-ink text-cream"
@@ -4191,7 +4196,7 @@ function WaypointEditor({
             </span>
             <GeocodeSearchField
               placeholder={t("Type a place or click the map… ")}
-              ariaLabel="Search location for start waypoint"
+              ariaLabel={t("Search location for start waypoint")}
               onSelect={(result) => onCreateEndpoint("start", result)}
               clearOnSelect
             />
@@ -4242,7 +4247,7 @@ function WaypointEditor({
               />
               <div className="min-w-0 flex-1">
                 <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-                  {role}
+                  {t(role)}
                 </span>
                 {onRelocate ? (
                   // The name line is a typed geocode search: the current
@@ -4251,7 +4256,9 @@ function WaypointEditor({
                   <GeocodeSearchField
                     variant="spine"
                     placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
-                    ariaLabel={`Search location for ${role} waypoint`}
+                    ariaLabel={t("Search location for {role} waypoint", {
+                      role: t(role),
+                    })}
                     onSelect={(result) => onRelocate(waypoint.id, result)}
                   />
                 ) : (
@@ -4303,7 +4310,7 @@ function WaypointEditor({
                   <span className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-fg-dim">
                     {legAfter.preference === "inherit"
                       ? t("Trip default")
-                      : ROAD_PREFERENCE_LABELS[legAfter.preference]}
+                      : t(ROAD_PREFERENCE_LABELS[legAfter.preference])}
                   </span>
                   {legAfter.preference !== "inherit" ? (
                     <span className="shrink-0 rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-[0.4px] text-accent">
@@ -4328,7 +4335,7 @@ function WaypointEditor({
                           (preference) =>
                             [
                               preference,
-                              ROAD_PREFERENCE_LABELS[preference],
+                              t(ROAD_PREFERENCE_LABELS[preference]),
                             ] as const,
                         ),
                       ] as ReadonlyArray<[LegPref["preference"], string]>
@@ -4348,7 +4355,7 @@ function WaypointEditor({
                         }`}
                       >
                         {value === "inherit"
-                          ? `${label} · ${ROAD_PREFERENCE_LABELS[tripPreference]}`
+                          ? `${label} · ${t(ROAD_PREFERENCE_LABELS[tripPreference])}`
                           : label}
                       </button>
                     ))}
@@ -4372,7 +4379,7 @@ function WaypointEditor({
             </span>
             <GeocodeSearchField
               placeholder={t("Type a place or click the map… ")}
-              ariaLabel="Search location for finish waypoint"
+              ariaLabel={t("Search location for finish waypoint")}
               onSelect={(result) => onCreateEndpoint("end", result)}
               clearOnSelect
             />
@@ -4389,7 +4396,7 @@ function WaypointEditor({
             />
             <GeocodeSearchField
               placeholder={t("Search a place… ")}
-              ariaLabel="Search location for a new via point"
+              ariaLabel={t("Search location for a new via point")}
               autoFocus
               clearOnSelect
               onSelect={(result) => {

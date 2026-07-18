@@ -1,5 +1,20 @@
-import type { QualitySource } from "@tarmoto/shared";
+import type { QualitySource, SurfaceType } from "@tarmoto/shared";
 import type { QualityTier, HazardType } from "@/lib/types";
+
+// ── Surface ──
+
+// Canonical English display labels for each surface enum value (the raw enum,
+// e.g. "gravel", is not renderable copy). Translate at the render site via
+// t(SURFACE_LABELS[surface]). Shared by the map legend and the planner's
+// flagged-section cards so the surface word localizes consistently.
+export const SURFACE_LABELS: Record<SurfaceType, string> = {
+  asphalt: "Asphalt",
+  concrete: "Concrete",
+  cobblestone: "Cobblestone",
+  gravel: "Gravel",
+  dirt: "Dirt",
+  unknown: "Unknown",
+};
 
 // ── Road Quality ──
 

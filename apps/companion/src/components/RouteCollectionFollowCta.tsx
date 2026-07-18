@@ -189,7 +189,7 @@ export function RouteCollectionFollowCta({
   return (
     <div className="rounded-2xl border border-line bg-cream p-6">
       <h2 className="text-sm font-semibold text-ink mb-1">
-        {isFollowing ? "Saved to your library" : "Save this collection"}
+        {isFollowing ? t("Saved to your library") : t("Save this collection")}
       </h2>
       <p className="text-sm text-fg-dim mb-4">
         {isFollowing
@@ -209,7 +209,7 @@ export function RouteCollectionFollowCta({
         }
         onClick={() => void onClick()}
       >
-        {isFollowing ? "Following" : "Follow collection"}
+        {isFollowing ? t("Following") : t("Follow collection")}
       </Button>
       {error && (
         <p role="alert" className="mt-3 text-xs text-quality-q1">

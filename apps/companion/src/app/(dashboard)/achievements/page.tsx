@@ -450,7 +450,7 @@ function Dashboard({
             id="milestone-heading"
             icon={<Heart size={16} />}
             title={t("Next milestone")}
-            subtitle="What you're working toward right now."
+            subtitle={t("What you're working toward right now.")}
           />
           <MilestoneCard progress={nextMilestone} format={format} />
         </section>
@@ -661,7 +661,7 @@ function SeasonalBanner({
           </div>
           <ProgressBar
             fraction={fraction}
-            ariaLabel={`${format.percent(fraction)} complete`}
+            ariaLabel={t("{pct} complete", { pct: format.percent(fraction) })}
           />
         </div>
       </div>
@@ -763,7 +763,7 @@ function ChallengeCard({
     <div className="rounded-[14px] border border-line bg-cream p-[18px]">
       <div className="flex items-start justify-between gap-3">
         <Mono className="text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-          {style.label}
+          {t(style.label)}
         </Mono>
         <Mono className="text-[10px] text-fg-mute">{daysFooter}</Mono>
       </div>
@@ -774,7 +774,10 @@ function ChallengeCard({
 
       <div
         role="progressbar"
-        aria-label={`${challenge.name}: ${format.percent(fraction)} complete`}
+        aria-label={t("{name}: {pct} complete", {
+          name: challenge.name,
+          pct: format.percent(fraction),
+        })}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(safePercent)}
@@ -803,7 +806,7 @@ function ChallengeCard({
               {format.integer(challenge.current)} /{" "}
               {format.integer(challenge.target)}
               {challenge.unit && (
-                <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+                <span className="ml-1 text-fg-mute">{t(challenge.unit)}</span>
               )}
             </>
           )}
@@ -969,10 +972,10 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           scope === "region" && homeRegion
             ? t("Top riders in {region}, ranked by {dimension}.", {
                 region: homeRegion,
-                dimension: labelForDimension(dimension).toLowerCase(),
+                dimension: labelForDimension(dimension, t).toLowerCase(),
               })
             : t("Top riders worldwide, ranked by {dimension}.", {
-                dimension: labelForDimension(dimension).toLowerCase(),
+                dimension: labelForDimension(dimension, t).toLowerCase(),
               })
         }
       />
@@ -995,7 +998,7 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           onChange={setDimension}
           options={LEADERBOARD_DIMENSION_KEYS.map((dim) => ({
             value: dim,
-            label: labelForDimension(dim),
+            label: labelForDimension(dim, t),
           }))}
         />
       </div>
@@ -1166,7 +1169,7 @@ function MilestoneCard({
   progress: MilestoneProgress;
   format: Formatters;
 }) {
-  const label = formatMilestoneLabel(progress, format);
+  const label = formatMilestoneLabel(progress, format, t);
   return (
     <div className="rounded-[14px] border border-line bg-cream p-5">
       <div className="flex items-start justify-between gap-4">

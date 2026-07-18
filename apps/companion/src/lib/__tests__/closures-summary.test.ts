@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createFormatters } from "@tarmoto/shared";
+import { createFormatters, makeTranslator } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import {
   buildTripClosureRoutes,
   countClosuresBySeverity,
@@ -132,6 +133,7 @@ describe("formatClosureWindow", () => {
           ends_at: "2026-07-18T00:00:00Z",
         }),
         format,
+        t,
       ),
     ).toBe("Jul 1 – 18");
   });
@@ -145,6 +147,7 @@ describe("formatClosureWindow", () => {
           ends_at: null,
         }),
         format,
+        t,
       ),
     ).toBe("Jul 1, 2026 onward");
   });
@@ -162,9 +165,9 @@ describe("formatClosureWindow", () => {
       ends_at: null,
     });
 
-    const utc = formatClosureWindow(lateJuneClosure, format);
-    const prague = formatClosureWindow(lateJuneClosure, pragueFormat);
-    const newYork = formatClosureWindow(lateJuneClosure, newYorkFormat);
+    const utc = formatClosureWindow(lateJuneClosure, format, t);
+    const prague = formatClosureWindow(lateJuneClosure, pragueFormat, t);
+    const newYork = formatClosureWindow(lateJuneClosure, newYorkFormat, t);
 
     expect(utc).toBe("Jun 30, 2026 onward");
     expect(prague).toBe(utc);
@@ -184,9 +187,9 @@ describe("formatClosureWindow", () => {
       ends_at: "2026-07-05T00:00:00Z",
     });
 
-    const utc = formatClosureWindow(lateJuneClosure, format);
-    const prague = formatClosureWindow(lateJuneClosure, pragueFormat);
-    const newYork = formatClosureWindow(lateJuneClosure, newYorkFormat);
+    const utc = formatClosureWindow(lateJuneClosure, format, t);
+    const prague = formatClosureWindow(lateJuneClosure, pragueFormat, t);
+    const newYork = formatClosureWindow(lateJuneClosure, newYorkFormat, t);
 
     // Intl's formatRange wraps the en dash (U+2013) in thin spaces (U+2009).
     expect(utc).toBe("Jun 30 – Jul 5");
@@ -245,7 +248,7 @@ describe("buildTripClosureRoutes", () => {
       ],
     };
 
-    expect(buildTripClosureRoutes(trip)).toEqual([
+    expect(buildTripClosureRoutes(trip, t)).toEqual([
       {
         id: "day-1",
         label: "Day 1 · Passo Sella",
@@ -256,5 +259,95 @@ describe("buildTripClosureRoutes", () => {
         ],
       },
     ]);
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…") rather
+// than an identity map. An identity map can't tell a real `t()` call apart
+// from a regression that bypasses `t()` and returns the raw canonical
+// English constant — both would produce the same string. With sentinel
+// values, a bypass regression returns the untranslated English constant and
+// these assertions fail.
+describe("closures-summary translator wiring", () => {
+  const sentinelT = makeTranslator<string>({
+    en: {
+      "Day {dayNumber} · {title}": "XX-Day {dayNumber} · {title}",
+      "Day {dayNumber}": "XX-Day {dayNumber}",
+      "{date} onward": "XX-{date} onward",
+    },
+  });
+
+  it("buildTripClosureRoutes routes both the titled and untitled day-label templates through the translator", () => {
+    const trip: Trip = {
+      id: "trip-1",
+      name: "Dolomites",
+      status: "planned",
+      num_days: 2,
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-02T00:00:00Z",
+      parameters: {
+        days: 2,
+        dailyKmTarget: 250,
+        roadPreference: "curvy",
+        surfacePreference: ["asphalt"],
+        avoidHighways: true,
+        avoidTolls: false,
+        avoidUnpaved: true,
+        minQuality: 3,
+      },
+      collaborators: [],
+      days: [
+        {
+          dayNumber: 1,
+          title: "Passo Sella",
+          waypoints: [],
+          distanceKm: 210,
+          durationMinutes: 320,
+          elevationGain: 2100,
+          avgQuality: 4.2,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [11.76, 46.51],
+              [11.78, 46.52],
+              [11.8, 46.53],
+            ],
+          },
+        },
+        {
+          // No title — exercises the `t("Day {dayNumber}")` branch instead
+          // of `t("Day {dayNumber} · {title}")`.
+          dayNumber: 2,
+          waypoints: [],
+          distanceKm: 190,
+          durationMinutes: 290,
+          elevationGain: 1800,
+          avgQuality: 3.9,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [11.9, 46.55],
+              [11.92, 46.56],
+            ],
+          },
+        },
+      ],
+    };
+
+    const routes = buildTripClosureRoutes(trip, sentinelT);
+    expect(routes[0]!.label).toBe("XX-Day 1 · Passo Sella");
+    expect(routes[1]!.label).toBe("XX-Day 2");
+  });
+
+  it("formatClosureWindow routes the open-ended window through the translator", () => {
+    const openEnded = closure({
+      id: "sentinel-open-ended",
+      starts_at: "2026-07-01T00:00:00Z",
+      ends_at: null,
+    });
+    expect(formatClosureWindow(openEnded, format, sentinelT)).toBe(
+      "XX-Jul 1, 2026 onward",
+    );
   });
 });

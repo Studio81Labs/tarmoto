@@ -10,7 +10,7 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
-import type { Formatters } from "@tarmoto/shared";
+import type { Formatters, LooseTranslate } from "@tarmoto/shared";
 import type { QualityTier } from "@/lib/types";
 import {
   buildRoutePreview,
@@ -134,17 +134,34 @@ const STAT_DEFS: Array<Omit<StatRow, "a" | "b" | "delta"> & { key: StatKey }> =
     },
   ];
 
+// Non-linguistic notation units render as-is — never translated (see the
+// ride-compare exclude list: fraction-marker glyph / degree symbol, not
+// linguistic unit words). Excluded from `t()` entirely, not just from
+// catalog registration, so a future unrelated catalog entry for "°" or "/5"
+// can never silently start rendering here.
+const NON_LINGUISTIC_UNITS = new Set(["/5", "°"]);
+
 // Builds one StatRow per metric. Both-null rows still appear (with em-dashes)
 // so the table layout is stable regardless of which fields the API populated.
 export function computeStatRows(
   a: ComparableRide,
   b: ComparableRide,
+  t: LooseTranslate,
 ): StatRow[] {
   return STAT_DEFS.map((def) => {
     const av = a[def.key];
     const bv = b[def.key];
     return {
       ...def,
+      label: t(def.label),
+      // Conditional spread (not `unit: ... : undefined`) so a unit-less def
+      // keeps `unit` absent rather than explicitly `undefined` — required
+      // under `exactOptionalPropertyTypes`.
+      ...(def.unit
+        ? {
+            unit: NON_LINGUISTIC_UNITS.has(def.unit) ? def.unit : t(def.unit),
+          }
+        : {}),
       a: av,
       b: bv,
       delta: av != null && bv != null ? bv - av : null,

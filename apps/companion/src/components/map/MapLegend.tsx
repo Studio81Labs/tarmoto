@@ -2,7 +2,7 @@
 import { t } from "@/i18n";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import { CONDITION_COLORS } from "@/lib/conditions-visual";
-import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
+import { HAZARD_CONFIG, HAZARD_TYPES_UI, SURFACE_LABELS } from "@/lib/utils";
 
 const SURFACE_KEYS = Object.keys(
   SURFACE_COLORS,
@@ -42,15 +42,7 @@ const CONDITION_LEGEND: readonly [color: string, label: string][] = [
   [CONDITION_COLORS.pass, "Seasonal pass"],
 ];
 
-function LineSwatch({
-  color,
-  label,
-  capitalize,
-}: {
-  color: string;
-  label: string;
-  capitalize?: boolean;
-}) {
+function LineSwatch({ color, label }: { color: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
       <span
@@ -58,11 +50,7 @@ function LineSwatch({
         className="h-1 w-3.5 rounded-sm"
         style={{ background: color }}
       />
-      <span
-        className={`text-[11px] font-semibold text-fg-dim ${capitalize ? "capitalize" : ""}`}
-      >
-        {label}
-      </span>
+      <span className="text-[11px] font-semibold text-fg-dim">{label}</span>
     </span>
   );
 }
@@ -122,7 +110,7 @@ export function MapLegend({
             <LineSwatch
               key={entry.label}
               color={entry.color}
-              label={entry.label}
+              label={t(entry.label)}
             />
           ))}
         </LegendCard>
@@ -135,8 +123,7 @@ export function MapLegend({
             <LineSwatch
               key={surfaceKey}
               color={SURFACE_COLORS[surfaceKey]}
-              label={surfaceKey}
-              capitalize
+              label={t(SURFACE_LABELS[surfaceKey])}
             />
           ))}
         </LegendCard>
@@ -154,7 +141,7 @@ export function MapLegend({
             <DiamondSwatch
               key={type}
               color={HAZARD_CONFIG[type].hex}
-              label={HAZARD_CONFIG[type].label}
+              label={t(HAZARD_CONFIG[type].label)}
               emoji={HAZARD_CONFIG[type].emoji}
             />
           ))}

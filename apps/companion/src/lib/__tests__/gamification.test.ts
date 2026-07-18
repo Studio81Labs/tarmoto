@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "@tarmoto/openapi-client";
-import { createFormatters } from "@tarmoto/shared";
+import { createFormatters, makeTranslator } from "@tarmoto/shared";
 import { t } from "@/i18n";
 import type { RiderStats } from "../types";
 import {
@@ -224,12 +224,16 @@ describe("formatMilestoneLabel", () => {
 
   it("shows current / next with the metric unit", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 12_345 }));
-    expect(formatMilestoneLabel(progress, format)).toBe("12,345 / 25,000 km");
+    expect(formatMilestoneLabel(progress, format, t)).toBe(
+      "12,345 / 25,000 km",
+    );
   });
 
   it("labels maxed milestones", () => {
     const progress = milestoneProgress(milestone, stats({ totalKm: 30_000 }));
-    expect(formatMilestoneLabel(progress, format)).toBe("Maxed at 30,000 km");
+    expect(formatMilestoneLabel(progress, format, t)).toBe(
+      "Maxed at 30,000 km",
+    );
   });
 });
 
@@ -396,6 +400,7 @@ describe("mapChallengeDto", () => {
   it("renames title → name and forwards endsAt", () => {
     const c = mapChallengeDto(
       challengeDto({ title: "Spring", ends_at: "2026-05-01T00:00:00Z" }),
+      undefined,
     );
     expect(c.name).toBe("Spring");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
@@ -404,13 +409,27 @@ describe("mapChallengeDto", () => {
   it("humanises a reward badge key into user-facing copy", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: "spring_explorer" }),
+      undefined,
     );
     expect(c.reward).toBe("Spring explorer");
   });
 
   it("leaves reward undefined when no badge key is set", () => {
-    const c = mapChallengeDto(challengeDto({ reward_badge_key: null }));
+    const c = mapChallengeDto(
+      challengeDto({ reward_badge_key: null }),
+      undefined,
+    );
     expect(c.reward).toBeUndefined();
+  });
+
+  it('keeps unit SEMANTIC (untranslated) so the render-site `=== "km"` check survives translation', () => {
+    // Regression pin for the Codex P2: even under a translator that would
+    // rewrite "km", the mapped challenge unit must stay the raw semantic
+    // "km" — the achievements page branches on `challenge.unit === "km"` to
+    // apply imperial distance conversion, and translation happens only at
+    // the display boundary via `t(challenge.unit)`.
+    const c = mapChallengeDto(challengeDto({ metric: "total_distance" }), 1);
+    expect(c.unit).toBe("km");
   });
 });
 
@@ -576,14 +595,76 @@ describe("regional leaderboard mappers", () => {
 describe("labelForDimension", () => {
   it("returns a human-readable label per dimension", () => {
     for (const dim of LEADERBOARD_DIMENSION_KEYS) {
-      expect(labelForDimension(dim)).toBeTruthy();
+      expect(labelForDimension(dim, t)).toBeTruthy();
     }
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…" / "XX …")
+// rather than an identity map. An identity map can't tell a real `t()` call
+// apart from a regression that bypasses `t()` and returns the raw canonical
+// English constant — both would produce the same string. With sentinel
+// values, a bypass regression returns the untranslated English constant and
+// these assertions fail.
+describe("gamification translator wiring", () => {
+  const t = makeTranslator<string>({
+    en: {
+      Distance: "XX-Distance",
+      "Roads discovered": "XX-Roads",
+      "Hazards reported": "XX-Hazards",
+      "Distance Traveller": "XX-DistanceTraveller",
+      "Cumulative kilometres ridden across every bike.": "XX-CumulativeKm",
+      km: "XX-km",
+      roads: "XX-roads",
+      reports: "XX-reports",
+      rides: "XX-rides",
+      reviews: "XX-reviews",
+      units: "XX-units",
+      "{current} / {target} {unit}": "XX {current}/{target} {unit}",
+      "Maxed at {value}": "XX Maxed {value}",
+      "Maxed at {value} {unit}": "XX Maxed {value} {unit}",
+    },
+  });
+
+  it("labelForDimension returns the translated sentinel, not the raw constant", () => {
+    expect(labelForDimension("total_distance_km", t)).toBe("XX-Distance");
+  });
+
+  // NB: `unitForChallengeMetric` deliberately does NOT route through the
+  // translator — `Challenge.unit` is a `=== "km"` discriminant at the render
+  // site, so it stays semantic and is translated only at display. Its
+  // semantic-stability regression pin lives in the mapChallengeDto describe.
+
+  it("formatMilestoneLabel routes the progress template and unit through the translator", () => {
+    const milestone: Milestone = {
+      id: "roads",
+      name: "Roads",
+      description: "",
+      metric: "roadsDiscovered",
+      thresholds: [100, 250],
+    };
+    const progress = milestoneProgress(
+      milestone,
+      stats({ roadsDiscovered: 120 }),
+    );
+    // Exercises both the outer "{current} / {target} {unit}" template AND
+    // the MILESTONE_UNITS-via-t() unit lookup in the same assertion.
+    expect(formatMilestoneLabel(progress, format, t)).toBe(
+      "XX 120/250 XX-roads",
+    );
+  });
+
+  it("buildLiveSnapshot routes milestone name/description through the translator", () => {
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
+    expect(snap.milestones[0]?.name).toBe("XX-DistanceTraveller");
+    expect(snap.milestones[0]?.description).toBe("XX-CumulativeKm");
   });
 });
 
 describe("buildLiveSnapshot", () => {
   it("produces an empty snapshot when no data is available", () => {
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] });
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
     expect(snap.badges).toEqual([]);
     expect(snap.challenges).toEqual([]);
     expect(snap.seasonal).toBeNull();
@@ -596,7 +677,10 @@ describe("buildLiveSnapshot", () => {
       participant_count: 7,
       my_progress: 3,
     });
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [detail] });
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [detail] },
+      t,
+    );
     expect(snap.challengeMeta["ch-1"]).toEqual({
       joined: true,
       participantCount: 7,
@@ -610,56 +694,65 @@ describe("buildLiveSnapshot", () => {
       participant_count: 0,
       my_progress: null,
     });
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [detail] });
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [detail] },
+      t,
+    );
     expect(snap.challengeMeta["ch-1"]?.joined).toBe(false);
     expect(snap.challenges[0]?.current).toBe(0);
   });
 
   it("derives stats from the badges payload", () => {
-    const snap = buildLiveSnapshot({
-      badges: [
-        badgeDto({
-          key: "total_distance",
-          progress: {
-            current: 8_000,
-            bronze: 100,
-            silver: 1_000,
-            gold: 10_000,
-          },
-        }),
-      ],
-      challengeDetails: [],
-    });
+    const snap = buildLiveSnapshot(
+      {
+        badges: [
+          badgeDto({
+            key: "total_distance",
+            progress: {
+              current: 8_000,
+              bronze: 100,
+              silver: 1_000,
+              gold: 10_000,
+            },
+          }),
+        ],
+        challengeDetails: [],
+      },
+      t,
+    );
     expect(snap.stats.totalKm).toBe(8_000);
   });
 
   it("prefers the me-profile summary for stats when supplied (totalHours / joinedAt only available there)", () => {
-    const snap = buildLiveSnapshot({
-      badges: [
-        badgeDto({
-          key: "total_distance",
-          // Stale badge value — me-profile should win.
-          progress: {
-            current: 100,
-            bronze: 100,
-            silver: 1_000,
-            gold: 10_000,
-          },
-        }),
-      ],
-      challengeDetails: [],
-      meProfile: {
-        joined_at: "2024-01-15T10:00:00.000Z",
-        total_hours: 120.5,
-        total_rides: 18,
-        total_distance_km: 1_234.5,
-        roads_discovered: 73,
-        hazards_reported: 6,
-        follower_count: 11,
-        following_count: 7,
-        badges_earned: 3,
+    const snap = buildLiveSnapshot(
+      {
+        badges: [
+          badgeDto({
+            key: "total_distance",
+            // Stale badge value — me-profile should win.
+            progress: {
+              current: 100,
+              bronze: 100,
+              silver: 1_000,
+              gold: 10_000,
+            },
+          }),
+        ],
+        challengeDetails: [],
+        meProfile: {
+          joined_at: "2024-01-15T10:00:00.000Z",
+          total_hours: 120.5,
+          total_rides: 18,
+          total_distance_km: 1_234.5,
+          roads_discovered: 73,
+          hazards_reported: 6,
+          follower_count: 11,
+          following_count: 7,
+          badges_earned: 3,
+        },
       },
-    });
+      t,
+    );
 
     expect(snap.stats.totalKm).toBe(1_234.5);
     expect(snap.stats.totalHours).toBe(120.5);

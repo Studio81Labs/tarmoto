@@ -366,7 +366,7 @@ function RoadMapPageInner() {
   const locateAndCenter = useCallback(
     (options?: { silent?: boolean }) => {
       requestUserLocation((lat, lng) => {
-        setCenter({ lat, lng, label: "My location" });
+        setCenter({ lat, lng, label: t("My location") });
         flyToWhenReady(lat, lng);
       }, options);
     },
@@ -647,7 +647,7 @@ function RoadMapPageInner() {
                 </div>
                 <div className="px-[18px] py-3">
                   {nearbyLoading ? (
-                    <LoaderRow label="Loading unridden roads…" />
+                    <LoaderRow label={t("Loading unridden roads…")} />
                   ) : nearbyError ? (
                     <Alert compact intent="danger" title={nearbyError} />
                   ) : nearby.length === 0 ? (

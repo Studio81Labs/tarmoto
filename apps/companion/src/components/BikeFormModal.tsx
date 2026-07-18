@@ -61,7 +61,7 @@ export function BikeFormModal({
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting) return;
-    const validation = validateBikeForm(values);
+    const validation = validateBikeForm(values, new Date(), t);
     if (hasErrors(validation)) {
       setErrors(validation);
       return;
@@ -111,7 +111,7 @@ export function BikeFormModal({
         <form onSubmit={handleSubmit} className="p-5 space-y-4" noValidate>
           <Field
             id="bike-make"
-            label="Make"
+            label={t("Make")}
             value={values.make}
             onChange={(v) => setField("make", v)}
             error={errors.make}
@@ -120,7 +120,7 @@ export function BikeFormModal({
           />
           <Field
             id="bike-model"
-            label="Model"
+            label={t("Model")}
             value={values.model}
             onChange={(v) => setField("model", v)}
             error={errors.model}
@@ -128,7 +128,7 @@ export function BikeFormModal({
           />
           <Field
             id="bike-year"
-            label="Year"
+            label={t("Year")}
             value={values.year}
             onChange={(v) => setField("year", v)}
             error={errors.year}
@@ -138,12 +138,14 @@ export function BikeFormModal({
           />
           <Field
             id="bike-photo"
-            label="Photo URL (optional)"
+            label={t("Photo URL (optional)")}
             value={values.photoUrl}
             onChange={(v) => setField("photoUrl", v)}
             error={errors.photoUrl}
             placeholder={t("https://\u2026")}
-            helpText="Paste a link to a photo of your bike. File upload is coming soon."
+            helpText={t(
+              "Paste a link to a photo of your bike. File upload is coming soon.",
+            )}
           />
 
           {submitError && (
@@ -166,8 +168,8 @@ export function BikeFormModal({
               {submitting
                 ? t("Saving\u2026 ")
                 : mode === "add"
-                  ? "Add bike"
-                  : "Save changes"}
+                  ? t("Add bike")
+                  : t("Save changes")}
             </Button>
           </div>
         </form>

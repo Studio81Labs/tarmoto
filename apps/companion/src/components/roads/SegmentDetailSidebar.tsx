@@ -203,7 +203,7 @@ function SegmentDetailContent({
             {format.distanceM(segment.length_m)}
           </Mono>
           <div className="mt-[9px] flex flex-wrap gap-1.5">
-            <Pill>{tier?.label ?? t("Unrated")}</Pill>
+            <Pill>{tier ? t(tier.label) : t("Unrated")}</Pill>
             <Pill>{formatSurface(segment.surface_type)}</Pill>
           </div>
           {provenance ? (
@@ -279,7 +279,7 @@ function SegmentDetailContent({
                       active ? "text-ink" : "text-fg-mute"
                     }`}
                   >
-                    {row.label}
+                    {t(row.label)}
                   </span>
                 </div>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper-2">
@@ -347,7 +347,7 @@ function SegmentDetailContent({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">
-                      {config.label}
+                      {t(config.label)}
                       <span className="ml-2 text-[10px] uppercase tracking-wider text-fg-dim">
                         {hazard.severity}
                       </span>
@@ -358,12 +358,11 @@ function SegmentDetailContent({
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-fg-dim">
-                      {(hazard.reporter ?? "Unknown rider") +
-                        " · " +
-                        format.relativeTime(hazard.created_at) +
-                        " · " +
-                        hazard.confirmations +
-                        " confirmations"}
+                      {t("{reporter} · {time} · {n} confirmations", {
+                        reporter: hazard.reporter ?? t("Unknown rider"),
+                        time: format.relativeTime(hazard.created_at),
+                        n: hazard.confirmations,
+                      })}
                     </p>
                   </div>
                 </li>

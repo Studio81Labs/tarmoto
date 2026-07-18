@@ -76,7 +76,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
       <Link
         href={rideHref}
         className="block h-[150px] overflow-hidden rounded-[10px] bg-paper"
-        aria-label={`${title} route preview`}
+        aria-label={t("{title} route preview", { title })}
       >
         {preview ? (
           <svg

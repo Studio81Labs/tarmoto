@@ -1,4 +1,5 @@
 "use client";
+import { t } from "@/i18n";
 import { Mono } from "@tarmoto/ui";
 import {
   coalesceQualityRuns,
@@ -37,8 +38,11 @@ export function RouteQualityStrip({
           <button
             key={segment.id}
             type="button"
-            aria-label={`Preview ${QUALITY_BAND_LABELS[segment.band]} section, ${Math.round(segment.lengthKm * 10) / 10} km`}
-            title={QUALITY_BAND_LABELS[segment.band]}
+            aria-label={t("Preview {label} section, {km} km", {
+              label: t(QUALITY_BAND_LABELS[segment.band]),
+              km: Math.round(segment.lengthKm * 10) / 10,
+            })}
+            title={t(QUALITY_BAND_LABELS[segment.band])}
             onClick={() => onSegmentClick?.(segment.id)}
             className="h-full border-r border-ink/20 transition last:border-r-0 hover:brightness-95"
             style={{
@@ -66,7 +70,7 @@ export function RouteQualityStrip({
                 className="h-[9px] w-[9px] rounded-sm"
                 style={{ background: QUALITY_BAND_COLORS[band] }}
               />
-              <span className="text-[11px] text-fg-dim">{label}</span>
+              <span className="text-[11px] text-fg-dim">{t(label)}</span>
             </span>
           ),
         )}
