@@ -1105,6 +1105,7 @@ export const en = {
   "Surface ": "Surface ",
   "Surface preference ": "Surface preference ",
   "Surface type ": "Surface type ",
+  "Surface unrated": "Surface unrated",
   T: "T",
   Tarmoto: "Tarmoto",
   "Tarmoto ": "Tarmoto ",
@@ -1454,6 +1455,7 @@ export const en = {
   "{status} \u00b7 {elevation} m": "{status} \u00b7 {elevation} m",
   "{label} results": "{label} results",
   "{label} route preview": "{label} route preview",
+  "{label} surface": "{label} surface",
   "{tier} \u2022 {distance}": "{tier} \u2022 {distance}",
   "\u00b7 crowdsourced road-quality ranking ":
     "\u00b7 crowdsourced road-quality ranking ",
