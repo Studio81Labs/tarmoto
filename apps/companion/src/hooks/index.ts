@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 
 /**
  * Debounced value hook — useful for search inputs
@@ -77,6 +83,43 @@ export function useDropdown() {
 }
 
 /**
+ * Reactive CSS media-query match, via `useSyncExternalStore` so the CLIENT
+ * reads the real match *synchronously* on first render — a component that
+ * (re)mounts on navigation lands on the correct value with no expand→collapse
+ * flash. `getServerSnapshot` returns `ssrDefault` on the server and during
+ * hydration (so SSR markup and the first client render agree — no mismatch),
+ * then the store settles to the live value.
+ */
+export function useMediaQuery(query: string, ssrDefault = false): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+      ) {
+        return () => {};
+      }
+      const mql = window.matchMedia(query);
+      // Older Safari / iPadOS WebKit expose only the deprecated
+      // `addListener`/`removeListener` — feature-detect so those (tablet!)
+      // users don't hit a runtime throw.
+      if (typeof mql.addEventListener === "function") {
+        mql.addEventListener("change", onChange);
+        return () => mql.removeEventListener("change", onChange);
+      }
+      mql.addListener(onChange);
+      return () => mql.removeListener(onChange);
+    },
+    [query],
+  );
+  const getSnapshot = () =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(query).matches
+      : ssrDefault;
+  return useSyncExternalStore(subscribe, getSnapshot, () => ssrDefault);
+}
+
+/**
  * Local storage hook with JSON serialization.
  *
  * SSR-safe: the first render always returns `initial` (both on the
@@ -87,37 +130,6 @@ export function useDropdown() {
  * we accept in exchange for a clean hydration with no React
  * warnings or content-shift mismatches.
  */
-/**
- * Reactive CSS media-query match. `ssrDefault` (default false) is returned on
- * the server and the first client paint — pick it to match the SSR markup, so
- * the real match only lands after mount (avoids a hydration mismatch). Where a
- * viewport branch must not flash, gate the branch on this being resolved.
- */
-export function useMediaQuery(query: string, ssrDefault = false): boolean {
-  const [matches, setMatches] = useState(ssrDefault);
-  useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
-      return;
-    }
-    const mql = window.matchMedia(query);
-    const update = () => setMatches(mql.matches);
-    update();
-    // Older Safari / iPadOS WebKit only expose the deprecated
-    // `addListener`/`removeListener` — feature-detect so those (tablet!)
-    // users don't hit a runtime throw on mount.
-    if (typeof mql.addEventListener === "function") {
-      mql.addEventListener("change", update);
-      return () => mql.removeEventListener("change", update);
-    }
-    mql.addListener(update);
-    return () => mql.removeListener(update);
-  }, [query]);
-  return matches;
-}
-
 export function useLocalStorage<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(initial);
 
