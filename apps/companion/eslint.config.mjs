@@ -70,6 +70,24 @@ const restrictedSyntaxSelectors = [
     message:
       "Wrap user-facing text on label/title/alt/placeholder/aria-label/ariaLabel with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
   },
+  // Same guard for the non-literal prop shapes the plain-Literal selectors
+  // above can't see: a template literal with raw static text
+  // (`label={`Force ${n}`}`) and a conditional with a raw string branch
+  // (`label={cond ? "Add" : "Save"}`). A t()-composed template
+  // (`label={`${t("X")} (${n})`}`, no 2+-letter static run) and a
+  // t()-wrapped conditional (CallExpression branches) both pass.
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      'Raw user-facing text in a template literal on label/title/alt/placeholder/aria-label/ariaLabel — compose it through t()/tDynamic (`${t("…")}`), or add a disable comment if deliberately not translatable.',
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > ConditionalExpression > Literal[value=/^[A-Za-z]/]",
+    message:
+      'Raw string literal in a conditional on label/title/alt/placeholder/aria-label/ariaLabel — wrap each branch with t()/tDynamic (`cond ? t("A") : t("B")`), or add a disable comment if deliberate.',
+  },
 ];
 
 export default [
