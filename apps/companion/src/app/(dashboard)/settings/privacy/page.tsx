@@ -219,7 +219,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.roadDataContribution}
             onChange={toggleRoadData}
-            ariaLabel="Road data contribution"
+            ariaLabel={t("Road data contribution")}
           />
         </div>
       </Card>
@@ -272,7 +272,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.analyticsConsent}
             onChange={toggleAnalytics}
-            ariaLabel="Product analytics consent"
+            ariaLabel={t("Product analytics consent")}
           />
         </div>
 
@@ -290,7 +290,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.personalizedRecommendationsConsent}
             onChange={togglePersonalized}
-            ariaLabel="Personalised recommendations consent"
+            ariaLabel={t("Personalised recommendations consent")}
           />
         </div>
       </Card>

@@ -269,12 +269,12 @@ export default function NotificationsPage() {
                 <Toggle
                   checked={toggles.email}
                   onChange={() => toggleChannel(category, "email")}
-                  ariaLabel={`${meta.label} email`}
+                  ariaLabel={t("{label} email", { label: meta.label })}
                 />
                 <Toggle
                   checked={toggles.push}
                   onChange={() => toggleChannel(category, "push")}
-                  ariaLabel={`${meta.label} push`}
+                  ariaLabel={t("{label} push", { label: meta.label })}
                 />
               </div>
             </div>
@@ -298,7 +298,7 @@ export default function NotificationsPage() {
           <Toggle
             checked={prefs.marketing_emails}
             onChange={toggleMarketing}
-            ariaLabel="Marketing emails"
+            ariaLabel={t("Marketing emails")}
           />
         </div>
       </Card>

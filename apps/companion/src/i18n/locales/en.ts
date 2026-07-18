@@ -283,6 +283,7 @@ export const en = {
   "Default ride sharing": "Default ride sharing",
   "Default ride sharing ": "Default ride sharing ",
   "Delete ": "Delete ",
+  "Delete {bike}": "Delete {bike}",
   "Delete account ": "Delete account ",
   "Delete account permanently ": "Delete account permanently ",
   "Delete collection": "Delete collection",
@@ -329,6 +330,7 @@ export const en = {
   "Drop to import GPX or KML ": "Drop to import GPX or KML ",
   Duration: "Duration",
   "Edit ": "Edit ",
+  "Edit {bike}": "Edit {bike}",
   "Edit profile": "Edit profile",
   "Edit profile ": "Edit profile ",
   "Edit your review": "Edit your review",
@@ -699,6 +701,8 @@ export const en = {
     "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
   "Personal road map ": "Personal road map ",
   "Personalised recommendations ": "Personalised recommendations ",
+  "Personalised recommendations consent":
+    "Personalised recommendations consent",
   "Photo URL must start with http:// or https://":
     "Photo URL must start with http:// or https://",
   "Photo uploaded. ": "Photo uploaded. ",
@@ -742,6 +746,7 @@ export const en = {
   "Private ": "Private ",
   Pro: "Pro",
   "Product analytics": "Product analytics",
+  "Product analytics consent": "Product analytics consent",
   "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ":
     "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ",
   Profile: "Profile",
@@ -827,6 +832,7 @@ export const en = {
   "Road Preview Cards ": "Road Preview Cards ",
   "Road Quality Explorer \u2014 Tarmoto":
     "Road Quality Explorer \u2014 Tarmoto",
+  "Road data contribution": "Road data contribution",
   "Road preference ": "Road preference ",
   "Road preview": "Road preview",
   "Road preview cards": "Road preview cards",
@@ -895,6 +901,7 @@ export const en = {
   "Sending...": "Sending...",
   September: "September",
   "Set active ": "Set active ",
+  "Set {bike} as active": "Set {bike} as active",
   Settings: "Settings",
   "Settings ": "Settings ",
   Share: "Share",
@@ -1213,7 +1220,9 @@ export const en = {
   "{distance} km total": "{distance} km total",
   "{distance} ridden": "{distance} ridden",
   "{elevation} m gain": "{elevation} m gain",
+  "{label} email": "{label} email",
   "{label} no longer available": "{label} no longer available",
+  "{label} push": "{label} push",
   "{percent}% explored": "{percent}% explored",
   "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
   "{rideType} ride": "{rideType} ride",
