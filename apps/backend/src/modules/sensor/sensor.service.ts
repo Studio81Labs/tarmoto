@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
@@ -8,6 +12,7 @@ import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { ModelEvalService } from '../model-eval/model-eval.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { SERVER_HEURISTIC_MODEL_VERSION } from '../model-eval/model-eval.constants.js';
 import {
   UploadSensorDataDto,
@@ -71,12 +76,21 @@ export class SensorService {
     private readonly tagEventRepo: Repository<RideTagEvent>,
     private readonly privacy: PrivacyPreferencesService,
     private readonly modelEval: ModelEvalService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async processUpload(
     userId: string,
     dto: UploadSensorDataDto,
   ): Promise<UploadResponseDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_surface_upload'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Sensor upload is temporarily unavailable',
+      );
+    }
+
     // #279 — honor the rider's road-data contribution opt-out. When
     // disabled we 202 (matching the controller status) without
     // persisting any surface readings or rider tag events (issue #7);
