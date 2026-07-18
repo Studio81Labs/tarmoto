@@ -153,4 +153,16 @@ describe('FeatureResolver', () => {
     expect(switches.sys_weather_provider).toBe(false);
     expect(switches.sys_mapillary_previews).toBe(true);
   });
+
+  it('isSystemSwitchEnabled is true by default and false only on force_off', async () => {
+    const { resolver } = makeResolver({
+      states: [{ feature: 'sys_weather_provider', state: 'force_off' }],
+    });
+    expect(await resolver.isSystemSwitchEnabled('sys_weather_provider')).toBe(
+      false,
+    );
+    expect(await resolver.isSystemSwitchEnabled('sys_mapillary_previews')).toBe(
+      true,
+    );
+  });
 });
