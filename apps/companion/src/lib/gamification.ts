@@ -545,11 +545,16 @@ const UNIT_BY_METRIC: Record<string, string> = {
   rides_shared: "rides",
 };
 
-export function unitForChallengeMetric(
-  metric: string,
-  t: LooseTranslate,
-): string {
-  return t(UNIT_BY_METRIC[metric] ?? "units");
+/**
+ * Returns the SEMANTIC unit label ("km"/"rides"/"roads"/…) for a challenge
+ * metric — NOT translated. `Challenge.unit` is consumed as a `=== "km"`
+ * discriminant at the render site (achievements page) to decide whether to
+ * apply distance conversion for imperial riders; translating it here would
+ * break that check once a locale ships a non-English "km". Translation
+ * happens at the display boundary via `t(challenge.unit)`.
+ */
+export function unitForChallengeMetric(metric: string): string {
+  return UNIT_BY_METRIC[metric] ?? "units";
 }
 
 /**
@@ -577,7 +582,6 @@ export function humanizeRewardBadgeKey(key: string): string {
 export function mapChallengeDto(
   dto: ChallengeDto,
   myProgress: number | null | undefined,
-  t: LooseTranslate,
 ): Challenge {
   return {
     id: dto.id,
@@ -586,7 +590,7 @@ export function mapChallengeDto(
     category: categoryForChallengeMetric(dto.metric),
     current: typeof myProgress === "number" ? myProgress : 0,
     target: dto.target,
-    unit: unitForChallengeMetric(dto.metric, t),
+    unit: unitForChallengeMetric(dto.metric),
     endsAt: dto.ends_at,
     reward: dto.reward_badge_key
       ? humanizeRewardBadgeKey(dto.reward_badge_key)
@@ -660,7 +664,7 @@ export function buildLiveSnapshot(
 ): GamificationSnapshot {
   const badges = input.badges.map(mapBadgeDto);
   const challenges = input.challengeDetails.map((d) =>
-    mapChallengeDto(d, d.my_progress, t),
+    mapChallengeDto(d, d.my_progress),
   );
   const challengeMeta: Record<string, ChallengeMeta> = {};
   for (const d of input.challengeDetails) {

@@ -378,22 +378,22 @@ describe("categoryForChallengeMetric", () => {
 
 describe("unitForChallengeMetric", () => {
   it("returns the unit label by metric", () => {
-    expect(unitForChallengeMetric("total_distance", t)).toBe("km");
-    expect(unitForChallengeMetric("ride_count", t)).toBe("rides");
-    expect(unitForChallengeMetric("roads_discovered", t)).toBe("roads");
-    expect(unitForChallengeMetric("hazards_reported", t)).toBe("reports");
+    expect(unitForChallengeMetric("total_distance")).toBe("km");
+    expect(unitForChallengeMetric("ride_count")).toBe("rides");
+    expect(unitForChallengeMetric("roads_discovered")).toBe("roads");
+    expect(unitForChallengeMetric("hazards_reported")).toBe("reports");
   });
 });
 
 describe("mapChallengeDto", () => {
   it("treats null my_progress as not-yet-joined (current = 0)", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), null, t);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), null);
     expect(c.current).toBe(0);
     expect(c.target).toBe(10);
   });
 
   it("uses my_progress when the rider has joined", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), 4, t);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), 4);
     expect(c.current).toBe(4);
   });
 
@@ -401,7 +401,6 @@ describe("mapChallengeDto", () => {
     const c = mapChallengeDto(
       challengeDto({ title: "Spring", ends_at: "2026-05-01T00:00:00Z" }),
       undefined,
-      t,
     );
     expect(c.name).toBe("Spring");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
@@ -411,7 +410,6 @@ describe("mapChallengeDto", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: "spring_explorer" }),
       undefined,
-      t,
     );
     expect(c.reward).toBe("Spring explorer");
   });
@@ -420,9 +418,18 @@ describe("mapChallengeDto", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: null }),
       undefined,
-      t,
     );
     expect(c.reward).toBeUndefined();
+  });
+
+  it('keeps unit SEMANTIC (untranslated) so the render-site `=== "km"` check survives translation', () => {
+    // Regression pin for the Codex P2: even under a translator that would
+    // rewrite "km", the mapped challenge unit must stay the raw semantic
+    // "km" — the achievements page branches on `challenge.unit === "km"` to
+    // apply imperial distance conversion, and translation happens only at
+    // the display boundary via `t(challenge.unit)`.
+    const c = mapChallengeDto(challengeDto({ metric: "total_distance" }), 1);
+    expect(c.unit).toBe("km");
   });
 });
 
@@ -624,9 +631,10 @@ describe("gamification translator wiring", () => {
     expect(labelForDimension("total_distance_km", t)).toBe("XX-Distance");
   });
 
-  it("unitForChallengeMetric returns the translated sentinel, not the raw constant", () => {
-    expect(unitForChallengeMetric("total_distance", t)).toBe("XX-km");
-  });
+  // NB: `unitForChallengeMetric` deliberately does NOT route through the
+  // translator — `Challenge.unit` is a `=== "km"` discriminant at the render
+  // site, so it stays semantic and is translated only at display. Its
+  // semantic-stability regression pin lives in the mapChallengeDto describe.
 
   it("formatMilestoneLabel routes the progress template and unit through the translator", () => {
     const milestone: Milestone = {

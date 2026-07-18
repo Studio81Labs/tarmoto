@@ -806,7 +806,7 @@ function ChallengeCard({
               {format.integer(challenge.current)} /{" "}
               {format.integer(challenge.target)}
               {challenge.unit && (
-                <span className="ml-1 text-fg-mute">{challenge.unit}</span>
+                <span className="ml-1 text-fg-mute">{t(challenge.unit)}</span>
               )}
             </>
           )}
