@@ -20,7 +20,7 @@ export const en = {
   ...rides,
   ...settings,
   ...trips,
-};
+} as const;
 
 export type EnglishMessageKey = keyof typeof en;
 

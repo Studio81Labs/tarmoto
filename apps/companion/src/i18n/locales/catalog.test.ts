@@ -48,4 +48,15 @@ describe("companion en catalog ICU validity", () => {
       .map(([key]) => key);
     expect(offenders).toEqual([]);
   });
+
+  // The English source text IS the key, so every entry must be `key === value`.
+  // `makeTranslator` returns the VALUE for a registered key, so a typo'd value
+  // silently changes rendered English — a drift the PR 3b typed flip can never
+  // catch (it constrains the key side only). This guards the next hand-edit.
+  it("registers every key as its own English value", () => {
+    const mismatches = entries
+      .filter(([key, value]) => key !== value)
+      .map(([key]) => key);
+    expect(mismatches).toEqual([]);
+  });
 });

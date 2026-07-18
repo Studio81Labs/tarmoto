@@ -1,4 +1,4 @@
-import { __catalogModules } from "./index";
+import { __catalogModules, en } from "./index";
 
 // The barrel merges domain modules with object spread, which silently
 // resolves a duplicate key to whichever module is spread last. This test
@@ -17,5 +17,12 @@ describe("en catalog domain partition", () => {
       }
     }
     expect(duplicates).toEqual([]);
+
+    // The barrel hand-maintains two module lists: the `en` spread and
+    // `__catalogModules`. If they diverge (a module added to one but not the
+    // other), keys silently escape this guard or vanish from `en`. Asserting
+    // the merged key count equals the partition's distinct-key count keeps the
+    // two lists mutually verifying.
+    expect(Object.keys(en)).toHaveLength(owner.size);
   });
 });
