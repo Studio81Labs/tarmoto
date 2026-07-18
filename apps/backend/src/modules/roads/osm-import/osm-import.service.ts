@@ -287,6 +287,26 @@ export class OsmImportService {
   }
 
   /**
+   * The configured coverage list (`TARMOTO_OSM_ROAD_IMPORT_REGIONS`, default all
+   * `DEFAULT_REGIONS`). Exposed for the manual `road:import` CLI to resolve a
+   * single-region argument and to report what is configured — the scheduled
+   * import reads it straight off `this.config`.
+   */
+  get regions(): readonly PoiImportRegion[] {
+    return this.config.regions;
+  }
+
+  /**
+   * The extract folder the importer reads (`TARMOTO_OSM_ROAD_IMPORT_DIR`), or
+   * `null` when unset. Exposed so the manual `road:import` CLI can pass it to
+   * {@link importRegion} for a single-region run (the same value `importAll`
+   * reads off `this.config`).
+   */
+  get extractDir(): string | null {
+    return this.config.extractDir;
+  }
+
+  /**
    * Import every configured region's per-tile extracts from `extractDir` in one
    * pass (the folder model, Sub-project B). Each region is subdivided into a tile
    * grid and imported tile-by-tile ({@link importRegion}); results aggregate. A
