@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
 import { UserNotification } from '../../entities/user-notification.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   PushService,
   isInQuietHours,
@@ -45,6 +46,7 @@ describe('PushService', () => {
     Pick<Repository<unknown>, 'create' | 'save'>
   >;
   let provider: jest.Mocked<PushProvider>;
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
   beforeEach(async () => {
     tokenRepo = {
@@ -86,6 +88,10 @@ describe('PushService', () => {
       ),
     };
 
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PushService,
@@ -99,6 +105,7 @@ describe('PushService', () => {
           useValue: notificationRepo,
         },
         { provide: PUSH_PROVIDER, useValue: provider },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -321,6 +328,43 @@ describe('PushService', () => {
       expect(result.pruned).toBe(1);
       expect(result.delivered).toBe(1);
     });
+
+    it('suppresses a non-safety push (and the in-app row) when sys_push_notifications is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.sendToUser(USER_ID, {
+        category: 'new_follower',
+        title: 'x',
+        body: 'y',
+      });
+      expect(result).toEqual({
+        delivered: 0,
+        pruned: 0,
+        suppressed: true,
+        suppressedReason: 'system-switch-off',
+      });
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(notificationRepo.save).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_push_notifications',
+      );
+    });
+
+    it.each(['hazard_alert', 'weather_alert', 'crash_followup'] as const)(
+      'still sends %s when sys_push_notifications is off (safety bypass)',
+      async (category) => {
+        featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+        const result = await service.sendToUser(USER_ID, {
+          category,
+          title: 'x',
+          body: 'y',
+        });
+        expect(provider.send).toHaveBeenCalled();
+        expect(notificationRepo.save).toHaveBeenCalledTimes(1);
+        expect(result.suppressed).toBe(false);
+        // Safety categories bypass the switch — it must not even be consulted.
+        expect(featureResolver.isSystemSwitchEnabled).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('sendToUsers', () => {

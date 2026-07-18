@@ -51,6 +51,10 @@ describe('UsersService', () => {
   let storage: jest.Mocked<ObjectStorage>;
   let privacy: { loadPreferences: jest.Mock };
   let badgesService: { computeStats: jest.Mock };
+  let featureResolver: {
+    resolveEntitlementsForLoadedUser: jest.Mock;
+    isSystemSwitchEnabled: jest.Mock;
+  };
 
   // Factory, not a shared instance — updateProfile mutates the entity it
   // loads via findOne, so any two tests sharing the same object would leak
@@ -171,6 +175,12 @@ describe('UsersService', () => {
         rides_shared: 0,
       }),
     };
+    featureResolver = {
+      resolveEntitlementsForLoadedUser: jest
+        .fn()
+        .mockResolvedValue(mockEntitlements),
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -184,14 +194,7 @@ describe('UsersService', () => {
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: BadgesService, useValue: badgesService },
-        {
-          provide: FeatureResolver,
-          useValue: {
-            resolveEntitlementsForLoadedUser: jest
-              .fn()
-              .mockResolvedValue(mockEntitlements),
-          },
-        },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -457,6 +460,35 @@ describe('UsersService', () => {
       await expect(service.getMeProfile('missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('zeroes badges_earned but keeps other stats when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      badgesService.computeStats.mockResolvedValueOnce({
+        total_distance: 1234.5,
+        single_ride: 412,
+        ride_count: 18,
+        roads_discovered: 73,
+        reviews_written: 4,
+        hazards_reported: 6,
+        rides_shared: 2,
+      });
+      rideHoursQb.getRawOne.mockResolvedValueOnce({ hours: '42.5' });
+      userBadgeRepo.count!.mockResolvedValueOnce(5);
+
+      const result = await service.getMeProfile('user-1');
+
+      expect(result.badges_earned).toBe(0); // gamification field hidden
+      expect(result.total_rides).toBe(18); // generic stat stays
+      expect(result.total_distance_km).toBe(1234.5);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      // The switch is resolved BEFORE the batch, so the user_badges query is
+      // SKIPPED entirely (not run-then-masked) — the profile degrades
+      // gracefully even if that subsystem is failing/slow. The mock above
+      // returns 5, so a 0 result proves the value came from the skip, not a query.
+      expect(userBadgeRepo.count).not.toHaveBeenCalled();
     });
   });
 

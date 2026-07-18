@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/unbound-method */
+import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { AuthGuard } from '../auth/auth.guard.js';
+import { SystemSwitchGuard } from '../features/system-switch.guard.js';
+import { REQUIRED_SYSTEM_SWITCH_KEY } from '../features/require-system-switch.decorator.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { SensorController } from './sensor.controller.js';
 import { SensorService } from './sensor.service.js';
 
@@ -19,6 +24,12 @@ describe('SensorController', () => {
       controllers: [SensorController],
       providers: [
         { provide: SensorService, useValue: mockService },
+        {
+          provide: FeatureResolver,
+          useValue: {
+            isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+          },
+        },
         ...authGuardTestProviders,
       ],
     }).compile();
@@ -41,6 +52,27 @@ describe('SensorController', () => {
       expect(service.processUpload).toHaveBeenCalledWith('user-1', dto);
       expect(result.accepted).toBe(100);
       expect(result.segments_updated).toBe(3);
+    });
+
+    it('POST /sensor/upload authenticates before the system-switch lookup', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        SensorController.prototype.upload,
+      ) as unknown[];
+      expect(guards).toBeDefined();
+      // AuthGuard first: an anonymous request is 401'd without the switch
+      // guard's feature_states read / state leak. SystemSwitchGuard still
+      // runs in the guard phase (before validation) for authenticated uploads.
+      expect(guards[0]).toBe(AuthGuard);
+      expect(guards).toContain(SystemSwitchGuard);
+    });
+
+    it('POST /sensor/upload declares the sys_surface_upload switch', () => {
+      const key = Reflect.getMetadata(
+        REQUIRED_SYSTEM_SWITCH_KEY,
+        SensorController.prototype.upload,
+      ) as string | undefined;
+      expect(key).toBe('sys_surface_upload');
     });
   });
 });

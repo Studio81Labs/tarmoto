@@ -94,6 +94,16 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 export const CRITICAL_NOTIFICATION_CATEGORIES: ReadonlySet<NotificationCategory> =
   new Set(["crash_followup"]);
 
+/**
+ * Safety-critical categories that ALWAYS send, even when an operator has
+ * killed non-critical push via `sys_push_notifications`. A rider must never
+ * miss a hazard, weather, or crash-follow-up alert because of a marketing
+ * kill switch. Distinct from `CRITICAL_NOTIFICATION_CATEGORIES` (quiet-hours
+ * bypass only) — do not conflate the two.
+ */
+export const SAFETY_NOTIFICATION_CATEGORIES: ReadonlySet<NotificationCategory> =
+  new Set(["hazard_alert", "weather_alert", "crash_followup"]);
+
 export interface InAppNotification {
   id: string;
   category: NotificationCategory;

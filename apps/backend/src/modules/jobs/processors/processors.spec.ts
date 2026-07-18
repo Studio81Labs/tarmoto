@@ -15,6 +15,7 @@ import { ModelEvalAgreementProcessor } from './model-eval-agreement.processor.js
 import { ModelEvalService } from '../../model-eval/model-eval.service.js';
 import { HazardsService } from '../../hazards/hazards.service.js';
 import { BadgesService } from '../../badges/badges.service.js';
+import { FeatureResolver } from '../../features/feature-resolver.service.js';
 import { JobsProducer } from '../jobs.producer.js';
 import { DataExportProcessor as DataExportRunner } from '../../account/data-export/data-export.processor.js';
 import { AccountDeletionService } from '../../account/account-deletion.service.js';
@@ -50,6 +51,7 @@ describe('BadgesRecheckProcessor', () => {
   let dataSource: { query: jest.Mock };
   let badges: { checkAndAward: jest.Mock };
   let producer: { enqueueBadgesRecheckUser: jest.Mock };
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
   let processor: BadgesRecheckProcessor;
 
   beforeEach(async () => {
@@ -58,12 +60,16 @@ describe('BadgesRecheckProcessor', () => {
     producer = {
       enqueueBadgesRecheckUser: jest.fn().mockResolvedValue(undefined),
     };
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
     const moduleRef = await Test.createTestingModule({
       providers: [
         BadgesRecheckProcessor,
         { provide: getDataSourceToken(), useValue: dataSource },
         { provide: BadgesService, useValue: badges },
         { provide: JobsProducer, useValue: producer },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
     processor = moduleRef.get(BadgesRecheckProcessor);
@@ -106,6 +112,30 @@ describe('BadgesRecheckProcessor', () => {
     await expect(
       processor.process(fakeJob('something-else', {}) as never),
     ).rejects.toThrow('Unknown badges.recheck job');
+  });
+
+  it('dispatch: skips and enqueues nothing when sys_gamification is off', async () => {
+    featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.BADGES_RECHECK_DISPATCH, {}) as never,
+    );
+    expect(result).toEqual({ users_enqueued: 0 });
+    expect(producer.enqueueBadgesRecheckUser).not.toHaveBeenCalled();
+    expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+      'sys_gamification',
+    );
+  });
+
+  it('recheck-user: skips and does not call checkAndAward when sys_gamification is off', async () => {
+    featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.BADGES_RECHECK_USER, { user_id: 'u1' }) as never,
+    );
+    expect(result).toEqual({ badges_awarded: [] });
+    expect(badges.checkAndAward).not.toHaveBeenCalled();
+    expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+      'sys_gamification',
+    );
   });
 });
 

@@ -4,6 +4,7 @@ import { In, IsNull, Repository } from 'typeorm';
 import {
   CRITICAL_NOTIFICATION_CATEGORIES,
   DEFAULT_NOTIFICATION_PREFERENCES,
+  SAFETY_NOTIFICATION_CATEGORIES,
   type NotificationCategory,
   type NotificationChannelToggles,
   type NotificationPreferences,
@@ -11,6 +12,7 @@ import {
 import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
 import { UserNotification } from '../../entities/user-notification.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { LogPushProvider } from './providers/log.provider.js';
 import {
   PUSH_PROVIDER,
@@ -34,7 +36,12 @@ export interface PushDispatchResult {
   /** True when preferences gated the dispatch entirely (no provider call). */
   suppressed: boolean;
   /** Reason for suppression — only set when `suppressed` is true. */
-  suppressedReason?: 'preference-off' | 'quiet-hours' | 'no-tokens' | undefined;
+  suppressedReason?:
+    | 'preference-off'
+    | 'quiet-hours'
+    | 'no-tokens'
+    | 'system-switch-off'
+    | undefined;
 }
 
 /**
@@ -68,6 +75,7 @@ export class PushService {
     @Inject(PUSH_PROVIDER)
     @Optional()
     private readonly provider: PushProvider | null,
+    private readonly featureResolver: FeatureResolver,
   ) {
     this.fallback = new LogPushProvider();
   }
@@ -76,6 +84,17 @@ export class PushService {
     userId: string,
     input: PushNotificationInput,
   ): Promise<PushDispatchResult> {
+    if (
+      !SAFETY_NOTIFICATION_CATEGORIES.has(input.category) &&
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_push_notifications',
+      ))
+    ) {
+      // Operator kill: suppress the whole non-safety notification (no in-app row,
+      // no provider push). Safety categories bypass this entirely above.
+      return zeroResult('system-switch-off');
+    }
+
     const prefs = await this.loadPreferences(userId);
 
     if (
