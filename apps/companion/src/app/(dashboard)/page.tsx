@@ -376,7 +376,7 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
       : t("No lean recorded");
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+    <div className="mb-8 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
       <MetricTile
         variant="ink"
         accentNumber
