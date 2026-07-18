@@ -50,6 +50,7 @@ export const en = {
     "Add a start waypoint before selecting this route.",
   "Add at least two waypoints to surface along-route stops. ":
     "Add at least two waypoints to surface along-route stops. ",
+  "Add bike": "Add bike",
   "Add bike ": "Add bike ",
   "Add routes": "Add routes",
   "Add routes ": "Add routes ",
@@ -481,8 +482,10 @@ export const en = {
   "Focus day": "Focus day",
   "Focus selected day": "Focus selected day",
   "Focus segment {name} on the map": "Focus segment {name} on the map",
+  "Follow collection": "Follow collection",
   "Followed collections": "Followed collections",
   "Followed collections ": "Followed collections ",
+  Following: "Following",
   "Food & drinks": "Food & drinks",
   "For group organisers and power users.":
     "For group organisers and power users.",
@@ -526,6 +529,7 @@ export const en = {
   "Here's what's happening on your roads.":
     "Here's what's happening on your roads.",
   "Hide days": "Hide days",
+  "Hide details": "Hide details",
   "Home region ": "Home region ",
   "Hover a highlighted road for ride details ":
     "Hover a highlighted road for ride details ",
@@ -980,6 +984,7 @@ export const en = {
   Safety: "Safety",
   Save: "Save",
   "Saved ": "Saved ",
+  "Saved to your library": "Saved to your library",
   "Saving\u2026": "Saving\u2026",
   "Saving\u2026 ": "Saving\u2026 ",
   "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ":
@@ -1051,6 +1056,7 @@ export const en = {
   "Short title (e.g. 'Scenic loop via Passo Giau')":
     "Short title (e.g. 'Scenic loop via Passo Giau')",
   "Show days": "Show days",
+  "Show details": "Show details",
   "Showing most recent 500 rides \u2014 refine filters to narrow the map. ":
     "Showing most recent 500 rides \u2014 refine filters to narrow the map. ",
   "Sights & viewpoints": "Sights & viewpoints",
@@ -1489,6 +1495,7 @@ export const en = {
     "Export your data or delete your account",
   // ---- Settings profile form ----
   "Save changes": "Save changes",
+  "Save this collection": "Save this collection",
   "Display name is required.": "Display name is required.",
   "Avatar URL must be a valid http:// or https:// address.":
     "Avatar URL must be a valid http:// or https:// address.",

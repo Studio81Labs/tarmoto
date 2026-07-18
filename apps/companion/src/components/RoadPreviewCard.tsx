@@ -129,7 +129,7 @@ export function RoadPreviewCard({
           aria-controls={detailId}
           className="flex items-center gap-1 text-xs text-fg-dim transition hover:text-ink"
         >
-          {isExpanded ? "Hide details" : "Show details"}
+          {isExpanded ? t("Hide details") : t("Show details")}
           <ChevronDown
             size={12}
             className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}

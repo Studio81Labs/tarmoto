@@ -168,8 +168,8 @@ export function BikeFormModal({
               {submitting
                 ? t("Saving\u2026 ")
                 : mode === "add"
-                  ? "Add bike"
-                  : "Save changes"}
+                  ? t("Add bike")
+                  : t("Save changes")}
             </Button>
           </div>
         </form>
