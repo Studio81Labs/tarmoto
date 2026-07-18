@@ -4,11 +4,16 @@ import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
-import type { PoiImportRegion } from '@tarmoto/ingest';
+import {
+  roadTileFileName,
+  type PoiImportRegion,
+  type RoadTile,
+} from '@tarmoto/ingest';
 import { RoadSegment } from '../../../entities/road-segment.entity.js';
 import {
   OsmImportService,
   ROAD_SEGMENT_ON_CONFLICT,
+  type RegionScope,
 } from './osm-import.service.js';
 import { osmRoadImportConfig } from './osm-import.config.js';
 import { regionPolygon } from './region-polygons.js';
@@ -27,11 +32,10 @@ function straightWay(id: number): OsmWay {
   };
 }
 
-/** A rectangle region as a GeoJSON Polygon string — the reconcile/importFrom
- *  region param is now the country polygon (for `ST_GeomFromGeoJSON`), not a bbox
- *  tuple. The exact coordinates are opaque to these unit tests (the geometry
- *  queries are mocked); only region-set-vs-null and the string value passed to the
- *  load matter. */
+/** A rectangle region as a GeoJSON Polygon string — the polygon half of a
+ *  {@link RegionScope} (for `ST_GeomFromGeoJSON`). The exact coordinates are
+ *  opaque to these unit tests (the geometry queries are mocked); only
+ *  scope-set-vs-null and the value passed to the load matter. */
 function poly(
   minLng: number,
   minLat: number,
@@ -50,6 +54,23 @@ function poly(
       ],
     ],
   });
+}
+
+/** A {@link RegionScope} covering the rectangle — the country polygon + the
+ *  enclosing tile bbox tuple. `reconcile`/`importFrom` now take this scope (both
+ *  the polygon AND the tile bbox), not a bare polygon string (#1033 + tiling).
+ *  The bbox is opaque to the mocked geometry queries; it only has to be present
+ *  and to travel through to the load's `ST_MakeEnvelope` binds. */
+function scope(
+  minLng: number,
+  minLat: number,
+  maxLng: number,
+  maxLat: number,
+): RegionScope {
+  return {
+    polygon: poly(minLng, minLat, maxLng, maxLat),
+    bbox: [minLng, minLat, maxLng, maxLat],
+  };
 }
 
 describe('ROAD_SEGMENT_ON_CONFLICT clause', () => {
@@ -175,6 +196,7 @@ describe('OsmImportService', () => {
     enabled: boolean;
     extractDir: string | null;
     regions: PoiImportRegion[];
+    tileSpanDeg: number;
   };
 
   /** Rows passed to `.values()` on the Nth (0-based) insert statement. */
@@ -182,7 +204,14 @@ describe('OsmImportService', () => {
     (qb.values.mock.calls[n] as [RoadSegmentRow[]])[0];
 
   beforeEach(async () => {
-    osmConfig = { enabled: false, extractDir: null, regions: [] };
+    // `tileSpanDeg` large by default so a single-region test region → one 1×1
+    // tile (r0c0); the multi-tile `importRegion` test overrides it.
+    osmConfig = {
+      enabled: false,
+      extractDir: null,
+      regions: [],
+      tileSpanDeg: 100,
+    };
     qb = {
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -204,9 +233,12 @@ describe('OsmImportService', () => {
     );
     managerQuery = jest.fn().mockResolvedValue(undefined);
     const manager = { createQueryBuilder, query: managerQuery };
-    // `repo.query` serves three raw queries; dispatch by SQL: the region filter
-    // (`unnest … WITH ORDINALITY`) vs the existing-row load + out-of-bbox owner
-    // load (both hit `road_segments`, driven by `loadExisting`'s call order).
+    // `repo.query` serves three raw queries; dispatch by SQL: the combined-test
+    // region filter (`unnest … WITH ORDINALITY`, the only one that carries it) vs
+    // the existing-row load + out-of-bbox owner load (both hit `road_segments`,
+    // driven by `loadExisting`'s call order). The filter + the load now BOTH also
+    // reference `ST_MakeEnvelope` (the tile-bbox half of the scope), so
+    // `WITH ORDINALITY` — not `ST_MakeEnvelope` — is what separates them.
     const repoQuery = jest.fn((sql: string, params: unknown[]): unknown =>
       sql.includes('WITH ORDINALITY')
         ? (filterRegion(sql, params) as unknown)
@@ -390,7 +422,7 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom(
         [incomingDownstream],
-        poly(-1, -1, 20, 20),
+        scope(-1, -1, 20, 20),
       );
 
       expect(result).toMatchObject({ carriedOver: 1, deactivated: 1 });
@@ -467,7 +499,7 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom(
         [straightWay(1)],
-        poly(-1, -1, 1, 1),
+        scope(-1, -1, 1, 1),
       );
 
       expect(result).toMatchObject({
@@ -494,7 +526,7 @@ describe('OsmImportService', () => {
         ]),
       ]);
 
-      const result = await service.importFrom([], poly(-1, -1, 20, 20));
+      const result = await service.importFrom([], scope(-1, -1, 20, 20));
 
       expect(result.deactivated).toBe(1);
       const deactivate = (
@@ -515,7 +547,7 @@ describe('OsmImportService', () => {
 
       const result = await service.importFrom(
         [straightWay(2)],
-        poly(-1, -1, 20, 20),
+        scope(-1, -1, 20, 20),
       );
 
       expect(result).toMatchObject({
@@ -543,7 +575,7 @@ describe('OsmImportService', () => {
       // outside the region polygon, yet is still reconciled + inserted.
       const result = await service.importFrom(
         [straightWay(1)],
-        poly(100, 100, 101, 101),
+        scope(100, 100, 101, 101),
       );
 
       expect(result.upserted).toBe(1);
@@ -596,63 +628,128 @@ describe('OsmImportService', () => {
     );
   }
 
-  describe('importRegion', () => {
+  const CZ: PoiImportRegion = {
+    code: 'CZ',
+    bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+  };
+  // A single 1×1 tile equal to the CZ bbox (what `subdivideRegion(CZ, span≥6.77)`
+  // yields) — file `cz-r0c0.osm`. Its bbox travels into the scope's
+  // `ST_MakeEnvelope` binds.
+  const CZ_TILE: RoadTile = { code: 'CZ', row: 0, col: 0, bbox: CZ.bbox };
+
+  describe('importTile', () => {
     let dir: string;
-    const CZ: PoiImportRegion = {
-      code: 'CZ',
-      bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
-    };
     beforeEach(async () => {
-      dir = await mkdtemp(join(tmpdir(), 'road-import-test-'));
+      dir = await mkdtemp(join(tmpdir(), 'road-import-tile-'));
     });
     afterEach(async () => {
       await rm(dir, { recursive: true, force: true });
     });
 
-    it('skips a region whose extract file is absent (no tombstone)', async () => {
+    it('skips a tile whose extract file is absent (no tombstone)', async () => {
       const warn = jest.spyOn(service['logger'], 'warn');
-      const result = await service.importRegion(CZ, dir);
+      const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
       // reconcile never ran → no load/transaction
       expect(loadExisting).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalled();
     });
 
-    it('skips a present-but-empty extract with a warning (no tombstone)', async () => {
-      await writeFile(join(dir, 'cz.osm'), '<osm version="0.6"></osm>');
+    it('skips a present-but-empty tile extract at info, NOT warn (empty grid cell is expected)', async () => {
+      // Sea-only / border cells are header-only extracts on every weekly run, so a
+      // 0-way tile is logged at info — not warn — to keep the genuinely suspicious
+      // skips (absent file, out-of-scope) visible. Still skips, never tombstones.
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE)),
+        '<osm version="0.6"></osm>',
+      );
       const warn = jest.spyOn(service['logger'], 'warn');
-      const result = await service.importRegion(CZ, dir);
+      const log = jest.spyOn(service['logger'], 'log');
+      const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
       expect(loadExisting).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('extract parsed 0 ways'),
+      );
     });
 
-    it('skips an extract whose ways are all outside the region polygon (no tombstone)', async () => {
-      // A present, non-empty extract that landed in the wrong file (e.g. SK data
-      // written to cz.osm) — filterToRegion finds NONE of its ways inside the CZ
-      // polygon. Must NOT reach `reconcile`: a post-filter-empty set WITH a region
-      // would otherwise tombstone every live CZ row. (filterToRegion is the DB
-      // `unnest … WITH ORDINALITY` query; here it returns no in-region ordinals.)
-      await writeFile(join(dir, 'cz.osm'), wayXml(1, 60, 30));
-      filterRegion.mockResolvedValueOnce([]); // nothing inside the CZ polygon
+    it('skips a tile whose ways are all outside the polygon ∩ bbox (no tombstone)', async () => {
+      // A present, non-empty extract that landed in the wrong tile file —
+      // filterToRegion finds NONE of its ways inside the CZ polygon ∩ this tile's
+      // bbox. Must NOT reach `reconcile`: a post-filter-empty set WITH a scope
+      // would otherwise tombstone every live row in the cell. (filterToRegion is
+      // the DB `unnest … WITH ORDINALITY` query; here it returns no ordinals.)
+      await writeFile(join(dir, roadTileFileName(CZ_TILE)), wayXml(1, 60, 30));
+      filterRegion.mockResolvedValueOnce([]); // nothing inside the polygon ∩ bbox
       const warn = jest.spyOn(service['logger'], 'warn');
-      const result = await service.importRegion(CZ, dir);
+      const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
       // reconcile never ran → the existing-row load was never issued.
       expect(loadExisting).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalled();
     });
 
-    it('reconciles a non-empty extract scoped to the region polygon', async () => {
-      await writeFile(join(dir, 'cz.osm'), wayXml(1));
+    it('reconciles a non-empty tile scoped to the country polygon ∩ tile bbox', async () => {
+      await writeFile(join(dir, roadTileFileName(CZ_TILE)), wayXml(1));
       loadExisting.mockResolvedValue([]); // no existing rows
-      const result = await service.importRegion(CZ, dir);
+      const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result.upserted).toBe(1);
-      // loadExistingInRegion is called with the CZ country polygon (not a bbox
-      // tuple) — the same geometry filterToRegion scoped the incoming set to.
+      // loadExistingInRegion is called with the CZ country polygon AND the tile
+      // bbox tuple — the SAME combined scope filterToRegion filtered the incoming
+      // set to (the #1033 invariant, extended to the tile bbox).
       expect(loadExisting).toHaveBeenCalledWith(expect.any(String), [
         regionPolygon('CZ'),
+        CZ.bbox.minLng,
+        CZ.bbox.minLat,
+        CZ.bbox.maxLng,
+        CZ.bbox.maxLat,
       ]);
+      // Both sides of the invariant run the combined polygon + envelope test:
+      // the incoming filter (unnest … WITH ORDINALITY) and the existing-row load
+      // (road_segments) BOTH reference ST_MakeEnvelope.
+      const filterSql = (filterRegion.mock.calls[0] as [string, unknown[]])[0];
+      expect(filterSql).toContain('WITH ORDINALITY');
+      expect(filterSql).toContain('ST_MakeEnvelope');
+      const loadSql = (loadExisting.mock.calls[0] as [string, unknown[]])[0];
+      expect(loadSql).toContain('road_segments');
+      expect(loadSql).toContain('ST_MakeEnvelope');
+    });
+  });
+
+  describe('importRegion', () => {
+    let dir: string;
+    beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'road-import-region-'));
+    });
+    afterEach(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    it('subdivides a region into >1 tile and imports every tile file', async () => {
+      // span 4° over CZ (width 6.77°, height 2.51°) → ceil(6.77/4)=2 cols ×
+      // ceil(2.51/4)=1 row → 2 tiles: r0c0 + r0c1. Each tile file carries its own
+      // way, so the per-tile loop reads both and the upserts aggregate.
+      osmConfig.tileSpanDeg = 4;
+      await writeFile(join(dir, 'cz-r0c0.osm'), wayXml(1));
+      await writeFile(join(dir, 'cz-r0c1.osm'), wayXml(2));
+      loadExisting.mockResolvedValue([]);
+      const result = await service.importRegion(CZ, dir);
+      // Both tiles imported (1 way each) → 2 upserts, one reconcile flush per tile.
+      expect(result.upserted).toBe(2);
+      expect(qb.execute).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips the region tiles with no extract, imports the ones present', async () => {
+      // span 4° → 2 tiles; only r0c1 has an extract. The absent r0c0 skips (warn,
+      // no tombstone), r0c1 imports — a region needn't have every cell on disk
+      // (all-water/empty cells are simply never written by the producer).
+      osmConfig.tileSpanDeg = 4;
+      await writeFile(join(dir, 'cz-r0c1.osm'), wayXml(2));
+      loadExisting.mockResolvedValue([]);
+      const result = await service.importRegion(CZ, dir);
+      expect(result.upserted).toBe(1);
+      expect(qb.execute).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -665,12 +762,14 @@ describe('OsmImportService', () => {
       await rm(dir, { recursive: true, force: true });
     });
 
-    it('loops the configured regions and aggregates upserts', async () => {
-      await writeFile(join(dir, 'cz.osm'), wayXml(1));
-      // SK's way sits inside SK (48.5N, 19.5E). In real runs importRegion scopes
-      // each extract to its country polygon via filterToRegion (a DB query, mocked
-      // here to accept every incoming way), so both regions contribute one upsert.
-      await writeFile(join(dir, 'sk.osm'), wayXml(2, 48.5, 19.5));
+    it('loops the configured regions (tile-by-tile) and aggregates upserts', async () => {
+      // tileSpanDeg default (100°) → each region is a single r0c0 tile. CZ's way
+      // sits inside CZ, SK's inside SK (48.5N, 19.5E). In real runs importTile
+      // scopes each extract to its country polygon ∩ tile bbox via filterToRegion
+      // (a DB query, mocked here to accept every incoming way), so both regions
+      // contribute one upsert.
+      await writeFile(join(dir, 'cz-r0c0.osm'), wayXml(1));
+      await writeFile(join(dir, 'sk-r0c0.osm'), wayXml(2, 48.5, 19.5));
       osmConfig.extractDir = dir;
       osmConfig.regions = [
         {

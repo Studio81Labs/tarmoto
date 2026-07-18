@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import type { PoiImportRegion } from '@tarmoto/ingest';
+import {
+  roadTileFileName,
+  subdivideRegion,
+  type PoiImportRegion,
+} from '@tarmoto/ingest';
 import { AppDataSource } from '../src/data-source.js';
 import { OsmImportService } from '../src/modules/roads/osm-import/osm-import.service.js';
 import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
@@ -26,7 +30,12 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  * OUTSIDE the SK polygon — the exact case the rectangle scope corrupts.
  *
  * Real Postgres/PostGIS, driven through `importRegion` (the folder-model entry
- * point) so the whole path — extract parse → region filter → reconcile — runs.
+ * point) so the whole path — tile subdivision → extract parse → region filter →
+ * reconcile — runs. The extracts are now per-tile `<code>-r<row>c<col>.osm` files
+ * (the sub-region tiling model); this test runs at a large tile span so each
+ * region is a single r0c0 tile whose bbox equals the region bbox, keeping the
+ * assertion purely about the country-POLYGON scope (#1033). The disjoint-tile
+ * no-wipe property is covered separately in `osm-tile-scope-reconcile.e2e-spec.ts`.
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
  */
@@ -35,6 +44,11 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
   let service: OsmImportService;
   let dataSource: DataSource;
   let dir: string;
+
+  // A tile span wider than either country, so `subdivideRegion` yields exactly
+  // one r0c0 tile per region (tile bbox == region bbox) — the country polygon is
+  // then the only thing scoping the reconcile, which is the #1033 property here.
+  const TILE_SPAN_DEG = 100;
 
   // Real CZ + SK region configs; their rectangles overlap (see header).
   const CZ: PoiImportRegion = {
@@ -45,6 +59,13 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     code: 'SK',
     bbox: { minLng: 16.83, minLat: 47.73, maxLng: 22.57, maxLat: 49.61 },
   };
+
+  /** The single-tile extract filename for a region at `TILE_SPAN_DEG` (one r0c0
+   *  tile) — the file `importRegion` reads for that region. */
+  function soleTileFile(region: PoiImportRegion): string {
+    const tiles = subdivideRegion(region, TILE_SPAN_DEG);
+    return roadTileFileName(tiles[0]!);
+  }
 
   // Way ids this test owns (across both cases) — deleted in afterAll.
   const trackedWayIds = ['881001', '881002', '882001', '882003'];
@@ -83,7 +104,12 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
         OsmImportService,
         {
           provide: osmRoadImportConfig.KEY,
-          useValue: { enabled: true, extractDir: null, regions: [] },
+          useValue: {
+            enabled: true,
+            extractDir: null,
+            regions: [],
+            tileSpanDeg: TILE_SPAN_DEG,
+          },
         },
       ],
     }).compile();
@@ -103,9 +129,15 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
 
   it('a later region does NOT tombstone an earlier region road in the bbox-overlap strip', async () => {
     // CZ extract: one road in the CZ∩SK strip, inside the CZ polygon.
-    await writeFile(join(dir, 'cz.osm'), osmDoc(wayXml(881001, 49.0, 17.5)));
+    await writeFile(
+      join(dir, soleTileFile(CZ)),
+      osmDoc(wayXml(881001, 49.0, 17.5)),
+    );
     // SK extract: one road well inside SK (its own country), far from the CZ road.
-    await writeFile(join(dir, 'sk.osm'), osmDoc(wayXml(881002, 48.7, 19.5)));
+    await writeFile(
+      join(dir, soleTileFile(SK)),
+      osmDoc(wayXml(881002, 48.7, 19.5)),
+    );
 
     // 1) CZ import inserts the overlap road; capture its id (identity to preserve).
     await service.importRegion(CZ, dir);
@@ -133,7 +165,7 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     // filter must keep the in-country road and drop the overhang, so re-importing
     // CZ never churns the neighbour's id.
     await writeFile(
-      join(dir, 'cz.osm'),
+      join(dir, soleTileFile(CZ)),
       osmDoc(
         wayXml(882001, 49.0, 17.5), // inside CZ polygon → kept
         wayXml(882003, 48.7, 17.5), // SK territory, in CZ rect but outside CZ polygon → dropped

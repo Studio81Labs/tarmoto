@@ -2,7 +2,10 @@ import { DataSource } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppDataSource } from '../src/data-source.js';
-import { OsmImportService } from '../src/modules/roads/osm-import/osm-import.service.js';
+import {
+  OsmImportService,
+  type RegionScope,
+} from '../src/modules/roads/osm-import/osm-import.service.js';
 import { RoadsService } from '../src/modules/roads/roads.service.js';
 import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
@@ -30,24 +33,29 @@ describe('OSM split/merge reconciliation (#835)', () => {
   // A remote corner of the map so this test's ways can't collide with seeded rows.
   const LNG = 9.11;
   const LAT = 47.03;
-  // An explicit region enclosing this test's ways so stale detection is
+  // An explicit scope enclosing this test's ways so stale detection is
   // authoritative (a data-derived bbox would not tombstone) — passed directly to
   // `importFrom` now that the importer no longer reads a region off its config
-  // (the folder model, Sub-project B; see `OsmImportService.importRegion`). The
-  // region is now a GeoJSON POLYGON string (for `ST_GeomFromGeoJSON`), not a bbox
-  // tuple (#1033) — here a rectangle enclosing every test way.
-  const REGION: string = JSON.stringify({
-    type: 'Polygon',
-    coordinates: [
-      [
-        [LNG - 0.1, LAT - 0.1],
-        [LNG + 0.2, LAT - 0.1],
-        [LNG + 0.2, LAT + 0.2],
-        [LNG - 0.1, LAT + 0.2],
-        [LNG - 0.1, LAT - 0.1],
+  // (the folder model, Sub-project B; see `OsmImportService.importTile`). The
+  // scope is now the country POLYGON (for `ST_GeomFromGeoJSON`, #1033) ∩ the tile
+  // bbox (for `ST_MakeEnvelope`, sub-region tiling) — here one rectangle serving
+  // as both, enclosing every test way, so the combined test behaves exactly as a
+  // single authoritative boundary.
+  const REGION: RegionScope = {
+    polygon: JSON.stringify({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [LNG - 0.1, LAT - 0.1],
+          [LNG + 0.2, LAT - 0.1],
+          [LNG + 0.2, LAT + 0.2],
+          [LNG - 0.1, LAT + 0.2],
+          [LNG - 0.1, LAT - 0.1],
+        ],
       ],
-    ],
-  });
+    }),
+    bbox: [LNG - 0.1, LAT - 0.1, LNG + 0.2, LAT + 0.2],
+  };
 
   /** A single ~100 m drivable way at a given offset from the test origin. */
   function way(id: number, dLat = 0, dLng = 0): OsmWay {

@@ -8,20 +8,21 @@ all dependent FKs (`surface_readings`, `road_reviews`, `hazard_reports`,
 ## Pipeline
 
 ```
-apps/ingest refresh-road-extracts.js → <extractDir>/<code>.osm (one per region)
+apps/ingest refresh-road-extracts.js → <extractDir>/<code>-r<row>c<col>.osm (a tile grid per region)
                                                     │
                                                     ▼
          OsmImportService.importAll() loops the configured regions
-                                                    │  per region:
+                                                    │  per region: subdivideRegion → per tile:
                                                     ▼
-  parseOsmXml → assembleWays → buildSegmentRows → importRegion → filterToRegion(polygon) → reconcile(polygon)
+  parseOsmXml → assembleWays → buildSegmentRows → importTile → filterToRegion(polygon ∩ tile bbox) → reconcile(scope)
 ```
 
 - **Producer** — `apps/ingest` (a separate deployable) downloads each region's
   Geofabrik PBF, `osmium tags-filter`s it to the drivable-highway set
   (`ROAD_TAGS_FILTER_EXPRESSIONS` — the same `DRIVABLE_HIGHWAYS` list this
-  module's `osm-tags.ts` gates on, so the two can't drift), `osmium extract -b`s
-  it to the region's bbox, and atomically writes `<extractDir>/<code>.osm`. See
+  module's `osm-tags.ts` gates on, so the two can't drift), then per tile of
+  `subdivideRegion(region, tileSpanDeg)` `osmium extract -b`s it to that tile's
+  bbox and atomically writes `<extractDir>/<code>-r<row>c<col>.osm`. See
   `refresh-road-extracts.ts` and
   [the runbook](../../../../../../docs/process/runbook.md#road-quality-extract-refresh-sub-project-b)
   § "Road-quality extract refresh (Sub-project B)".
@@ -39,61 +40,71 @@ apps/ingest refresh-road-extracts.js → <extractDir>/<code>.osm (one per region
 This importer used to read **one** hand-prepared `.osm` file clipped to **one**
 hand-configured bbox (the now-retired single-file `TARMOTO_OSM_ROAD_IMPORT_*`
 env pair — a `FILE` path + a `BBOX` rectangle). It now reads a **folder** of
-per-region extracts, mirroring the POI importer's model:
+per-region, per-tile extracts, mirroring the POI importer's model:
 
-- **`extractDir`** (`TARMOTO_OSM_ROAD_IMPORT_DIR`) — a directory of `<code>.osm`
-  files, one per region, named by lower-case ISO 3166-1 alpha-2 code (e.g.
-  `cz.osm`). The SAME shared volume the `apps/ingest` producer writes and this
-  importer reads — both apps must point at the same path. `null`/unset skips
-  the whole job (nothing to read).
+- **`extractDir`** (`TARMOTO_OSM_ROAD_IMPORT_DIR`) — a directory of
+  `<code>-r<row>c<col>.osm` files, a deterministic **tile grid** per region
+  (lower-case ISO 3166-1 alpha-2 code + 0-based row/col, e.g. `cz-r0c1.osm`). The
+  SAME shared volume the `apps/ingest` producer writes and this importer reads —
+  both apps must point at the same path. `null`/unset skips the whole job
+  (nothing to read).
 - **`regions`** (`TARMOTO_OSM_ROAD_IMPORT_REGIONS`, default all
   `DEFAULT_REGIONS`) — the coverage list, the SAME 17-country list POI/FSQ use
-  (`packages/ingest/src/poi/regions.ts`). Each region's authoritative import
-  scope is its **country polygon** (the bundled `import-region-boundaries.geojson`),
-  which bounds **stale-by-absence** tombstoning for that region alone (a re-import
-  may tombstone rows inside the region's polygon that are absent from its extract,
-  never rows outside it). The region bbox is used only by the producer's clip
-  step, not for import scoping — adjacent countries' bboxes overlap, so a bbox
-  scope would let a region tombstone a neighbour's roads (#1033). Shared with the
-  producer's region env so refresh and import always target the same set; an
-  unknown code fails fast rather than being silently dropped.
+  (`packages/ingest/src/poi/regions.ts`). Each tile's authoritative import scope
+  is its region's **country polygon** (the bundled `import-region-boundaries.geojson`)
+  **∩ the tile bbox**, which bounds **stale-by-absence** tombstoning to that tile's
+  cell alone (a re-import may tombstone rows inside the polygon ∩ tile bbox that
+  are absent from that tile's extract, never rows outside it). Scoping to the bbox
+  alone would let a region tombstone a neighbour's roads in the overlapping strip
+  (#1033); scoping to the polygon alone would let one tile tombstone the region's
+  roads in the OTHER tiles. Shared with the producer's region env so refresh and
+  import always target the same set; an unknown code fails fast rather than being
+  silently dropped.
+- **`tileSpanDeg`** (`TARMOTO_OSM_ROAD_TILE_SPAN_DEG`, default 2.5) — the max tile
+  span the importer subdivides each region by (`subdivideRegion`). It **MUST match
+  the producer's value** — both call `subdivideRegion` with it to derive the
+  identical grid, so a mismatch means the importer looks for tile files the
+  producer never wrote (or vice-versa). Invalid/≤0 fails fast.
 - **`OsmImportService.importAll()`** loops the configured regions and calls
-  `importRegion()` for each, aggregating the upsert/carry-over/deactivate
-  counts. A region whose extract is **absent, or parses to zero ways, is
-  skipped — not tombstoned**: a folder-model region is an automated
-  whole-country extract, so an empty result more likely signals a broken
-  refresh than a genuinely road-less country, and tombstoning the region on
-  that would be far worse than skipping it for one cycle. (This intentionally
-  overrides `reconcile()`'s authoritative-empty-snapshot behavior, which exists
-  for direct-source callers/tests that hand-supply a single-file tile — see the
-  `importRegion` / `reconcile` doc comments.)
+  `importRegion()` for each; `importRegion()` subdivides the region into its tile
+  grid and calls `importTile()` per tile, all aggregating the
+  upsert/carry-over/deactivate counts. A tile whose extract is **absent, or parses
+  to zero ways, is skipped — not tombstoned**: a tile extract is automated, so an
+  empty result more likely signals a broken refresh than a genuinely road-less
+  cell, and tombstoning the cell on that would be far worse than skipping it for
+  one cycle. (This intentionally overrides `reconcile()`'s
+  authoritative-empty-snapshot behavior, which exists for direct-source
+  callers/tests that hand-supply a single tile — see the `importTile` /
+  `reconcile` doc comments.)
 
 ### The `complete_ways` contract
 
 `osmium extract -b` (the producer's clip step) does **not** cut geometries —
 its default `complete_ways` strategy emits every way that crosses the bbox
-**whole**, extending beyond it. A way straddling two adjacent regions therefore
-lands, complete, in **both** regions' `<code>.osm` files.
+**whole**, extending beyond it. A way straddling two adjacent tiles (or regions)
+therefore lands, complete, in **both** tiles' `<code>-r<row>c<col>.osm` files.
 
-The importer reconciles this per region against the region's **country polygon**
-(not its bounding rectangle — adjacent countries' rectangles overlap, and a
-rectangle scope would let a later region tombstone an earlier region's roads that
-fall in the shared strip, destroying their id + crowd history, #1033).
-`importRegion` filters incoming rows to the polygon (`filterToRegion` — a PostGIS
-`ST_Intersects` against `ST_GeomFromGeoJSON`) before reconcile compares against
-existing rows, and reconcile loads the existing rows with the **same**
-`ST_Intersects` polygon test (`loadExistingInRegion`) — so a border row is judged
-identically against the incoming snapshot and the existing-row load, and only
-**absent** rows inside that polygon are tombstoned. So:
+The importer reconciles this **per tile** against the region's **country polygon
+∩ the tile bbox** (not the bbox alone — adjacent countries' rectangles overlap,
+and a bare-rectangle scope would let a later region tombstone an earlier region's
+roads in the shared strip, #1033; and not the polygon alone — that would let one
+tile tombstone the region's roads in the OTHER tiles). `importTile` filters
+incoming rows to the polygon ∩ bbox (`filterToRegion` — a PostGIS `ST_Intersects`
+pair against `ST_GeomFromGeoJSON` and `ST_MakeEnvelope`) before reconcile compares
+against existing rows, and reconcile loads the existing rows with the **same**
+combined test (`loadExistingInRegion`) — kept byte-for-byte parallel, so a
+border/tile-seam row is judged identically against the incoming snapshot and the
+existing-row load, and only **absent** rows inside that polygon ∩ bbox cell are
+tombstoned. So:
 
-- the extract only has to **cover** the country — the producer never clips
-  geometries itself, and any neighbouring overhang is dropped by the polygon
+- the extract only has to **cover** its tile — the producer never clips
+  geometries itself, and any neighbouring overhang is dropped by the combined
   filter;
-- a way straddling the edge is scoped to whichever country actually contains each
-  part, and its shared segment upserts idempotently;
-- stale-by-absence tombstoning stays sound per region, bounded by the region's
-  own authoritative country polygon — never its overlapping rectangle, never a
-  data-derived guess.
+- a way straddling a tile seam or country edge is scoped to whichever tile/country
+  actually contains each part, and its shared segment upserts idempotently;
+- stale-by-absence tombstoning stays sound per tile, bounded by the region's
+  authoritative country polygon ∩ the tile bbox — never a country's overlapping
+  rectangle, never another tile's cell, never a data-derived guess.
 
 (This replaces the old single-file "the extract must be clipped to exactly this
 rectangle" contract.)
@@ -117,53 +128,61 @@ osmium tags-filter cz-latest.osm.pbf \
   w/highway=motorway,motorway_link,trunk,trunk_link,primary,primary_link,secondary,secondary_link,tertiary,tertiary_link,unclassified,residential,living_street,service,track \
   -o cz-road.osm.pbf
 
-# 3. Extract to CZ's bbox from DEFAULT_REGIONS (complete_ways default — see
-#    above; the importer scopes the overhang, so this just needs to COVER CZ)
+# 3. Extract to CZ's r0c0 tile bbox (complete_ways default — see above; the
+#    importer scopes the overhang, so this just needs to COVER the tile). The
+#    importer reads per-tile files, so a manual single-file prep is only valid at
+#    a tile span >= the region (one r0c0 tile == the region bbox). Real coverage
+#    is a grid of subdivideRegion(region, TARMOTO_OSM_ROAD_TILE_SPAN_DEG) tiles;
+#    the automated refresh below writes every <code>-r<row>c<col>.osm.
 osmium extract -b 12.09,48.55,18.86,51.06 cz-road.osm.pbf \
-  -f osm -o "$TARMOTO_OSM_ROAD_IMPORT_DIR/cz.osm"
+  -f osm -o "$TARMOTO_OSM_ROAD_IMPORT_DIR/cz-r0c0.osm"
 ```
 
 Repeat per region in the active set. The `apps/ingest` scheduled refresh
-(`refresh-road-extracts.ts`, `pnpm road:refresh`) automates exactly this, for
+(`refresh-road-extracts.ts`, `pnpm road:refresh`) automates exactly this (tiling
+each region), for
 every configured region, atomically.
 
 ## Config
 
-| env                               | default               | meaning                                                                        |
-| --------------------------------- | --------------------- | ------------------------------------------------------------------------------ |
-| `TARMOTO_OSM_ROAD_IMPORT_ENABLED` | `false`               | turn the weekly job on                                                         |
-| `TARMOTO_OSM_ROAD_IMPORT_DIR`     | —                     | folder of per-region `<code>.osm` extracts (required when enabled)             |
-| `TARMOTO_OSM_ROAD_IMPORT_REGIONS` | all `DEFAULT_REGIONS` | comma-separated ISO 3166-1 alpha-2 codes to import; an unknown code fails fast |
+| env                               | default               | meaning                                                                          |
+| --------------------------------- | --------------------- | -------------------------------------------------------------------------------- |
+| `TARMOTO_OSM_ROAD_IMPORT_ENABLED` | `false`               | turn the weekly job on                                                           |
+| `TARMOTO_OSM_ROAD_IMPORT_DIR`     | —                     | folder of per-tile `<code>-r<row>c<col>.osm` extracts (required when enabled)    |
+| `TARMOTO_OSM_ROAD_IMPORT_REGIONS` | all `DEFAULT_REGIONS` | comma-separated ISO 3166-1 alpha-2 codes to import; an unknown code fails fast   |
+| `TARMOTO_OSM_ROAD_TILE_SPAN_DEG`  | `2.5`                 | max tile span (deg) to subdivide each region by; MUST match the producer's value |
 
 Dormant by default: an off tick is a cheap no-op.
 
 ## Memory & scale
 
-Split/merge reconciliation is **region-scoped by design**: to decide whether a
+Split/merge reconciliation is **scope-buffered by design**: to decide whether a
 way was split/merged (vs removed), it has to compare the whole incoming
 snapshot against the existing rows in the same area, so a run buffers one
-region's ~100 m segment rows and loads the matching existing rows into memory
+**tile's** ~100 m segment rows and loads the matching existing rows into memory
 (it can't be a pure per-chunk stream like a plain upsert).
 
-`importAll()`'s region-by-region loop bounds **peak** memory to one region at a
-time no matter how many are configured — but that bound is only as small as the
-largest single region. Because reconciliation buffers a whole region's ~100 m
-segment rows (plus the assembler's node map, and the incoming array) at once, a
-region's extract **must fit the import worker's heap**. The single-file model
-made this the operator's job ("tile each source to fit the heap"); the folder
-model replaces per-file tiling with **per-country** extracts, which is only
-safe while a country fits the heap.
+**Sub-region tiling bounds this to one tile.** Each region is subdivided into a
+deterministic non-overlapping grid of `<= TARMOTO_OSM_ROAD_TILE_SPAN_DEG`-degree
+cells (`subdivideRegion`, shared with the `apps/ingest` producer so both derive
+the identical grid), and `importRegion()` imports the region **tile-by-tile** —
+one `<code>-r<row>c<col>.osm` extract at a time. Each tile reconciles against the
+country **polygon ∩ that tile's bbox**, so peak memory is bounded to one tile's
+segment rows (plus the assembler's node map and the incoming array) **regardless
+of the country's overall size**. `importAll()`'s region loop and `importRegion()`'s
+tile loop both aggregate counts without holding more than one tile at once.
 
-The launch set (cz, sk, at) is moderate and expected to fit a standard worker
-heap — but this must be validated on the first real import, and the worker's
-`--max-old-space-size` sized accordingly. A country whose drivable network
-outgrows the heap (e.g. DE / IT / PL) must NOT be enabled until it is split into
-bounded **sub-region tiles**, each carrying its own clip polygon so per-region
-tombstoning stays correct (the country-polygon scoping from #1033 is what makes
-sub-region tiles safe). That in-engine sub-region tiling is a **tracked
-pre-enablement requirement for large countries** — not yet built. (A way split
-exactly across a region border loses history only at that seam; adjacent
-regions still reconcile independently.)
+Because a tile is bounded (default 2.5° ≈ a couple hundred km per side), large
+countries (**DE / IT / PL**) are now safe to enable — a whole-country buffer,
+which could OOM the worker, never forms. Tune the span down per country density
+if a single tile is still too heavy (it must match the producer's value, or the
+importer looks for tiles the producer never wrote). The no-cross-**region** wipe
+(#1033, country-polygon scope) and the no-cross-**tile** wipe (the `∩ tile bbox`
+half of the scope) both hold: a tile only ever tombstones absent roads inside its
+own polygon ∩ bbox cell. (A way split exactly across a tile seam or region border
+loses history only at that seam; adjacent tiles/regions still reconcile
+independently — a seam way is emitted COMPLETE into both tiles by `complete_ways`
+and upserts idempotently.)
 
 ## Cadence & manual runs
 
