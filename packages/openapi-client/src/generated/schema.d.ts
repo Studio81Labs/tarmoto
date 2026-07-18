@@ -3395,6 +3395,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/feature-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the limit registry with overrides */
+        get: operations["AdminLimitsController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feature-limits/{feature}/global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a global limit override (launch mode / promo raise) */
+        put: operations["AdminLimitsController_setGlobal"];
+        post?: never;
+        /** Clear a global limit override (back to normal) */
+        delete: operations["AdminLimitsController_clearGlobal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/feature-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A user's resolved limits + override states */
+        get: operations["AdminLimitsController_getUserLimits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/feature-limits/{feature}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a per-user limit override (raise or restrict) */
+        put: operations["AdminLimitsController_setOverride"];
+        post?: never;
+        /** Remove a per-user limit override */
+        delete: operations["AdminLimitsController_removeOverride"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/content": {
         parameters: {
             query?: never;
@@ -3773,6 +3843,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/config/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global limit-override map (feature → value, null = unlimited)
+         * @description Only operator overrides appear here; a missing key means the limit resolves normally (registry tier value + per-user override, served on /users/me). Clients may apply these values only as a downward clamp (min with the cached snapshot) and must not raise a limit from this map.
+         */
+        get: operations["ClientConfigController_limits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3837,6 +3927,10 @@ export interface components {
             /** @description Advanced riding analytics dashboard. */
             advanced_analytics: boolean;
         };
+        LimitSnapshotDto: {
+            /** @description Maximum open (draft/planned/active) trips the user may own. null = unlimited. */
+            max_active_trips: number | null;
+        };
         UserResponseDto: {
             id: string;
             email: string;
@@ -3857,6 +3951,8 @@ export interface components {
             subscription_tier: "free" | "pro" | "premium";
             /** @description Resolved feature entitlements (tier + overrides). UI gating only — gated endpoints re-check server-side. */
             features: components["schemas"]["FeatureSnapshotDto"];
+            /** @description Resolved numeric entitlements (null = unlimited), keyed by limit registry key. */
+            limits: components["schemas"]["LimitSnapshotDto"];
             created_at: string;
         };
         AuthResponseDto: {
@@ -6503,6 +6599,55 @@ export interface components {
             /** @description true force-grants the feature, false force-revokes it. */
             enabled: boolean;
         };
+        TierLimitValuesDto: {
+            free: number | null;
+            pro: number | null;
+            premium: number | null;
+        };
+        AdminFeatureLimitDto: {
+            /** @description Registry limit key. */
+            feature: string;
+            description: string;
+            /** @description Registry value for unknown tiers. */
+            default_value: number | null;
+            tier_values: components["schemas"]["TierLimitValuesDto"];
+            /** @description Whether a global override row exists. */
+            global_active: boolean;
+            /** @description Global override value (null = unlimited). Only meaningful when global_active. */
+            global_value: number | null;
+            global_reason: string | null;
+            global_updated_by: string | null;
+            global_updated_at: string | null;
+            /** @description Users with a per-user override. */
+            overridden_user_count: number;
+        };
+        AdminFeatureLimitsResponseDto: {
+            limits: components["schemas"]["AdminFeatureLimitDto"][];
+        };
+        SetLimitGlobalValueDto: {
+            /** @description Override value; null = unlimited (launch mode / promo raise). */
+            value: number | null;
+            /** @description Why the override is set — always required (any global limit change is user-visible). Stored on the row, never audited. */
+            reason: string;
+        };
+        AdminUserFeatureLimitDto: {
+            feature: string;
+            description: string;
+            /** @description The value the user actually resolves to right now (null = unlimited). */
+            resolved: number | null;
+            /** @description Whether a per-user override row exists. */
+            override_active: boolean;
+            /** @description Override value (null = unlimited). Only meaningful when override_active. */
+            override_value: number | null;
+        };
+        AdminUserFeatureLimitsResponseDto: {
+            user_id: string;
+            limits: components["schemas"]["AdminUserFeatureLimitDto"][];
+        };
+        SetUserLimitOverrideDto: {
+            /** @description Override value; null = unlimited. */
+            value: number | null;
+        };
         ContentLocationDto: {
             lat: number;
             lng: number;
@@ -6692,6 +6837,7 @@ export type SchemaLatLngResponse = components['schemas']['LatLngResponse'];
 export type SchemaUserRoutePrefsResponse = components['schemas']['UserRoutePrefsResponse'];
 export type SchemaUserPreferencesResponse = components['schemas']['UserPreferencesResponse'];
 export type SchemaFeatureSnapshotDto = components['schemas']['FeatureSnapshotDto'];
+export type SchemaLimitSnapshotDto = components['schemas']['LimitSnapshotDto'];
 export type SchemaUserResponseDto = components['schemas']['UserResponseDto'];
 export type SchemaAuthResponseDto = components['schemas']['AuthResponseDto'];
 export type SchemaLoginDto = components['schemas']['LoginDto'];
@@ -6951,6 +7097,13 @@ export type SchemaAdminFeatureFlagUsersResponseDto = components['schemas']['Admi
 export type SchemaAdminUserFeatureFlagDto = components['schemas']['AdminUserFeatureFlagDto'];
 export type SchemaAdminUserFeatureFlagsResponseDto = components['schemas']['AdminUserFeatureFlagsResponseDto'];
 export type SchemaSetFeatureOverrideDto = components['schemas']['SetFeatureOverrideDto'];
+export type SchemaTierLimitValuesDto = components['schemas']['TierLimitValuesDto'];
+export type SchemaAdminFeatureLimitDto = components['schemas']['AdminFeatureLimitDto'];
+export type SchemaAdminFeatureLimitsResponseDto = components['schemas']['AdminFeatureLimitsResponseDto'];
+export type SchemaSetLimitGlobalValueDto = components['schemas']['SetLimitGlobalValueDto'];
+export type SchemaAdminUserFeatureLimitDto = components['schemas']['AdminUserFeatureLimitDto'];
+export type SchemaAdminUserFeatureLimitsResponseDto = components['schemas']['AdminUserFeatureLimitsResponseDto'];
+export type SchemaSetUserLimitOverrideDto = components['schemas']['SetUserLimitOverrideDto'];
 export type SchemaContentLocationDto = components['schemas']['ContentLocationDto'];
 export type SchemaContentItemDto = components['schemas']['ContentItemDto'];
 export type SchemaContentListResponseDto = components['schemas']['ContentListResponseDto'];
@@ -12947,6 +13100,136 @@ export interface operations {
             };
         };
     };
+    AdminLimitsController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureLimitsResponseDto"];
+                };
+            };
+        };
+    };
+    AdminLimitsController_setGlobal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLimitGlobalValueDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminFeatureLimitDto"];
+                };
+            };
+        };
+    };
+    AdminLimitsController_clearGlobal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AdminLimitsController_getUserLimits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserFeatureLimitsResponseDto"];
+                };
+            };
+        };
+    };
+    AdminLimitsController_setOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetUserLimitOverrideDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserFeatureLimitsResponseDto"];
+                };
+            };
+        };
+    };
+    AdminLimitsController_removeOverride: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+                feature: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AdminContentController_list: {
         parameters: {
             query: {
@@ -13499,6 +13782,27 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: "force_off" | "force_on";
+                    };
+                };
+            };
+        };
+    };
+    ClientConfigController_limits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number | null;
                     };
                 };
             };

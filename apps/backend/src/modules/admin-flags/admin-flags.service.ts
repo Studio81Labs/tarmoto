@@ -8,11 +8,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   FEATURE_DEFINITIONS,
-  FEATURE_KEYS,
-  isFeatureKey,
+  TOGGLE_FEATURE_KEYS,
   isGlobalFeatureState,
+  isToggleFeatureKey,
   resolveFeature,
-  type FeatureKey,
+  type ToggleFeatureKey,
 } from '@tarmoto/shared';
 import { FeatureState } from '../../entities/feature-state.entity.js';
 import { UserFeature } from '../../entities/user-feature.entity.js';
@@ -68,7 +68,7 @@ export class AdminFlagsService {
       counts.map((c) => [c.feature, Number(c.count)]),
     );
 
-    const flags = FEATURE_KEYS.map((feature): AdminFeatureFlagDto => {
+    const flags = TOGGLE_FEATURE_KEYS.map((feature): AdminFeatureFlagDto => {
       const def = FEATURE_DEFINITIONS[feature];
       const state = stateByFeature.get(feature);
       const hasValidState =
@@ -196,27 +196,29 @@ export class AdminFlagsService {
         .map((s) => [s.feature, s.state]),
     );
 
-    const flags = FEATURE_KEYS.map((feature): AdminUserFeatureFlagDto => {
-      const def = FEATURE_DEFINITIONS[feature];
-      const override = overrideByFeature.get(feature);
-      return {
-        feature,
-        description: def.description,
-        default_value: def.default,
-        resolved: resolveFeature(
+    const flags = TOGGLE_FEATURE_KEYS.map(
+      (feature): AdminUserFeatureFlagDto => {
+        const def = FEATURE_DEFINITIONS[feature];
+        const override = overrideByFeature.get(feature);
+        return {
           feature,
-          user.subscription_tier,
-          override,
-          stateByFeature.get(feature),
-        ),
-        override_state:
-          override === undefined
-            ? 'default'
-            : override
-              ? 'force_on'
-              : 'force_off',
-      };
-    });
+          description: def.description,
+          default_value: def.default,
+          resolved: resolveFeature(
+            feature,
+            user.subscription_tier,
+            override,
+            stateByFeature.get(feature),
+          ),
+          override_state:
+            override === undefined
+              ? 'default'
+              : override
+                ? 'force_on'
+                : 'force_off',
+        };
+      },
+    );
 
     return { user_id: user.id, flags };
   }
@@ -288,7 +290,9 @@ export class AdminFlagsService {
     }
   }
 
-  private async flagDto(feature: FeatureKey): Promise<AdminFeatureFlagDto> {
+  private async flagDto(
+    feature: ToggleFeatureKey,
+  ): Promise<AdminFeatureFlagDto> {
     const { flags } = await this.listFlags();
     const flag = flags.find((f) => f.feature === feature);
     // The registry is static and `feature` passed the key guard, so the
@@ -297,8 +301,8 @@ export class AdminFlagsService {
     return flag;
   }
 
-  private assertKnownFeature(feature: string): FeatureKey {
-    if (!isFeatureKey(feature)) {
+  private assertKnownFeature(feature: string): ToggleFeatureKey {
+    if (!isToggleFeatureKey(feature)) {
       throw new BadRequestException(`Unknown feature: ${feature}`);
     }
     return feature;

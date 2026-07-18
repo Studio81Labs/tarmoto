@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Route } from "lucide-react";
+import { Route } from "lucide-react";
+import { Button } from "@tarmoto/ui";
 import { t } from "@/i18n";
 import { tripSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -51,19 +52,33 @@ export function SharedTripJoinCta({
           trips.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <Link
-            href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-ink transition hover:brightness-95"
+          <Button
+            variant="accent"
+            leftIcon={<Route size={16} />}
+            renderLink={({ className, children }) => (
+              <Link
+                href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+                className={className}
+              >
+                {children}
+              </Link>
+            )}
           >
-            <Route size={16} />
             Sign in to collaborate
-          </Link>
-          <Link
-            href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-            className="inline-flex items-center gap-2 rounded-lg border border-line-strong px-4 py-2 text-sm font-bold text-ink transition hover:bg-paper-2"
+          </Button>
+          <Button
+            variant="secondary"
+            renderLink={({ className, children }) => (
+              <Link
+                href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+                className={className}
+              >
+                {children}
+              </Link>
+            )}
           >
             Create an account
-          </Link>
+          </Button>
         </div>
       </section>
     );
@@ -104,19 +119,16 @@ export function SharedTripJoinCta({
         Accept this shared trip to open its preview, submit suggestions, and
         vote with the group.
       </p>
-      <button
-        type="button"
+      <Button
+        variant="accent"
+        className="mt-4"
         onClick={handleJoin}
-        disabled={!authReady || joining}
-        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={!authReady}
+        loading={joining}
+        leftIcon={<Route size={16} />}
       >
-        {joining ? (
-          <Loader2 size={16} className="animate-spin" />
-        ) : (
-          <Route size={16} />
-        )}
         Join trip
-      </button>
+      </Button>
     </section>
   );
 }

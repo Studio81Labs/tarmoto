@@ -80,6 +80,7 @@ import { AddUserLanguage1800000000000 } from '../../migrations/1800000000000-Add
 import { AddEmailTemplate1810000000000 } from '../../migrations/1810000000000-AddEmailTemplate.js';
 import { AddRoadQualitySeed1811000000000 } from '../../migrations/1811000000000-AddRoadQualitySeed.js';
 import { DropSharedRideEmbedClickCount1812000000000 } from '../../migrations/1812000000000-DropSharedRideEmbedClickCount.js';
+import { AddLimitEntitlements1813000000000 } from '../../migrations/1813000000000-AddLimitEntitlements.js';
 import {
   User,
   UserContact,
@@ -138,6 +139,8 @@ import {
   AdminAuditLog,
   UserFeature,
   FeatureState,
+  UserLimit,
+  LimitState,
   AppSetting,
   EmailLog,
   EmailTemplate,
@@ -201,6 +204,8 @@ const entities = [
   AdminAuditLog,
   UserFeature,
   FeatureState,
+  UserLimit,
+  LimitState,
   AppSetting,
   EmailLog,
   EmailTemplate,
@@ -311,6 +316,7 @@ const entities = [
             AddEmailTemplate1810000000000,
             AddRoadQualitySeed1811000000000,
             DropSharedRideEmbedClickCount1812000000000,
+            AddLimitEntitlements1813000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

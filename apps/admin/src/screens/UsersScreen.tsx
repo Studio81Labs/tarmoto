@@ -21,8 +21,11 @@ import {
 } from "../data/useAdminUsers.js";
 import {
   useAdminUserFeatureFlags,
+  useAdminUserFeatureLimits,
   useRemoveFeatureOverride,
+  useRemoveLimitOverride,
   useSetFeatureOverride,
+  useSetLimitOverride,
 } from "../data/useAdminFlags.js";
 
 type DeletedFilter = "active" | "deleted" | "all";
@@ -30,6 +33,9 @@ type UserRow = components["schemas"]["AdminUserRowDto"];
 type UserDetail = components["schemas"]["AdminUserDetailDto"];
 
 const PAGE_SIZE = 25;
+
+const formatLimit = (v: number | null | undefined) =>
+  v === null || v === undefined ? "∞" : String(v);
 
 export function UsersScreen() {
   const [q, setQ] = useState("");
@@ -276,6 +282,13 @@ export function UsersScreen() {
           </div>
           <NotificationPreferencesCard userId={selectedUserId} />
           <UserFeatureFlagsCard userId={selectedUserId} />
+          {/* Keyed so a direct switch between two selected users (View on a
+              different row, without Close in between) fully remounts the
+              card — otherwise the draft override input (free text, unlike
+              the flags card's plain buttons) would carry an unsubmitted
+              value typed for the previous user into the newly selected
+              user's row. */}
+          <UserFeatureLimitsCard key={selectedUserId} userId={selectedUserId} />
         </>
       ) : null}
     </section>
@@ -569,6 +582,144 @@ function UserFeatureFlagsCard({ userId }: { userId: string }) {
                     onClick={() => removeOverride(flag.feature)}
                   >
                     Reset to default
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function UserFeatureLimitsCard({ userId }: { userId: string }) {
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  const { data, isPending, error, refetch } = useAdminUserFeatureLimits(userId);
+  const setOverrideMutation = useSetLimitOverride();
+  const removeOverrideMutation = useRemoveLimitOverride();
+
+  function setOverride(feature: string, value: number | null) {
+    setPendingKey(feature);
+    setLimitError(null);
+    setOverrideMutation.mutate(
+      { params: { path: { userId, feature } }, body: { value } },
+      {
+        onSuccess: () => void refetch(),
+        onError: (err: unknown) => {
+          const serverMsg = (err as { message?: string } | undefined)?.message;
+          setLimitError(serverMsg ?? "Failed to set the limit override.");
+        },
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  }
+
+  function removeOverride(feature: string) {
+    setPendingKey(feature);
+    removeOverrideMutation.mutate(
+      { params: { path: { userId, feature } } },
+      {
+        onSuccess: () => {
+          setLimitError(null);
+          void refetch();
+        },
+        onError: (err: unknown) => {
+          const serverMsg = (err as { message?: string } | undefined)?.message;
+          setLimitError(serverMsg ?? "Failed to remove the limit override.");
+        },
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  }
+
+  function handleSet(feature: string) {
+    const trimmedValue = (drafts[feature] ?? "").trim();
+    const parsed = Number(trimmedValue);
+    // `Number("")` coerces to `0`, so an empty field must be rejected
+    // explicitly — otherwise a blank value silently submits as a real 0
+    // (capping the user at zero) instead of prompting the operator.
+    if (trimmedValue === "" || !Number.isInteger(parsed) || parsed < 0) {
+      setLimitError("Value must be a non-negative integer.");
+      return;
+    }
+    setOverride(feature, parsed);
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-paper p-5">
+      <h3 className="mb-4 text-sm font-semibold text-ink">Feature limits</h3>
+      {error ? (
+        <Alert
+          intent="danger"
+          title="Failed to load the user's feature limits."
+          className="mb-4"
+          compact
+        />
+      ) : null}
+      {limitError ? (
+        <Alert intent="danger" title={limitError} className="mb-4" compact />
+      ) : null}
+      {isPending ? (
+        <p className="text-sm text-fg-dim">Loading…</p>
+      ) : (
+        <dl className="flex flex-col gap-3 text-sm">
+          {(data?.limits ?? []).map((limit) => (
+            <div
+              key={limit.feature}
+              className="flex flex-wrap items-center gap-3"
+            >
+              <div className="min-w-48">
+                <dt className="text-ink">{limit.feature}</dt>
+                <dd className="text-fg-dim">{limit.description}</dd>
+              </div>
+              <span className="tabular-nums">
+                {formatLimit(limit.resolved)}
+              </span>
+              {limit.override_active ? (
+                <Pill variant="accent">
+                  {formatLimit(limit.override_value)}
+                </Pill>
+              ) : null}
+              <div className="ml-auto flex items-center gap-2">
+                <Input
+                  value={drafts[limit.feature] ?? ""}
+                  onChange={(v) =>
+                    setDrafts((prev) => ({ ...prev, [limit.feature]: v }))
+                  }
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="value"
+                  ariaLabel={`${limit.feature} override value`}
+                  className="w-24"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={pendingKey === limit.feature}
+                  onClick={() => handleSet(limit.feature)}
+                >
+                  Set
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={pendingKey === limit.feature}
+                  onClick={() => setOverride(limit.feature, null)}
+                >
+                  Unlimited
+                </Button>
+                {limit.override_active ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={pendingKey === limit.feature}
+                    onClick={() => removeOverride(limit.feature)}
+                  >
+                    Remove override
                   </Button>
                 ) : null}
               </div>

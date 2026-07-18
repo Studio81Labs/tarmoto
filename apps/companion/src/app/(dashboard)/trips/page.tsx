@@ -502,13 +502,13 @@ export default function TripListPage() {
         />
 
         {errorBanner && (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
             <span>{errorBanner}</span>
             <button
               type="button"
               aria-label={t("Dismiss error")}
               onClick={() => setErrorBanner(null)}
-              className="text-red-400 hover:text-ink"
+              className="text-red-700 hover:text-ink"
             >
               <X size={14} />
             </button>
@@ -1264,7 +1264,7 @@ function FolderModal({
           }}
           placeholder={t("e.g. Summer 2026 Alps")}
         />
-        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel ")}
@@ -1391,7 +1391,7 @@ function MenuItem({
 }) {
   const toneClass =
     tone === "danger"
-      ? "text-red-400 hover:bg-red-500/10"
+      ? "text-red-700 hover:bg-red-500/10"
       : "text-ink hover:bg-paper";
   return (
     <button

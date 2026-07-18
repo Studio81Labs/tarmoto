@@ -70,7 +70,7 @@ export class UsersService {
     }
     return toUserResponse(
       user,
-      await this.featureResolver.resolveForLoadedUser(user),
+      await this.featureResolver.resolveEntitlementsForLoadedUser(user),
     );
   }
 
@@ -556,7 +556,7 @@ export class UsersService {
     }
     return toUserResponse(
       saved,
-      await this.featureResolver.resolveForLoadedUser(saved),
+      await this.featureResolver.resolveEntitlementsForLoadedUser(saved),
     );
   }
 
@@ -614,7 +614,7 @@ export class UsersService {
     await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
     return toUserResponse(
       saved,
-      await this.featureResolver.resolveForLoadedUser(saved),
+      await this.featureResolver.resolveEntitlementsForLoadedUser(saved),
     );
   }
 

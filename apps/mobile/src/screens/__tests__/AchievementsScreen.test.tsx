@@ -1,7 +1,7 @@
 /**
  * AchievementsScreen — hub navigation + summary line.
  */
-import { buildFeatureSnapshot } from "@tarmoto/shared";
+import { buildFeatureSnapshot, buildLimitSnapshot } from "@tarmoto/shared";
 import React from "react";
 import {
   fireEvent,
@@ -62,6 +62,7 @@ beforeAll(() => {
       },
       subscription_tier: "free",
       features: buildFeatureSnapshot("free", {}, {}),
+      limits: buildLimitSnapshot("free", {}, {}),
       created_at: "2026-01-01T00:00:00Z",
     },
     isAuthenticated: true,

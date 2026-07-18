@@ -200,7 +200,7 @@ export default function RideDetailPage() {
   if (error || !ride) {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {error ?? "Could not load ride"}
         </div>
       </PageShell>
@@ -370,7 +370,7 @@ export default function RideDetailPage() {
                 </div>
               )}
               {renameError && (
-                <p className="mt-1 text-xs text-red-400">{renameError}</p>
+                <p className="mt-1 text-xs text-red-700">{renameError}</p>
               )}
             </div>
 

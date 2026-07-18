@@ -1,4 +1,4 @@
-import { buildFeatureSnapshot } from '@tarmoto/shared';
+import { buildFeatureSnapshot, buildLimitSnapshot } from '@tarmoto/shared';
 import { AuthService } from './auth.service.js';
 
 /**
@@ -33,10 +33,13 @@ describe('AuthService register launch-tier grant', () => {
       issueAndSend: jest.fn().mockResolvedValue(undefined),
     };
     const featureResolver = {
-      resolveForLoadedUser: jest
+      resolveEntitlementsForLoadedUser: jest
         .fn()
         .mockImplementation((user: { subscription_tier: string }) =>
-          Promise.resolve(buildFeatureSnapshot(user.subscription_tier, {}, {})),
+          Promise.resolve({
+            features: buildFeatureSnapshot(user.subscription_tier, {}, {}),
+            limits: buildLimitSnapshot(user.subscription_tier, {}, {}),
+          }),
         ),
     };
     const appSettings = {
@@ -74,6 +77,8 @@ describe('AuthService register launch-tier grant', () => {
     expect(created).not.toHaveProperty('subscription_tier');
     expect(res.user.subscription_tier).toBe('free');
     expect(res.user.features.gpx_export).toBe(false);
+    // Free tier is capped at 1 active trip.
+    expect(res.user.limits.max_active_trips).toBe(1);
   });
 
   it('auto-grants the launch tier with plan_source founder', async () => {
@@ -89,6 +94,8 @@ describe('AuthService register launch-tier grant', () => {
     // the pro (mid) tier grant reaches the resolved snapshot immediately
     expect(res.user.features.gpx_export).toBe(true);
     expect(res.user.features.group_rides).toBe(false);
+    // pro is unlimited on max_active_trips
+    expect(res.user.limits.max_active_trips).toBeNull();
   });
 
   it('supports granting the premium (top) tier', async () => {
@@ -96,5 +103,6 @@ describe('AuthService register launch-tier grant', () => {
     const res = await svc.register(dto);
     expect(res.user.subscription_tier).toBe('premium');
     expect(res.user.features.group_rides).toBe(true);
+    expect(res.user.limits.max_active_trips).toBeNull();
   });
 });

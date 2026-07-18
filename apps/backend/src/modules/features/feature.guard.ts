@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as express from 'express';
-import type { FeatureKey } from '@tarmoto/shared';
+import type { ToggleFeatureKey } from '@tarmoto/shared';
 import { FeatureResolver } from './feature-resolver.service.js';
 import { REQUIRED_FEATURE_KEY } from './require-feature.decorator.js';
 
@@ -26,10 +26,9 @@ export class FeatureGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const feature = this.reflector.getAllAndOverride<FeatureKey | undefined>(
-      REQUIRED_FEATURE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const feature = this.reflector.getAllAndOverride<
+      ToggleFeatureKey | undefined
+    >(REQUIRED_FEATURE_KEY, [context.getHandler(), context.getClass()]);
     if (!feature) return true;
 
     const request = context.switchToHttp().getRequest<express.Request>();

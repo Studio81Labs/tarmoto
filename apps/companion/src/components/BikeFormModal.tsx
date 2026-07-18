@@ -147,7 +147,7 @@ export function BikeFormModal({
           />
 
           {submitError && (
-            <div className="rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-400">
+            <div className="rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-sm text-red-700">
               {submitError}
             </div>
           )}

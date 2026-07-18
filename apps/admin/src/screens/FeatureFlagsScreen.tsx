@@ -3,8 +3,10 @@ import type { components } from "@tarmoto/openapi-client";
 import {
   Alert,
   Button,
+  Checkbox,
   DataTable,
   type DataTableColumn,
+  Input,
   PageHeader,
   Pill,
   Textarea,
@@ -12,8 +14,11 @@ import {
 import {
   useAdminFeatureFlags,
   useAdminFeatureFlagUsers,
+  useAdminFeatureLimits,
   useClearFeatureGlobal,
+  useClearLimitGlobal,
   useSetFeatureGlobal,
+  useSetLimitGlobal,
 } from "../data/useAdminFlags.js";
 import {
   useLaunchTier,
@@ -24,6 +29,10 @@ import { Dialog } from "../components/Dialog.js";
 type FeatureFlag = components["schemas"]["AdminFeatureFlagDto"];
 type FlagUserRow = components["schemas"]["AdminFeatureFlagUserRowDto"];
 type LaunchTier = components["schemas"]["SetLaunchTierDto"]["tier"];
+type FeatureLimit = components["schemas"]["AdminFeatureLimitDto"];
+
+const formatLimit = (v: number | null | undefined) =>
+  v === null || v === undefined ? "∞" : String(v);
 
 function readErrorMessage(err: unknown, fallback: string): string {
   const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
@@ -317,6 +326,8 @@ export function FeatureFlagsScreen() {
       {expandedFeature ? (
         <FlagOverridesPanel feature={expandedFeature} />
       ) : null}
+
+      <FeatureLimitsCard />
     </section>
   );
 }
@@ -489,6 +500,265 @@ function FlagOverridesPanel({ feature }: { feature: string }) {
           </span>
         }
         ariaLabel={`Overridden users for ${feature}`}
+      />
+    </div>
+  );
+}
+
+function FeatureLimitsCard() {
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Set-override dialog state (value OR unlimited + mandatory reason).
+  const [target, setTarget] = useState<FeatureLimit | null>(null);
+  const [valueInput, setValueInput] = useState("");
+  const [unlimited, setUnlimited] = useState(false);
+  const [reason, setReason] = useState("");
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  const { data, isPending, error, refetch } = useAdminFeatureLimits();
+  const setGlobalMutation = useSetLimitGlobal();
+  const clearGlobalMutation = useClearLimitGlobal();
+  const rows: FeatureLimit[] = data?.limits ?? [];
+
+  function openDialog(row: FeatureLimit) {
+    setTarget(row);
+    setUnlimited(row.global_active && row.global_value === null);
+    setValueInput(
+      row.global_active && row.global_value !== null
+        ? String(row.global_value)
+        : "",
+    );
+    setReason("");
+    setDialogError(null);
+  }
+
+  function handleSetSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!target) return;
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setDialogError("A reason is required for any global limit change.");
+      return;
+    }
+    const trimmedValue = valueInput.trim();
+    const parsed = Number(trimmedValue);
+    // `Number("")` coerces to `0`, so an empty field must be rejected
+    // explicitly — otherwise a blank value silently submits as a real 0
+    // (blocking the feature for everyone) instead of prompting the operator.
+    if (
+      !unlimited &&
+      (trimmedValue === "" || !Number.isInteger(parsed) || parsed < 0)
+    ) {
+      setDialogError("Value must be a non-negative integer (or Unlimited).");
+      return;
+    }
+    setDialogError(null);
+    setGlobalMutation.mutate(
+      {
+        params: { path: { feature: target.feature } },
+        body: { value: unlimited ? null : parsed, reason: trimmedReason },
+      },
+      {
+        onSuccess: () => {
+          setTarget(null);
+          void refetch();
+        },
+        onError: (err: unknown) =>
+          setDialogError(
+            readErrorMessage(err, "Failed to set the limit override."),
+          ),
+      },
+    );
+  }
+
+  function clearGlobal(row: FeatureLimit) {
+    setPendingKey(row.feature);
+    setActionError(null);
+    clearGlobalMutation.mutate(
+      { params: { path: { feature: row.feature } } },
+      {
+        onSuccess: () => void refetch(),
+        onError: (err: unknown) =>
+          setActionError(
+            readErrorMessage(err, "Failed to clear the limit override."),
+          ),
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  }
+
+  const columns: ReadonlyArray<DataTableColumn<FeatureLimit>> = [
+    {
+      key: "feature",
+      label: "Limit",
+      primary: true,
+      render: (row) => row.feature,
+    },
+    {
+      key: "description",
+      label: "Description",
+      render: (row) => row.description,
+    },
+    {
+      key: "tiers",
+      label: "Free / Pro / Premium",
+      size: "160px",
+      render: (row) => (
+        <span className="tabular-nums">
+          {formatLimit(row.tier_values.free)} /{" "}
+          {formatLimit(row.tier_values.pro)} /{" "}
+          {formatLimit(row.tier_values.premium)}
+        </span>
+      ),
+    },
+    {
+      key: "global",
+      label: "Global override",
+      size: "200px",
+      render: (row) =>
+        row.global_active ? (
+          <div className="flex flex-col gap-0.5">
+            <Pill
+              variant="warning"
+              {...(row.global_reason ? { title: row.global_reason } : {})}
+            >
+              {formatLimit(row.global_value)}
+            </Pill>
+            {row.global_reason ? (
+              <span className="text-xs text-fg-dim">{row.global_reason}</span>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-fg-dim">—</span>
+        ),
+    },
+    {
+      key: "overridden_user_count",
+      label: "Overridden users",
+      size: "140px",
+      numeric: true,
+      render: (row) => row.overridden_user_count,
+    },
+    {
+      key: "actions",
+      label: "",
+      size: "220px",
+      align: "right",
+      render: (row) => (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={pendingKey === row.feature}
+            onClick={() => openDialog(row)}
+          >
+            Set override
+          </Button>
+          {row.global_active ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={pendingKey === row.feature}
+              onClick={() => clearGlobal(row)}
+            >
+              Clear override
+            </Button>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="mt-6 rounded-xl border border-line bg-paper p-5">
+      <h3 className="mb-4 text-sm font-semibold text-ink">Limits</h3>
+      {error ? (
+        <Alert
+          intent="danger"
+          title="Failed to load feature limits."
+          className="mb-4"
+          compact
+        />
+      ) : null}
+      {actionError ? (
+        <Alert intent="danger" title={actionError} className="mb-4" compact />
+      ) : null}
+
+      <Dialog
+        open={target !== null}
+        title={`Set override — "${target?.feature ?? ""}"`}
+        onClose={() => setTarget(null)}
+        busy={setGlobalMutation.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="set-limit-form"
+              variant="primary"
+              size="sm"
+              loading={setGlobalMutation.isPending}
+            >
+              Set override
+            </Button>
+          </>
+        }
+      >
+        {dialogError ? (
+          <Alert intent="danger" title={dialogError} className="mb-4" compact />
+        ) : null}
+        <form
+          id="set-limit-form"
+          onSubmit={handleSetSubmit}
+          className="flex flex-col gap-3"
+        >
+          <p className="text-sm text-fg-dim">
+            Sets a global override for this limit, replacing the tier default
+            for everyone. A stricter per-user override still wins. A reason is
+            required.
+          </p>
+          <Input
+            value={valueInput}
+            onChange={setValueInput}
+            type="text"
+            inputMode="numeric"
+            placeholder="e.g. 3"
+            ariaLabel="Value"
+            disabled={unlimited}
+          />
+          <Checkbox
+            checked={unlimited}
+            onChange={setUnlimited}
+            label="Unlimited (∞)"
+          />
+          <Textarea
+            value={reason}
+            onChange={setReason}
+            placeholder="Why is this override being set?"
+            ariaLabel="Reason"
+            maxLength={500}
+          />
+        </form>
+      </Dialog>
+
+      <DataTable
+        columns={columns}
+        rows={isPending ? [] : rows}
+        rowKey={(row) => row.feature}
+        showCaret={false}
+        emptyState={
+          <span className="text-sm text-fg-dim">
+            {isPending ? "—" : "No limits in the registry."}
+          </span>
+        }
+        ariaLabel="Feature Limits"
       />
     </div>
   );

@@ -15,6 +15,8 @@ import {
   Siren,
   Flame,
   Info,
+  Square,
+  X,
 } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
@@ -43,6 +45,7 @@ import {
 import { ApiError, api, roadsApi, tripsApi } from "@/lib/api";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
+import { useFormat } from "@/format/FormatProvider";
 import { FunZonePanel } from "./_components/FunZonePanel";
 import { fetchFunZonesInBbox, type FunZoneListItem } from "@/lib/discover";
 import { tripFromDetail } from "@/lib/trip-from-detail";
@@ -192,6 +195,25 @@ function ExplorerPageInner() {
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
   }, []);
+  // The draw-region control is drag-based and only handles mouse events, so we
+  // offer it only where a fine pointer (mouse / trackpad) exists. On touch-only
+  // devices it can't complete a box; the zone list still scopes to the
+  // viewport there (pan to re-scope). SSR-stable default true; narrowed post
+  // mount. Proper touch draw is a follow-up on the shared RegionDrawControl.
+  const [canDrawRegion, setCanDrawRegion] = useState(true);
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const mq = window.matchMedia("(any-pointer: fine)");
+    const update = () => setCanDrawRegion(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
   // Post-mount narrow-screen default: close the sidebar so the map
   // gets full width on phones. Runs once on mount; subsequent user
   // toggles of the Filters pill are respected (the effect is keyed
@@ -242,6 +264,7 @@ function ExplorerPageInner() {
     useState<SegmentDetailPanelState>({ status: "idle" });
   // "My trips" overlay: the rider's trips + the drawer for a clicked route.
   // Only fetch the (geospatial) trip outlines while the overlay is on.
+  const format = useFormat();
   const { trips } = useUserTrips({ enabled: showMyTrips });
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [tripDetailState, setTripDetailState] = useState<TripDetailPanelState>({
@@ -263,6 +286,17 @@ function ExplorerPageInner() {
   const [selectedFunZoneId, setSelectedFunZoneId] = useState<string | null>(
     null,
   );
+  // Optional drawn bounding box (from the sidebar "Draw region" control). When
+  // set it constrains the zone fetch to that box instead of the live viewport,
+  // so panning doesn't re-scope the list — matching the retired /discover flow.
+  const [drawnBbox, setDrawnBbox] = useState<
+    [number, number, number, number] | null
+  >(null);
+  // Narrow viewports render the info column as a full-width overlay that
+  // covers the map — no room to drag a box. While a draw is armed there we
+  // hide the overlay (map exposed) and show a floating cancel affordance,
+  // restoring the panel once the box is drawn or the draw is cancelled.
+  const [narrowDrawing, setNarrowDrawing] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -292,6 +326,10 @@ function ExplorerPageInner() {
   // already carries the brand + auth CTAs. Without our header there's no Filter
   // toggle for them, so the filter column is always shown.
   const filterVisible = isAuthenticated ? filterOpen : true;
+  // The right info column composites one block per active info layer: Fun
+  // Zones (list + draw region) and/or Conditions (closures + passes). It docks
+  // in whenever either is on.
+  const rightPanelOpen = showFunZones || showConditionsLayer;
   // Imperative handle to the MapLibre camera. `MapCanvas` reads
   // its initial center/zoom only at mount (to avoid yanking user
   // pans), so search-pick flows need this narrow opt-in channel
@@ -462,17 +500,27 @@ function ExplorerPageInner() {
     if (!showMyRides) setSelectedRideId(null);
   }, [showMyRides]);
   useEffect(() => {
-    if (!showFunZones) setSelectedFunZoneId(null);
+    if (!showFunZones) {
+      setSelectedFunZoneId(null);
+      // Toggling the overlay off also drops any drawn region + its map box,
+      // and ends a narrow draw session.
+      setDrawnBbox(null);
+      setNarrowDrawing(false);
+      mapRef.current?.clearDrawnRegion();
+    }
   }, [showFunZones]);
-  // Viewport-driven zone fetch while the overlay is on. Debounced so
-  // continuous panning doesn't spam the endpoint; superseded requests abort.
-  // On failure the previous zones stay on the map and a floating notice
-  // appears — silently blanking the overlay would read as "no zones here".
+  // The bbox the zone list is scoped to: a drawn region (stable across pans)
+  // takes precedence over the live viewport.
+  const funZoneBbox = drawnBbox ? drawnBbox.join(",") : conditionBbox;
+  // Zone fetch while the overlay is on. Debounced so continuous panning
+  // doesn't spam the endpoint; superseded requests abort. On failure the
+  // previous zones stay on the map and a floating notice appears — silently
+  // blanking the overlay would read as "no zones here".
   useEffect(() => {
-    if (!showFunZones || !conditionBbox) return;
+    if (!showFunZones || !funZoneBbox) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      const bbox = conditionBbox.split(",").map(Number) as [
+      const bbox = funZoneBbox.split(",").map(Number) as [
         number,
         number,
         number,
@@ -494,7 +542,7 @@ function ExplorerPageInner() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [showFunZones, conditionBbox]);
+  }, [showFunZones, funZoneBbox]);
   // Legacy /discover deep links: the permanent redirect lands here with the
   // old page's query intact (lng/lat/z camera, zone=<id>, zones=1, and the
   // drawn-region bbox — the last has no explorer equivalent; drawn-region
@@ -549,6 +597,65 @@ function ExplorerPageInner() {
     if (showQualityOverlay) toggleQuality();
     toggleSurface();
   };
+  // Dismisses the whole composited info column (narrow-viewport ×), turning
+  // off every info layer that feeds it.
+  const closeRightPanel = () => {
+    if (showFunZones) setShowFunZones(false);
+    if (showConditionsLayer) toggleConditionsLayer();
+  };
+  // Composited right-column content: a Fun Zones block (draw region + ranked
+  // list) and/or a Conditions block, with a divider only between the two.
+  const rightPanel = (
+    <div className="flex min-h-0 flex-col gap-4">
+      {showFunZones && (
+        <FunZonesBlock
+          zones={funZones}
+          selectedZoneId={selectedFunZoneId}
+          hasDrawnRegion={drawnBbox != null}
+          canDraw={canDrawRegion}
+          error={funZonesError}
+          format={format}
+          onSelectZone={(zoneId) => {
+            setSelectedSegmentId(null);
+            setSelectedTripId(null);
+            setSelectedRideId(null);
+            setSelectedFunZoneId(zoneId);
+          }}
+          onDrawRegion={() => {
+            mapRef.current?.startDrawRegion();
+            // Narrow overlay covers the map — step it aside to drag on.
+            if (!isWideViewport) setNarrowDrawing(true);
+          }}
+          onClearRegion={() => mapRef.current?.clearDrawnRegion()}
+        />
+      )}
+      {showConditionsLayer && (
+        <InfoPanelContent
+          // A leading divider only when a Fun Zones block sits above — same
+          // `border-t` the Closures/Passes sections use, so the between-blocks
+          // rule reads consistently (a 1px bg div could sub-pixel away).
+          topDivider={showFunZones}
+          conditionsMonth={conditionsMonth}
+          setConditionsMonth={setConditionsMonth}
+          conditionsDate={conditionsDate}
+          setConditionsDate={setConditionsDate}
+          conditionBbox={conditionBbox}
+          onFocusClosure={(closure) =>
+            mapRef.current?.openConditionPopover({
+              kind: "closure",
+              id: closure.id,
+            })
+          }
+          onFocusPass={(pass) =>
+            mapRef.current?.openConditionPopover({
+              kind: "pass",
+              id: pass.id,
+            })
+          }
+        />
+      )}
+    </div>
+  );
   return (
     // Spec-aligned Route Explorer (v2-pages.jsx RoadExplorerView): a
     // 300|1fr grid with the Filters sidebar on the left, full-bleed
@@ -625,7 +732,7 @@ function ExplorerPageInner() {
             // (see the absolute-positioned aside below) so a phone
             // doesn't lose its entire map area to a fixed rail.
             "--explore-right":
-              isWideViewport && showConditionsLayer ? "370px" : "0px",
+              isWideViewport && rightPanelOpen ? "370px" : "0px",
           } as React.CSSProperties
         }
       >
@@ -770,6 +877,11 @@ function ExplorerPageInner() {
                 setSelectedTripId(null);
                 setSelectedRideId(null);
                 setSelectedFunZoneId(zoneId);
+              }}
+              onDrawnRegionChange={(bbox) => {
+                setDrawnBbox(bbox);
+                // A committed/cleared box ends the narrow draw session.
+                setNarrowDrawing(false);
               }}
               onSegmentSelect={(segmentId) => {
                 setSelectedTripId(null);
@@ -979,75 +1091,58 @@ function ExplorerPageInner() {
             onClose={() => setSelectedFunZoneId(null)}
           />
 
+          {/* Narrow draw session: the overlay is stepped aside so the rider
+              can drag on the exposed map. A floating chip keeps a cancel out
+              (which restores the panel via `startDrawRegion`'s counterpart). */}
+          {!isWideViewport && narrowDrawing && (
+            <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
+              <Square size={12} className="shrink-0 text-accent" aria-hidden />
+              {t("Drag on the map to draw a region")}
+              <button
+                type="button"
+                onClick={() => {
+                  mapRef.current?.cancelDrawRegion();
+                  setNarrowDrawing(false);
+                }}
+                className="rounded-full border border-line-strong px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+              >
+                {t("Cancel")}
+              </button>
+            </div>
+          )}
+
           {/* Narrow-viewport info panel — overlays the map instead of
             taking a grid column so a phone keeps useful map area
-            underneath. Close button toggles off whichever info
-            layer is active (mirrors how toggling the pill in the
-            top overlay dismisses the panel). */}
-          {showConditionsLayer && !isWideViewport && (
+            underneath. Hidden while a draw is armed (above). Close button
+            toggles off whichever info layer is active (mirrors how toggling
+            the pill in the top overlay dismisses the panel). */}
+          {rightPanelOpen && !isWideViewport && !narrowDrawing && (
             <aside
-              className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
+              className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
               aria-label={t("Info layers")}
             >
               <button
                 type="button"
-                onClick={toggleConditionsLayer}
+                onClick={closeRightPanel}
                 className="absolute right-3 top-3 rounded-md border border-line-strong bg-cream px-2 py-1 text-[11px] font-bold uppercase tracking-[1px] text-ink transition hover:bg-paper-2"
                 aria-label={t("Close info panel")}
               >
                 {t("Close")}
               </button>
-              <InfoPanelContent
-                conditionsMonth={conditionsMonth}
-                setConditionsMonth={setConditionsMonth}
-                conditionsDate={conditionsDate}
-                setConditionsDate={setConditionsDate}
-                conditionBbox={conditionBbox}
-                onFocusClosure={(closure) =>
-                  mapRef.current?.openConditionPopover({
-                    kind: "closure",
-                    id: closure.id,
-                  })
-                }
-                onFocusPass={(pass) =>
-                  mapRef.current?.openConditionPopover({
-                    kind: "pass",
-                    id: pass.id,
-                  })
-                }
-              />
+              {rightPanel}
             </aside>
           )}
         </div>
 
-        {/* RIGHT — Closures / Passes info panel. On wide viewports
-          docks in as a real third grid column (the `--explore-right`
-          CSS variable allocates 370 px, matching the planner/preview right
-          column); on narrow viewports the
-          grid column collapses to 0 and the same content renders
-          as a top-anchored overlay over the map (with a close
-          affordance) so a phone keeps a usable map underneath. */}
-        {showConditionsLayer && isWideViewport && (
-          <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line bg-paper p-4">
-            <InfoPanelContent
-              conditionsMonth={conditionsMonth}
-              setConditionsMonth={setConditionsMonth}
-              conditionsDate={conditionsDate}
-              setConditionsDate={setConditionsDate}
-              conditionBbox={conditionBbox}
-              onFocusClosure={(closure) =>
-                mapRef.current?.openConditionPopover({
-                  kind: "closure",
-                  id: closure.id,
-                })
-              }
-              onFocusPass={(pass) =>
-                mapRef.current?.openConditionPopover({
-                  kind: "pass",
-                  id: pass.id,
-                })
-              }
-            />
+        {/* RIGHT — composited info column. One block per active info layer
+          (Fun Zones list + draw region, and/or Closures/Passes), stacked with
+          a divider only *between* blocks. On wide viewports it docks in as a
+          real third grid column (`--explore-right` = 370 px); on narrow
+          viewports the grid column collapses to 0 and the same content
+          overlays the map (above) so a phone keeps a usable map underneath. */}
+        {rightPanelOpen && isWideViewport && (
+          <aside className="flex min-h-0 flex-col overflow-y-auto border-l border-line bg-paper p-4">
+            {rightPanel}
           </aside>
         )}
       </div>
@@ -1063,6 +1158,7 @@ const EXPLORE_SEARCH_RESULT_ZOOM = 12;
 // and PassesPanel only get described once. `onFocusClosure`/`onFocusPass`
 // fly the map to a list-row's marker and open its shared popover.
 function InfoPanelContent({
+  topDivider = false,
   conditionsMonth,
   setConditionsMonth,
   conditionsDate,
@@ -1071,6 +1167,8 @@ function InfoPanelContent({
   onFocusClosure,
   onFocusPass,
 }: {
+  /** Divider above the first section — set when another block sits above. */
+  topDivider?: boolean;
   conditionsMonth: number;
   setConditionsMonth: (month: number) => void;
   conditionsDate: Date;
@@ -1090,6 +1188,9 @@ function InfoPanelContent({
           bbox={conditionBbox}
           showRouteWarnings={false}
           onFocusClosure={onFocusClosure}
+          // Leading divider only when a block sits above (Fun Zones); when
+          // Conditions is the first/only block the panel top stays clean.
+          topDivider={topDivider}
         />
       ) : (
         <p className="text-xs text-fg-dim">
@@ -1113,6 +1214,146 @@ function InfoPanelContent({
       )}
     </>
   );
+}
+
+// Fun Zones info block: header + draw-region controls + a ranked list of zones
+// in the current scope (drawn box or viewport). Selecting a row opens the
+// zone's detail drawer. Carried over from the retired /discover left panel.
+function FunZonesBlock({
+  zones,
+  selectedZoneId,
+  hasDrawnRegion,
+  canDraw,
+  error,
+  format,
+  onSelectZone,
+  onDrawRegion,
+  onClearRegion,
+}: {
+  zones: readonly FunZoneListItem[];
+  selectedZoneId: string | null;
+  hasDrawnRegion: boolean;
+  /** Whether the drag-based draw-region control is offered (fine pointer). */
+  canDraw: boolean;
+  error: boolean;
+  format: ReturnType<typeof useFormat>;
+  onSelectZone: (zoneId: string) => void;
+  onDrawRegion: () => void;
+  onClearRegion: () => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <Flame size={14} className="text-accent" />
+          {t("Fun Zones")}
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-[0.4px] text-fg-mute">
+          {t("{count} in {scope}", {
+            count: zones.length,
+            scope: hasDrawnRegion ? t("drawn region") : t("view"),
+          })}
+        </span>
+      </div>
+
+      {canDraw && (
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Square size={13} />}
+            onClick={onDrawRegion}
+            className="flex-1"
+          >
+            {hasDrawnRegion ? t("Redraw region") : t("Draw region")}
+          </Button>
+          {hasDrawnRegion && (
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<X size={13} />}
+              onClick={onClearRegion}
+            >
+              {t("Clear")}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {error ? (
+        <p className="text-xs text-fg-dim">
+          {t("Couldn't refresh Fun Zones for this area.")}
+        </p>
+      ) : zones.length === 0 ? (
+        <p className="text-xs text-fg-dim">
+          {hasDrawnRegion
+            ? t("No Fun Zones in the drawn region — redraw a larger area.")
+            : t("No Fun Zones in view — zoom out or pan the map.")}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {zones.map((zone, index) => {
+            const active = zone.id === selectedZoneId;
+            return (
+              <li key={zone.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectZone(zone.id)}
+                  className={`flex w-full items-start gap-3 rounded-[11px] border px-3 py-2.5 text-left transition ${
+                    active
+                      ? "border-accent bg-accent/10"
+                      : "border-line bg-cream hover:border-line-strong hover:bg-paper"
+                  }`}
+                >
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[11px] font-bold tabular-nums text-accent">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+                        {zone.name ?? funZoneFallbackName(zone)}
+                      </span>
+                      <span className="shrink-0 text-xs font-bold tabular-nums text-accent">
+                        {format.decimal(zone.composite_score, 1)}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-fg-dim">
+                      {t("{count} roads", { count: zone.road_count })}
+                      {zone.total_curve_km != null
+                        ? ` · ${format.distanceKm(zone.total_curve_km)} ${t("curves")}`
+                        : ""}
+                      {zone.avg_quality != null
+                        ? ` · ${t("avg")} ${format.decimal(zone.avg_quality, 1)}★`
+                        : ""}
+                    </span>
+                    {zone.best_season ? (
+                      <span className="mt-0.5 block truncate text-[10px] text-fg-mute">
+                        {zone.best_season}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// Placeholder name from the zone polygon centroid when the backend has no
+// human label yet — the boundary is a closed ring, so averaging its vertices
+// is a cheap centroid approximation (mirrors the retired /discover panel).
+function funZoneFallbackName(zone: FunZoneListItem): string {
+  const points = zone.boundary as unknown as Array<{
+    lat: number;
+    lng: number;
+  }>;
+  if (!points || points.length === 0) return "Unnamed zone";
+  const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
+  const lng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
+  return `Zone near ${lat.toFixed(2)}, ${lng.toFixed(2)}`;
 }
 
 // Spec-styled filter checkbox: 16 × 16 rounded-4 ink-bordered

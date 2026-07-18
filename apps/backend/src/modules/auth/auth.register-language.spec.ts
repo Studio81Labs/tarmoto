@@ -1,4 +1,8 @@
-import { buildFeatureSnapshot, resolveLocale } from '@tarmoto/shared';
+import {
+  buildFeatureSnapshot,
+  buildLimitSnapshot,
+  resolveLocale,
+} from '@tarmoto/shared';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 
@@ -49,10 +53,13 @@ describe('Auth register: Accept-Language -> User.language capture', () => {
       issueAndSend: jest.fn().mockResolvedValue(undefined),
     };
     const featureResolver = {
-      resolveForLoadedUser: jest
+      resolveEntitlementsForLoadedUser: jest
         .fn()
         .mockImplementation((user: { subscription_tier: string }) =>
-          Promise.resolve(buildFeatureSnapshot(user.subscription_tier, {}, {})),
+          Promise.resolve({
+            features: buildFeatureSnapshot(user.subscription_tier, {}, {}),
+            limits: buildLimitSnapshot(user.subscription_tier, {}, {}),
+          }),
         ),
     };
     const appSettings = {

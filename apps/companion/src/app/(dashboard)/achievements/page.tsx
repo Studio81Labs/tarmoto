@@ -412,7 +412,7 @@ function Dashboard({
         />
         {joinError && (
           <p
-            className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-xs text-red-400"
+            className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-3 py-2 text-xs text-red-700"
             role="alert"
           >
             {joinError}
@@ -1009,7 +1009,7 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           className="rounded-[14px] border border-quality-q1/30 bg-quality-q1/10 p-6 text-center"
         >
           <AlertTriangle
-            className="mx-auto mb-2 text-red-400"
+            className="mx-auto mb-2 text-red-700"
             size={24}
             aria-hidden="true"
           />
@@ -1341,11 +1341,11 @@ function ErrorCard({
       role="alert"
       className="rounded-[14px] border border-red-900/60 bg-red-950/30 p-6 text-center"
     >
-      <AlertTriangle className="mx-auto text-red-300 mb-2" size={28} />
-      <p className="text-red-200 font-medium">
+      <AlertTriangle className="mx-auto text-red-700 mb-2" size={28} />
+      <p className="text-red-700 font-medium">
         {t("Could not load achievements")}
       </p>
-      <p className="text-red-300/80 text-sm mt-1">{message}</p>
+      <p className="text-red-700/80 text-sm mt-1">{message}</p>
       <button
         type="button"
         onClick={onRetry}

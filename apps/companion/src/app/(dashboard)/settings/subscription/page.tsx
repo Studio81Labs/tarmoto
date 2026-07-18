@@ -229,7 +229,7 @@ export default function SubscriptionPage() {
       />
 
       {actionState.error ? (
-        <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-400">
+        <div className="mb-6 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
           {actionState.error}
         </div>
       ) : null}
@@ -237,7 +237,7 @@ export default function SubscriptionPage() {
       {state.kind === "loading" ? (
         <LoadingState />
       ) : state.kind === "error" ? (
-        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-400">
+        <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
           {state.message}
         </div>
       ) : snapshot ? (
