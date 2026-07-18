@@ -7,6 +7,7 @@
 
 import type { components } from "@tarmoto/openapi-client";
 import type { Formatters } from "@tarmoto/shared";
+import type { EnglishMessageKey } from "@/i18n";
 
 export const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
 export type RideType = (typeof RIDE_TYPES)[number];
@@ -67,12 +68,13 @@ export type YearOverYearPoint = {
  */
 export type StatsWindow = "all" | "year" | "90d" | "30d";
 
-export const STATS_WINDOWS: { value: StatsWindow; label: string }[] = [
-  { value: "all", label: "All time" },
-  { value: "year", label: "This year" },
-  { value: "90d", label: "Last 90 days" },
-  { value: "30d", label: "Last 30 days" },
-];
+export const STATS_WINDOWS: { value: StatsWindow; label: EnglishMessageKey }[] =
+  [
+    { value: "all", label: "All time" },
+    { value: "year", label: "This year" },
+    { value: "90d", label: "Last 90 days" },
+    { value: "30d", label: "Last 30 days" },
+  ];
 
 export interface RideFilters {
   window: StatsWindow;

@@ -1,6 +1,7 @@
 export const map = {
   "Add as stop": "Add as stop",
   "Add as via": "Add as via",
+  "Add via here": "Add via here",
   "Affects your route": "Affects your route",
   "Best Motorcycle Roads \u2014 Tarmoto":
     "Best Motorcycle Roads \u2014 Tarmoto",
@@ -71,6 +72,8 @@ export const map = {
   "Seasonal pass": "Seasonal pass",
   "Set as finish": "Set as finish",
   "Set as start": "Set as start",
+  "Set end here": "Set end here",
+  "Set start here": "Set start here",
   "Showing your {count} most recent routes":
     "Showing your {count} most recent routes",
   "Sign in ": "Sign in ",

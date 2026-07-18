@@ -252,7 +252,9 @@ export default function PrivacyPage() {
           options={LOCATION_RETENTION_OPTIONS.map((option) => ({
             ...option,
             label: t(option.label),
-            description: t(option.description),
+            // Two of the five options have no description ("") — rendered
+            // bare; the other three are registered catalog keys.
+            description: option.description ? t(option.description) : "",
           }))}
         />
       </Card>

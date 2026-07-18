@@ -10,7 +10,8 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
-import type { Formatters, LooseTranslate } from "@tarmoto/shared";
+import type { Formatters } from "@tarmoto/shared";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 import type { QualityTier } from "@/lib/types";
 import {
   buildRoutePreview,
@@ -68,85 +69,87 @@ export interface StatRow {
   delta: number | null;
 }
 
-const STAT_DEFS: Array<Omit<StatRow, "a" | "b" | "delta"> & { key: StatKey }> =
-  [
-    {
-      key: "distance_km",
-      label: "Distance",
-      unit: "km",
-      digits: 1,
-      higherIsBetter: null,
-    },
-    {
-      key: "duration_min",
-      label: "Duration",
-      unit: "min",
-      digits: 0,
-      higherIsBetter: null,
-    },
-    {
-      key: "avg_speed",
-      label: "Avg speed",
-      unit: "km/h",
-      digits: 0,
-      higherIsBetter: true,
-    },
-    {
-      key: "max_speed",
-      label: "Max speed",
-      unit: "km/h",
-      digits: 0,
-      higherIsBetter: true,
-    },
-    {
-      key: "elevation_gain",
-      label: "Elevation gain",
-      unit: "m",
-      digits: 0,
-      higherIsBetter: null,
-    },
-    {
-      key: "elevation_loss",
-      label: "Elevation loss",
-      unit: "m",
-      digits: 0,
-      higherIsBetter: null,
-    },
-    {
-      key: "avg_road_quality",
-      label: "Avg road quality",
-      unit: "/5",
-      digits: 2,
-      higherIsBetter: true,
-    },
-    {
-      key: "curve_count",
-      label: "Curve count",
-      digits: 0,
-      higherIsBetter: null,
-    },
-    {
-      key: "max_lean_angle",
-      label: "Max lean",
-      unit: "°",
-      digits: 0,
-      higherIsBetter: true,
-    },
-  ];
-
-// Non-linguistic notation units render as-is — never translated (see the
-// ride-compare exclude list: fraction-marker glyph / degree symbol, not
-// linguistic unit words). Excluded from `t()` entirely, not just from
-// catalog registration, so a future unrelated catalog entry for "°" or "/5"
-// can never silently start rendering here.
-const NON_LINGUISTIC_UNITS = new Set(["/5", "°"]);
+const STAT_DEFS: Array<
+  Omit<StatRow, "a" | "b" | "delta" | "label" | "unit"> & {
+    key: StatKey;
+    label: EnglishMessageKey;
+    // Non-linguistic notation ("/5" fraction marker, "°" degree symbol) is
+    // excluded from the catalog entirely — typed here (not just `string`) so
+    // the compiler, not a runtime Set, enforces that every other unit is a
+    // registered key.
+    unit?: EnglishMessageKey | "/5" | "°";
+  }
+> = [
+  {
+    key: "distance_km",
+    label: "Distance",
+    unit: "km",
+    digits: 1,
+    higherIsBetter: null,
+  },
+  {
+    key: "duration_min",
+    label: "Duration",
+    unit: "min",
+    digits: 0,
+    higherIsBetter: null,
+  },
+  {
+    key: "avg_speed",
+    label: "Avg speed",
+    unit: "km/h",
+    digits: 0,
+    higherIsBetter: true,
+  },
+  {
+    key: "max_speed",
+    label: "Max speed",
+    unit: "km/h",
+    digits: 0,
+    higherIsBetter: true,
+  },
+  {
+    key: "elevation_gain",
+    label: "Elevation gain",
+    unit: "m",
+    digits: 0,
+    higherIsBetter: null,
+  },
+  {
+    key: "elevation_loss",
+    label: "Elevation loss",
+    unit: "m",
+    digits: 0,
+    higherIsBetter: null,
+  },
+  {
+    key: "avg_road_quality",
+    label: "Avg road quality",
+    unit: "/5",
+    digits: 2,
+    higherIsBetter: true,
+  },
+  {
+    key: "curve_count",
+    label: "Curve count",
+    digits: 0,
+    higherIsBetter: null,
+  },
+  {
+    key: "max_lean_angle",
+    label: "Max lean",
+    unit: "°",
+    digits: 0,
+    higherIsBetter: true,
+  },
+];
 
 // Builds one StatRow per metric. Both-null rows still appear (with em-dashes)
 // so the table layout is stable regardless of which fields the API populated.
 export function computeStatRows(
   a: ComparableRide,
   b: ComparableRide,
-  t: LooseTranslate,
+  t: Translate,
 ): StatRow[] {
   return STAT_DEFS.map((def) => {
     const av = a[def.key];
@@ -159,7 +162,11 @@ export function computeStatRows(
       // under `exactOptionalPropertyTypes`.
       ...(def.unit
         ? {
-            unit: NON_LINGUISTIC_UNITS.has(def.unit) ? def.unit : t(def.unit),
+            // Explicit literal equality (not `Set.has()`, which wouldn't
+            // narrow the union) — the `else` branch types `def.unit` as
+            // `EnglishMessageKey` for `t()`.
+            unit:
+              def.unit === "/5" || def.unit === "°" ? def.unit : t(def.unit),
           }
         : {}),
       a: av,

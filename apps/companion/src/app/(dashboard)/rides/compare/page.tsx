@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Scale } from "lucide-react";
@@ -42,7 +42,10 @@ type FetchedRide = ComparableRide &
 
 /** Which slot a card represents — drives the stamp + accent hue. */
 type Slot = "a" | "b";
-const SLOT_LABEL: Record<Slot, string> = { a: "Ride A", b: "Ride B" };
+const SLOT_LABEL: Record<Slot, EnglishMessageKey> = {
+  a: "Ride A",
+  b: "Ride B",
+};
 const SLOT_STAMP: Record<Slot, string> = { a: "RIDE A", b: "RIDE B" };
 
 function CompareRidesPageInner() {
@@ -550,7 +553,7 @@ function MetricTable({
             i % 2 === 1 ? { backgroundColor: "rgba(14,14,16,0.02)" } : undefined
           }
         >
-          <span className="text-fg-dim">{t(row.label)}</span>
+          <span className="text-fg-dim">{row.label}</span>
           <Mono className="text-ink">{row.a}</Mono>
           <Mono className="text-ink">{row.b}</Mono>
         </div>

@@ -1,4 +1,5 @@
 import type { RoutePreviewSegment } from "@/lib/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 /**
  * Build the `d` attribute of an SVG path for a sparkline rendered inside the
@@ -35,7 +36,7 @@ export function buildSparklinePath(
     .join(" ");
 }
 
-const CURVINESS_LABELS: readonly [number, string][] = [
+const CURVINESS_LABELS: readonly [number, EnglishMessageKey][] = [
   [80, "Very twisty"],
   [60, "Twisty"],
   [40, "Mixed"],
@@ -43,7 +44,7 @@ const CURVINESS_LABELS: readonly [number, string][] = [
   [0, "Straight"],
 ];
 
-export function curvinessLabel(score: number): string {
+export function curvinessLabel(score: number): EnglishMessageKey {
   for (const [threshold, label] of CURVINESS_LABELS) {
     if (score >= threshold) return label;
   }

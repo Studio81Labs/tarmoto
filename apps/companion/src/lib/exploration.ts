@@ -20,11 +20,12 @@ import {
   type RideForStats,
 } from "./ride-stats";
 import type { ExplorationStats, UnriddenSegment } from "./api";
+import type { EnglishMessageKey } from "@/i18n";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
 export type TimePeriod = (typeof TIME_PERIODS)[number];
 
-export const TIME_PERIOD_LABELS: Record<TimePeriod, string> = {
+export const TIME_PERIOD_LABELS: Record<TimePeriod, EnglishMessageKey> = {
   all: "All time",
   year: "This year",
   "90d": "Last 90 days",
