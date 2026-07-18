@@ -168,11 +168,11 @@ describe("buildFeatureSnapshot", () => {
     const premium = buildFeatureSnapshot("premium", {}, {});
     // free gets the free-tier line items only
     expect(free.basic_navigation).toBe(true);
-    expect(free.unlimited_trip_planning).toBe(false);
+    expect(free.road_quality_full_zoom).toBe(false);
     expect(free.group_rides).toBe(false);
     // pro adds the mid-tier line items
     expect(pro.basic_navigation).toBe(true);
-    expect(pro.unlimited_trip_planning).toBe(true);
+    expect(pro.road_quality_full_zoom).toBe(true);
     expect(pro.offline_maps).toBe(true);
     expect(pro.group_rides).toBe(false);
     expect(pro.advanced_analytics).toBe(false);
@@ -311,7 +311,14 @@ describe("buildLimitSnapshot", () => {
       { ghost_limit: null },
       { other_ghost: null },
     );
-    expect(snapshot).toEqual({ max_active_trips: 1 });
+    // The snapshot carries exactly the registry limit keys — the stale
+    // override/state keys never widen it.
+    expect(Object.keys(snapshot).sort()).toEqual(
+      [...LIMIT_FEATURE_KEYS].sort(),
+    );
+    expect(snapshot).not.toHaveProperty("ghost_limit");
+    expect(snapshot).not.toHaveProperty("other_ghost");
+    expect(snapshot.max_active_trips).toBe(1);
   });
 
   it("combines all layers", () => {

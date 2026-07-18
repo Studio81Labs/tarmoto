@@ -50,34 +50,77 @@ const PRO_AND_UP = ["pro", "premium"] as const;
 const PREMIUM_ONLY = ["premium"] as const;
 
 export const FEATURE_DEFINITIONS = {
-  // ── Free (granted to every tier) ──
+  // ── Free flags (granted to every tier; exist for the kill switch) ──
   basic_navigation: {
     kind: "toggle",
-    description: "Basic turn-by-turn navigation.",
+    description: "Turn-by-turn navigation.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  ride_tracking: {
+    kind: "toggle",
+    description: "Ride recording and basic stats.",
     default: false,
     tiers: ALL_TIERS,
   },
   road_quality_overlay: {
     kind: "toggle",
-    description: "Road quality overlay (limited zoom on the free tier).",
+    description:
+      "Quality-colored road overlay (zoom-limited on the free tier via road_quality_max_zoom).",
     default: false,
     tiers: ALL_TIERS,
   },
   hazard_alerts: {
     kind: "toggle",
-    description: "Community hazard alerts.",
+    description: "Receiving community hazard alerts.",
     default: false,
     tiers: ALL_TIERS,
   },
-  // ── Pro (€29.99/yr) ──
-  unlimited_trip_planning: {
+  hazard_reporting: {
+    kind: "toggle",
+    description: "Submitting one-tap hazard reports.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  crash_detection: {
+    kind: "toggle",
+    description: "Crash detection and emergency-contact SOS.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  weather_alerts: {
+    kind: "toggle",
+    description: "Severe weather alerts along the route.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  trip_planning: {
     kind: "toggle",
     description:
-      "Unlimited trip planning (the free tier is capped at 1 active trip).",
+      "Trip planner (count-limited on the free tier via max_active_trips).",
     default: false,
-    tiers: PRO_AND_UP,
+    tiers: ALL_TIERS,
   },
-  full_road_quality_zoom: {
+  gpx_import: {
+    kind: "toggle",
+    description: "Import GPX from other platforms.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  community_access: {
+    kind: "toggle",
+    description: "Browse published rides and collections.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  carplay_android_auto: {
+    kind: "toggle",
+    description: "CarPlay / Android Auto projection.",
+    default: false,
+    tiers: ALL_TIERS,
+  },
+  // ── Pro flags (€29.99/yr) ──
+  road_quality_full_zoom: {
     kind: "toggle",
     description: "Full-depth road quality zoom.",
     default: false,
@@ -85,48 +128,105 @@ export const FEATURE_DEFINITIONS = {
   },
   offline_maps: {
     kind: "toggle",
-    description: "Offline map downloads.",
+    description: "Offline map region downloads.",
     default: false,
     tiers: PRO_AND_UP,
   },
   gpx_export: {
     kind: "toggle",
-    description: "GPX export of recorded rides.",
+    description: "GPX export of rides and planned routes.",
     default: false,
     tiers: PRO_AND_UP,
   },
   commuter_mode: {
     kind: "toggle",
     description:
-      "Commuter mode — saved commute routes, status and alternatives.",
+      "Commuter mode — saved commutes, one-tap commute nav, alternatives, weekly summary.",
     default: false,
     tiers: PRO_AND_UP,
   },
-  // ── Premium (€49.99/yr) ──
+  advanced_ride_stats: {
+    kind: "toggle",
+    description:
+      "Advanced ride stats — lean angles, elevation profile, detailed per-ride stats.",
+    default: false,
+    tiers: PRO_AND_UP,
+  },
+  collaborative_trips: {
+    kind: "toggle",
+    description:
+      "Shared trip planning (collaborator count via max_trip_collaborators).",
+    default: false,
+    tiers: PRO_AND_UP,
+  },
+  // ── Premium flags (€49.99/yr) ──
   group_rides: {
     kind: "toggle",
-    description: "Real-time group rides (unlimited).",
+    description: "Real-time group location sharing (US-26).",
     default: false,
     tiers: PREMIUM_ONLY,
   },
   priority_hazard_alerts: {
     kind: "toggle",
-    description: "Priority hazard alert delivery.",
+    description: "Priority delivery of hazard alerts.",
     default: false,
     tiers: PREMIUM_ONLY,
   },
   advanced_analytics: {
     kind: "toggle",
-    description: "Advanced riding analytics dashboard.",
+    description: "Riding analytics dashboard.",
     default: false,
     tiers: PREMIUM_ONLY,
   },
-  // ── Limits (numeric entitlements; null = unlimited) ──
+  api_access: {
+    kind: "toggle",
+    description: "Personal API token for ride/route data.",
+    default: false,
+    tiers: PREMIUM_ONLY,
+  },
+  garmin_export: {
+    kind: "toggle",
+    description: "Direct route export to Garmin.",
+    default: false,
+    tiers: PREMIUM_ONLY,
+  },
+  // ── Limits (numeric entitlements; null = unlimited, 0 = kill switch) ──
   max_active_trips: {
     kind: "limit",
     description: "Maximum open (draft/planned/active) trips a user may own.",
     default: 1,
     tiers: { free: 1, pro: null, premium: null },
+  },
+  max_trip_collaborators: {
+    kind: "limit",
+    description: "Collaborators per trip, excluding the owner.",
+    default: 0,
+    tiers: { free: 0, pro: 5, premium: null },
+  },
+  max_group_ride_members: {
+    kind: "limit",
+    description: "Live group-ride size.",
+    default: 0,
+    tiers: { free: 0, pro: 0, premium: null },
+  },
+  road_quality_max_zoom: {
+    kind: "limit",
+    description:
+      "Maximum zoom level at which the road quality overlay renders.",
+    default: 12,
+    tiers: { free: 12, pro: null, premium: null },
+  },
+  max_offline_regions: {
+    kind: "limit",
+    description: "Offline map regions a user may download.",
+    default: 0,
+    tiers: { free: 0, pro: null, premium: null },
+  },
+  hazard_reports_per_day: {
+    kind: "limit",
+    description: "Anti-abuse cap on hazard reports submitted per day.",
+    default: 50,
+    tiers: { free: 50, pro: 50, premium: 50 },
   },
 } as const satisfies Record<string, FeatureDefinition>;
 
