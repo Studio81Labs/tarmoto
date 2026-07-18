@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ClosuresService } from './closures.service.js';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 const SAMPLE_CLOSURE: RoadClosure = {
   id: 'closure-1',
@@ -75,6 +76,9 @@ const PARTIAL_CLOSURE: RoadClosure = {
 describe('ClosuresService', () => {
   let service: ClosuresService;
   let repo: Partial<jest.Mocked<Repository<RoadClosure>>>;
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+  >;
 
   const mockQb = {
     select: jest.fn().mockReturnThis(),
@@ -115,10 +119,17 @@ describe('ClosuresService', () => {
       remove: jest.fn().mockResolvedValue(undefined),
     };
 
+    // Defaults both switches ON so every pre-existing test below is
+    // unaffected; the off-case tests set their own mock resolving `false`.
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClosuresService,
         { provide: getRepositoryToken(RoadClosure), useValue: repo },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
     service = module.get(ClosuresService);
@@ -222,6 +233,18 @@ describe('ClosuresService', () => {
         { lng: 17.2, lat: 50.2 },
       ]);
     });
+
+    it('still returns operator/osm closures — hides only NAP (official) rows — when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      // Default mockQb.getMany fixture (SAMPLE_CLOSURE) is source: 'operator'
+      // — road_closures is mixed-source, so the switch must not zero it out.
+      const [dto] = await service.list({});
+      expect(dto.source).toBe('operator');
+      expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_conditions',
+      );
+    });
   });
 
   describe('getById', () => {
@@ -264,6 +287,30 @@ describe('ClosuresService', () => {
         NotFoundException,
       );
     });
+
+    it('404s a NAP-sourced (official) closure when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        source: 'official',
+      });
+      await expect(service.getById('closure-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_conditions',
+      );
+    });
+
+    it('still returns an operator-sourced closure when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        source: 'operator',
+      });
+      const dto = await service.getById('closure-1');
+      expect(dto.source).toBe('operator');
+    });
   });
 
   describe('checkRoute', () => {
@@ -276,6 +323,30 @@ describe('ClosuresService', () => {
       });
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.geom IS NOT NULL');
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
+    });
+
+    it('still counts operator/osm closures — hides only NAP (official) rows — when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]); // source: 'operator'
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50.0, lng: 17.0 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+      expect(result.closures).toHaveLength(1);
+      expect(result.full_count).toBe(1);
+      expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_conditions',
+      );
+    });
+
+    it('still validates route length (400) even when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      await expect(
+        service.checkRoute({ route: [{ lat: 50, lng: 17 }] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -344,6 +415,25 @@ describe('ClosuresService', () => {
     it('returns [] when there are no full closures in the area', async () => {
       mockQb.getRawMany.mockResolvedValueOnce([]);
       expect(await service.exclusionPolygons(bbox)).toEqual([]);
+    });
+
+    it('still produces polygons for operator/osm full closures — hides only NAP (official) — when sys_nap_routing_avoidance is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const ring: [number, number][] = [
+        [16.6, 49.2],
+        [16.7, 49.2],
+        [16.7, 49.25],
+        [16.6, 49.2],
+      ];
+      mockQb.getRawMany.mockResolvedValueOnce([
+        { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
+      ]);
+      const polygons = await service.exclusionPolygons(bbox);
+      expect(polygons).toEqual([ring]);
+      expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_routing_avoidance',
+      );
     });
   });
 
