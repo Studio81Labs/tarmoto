@@ -3904,32 +3904,64 @@ export interface components {
             route_prefs?: components["schemas"]["UserRoutePrefsResponse"];
         };
         FeatureSnapshotDto: {
-            /** @description Basic turn-by-turn navigation. */
+            /** @description Turn-by-turn navigation. */
             basic_navigation: boolean;
-            /** @description Road quality overlay (limited zoom on the free tier). */
+            /** @description Ride recording and basic stats. */
+            ride_tracking: boolean;
+            /** @description Quality-colored road overlay (zoom-limited on the free tier via road_quality_max_zoom). */
             road_quality_overlay: boolean;
-            /** @description Community hazard alerts. */
+            /** @description Receiving community hazard alerts. */
             hazard_alerts: boolean;
-            /** @description Unlimited trip planning (the free tier is capped at 1 active trip). */
-            unlimited_trip_planning: boolean;
+            /** @description Submitting one-tap hazard reports. */
+            hazard_reporting: boolean;
+            /** @description Crash detection and emergency-contact SOS. */
+            crash_detection: boolean;
+            /** @description Severe weather alerts along the route. */
+            weather_alerts: boolean;
+            /** @description Trip planner (count-limited on the free tier via max_active_trips). */
+            trip_planning: boolean;
+            /** @description Import GPX from other platforms. */
+            gpx_import: boolean;
+            /** @description Browse published rides and collections. */
+            community_access: boolean;
+            /** @description CarPlay / Android Auto projection. */
+            carplay_android_auto: boolean;
             /** @description Full-depth road quality zoom. */
-            full_road_quality_zoom: boolean;
-            /** @description Offline map downloads. */
+            road_quality_full_zoom: boolean;
+            /** @description Offline map region downloads. */
             offline_maps: boolean;
-            /** @description GPX export of recorded rides. */
+            /** @description GPX export of rides and planned routes. */
             gpx_export: boolean;
-            /** @description Commuter mode — saved commute routes, status, alternatives. */
+            /** @description Commuter mode — saved commutes, one-tap commute nav, alternatives, weekly summary. */
             commuter_mode: boolean;
-            /** @description Real-time group rides (unlimited). */
+            /** @description Advanced ride stats — lean angles, elevation profile, detailed per-ride stats. */
+            advanced_ride_stats: boolean;
+            /** @description Shared trip planning (collaborator count via max_trip_collaborators). */
+            collaborative_trips: boolean;
+            /** @description Real-time group location sharing (US-26). */
             group_rides: boolean;
-            /** @description Priority hazard alert delivery. */
+            /** @description Priority delivery of hazard alerts. */
             priority_hazard_alerts: boolean;
-            /** @description Advanced riding analytics dashboard. */
+            /** @description Riding analytics dashboard. */
             advanced_analytics: boolean;
+            /** @description Personal API token for ride/route data. */
+            api_access: boolean;
+            /** @description Direct route export to Garmin. */
+            garmin_export: boolean;
         };
         LimitSnapshotDto: {
             /** @description Maximum open (draft/planned/active) trips the user may own. null = unlimited. */
             max_active_trips: number | null;
+            /** @description Collaborators per trip, excluding the owner. null = unlimited. */
+            max_trip_collaborators: number | null;
+            /** @description Live group-ride size. null = unlimited. */
+            max_group_ride_members: number | null;
+            /** @description Maximum zoom level at which the road quality overlay renders. null = unlimited. */
+            road_quality_max_zoom: number | null;
+            /** @description Offline map regions a user may download. null = unlimited. */
+            max_offline_regions: number | null;
+            /** @description Anti-abuse cap on hazard reports submitted per day. null = unlimited. */
+            hazard_reports_per_day: number | null;
         };
         UserResponseDto: {
             id: string;
