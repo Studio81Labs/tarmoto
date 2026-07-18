@@ -707,7 +707,7 @@ function BadgeCard({
       )}
       title={
         earned && badge.earnedAt
-          ? `Earned ${format.monthYear(badge.earnedAt)}`
+          ? t("Earned {date}", { date: format.monthYear(badge.earnedAt) })
           : badge.description
       }
     >

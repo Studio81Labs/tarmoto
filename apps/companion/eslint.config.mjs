@@ -72,10 +72,15 @@ const restrictedSyntaxSelectors = [
   },
   // Same guard for the non-literal prop shapes the plain-Literal selectors
   // above can't see: a template literal with raw static text
-  // (`label={`Force ${n}`}`) and a conditional with a raw string branch
-  // (`label={cond ? "Add" : "Save"}`). A t()-composed template
-  // (`label={`${t("X")} (${n})`}`, no 2+-letter static run) and a
-  // t()-wrapped conditional (CallExpression branches) both pass.
+  // (`label={`Force ${n}`}`) and a raw string / template in a conditional
+  // branch (`label={cond ? "Add" : "Save"}`). The conditional selectors use a
+  // DESCENDANT match (`JSXAttribute … ConditionalExpression > …`) so NESTED
+  // ternaries can't slip an inner raw branch through
+  // (`label={ok ? t("K") : flag ? "Add" : "Save"}`). Scoping to a direct
+  // child of `ConditionalExpression`/the expression container (not a bare
+  // descendant Literal) means a Literal/TemplateLiteral that is a t()
+  // ARGUMENT is not matched, so t()-wrapped branches and t()-composed
+  // templates (`label={`${t("X")} (${n})`}`, no 2+-letter static run) pass.
   {
     selector:
       "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
@@ -84,9 +89,15 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > ConditionalExpression > Literal[value=/^[A-Za-z]/]",
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] ConditionalExpression > Literal[value=/^[A-Za-z]/]",
     message:
-      'Raw string literal in a conditional on label/title/alt/placeholder/aria-label/ariaLabel — wrap each branch with t()/tDynamic (`cond ? t("A") : t("B")`), or add a disable comment if deliberate.',
+      'Raw string literal in a conditional (any nesting) on label/title/alt/placeholder/aria-label/ariaLabel — wrap each branch with t()/tDynamic (`cond ? t("A") : t("B")`), or add a disable comment if deliberate.',
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Raw user-facing text in a conditional template branch (any nesting) on label/title/alt/placeholder/aria-label/ariaLabel — compose it through t()/tDynamic, or add a disable comment if deliberate.",
   },
 ];
 
