@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
@@ -15,6 +16,7 @@ import {
   JoinChallengeResponseDto,
   ProgressDto,
 } from './dto/challenges.dto.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 @Injectable()
 export class ChallengesService {
@@ -23,9 +25,16 @@ export class ChallengesService {
     private readonly challengeRepo: Repository<Challenge>,
     @InjectRepository(ChallengeEntry)
     private readonly entryRepo: Repository<ChallengeEntry>,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async listActive(): Promise<ChallengeDto[]> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      return [];
+    }
+
     const now = new Date();
     const challenges = await this.challengeRepo.find({
       where: {
@@ -49,6 +58,12 @@ export class ChallengesService {
     challengeId: string,
     userId?: string,
   ): Promise<ChallengeDetailDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      throw new NotFoundException('Challenge not found');
+    }
+
     const challenge = await this.challengeRepo.findOne({
       where: { id: challengeId },
     });
@@ -78,6 +93,14 @@ export class ChallengesService {
     userId: string,
     challengeId: string,
   ): Promise<JoinChallengeResponseDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Gamification is temporarily unavailable',
+      );
+    }
+
     const challenge = await this.challengeRepo.findOne({
       where: { id: challengeId, is_active: true },
     });
@@ -117,6 +140,12 @@ export class ChallengesService {
   }
 
   async getProgress(userId: string, challengeId: string): Promise<ProgressDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_gamification'))
+    ) {
+      throw new NotFoundException('Not participating in this challenge');
+    }
+
     const entry = await this.entryRepo.findOne({
       where: { challenge_id: challengeId, user_id: userId },
       relations: ['challenge'],
