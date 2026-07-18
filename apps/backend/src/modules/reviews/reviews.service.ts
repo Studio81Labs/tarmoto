@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,6 +18,7 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   ALLOWED_REVIEW_PHOTO_TYPES,
   CreateReviewDto,
@@ -134,6 +136,7 @@ export class ReviewsService {
     @InjectRepository(RoadReviewVote)
     private readonly voteRepo: Repository<RoadReviewVote>,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly featureResolver: FeatureResolver,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
     config: ConfigService,
@@ -201,6 +204,14 @@ export class ReviewsService {
     segmentId: string,
     viewerUserId: string | null = null,
   ): Promise<ReviewResponseDto[]> {
+    // Operator kill switch: hide reviews gracefully (never throw on a read) —
+    // short-circuit before the way resolution / query so a disable takes
+    // effect immediately without touching the DB.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      return [];
+    }
     // Reviews are keyed on the logical ROAD (the requested id's whole way), so the
     // panel matches the aggregated /roads/:id detail — a road's reviews are the
     // union across its ~100 m sub-segments (#809).
@@ -251,6 +262,15 @@ export class ReviewsService {
     segmentId: string,
     dto: CreateReviewDto,
   ): Promise<ReviewResponseDto> {
+    // Operator kill switch: a write can't degrade to empty, so a clean 503 is
+    // the honest response instead of silently dropping the submission.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Reviews are temporarily unavailable',
+      );
+    }
     // Verify the segment exists AND is live — a review posted to a tombstoned
     // road (which /roads/:id 404s) would be saved but then hidden by the way
     // resolver, i.e. an invisible review (#835).
@@ -330,6 +350,15 @@ export class ReviewsService {
     segmentId: string,
     dto: CreateReviewDto,
   ): Promise<ReviewResponseDto> {
+    // Operator kill switch: a write can't degrade to empty, so a clean 503 is
+    // the honest response instead of silently dropping the edit.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Reviews are temporarily unavailable',
+      );
+    }
     const review = await this.findOwnReviewOnWay(userId, segmentId, ['user']);
     if (!review) {
       throw new NotFoundException('Review not found');
@@ -446,6 +475,15 @@ export class ReviewsService {
     files: Express.Multer.File[],
     publicBaseUrl: string,
   ): Promise<ReviewPhotosResponseDto> {
+    // Operator kill switch: a write can't degrade to empty, so a clean 503 is
+    // the honest response instead of silently dropping the upload.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Reviews are temporarily unavailable',
+      );
+    }
     if (files.length === 0) {
       throw new BadRequestException('At least one photo file is required');
     }
@@ -591,6 +629,15 @@ export class ReviewsService {
     reviewId: string,
     isHelpful: boolean,
   ): Promise<ReviewVoteResultDto> {
+    // Operator kill switch: a write can't degrade to empty, so a clean 503 is
+    // the honest response instead of silently dropping the vote.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Reviews are temporarily unavailable',
+      );
+    }
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId, moderation_status: 'visible' },
     });
@@ -630,6 +677,15 @@ export class ReviewsService {
     userId: string,
     reviewId: string,
   ): Promise<ReviewVoteResultDto> {
+    // Operator kill switch: a write can't degrade to empty, so a clean 503 is
+    // the honest response instead of silently dropping the vote clear.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings'))
+    ) {
+      throw new ServiceUnavailableException(
+        'Reviews are temporarily unavailable',
+      );
+    }
     const review = await this.reviewRepo.findOne({
       where: { id: reviewId, moderation_status: 'visible' },
     });
