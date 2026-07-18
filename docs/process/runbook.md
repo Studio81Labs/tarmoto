@@ -647,20 +647,26 @@ Place both on the shared volume, e.g. `/data/routing/cz.osm` (input) and
   size the app + swap accordingly).
 - **Start command** — the args mirror the compose service's `command:`, but the
   start MUST clear `graph-cache` first so a redeploy re-imports the fresh extract
-  (this is the re-import receiver — see step 4):
+  (this is the re-import receiver — see step 4). The image's entrypoint is
+  `./graphhopper.sh` (WORKDIR `/graphhopper`), so override it with a shell that
+  clears the cache and re-execs the launcher: set the Coolify app's **Entrypoint**
+  to `/bin/sh -c` and its **Command** to
 
   ```sh
-  sh -c 'rm -rf /data/graph-cache && exec <image-entrypoint> \
-    -i /data/routing/cz.quality.osm -c /data/config.yml -o /data/graph-cache --host 0.0.0.0'
+  rm -rf /data/graph-cache && exec /graphhopper/graphhopper.sh \
+    -i /data/routing/cz.quality.osm -c /data/config.yml -o /data/graph-cache --host 0.0.0.0
   ```
 
-  The first start imports (slow, one-time); every restart re-imports (acceptable
-  at the weekly cadence). Network alias e.g. `tarmoto-graphhopper`.
+  Overriding the entrypoint drops the image's baked `-c config-example.yml`, so
+  the explicit `-c /data/config.yml` above is required. The first start imports
+  (slow, one-time); every restart re-imports (acceptable at the weekly cadence).
+  Network alias e.g. `tarmoto-graphhopper`.
 
 **3. Wire the backend (Coolify env), then redeploy.**
 
 ```bash
 TARMOTO_GRAPHHOPPER_BASE_URL=http://tarmoto-graphhopper:8989   # route via staging GH
+TARMOTO_GRAPHHOPPER_TOLL_ENABLED=true                          # self-hosted defaults toll OFF; keep avoidTolls working
 TARMOTO_QUALITY_CONFLATION_ENABLED=true
 TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/routing/cz.osm
 TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/routing/cz.quality.osm
@@ -688,7 +694,7 @@ step 2 — no sidecar. A non-2xx/unreachable webhook makes the conflation job th
 4. Produce the first **tagged** extract on demand rather than waiting for the
    Sunday import tick:
    ```bash
-   docker exec <backend-staging> node dist/scripts/quality-conflation.js
+   docker exec <backend-staging> node apps/backend/dist/scripts/quality-conflation.js
    ```
    It tags `cz.quality.osm`, then fires the webhook → GraphHopper redeploys and
    re-imports the quality-weighted graph. (Every subsequent road import chains it
