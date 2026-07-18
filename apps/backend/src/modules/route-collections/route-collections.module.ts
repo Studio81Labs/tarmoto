@@ -5,6 +5,7 @@ import { RouteCollectionItem } from '../../entities/route-collection-item.entity
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
 import { AccountModule } from '../account/account.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { RouteCollectionsController } from './route-collections.controller.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 
@@ -17,6 +18,7 @@ import { RouteCollectionsService } from './route-collections.service.js';
     ]),
     AccountModule,
     AuthModule,
+    FeaturesModule,
   ],
   controllers: [RouteCollectionsController],
   providers: [RouteCollectionsService],
