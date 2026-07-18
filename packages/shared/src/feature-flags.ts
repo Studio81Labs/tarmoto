@@ -318,7 +318,11 @@ export type ToggleFeatureKey = {
     : never;
 }[FeatureKey];
 
-export type LimitFeatureKey = Exclude<FeatureKey, ToggleFeatureKey>;
+export type LimitFeatureKey = {
+  [K in FeatureKey]: (typeof FEATURE_DEFINITIONS)[K]["kind"] extends "limit"
+    ? K
+    : never;
+}[FeatureKey];
 
 export const FEATURE_KEYS = Object.keys(
   FEATURE_DEFINITIONS,
@@ -425,7 +429,7 @@ export function resolveFeature(
   override: boolean | undefined,
   globalState: GlobalFeatureState | undefined,
 ): boolean {
-  const def = FEATURE_DEFINITIONS[key] as ToggleFeatureDefinition;
+  const def = FEATURE_DEFINITIONS[key];
   // Widened the same way as `grantTiers` below: every toggle entry in the
   // registry currently hardcodes `default: false`, so `def.default` infers
   // as the literal `false` (not `boolean`) under `as const satisfies` —
@@ -513,7 +517,7 @@ export function resolveLimit(
   override: number | null | undefined,
   globalOverride: number | null | undefined,
 ): number | null {
-  const def = FEATURE_DEFINITIONS[key] as LimitFeatureDefinition;
+  const def = FEATURE_DEFINITIONS[key];
   let value: number | null = isSubscriptionTier(tier)
     ? def.tiers[tier]
     : def.default;
