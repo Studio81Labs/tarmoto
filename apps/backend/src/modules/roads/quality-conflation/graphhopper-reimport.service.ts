@@ -12,7 +12,7 @@ const REIMPORT_TIMEOUT_MS = 30_000;
  * (#779), so GraphHopper re-imports the freshly `smoothness`-tagged extract.
  *
  * The backend does not restart GraphHopper itself: GraphHopper has no re-import
- * API and reuses its `graph-cache`, and it may live in a sibling container or on
+ * API and reuses its existing graph, and it may live in a sibling container or on
  * a separate host. So this is a thin, host-agnostic HTTP trigger — the receiver
  * (a Coolify deploy webhook, a small sidecar, etc.) owns the actual cache-bust +
  * restart. See {@link GraphHopperReimportConfig} and the module README.
