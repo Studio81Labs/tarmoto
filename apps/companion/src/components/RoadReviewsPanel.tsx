@@ -1024,8 +1024,8 @@ function ReviewCard({
           <VoteButton
             label={
               review.my_vote === true
-                ? "Remove helpful vote"
-                : "Mark this review as helpful"
+                ? t("Remove helpful vote")
+                : t("Mark this review as helpful")
             }
             count={review.helpful_count}
             active={review.my_vote === true}
@@ -1037,8 +1037,8 @@ function ReviewCard({
           <VoteButton
             label={
               review.my_vote === false
-                ? "Remove not-helpful vote"
-                : "Mark this review as not helpful"
+                ? t("Remove not-helpful vote")
+                : t("Mark this review as not helpful")
             }
             count={review.not_helpful_count}
             active={review.my_vote === false}

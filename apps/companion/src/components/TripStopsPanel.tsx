@@ -214,10 +214,10 @@ export function TripStopsPanel({
                   aria-hidden="true"
                   title={
                     tarmotoDerived
-                      ? "Tarmoto data"
+                      ? t("Tarmoto data")
                       : twoTone
-                        ? "OpenStreetMap + Foursquare"
-                        : "OpenStreetMap"
+                        ? t("OpenStreetMap + Foursquare")
+                        : t("OpenStreetMap")
                   }
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                     tarmotoDerived
