@@ -87,6 +87,30 @@ export function useDropdown() {
  * we accept in exchange for a clean hydration with no React
  * warnings or content-shift mismatches.
  */
+/**
+ * Reactive CSS media-query match. `ssrDefault` (default false) is returned on
+ * the server and the first client paint — pick it to match the SSR markup, so
+ * the real match only lands after mount (avoids a hydration mismatch). Where a
+ * viewport branch must not flash, gate the branch on this being resolved.
+ */
+export function useMediaQuery(query: string, ssrDefault = false): boolean {
+  const [matches, setMatches] = useState(ssrDefault);
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const mql = window.matchMedia(query);
+    const update = () => setMatches(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
 export function useLocalStorage<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(initial);
 

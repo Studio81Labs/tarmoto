@@ -73,7 +73,21 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear();
+  vi.unstubAllGlobals();
 });
+
+// Stub matchMedia so a test can pretend it's on a compact (tablet) viewport:
+// the compact query "(max-width: 1023px)" reports matched.
+function stubCompactViewport(compact: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: compact && query.includes("max-width: 1023px"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
 
 describe("Sidebar — Web App v2 nav", () => {
   it("hides the contribution badge when the rider has mapped nothing", () => {
@@ -279,6 +293,29 @@ describe("Sidebar — Web App v2 nav", () => {
     expect(
       JSON.parse(localStorage.getItem("tarmoto:sidebar-collapsed") ?? ""),
     ).toBe(false);
+  });
+
+  it("defaults to collapsed on a compact (tablet) viewport with no saved preference", () => {
+    stubCompactViewport(true);
+    render(<Sidebar />);
+
+    // Collapsed: the expand affordance shows, and nav/section labels are hidden.
+    expect(screen.getByLabelText(/expand sidebar/i)).toBeInTheDocument();
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan")).not.toBeInTheDocument();
+    // A viewport-driven default is not written to storage — only a real toggle
+    // persists (so a later desktop visit still opens expanded).
+    expect(localStorage.getItem("tarmoto:sidebar-collapsed")).toBeNull();
+  });
+
+  it("lets a saved preference win over the compact-viewport default", () => {
+    // Compact viewport, but the rider previously chose expanded.
+    stubCompactViewport(true);
+    localStorage.setItem("tarmoto:sidebar-collapsed", "false");
+    render(<Sidebar />);
+
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByLabelText(/collapse sidebar/i)).toBeInTheDocument();
   });
 
   it("opens a menu (Settings + Log out) when the user button is clicked", () => {
