@@ -7,6 +7,7 @@ import { RideSegment } from '../src/entities/ride-segment.entity.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 import { Ride } from '../src/entities/ride.entity.js';
 import { PrivacyPreferencesService } from '../src/modules/account/privacy-preferences.service.js';
+import { FeatureResolver } from '../src/modules/features/feature-resolver.service.js';
 
 /**
  * Issue #557 — `GET /api/v1/exploration/ridden-segments` returned
@@ -44,6 +45,13 @@ describe('exploration: GET /ridden-segments — query executes (#557)', () => {
           // `getNearbyUnridden` path; `getRiddenSegments` doesn't
           // touch it, so a stub is enough.
           useValue: { loadPreferences: () => Promise.resolve({}) },
+        },
+        {
+          // ExplorationService now depends on FeatureResolver (the
+          // sys_gamification gate); this regression test exercises the real
+          // getRiddenSegments query with the switch on (default).
+          provide: FeatureResolver,
+          useValue: { isSystemSwitchEnabled: () => Promise.resolve(true) },
         },
       ],
     }).compile();

@@ -8,6 +8,7 @@ import { RoadReview } from '../../entities/road-review.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { BadgesController } from './badges.controller.js';
 import { BadgesService } from './badges.service.js';
+import { FeaturesModule } from '../features/features.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { BadgesService } from './badges.service.js';
       RoadReview,
       SharedRide,
     ]),
+    FeaturesModule,
   ],
   controllers: [BadgesController],
   providers: [BadgesService],

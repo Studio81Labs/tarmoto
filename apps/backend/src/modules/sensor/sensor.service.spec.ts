@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +13,7 @@ import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { ModelEvalService } from '../model-eval/model-eval.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('SensorService', () => {
   let service: SensorService;
@@ -29,6 +31,7 @@ describe('SensorService', () => {
   } | null;
   let privacy: { loadPreferences: jest.Mock };
   let modelEval: { maybeSample: jest.Mock };
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
   beforeEach(async () => {
     readingRepo = {
@@ -163,6 +166,10 @@ describe('SensorService', () => {
       maybeSample: jest.fn().mockResolvedValue(null),
     };
 
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SensorService,
@@ -173,6 +180,7 @@ describe('SensorService', () => {
         { provide: getRepositoryToken(RideTagEvent), useValue: tagEventRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: ModelEvalService, useValue: modelEval },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -374,6 +382,24 @@ describe('SensorService', () => {
   });
 
   describe('processUpload', () => {
+    it('throws 503 and persists nothing when sys_surface_upload is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(
+        service.processUpload('user-1', {
+          ride_id: 'ride-1',
+          readings: [],
+        }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_surface_upload',
+      );
+      // Gate is the first statement — privacy prefs never loaded, nothing saved.
+      expect(privacy.loadPreferences).not.toHaveBeenCalled();
+      expect(readingRepo.save).not.toHaveBeenCalled();
+    });
+
     it('should process readings and create surface_reading records', async () => {
       const dto = {
         ride_id: 'ride-1',

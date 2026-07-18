@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -9,6 +10,7 @@ import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('BadgesService', () => {
   let service: BadgesService;
@@ -17,6 +19,7 @@ describe('BadgesService', () => {
   let hazardRepo: { count: jest.Mock };
   let reviewRepo: { count: jest.Mock };
   let sharedRideRepo: { count: jest.Mock };
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
   const mockQb = {
     select: jest.fn().mockReturnThis(),
@@ -71,6 +74,9 @@ describe('BadgesService', () => {
     hazardRepo = { count: jest.fn().mockResolvedValue(0) };
     reviewRepo = { count: jest.fn().mockResolvedValue(0) };
     sharedRideRepo = { count: jest.fn().mockResolvedValue(0) };
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -95,6 +101,7 @@ describe('BadgesService', () => {
               ),
           },
         },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -133,6 +140,16 @@ describe('BadgesService', () => {
 
       expect(result[0].tier).toBeNull();
       expect(result[0].earned_at).toBeNull();
+    });
+
+    it('returns [] without querying when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.listBadges('user-1');
+      expect(result).toEqual([]);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(userBadgeRepo.find).not.toHaveBeenCalled();
     });
   });
 
@@ -234,6 +251,16 @@ describe('BadgesService', () => {
       expect(result.newly_earned).toContain('single_ride:gold');
       expect(result.newly_earned).toContain('ride_count:gold');
       expect(result.newly_earned).toContain('roads_discovered:gold');
+    });
+
+    it('throws 503 when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      await expect(service.checkAndAward('user-1')).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
     });
   });
 
@@ -347,6 +374,17 @@ describe('BadgesService', () => {
       expect(progression.level).toBe(14);
       expect(progression.tier).toBe('Curve Hunter');
       expect(progression.next_tier).toBe('Mountain Goat');
+    });
+
+    it('returns the floor progression when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.computeProgression('user-1');
+      // Floor = deriveProgression({}) — level clamps to a minimum of 1.
+      expect(result.level).toBeGreaterThanOrEqual(1);
+      expect(result.xp).toBe(0);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
     });
   });
 });
