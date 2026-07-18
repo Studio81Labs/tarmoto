@@ -97,7 +97,8 @@ export function RoadPreviewCard({
             {segment.name ?? t("Segment {n}", { n: segment.orderInDay + 1 })}
           </span>
           <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.3px] text-fg-mute">
-            {format.distanceKm(segment.distanceKm)} · {segment.surfaceType} ·{" "}
+            {format.distanceKm(segment.distanceKm)} ·{" "}
+            {t(segment.surfaceType.replace(/\b\w/g, (c) => c.toUpperCase()))} ·{" "}
             {t(curvinessLabel(segment.curvinessScore))}
           </span>
         </span>

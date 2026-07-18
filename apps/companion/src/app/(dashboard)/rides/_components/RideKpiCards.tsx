@@ -13,9 +13,9 @@ const DASH = "—";
  */
 function formatRideTime(hours: number): { value: number; unit: string } {
   if (hours > 0 && hours < 1) {
-    return { value: Math.round(hours * 60), unit: "MIN" };
+    return { value: Math.round(hours * 60), unit: t("MIN") };
   }
-  return { value: Math.round(hours), unit: "HRS" };
+  return { value: Math.round(hours), unit: t("HRS") };
 }
 
 /**
@@ -74,7 +74,7 @@ export function RideKpiCards({
       // sublabel reads RIDDEN rather than overstating DISCOVERED.
       label: t("Roads"),
       value: has ? stats.new_roads : DASH,
-      unit: "RIDDEN",
+      unit: t("RIDDEN"),
     },
     {
       label: t("Avg quality"),

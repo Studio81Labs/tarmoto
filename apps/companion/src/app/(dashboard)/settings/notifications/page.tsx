@@ -273,12 +273,12 @@ export default function NotificationsPage() {
                 <Toggle
                   checked={toggles.email}
                   onChange={() => toggleChannel(category, "email")}
-                  ariaLabel={t("{label} email", { label: meta.label })}
+                  ariaLabel={t("{label} email", { label: t(meta.label) })}
                 />
                 <Toggle
                   checked={toggles.push}
                   onChange={() => toggleChannel(category, "push")}
-                  ariaLabel={t("{label} push", { label: meta.label })}
+                  ariaLabel={t("{label} push", { label: t(meta.label) })}
                 />
               </div>
             </div>

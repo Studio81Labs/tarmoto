@@ -291,6 +291,7 @@ export const en = {
   Forever: "Forever",
   "Get warned about new potholes, roadworks, or hazards reported on routes you ride.":
     "Get warned about new potholes, roadworks, or hazards reported on routes you ride.",
+  HRS: "HRS",
   Hairpin: "Hairpin",
   "Hazard alerts for saved routes": "Hazard alerts for saved routes",
   "Highest quality": "Highest quality",
@@ -304,10 +305,12 @@ export const en = {
     "Keep my raw location data indefinitely.",
   "Loading unridden roads\u2026": "Loading unridden roads\u2026",
   Longest: "Longest",
+  MIN: "MIN",
   Make: "Make",
   "Maximum twisty": "Maximum twisty",
   "Minimum popularity": "Minimum popularity",
   "Minimum quality": "Minimum quality",
+  "Minimum retention.": "Minimum retention.",
   Mixed: "Mixed",
   Model: "Model",
   "Most popular": "Most popular",
@@ -779,6 +782,7 @@ export const en = {
   "Payment method ": "Payment method ",
   "Payment method editing will light up automatically as soon as the billing backend is available. ":
     "Payment method editing will light up automatically as soon as the billing backend is available. ",
+  People: "People",
   "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ":
     "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
   "Personal road map ": "Personal road map ",
@@ -858,6 +862,7 @@ export const en = {
   "Quality score {score} of 5": "Quality score {score} of 5",
   "Quality trend ": "Quality trend ",
   REROUTE: "REROUTE",
+  RIDDEN: "RIDDEN",
   RIDE: "RIDE",
   "Ranked by the current quality and curviness model. ":
     "Ranked by the current quality and curviness model. ",
