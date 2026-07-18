@@ -1,0 +1,9 @@
+# Keep the Docker build context small. The image (Dockerfile in this dir) only
+# COPYs config.yml + start.sh — but a developer who followed this folder's README
+# has a multi-GB `czech-republic-latest.osm.pbf` and a `graph-cache/` here (both
+# git-ignored). `.gitignore` does NOT affect the Docker build context — only
+# `.dockerignore` does — so without this every local/registry build would upload
+# gigabytes and can time out. Mirrors infra/graphhopper/.gitignore's graph data.
+*.osm.pbf
+*.osm
+graph-cache/
