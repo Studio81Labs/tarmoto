@@ -649,31 +649,32 @@ cp cz.osm cz.quality.osm                   # seed: GraphHopper imports the TAGGE
 Place both on the shared volume, e.g. `/data/routing/cz.osm` (input) and
 `/data/routing/cz.quality.osm` (output GraphHopper imports).
 
-**2. Stand up the GraphHopper Coolify app.**
+**2. Stand up the GraphHopper Coolify app — build it from
+[`infra/graphhopper/Dockerfile`](../../infra/graphhopper/Dockerfile).** Coolify's
+image apps expose only "Custom Docker Options" (no entrypoint/command field), and
+the stock image's entrypoint bakes `-c config-example.yml` with no `-i` and no
+cache-clear — so it can't be pointed at our extract as-is. Rather than fight that,
+deploy the small custom image: stock `israelhikingmap/graphhopper:10.2` **plus**
+our `config.yml` (baked at `/graphhopper/config.yml`, so the `/data` mount can't
+hide it — it already lists `smoothness` in `graph.encoded_values`, no engine
+change) **plus** a start wrapper
+([`start.sh`](../../infra/graphhopper/start.sh)) set as `ENTRYPOINT` that clears
+`graph-cache` on each start then launches GraphHopper against
+`/data/routing/cz.quality.osm`. Point the Coolify app at this repo with the
+**Dockerfile build pack** (build context `infra/graphhopper`), or build + push the
+image to a registry the app pulls from.
 
-- **Image** `israelhikingmap/graphhopper:10.2` (multi-arch; its config schema
-  matches the repo's `config.yml`, which **already lists `smoothness` in
-  `graph.encoded_values`** — no engine change).
-- **Persistent storage**: the shared volume at `/data` (holds `config.yml`, the
-  extract, and `graph-cache`). Copy `infra/graphhopper/config.yml` there.
+- **Persistent storage**: the shared volume at `/data` — holds `routing/` (the
+  extract) + `graph-cache`. `config.yml` is **baked into the image**, not placed
+  here.
 - **Port** 8989. **Env** `JAVA_OPTS=-Xms1g -Xmx4g` (a CZ import peaks ~4–5 GB —
   size the app + swap accordingly).
-- **Start command** — the args mirror the compose service's `command:`, but the
-  start MUST clear `graph-cache` first so a redeploy re-imports the fresh extract
-  (this is the re-import receiver — see step 4). The image's entrypoint is
-  `./graphhopper.sh` (WORKDIR `/graphhopper`), so override it with a shell that
-  clears the cache and re-execs the launcher: set the Coolify app's **Entrypoint**
-  to `/bin/sh -c` and its **Command** to
+- **Network alias** e.g. `tarmoto-graphhopper`.
 
-  ```sh
-  rm -rf /data/graph-cache && exec /graphhopper/graphhopper.sh \
-    -i /data/routing/cz.quality.osm -c /data/config.yml -o /data/graph-cache --host 0.0.0.0
-  ```
-
-  Overriding the entrypoint drops the image's baked `-c config-example.yml`, so
-  the explicit `-c /data/config.yml` above is required. The first start imports
-  (slow, one-time); every restart re-imports (acceptable at the weekly cadence).
-  Network alias e.g. `tarmoto-graphhopper`.
+The baked start clears `graph-cache` every boot, so the first start imports
+(slow, one-time) and every redeploy re-imports the latest conflated extract —
+which is what makes a plain Coolify redeploy the re-import receiver (step 4). No
+entrypoint/command override or `--entrypoint` docker option needed.
 
 **3. Wire the backend (Coolify env), then redeploy.**
 

@@ -2,7 +2,7 @@
 
 GraphHopper is Tarmoto's **strategic** routing engine ([ADR-0004](../../docs/decisions/0004-routing-engine-graphhopper.md)): road filters and the future "prefer our own road-quality" weighting are expressed as request-time `custom_model` JSON, so they're tuned without rebuilding the engine. Self-hosting also sidesteps the public OSRM demo's inability to honour any `exclude=` flag.
 
-This directory holds the GraphHopper service config; the container is defined in [`../docker/docker-compose.yml`](../docker/docker-compose.yml).
+This directory holds the GraphHopper service config. **Local dev** runs the stock image with a `command:` override in [`../docker/docker-compose.yml`](../docker/docker-compose.yml) (Compose can set the entrypoint/command). The **deployed (Coolify) environment** builds [`Dockerfile`](./Dockerfile) instead — the stock image plus this `config.yml` and a [`start.sh`](./start.sh) `ENTRYPOINT` that clears the graph cache on each start and imports the conflated extract — because Coolify image apps expose only "Custom Docker Options", not an entrypoint/command field. See the quality-aware-routing runbook ([`docs/process/runbook.md`](../../docs/process/runbook.md)) for the full staging wiring.
 
 ## Build + run (first start imports the graph — slow, one-time)
 
