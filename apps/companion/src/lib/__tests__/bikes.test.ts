@@ -1,3 +1,5 @@
+import { makeTranslator } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import {
   EMPTY_BIKE_FORM,
   MIN_BIKE_YEAR,
@@ -14,7 +16,7 @@ const FIXED_NOW = new Date("2026-06-15T00:00:00Z");
 
 describe("validateBikeForm", () => {
   it("flags every missing required field", () => {
-    const errors = validateBikeForm(EMPTY_BIKE_FORM, FIXED_NOW);
+    const errors = validateBikeForm(EMPTY_BIKE_FORM, FIXED_NOW, t);
     expect(errors.make).toBeDefined();
     expect(errors.model).toBeDefined();
     expect(errors.year).toBeDefined();
@@ -24,6 +26,7 @@ describe("validateBikeForm", () => {
     const errors = validateBikeForm(
       { make: "Yamaha", model: "MT-09", year: "2024", photoUrl: "" },
       FIXED_NOW,
+      t,
     );
     expect(errors).toEqual({});
   });
@@ -33,12 +36,14 @@ describe("validateBikeForm", () => {
       validateBikeForm(
         { make: "A", model: "B", year: "99", photoUrl: "" },
         FIXED_NOW,
+        t,
       ).year,
     ).toBeDefined();
     expect(
       validateBikeForm(
         { make: "A", model: "B", year: "20a4", photoUrl: "" },
         FIXED_NOW,
+        t,
       ).year,
     ).toBeDefined();
   });
@@ -48,6 +53,7 @@ describe("validateBikeForm", () => {
       validateBikeForm(
         { make: "A", model: "B", year: "1800", photoUrl: "" },
         FIXED_NOW,
+        t,
       ).year,
     ).toBeDefined();
     // maxBikeYear(FIXED_NOW) === 2027
@@ -55,6 +61,7 @@ describe("validateBikeForm", () => {
       validateBikeForm(
         { make: "A", model: "B", year: "2030", photoUrl: "" },
         FIXED_NOW,
+        t,
       ).year,
     ).toBeDefined();
   });
@@ -64,6 +71,7 @@ describe("validateBikeForm", () => {
       validateBikeForm(
         { make: "A", model: "B", year: "2027", photoUrl: "" },
         FIXED_NOW,
+        t,
       ).year,
     ).toBeUndefined();
   });
@@ -73,12 +81,14 @@ describe("validateBikeForm", () => {
       validateBikeForm(
         { make: "A", model: "B", year: "2024", photoUrl: "ftp://host/img.png" },
         FIXED_NOW,
+        t,
       ).photoUrl,
     ).toBeDefined();
     expect(
       validateBikeForm(
         { make: "A", model: "B", year: "2024", photoUrl: "not a url" },
         FIXED_NOW,
+        t,
       ).photoUrl,
     ).toBeDefined();
   });
@@ -88,12 +98,14 @@ describe("validateBikeForm", () => {
       validateBikeForm(
         { make: "A", model: "B", year: "2024", photoUrl: "" },
         FIXED_NOW,
+        t,
       ).photoUrl,
     ).toBeUndefined();
     expect(
       validateBikeForm(
         { make: "A", model: "B", year: "2024", photoUrl: "   " },
         FIXED_NOW,
+        t,
       ).photoUrl,
     ).toBeUndefined();
   });
@@ -102,9 +114,75 @@ describe("validateBikeForm", () => {
     const errors = validateBikeForm(
       { make: "   ", model: "   ", year: "2024", photoUrl: "" },
       FIXED_NOW,
+      t,
     );
     expect(errors.make).toBeDefined();
     expect(errors.model).toBeDefined();
+  });
+});
+
+// Builds a translator over a minimal en-only catalog stub (independent of the
+// real companion catalog) whose values are DISTINCT sentinels ("XX-…") rather
+// than an identity map. An identity map can't tell a real `t()` call apart
+// from a regression that bypasses `t()` and returns the raw canonical
+// English string directly — both would produce the same string. With
+// sentinel values, a bypass regression returns the untranslated English text
+// and these assertions fail.
+describe("validateBikeForm translator wiring", () => {
+  const sentinelT = makeTranslator<string>({
+    en: {
+      "Make is required": "XX-make-required",
+      "Model is required": "XX-model-required",
+      "Year is required": "XX-year-required",
+      "Enter a 4-digit year": "XX-enter-4-digit-year",
+      "Year must be between {min} and {max}": "XX-year-between-{min}-{max}",
+      "Photo URL must start with http:// or https://": "XX-photo-url-protocol",
+    },
+  });
+
+  it("routes the required-field messages through the translator", () => {
+    const errors = validateBikeForm(EMPTY_BIKE_FORM, FIXED_NOW, sentinelT);
+    expect(errors.make).toBe("XX-make-required");
+    expect(errors.model).toBe("XX-model-required");
+    expect(errors.year).toBe("XX-year-required");
+  });
+
+  it("routes the 4-digit-year message through the translator", () => {
+    expect(
+      validateBikeForm(
+        { make: "A", model: "B", year: "99", photoUrl: "" },
+        FIXED_NOW,
+        sentinelT,
+      ).year,
+    ).toBe("XX-enter-4-digit-year");
+  });
+
+  it("routes the year-range message through the translator with min/max interpolated", () => {
+    // maxBikeYear(FIXED_NOW) === 2027
+    expect(
+      validateBikeForm(
+        { make: "A", model: "B", year: "1800", photoUrl: "" },
+        FIXED_NOW,
+        sentinelT,
+      ).year,
+    ).toBe("XX-year-between-1900-2027");
+    expect(
+      validateBikeForm(
+        { make: "A", model: "B", year: "2030", photoUrl: "" },
+        FIXED_NOW,
+        sentinelT,
+      ).year,
+    ).toBe("XX-year-between-1900-2027");
+  });
+
+  it("routes the photo-url message through the translator", () => {
+    expect(
+      validateBikeForm(
+        { make: "A", model: "B", year: "2024", photoUrl: "ftp://host/img.png" },
+        FIXED_NOW,
+        sentinelT,
+      ).photoUrl,
+    ).toBe("XX-photo-url-protocol");
   });
 });
 

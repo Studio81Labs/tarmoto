@@ -25,7 +25,9 @@ export async function shareRoadMap(
     typeof navigator !== "undefined" && Boolean(navigator.clipboard?.writeText);
   if (!canWebShare && !canClipboard) {
     toast.error(
-      "Your browser doesn't support sharing or clipboard access — try a different browser.",
+      t(
+        "Your browser doesn't support sharing or clipboard access — try a different browser.",
+      ),
     );
     return;
   }
@@ -65,7 +67,7 @@ export async function shareRoadMap(
     // user opted out, so no error toast.
     if (!(err instanceof Error && err.name === "AbortError")) {
       toast.error(
-        err instanceof Error ? err.message : "Could not generate share link",
+        err instanceof Error ? err.message : t("Could not generate share link"),
       );
     }
   }

@@ -178,7 +178,11 @@ export default function PrivacyPage() {
           className="grid grid-cols-1 gap-2 sm:grid-cols-3"
           value={settings.profileVisibility}
           onChange={setProfileVisibility}
-          options={PROFILE_VISIBILITY_OPTIONS}
+          options={PROFILE_VISIBILITY_OPTIONS.map((option) => ({
+            ...option,
+            label: t(option.label),
+            description: t(option.description),
+          }))}
         />
       </Card>
 
@@ -199,7 +203,11 @@ export default function PrivacyPage() {
           className="grid grid-cols-1 gap-2 sm:grid-cols-2"
           value={settings.defaultRideSharing}
           onChange={setRideSharing}
-          options={RIDE_SHARING_OPTIONS}
+          options={RIDE_SHARING_OPTIONS.map((option) => ({
+            ...option,
+            label: t(option.label),
+            description: t(option.description),
+          }))}
         />
       </Card>
 
@@ -219,7 +227,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.roadDataContribution}
             onChange={toggleRoadData}
-            ariaLabel="Road data contribution"
+            ariaLabel={t("Road data contribution")}
           />
         </div>
       </Card>
@@ -241,7 +249,11 @@ export default function PrivacyPage() {
           className="grid grid-cols-2 gap-2 sm:grid-cols-5"
           value={settings.locationRetention}
           onChange={setLocationRetention}
-          options={LOCATION_RETENTION_OPTIONS}
+          options={LOCATION_RETENTION_OPTIONS.map((option) => ({
+            ...option,
+            label: t(option.label),
+            description: t(option.description),
+          }))}
         />
       </Card>
 
@@ -272,7 +284,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.analyticsConsent}
             onChange={toggleAnalytics}
-            ariaLabel="Product analytics consent"
+            ariaLabel={t("Product analytics consent")}
           />
         </div>
 
@@ -290,7 +302,7 @@ export default function PrivacyPage() {
           <Toggle
             checked={settings.personalizedRecommendationsConsent}
             onChange={togglePersonalized}
-            ariaLabel="Personalised recommendations consent"
+            ariaLabel={t("Personalised recommendations consent")}
           />
         </div>
       </Card>

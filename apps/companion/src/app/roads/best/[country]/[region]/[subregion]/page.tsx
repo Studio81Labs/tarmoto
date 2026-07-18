@@ -1,3 +1,5 @@
+import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { findCountry, findRegion, listIndexableRegions } from "@tarmoto/shared";
@@ -37,13 +39,20 @@ export async function generateMetadata({
   const subregion = normalizeSlugParam(rawSubregion);
   const r = findRegion(country, subregion);
   if (!r || r.parent !== region) return {};
-  const title = `Best motorcycle roads in ${r.name} — Tarmoto`;
+  const locale = await readLocale();
+  const title = t(
+    "Best motorcycle roads in {name} — Tarmoto",
+    { name: r.name },
+    locale,
+  );
   const url = `/roads/best/${r.country}/${r.parent}/${r.slug}`;
   return buildBestRoadsMetadata({
     title,
+    // `r.description` is catalog data from `@tarmoto/shared` (not UI-chrome
+    // copy) — excluded from t() wrapping; see the i18n readiness plan.
     description: r.description,
     canonicalPath: url,
-    imageAlt: `Best motorcycle roads in ${r.name}`,
+    imageAlt: t("Best motorcycle roads in {name}", { name: r.name }, locale),
   });
 }
 

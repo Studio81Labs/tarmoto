@@ -10,6 +10,7 @@
 
 import {
   MAX_TRIP_FOLDER_NAME_LENGTH,
+  type LooseTranslate,
   type TripFolder as SharedTripFolder,
 } from "@tarmoto/shared";
 import { tripFoldersApi } from "@/lib/api";
@@ -55,18 +56,21 @@ export function sortFoldersForDisplay(
 export function validateFolderName(
   name: string,
   folders: readonly TripFolder[],
+  t: LooseTranslate,
   excludeId?: string,
 ): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return "Folder name is required";
+  if (!trimmed) return t("Folder name is required");
   if (trimmed.length > MAX_FOLDER_NAME_LENGTH) {
-    return `Folder name must be ${MAX_FOLDER_NAME_LENGTH} characters or fewer`;
+    return t("Folder name must be {max} characters or fewer", {
+      max: MAX_FOLDER_NAME_LENGTH,
+    });
   }
   const lower = trimmed.toLowerCase();
   const clash = folders.some(
     (f) => f.id !== excludeId && f.name.trim().toLowerCase() === lower,
   );
-  if (clash) return "A folder with that name already exists";
+  if (clash) return t("A folder with that name already exists");
   return null;
 }
 

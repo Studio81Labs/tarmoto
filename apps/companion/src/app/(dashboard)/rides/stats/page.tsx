@@ -210,13 +210,15 @@ export default function StatsPage() {
       </div>
     );
   }
-  const windowLabel =
-    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time";
+  const windowLabel = t(
+    STATS_WINDOWS.find((w) => w.value === filters.window)?.label ?? "All time",
+  );
   // The chart switches from monthly to daily bars on the short windows; the
   // header copy follows so "Distance by day" reads honestly for 90/30 days.
   const isDayView = filters.window === "30d" || filters.window === "90d";
-  const chartStamp = isDayView ? "Distance by day" : "Distance by month";
-  const chartTitle = filters.window === "all" ? "Last 12 months" : windowLabel;
+  const chartStamp = isDayView ? t("Distance by day") : t("Distance by month");
+  const chartTitle =
+    filters.window === "all" ? t("Last 12 months") : windowLabel;
   // The heatmap is always the focus calendar year (window-independent).
   const heatmapLabel = String(focusYear);
   // `key` is unique per bar, so the axis tick + tooltip both resolve their
@@ -305,7 +307,7 @@ export default function StatsPage() {
       <Card padded={false} className="p-[22px]">
         <SectionHeading
           className="mb-[18px]"
-          stamp={t(chartStamp)}
+          stamp={chartStamp}
           title={chartTitle}
           caption={
             <>
@@ -393,7 +395,7 @@ export default function StatsPage() {
             title={`${t("Monthly distance")} · ${t("last {count} years", {
               count: yoyYears.length,
             })}`}
-            caption={`${distanceUnit} / month`}
+            caption={t("{unit} / month", { unit: distanceUnit })}
           />
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -513,7 +515,7 @@ function FilterBar({ filters, onChange }: FilterBarProps) {
         ariaLabel={t("Time window")}
         value={filters.window}
         onChange={(window) => onChange({ ...filters, window })}
-        options={WINDOW_OPTIONS}
+        options={WINDOW_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}
       />
       <SegmentedControl
         ariaLabel={t("Ride type filter")}
@@ -524,7 +526,10 @@ function FilterBar({ filters, onChange }: FilterBarProps) {
             rideType: next === "all" ? "all" : (next as RideType),
           })
         }
-        options={RIDE_TYPE_OPTIONS}
+        options={RIDE_TYPE_OPTIONS.map((opt) => ({
+          ...opt,
+          label: t(opt.label),
+        }))}
       />
     </div>
   );
@@ -699,7 +704,7 @@ function SurfaceBreakdownCard({
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${s.label} · ${format.decimal(s.pct, 1)}%`}
+                  title={`${t(s.label)} · ${format.decimal(s.pct, 1)}%`}
                 />
               ))}
             </div>
@@ -714,7 +719,7 @@ function SurfaceBreakdownCard({
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: surfaceColor(s.key) }}
                     />
-                    <span className="text-ink">{s.label}</span>
+                    <span className="text-ink">{t(s.label)}</span>
                   </span>
                   <Mono className="text-fg-dim">
                     {`${format.decimal(s.pct, 1)}%`}
@@ -760,7 +765,7 @@ function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
                 return (
                   <div key={s.key}>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-ink">{s.label}</span>
+                      <span className="text-ink">{t(s.label)}</span>
                       <Mono className="text-fg-dim">
                         {`${format.decimal(s.pct, 1)}%`}
                       </Mono>
@@ -919,7 +924,7 @@ function CalendarHeatmap({ days, label, format }: CalendarHeatmapProps) {
           aspectRatio: `${weeks} / 7`,
         }}
         role="img"
-        aria-label={`Riding calendar — ${label}`}
+        aria-label={t("Riding calendar — {label}", { label })}
       >
         {cells.map((cell, index) => (
           <CalendarCell

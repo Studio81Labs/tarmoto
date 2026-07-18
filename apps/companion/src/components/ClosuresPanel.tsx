@@ -222,7 +222,7 @@ function ClosuresPanelBody({
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-  const monthText = monthLabel(month);
+  const monthText = t(monthLabel(month));
   const previewDay = format.calendarDate(previewDate);
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);
@@ -259,7 +259,7 @@ function ClosuresPanelBody({
       ) : (
         <p className="text-xs text-fg-mute">
           {t("Previewing {month} conditions on {previewDay}.", {
-            month: monthText || "this month",
+            month: monthText || t("this month"),
             previewDay,
           })}
         </p>
@@ -418,7 +418,7 @@ function OnRouteClosureCard({
           </span>
         </div>
         <p className="mt-1 text-xs text-fg-dim">
-          {formatClosureWindow(closure, format)}
+          {formatClosureWindow(closure, format, t)}
         </p>
         {closure.notes ? (
           <p className="mt-1 text-xs text-fg-dim">{closure.notes}</p>
@@ -502,7 +502,7 @@ function ClosureRow({
       </div>
 
       <p className="mt-1 text-xs text-fg-dim">
-        {formatClosureWindow(closure, format)}
+        {formatClosureWindow(closure, format, t)}
       </p>
 
       {detourKm != null && (

@@ -84,7 +84,7 @@ export default function SubscriptionPage() {
         if (cancelled) return;
         setState({
           kind: "loaded",
-          snapshot: normalizeSubscriptionSnapshot(data),
+          snapshot: normalizeSubscriptionSnapshot(data, t),
         });
       })
       .catch((error) => {
@@ -92,7 +92,7 @@ export default function SubscriptionPage() {
         if (shouldUseSubscriptionPreview(error)) {
           setState({
             kind: "loaded",
-            snapshot: buildFallbackSubscriptionSnapshot(),
+            snapshot: buildFallbackSubscriptionSnapshot(t),
           });
           return;
         }
@@ -110,7 +110,7 @@ export default function SubscriptionPage() {
   }, [authReady]);
   const snapshot = state.kind === "loaded" ? state.snapshot : null;
   const renewalLabel = useMemo(
-    () => (snapshot ? describeRenewal(snapshot.currentPlan, format) : ""),
+    () => (snapshot ? describeRenewal(snapshot.currentPlan, format, t) : ""),
     [snapshot, format],
   );
   async function openCheckout(tier: "premium" | "pro") {
@@ -406,10 +406,10 @@ function PaymentMethodCard({
       {paymentMethod ? (
         <div className="rounded-xl border border-line bg-paper p-4">
           <p className="text-[18px] font-semibold text-ink">
-            {formatPaymentMethodLabel(paymentMethod)}
+            {formatPaymentMethodLabel(paymentMethod, t)}
           </p>
           <p className="mt-1 text-[14px] text-fg-dim">
-            {formatPaymentMethodExpiry(paymentMethod)}
+            {formatPaymentMethodExpiry(paymentMethod, t)}
           </p>
         </div>
       ) : (
@@ -476,7 +476,7 @@ function PlanCard({
   const actionLabel =
     paidPlanNeedsCheckout && isCurrent
       ? "Subscribe"
-      : planActionLabel(plan.tier, currentTier);
+      : planActionLabel(plan.tier, currentTier, t);
   const disabled =
     busy ||
     (paidPlanNeedsCheckout
@@ -562,7 +562,8 @@ function BillingHistoryCard({
                   {formatInvoiceDate(invoice.date, format)}
                 </p>
                 <p className="mt-1 text-[14px] text-fg-dim">
-                  {invoice.amountLabel} · {invoiceStatusLabel(invoice.status)}
+                  {invoice.amountLabel} ·{" "}
+                  {invoiceStatusLabel(invoice.status, t)}
                 </p>
               </div>
 

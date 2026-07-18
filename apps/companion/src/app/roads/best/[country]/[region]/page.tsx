@@ -1,3 +1,5 @@
+import { t } from "@/i18n";
+import { readLocale } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { findCountry, findRegion, listIndexableRegions } from "@tarmoto/shared";
@@ -31,12 +33,19 @@ export async function generateMetadata({
   // request like /roads/best/at/alpine-passes doesn't duplicate the canonical
   // /roads/best/at/tyrol/alpine-passes page with conflicting metadata.
   if (!r || r.parent) return {};
-  const title = `Best motorcycle roads in ${r.name} — Tarmoto`;
+  const locale = await readLocale();
+  const title = t(
+    "Best motorcycle roads in {name} — Tarmoto",
+    { name: r.name },
+    locale,
+  );
   return buildBestRoadsMetadata({
     title,
+    // `r.description` is catalog data from `@tarmoto/shared` (not UI-chrome
+    // copy) — excluded from t() wrapping; see the i18n readiness plan.
     description: r.description,
     canonicalPath: `/roads/best/${r.country}/${r.slug}`,
-    imageAlt: `Best motorcycle roads in ${r.name}`,
+    imageAlt: t("Best motorcycle roads in {name}", { name: r.name }, locale),
   });
 }
 
