@@ -4,6 +4,7 @@ import { TypeOrmModule, getDataSourceToken } from '@nestjs/typeorm';
 import { AppDataSource } from '../src/data-source.js';
 import { RoadsService } from '../src/modules/roads/roads.service.js';
 import { FunZoneClusteringService } from '../src/modules/roads/fun-zone-clustering.service.js';
+import { FeatureResolver } from '../src/modules/features/feature-resolver.service.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 import { FunZone } from '../src/entities/fun-zone.entity.js';
 import { FunZoneRoad } from '../src/entities/fun-zone-road.entity.js';
@@ -76,7 +77,17 @@ describe('segment-length aggregation for best-roads + fun-zones (#794)', () => {
         TypeOrmModule.forRoot(AppDataSource.options),
         TypeOrmModule.forFeature([RoadSegment, FunZone, FunZoneRoad]),
       ],
-      providers: [RoadsService, FunZoneClusteringService],
+      providers: [
+        RoadsService,
+        FunZoneClusteringService,
+        // findById consults sys_poi_ratings to gate the review aggregate; the
+        // #809 review assertions below assume it's on (the default), so a stub
+        // returning true preserves the real review-embed behaviour.
+        {
+          provide: FeatureResolver,
+          useValue: { isSystemSwitchEnabled: () => Promise.resolve(true) },
+        },
+      ],
     }).compile();
 
     roads = module.get(RoadsService);

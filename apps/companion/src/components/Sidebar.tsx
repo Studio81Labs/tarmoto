@@ -26,7 +26,7 @@ import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useContribution } from "@/hooks/useContribution";
-import { useDropdown, useLocalStorage } from "@/hooks";
+import { useDropdown, useMediaQuery, usePersistentState } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
@@ -162,10 +162,21 @@ function isItemActive(item: NavItem, pathname: string): boolean {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useLocalStorage<boolean>(
+  // The rider's explicit choice, persisted. `null` = never toggled, so the
+  // sidebar follows the viewport default below. Once they collapse/expand it
+  // by hand, that preference sticks (and wins over the viewport) until cleared.
+  // Read synchronously (usePersistentState, not useLocalStorage) so a manually
+  // saved preference is present on the first commit — otherwise the sidebar
+  // remounting across a route-group boundary would paint the viewport default
+  // for one frame before the stored value lands, flashing expand→collapse.
+  const [userCollapsed, setUserCollapsed] = usePersistentState<boolean | null>(
     COLLAPSED_STORAGE_KEY,
-    false,
+    null,
   );
+  // Default collapsed below the desktop breakpoint (lg / 1024px) so tablet
+  // portrait (e.g. 744px) and narrower start compact; desktop starts expanded.
+  const compactViewport = useMediaQuery("(max-width: 1023px)");
+  const collapsed = userCollapsed ?? compactViewport;
 
   const groups = buildNavGroups(NAV_ITEMS);
 
@@ -201,7 +212,7 @@ export function Sidebar() {
         {!collapsed && (
           <button
             type="button"
-            onClick={() => setCollapsed(true)}
+            onClick={() => setUserCollapsed(true)}
             className="ml-auto flex h-6 w-6 items-center justify-center rounded-md bg-cream/5 text-cream/60 transition hover:bg-cream/10 hover:text-cream"
             aria-label={t("Collapse sidebar")}
           >
@@ -213,7 +224,7 @@ export function Sidebar() {
       {collapsed && (
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
+          onClick={() => setUserCollapsed(false)}
           className="flex h-8 w-full items-center justify-center rounded-lg text-cream/60 transition hover:bg-cream/10 hover:text-cream"
           aria-label={t("Expand sidebar")}
         >

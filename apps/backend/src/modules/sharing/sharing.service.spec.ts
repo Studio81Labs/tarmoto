@@ -18,6 +18,7 @@ import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('SharingService', () => {
   let service: SharingService;
@@ -40,6 +41,9 @@ describe('SharingService', () => {
     assertCanMintOpenTrip: jest.Mock;
   };
   let privacy: { loadPreferences: jest.Mock };
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+  >;
 
   const mockOwner = {
     id: 'user-1',
@@ -181,6 +185,11 @@ describe('SharingService', () => {
         .fn()
         .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
     };
+    // Default ON so every pre-existing toggleShare test is unaffected; the
+    // off-case tests below override with mockResolvedValue(false).
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -194,6 +203,7 @@ describe('SharingService', () => {
         { provide: getRepositoryToken(TripMember), useValue: tripMemberRepo },
         { provide: TripsService, useValue: tripsService },
         { provide: PrivacyPreferencesService, useValue: privacy },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -264,6 +274,28 @@ describe('SharingService', () => {
         share_token: string;
       };
       expect(createCall.share_token).toMatch(/^[a-f0-9]{32}$/);
+    });
+
+    // sys_ride_publishing (operator kill switch) — directional: only the
+    // publish direction is gated. Unpublishing must always work so a kill
+    // can't trap an already-public ride.
+    it('coerces a publish to private when sys_ride_publishing is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const result = await service.toggleShare('user-1', 'ride-1', true); // request public
+
+      expect(result.is_public).toBe(false); // coerced private, no throw
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_ride_publishing',
+      );
+    });
+
+    it('still allows unpublishing when sys_ride_publishing is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const result = await service.toggleShare('user-1', 'ride-1', false);
+
+      expect(result.is_public).toBe(false); // unpublish works
     });
   });
 

@@ -797,6 +797,19 @@ describe('OsmImportService', () => {
     expect(service.enabled).toBe(true);
   });
 
+  it('exposes the configured regions + extract dir for the manual CLI', () => {
+    const region: PoiImportRegion = {
+      code: 'CZ',
+      bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+    };
+    osmConfig.regions = [region];
+    osmConfig.extractDir = '/data/road-extracts';
+    expect(service.regions).toEqual([region]);
+    expect(service.extractDir).toBe('/data/road-extracts');
+    osmConfig.extractDir = null;
+    expect(service.extractDir).toBeNull();
+  });
+
   // A minimal valid <osm> XML extract with one drivable way, at `(lat, lng)`
   // (default 50.0N, 14.0E — inside the CZ test region below). The second node
   // offsets LATITUDE by ~0.0009° (matching `straightWay` above) for a single

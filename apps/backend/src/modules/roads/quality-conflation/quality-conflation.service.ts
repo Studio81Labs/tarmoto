@@ -1,6 +1,7 @@
 import { createReadStream, createWriteStream } from 'node:fs';
 import { rename, rm } from 'node:fs/promises';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -100,11 +101,16 @@ export class QualityConflationService {
    * step (the graph bakes `smoothness` at import time): point the GraphHopper
    * import at `outputFilePath`. This method only produces that file.
    *
-   * The write is **atomic**: output goes to a temp sibling that is renamed onto
-   * `outputFilePath` only after it finishes cleanly. A wrong input path,
-   * malformed XML, full disk, or mid-run crash therefore leaves the previous
-   * good extract intact (BullMQ retries), rather than truncating the very file
-   * GraphHopper is documented to import.
+   * The write is **atomic**: output goes to a **unique** temp sibling
+   * (`.<uuid>.tmp`) that is renamed onto `outputFilePath` only after it finishes
+   * cleanly. A wrong input path, malformed XML, full disk, or mid-run crash
+   * therefore leaves the previous good extract intact (BullMQ retries), rather
+   * than truncating the very file GraphHopper is documented to import. The temp
+   * is unique per run so a second concurrent conflation — the queued
+   * success-continuation worker plus the `quality:conflation` CLI, or two manual
+   * runs — can't clobber or rename/delete the other's in-flight temp; the atomic
+   * rename then guarantees `outputFilePath` is only ever a COMPLETE extract, so
+   * GraphHopper never re-imports a partial file.
    */
   async runConflation(): Promise<{ waysTagged: number; assignments: number }> {
     const { inputFilePath, outputFilePath } = this.conflationConfig;
@@ -119,7 +125,11 @@ export class QualityConflationService {
       assignments.map((a) => [a.osmWayId, a.smoothness]),
     );
 
-    const tmpPath = `${outputFilePath}.tmp`;
+    // Unique per run: a second concurrent conflation (the queued worker + this
+    // CLI, or two manual runs) must not clobber or rename/delete another run's
+    // in-flight temp. The atomic rename below then keeps `outputFilePath` a
+    // COMPLETE extract, so GraphHopper never imports a partial file.
+    const tmpPath = `${outputFilePath}.${randomUUID()}.tmp`;
     const input = createReadStream(inputFilePath);
     const output = createWriteStream(tmpPath);
     let waysTagged: number;

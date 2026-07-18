@@ -5,6 +5,7 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
 import { FunZoneRoad } from '../../entities/fun-zone-road.entity.js';
 import { MapillaryModule } from '../mapillary/index.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { RoadsController } from './roads.controller.js';
 import { RoadsService } from './roads.service.js';
 import { FunZoneClusteringService } from './fun-zone-clustering.service.js';
@@ -19,6 +20,7 @@ import { graphhopperReimportConfig } from './quality-conflation/graphhopper-reim
   imports: [
     TypeOrmModule.forFeature([RoadSegment, FunZone, FunZoneRoad]),
     MapillaryModule,
+    FeaturesModule,
     ConfigModule.forFeature(osmRoadImportConfig),
     ConfigModule.forFeature(qualityConflationConfig),
     ConfigModule.forFeature(graphhopperReimportConfig),

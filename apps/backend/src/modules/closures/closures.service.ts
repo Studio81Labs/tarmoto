@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   CheckRouteClosuresDto,
   CheckRouteClosuresResponseDto,
@@ -45,6 +46,7 @@ export class ClosuresService {
   constructor(
     @InjectRepository(RoadClosure)
     private readonly repo: Repository<RoadClosure>,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async list(query: ListClosuresQueryDto): Promise<RoadClosureDto[]> {
@@ -57,6 +59,20 @@ export class ClosuresService {
     // is unconditional, so `include_past` can't expose inactive feed
     // history. (Inactive history would belong behind an admin endpoint.)
     qb.andWhere('c.geom IS NOT NULL').andWhere('c.is_active = true');
+
+    // Operator kill switch: `road_closures` is a MIXED-SOURCE table —
+    // 'official' is the NAP/DATEX feed's source value (see `nap.config`'s
+    // `source: 'official'`), while 'operator'/'osm' rows are independently
+    // entered/imported. A disable must hide only NAP-sourced closures, not
+    // an operator's own manually-entered ones — so we filter them out
+    // rather than short-circuiting to `[]`. Independent of
+    // sys_nap_routing_avoidance below: an operator can kill display while
+    // keeping (or vice versa) closures still routed around.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
+    ) {
+      qb.andWhere("c.source != 'official'");
+    }
 
     if (query.bbox) {
       const parsed = this.parseBbox(query.bbox);
@@ -115,7 +131,7 @@ export class ClosuresService {
       })
       .join(',');
 
-    const rows = await this.repo
+    const qb = this.repo
       .createQueryBuilder('c')
       // Skip undecoded feed rows (no geometry) and any closure
       // deactivated by the reconcile pass (#743).
@@ -131,8 +147,19 @@ export class ClosuresService {
       )
       .andWhere('c.starts_at <= :activeOn', { activeOn })
       .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', { activeOn })
-      .orderBy('c.starts_at', 'DESC')
-      .getMany();
+      .orderBy('c.starts_at', 'DESC');
+
+    // Same operator kill switch as `list`: `road_closures` is a
+    // MIXED-SOURCE table, so a disable hides only NAP-sourced ('official')
+    // rows from the route check — operator/osm closures on the route are
+    // still reported.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
+    ) {
+      qb.andWhere("c.source != 'official'");
+    }
+
+    const rows = await qb.getMany();
 
     const closures = rows
       .map((r) => this.toDto(r))
@@ -161,7 +188,7 @@ export class ClosuresService {
     bbox: BboxCoords,
     activeOn: Date = new Date(),
   ): Promise<Array<Array<[number, number]>>> {
-    const rows = await this.repo
+    const qb = this.repo
       .createQueryBuilder('c')
       .select(
         'ST_AsGeoJSON(ST_Buffer(c.geom::geography, :buffer)::geometry)',
@@ -176,8 +203,22 @@ export class ClosuresService {
         'ST_Intersects(c.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
         bbox,
       )
-      .setParameter('buffer', EXCLUSION_BUFFER_M)
-      .getRawMany<{ geojson: string | null }>();
+      .setParameter('buffer', EXCLUSION_BUFFER_M);
+
+    // Separate operator kill switch from sys_nap_conditions above: routing
+    // avoidance can be disabled independently of closure display. Same
+    // mixed-source rule as `list`/`checkRoute` — exclude only NAP-sourced
+    // ('official') rows when off, so an operator's own full closures
+    // (e.g. US-40) are still routed around.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_nap_routing_avoidance',
+      ))
+    ) {
+      qb.andWhere("c.source != 'official'");
+    }
+
+    const rows = await qb.getRawMany<{ geojson: string | null }>();
 
     const polygons: Array<Array<[number, number]>> = [];
     for (const row of rows) {
@@ -207,6 +248,17 @@ export class ClosuresService {
     // cached/bookmarked URL can't surface a stale closure the map hides
     // (#743). Inactive history belongs behind an explicit admin path.
     if (!row || row.geom === null || row.is_active === false) {
+      throw new NotFoundException('Closure not found');
+    }
+    // Same operator kill switch as `list`/`checkRoute`: `road_closures` is
+    // a MIXED-SOURCE table, so a killed NAP display 404s only a
+    // NAP-sourced ('official') closure — an operator/osm closure's detail
+    // URL stays reachable. Checking `row.source` first also skips the
+    // switch read entirely for the common (non-NAP) case.
+    if (
+      row.source === 'official' &&
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
+    ) {
       throw new NotFoundException('Closure not found');
     }
     return this.toDto(row);

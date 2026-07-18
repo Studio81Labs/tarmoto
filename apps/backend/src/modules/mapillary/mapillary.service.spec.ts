@@ -3,8 +3,16 @@ import type { StreetImageryProvider } from './mapillary-provider.interface.js';
 
 function makeService(
   provider: Partial<StreetImageryProvider>,
+  // Default stub keeps the switch ON so every pre-existing test below is
+  // unaffected; off-case tests pass their own mock resolving `false`.
+  featureResolver = {
+    isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+  },
 ): MapillaryService {
-  return new MapillaryService(provider as StreetImageryProvider);
+  return new MapillaryService(
+    provider as StreetImageryProvider,
+    featureResolver as never,
+  );
 }
 
 const NO_IMAGERY = {
@@ -60,6 +68,22 @@ describe('MapillaryService', () => {
       expect(a).toEqual(NO_IMAGERY);
       expect(nearestImage).toHaveBeenCalledTimes(2); // not cached → retried
     });
+
+    it('returns NO_IMAGERY without calling the provider when sys_mapillary_previews is off', async () => {
+      const nearestImage = jest.fn();
+      const featureResolver = {
+        isSystemSwitchEnabled: jest.fn().mockResolvedValue(false),
+      };
+      const service = makeService({ nearestImage }, featureResolver);
+
+      const result = await service.segmentImagery(46.5, 10.4, 90);
+
+      expect(result).toEqual(NO_IMAGERY);
+      expect(nearestImage).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_mapillary_previews',
+      );
+    });
   });
 
   describe('thumbnail', () => {
@@ -83,6 +107,20 @@ describe('MapillaryService', () => {
       expect(await service.thumbnail('mly-1')).toBeNull();
       await service.thumbnail('mly-1');
       expect(thumbnail).toHaveBeenCalledTimes(2); // not cached → retried
+    });
+
+    it('returns null without fetching when sys_mapillary_previews is off', async () => {
+      const thumbnail = jest.fn();
+      const featureResolver = {
+        isSystemSwitchEnabled: jest.fn().mockResolvedValue(false),
+      };
+      const service = makeService({ thumbnail }, featureResolver);
+
+      expect(await service.thumbnail('img-1')).toBeNull();
+      expect(thumbnail).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_mapillary_previews',
+      );
     });
   });
 });

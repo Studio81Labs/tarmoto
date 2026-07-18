@@ -6,11 +6,13 @@ import {
   buildLimitSnapshot,
   buildSystemSwitchSnapshot,
   isGlobalFeatureState,
+  resolveSystemSwitch,
   type FeatureSnapshot,
   type GlobalFeatureState,
   type GlobalFeatureStates,
   type GlobalLimitOverrides,
   type LimitSnapshot,
+  type SystemFeatureKey,
   type SystemSwitchSnapshot,
 } from '@tarmoto/shared';
 import { FeatureState } from '../../entities/feature-state.entity.js';
@@ -157,6 +159,17 @@ export class FeatureResolver {
    */
   async getSystemSwitches(): Promise<SystemSwitchSnapshot> {
     return buildSystemSwitchSnapshot(await this.getGlobalStates());
+  }
+
+  /**
+   * Whether an operator kill switch is currently ON (default) — false only
+   * when an operator has force_off'd it. One indexed read; no cache, so a
+   * disable takes effect on the next request. Callable from public and
+   * authed endpoints (system switches are global — no user).
+   */
+  async isSystemSwitchEnabled(key: SystemFeatureKey): Promise<boolean> {
+    const states = await this.getGlobalStates();
+    return resolveSystemSwitch(key, states[key]);
   }
 
   private async loadOverrides(
