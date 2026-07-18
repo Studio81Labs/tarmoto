@@ -101,8 +101,9 @@ export function PageHeader({
         {stamp && <Stamp>{stamp}</Stamp>}
         {/* Title and actions share the first row on every size; the sub sits
             below spanning the full column. `items-center` keeps the CTAs
-            aligned to the title, and the title truncates so it never pushes
-            the shrink-0 action slot off-screen on narrow viewports. */}
+            aligned to the title. When an action slot is present the title
+            truncates so it never pushes the shrink-0 actions off-screen on
+            narrow viewports; a title-only header keeps its natural wrapping. */}
         <div
           className={cn(
             "flex items-center justify-between gap-6",
@@ -115,7 +116,7 @@ export function PageHeader({
                 {icon}
               </span>
             )}
-            <Heading size="xl" as="h1" className="truncate">
+            <Heading size="xl" as="h1" className={cn(right && "truncate")}>
               {title}
             </Heading>
           </div>
