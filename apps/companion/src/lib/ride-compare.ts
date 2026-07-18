@@ -70,9 +70,14 @@ export interface StatRow {
 }
 
 const STAT_DEFS: Array<
-  Omit<StatRow, "a" | "b" | "delta" | "label"> & {
+  Omit<StatRow, "a" | "b" | "delta" | "label" | "unit"> & {
     key: StatKey;
     label: EnglishMessageKey;
+    // Non-linguistic notation ("/5" fraction marker, "°" degree symbol) is
+    // excluded from the catalog entirely — typed here (not just `string`) so
+    // the compiler, not a runtime Set, enforces that every other unit is a
+    // registered key.
+    unit?: EnglishMessageKey | "/5" | "°";
   }
 > = [
   {
@@ -139,13 +144,6 @@ const STAT_DEFS: Array<
   },
 ];
 
-// Non-linguistic notation units render as-is — never translated (see the
-// ride-compare exclude list: fraction-marker glyph / degree symbol, not
-// linguistic unit words). Excluded from `t()` entirely, not just from
-// catalog registration, so a future unrelated catalog entry for "°" or "/5"
-// can never silently start rendering here.
-const NON_LINGUISTIC_UNITS = new Set(["/5", "°"]);
-
 // Builds one StatRow per metric. Both-null rows still appear (with em-dashes)
 // so the table layout is stable regardless of which fields the API populated.
 export function computeStatRows(
@@ -164,12 +162,11 @@ export function computeStatRows(
       // under `exactOptionalPropertyTypes`.
       ...(def.unit
         ? {
-            unit: NON_LINGUISTIC_UNITS.has(def.unit)
-              ? def.unit
-              : // dynamic: `unit` stays plain `string` (not EnglishMessageKey)
-                // because NON_LINGUISTIC_UNITS above deliberately carries
-                // glyphs ("/5", "°") that are excluded from the catalog.
-                t(def.unit as EnglishMessageKey),
+            // Explicit literal equality (not `Set.has()`, which wouldn't
+            // narrow the union) — the `else` branch types `def.unit` as
+            // `EnglishMessageKey` for `t()`.
+            unit:
+              def.unit === "/5" || def.unit === "°" ? def.unit : t(def.unit),
           }
         : {}),
       a: av,

@@ -659,6 +659,7 @@ export const common = {
   People: "People",
   "People you might follow": "People you might follow",
   "Personal road map ": "Personal road map ",
+  Photo: "Photo",
   "Photo URL (optional)": "Photo URL (optional)",
   "Photo URL must start with http:// or https://":
     "Photo URL must start with http:// or https://",
@@ -763,6 +764,7 @@ export const common = {
   "Reroute around this ": "Reroute around this ",
   Reset: "Reset",
   "Reset ": "Reset ",
+  Rest: "Rest",
   Retry: "Retry",
   "Retry ": "Retry ",
   "Review photo {n}": "Review photo {n}",
@@ -911,6 +913,7 @@ export const common = {
   "Start riding with the Tarmoto mobile app to see your stats here. ":
     "Start riding with the Tarmoto mobile app to see your stats here. ",
   "Stats overlay": "Stats overlay",
+  Stay: "Stay",
   Stops: "Stops",
   Straight: "Straight",
   "Street-level preview of this road section":

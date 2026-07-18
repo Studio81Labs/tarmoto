@@ -25,6 +25,9 @@ describe("GeocodeSearchField", () => {
            placeholder for a required prop; not asserted on. Production
            callers localize this prop via t(). */
         placeholder="Search"
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           label used only to query this field via getByLabelText; not
+           user-facing. Production callers localize this prop via t(). */
         ariaLabel="Search start"
         onSelect={vi.fn()}
       />,
@@ -57,6 +60,9 @@ describe("GeocodeSearchField", () => {
            placeholder for a required prop; not asserted on. Production
            callers localize this prop via t(). */
         placeholder="Search"
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           label used only to query this field via getByLabelText; not
+           user-facing. Production callers localize this prop via t(). */
         ariaLabel="Search start"
         onSelect={vi.fn()}
       />,
@@ -83,6 +89,9 @@ describe("GeocodeSearchField", () => {
            placeholder for a required prop; not asserted on. Production
            callers localize this prop via t(). */
         placeholder="Search"
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           label used only to query this field via getByLabelText; not
+           user-facing. Production callers localize this prop via t(). */
         ariaLabel="Search finish"
         onSelect={onSelect}
       />,
@@ -113,6 +122,9 @@ describe("GeocodeSearchField", () => {
            placeholder for a required prop; not asserted on. Production
            callers localize this prop via t(). */
         placeholder="Search"
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           label used only to query this field via getByLabelText; not
+           user-facing. Production callers localize this prop via t(). */
         ariaLabel="Search start"
         onSelect={vi.fn()}
       />,
@@ -140,6 +152,9 @@ describe("GeocodeSearchField", () => {
            placeholder for a required prop; not asserted on. Production
            callers localize this prop via t(). */
         placeholder="Add via"
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           label used only to query this field via getByLabelText; not
+           user-facing. Production callers localize this prop via t(). */
         ariaLabel="Search via"
         onSelect={vi.fn()}
         clearOnSelect
@@ -159,6 +174,9 @@ describe("GeocodeSearchField", () => {
            placeholder for a required prop; not asserted on. Production
            callers localize this prop via t(). */
         placeholder="Search"
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           label used only to query this field via getByLabelText; not
+           user-facing. Production callers localize this prop via t(). */
         ariaLabel="Search start"
         onSelect={vi.fn()}
       />,

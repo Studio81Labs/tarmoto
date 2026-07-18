@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic } from "@/i18n";
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { Check, Shield } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -252,10 +252,9 @@ export default function PrivacyPage() {
           options={LOCATION_RETENTION_OPTIONS.map((option) => ({
             ...option,
             label: t(option.label),
-            // Two of the five options have no description ("") — genuinely
-            // not a registered catalog key, hence `tDynamic` here (unlike the
-            // profile-visibility / ride-sharing grids above).
-            description: tDynamic(option.description),
+            // Two of the five options have no description ("") — rendered
+            // bare; the other three are registered catalog keys.
+            description: option.description ? t(option.description) : "",
           }))}
         />
       </Card>

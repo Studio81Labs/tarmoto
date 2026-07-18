@@ -56,17 +56,19 @@ const restrictedSyntaxSelectors = [
   // (direct or in braces) that starts with a letter, so symbols, empty
   // alt="", and interpolated/`t(...)` values pass. Deliberate raw text
   // (a brand name, a non-translatable token) carries a disable comment.
+  // `ariaLabel` (camelCase) is the @tarmoto/ui prop name, alongside the
+  // kebab-case DOM `aria-label` used on native/passthrough elements.
   {
     selector:
-      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label)$/] > Literal[value=/^[A-Za-z]/]",
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > Literal[value=/^[A-Za-z]/]",
     message:
-      "Wrap user-facing text on label/title/alt/placeholder/aria-label with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
+      "Wrap user-facing text on label/title/alt/placeholder/aria-label/ariaLabel with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label)$/] > JSXExpressionContainer > Literal[value=/^[A-Za-z]/]",
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > Literal[value=/^[A-Za-z]/]",
     message:
-      "Wrap user-facing text on label/title/alt/placeholder/aria-label with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
+      "Wrap user-facing text on label/title/alt/placeholder/aria-label/ariaLabel with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
   },
 ];
 

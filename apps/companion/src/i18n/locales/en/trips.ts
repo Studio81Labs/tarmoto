@@ -245,8 +245,11 @@ export const trips = {
   "You've been invited to collaborate as {role}.":
     "You've been invited to collaborate as {role}.",
   "a viewer": "a viewer",
+  accommodation: "accommodation",
   "an editor": "an editor",
   "e.g. Summer 2026 Alps": "e.g. Summer 2026 Alps",
+  fuel: "fuel",
+  rest: "rest",
   "waypoint {n}": "waypoint {n}",
   "{count, plural, one {# member} other {# members}}":
     "{count, plural, one {# member} other {# members}}",

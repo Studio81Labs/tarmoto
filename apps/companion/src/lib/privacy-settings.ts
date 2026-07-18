@@ -57,9 +57,9 @@ export const RIDE_SHARING_OPTIONS: {
 export const LOCATION_RETENTION_OPTIONS: {
   value: LocationRetention;
   label: EnglishMessageKey;
-  // Two entries below have no description ("") — not every registered catalog
-  // key, so this stays `string` and the render site uses `tDynamic`.
-  description: string;
+  // Two entries below have no description (""); the render site treats an
+  // empty description as bare and `t()`s the rest.
+  description: EnglishMessageKey | "";
 }[] = [
   { value: "3months", label: "3 months", description: "Minimum retention." },
   { value: "6months", label: "6 months", description: "" },

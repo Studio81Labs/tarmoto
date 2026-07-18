@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useState } from "react";
 import { FilterX, Search } from "lucide-react";
 import {
@@ -158,9 +158,7 @@ export function RidesFilters({ state, update, reset }: Props) {
   // SelectOption's `label` is typed ReactNode (it also renders JSX elsewhere
   // in the app); this array's own literals are always plain strings.
   const qualityOptions = QUALITY_OPTIONS.map((opt) =>
-    opt.value === "any"
-      ? { ...opt, label: tDynamic(opt.label as string) }
-      : opt,
+    opt.value === "any" ? { ...opt, label: t("Any") } : opt,
   );
   const typeOptions = TYPE_OPTIONS.map((opt) => ({
     ...opt,

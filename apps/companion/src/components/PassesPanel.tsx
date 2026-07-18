@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic, type Translate } from "@/i18n";
+import { t, type Translate } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Loader2, Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -203,6 +203,7 @@ function PassesPanelBody({
     routeHitCount: routeClosedCount + routeUnknownCount,
   });
   const routeBoxVisible = showRouteWarnings && routes.length > 0;
+  const m = monthLabel(month);
   return (
     <div className="space-y-3 pt-2 border-t border-line">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
@@ -305,7 +306,7 @@ function PassesPanelBody({
         <>
           <p className="text-xs text-fg-dim">
             {t("In ")}
-            {tDynamic(monthLabel(month))}:{" "}
+            {m ? t(m) : ""}:{" "}
             <span className="text-quality-q1">
               {t("{count} closed", { count: counts.closed })}
             </span>

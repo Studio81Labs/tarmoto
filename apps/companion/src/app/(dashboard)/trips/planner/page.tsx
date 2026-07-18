@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import {
   Fragment,
   useCallback,
@@ -4138,6 +4138,19 @@ const SPINE_ROLE_COLORS: Record<string, string> = {
   end: "#FF6A1A",
 };
 
+// Fixed 7-member Waypoint["type"] union — typed so `t()` enforces every
+// role label is a registered catalog key (was a `tDynamic(role)` escape
+// hatch that hid "fuel"/"rest"/"accommodation" from the compiler).
+const WAYPOINT_ROLE_LABEL = {
+  start: "start",
+  via: "via",
+  end: "finish",
+  fuel: "fuel",
+  rest: "rest",
+  photo: "photo",
+  accommodation: "accommodation",
+} satisfies Record<Waypoint["type"], EnglishMessageKey>;
+
 function WaypointEditor({
   waypoints,
   legPrefs = [],
@@ -4152,7 +4165,7 @@ function WaypointEditor({
   waypoints: Array<{
     id: string;
     name?: string | undefined;
-    type: string;
+    type: Waypoint["type"];
   }>;
   /** Per-leg road filters (revision 3 §C), keyed by waypoint identity. */
   legPrefs?: LegPref[];
@@ -4204,7 +4217,7 @@ function WaypointEditor({
         </div>
       ) : null}
       {waypoints.map((waypoint, index) => {
-        const role = waypoint.type === "end" ? "finish" : waypoint.type;
+        const role = WAYPOINT_ROLE_LABEL[waypoint.type];
         const dotColor = SPINE_ROLE_COLORS[waypoint.type] ?? "#A89D8B";
         // Thin LEG row between consecutive routing waypoints (revision 3
         // §C): its road-type control overrides the trip-wide preference
@@ -4247,7 +4260,7 @@ function WaypointEditor({
               />
               <div className="min-w-0 flex-1">
                 <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-                  {tDynamic(role)}
+                  {t(role)}
                 </span>
                 {onRelocate ? (
                   // The name line is a typed geocode search: the current
@@ -4259,7 +4272,7 @@ function WaypointEditor({
                       waypoint.name ?? t("Waypoint {n}", { n: index + 1 })
                     }
                     ariaLabel={t("Search location for {role} waypoint", {
-                      role: tDynamic(role),
+                      role: t(role),
                     })}
                     onSelect={(result) => onRelocate(waypoint.id, result)}
                   />

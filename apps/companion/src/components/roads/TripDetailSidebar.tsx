@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, MapPin, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
-import type { TripDetail } from "@/lib/types";
+import type { TripDetail, Waypoint } from "@/lib/types";
 import { useFormat } from "@/format/FormatProvider";
 import type { EnglishMessageKey } from "@/i18n";
 
@@ -29,7 +29,9 @@ const STATUS_LABEL: Record<TripDetail["status"], EnglishMessageKey> = {
   completed: "Completed",
 };
 
-const WAYPOINT_ROLE: Partial<Record<string, string>> = {
+// Partial — "via" (the majority of stops) renders through the position-based
+// start/finish/via branches below instead, never through this map.
+const WAYPOINT_ROLE: Partial<Record<Waypoint["type"], EnglishMessageKey>> = {
   start: "Start",
   end: "Finish",
   fuel: "Fuel",
@@ -189,7 +191,7 @@ function TripBody({ trip }: { trip: TripDetail }) {
                   ? t("Start")
                   : index === waypoints.length - 1
                     ? t("Finish")
-                    : (WAYPOINT_ROLE[wp.type] ?? t("Via"));
+                    : t(WAYPOINT_ROLE[wp.type] ?? "Via");
               return (
                 <li
                   key={wp.id}
