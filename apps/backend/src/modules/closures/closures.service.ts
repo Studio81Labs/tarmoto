@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   CheckRouteClosuresDto,
   CheckRouteClosuresResponseDto,
@@ -45,9 +46,21 @@ export class ClosuresService {
   constructor(
     @InjectRepository(RoadClosure)
     private readonly repo: Repository<RoadClosure>,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async list(query: ListClosuresQueryDto): Promise<RoadClosureDto[]> {
+    // Operator kill switch: short-circuit before the query so a disable
+    // takes effect immediately — the CONDITIONS tab / map just sees no
+    // closures rather than an error. Independent of
+    // sys_nap_routing_avoidance below: an operator can kill display while
+    // keeping (or vice versa) closures still routed around.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
+    ) {
+      return [];
+    }
+
     const qb = this.repo.createQueryBuilder('c').orderBy('c.starts_at', 'DESC');
 
     // Undecoded Alert-C/OpenLR feed rows (#743) have no geometry — never
@@ -91,6 +104,18 @@ export class ClosuresService {
   async checkRoute(
     dto: CheckRouteClosuresDto,
   ): Promise<CheckRouteClosuresResponseDto> {
+    // Same operator kill switch as `list` — the route-check panel degrades
+    // to "no closures found" rather than erroring.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
+    ) {
+      return {
+        closures: [],
+        full_count: 0,
+        partial_count: 0,
+        advisory_count: 0,
+      };
+    }
     if (dto.route.length < 2) {
       throw new BadRequestException('Route must have at least 2 points');
     }
@@ -161,6 +186,17 @@ export class ClosuresService {
     bbox: BboxCoords,
     activeOn: Date = new Date(),
   ): Promise<Array<Array<[number, number]>>> {
+    // Separate operator kill switch from sys_nap_conditions above: routing
+    // avoidance can be disabled independently of closure display (e.g. to
+    // stop Valhalla exclusions while still surfacing closures on the map).
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_nap_routing_avoidance',
+      ))
+    ) {
+      return [];
+    }
+
     const rows = await this.repo
       .createQueryBuilder('c')
       .select(
@@ -199,6 +235,14 @@ export class ClosuresService {
   }
 
   async getById(id: string): Promise<RoadClosureDto> {
+    // Same operator kill switch as `list`/`checkRoute`: a killed display
+    // treats every closure as not-found, matching the shape a caller
+    // already handles for a genuinely missing id.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
+    ) {
+      throw new NotFoundException('Closure not found');
+    }
     const row = await this.repo.findOne({ where: { id } });
     // Detail lookups must match the live list/route-check paths: hide
     // undecoded feed rows (no geometry — `RoadClosureDto.geometry` is
