@@ -326,7 +326,12 @@ function clamp01(value: number): number {
 
 // ── Demo data ──
 
-const DEFAULT_MILESTONES: Milestone[] = [
+const DEFAULT_MILESTONES: Array<
+  Omit<Milestone, "name" | "description"> & {
+    name: EnglishMessageKey;
+    description: EnglishMessageKey;
+  }
+> = [
   {
     id: "distance-traveller",
     name: "Distance Traveller",
@@ -683,11 +688,8 @@ export function buildLiveSnapshot(
     // it's the read site that translates name/description for display.
     milestones: DEFAULT_MILESTONES.map((m) => ({
       ...m,
-      // dynamic: Milestone.name/description are plain `string` on the public
-      // interface (test fixtures build milestones with arbitrary, unregistered
-      // names) — DEFAULT_MILESTONES' own English copy mirrors the catalog.
-      name: t(m.name as EnglishMessageKey),
-      description: t(m.description as EnglishMessageKey),
+      name: t(m.name),
+      description: t(m.description),
     })),
     seasonal: null,
     stats: input.meProfile
