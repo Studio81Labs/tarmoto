@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Repository } from 'typeorm';
@@ -180,9 +180,51 @@ describe('QualityConflationService', () => {
         );
 
         await expect(service.runConflation()).rejects.toBeDefined();
-        // The last good extract is untouched and no temp file is left behind.
+        // The last good extract is untouched and no (unique) temp file is left
+        // behind — the failed run cleans up only its own `.<uuid>.tmp`.
         expect(await readFile(output, 'utf8')).toBe('PREVIOUS GOOD EXTRACT');
-        await expect(readFile(`${output}.tmp`, 'utf8')).rejects.toThrow();
+        expect((await readdir(dir)).filter((f) => f.endsWith('.tmp'))).toEqual(
+          [],
+        );
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('is concurrency-safe: two overlapping runs yield a complete extract, no temp orphans', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'conflation-'));
+      const input = join(dir, 'in.osm');
+      const output = join(dir, 'out.osm');
+      try {
+        await writeFile(
+          input,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6">
+  <way id="100"><nd ref="1"/><nd ref="2"/><tag k="highway" v="secondary"/></way>
+</osm>`,
+        );
+        const { service } = makeService(
+          [{ osmWayId: '100', representativeQuality: 4.6, segmentCount: 2 }],
+          { enabled: true, inputFilePath: input, outputFilePath: output },
+        );
+
+        // The queued worker + the manual CLI (or two manual runs) can call
+        // runConflation() at once. Unique temp + atomic rename means neither
+        // clobbers the other's in-flight file and the output is never partial;
+        // conflation is idempotent, so both produce the same complete extract.
+        const [a, b] = await Promise.all([
+          service.runConflation(),
+          service.runConflation(),
+        ]);
+        expect(a).toEqual({ waysTagged: 1, assignments: 1 });
+        expect(b).toEqual({ waysTagged: 1, assignments: 1 });
+
+        const written = await readFile(output, 'utf8');
+        expect(written).toContain('<tag k="smoothness" v="excellent"/>');
+        expect(written.trim().endsWith('</osm>')).toBe(true); // complete, not truncated
+        expect((await readdir(dir)).filter((f) => f.endsWith('.tmp'))).toEqual(
+          [],
+        );
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
