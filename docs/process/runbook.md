@@ -702,11 +702,31 @@ The backend must mount the **same** shared volume at the path holding
 `cz.osm`/`cz.quality.osm`.
 
 **4. The re-import receiver.** GraphHopper has no reload API and reuses the
-existing graph (`/data/default-gh`) on restart, so after a conflation the webhook
-must clear it (`rm -rf /data/default-gh`) and restart. With GraphHopper as a Coolify app the receiver is just its
-**Coolify redeploy webhook** (`METHOD=GET`) + the cache-clearing start command in
-step 2 — no sidecar. A non-2xx/unreachable webhook makes the conflation job throw
-(BullMQ retries), so a broken hook is visible, not silent.
+existing graph (`/data/default-gh`) on restart, so after a conflation something
+must **clear `/data/default-gh` and restart** it, or the fresh smoothness never
+reaches the graph.
+
+A plain **Coolify redeploy webhook** (`METHOD=GET`) is sufficient **only if the
+image's `start.sh` ENTRYPOINT is actually running** — that's what does the
+`rm -rf /data/default-gh` on each start. **Verify that before relying on it:** run
+a conflation, let the redeploy fire, and confirm GraphHopper logs a fresh **import**
+(not just a graph _load_). If it only loads the existing graph, the stock
+`graphhopper.sh` entrypoint is running (Coolify isn't honouring the ENTRYPOINT, or
+a leftover `--entrypoint` custom docker option is overriding it), so the redeploy
+does **not** clear the graph and quality routes silently go stale.
+
+In that stock-entrypoint case the receiver must clear the graph itself:
+
+- **Fix the ENTRYPOINT** (preferred) — remove any leftover `--entrypoint` custom
+  docker option so the image's `start.sh` runs; then the plain redeploy hook works
+  as above. Or
+- **Clear-then-redeploy** — point the webhook at a small sidecar (or a manual
+  step) that runs `rm -rf /data/default-gh` on the shared volume **before**
+  triggering the GraphHopper redeploy.
+
+A non-2xx/unreachable webhook makes the conflation job throw (BullMQ retries), so
+a broken hook is visible; but a redeploy that succeeds **without** clearing the
+graph is silent — hence the verify step above.
 
 **5. Enablement order + first run.**
 
