@@ -49,8 +49,9 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
   [Re-import orchestration hook](#re-import-orchestration-hook)). No-op when
   unconfigured; throws on a failed webhook so the job retries.
 - **`*.config.ts`** — `TARMOTO_QUALITY_CONFLATION_ENABLED` (default off) +
-  input/output `.osm` paths (region reuses `TARMOTO_OSM_ROAD_IMPORT_BBOX`), and the
-  `TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_*` webhook settings.
+  input/output `.osm` paths (no region config — conflation is whole-network,
+  see below), and the `TARMOTO_GRAPHHOPPER_REIMPORT_WEBHOOK_*` webhook
+  settings.
 - Wired as the **`quality.conflation` BullMQ queue** (`jobs.constants.ts`),
   processed by `QualityConflationProcessor` (which runs the conflation then fires
   the re-import hook). It is **not** independently scheduled: the OSM import
@@ -72,9 +73,11 @@ road_segments.quality_score ──(this core)──► per-way smoothness assign
 - **Atomic output.** The derived extract is written to a temp sibling and
   renamed on success, so a failed/partial run never truncates the last good
   extract GraphHopper imports.
-- **Region-bounded.** When `TARMOTO_OSM_ROAD_IMPORT_BBOX` is set the job only conflates
-  ways intersecting that rectangle — the same region the OSM extract and the
-  GraphHopper graph cover. Unset → the whole live network.
+- **Whole network.** The job always scores every live, scored way — the road
+  import now spans multiple independently-refreshed regions (the folder model,
+  Sub-project B), so no single import bbox describes the covered area anymore.
+  The operator-provided input extract (`TARMOTO_QUALITY_CONFLATION_INPUT_FILE`)
+  bounds which ways actually get tagged in the derived output.
 - **Idempotent.** Reads current aggregates only; re-running yields the same
   artifact until the underlying scores change.
 
@@ -94,7 +97,7 @@ and a derived output path on a volume GraphHopper can read, and enable it:
 TARMOTO_QUALITY_CONFLATION_ENABLED=true
 TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/czech.osm       # osmium-produced .osm XML
 TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/czech.quality.osm
-# region reuses TARMOTO_OSM_ROAD_IMPORT_BBOX
+# no region config — conflation always scores the whole live network
 ```
 
 The job writes `…/czech.quality.osm` after each successful OSM import; point the
