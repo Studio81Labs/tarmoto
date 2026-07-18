@@ -167,8 +167,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <>
         {loading ? spinner : leftIcon}
         {/* `sr-only` (not `hidden`) below lg so the collapsed label stays the
-            button's accessible name; `not-sr-only` restores it in-flow at lg. */}
-        <span className={collapseLabel ? "sr-only lg:not-sr-only" : undefined}>
+            button's accessible name; `not-sr-only` restores it in-flow at lg.
+            `not-sr-only` also resets white-space to normal, so re-assert
+            nowrap at lg or a two-word label (e.g. "Save route") can wrap and
+            clip inside the fixed-height button. */}
+        <span
+          className={
+            collapseLabel
+              ? "sr-only lg:not-sr-only lg:whitespace-nowrap"
+              : undefined
+          }
+        >
           {children}
         </span>
         {!loading && rightIcon}

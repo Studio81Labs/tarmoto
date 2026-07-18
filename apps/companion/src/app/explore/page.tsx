@@ -640,18 +640,23 @@ function ExplorerPageInner() {
           conditionsDate={conditionsDate}
           setConditionsDate={setConditionsDate}
           conditionBbox={conditionBbox}
-          onFocusClosure={(closure) =>
+          onFocusClosure={(closure) => {
             mapRef.current?.openConditionPopover({
               kind: "closure",
               id: closure.id,
-            })
-          }
-          onFocusPass={(pass) =>
+            });
+            // Narrow: the panel overlays the map (z-40) and would hide the
+            // popover it just opened — close it so the focused closure is
+            // visible on the map. Wide keeps the panel (a side rail, no overlap).
+            if (!isWideViewport) closeRightPanel();
+          }}
+          onFocusPass={(pass) => {
             mapRef.current?.openConditionPopover({
               kind: "pass",
               id: pass.id,
-            })
-          }
+            });
+            if (!isWideViewport) closeRightPanel();
+          }}
         />
       )}
     </div>
