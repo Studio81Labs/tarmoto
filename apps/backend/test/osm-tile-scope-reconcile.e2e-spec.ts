@@ -36,6 +36,17 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  *
  * Real Postgres/PostGIS, driven through the public `importTile` so the whole path
  * — tile scope → extract parse → combined polygon∩bbox filter → reconcile — runs.
+ *
+ * Isolation (Codex P2): `importTile` drives the SAME production reconcile this
+ * test is proving, scoped to RO's real country polygon ∩ the Bucharest/Cluj
+ * tile bboxes — so if the DB already holds live OSM road rows there (RO is a
+ * configured import region), this test's tiny synthetic extract would make
+ * them look "removed" and tombstone them, and cleanup only deletes this test's
+ * own tracked way ids, never restoring collateral. `beforeEach` therefore
+ * DELETEs every `road_segments` row in either tile's bbox first, so the test
+ * starts from a clean scope — this spec owns that scope and must run against a
+ * disposable test DB, never one with road data you care about.
+ *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
  */
@@ -44,6 +55,8 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
   let service: OsmImportService;
   let dataSource: DataSource;
   let dir: string;
+  let tileA: RoadTile;
+  let tileB: RoadTile;
 
   const TILE_SPAN_DEG = 2.5;
   // RO bbox 9.45° × 4.65° → ceil(9.45/2.5)=4 cols × ceil(4.65/2.5)=2 rows = 8
@@ -122,6 +135,24 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
     );
   }
 
+  /** DELETE every OSM-owned road_segments row (live or tombstoned) whose
+   *  geometry overlaps `tile`'s bbox — this spec owns the Bucharest/Cluj tile
+   *  scopes (see the isolation note above), so each test starts clean and
+   *  `reconcile` has nothing pre-existing left to tombstone. Scoped to
+   *  `osm_way_id IS NOT NULL`: crowd-sourced rows are never reconcile
+   *  candidates (the importer's own existing-row loaders exclude them the
+   *  same way), so narrowing here keeps this from nuking real demo/seed data
+   *  on a developer DB. */
+  async function clearTileScope(tile: RoadTile): Promise<void> {
+    const { minLng, minLat, maxLng, maxLat } = tile.bbox;
+    await dataSource.query(
+      `DELETE FROM road_segments
+       WHERE osm_way_id IS NOT NULL
+         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+      [minLng, minLat, maxLng, maxLat],
+    );
+  }
+
   beforeAll(async () => {
     module = await Test.createTestingModule({
       imports: [
@@ -144,20 +175,28 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
     service = module.get(OsmImportService);
     dataSource = module.get(DataSource);
     dir = await mkdtemp(join(tmpdir(), 'road-tile-scope-e2e-'));
+
+    const tiles = subdivideRegion(RO, TILE_SPAN_DEG);
+    tileA = tileContaining(tiles, BUCHAREST.lng, BUCHAREST.lat);
+    tileB = tileContaining(tiles, CLUJ.lng, CLUJ.lat);
+
     await deleteTrackedWays();
+  });
+
+  beforeEach(async () => {
+    await clearTileScope(tileA);
+    await clearTileScope(tileB);
   });
 
   afterAll(async () => {
     await deleteTrackedWays();
+    await clearTileScope(tileA);
+    await clearTileScope(tileB);
     await rm(dir, { recursive: true, force: true });
     await module?.close();
   });
 
   it('importing one tile does NOT tombstone another tile’s road in the same country', async () => {
-    const tiles = subdivideRegion(RO, TILE_SPAN_DEG);
-    const tileA = tileContaining(tiles, BUCHAREST.lng, BUCHAREST.lat);
-    const tileB = tileContaining(tiles, CLUJ.lng, CLUJ.lat);
-
     // Guard the premise: the two roads must be in DIFFERENT tiles, and each must
     // be OUTSIDE the other tile's bbox — otherwise the ∩-tile-bbox scope wouldn't
     // be what's under test.

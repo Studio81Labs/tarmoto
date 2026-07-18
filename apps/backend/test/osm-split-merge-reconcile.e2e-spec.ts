@@ -20,6 +20,16 @@ import type { OsmWay } from '../src/modules/roads/osm-import/segment-rows.js';
  * write, both against real Postgres/PostGIS, so the only meaningful test drives
  * the real queries.
  *
+ * Isolation (Codex P2): `importFrom` drives the SAME production reconcile this
+ * test is proving, scoped to the explicit REGION below — a real ~30 km patch of
+ * map near the Alps, not a synthetic no-man's-land. If the DB already holds
+ * live OSM road rows there, this test's tiny two-way snapshot would make them
+ * look "removed" and tombstone them, and cleanup only deletes this test's own
+ * tracked row ids, never restoring collateral. `beforeEach` therefore DELETEs
+ * every `road_segments` row in REGION's bbox first, so the test starts from a
+ * clean scope — this spec owns that scope and must run against a disposable
+ * test DB, never one with road data you care about.
+ *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before running
  * `pnpm --filter @tarmoto/backend test:e2e`.
  */
@@ -81,6 +91,25 @@ describe('OSM split/merge reconciliation (#835)', () => {
     );
   }
 
+  /** DELETE every OSM-owned road_segments row (live or tombstoned) whose
+   *  geometry overlaps REGION's bbox — this spec owns that scope (see the
+   *  isolation note above), so each test starts clean and `reconcile` has
+   *  nothing pre-existing left to tombstone. REGION's bbox IS its polygon
+   *  here (a synthetic rectangle), so this clears exactly reconcile's real
+   *  scope. Scoped to `osm_way_id IS NOT NULL`: crowd-sourced rows are never
+   *  reconcile candidates (the importer's own existing-row loaders exclude
+   *  them the same way), so narrowing here keeps this from nuking real
+   *  demo/seed data on a developer DB. */
+  async function clearRegionScope(): Promise<void> {
+    const [minLng, minLat, maxLng, maxLat] = REGION.bbox;
+    await dataSource.query(
+      `DELETE FROM road_segments
+       WHERE osm_way_id IS NOT NULL
+         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+      [minLng, minLat, maxLng, maxLat],
+    );
+  }
+
   beforeAll(async () => {
     module = await Test.createTestingModule({
       imports: [
@@ -101,6 +130,10 @@ describe('OSM split/merge reconciliation (#835)', () => {
     dataSource = module.get(DataSource);
   });
 
+  beforeEach(async () => {
+    await clearRegionScope();
+  });
+
   afterAll(async () => {
     if (trackedIds.length > 0) {
       await dataSource.query(
@@ -112,6 +145,7 @@ describe('OSM split/merge reconciliation (#835)', () => {
         [trackedIds],
       );
     }
+    await clearRegionScope();
     await module?.close();
   });
 

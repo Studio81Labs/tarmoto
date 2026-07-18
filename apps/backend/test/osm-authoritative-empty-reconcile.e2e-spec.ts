@@ -32,7 +32,10 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  * the other reconcile e2e specs (Bucharest r0c2 / Cluj r1c1 / CZ / SK / the
  * synthetic split-merge scope). Each test starts by clearing that tile's scope, so
  * the guard's denominator (the in-scope existing rows) is exactly this test's seeded
- * roads — independent of any seed/other data.
+ * roads — independent of any seed/other data. The same DELETE also protects a
+ * developer DB that already holds live RO road rows there (Codex P2 — see the
+ * isolation note in `osm-region-overlap-reconcile.e2e-spec.ts`): this spec owns
+ * the Timișoara tile scope and must run against a disposable test DB.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
@@ -107,15 +110,21 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
     );
   }
 
-  /** Clear every road_segment (live or tombstoned) whose bbox overlaps the test
-   *  tile, so each test's in-scope existing set is exactly its own seeded roads —
-   *  the mass-wipe fraction denominator is then deterministic. Bounded to this
-   *  test's remote tile, so it can't touch another spec's rows. */
+  /** Clear every OSM-owned road_segment (live or tombstoned) whose bbox
+   *  overlaps the test tile, so each test's in-scope existing set is exactly
+   *  its own seeded roads — the mass-wipe fraction denominator is then
+   *  deterministic. Bounded to this test's remote tile, so it can't touch
+   *  another spec's rows. Scoped to `osm_way_id IS NOT NULL`: crowd-sourced
+   *  rows are never reconcile candidates (the importer's own existing-row
+   *  loaders exclude them the same way, so they'd never affect the fraction
+   *  denominator anyway), so narrowing here keeps this from nuking real
+   *  demo/seed data on a developer DB. */
   async function clearTileScope(): Promise<void> {
     const { minLng, minLat, maxLng, maxLat } = testTile.bbox;
     await dataSource.query(
       `DELETE FROM road_segments
-       WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+       WHERE osm_way_id IS NOT NULL
+         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
       [minLng, minLat, maxLng, maxLat],
     );
   }

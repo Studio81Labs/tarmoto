@@ -36,6 +36,18 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  * region is a single r0c0 tile whose bbox equals the region bbox, keeping the
  * assertion purely about the country-POLYGON scope (#1033). The disjoint-tile
  * no-wipe property is covered separately in `osm-tile-scope-reconcile.e2e-spec.ts`.
+ *
+ * Isolation (Codex P2): `importRegion` drives the SAME production reconcile
+ * this test is proving, scoped to CZ's and SK's REAL country polygons — so if
+ * the DB already holds live OSM road rows there (CZ is the launch region, the
+ * most likely to be populated on a developer DB), this test's tiny synthetic
+ * extract would make them look "removed" and tombstone them, and cleanup only
+ * deletes this test's own tracked way ids, never restoring collateral. Each
+ * test's `beforeEach` therefore DELETEs every `road_segments` row in the CZ ∪
+ * SK bbox first, so the test starts from a clean scope and there's nothing
+ * else for `reconcile` to tombstone — these specs own that scope and must run
+ * against a disposable test DB, never one with road data you care about.
+ *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
  */
@@ -94,6 +106,23 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     );
   }
 
+  /** DELETE every OSM-owned road_segments row (live or tombstoned) whose
+   *  geometry overlaps `region`'s bbox — this spec owns the CZ/SK scope (see
+   *  the isolation note above), so each test starts clean and `reconcile` has
+   *  nothing pre-existing left to tombstone. Scoped to `osm_way_id IS NOT
+   *  NULL`: crowd-sourced rows are never reconcile candidates (the importer's
+   *  own existing-row loaders exclude them the same way), so narrowing here
+   *  keeps this from nuking real demo/seed data on a developer DB. */
+  async function clearRegionScope(region: PoiImportRegion): Promise<void> {
+    const { minLng, minLat, maxLng, maxLat } = region.bbox;
+    await dataSource.query(
+      `DELETE FROM road_segments
+       WHERE osm_way_id IS NOT NULL
+         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
+      [minLng, minLat, maxLng, maxLat],
+    );
+  }
+
   beforeAll(async () => {
     module = await Test.createTestingModule({
       imports: [
@@ -118,11 +147,18 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     dir = await mkdtemp(join(tmpdir(), 'road-overlap-e2e-'));
   });
 
+  beforeEach(async () => {
+    await clearRegionScope(CZ);
+    await clearRegionScope(SK);
+  });
+
   afterAll(async () => {
     await dataSource.query(
       `DELETE FROM road_segments WHERE osm_way_id = ANY($1::bigint[])`,
       [trackedWayIds],
     );
+    await clearRegionScope(CZ);
+    await clearRegionScope(SK);
     await rm(dir, { recursive: true, force: true });
     await module?.close();
   });
