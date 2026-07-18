@@ -234,11 +234,13 @@ describe('ClosuresService', () => {
       ]);
     });
 
-    it('returns [] without querying when sys_nap_conditions is off', async () => {
+    it('still returns operator/osm closures — hides only NAP (official) rows — when sys_nap_conditions is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
-      const result = await service.list({});
-      expect(result).toEqual([]);
-      expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+      // Default mockQb.getMany fixture (SAMPLE_CLOSURE) is source: 'operator'
+      // — road_closures is mixed-source, so the switch must not zero it out.
+      const [dto] = await service.list({});
+      expect(dto.source).toBe('operator');
+      expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
         'sys_nap_conditions',
       );
@@ -286,15 +288,28 @@ describe('ClosuresService', () => {
       );
     });
 
-    it('404s without querying when sys_nap_conditions is off', async () => {
+    it('404s a NAP-sourced (official) closure when sys_nap_conditions is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        source: 'official',
+      });
       await expect(service.getById('closure-1')).rejects.toBeInstanceOf(
         NotFoundException,
       );
-      expect(repo.findOne).not.toHaveBeenCalled();
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
         'sys_nap_conditions',
       );
+    });
+
+    it('still returns an operator-sourced closure when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        source: 'operator',
+      });
+      const dto = await service.getById('closure-1');
+      expect(dto.source).toBe('operator');
     });
   });
 
@@ -310,24 +325,28 @@ describe('ClosuresService', () => {
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
     });
 
-    it('returns zeroed counts without querying when sys_nap_conditions is off', async () => {
+    it('still counts operator/osm closures — hides only NAP (official) rows — when sys_nap_conditions is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]); // source: 'operator'
       const result = await service.checkRoute({
         route: [
           { lat: 50.0, lng: 17.0 },
           { lat: 50.1, lng: 17.1 },
         ],
       });
-      expect(result).toEqual({
-        closures: [],
-        full_count: 0,
-        partial_count: 0,
-        advisory_count: 0,
-      });
-      expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(result.closures).toHaveLength(1);
+      expect(result.full_count).toBe(1);
+      expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
         'sys_nap_conditions',
       );
+    });
+
+    it('still validates route length (400) even when sys_nap_conditions is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      await expect(
+        service.checkRoute({ route: [{ lat: 50, lng: 17 }] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -398,11 +417,20 @@ describe('ClosuresService', () => {
       expect(await service.exclusionPolygons(bbox)).toEqual([]);
     });
 
-    it('returns [] without querying when sys_nap_routing_avoidance is off', async () => {
+    it('still produces polygons for operator/osm full closures — hides only NAP (official) — when sys_nap_routing_avoidance is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
-      const result = await service.exclusionPolygons(bbox);
-      expect(result).toEqual([]);
-      expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+      const ring: [number, number][] = [
+        [16.6, 49.2],
+        [16.7, 49.2],
+        [16.7, 49.25],
+        [16.6, 49.2],
+      ];
+      mockQb.getRawMany.mockResolvedValueOnce([
+        { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
+      ]);
+      const polygons = await service.exclusionPolygons(bbox);
+      expect(polygons).toEqual([ring]);
+      expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
         'sys_nap_routing_avoidance',
       );

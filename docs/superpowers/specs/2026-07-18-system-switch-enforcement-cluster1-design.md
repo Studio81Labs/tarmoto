@@ -58,30 +58,31 @@ if (
 
 ### 3.3 `sys_nap_conditions` → `ClosuresService` (display)
 
-`apps/backend/src/modules/closures/closures.service.ts`. Gate the three public read methods:
+`apps/backend/src/modules/closures/closures.service.ts`. `road_closures` is a **mixed-source** table (`RoadClosureSource = 'operator' | 'osm' | 'official'`, where `'official'` is the NAP/DATEX feed's value — see `nap.config`'s `source: 'official'`); the switch is NAP-specific, so it must filter out only `'official'` rows rather than blanket-emptying the three public read methods (a blanket empty/404 would also hide an operator's own manually-entered closures, e.g. US-40, whenever NAP display is killed):
 
-- `list(...)` → `[]`
-- `checkRoute(...)` → `{ closures: [], full_count: 0, partial_count: 0, advisory_count: 0 }`
-- `getById(id)` → `throw new NotFoundException(...)` (the switch hides the display surface; a 404 is the existing "closure not found" shape, not an error state)
+- `list(...)` → add `c.source != 'official'` to the query when off (instead of returning `[]`), so operator/osm closures still list.
+- `checkRoute(...)` → same `c.source != 'official'` filter on the route query when off (instead of the zeroed shape), so operator/osm closures on the route are still reported.
+- `getById(id)` → 404 only when the loaded row's `source === 'official'` and the switch is off (instead of 404ing unconditionally); an operator/osm closure's detail URL stays reachable.
 
 (Confirm the exact `checkRoute` response shape against its DTO when implementing.)
 
-The NAP **ingest** (`NapService.poll`) is untouched — closures keep being ingested into `road_closure`; only the display is hidden, so re-enabling is instant with no data gap.
+The NAP **ingest** (`NapService.poll`) is untouched — closures keep being ingested into `road_closure`; only NAP-sourced display is hidden, so re-enabling is instant with no data gap.
 
 ### 3.4 `sys_nap_routing_avoidance` → `ClosuresService.exclusionPolygons`
 
-Same file, separate method — independent of §3.3:
+Same file, separate method — independent of §3.3. Same mixed-source rule as §3.3: add `c.source != 'official'` to the polygon query when off, rather than short-circuiting to `[]`, so an operator's own full closures are still routed around while NAP-sourced ones are excluded from avoidance:
 
 ```ts
 async exclusionPolygons(...): Promise<Polygon[]> {
+  const qb = /* ...existing polygon query... */;
   if (!(await this.featureResolver.isSystemSwitchEnabled('sys_nap_routing_avoidance'))) {
-    return [];
+    qb.andWhere("c.source != 'official'");
   }
-  // ...existing polygon production...
+  return /* ...polygon extraction from qb.getRawMany()... */;
 }
 ```
 
-The two confirmed consumers — `trips/trip-generator.service.ts:218` and `commute/commute.service.ts` (`:349`, `:587`) — pass the result to the routing provider as `exclude_polygons`; both Valhalla and GraphHopper treat an empty array as "omit exclusions." So routing avoidance stops while closure display (§3.3) is independently controllable.
+The two confirmed consumers — `trips/trip-generator.service.ts:218` and `commute/commute.service.ts` (`:349`, `:587`) — pass the result to the routing provider as `exclude_polygons`; both Valhalla and GraphHopper treat an empty array as "omit exclusions." So NAP-driven routing avoidance stops while operator-driven avoidance and closure display (§3.3) remain independently controllable.
 
 ### 3.5 `sys_mapillary_previews` → `MapillaryService`
 
