@@ -358,7 +358,7 @@ export function TripCollaborateModal({
                     (tab === id ? "text-ink" : "text-fg-mute hover:text-ink")
                   }
                 >
-                  {label}
+                  {t(label)}
                   {badge != null && badge > 0 && (
                     <span className="rounded-full bg-accent px-1.5 py-px font-mono text-[9px] font-bold text-cream">
                       {badge}

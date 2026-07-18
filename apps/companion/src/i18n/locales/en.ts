@@ -16,9 +16,16 @@ export const en = {
     ". Your shared rides and account settings stay intact, while ",
   "1 active trip": "1 active trip",
   "1 day": "1 day",
+  "1 year": "1 year",
+  "100+ views": "100+ views",
+  "2 years": "2 years",
+  "250+ views": "250+ views",
+  "3 months": "3 months",
   "3 stars or better": "3 stars or better",
   "4 stars or better": "4 stars or better",
   "5 stars only": "5 stars only",
+  "500+ views": "500+ views",
+  "6 months": "6 months",
   "A collection with that name already exists":
     "A collection with that name already exists",
   "A folder with that name already exists":
@@ -35,6 +42,7 @@ export const en = {
   "Active ": "Active ",
   "Active challenges": "Active challenges",
   "Active hazards ": "Active hazards ",
+  Activity: "Activity",
   Add: "Add",
   "Add a start waypoint before saving this trip.":
     "Add a start waypoint before saving this trip.",
@@ -58,6 +66,7 @@ export const en = {
   "Adopt as trip draft ": "Adopt as trip draft ",
   "Advanced analytics": "Advanced analytics",
   All: "All",
+  "All rides": "All rides",
   "All time": "All time",
   "All-time distance": "All-time distance",
   "All years": "All years",
@@ -74,8 +83,16 @@ export const en = {
   Animals: "Animals",
   Any: "Any",
   "Any condition": "Any condition",
+  "Any reach": "Any reach",
+  "Any road": "Any road",
+  "Anyone can find and view this collection.":
+    "Anyone can find and view this collection.",
+  "Anyone on the web can view your profile.":
+    "Anyone on the web can view your profile.",
   "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ":
     "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
+  "Anyone with the link can view. Not listed publicly.":
+    "Anyone with the link can view. Not listed publicly.",
   "Apply coordinates ": "Apply coordinates ",
   April: "April",
   Ascent: "Ascent",
@@ -102,6 +119,7 @@ export const en = {
   "Badges earned ": "Badges earned ",
   "Badges, challenges, leaderboards, and milestones for your riding region. ":
     "Badges, challenges, leaderboards, and milestones for your riding region. ",
+  Balanced: "Balanced",
   "Bars share a scale so gain/loss are visually comparable across both rides. ":
     "Bars share a scale so gain/loss are visually comparable across both rides. ",
   Basemap: "Basemap",
@@ -170,6 +188,7 @@ export const en = {
   "Close zone details": "Close zone details",
   "Closures ": "Closures ",
   "Closures & roadworks ": "Closures & roadworks ",
+  Cobbles: "Cobbles",
   Cobblestone: "Cobblestone",
   "Collaborate ": "Collaborate ",
   "Collaborate on this trip ": "Collaborate on this trip ",
@@ -189,6 +208,8 @@ export const en = {
   "Colour the route line by surface": "Colour the route line by surface",
   Comment: "Comment",
   "Comment ": "Comment ",
+  "Comments on your shared routes and rides.":
+    "Comments on your shared routes and rides.",
   Community: "Community",
   "Community ": "Community ",
   "Community reviews become available when this segment maps to a saved Tarmoto road. ":
@@ -197,6 +218,7 @@ export const en = {
   Commute: "Commute",
   "Compare rides ": "Compare rides ",
   Concrete: "Concrete",
+  Conditions: "Conditions",
   "Conditions for ": "Conditions for ",
   "Confirmed hazards reported to the community.":
     "Confirmed hazards reported to the community.",
@@ -251,6 +273,57 @@ export const en = {
   "Create account ": "Create account ",
   Create: "Create",
   "Create invite link ": "Create invite link ",
+  "Curve {unit}": "Curve {unit}",
+  Curviest: "Curviest",
+  Curviness: "Curviness",
+  Daily: "Daily",
+  Declining: "Declining",
+  Delete: "Delete",
+  "Delete folder": "Delete folder",
+  Direct: "Direct",
+  Discovery: "Discovery",
+  Duplicate: "Duplicate",
+  Edit: "Edit",
+  "Efficient loop": "Efficient loop",
+  "Every Sunday": "Every Sunday",
+  "Every morning": "Every morning",
+  Flowing: "Flowing",
+  Forever: "Forever",
+  "Get warned about new potholes, roadworks, or hazards reported on routes you ride.":
+    "Get warned about new potholes, roadworks, or hazards reported on routes you ride.",
+  Hairpin: "Hairpin",
+  "Hazard alerts for saved routes": "Hazard alerts for saved routes",
+  "Highest quality": "Highest quality",
+  INSPECT: "INSPECT",
+  Improving: "Improving",
+  Inspect: "Inspect",
+  "Invite link": "Invite link",
+  "Invites, edits, and comments on trips you collaborate on.":
+    "Invites, edits, and comments on trips you collaborate on.",
+  "Keep my raw location data indefinitely.":
+    "Keep my raw location data indefinitely.",
+  "Loading unridden roads\u2026": "Loading unridden roads\u2026",
+  Longest: "Longest",
+  Make: "Make",
+  "Maximum twisty": "Maximum twisty",
+  "Minimum popularity": "Minimum popularity",
+  "Minimum quality": "Minimum quality",
+  Mixed: "Mixed",
+  Model: "Model",
+  "Most popular": "Most popular",
+  "Move to folder": "Move to folder",
+  "My location": "My location",
+  Nearest: "Nearest",
+  Never: "Never",
+  "New followers": "New followers",
+  "New rides are kept to yourself by default.":
+    "New rides are kept to yourself by default.",
+  "New rides are visible to the community by default.":
+    "New rides are visible to the community by default.",
+  Newest: "Newest",
+  "No digest emails": "No digest emails",
+  "Only signed-in Tarmoto riders can view your profile.":
+    "Only signed-in Tarmoto riders can view your profile.",
   "Only trip owners and admins can create invite links. ":
     "Only trip owners and admins can create invite links. ",
   "Create one": "Create one",
@@ -624,6 +697,7 @@ export const en = {
     "No folders yet. Create one from the sidebar. ",
   "No matches": "No matches",
   "No members yet.": "No members yet.",
+  "Only you can see this collection.": "Only you can see this collection.",
   "Pass data not available for this region yet. ":
     "Pass data not available for this region yet. ",
   "No new notifications ": "No new notifications ",
@@ -700,6 +774,8 @@ export const en = {
   "Passes ": "Passes ",
   Password: "Password",
   "Password ": "Password ",
+  "Paste a link to a photo of your bike. File upload is coming soon.":
+    "Paste a link to a photo of your bike. File upload is coming soon.",
   "Payment method ": "Payment method ",
   "Payment method editing will light up automatically as soon as the billing backend is available. ":
     "Payment method editing will light up automatically as soon as the billing backend is available. ",
@@ -709,6 +785,7 @@ export const en = {
   "Personalised recommendations ": "Personalised recommendations ",
   "Personalised recommendations consent":
     "Personalised recommendations consent",
+  "Photo URL (optional)": "Photo URL (optional)",
   "Photo URL must start with http:// or https://":
     "Photo URL must start with http:// or https://",
   "Photo uploaded. ": "Photo uploaded. ",
@@ -730,6 +807,7 @@ export const en = {
   "Plan your own trip ": "Plan your own trip ",
   "Planner map ": "Planner map ",
   "Planner sections": "Planner sections",
+  Points: "Points",
   Police: "Police",
   Poor: "Poor",
   "Position ": "Position ",
@@ -749,6 +827,7 @@ export const en = {
   "Previous page": "Previous page",
   "Priority hazard alerts": "Priority hazard alerts",
   "Privacy & Data": "Privacy & Data",
+  Private: "Private",
   "Private ": "Private ",
   Pro: "Pro",
   "Product analytics": "Product analytics",
@@ -759,6 +838,7 @@ export const en = {
   "Profile visibility": "Profile visibility",
   "Profile visibility ": "Profile visibility ",
   "Propose an alternative ": "Propose an alternative ",
+  Public: "Public",
   "Public Tarmoto personal road map.": "Public Tarmoto personal road map.",
   "Public Tarmoto shared ride page.": "Public Tarmoto shared ride page.",
   "Public Tarmoto shared trip page.": "Public Tarmoto shared trip page.",
@@ -772,10 +852,12 @@ export const en = {
   QUALITY: "QUALITY",
   Quality: "Quality",
   "Quality ": "Quality ",
+  "Quality score": "Quality score",
   "Quality {quality}": "Quality {quality}",
   "Quality (min \u2192 max)": "Quality (min \u2192 max)",
   "Quality score {score} of 5": "Quality score {score} of 5",
   "Quality trend ": "Quality trend ",
+  REROUTE: "REROUTE",
   RIDE: "RIDE",
   "Ranked by the current quality and curviness model. ":
     "Ranked by the current quality and curviness model. ",
@@ -787,6 +869,7 @@ export const en = {
   "Read-only preview shared by ": "Read-only preview shared by ",
   "Real-time updates are paused": "Real-time updates are paused",
   "Recent rides": "Recent rides",
+  "Recommended.": "Recommended.",
   "Record a ride from the mobile app and it will show up here.":
     "Record a ride from the mobile app and it will show up here.",
   "Record a ride from the mobile app and it will show up here. ":
@@ -797,6 +880,7 @@ export const en = {
   "Redo ": "Redo ",
   Refunded: "Refunded",
   "Region coverage": "Region coverage",
+  "Region or place": "Region or place",
   "Region scope": "Region scope",
   "Region: ": "Region: ",
   "Regional avg ": "Regional avg ",
@@ -808,6 +892,8 @@ export const en = {
   Remove: "Remove",
   "Remove ": "Remove ",
   "Remove photo {n}": "Remove photo {n}",
+  "Remove {name} from collection": "Remove {name} from collection",
+  Rename: "Rename",
   "Renewal ": "Renewal ",
   "Renews {date}": "Renews {date}",
   Reorder: "Reorder",
@@ -828,13 +914,17 @@ export const en = {
   "Ride B": "Ride B",
   "Ride History": "Ride History",
   "Ride history sections": "Ride history sections",
+  "Ride likes": "Ride likes",
   "Ride not found": "Ride not found",
+  "Ride route map": "Ride route map",
   "Ride route preview": "Ride route preview",
   "Ride stats": "Ride stats",
   "Ride time": "Ride time",
+  "Ride type": "Ride type",
   Rider: "Rider",
   "Rider not found": "Rider not found",
   "Rider photos ": "Rider photos ",
+  "Riders only": "Riders only",
   Rides: "Rides",
   "Rides in this collection. Drag handle to reorder.":
     "Rides in this collection. Drag handle to reorder.",
@@ -859,6 +949,7 @@ export const en = {
   "Road reviews ": "Road reviews ",
   "Road-quality mini-map ": "Road-quality mini-map ",
   RoadWarrior42: "RoadWarrior42",
+  Roads: "Roads",
   "Roads discovered": "Roads discovered",
   Roadworks: "Roadworks",
   Rough: "Rough",
@@ -867,6 +958,7 @@ export const en = {
   "Route Collections": "Route Collections",
   "Route builder ": "Route builder ",
   "Route collection ": "Route collection ",
+  "Route comments": "Route comments",
   "Route preview": "Route preview",
   "Route preview ": "Route preview ",
   "Route preview unavailable for this shared ride. ":
@@ -878,12 +970,14 @@ export const en = {
   "Routes ": "Routes ",
   "Routes (same scale) ": "Routes (same scale) ",
   SEGMENT: "SEGMENT",
+  Safety: "Safety",
   Save: "Save",
   "Saved ": "Saved ",
   "Saving\u2026": "Saving\u2026",
   "Saving\u2026 ": "Saving\u2026 ",
   "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ":
     "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ",
+  "Scenic balance": "Scenic balance",
   "Scenic roads": "Scenic roads",
   "Score ": "Score ",
   "Search by name, description, or rider\u2026":
@@ -896,12 +990,14 @@ export const en = {
   "Search name": "Search name",
   "Search roads, regions...": "Search roads, regions...",
   "Searching\u2026": "Searching\u2026",
+  Seasonal: "Seasonal",
   "Seasonal challenge": "Seasonal challenge",
   "Seasonal pass": "Seasonal pass",
   "Seasonal passes ": "Seasonal passes ",
   "Seasonal \u00b7 {season}": "Seasonal \u00b7 {season}",
   "Seasonal \u00b7 ": "Seasonal \u00b7 ",
   "Segment quality (": "Segment quality (",
+  "Segment {n}": "Segment {n}",
   Segments: "Segments",
   "Segments ": "Segments ",
   "Segments ridden": "Segments ridden",
@@ -969,8 +1065,11 @@ export const en = {
     "Snapshot from the shared Tarmoto ride. ",
   "Snapshot of the shared route and its current ride metrics. ":
     "Snapshot of the shared route and its current ride metrics. ",
+  Social: "Social",
   Sort: "Sort",
+  "Sort feed": "Sort feed",
   Speed: "Speed",
+  Stable: "Stable",
   "Start riding with the Tarmoto mobile app to see your stats here. ":
     "Start riding with the Tarmoto mobile app to see your stats here. ",
   Statistics: "Statistics",
@@ -984,9 +1083,11 @@ export const en = {
   Subscription: "Subscription",
   "Suggestion description": "Suggestion description",
   "Suggestion title": "Suggestion title",
+  Suggestions: "Suggestions",
   "Summary of your riding stats and community activity. ":
     "Summary of your riding stats and community activity. ",
   "Sunday\u2026": "Sunday\u2026",
+  Surface: "Surface",
   "Surface ": "Surface ",
   "Surface preference ": "Surface preference ",
   "Surface type ": "Surface type ",
@@ -1022,6 +1123,7 @@ export const en = {
   "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ":
     "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ",
   "This year": "This year",
+  Tight: "Tight",
   "Time window": "Time window",
   "To ": "To ",
   "To confirm, type your email address": "To confirm, type your email address",
@@ -1037,6 +1139,7 @@ export const en = {
   Trip: "Trip",
   "Trip ": "Trip ",
   "Trip actions for {name}": "Trip actions for {name}",
+  "Trip collaboration": "Trip collaboration",
   "Trip detail panel": "Trip detail panel",
   "Trip detail tabs": "Trip detail tabs",
   "Trip invite ": "Trip invite ",
@@ -1047,17 +1150,22 @@ export const en = {
   "Try again ": "Try again ",
   "Try broadening the feed or switching back to the most popular rides. ":
     "Try broadening the feed or switching back to the most popular rides. ",
+  Twisty: "Twisty",
   "Twisty highlights": "Twisty highlights",
   Type: "Type",
   Unavailable: "Unavailable",
   "Undo ": "Undo ",
+  Unfiled: "Unfiled",
   "Unfollow {title}": "Unfollow {title}",
   "Unique roads you were first to map.": "Unique roads you were first to map.",
   Unknown: "Unknown",
+  "Unknown rider": "Unknown rider",
   "Unlimited group rides": "Unlimited group rides",
   "Unlimited trip planning": "Unlimited trip planning",
+  Unlisted: "Unlisted",
   Unnamed: "Unnamed",
   "Unnamed road": "Unnamed road",
+  "Unnamed zone": "Unnamed zone",
   "Unridden ": "Unridden ",
   "Unsaved changes": "Unsaved changes",
   "Generated routes use backend road geometry from the start waypoint and planner parameters. ":
@@ -1093,17 +1201,23 @@ export const en = {
   "Vote down": "Vote down",
   "Vote up": "Vote up",
   "Want to save this collection? ": "Want to save this collection? ",
+  "Waypoint {n}": "Waypoint {n}",
   "Waypoints (": "Waypoints (",
   "We couldn't complete social sign-in. Try again or use your password.":
     "We couldn't complete social sign-in. Try again or use your password.",
   "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ":
     "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ",
+  Weekly: "Weekly",
   "Welcome back": "Welcome back",
   "What makes this collection special?": "What makes this collection special?",
   "What should other riders know about this road?":
     "What should other riders know about this road?",
   "What you're working toward right now.":
     "What you're working toward right now.",
+  "When another rider follows your profile.":
+    "When another rider follows your profile.",
+  "When riders like one of your shared rides.":
+    "When riders like one of your shared rides.",
   "Who can see your profile, stats, and shared rides. ":
     "Who can see your profile, stats, and shared rides. ",
   "Write a review ": "Write a review ",
@@ -1133,11 +1247,14 @@ export const en = {
   "Your invoices will appear here once the first subscription charge is created. ":
     "Your invoices will appear here once the first subscription charge is created. ",
   "Your password ": "Your password ",
+  "Your profile is hidden \u2014 only you can see it.":
+    "Your profile is hidden \u2014 only you can see it.",
   "Your rank": "Your rank",
   "Your rank ": "Your rank ",
   "Your rides from the mobile app will appear here.":
     "Your rides from the mobile app will appear here.",
   "Your trips": "Your trips",
+  "Zone near {lat}, {lng}": "Zone near {lat}, {lng}",
   "a Tarmoto rider": "a Tarmoto rider",
   "active hazard ": "active hazard ",
   "and add their routes to your own library. ":
@@ -1244,10 +1361,13 @@ export const en = {
   "{label} email": "{label} email",
   "{label} no longer available": "{label} no longer available",
   "{label} push": "{label} push",
+  "{label} route map": "{label} route map",
   "{name} review photo {n}": "{name} review photo {n}",
   "{name}: {pct} complete": "{name}: {pct} complete",
   "{pct} complete": "{pct} complete",
   "{percent}% explored": "{percent}% explored",
+  "{reporter} \u00b7 {time} \u00b7 {n} confirmations":
+    "{reporter} \u00b7 {time} \u00b7 {n} confirmations",
   "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
   "{rideType} ride": "{rideType} ride",
   "{count, plural, one {# PASS} other {# PASSES}}":
@@ -1304,6 +1424,7 @@ export const en = {
     "{count, plural, one {{n} view} other {{n} views}}",
   "{title} route preview": "{title} route preview",
   "{title} \u2014 Tarmoto collection": "{title} \u2014 Tarmoto collection",
+  "{unit} / month": "{unit} / month",
   "{weeks}w {days}d left": "{weeks}w {days}d left",
   "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ":
     "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",

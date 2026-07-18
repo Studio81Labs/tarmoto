@@ -804,7 +804,7 @@ function FolderChip({
             <Menu onClose={() => setOpen(false)} align={menuAlign}>
               <MenuItem
                 icon={<Pencil size={13} />}
-                label="Rename"
+                label={t("Rename")}
                 onClick={() => {
                   setOpen(false);
                   onRename?.();
@@ -812,7 +812,7 @@ function FolderChip({
               />
               <MenuItem
                 icon={<Trash2 size={13} />}
-                label="Delete folder"
+                label={t("Delete folder")}
                 tone="danger"
                 onClick={() => {
                   setOpen(false);
@@ -1076,7 +1076,7 @@ function TripCard({
           >
             <MenuItem
               icon={<Copy size={13} />}
-              label="Duplicate"
+              label={t("Duplicate")}
               onClick={() => {
                 setMenuOpen(false);
                 onDuplicate();
@@ -1084,18 +1084,18 @@ function TripCard({
             />
             <MenuItem
               icon={<FolderInput size={13} />}
-              label="Move to folder"
+              label={t("Move to folder")}
               onClick={() => setMoveOpen((v) => !v)}
               trailing={
                 <span className="text-[10px] text-fg-dim">
-                  {currentFolder?.name ?? "Unfiled"}
+                  {currentFolder?.name ?? t("Unfiled")}
                 </span>
               }
             />
             {moveOpen && (
               <div className="max-h-48 overflow-y-auto border-t border-line py-1 pl-3 pr-1">
                 <MoveItem
-                  label="Unfiled"
+                  label={t("Unfiled")}
                   active={!trip.folder_id}
                   onClick={() => {
                     setMenuOpen(false);
@@ -1124,7 +1124,7 @@ function TripCard({
             )}
             <MenuItem
               icon={<Trash2 size={13} />}
-              label="Delete"
+              label={t("Delete")}
               tone="danger"
               onClick={() => {
                 setMenuOpen(false);

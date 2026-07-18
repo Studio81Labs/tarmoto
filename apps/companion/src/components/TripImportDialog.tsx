@@ -231,12 +231,12 @@ function RoutePreview({
         </p>
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Stat
-            label="Distance"
+            label={t("Distance")}
             value={format.distanceKm(route.totalDistanceKm)}
           />
-          <Stat label="Points" value={String(route.points.length)} />
+          <Stat label={t("Points")} value={String(route.points.length)} />
           <Stat
-            label="Avg quality"
+            label={t("Avg quality")}
             value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}
           />
         </div>
@@ -279,7 +279,7 @@ function RoutePreview({
                 <span
                   className={`quality-${seg.qualityTier} w-16 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold`}
                 >
-                  {cfg.label}
+                  {t(cfg.label)}
                 </span>
               </div>
             );
@@ -298,7 +298,7 @@ function RoutePreview({
               <li key={i} className="flex items-center gap-2 truncate">
                 <MapPin size={12} className="shrink-0 text-fg-dim" />
                 <span className="truncate">
-                  {wp.name ?? `Waypoint ${i + 1}`}
+                  {wp.name ?? t("Waypoint {n}", { n: i + 1 })}
                 </span>
                 <span className="tabular-nums text-fg-dim">
                   {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}

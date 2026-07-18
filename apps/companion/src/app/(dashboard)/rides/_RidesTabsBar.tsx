@@ -45,7 +45,7 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
         tabs={[
           {
             href: `/rides${qs}`,
-            label: "All rides",
+            label: t("All rides"),
             badge: allRidesBadge,
             matchPrefixes: ["/rides"],
             // `/rides/road-map` and `/rides/compare` share the
@@ -56,12 +56,12 @@ export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
           },
           {
             href: `/rides/road-map${qs}`,
-            label: "Road map",
+            label: t("Road map"),
             matchPrefixes: ["/rides/road-map"],
           },
           {
             href: `/rides/compare${qs}`,
-            label: "Compare rides",
+            label: t("Compare rides"),
             matchPrefixes: ["/rides/compare"],
           },
         ]}

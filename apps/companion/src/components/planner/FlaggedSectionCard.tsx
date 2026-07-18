@@ -76,7 +76,7 @@ export function FlaggedSectionCard({
         }}
         className="shrink-0 rounded-lg border border-accent bg-transparent px-3 py-[7px] font-mono text-[10.5px] font-bold tracking-[0.5px] text-accent transition hover:bg-accent/10"
       >
-        {action}
+        {t(action)}
       </button>
     </div>
   );

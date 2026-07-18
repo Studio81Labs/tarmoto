@@ -404,7 +404,7 @@ function CollectionCard({
         <CardMenu onClose={() => setMenuOpen(false)}>
           <CardMenuItem
             icon={<Pencil size={13} />}
-            label="Edit"
+            label={t("Edit")}
             onClick={() => {
               setMenuOpen(false);
               onEdit();
@@ -412,7 +412,7 @@ function CollectionCard({
           />
           <CardMenuItem
             icon={<Trash2 size={13} />}
-            label="Delete"
+            label={t("Delete")}
             tone="danger"
             onClick={() => {
               setMenuOpen(false);
@@ -621,18 +621,20 @@ function CollectionModal({
               options={[
                 {
                   value: "private",
-                  label: "Private",
-                  help: "Only you can see this collection.",
+                  label: t("Private"),
+                  help: t("Only you can see this collection."),
                 },
                 {
                   value: "unlisted",
-                  label: "Unlisted",
-                  help: "Anyone with the link can view. Not listed publicly.",
+                  label: t("Unlisted"),
+                  help: t(
+                    "Anyone with the link can view. Not listed publicly.",
+                  ),
                 },
                 {
                   value: "public",
-                  label: "Public",
-                  help: "Anyone can find and view this collection.",
+                  label: t("Public"),
+                  help: t("Anyone can find and view this collection."),
                 },
               ]}
             />

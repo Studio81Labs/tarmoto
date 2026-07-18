@@ -395,7 +395,7 @@ export default function StatsPage() {
             title={`${t("Monthly distance")} · ${t("last {count} years", {
               count: yoyYears.length,
             })}`}
-            caption={`${distanceUnit} / month`}
+            caption={t("{unit} / month", { unit: distanceUnit })}
           />
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -704,7 +704,7 @@ function SurfaceBreakdownCard({
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${s.label} · ${format.decimal(s.pct, 1)}%`}
+                  title={`${t(s.label)} · ${format.decimal(s.pct, 1)}%`}
                 />
               ))}
             </div>
@@ -719,7 +719,7 @@ function SurfaceBreakdownCard({
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: surfaceColor(s.key) }}
                     />
-                    <span className="text-ink">{s.label}</span>
+                    <span className="text-ink">{t(s.label)}</span>
                   </span>
                   <Mono className="text-fg-dim">
                     {`${format.decimal(s.pct, 1)}%`}
@@ -765,7 +765,7 @@ function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
                 return (
                   <div key={s.key}>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-ink">{s.label}</span>
+                      <span className="text-ink">{t(s.label)}</span>
                       <Mono className="text-fg-dim">
                         {`${format.decimal(s.pct, 1)}%`}
                       </Mono>

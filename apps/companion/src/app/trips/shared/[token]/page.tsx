@@ -127,7 +127,7 @@ export default async function SharedTripPage({
             {/* Route preview */}
             <SharedRoutePreviewCard
               preview={preview}
-              label={`${share.title} route preview`}
+              label={t("{title} route preview", { title: share.title })}
               title={t("Route preview")}
               subtitle={t(
                 "Simplified overview of the planned route across all days.",

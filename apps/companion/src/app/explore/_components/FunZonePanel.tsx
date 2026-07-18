@@ -79,7 +79,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
       <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold text-ink">
-            {zone?.name ?? "Unnamed zone"}
+            {zone?.name ?? t("Unnamed zone")}
           </h2>
           <p className="mt-0.5 text-xs tabular-nums text-fg-dim">
             {t("Score ")}
@@ -101,9 +101,9 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
 
       {zone ? (
         <div className="grid grid-cols-3 gap-3 border-b border-line px-4 py-3 text-center">
-          <Stat label="Roads" value={String(zone.road_count)} />
+          <Stat label={t("Roads")} value={String(zone.road_count)} />
           <Stat
-            label={`Curve ${format.splitDistanceKm(1).unit}`}
+            label={t("Curve {unit}", { unit: format.splitDistanceKm(1).unit })}
             value={
               zone.total_curve_km != null
                 ? format.splitDistanceKm(zone.total_curve_km).value
@@ -111,7 +111,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
             }
           />
           <Stat
-            label="Quality"
+            label={t("Quality")}
             value={
               zone.avg_quality != null
                 ? format.decimal(zone.avg_quality, 1)

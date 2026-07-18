@@ -54,15 +54,7 @@ const CONDITION_LEGEND: readonly [color: string, label: string][] = [
   [CONDITION_COLORS.pass, "Seasonal pass"],
 ];
 
-function LineSwatch({
-  color,
-  label,
-  capitalize,
-}: {
-  color: string;
-  label: string;
-  capitalize?: boolean;
-}) {
+function LineSwatch({ color, label }: { color: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
       <span
@@ -70,11 +62,7 @@ function LineSwatch({
         className="h-1 w-3.5 rounded-sm"
         style={{ background: color }}
       />
-      <span
-        className={`text-[11px] font-semibold text-fg-dim ${capitalize ? "capitalize" : ""}`}
-      >
-        {label}
-      </span>
+      <span className="text-[11px] font-semibold text-fg-dim">{label}</span>
     </span>
   );
 }

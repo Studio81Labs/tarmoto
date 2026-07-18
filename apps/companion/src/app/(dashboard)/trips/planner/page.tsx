@@ -3192,8 +3192,8 @@ export default function TripPlannerPage() {
                           key={surface.value}
                           checked={surfacePreference.includes(surface.value)}
                           onChange={() => handleSurfaceToggle(surface.value)}
-                          label={surface.label}
-                          ariaLabel={surface.label}
+                          label={t(surface.label)}
+                          ariaLabel={t(surface.label)}
                           className="py-1"
                         />
                       ))}
@@ -4310,7 +4310,7 @@ function WaypointEditor({
                   <span className="min-w-0 flex-1 truncate text-[11.5px] font-bold text-fg-dim">
                     {legAfter.preference === "inherit"
                       ? t("Trip default")
-                      : ROAD_PREFERENCE_LABELS[legAfter.preference]}
+                      : t(ROAD_PREFERENCE_LABELS[legAfter.preference])}
                   </span>
                   {legAfter.preference !== "inherit" ? (
                     <span className="shrink-0 rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[8px] font-bold tracking-[0.4px] text-accent">
@@ -4335,7 +4335,7 @@ function WaypointEditor({
                           (preference) =>
                             [
                               preference,
-                              ROAD_PREFERENCE_LABELS[preference],
+                              t(ROAD_PREFERENCE_LABELS[preference]),
                             ] as const,
                         ),
                       ] as ReadonlyArray<[LegPref["preference"], string]>
@@ -4355,7 +4355,7 @@ function WaypointEditor({
                         }`}
                       >
                         {value === "inherit"
-                          ? `${label} · ${ROAD_PREFERENCE_LABELS[tripPreference]}`
+                          ? `${label} · ${t(ROAD_PREFERENCE_LABELS[tripPreference])}`
                           : label}
                       </button>
                     ))}

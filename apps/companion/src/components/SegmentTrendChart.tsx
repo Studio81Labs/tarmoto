@@ -310,17 +310,17 @@ function TrendSummaryBadge({
     improving: {
       icon: <TrendingUp size={12} />,
       color: "text-emerald-600",
-      label: "Improving",
+      label: t("Improving"),
     },
     declining: {
       icon: <TrendingDown size={12} />,
       color: "text-rose-600",
-      label: "Declining",
+      label: t("Declining"),
     },
     stable: {
       icon: <Minus size={12} />,
       color: "text-fg-mute",
-      label: "Stable",
+      label: t("Stable"),
     },
   }[direction];
   const sign = delta > 0 ? "+" : "";

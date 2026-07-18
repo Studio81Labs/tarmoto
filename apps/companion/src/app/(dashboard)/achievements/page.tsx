@@ -763,7 +763,7 @@ function ChallengeCard({
     <div className="rounded-[14px] border border-line bg-cream p-[18px]">
       <div className="flex items-start justify-between gap-3">
         <Mono className="text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-          {style.label}
+          {t(style.label)}
         </Mono>
         <Mono className="text-[10px] text-fg-mute">{daysFooter}</Mono>
       </div>

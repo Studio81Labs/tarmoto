@@ -347,7 +347,7 @@ function SegmentDetailContent({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">
-                      {config.label}
+                      {t(config.label)}
                       <span className="ml-2 text-[10px] uppercase tracking-wider text-fg-dim">
                         {hazard.severity}
                       </span>
@@ -358,12 +358,11 @@ function SegmentDetailContent({
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-fg-dim">
-                      {(hazard.reporter ?? "Unknown rider") +
-                        " · " +
-                        format.relativeTime(hazard.created_at) +
-                        " · " +
-                        hazard.confirmations +
-                        " confirmations"}
+                      {t("{reporter} · {time} · {n} confirmations", {
+                        reporter: hazard.reporter ?? t("Unknown rider"),
+                        time: format.relativeTime(hazard.created_at),
+                        n: hazard.confirmations,
+                      })}
                     </p>
                   </div>
                 </li>

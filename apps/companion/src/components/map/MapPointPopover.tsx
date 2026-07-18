@@ -352,7 +352,7 @@ function HazardBody({
     <>
       <PopoverHeader
         onClose={onClose}
-        title={cfg.label}
+        title={t(cfg.label)}
         {...(hazard.road_name ? { subtitle: hazard.road_name } : {})}
         badge={
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-[18px] leading-none">

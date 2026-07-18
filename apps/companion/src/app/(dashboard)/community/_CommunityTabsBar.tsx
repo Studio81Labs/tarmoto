@@ -33,10 +33,10 @@ export function CommunityTabsBar({
     <SubRouteTabs
       ariaLabel={t("Community sections")}
       tabs={[
-        { href: "/community/feed", label: "Feed", badge: feedBadge },
+        { href: "/community/feed", label: t("Feed"), badge: feedBadge },
         {
           href: "/community/collections",
-          label: "Collections",
+          label: t("Collections"),
           badge: collectionsBadge,
         },
       ]}

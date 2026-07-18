@@ -258,7 +258,7 @@ function ABCard({
         <RideRouteMap
           geometry={geometry}
           color={slot === "a" ? "#0ED3CF" : "#F472B6"}
-          label={`${slotLabel} route map`}
+          label={t("{label} route map", { label: slotLabel })}
           containerClassName="h-[120px]"
         />
       ) : (
@@ -550,7 +550,7 @@ function MetricTable({
             i % 2 === 1 ? { backgroundColor: "rgba(14,14,16,0.02)" } : undefined
           }
         >
-          <span className="text-fg-dim">{row.label}</span>
+          <span className="text-fg-dim">{t(row.label)}</span>
           <Mono className="text-ink">{row.a}</Mono>
           <Mono className="text-ink">{row.b}</Mono>
         </div>

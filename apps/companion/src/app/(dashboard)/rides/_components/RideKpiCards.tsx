@@ -2,6 +2,7 @@
 
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
+import { t } from "@/i18n";
 import { useFormat } from "@/format/FormatProvider";
 
 const DASH = "—";
@@ -56,14 +57,14 @@ export function RideKpiCards({
   // avg quality keeps a fixed 1-decimal, locale-formatted string.
   const tiles: MetricTileProps[] = [
     {
-      label: "Distance",
+      label: t("Distance"),
       value: distance ? distance.value : DASH,
       unit: distanceUnit,
       variant: "ink",
       accentNumber: true,
     },
     {
-      label: "Ride time",
+      label: t("Ride time"),
       value: has ? rideTime.value : DASH,
       unit: rideTime.unit,
     },
@@ -71,12 +72,12 @@ export function RideKpiCards({
       // Distinct roads ridden in the active window — not strictly first-time
       // discoveries (a road repeated in the window still counts), so the
       // sublabel reads RIDDEN rather than overstating DISCOVERED.
-      label: "Roads",
+      label: t("Roads"),
       value: has ? stats.new_roads : DASH,
       unit: "RIDDEN",
     },
     {
-      label: "Avg quality",
+      label: t("Avg quality"),
       value:
         has && stats.avg_quality != null
           ? format.decimal(stats.avg_quality, 1)
