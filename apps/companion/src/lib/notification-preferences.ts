@@ -6,6 +6,7 @@ import {
   type NotificationChannelToggles,
   type NotificationPreferences,
 } from "@tarmoto/shared";
+import type { EnglishMessageKey } from "@/i18n";
 
 // Re-exports kept so existing imports in this app keep working.
 export {
@@ -19,8 +20,8 @@ export {
 
 export const EMAIL_DIGEST_OPTIONS: {
   value: EmailDigestFrequency;
-  label: string;
-  description: string;
+  label: EnglishMessageKey;
+  description: EnglishMessageKey;
 }[] = [
   { value: "daily", label: "Daily", description: "Every morning" },
   { value: "weekly", label: "Weekly", description: "Every Sunday" },
@@ -45,7 +46,7 @@ export type VisibleNotificationCategory =
 
 export const VISIBLE_CATEGORY_LABELS: Record<
   VisibleNotificationCategory,
-  { label: string; description: string }
+  { label: EnglishMessageKey; description: EnglishMessageKey }
 > = {
   hazard_alert: {
     label: "Hazard alerts for saved routes",

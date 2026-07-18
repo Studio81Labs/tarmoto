@@ -1,4 +1,5 @@
 import type { SurfaceType, TripParameters } from "@/lib/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 /** All rider-selectable surfaces (companion vocabulary — no "unknown"). */
 export const SURFACE_VALUES: readonly SurfaceType[] = [
@@ -25,13 +26,14 @@ export type RoadPreference =
 
 export const DEFAULT_ROAD_PREFERENCE: RoadPreference = "direct";
 
-export const ROAD_PREFERENCE_LABELS: Record<RoadPreference, string> = {
-  direct: "Direct",
-  balanced: "Balanced",
-  scenic_balance: "Scenic balance",
-  maximum_twisty: "Maximum twisty",
-  efficient_loop: "Efficient loop",
-};
+export const ROAD_PREFERENCE_LABELS: Record<RoadPreference, EnglishMessageKey> =
+  {
+    direct: "Direct",
+    balanced: "Balanced",
+    scenic_balance: "Scenic balance",
+    maximum_twisty: "Maximum twisty",
+    efficient_loop: "Efficient loop",
+  };
 
 /** Point-to-point characters offered trip-wide and per leg (§A). */
 export const POINT_TO_POINT_PREFERENCES: readonly RoadPreference[] = [

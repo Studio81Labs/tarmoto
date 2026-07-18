@@ -50,6 +50,55 @@ const restrictedSyntaxSelectors = [
     message:
       "Use @tarmoto/ui Textarea instead of a native <textarea>. If this element is deliberate (dark surface, read-only embed code), add a disable comment with the reason.",
   },
+  // i18n bypass guard (PR 3b): user-facing text on these JSX props must go
+  // through t()/tDynamic, not a raw string literal — the typed t() flip
+  // cannot catch a string that never reaches t(). Flags a string literal
+  // (direct or in braces) that starts with a letter, so symbols, empty
+  // alt="", and interpolated/`t(...)` values pass. Deliberate raw text
+  // (a brand name, a non-translatable token) carries a disable comment.
+  // `ariaLabel` (camelCase) is the @tarmoto/ui prop name, alongside the
+  // kebab-case DOM `aria-label` used on native/passthrough elements.
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > Literal[value=/^[A-Za-z]/]",
+    message:
+      "Wrap user-facing text on label/title/alt/placeholder/aria-label/ariaLabel with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > Literal[value=/^[A-Za-z]/]",
+    message:
+      "Wrap user-facing text on label/title/alt/placeholder/aria-label/ariaLabel with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
+  },
+  // Same guard for the non-literal prop shapes the plain-Literal selectors
+  // above can't see: a template literal with raw static text
+  // (`label={`Force ${n}`}`) and a raw string / template in a conditional
+  // branch (`label={cond ? "Add" : "Save"}`). The conditional selectors use a
+  // DESCENDANT match (`JSXAttribute … ConditionalExpression > …`) so NESTED
+  // ternaries can't slip an inner raw branch through
+  // (`label={ok ? t("K") : flag ? "Add" : "Save"}`). Scoping to a direct
+  // child of `ConditionalExpression`/the expression container (not a bare
+  // descendant Literal) means a Literal/TemplateLiteral that is a t()
+  // ARGUMENT is not matched, so t()-wrapped branches and t()-composed
+  // templates (`label={`${t("X")} (${n})`}`, no 2+-letter static run) pass.
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      'Raw user-facing text in a template literal on label/title/alt/placeholder/aria-label/ariaLabel — compose it through t()/tDynamic (`${t("…")}`), or add a disable comment if deliberately not translatable.',
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] ConditionalExpression > Literal[value=/^[A-Za-z]/]",
+    message:
+      'Raw string literal in a conditional (any nesting) on label/title/alt/placeholder/aria-label/ariaLabel — wrap each branch with t()/tDynamic (`cond ? t("A") : t("B")`), or add a disable comment if deliberate.',
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Raw user-facing text in a conditional template branch (any nesting) on label/title/alt/placeholder/aria-label/ariaLabel — compose it through t()/tDynamic, or add a disable comment if deliberate.",
+  },
 ];
 
 export default [

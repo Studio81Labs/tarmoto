@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
@@ -33,7 +33,7 @@ import { CommunityEmptyState } from "../_CommunityEmptyState";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
   value: CommunityRideSort;
-  label: string;
+  label: EnglishMessageKey;
 }> = [
   { value: "most_popular", label: "Most popular" },
   { value: "newest", label: "Newest" },
@@ -42,6 +42,12 @@ const SORT_OPTIONS: Array<{
   { value: "curviest", label: "Curviest" },
   { value: "longest", label: "Longest" },
 ];
+const RIDE_TYPE_LABEL = {
+  free: "Free",
+  commute: "Commute",
+  trip: "Trip",
+  tracked: "Tracked",
+} satisfies Record<(typeof RIDE_TYPES)[number], EnglishMessageKey>;
 export default function CommunityFeedPage() {
   const [sort, setSort] = useState<CommunityRideSort>("most_popular");
   const [rideType, setRideType] = useState<RideTypeFilter>("all");
@@ -171,7 +177,7 @@ export default function CommunityFeedPage() {
             { value: "all", label: t("All rides") },
             ...RIDE_TYPES.map((type) => ({
               value: type,
-              label: t(type.charAt(0).toUpperCase() + type.slice(1)),
+              label: t(RIDE_TYPE_LABEL[type]),
             })),
           ]}
         />

@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -17,8 +17,8 @@ import { Card, PageHeader } from "@tarmoto/ui";
 interface SettingsSection {
   href: string;
   icon: LucideIcon;
-  label: string;
-  description: string;
+  label: EnglishMessageKey;
+  description: EnglishMessageKey;
 }
 
 const SETTINGS_SECTIONS: SettingsSection[] = [

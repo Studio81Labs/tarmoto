@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -79,7 +79,7 @@ const BADGE_ICONS: Record<string, LucideIcon> = {
 const CATEGORY_STYLE: Record<
   ChallengeCategory,
   {
-    label: string;
+    label: EnglishMessageKey;
     icon: LucideIcon;
     accent: string;
   }
@@ -707,7 +707,7 @@ function BadgeCard({
       )}
       title={
         earned && badge.earnedAt
-          ? `Earned ${format.monthYear(badge.earnedAt)}`
+          ? t("Earned {date}", { date: format.monthYear(badge.earnedAt) })
           : badge.description
       }
     >
@@ -806,7 +806,9 @@ function ChallengeCard({
               {format.integer(challenge.current)} /{" "}
               {format.integer(challenge.target)}
               {challenge.unit && (
-                <span className="ml-1 text-fg-mute">{t(challenge.unit)}</span>
+                <span className="ml-1 text-fg-mute">
+                  {tDynamic(challenge.unit)}
+                </span>
               )}
             </>
           )}

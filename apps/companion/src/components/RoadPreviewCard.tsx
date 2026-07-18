@@ -3,7 +3,7 @@ import { t } from "@/i18n";
 import { useId, useMemo } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import type { RoutePreviewSegment } from "@/lib/types";
-import { QUALITY_CONFIG } from "@/lib/utils";
+import { QUALITY_CONFIG, SURFACE_LABELS } from "@/lib/utils";
 import {
   buildSparklinePath,
   curvinessLabel,
@@ -98,7 +98,7 @@ export function RoadPreviewCard({
           </span>
           <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-[0.3px] text-fg-mute">
             {format.distanceKm(segment.distanceKm)} ·{" "}
-            {t(segment.surfaceType.replace(/\b\w/g, (c) => c.toUpperCase()))} ·{" "}
+            {t(SURFACE_LABELS[segment.surfaceType])} ·{" "}
             {t(curvinessLabel(segment.curvinessScore))}
           </span>
         </span>
@@ -150,9 +150,7 @@ export function RoadPreviewCard({
             />
             <Stat
               label={t("Surface")}
-              value={t(
-                segment.surfaceType.replace(/\b\w/g, (c) => c.toUpperCase()),
-              )}
+              value={t(SURFACE_LABELS[segment.surfaceType])}
             />
             <Stat
               label={t("Curviness")}

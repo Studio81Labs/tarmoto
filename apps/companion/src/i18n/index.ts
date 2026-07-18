@@ -45,16 +45,41 @@ export function getActiveLocale(): SupportedLocale {
 }
 
 /**
- * Consumers pass raw English source text as the key (loose `string`), relying on
- * the raw-key fallback for untranslated strings — so this keeps the `string`
- * signature and casts into the catalog key type.
+ * Companion translator: the key must be a registered catalog key
+ * (`EnglishMessageKey`) — an unregistered string is a compile error. The raw
+ * English source text IS the key. For a genuinely dynamic key (a runtime
+ * string with no fixed key set), use `tDynamic` below.
  */
 export function translate(
+  key: EnglishMessageKey,
+  values?: TranslationValues,
+  locale: SupportedLocale = activeLocale,
+): string {
+  return baseTranslate(key, values, locale);
+}
+
+export const t = translate;
+
+/**
+ * Typed companion translator: the key must be a registered catalog key.
+ * PR 3b narrows `translate`/`t` to this; libs that receive a translator
+ * declare their parameter as `Translate`.
+ */
+export type Translate = (
+  key: EnglishMessageKey,
+  values?: TranslationValues,
+  locale?: SupportedLocale,
+) => string;
+
+/**
+ * Escape hatch for genuinely dynamic keys (a runtime string that cannot be a
+ * compile-time literal). Deliberately loose and greppable — reach for a typed
+ * label map before reaching for this. Same lookup + raw-key fallback as `t`.
+ */
+export function tDynamic(
   key: string,
   values?: TranslationValues,
   locale: SupportedLocale = activeLocale,
 ): string {
   return baseTranslate(key as EnglishMessageKey, values, locale);
 }
-
-export const t = translate;

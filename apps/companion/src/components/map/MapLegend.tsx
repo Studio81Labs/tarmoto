@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import { CONDITION_COLORS } from "@/lib/conditions-visual";
 import { HAZARD_CONFIG, HAZARD_TYPES_UI, SURFACE_LABELS } from "@/lib/utils";
+import type { EnglishMessageKey } from "@/i18n";
 
 const SURFACE_KEYS = Object.keys(
   SURFACE_COLORS,
@@ -20,7 +21,7 @@ const SURFACE_KEYS = Object.keys(
 
 /** A quality swatch — the label + the exact line colour the map paints. */
 export interface QualityLegendEntry {
-  label: string;
+  label: EnglishMessageKey;
   color: string;
 }
 
@@ -35,7 +36,7 @@ export interface MapLegendProps {
   hazards?: boolean;
 }
 
-const CONDITION_LEGEND: readonly [color: string, label: string][] = [
+const CONDITION_LEGEND: readonly [color: string, label: EnglishMessageKey][] = [
   [CONDITION_COLORS.roadworks, "Roadworks"],
   [CONDITION_COLORS["closure-full"], "Full closure"],
   [CONDITION_COLORS["closure-partial"], "Partial closure"],

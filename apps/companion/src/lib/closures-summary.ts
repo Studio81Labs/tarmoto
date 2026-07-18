@@ -1,8 +1,5 @@
-import {
-  haversineKm,
-  type Formatters,
-  type LooseTranslate,
-} from "@tarmoto/shared";
+import { haversineKm, type Formatters } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 import type { RoadClosure } from "./api";
 import { sampleRoutePoints } from "./route-sampling";
 import type { Trip } from "./types";
@@ -100,7 +97,7 @@ export function detourLengthKm(closure: PlannerClosure): number | null {
 
 export function buildTripClosureRoutes(
   trip: Trip | null,
-  t: LooseTranslate,
+  t: Translate,
 ): PlannerClosureRoute[] {
   if (!trip) return [];
 
@@ -138,7 +135,7 @@ export function buildTripClosureRoutes(
 export function formatClosureWindow(
   closure: PlannerClosure,
   format: Formatters,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   if (!closure.ends_at) {
     return t("{date} onward", {

@@ -7,7 +7,7 @@
  * `RouteCollectionView` shape consumed by the pages and hook.
  */
 
-import type { LooseTranslate } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 import {
   type RouteCollectionDetail,
   type RouteCollectionSummary,
@@ -63,7 +63,7 @@ export const MAX_COLLECTION_DESCRIPTION_LENGTH = 500;
 export function validateCollectionName(
   name: string,
   collections: readonly { id: string; title: string }[],
-  t: LooseTranslate,
+  t: Translate,
   excludeId?: string,
 ): string | null {
   const trimmed = name.trim();
@@ -83,7 +83,7 @@ export function validateCollectionName(
 
 export function validateCollectionDescription(
   description: string | undefined,
-  t: LooseTranslate,
+  t: Translate,
 ): string | null {
   if (description === undefined) return null;
   // Trim to match what `createCollection`/`updateCollection` actually store —
