@@ -4,12 +4,14 @@ import { Repository } from 'typeorm';
 import {
   buildFeatureSnapshot,
   buildLimitSnapshot,
+  buildSystemSwitchSnapshot,
   isGlobalFeatureState,
   type FeatureSnapshot,
   type GlobalFeatureState,
   type GlobalFeatureStates,
   type GlobalLimitOverrides,
   type LimitSnapshot,
+  type SystemSwitchSnapshot,
 } from '@tarmoto/shared';
 import { FeatureState } from '../../entities/feature-state.entity.js';
 import { LimitState } from '../../entities/limit-state.entity.js';
@@ -145,6 +147,16 @@ export class FeatureResolver {
       if (isValidLimitValue(row.value)) overrides[row.feature] = row.value;
     }
     return overrides;
+  }
+
+  /**
+   * Resolved system switches (operator kill toggles, default ON). Reads the
+   * same global `feature_states` rows as `getGlobalStates` and folds them
+   * through the pure `buildSystemSwitchSnapshot`. For the backend's own use
+   * (and future per-subsystem enforcement) — not gated by any guard yet.
+   */
+  async getSystemSwitches(): Promise<SystemSwitchSnapshot> {
+    return buildSystemSwitchSnapshot(await this.getGlobalStates());
   }
 
   private async loadOverrides(

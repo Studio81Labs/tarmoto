@@ -15,8 +15,11 @@ import {
   useAdminFeatureFlags,
   useAdminFeatureFlagUsers,
   useAdminFeatureLimits,
+  useAdminSystemSwitches,
   useClearFeatureGlobal,
   useClearLimitGlobal,
+  useDisableSystemSwitch,
+  useEnableSystemSwitch,
   useSetFeatureGlobal,
   useSetLimitGlobal,
 } from "../data/useAdminFlags.js";
@@ -30,6 +33,7 @@ type FeatureFlag = components["schemas"]["AdminFeatureFlagDto"];
 type FlagUserRow = components["schemas"]["AdminFeatureFlagUserRowDto"];
 type LaunchTier = components["schemas"]["SetLaunchTierDto"]["tier"];
 type FeatureLimit = components["schemas"]["AdminFeatureLimitDto"];
+type SystemSwitch = components["schemas"]["AdminSystemSwitchDto"];
 
 const formatLimit = (v: number | null | undefined) =>
   v === null || v === undefined ? "∞" : String(v);
@@ -328,6 +332,8 @@ export function FeatureFlagsScreen() {
       ) : null}
 
       <FeatureLimitsCard />
+
+      <SystemSwitchesCard />
     </section>
   );
 }
@@ -759,6 +765,204 @@ function FeatureLimitsCard() {
           </span>
         }
         ariaLabel="Feature Limits"
+      />
+    </div>
+  );
+}
+
+function SystemSwitchesCard() {
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Disable dialog state (kill switch — reason is mandatory).
+  const [target, setTarget] = useState<SystemSwitch | null>(null);
+  const [reason, setReason] = useState("");
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  const { data, isPending, error, refetch } = useAdminSystemSwitches();
+  const disableMutation = useDisableSystemSwitch();
+  const enableMutation = useEnableSystemSwitch();
+  const rows: SystemSwitch[] = data?.switches ?? [];
+
+  function openDisableDialog(row: SystemSwitch) {
+    setTarget(row);
+    setReason("");
+    setDialogError(null);
+  }
+
+  function handleDisableSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!target) return;
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      setDialogError("A reason is required to disable a system switch.");
+      return;
+    }
+    setDialogError(null);
+    disableMutation.mutate(
+      {
+        params: { path: { key: target.key } },
+        body: { reason: trimmedReason },
+      },
+      {
+        onSuccess: () => {
+          setTarget(null);
+          void refetch();
+        },
+        onError: (err: unknown) =>
+          setDialogError(
+            readErrorMessage(err, "Failed to disable the switch."),
+          ),
+      },
+    );
+  }
+
+  function enable(row: SystemSwitch) {
+    setPendingKey(row.key);
+    setActionError(null);
+    enableMutation.mutate(
+      { params: { path: { key: row.key } } },
+      {
+        onSuccess: () => void refetch(),
+        onError: (err: unknown) =>
+          setActionError(readErrorMessage(err, "Failed to enable the switch.")),
+        onSettled: () => setPendingKey(null),
+      },
+    );
+  }
+
+  const columns: ReadonlyArray<DataTableColumn<SystemSwitch>> = [
+    {
+      key: "key",
+      label: "Switch",
+      primary: true,
+      render: (row) => row.key,
+    },
+    {
+      key: "description",
+      label: "Description",
+      render: (row) => row.description,
+    },
+    {
+      key: "state",
+      label: "State",
+      size: "220px",
+      render: (row) => (
+        <div className="flex flex-col gap-0.5">
+          <Pill variant={row.enabled ? "ghost" : "warning"}>
+            {row.enabled ? "On" : "Disabled"}
+          </Pill>
+          {!row.enabled && row.disabled_reason ? (
+            <span className="text-xs text-fg-dim">{row.disabled_reason}</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: "actions",
+      label: "",
+      size: "140px",
+      align: "right",
+      render: (row) => (
+        <div className="flex items-center justify-end gap-2">
+          {row.enabled ? (
+            <Button
+              variant="danger"
+              size="sm"
+              loading={pendingKey === row.key}
+              onClick={() => openDisableDialog(row)}
+            >
+              Disable
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={pendingKey === row.key}
+              onClick={() => enable(row)}
+            >
+              Enable
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="mt-6 rounded-xl border border-line bg-paper p-5">
+      <h3 className="mb-4 text-sm font-semibold text-ink">System switches</h3>
+      {error ? (
+        <Alert
+          intent="danger"
+          title="Failed to load system switches."
+          className="mb-4"
+          compact
+        />
+      ) : null}
+      {actionError ? (
+        <Alert intent="danger" title={actionError} className="mb-4" compact />
+      ) : null}
+
+      <Dialog
+        open={target !== null}
+        title={`Disable "${target?.key ?? ""}"`}
+        onClose={() => setTarget(null)}
+        busy={disableMutation.isPending}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="disable-switch-form"
+              variant="danger-solid"
+              size="sm"
+              loading={disableMutation.isPending}
+            >
+              Disable
+            </Button>
+          </>
+        }
+      >
+        {dialogError ? (
+          <Alert intent="danger" title={dialogError} className="mb-4" compact />
+        ) : null}
+        <form
+          id="disable-switch-form"
+          onSubmit={handleDisableSubmit}
+          className="flex flex-col gap-3"
+        >
+          <p className="text-sm text-fg-dim">
+            This is a kill switch: the subsystem turns off for everyone. A
+            reason is required.
+          </p>
+          <Textarea
+            value={reason}
+            onChange={setReason}
+            placeholder="Why is this subsystem being disabled?"
+            ariaLabel="Reason"
+            maxLength={500}
+          />
+        </form>
+      </Dialog>
+
+      <DataTable
+        columns={columns}
+        rows={isPending ? [] : rows}
+        rowKey={(row) => row.key}
+        showCaret={false}
+        emptyState={
+          <span className="text-sm text-fg-dim">
+            {isPending ? "—" : "No system switches in the registry."}
+          </span>
+        }
+        ariaLabel="System Switches"
       />
     </div>
   );

@@ -2,18 +2,22 @@ import {
   FEATURE_DEFINITIONS,
   FEATURE_KEYS,
   LIMIT_FEATURE_KEYS,
+  SYSTEM_FEATURE_KEYS,
   TOGGLE_FEATURE_KEYS,
   buildFeatureSnapshot,
   buildLimitSnapshot,
+  buildSystemSwitchSnapshot,
   getFeatureLimit,
   isFeatureEnabled,
   isFeatureKey,
   isGlobalFeatureState,
   isLimitFeatureKey,
+  isSystemFeatureKey,
   isToggleFeatureKey,
   isWithinLimit,
   resolveFeature,
   resolveLimit,
+  resolveSystemSwitch,
 } from "./feature-flags";
 import { SUBSCRIPTION_TIERS } from "./constants";
 
@@ -42,15 +46,22 @@ describe("registry", () => {
 });
 
 describe("kind-split registry", () => {
-  it("partitions FEATURE_KEYS exactly into toggle + limit keys", () => {
-    expect([...TOGGLE_FEATURE_KEYS, ...LIMIT_FEATURE_KEYS].sort()).toEqual(
-      [...FEATURE_KEYS].sort(),
-    );
+  it("partitions FEATURE_KEYS exactly into toggle + limit + system keys", () => {
+    expect(
+      [
+        ...TOGGLE_FEATURE_KEYS,
+        ...LIMIT_FEATURE_KEYS,
+        ...SYSTEM_FEATURE_KEYS,
+      ].sort(),
+    ).toEqual([...FEATURE_KEYS].sort());
     for (const key of TOGGLE_FEATURE_KEYS) {
       expect(FEATURE_DEFINITIONS[key].kind).toBe("toggle");
     }
     for (const key of LIMIT_FEATURE_KEYS) {
       expect(FEATURE_DEFINITIONS[key].kind).toBe("limit");
+    }
+    for (const key of SYSTEM_FEATURE_KEYS) {
+      expect(FEATURE_DEFINITIONS[key].kind).toBe("system");
     }
   });
 
@@ -79,6 +90,48 @@ describe("kind-split registry", () => {
     expect(isLimitFeatureKey("gpx_export")).toBe(false);
     expect(isFeatureKey("max_active_trips")).toBe(true);
     expect(isLimitFeatureKey("nope")).toBe(false);
+  });
+});
+
+describe("system switches", () => {
+  it("has 14 system keys, all kind:system + default:true, disjoint from toggle/limit", () => {
+    expect(SYSTEM_FEATURE_KEYS.length).toBe(14);
+    for (const key of SYSTEM_FEATURE_KEYS) {
+      expect(FEATURE_DEFINITIONS[key].kind).toBe("system");
+      expect(FEATURE_DEFINITIONS[key].default).toBe(true);
+    }
+    const toggleLimit = new Set([
+      ...TOGGLE_FEATURE_KEYS,
+      ...LIMIT_FEATURE_KEYS,
+    ]);
+    for (const key of SYSTEM_FEATURE_KEYS) {
+      expect(toggleLimit.has(key as never)).toBe(false);
+    }
+  });
+
+  it("resolveSystemSwitch is on by default and off only on force_off", () => {
+    expect(resolveSystemSwitch("sys_weather_provider", undefined)).toBe(true);
+    expect(resolveSystemSwitch("sys_weather_provider", "force_on")).toBe(true);
+    expect(resolveSystemSwitch("sys_weather_provider", "force_off")).toBe(
+      false,
+    );
+  });
+
+  it("buildSystemSwitchSnapshot resolves every key; absent = on; ignores stale keys", () => {
+    const snap = buildSystemSwitchSnapshot({
+      sys_weather_provider: "force_off",
+    });
+    expect(Object.keys(snap).sort()).toEqual([...SYSTEM_FEATURE_KEYS].sort());
+    expect(snap.sys_weather_provider).toBe(false);
+    expect(snap.sys_mapillary_previews).toBe(true); // absent → default on
+    expect(snap).not.toHaveProperty("ghost_switch");
+  });
+
+  it("isSystemFeatureKey discriminates by kind", () => {
+    expect(isSystemFeatureKey("sys_weather_provider")).toBe(true);
+    expect(isSystemFeatureKey("gpx_export")).toBe(false);
+    expect(isSystemFeatureKey("max_active_trips")).toBe(false);
+    expect(isSystemFeatureKey("nope")).toBe(false);
   });
 });
 

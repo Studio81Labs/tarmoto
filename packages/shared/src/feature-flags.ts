@@ -41,9 +41,17 @@ export interface LimitFeatureDefinition {
   tiers: Readonly<Record<SubscriptionTier, number | null>>;
 }
 
+export interface SystemFeatureDefinition {
+  kind: "system";
+  description: string;
+  /** System switches default ON; an operator force_off is the only way off. */
+  default: true;
+}
+
 export type FeatureDefinition =
   | ToggleFeatureDefinition
-  | LimitFeatureDefinition;
+  | LimitFeatureDefinition
+  | SystemFeatureDefinition;
 
 const ALL_TIERS = ["free", "pro", "premium"] as const;
 const PRO_AND_UP = ["pro", "premium"] as const;
@@ -228,6 +236,78 @@ export const FEATURE_DEFINITIONS = {
     default: 50,
     tiers: { free: 50, pro: 50, premium: 50 },
   },
+  // ── System switches (operator-only, default ON, no tier) ──
+  sys_accel_collection: {
+    kind: "system",
+    description: "Background accelerometer/gyro sampling (50Hz).",
+    default: true,
+  },
+  sys_surface_upload: {
+    kind: "system",
+    description: "Batch upload of surface data to the backend.",
+    default: true,
+  },
+  sys_surface_ml_classification: {
+    kind: "system",
+    description: "On-device TF Lite surface classification.",
+    default: true,
+  },
+  sys_nap_conditions: {
+    kind: "system",
+    description: "NAP/DATEX II closure display (CONDITIONS tab + map).",
+    default: true,
+  },
+  sys_nap_routing_avoidance: {
+    kind: "system",
+    description: "Closures injected as Valhalla exclude_polygons.",
+    default: true,
+  },
+  sys_weather_provider: {
+    kind: "system",
+    description: "Weather-along-route data.",
+    default: true,
+  },
+  sys_mapillary_previews: {
+    kind: "system",
+    description: "Mapillary imagery in Road Preview Cards.",
+    default: true,
+  },
+  sys_aerial_basemap: {
+    kind: "system",
+    description: "ČÚZK orthophoto basemap toggle.",
+    default: true,
+  },
+  sys_booking_affiliate: {
+    kind: "system",
+    description: "Booking.com deep links on hotel POIs.",
+    default: true,
+  },
+  sys_ride_publishing: {
+    kind: "system",
+    description: "Publishing rides (public/members).",
+    default: true,
+  },
+  sys_community_collections: {
+    kind: "system",
+    description: "Community collections browsing.",
+    default: true,
+  },
+  sys_poi_ratings: {
+    kind: "system",
+    description: "Rider ratings & stop reviews (US-25).",
+    default: true,
+  },
+  sys_gamification: {
+    kind: "system",
+    description: "Badges, challenges, personal road map (Epic 7).",
+    default: true,
+  },
+  sys_push_notifications: {
+    kind: "system",
+    description:
+      "Non-critical push (marketing, engagement). Safety alerts are not behind this.",
+    default: true,
+  },
 } as const satisfies Record<string, FeatureDefinition>;
 
 export type FeatureKey = keyof typeof FEATURE_DEFINITIONS;
@@ -238,7 +318,11 @@ export type ToggleFeatureKey = {
     : never;
 }[FeatureKey];
 
-export type LimitFeatureKey = Exclude<FeatureKey, ToggleFeatureKey>;
+export type LimitFeatureKey = {
+  [K in FeatureKey]: (typeof FEATURE_DEFINITIONS)[K]["kind"] extends "limit"
+    ? K
+    : never;
+}[FeatureKey];
 
 export const FEATURE_KEYS = Object.keys(
   FEATURE_DEFINITIONS,
@@ -251,6 +335,18 @@ export const TOGGLE_FEATURE_KEYS = FEATURE_KEYS.filter(
 export const LIMIT_FEATURE_KEYS = FEATURE_KEYS.filter(
   (key): key is LimitFeatureKey => FEATURE_DEFINITIONS[key].kind === "limit",
 );
+
+export type SystemFeatureKey = {
+  [K in FeatureKey]: (typeof FEATURE_DEFINITIONS)[K]["kind"] extends "system"
+    ? K
+    : never;
+}[FeatureKey];
+
+export const SYSTEM_FEATURE_KEYS = FEATURE_KEYS.filter(
+  (key): key is SystemFeatureKey => FEATURE_DEFINITIONS[key].kind === "system",
+);
+
+export type SystemSwitchSnapshot = Record<SystemFeatureKey, boolean>;
 
 /** Global override states stored in `feature_states` (absence = normal). */
 export const GLOBAL_FEATURE_STATES = ["force_off", "force_on"] as const;
@@ -294,6 +390,10 @@ export function isToggleFeatureKey(value: unknown): value is ToggleFeatureKey {
 
 export function isLimitFeatureKey(value: unknown): value is LimitFeatureKey {
   return isFeatureKey(value) && FEATURE_DEFINITIONS[value].kind === "limit";
+}
+
+export function isSystemFeatureKey(value: unknown): value is SystemFeatureKey {
+  return isFeatureKey(value) && FEATURE_DEFINITIONS[value].kind === "system";
 }
 
 export function isSubscriptionTier(value: unknown): value is SubscriptionTier {
@@ -448,6 +548,30 @@ export function buildLimitSnapshot(
       overrides[key],
       globalOverrides[key],
     );
+  }
+  return snapshot;
+}
+
+/**
+ * Resolve one system switch. Pure. On by default; an operator `force_off`
+ * is the only way off. `force_on`/absent resolve on.
+ */
+export function resolveSystemSwitch(
+  key: SystemFeatureKey,
+  globalState: GlobalFeatureState | undefined,
+): boolean {
+  void key; // key kept for signature symmetry; the default is always ON
+  return globalState !== "force_off";
+}
+
+/** Resolve every registry system switch. Unknown keys in the state map are
+ * ignored — only registry keys are iterated. */
+export function buildSystemSwitchSnapshot(
+  globalStates: Readonly<Partial<Record<string, GlobalFeatureState>>>,
+): SystemSwitchSnapshot {
+  const snapshot = {} as SystemSwitchSnapshot;
+  for (const key of SYSTEM_FEATURE_KEYS) {
+    snapshot[key] = resolveSystemSwitch(key, globalStates[key]);
   }
   return snapshot;
 }
