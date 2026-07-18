@@ -10,6 +10,7 @@ import {
 import * as AllEntities from '../src/entities/index.js';
 import { AppDataSource } from '../src/data-source.js';
 import { BadgesService } from '../src/modules/badges/badges.service.js';
+import { FeatureResolver } from '../src/modules/features/feature-resolver.service.js';
 import { DemoSeeder } from '../src/scripts/demo-seed/demo-seeder.js';
 import {
   DEMO_PERSONAS,
@@ -61,6 +62,12 @@ describe('seed-demo-data: DemoSeeder (integration)', () => {
       ds.getRepository(RoadReview),
       ds.getRepository(SharedRide),
       ds,
+      // BadgesService now depends on FeatureResolver (the sys_gamification
+      // gate); the seeder's checkAndAward path needs it on so demo badges are
+      // awarded as the integration assertions expect.
+      {
+        isSystemSwitchEnabled: () => Promise.resolve(true),
+      } as unknown as FeatureResolver,
     );
     seeder = new DemoSeeder(ds, badges);
     await seeder.run({ only: null });
