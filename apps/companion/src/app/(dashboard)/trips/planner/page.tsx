@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
 import {
   Fragment,
   useCallback,
@@ -167,7 +167,7 @@ import { useFormat } from "@/format/FormatProvider";
  */
 const SURFACE_OPTIONS: {
   value: SurfaceType;
-  label: string;
+  label: EnglishMessageKey;
 }[] = [
   { value: "asphalt", label: "Asphalt" },
   { value: "concrete", label: "Concrete" },
@@ -4247,7 +4247,7 @@ function WaypointEditor({
               />
               <div className="min-w-0 flex-1">
                 <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-                  {t(role)}
+                  {tDynamic(role)}
                 </span>
                 {onRelocate ? (
                   // The name line is a typed geocode search: the current
@@ -4257,7 +4257,7 @@ function WaypointEditor({
                     variant="spine"
                     placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
                     ariaLabel={t("Search location for {role} waypoint", {
-                      role: t(role),
+                      role: tDynamic(role),
                     })}
                     onSelect={(result) => onRelocate(waypoint.id, result)}
                   />

@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Loader2, Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -306,7 +306,7 @@ function PassesPanelBody({
         <>
           <p className="text-xs text-fg-dim">
             {t("In ")}
-            {t(monthLabel(month))}:{" "}
+            {tDynamic(monthLabel(month))}:{" "}
             <span className="text-quality-q1">
               {t("{count} closed", { count: counts.closed })}
             </span>

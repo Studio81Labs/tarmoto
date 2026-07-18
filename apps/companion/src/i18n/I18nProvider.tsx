@@ -8,7 +8,7 @@ import {
   type TranslationValues,
   resolveLocale,
   setActiveLocale,
-  translate,
+  tDynamic,
 } from ".";
 
 type I18nContextValue = {
@@ -20,7 +20,7 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue>({
   locale: DEFAULT_LOCALE,
   localeLabel: LOCALES[DEFAULT_LOCALE].label,
-  t: (key, values) => translate(key, values, DEFAULT_LOCALE),
+  t: (key, values) => tDynamic(key, values, DEFAULT_LOCALE),
 });
 
 export function I18nProvider({
@@ -36,7 +36,7 @@ export function I18nProvider({
     () => ({
       locale: resolvedLocale,
       localeLabel: LOCALES[resolvedLocale].label,
-      t: (key, values) => translate(key, values, resolvedLocale),
+      t: (key, values) => tDynamic(key, values, resolvedLocale),
     }),
     [resolvedLocale],
   );

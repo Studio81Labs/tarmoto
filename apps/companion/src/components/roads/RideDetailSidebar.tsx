@@ -1,6 +1,6 @@
 "use client";
 
-import { t } from "@/i18n";
+import { t, tDynamic } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, X } from "lucide-react";
@@ -174,7 +174,7 @@ function RideBody({ ride }: { ride: RideDetail }) {
         <p className="mt-1 flex items-center gap-2 text-[12.5px] text-fg-dim">
           <span>{format.date(ride.started_at)}</span>
           <span className="rounded-full border border-line-strong px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[1px] text-fg-mute">
-            {t(RIDE_TYPE_LABEL[ride.ride_type] ?? ride.ride_type)}
+            {tDynamic(RIDE_TYPE_LABEL[ride.ride_type] ?? ride.ride_type)}
           </span>
         </p>
       </div>

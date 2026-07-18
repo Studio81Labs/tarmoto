@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useState } from "react";
 import { FilterX, Search } from "lucide-react";
 import {
@@ -8,7 +8,6 @@ import {
   Input,
   SegmentedControl,
   Select,
-  type SegmentedOption,
   type SelectOption,
 } from "@tarmoto/ui";
 import type { RidesQueryState } from "./useRidesQuery";
@@ -22,7 +21,7 @@ const QUALITY_OPTIONS: SelectOption[] = [
   ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
 ];
 
-const TYPE_OPTIONS: SegmentedOption<string>[] = [
+const TYPE_OPTIONS: { value: string; label: EnglishMessageKey }[] = [
   { value: "all", label: "All" },
   { value: "free", label: "Free" },
   { value: "commute", label: "Commute" },
@@ -159,7 +158,9 @@ export function RidesFilters({ state, update, reset }: Props) {
   // SelectOption's `label` is typed ReactNode (it also renders JSX elsewhere
   // in the app); this array's own literals are always plain strings.
   const qualityOptions = QUALITY_OPTIONS.map((opt) =>
-    opt.value === "any" ? { ...opt, label: t(opt.label as string) } : opt,
+    opt.value === "any"
+      ? { ...opt, label: tDynamic(opt.label as string) }
+      : opt,
   );
   const typeOptions = TYPE_OPTIONS.map((opt) => ({
     ...opt,

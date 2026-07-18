@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic } from "@/i18n";
 import { useEffect } from "react";
 import { AlertTriangle, Loader2, Route } from "lucide-react";
 import { DatePicker } from "@tarmoto/ui";
@@ -222,7 +222,7 @@ function ClosuresPanelBody({
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-  const monthText = t(monthLabel(month));
+  const monthText = tDynamic(monthLabel(month));
   const previewDay = format.calendarDate(previewDate);
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);

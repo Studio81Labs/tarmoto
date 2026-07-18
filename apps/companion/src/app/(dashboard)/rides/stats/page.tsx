@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -26,7 +26,6 @@ import {
   Stamp,
   type DataTableColumn,
   type MetricTileProps,
-  type SegmentedOption,
 } from "@tarmoto/ui";
 import { RidesEmptyState } from "../_RidesEmptyState";
 import { fetchAllRides } from "@/lib/rides-fetch";
@@ -57,7 +56,7 @@ import {
   type YearlyTotal,
 } from "@/lib/ride-stats";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-const RIDE_TYPE_OPTIONS: SegmentedOption<string>[] = [
+const RIDE_TYPE_OPTIONS: { value: string; label: EnglishMessageKey }[] = [
   { value: "all", label: "All" },
   { value: "free", label: "Free" },
   { value: "commute", label: "Commute" },
@@ -500,12 +499,11 @@ interface FilterBarProps {
   filters: RideFilters;
   onChange: (filters: RideFilters) => void;
 }
-const WINDOW_OPTIONS: SegmentedOption<StatsWindow>[] = STATS_WINDOWS.map(
-  (w) => ({
+const WINDOW_OPTIONS: { value: StatsWindow; label: EnglishMessageKey }[] =
+  STATS_WINDOWS.map((w) => ({
     value: w.value,
     label: w.label,
-  }),
-);
+  }));
 // Filters mirror the Ride History controls: a time-window pill group + a
 // ride-type group, both the shared `SegmentedControl`.
 function FilterBar({ filters, onChange }: FilterBarProps) {
@@ -704,7 +702,7 @@ function SurfaceBreakdownCard({
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${t(s.label)} · ${format.decimal(s.pct, 1)}%`}
+                  title={`${tDynamic(s.label)} · ${format.decimal(s.pct, 1)}%`}
                 />
               ))}
             </div>
@@ -719,7 +717,7 @@ function SurfaceBreakdownCard({
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: surfaceColor(s.key) }}
                     />
-                    <span className="text-ink">{t(s.label)}</span>
+                    <span className="text-ink">{tDynamic(s.label)}</span>
                   </span>
                   <Mono className="text-fg-dim">
                     {`${format.decimal(s.pct, 1)}%`}
@@ -765,7 +763,7 @@ function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
                 return (
                   <div key={s.key}>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-ink">{t(s.label)}</span>
+                      <span className="text-ink">{tDynamic(s.label)}</span>
                       <Mono className="text-fg-dim">
                         {`${format.decimal(s.pct, 1)}%`}
                       </Mono>

@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowUpRight, Loader2, MapPin, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { TripDetail } from "@/lib/types";
 import { useFormat } from "@/format/FormatProvider";
+import type { EnglishMessageKey } from "@/i18n";
 
 export type TripDetailPanelState =
   | { status: "idle" }
@@ -21,7 +22,7 @@ interface TripDetailSidebarProps {
   anchor?: "container" | "viewport";
 }
 
-const STATUS_LABEL: Record<TripDetail["status"], string> = {
+const STATUS_LABEL: Record<TripDetail["status"], EnglishMessageKey> = {
   draft: "Draft",
   planned: "Planned",
   active: "Active",

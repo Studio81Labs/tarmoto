@@ -30,7 +30,7 @@ import { useDropdown, useLocalStorage } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 
 /**
  * Tarmoto sidebar — single source of navigation chrome. Mirrors the
@@ -44,7 +44,7 @@ type NavSection = "plan" | "activity" | "discover" | null;
 
 type NavItem = {
   href: string;
-  label: string;
+  label: EnglishMessageKey;
   stamp: string;
   icon: LucideIcon;
   section: NavSection;

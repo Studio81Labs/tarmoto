@@ -7,6 +7,7 @@ import {
   QUALITY_BAND_LABELS,
 } from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 /**
  * Road-quality-along-route strip: the day's quality segments laid out
@@ -63,17 +64,20 @@ export function RouteQualityStrip({
         </Mono>
       </div>
       <div className="mt-3 flex flex-wrap gap-3">
-        {(Object.entries(QUALITY_BAND_LABELS) as [QualityBand, string][]).map(
-          ([band, label]) => (
-            <span key={band} className="flex items-center gap-1.5">
-              <span
-                className="h-[9px] w-[9px] rounded-sm"
-                style={{ background: QUALITY_BAND_COLORS[band] }}
-              />
-              <span className="text-[11px] text-fg-dim">{t(label)}</span>
-            </span>
-          ),
-        )}
+        {(
+          Object.entries(QUALITY_BAND_LABELS) as [
+            QualityBand,
+            EnglishMessageKey,
+          ][]
+        ).map(([band, label]) => (
+          <span key={band} className="flex items-center gap-1.5">
+            <span
+              className="h-[9px] w-[9px] rounded-sm"
+              style={{ background: QUALITY_BAND_COLORS[band] }}
+            />
+            <span className="text-[11px] text-fg-dim">{t(label)}</span>
+          </span>
+        ))}
       </div>
     </div>
   );

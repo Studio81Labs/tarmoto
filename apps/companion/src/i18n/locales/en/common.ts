@@ -178,6 +178,7 @@ export const common = {
     "Community reviews become available when this segment maps to a saved Tarmoto road. ",
   Commute: "Commute",
   "Compare rides ": "Compare rides ",
+  Completed: "Completed",
   Concrete: "Concrete",
   "Conditions ": "Conditions ",
   "Conditions for ": "Conditions for ",
@@ -269,6 +270,7 @@ export const common = {
   "Distance ": "Distance ",
   "Distance Traveller": "Distance Traveller",
   "Distance, lean, quality": "Distance, lean, quality",
+  Draft: "Draft",
   "Draft a multi-day loop": "Draft a multi-day loop",
   "Draft roundtrip": "Draft roundtrip",
   "Drag via points to reorder them. Start and finish stay pinned. ":
@@ -682,6 +684,7 @@ export const common = {
   "Plan new trip ": "Plan new trip ",
   "Plan your own trip ": "Plan your own trip ",
   "Plan, billing, payment methods": "Plan, billing, payment methods",
+  Planned: "Planned",
   "Planner map ": "Planner map ",
   "Planner sections": "Planner sections",
   Points: "Points",
@@ -1115,6 +1118,7 @@ export const common = {
   "based on {count, plural, one {# rider pass} other {# rider passes}}":
     "based on {count, plural, one {# rider pass} other {# rider passes}}",
   "be the first to map it. ": "be the first to map it. ",
+  "below your Good-or-better floor": "below your Good-or-better floor",
   "by ": "by ",
   "captured ": "captured ",
   closed: "closed",
@@ -1147,6 +1151,8 @@ export const common = {
   "member ": "member ",
   min: "min",
   "no longer available": "no longer available",
+  "no rider passes \u2014 verify before you commit":
+    "no rider passes \u2014 verify before you commit",
   "of ": "of ",
   "on route": "on route",
   open: "open",

@@ -1,13 +1,13 @@
 "use client";
 
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { SegmentedControl, type SegmentedOption } from "@tarmoto/ui";
+import { SegmentedControl } from "@tarmoto/ui";
 
 export type TimeWindow = "all" | "year" | "90d" | "30d";
 
-const OPTIONS: SegmentedOption<TimeWindow>[] = [
+const OPTIONS: { value: TimeWindow; label: EnglishMessageKey }[] = [
   { value: "all", label: "All time" },
   { value: "year", label: "This year" },
   { value: "90d", label: "Last 90 days" },

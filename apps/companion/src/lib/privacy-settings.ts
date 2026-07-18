@@ -4,6 +4,7 @@ import type {
   ProfileVisibility,
   RideSharingDefault,
 } from "@/lib/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   profileVisibility: "riders-only",
@@ -16,8 +17,8 @@ export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
 
 export const PROFILE_VISIBILITY_OPTIONS: {
   value: ProfileVisibility;
-  label: string;
-  description: string;
+  label: EnglishMessageKey;
+  description: EnglishMessageKey;
 }[] = [
   {
     value: "public",
@@ -38,8 +39,8 @@ export const PROFILE_VISIBILITY_OPTIONS: {
 
 export const RIDE_SHARING_OPTIONS: {
   value: RideSharingDefault;
-  label: string;
-  description: string;
+  label: EnglishMessageKey;
+  description: EnglishMessageKey;
 }[] = [
   {
     value: "public",
@@ -55,7 +56,9 @@ export const RIDE_SHARING_OPTIONS: {
 
 export const LOCATION_RETENTION_OPTIONS: {
   value: LocationRetention;
-  label: string;
+  label: EnglishMessageKey;
+  // Two entries below have no description ("") — not every registered catalog
+  // key, so this stays `string` and the render site uses `tDynamic`.
   description: string;
 }[] = [
   { value: "3months", label: "3 months", description: "Minimum retention." },

@@ -19,7 +19,7 @@ describe("companion i18n barrel", () => {
   });
 
   it("falls back to the raw key for an unknown string", () => {
-    expect(translate("__definitely-not-in-the-catalog__")).toBe(
+    expect(tDynamic("__definitely-not-in-the-catalog__")).toBe(
       "__definitely-not-in-the-catalog__",
     );
   });

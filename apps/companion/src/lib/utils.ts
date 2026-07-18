@@ -1,5 +1,6 @@
 import type { QualitySource, SurfaceType } from "@tarmoto/shared";
 import type { QualityTier, HazardType } from "@/lib/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 // ── Surface ──
 
@@ -7,7 +8,7 @@ import type { QualityTier, HazardType } from "@/lib/types";
 // e.g. "gravel", is not renderable copy). Translate at the render site via
 // t(SURFACE_LABELS[surface]). Shared by the map legend and the planner's
 // flagged-section cards so the surface word localizes consistently.
-export const SURFACE_LABELS: Record<SurfaceType, string> = {
+export const SURFACE_LABELS: Record<SurfaceType, EnglishMessageKey> = {
   asphalt: "Asphalt",
   concrete: "Concrete",
   cobblestone: "Cobblestone",
@@ -31,7 +32,7 @@ export const QUALITY_TIERS = [
 
 export const QUALITY_CONFIG: Record<
   QualityTier,
-  { label: string; color: string; bg: string; hex: string }
+  { label: EnglishMessageKey; color: string; bg: string; hex: string }
 > = {
   excellent: {
     label: "Excellent",
@@ -87,7 +88,7 @@ export function scoreToColor(score: number): string {
 export function qualityProvenanceLabel(
   source: QualitySource | null,
   readingCount: number,
-): string | null {
+): EnglishMessageKey | null {
   if (readingCount > 0 || source === null) return null;
   switch (source) {
     case "osm_smoothness":
@@ -122,7 +123,7 @@ export const HAZARD_TYPES_UI = [
 // filter sidebar. Change here and everything follows.
 export const HAZARD_CONFIG: Record<
   HazardType,
-  { label: string; emoji: string; hex: string }
+  { label: EnglishMessageKey; emoji: string; hex: string }
 > = {
   pothole: { label: "Pothole", emoji: "🕳️", hex: "#ef4444" },
   gravel: { label: "Gravel", emoji: "🪨", hex: "#f59e0b" },
