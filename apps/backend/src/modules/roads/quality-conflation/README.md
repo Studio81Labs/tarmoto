@@ -106,7 +106,7 @@ The job writes `…/czech.quality.osm` after each successful OSM import; point t
 
 ## Re-import orchestration hook
 
-GraphHopper has no re-import API and reuses its `graph-cache` on restart, and it
+GraphHopper has no re-import API and reuses its existing graph on restart, and it
 may run in a sibling container or on a separate VPS — so the backend does not
 restart it directly. After a successful conflation, `QualityConflationProcessor`
 fires a **generic authenticated webhook** (`GraphHopperReimportService`); the
@@ -129,16 +129,23 @@ token/UUID never leaks.
 
 1. make the derived extract GraphHopper's input (shared volume same-host, or
    sync/copy to the remote host), then
-2. delete the `graph-cache` and restart GraphHopper (its start re-imports).
+2. delete GraphHopper's **graph directory** and restart it (its start
+   re-imports). The path depends on launch flags: `graphhopper.sh` forces the
+   graph location to its `GRAPH` default `/data/default-gh` unless `-o` is passed,
+   so the **deployed** image (no `-o`) uses `/data/default-gh` while **local
+   compose** (`-o /data/graph-cache`) uses `/data/graph-cache`. Clearing the wrong
+   one is a silent no-op that leaves the stale graph serving.
 
 Concretely:
 
 - **Same host, sibling container (default).** Point the URL at your orchestrator's
   redeploy hook for the GraphHopper service (this repo deploys via the Coolify
-  API — a Coolify deploy webhook fits), and make that service's start clear
-  `graph-cache` before importing (`rm -rf /data/graph-cache`, per
-  `infra/docker/docker-compose.yml`). Or run a tiny sidecar exposing the URL that
-  does the `rm` + `docker restart tarmoto-graphhopper`.
+  API — a Coolify deploy webhook fits). The deployed image's baked `start.sh`
+  ENTRYPOINT clears `/data/default-gh` on each start, so a plain redeploy
+  re-imports — **but only if that ENTRYPOINT actually runs** (see the runbook's
+  step 4 caveat); otherwise run a tiny sidecar that does `rm -rf /data/default-gh`
+  - `docker restart tarmoto-graphhopper`. (Local compose clears its own
+    `/data/graph-cache` via the compose `-o`.)
 - **Separate VPS.** The same webhook on the other host (its own Coolify/sidecar);
   the only extra step is getting the derived file there (object-store sync or
   `scp` in the receiver) before the restart.

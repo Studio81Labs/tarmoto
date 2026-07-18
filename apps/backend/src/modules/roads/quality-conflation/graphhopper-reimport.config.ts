@@ -5,7 +5,7 @@ import { registerAs } from '@nestjs/config';
  * fired after a successful quality conflation so GraphHopper re-imports the
  * freshly-tagged extract and quality-aware routing stops lagging.
  *
- * GraphHopper has no re-import API and reuses its `graph-cache` on restart, so
+ * GraphHopper has no re-import API and reuses its existing graph on restart, so
  * the actual "clear cache + restart" lives outside the backend. This is
  * deliberately a **generic authenticated webhook** rather than anything
  * GraphHopper- or host-specific: the backend just POSTs (or GETs) a URL, and the
@@ -21,7 +21,7 @@ import { registerAs } from '@nestjs/config';
  * (e.g. Coolify's `/api/v1/deploy`).
  *
  * The receiver contract (documented in the module README): make the derived
- * extract GraphHopper's input, delete the `graph-cache`, and restart.
+ * extract GraphHopper's input, delete its graph directory, and restart.
  */
 export interface GraphHopperReimportConfig {
   webhookUrl: string | null;
