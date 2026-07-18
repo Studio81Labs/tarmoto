@@ -105,8 +105,15 @@ export function useMediaQuery(query: string, ssrDefault = false): boolean {
     const mql = window.matchMedia(query);
     const update = () => setMatches(mql.matches);
     update();
-    mql.addEventListener("change", update);
-    return () => mql.removeEventListener("change", update);
+    // Older Safari / iPadOS WebKit only expose the deprecated
+    // `addListener`/`removeListener` — feature-detect so those (tablet!)
+    // users don't hit a runtime throw on mount.
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", update);
+      return () => mql.removeEventListener("change", update);
+    }
+    mql.addListener(update);
+    return () => mql.removeListener(update);
   }, [query]);
   return matches;
 }
