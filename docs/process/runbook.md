@@ -629,7 +629,8 @@ rule as Valhalla — and is a later step.
   ```
 
   (The conflation writes the output world-readable, so GraphHopper reads it
-  regardless of its own uid, and GraphHopper owns its own `graph-cache`.)
+  regardless of its own uid, and GraphHopper owns its own graph dir
+  `/data/default-gh`.)
 
 - Coolify **"Connect To Predefined Network"** on both apps so the backend reaches
   GraphHopper by network alias (see the ingest networking note above).
@@ -659,22 +660,29 @@ our `config.yml` (baked at `/graphhopper/config.yml`, so the `/data` mount can't
 hide it — it already lists `smoothness` in `graph.encoded_values`, no engine
 change) **plus** a start wrapper
 ([`start.sh`](../../infra/graphhopper/start.sh)) set as `ENTRYPOINT` that clears
-`graph-cache` on each start then launches GraphHopper against
-`/data/routing/cz.quality.osm`. Point the Coolify app at this repo with the
+the graph dir (`/data/default-gh` — see the callout below) on each start then
+launches GraphHopper against `/data/routing/cz.quality.osm`. Point the Coolify app at this repo with the
 **Dockerfile build pack** (build context `infra/graphhopper`), or build + push the
 image to a registry the app pulls from.
 
 - **Persistent storage**: the shared volume at `/data` — holds `routing/` (the
-  extract) + `graph-cache`. `config.yml` is **baked into the image**, not placed
-  here.
+  extract) + the graph dir (`/data/default-gh`). `config.yml` is **baked into the
+  image**, not placed here.
 - **Port** 8989. **Env** `JAVA_OPTS=-Xms1g -Xmx4g` (a CZ import peaks ~4–5 GB —
   size the app + swap accordingly).
 - **Network alias** e.g. `tarmoto-graphhopper`.
 
-The baked start clears `graph-cache` every boot, so the first start imports
+The baked start clears the graph dir every boot, so the first start imports
 (slow, one-time) and every redeploy re-imports the latest conflated extract —
 which is what makes a plain Coolify redeploy the re-import receiver (step 4). No
 entrypoint/command override or `--entrypoint` docker option needed.
+
+> **The graph lives in `/data/default-gh`, not `graph-cache`.** The image's
+> `graphhopper.sh` always forces the graph location to its `GRAPH` default
+> `/data/default-gh` unless `-o` is passed — and neither the stock entrypoint nor
+> our `start.sh` passes `-o` (so both agree). So every cache clear (start.sh's,
+> and the manual one in the re-import note below) must target `/data/default-gh`;
+> clearing `graph-cache` would be a no-op and leave a stale graph.
 
 **3. Wire the backend (Coolify env), then redeploy.**
 
@@ -693,12 +701,32 @@ TARMOTO_GRAPHHOPPER_QUALITY_ENABLED=true                       # request-time: U
 The backend must mount the **same** shared volume at the path holding
 `cz.osm`/`cz.quality.osm`.
 
-**4. The re-import receiver.** GraphHopper has no reload API and reuses
-`graph-cache` on restart, so after a conflation the webhook must clear the cache
-and restart it. With GraphHopper as a Coolify app the receiver is just its
-**Coolify redeploy webhook** (`METHOD=GET`) + the cache-clearing start command in
-step 2 — no sidecar. A non-2xx/unreachable webhook makes the conflation job throw
-(BullMQ retries), so a broken hook is visible, not silent.
+**4. The re-import receiver.** GraphHopper has no reload API and reuses the
+existing graph (`/data/default-gh`) on restart, so after a conflation something
+must **clear `/data/default-gh` and restart** it, or the fresh smoothness never
+reaches the graph.
+
+A plain **Coolify redeploy webhook** (`METHOD=GET`) is sufficient **only if the
+image's `start.sh` ENTRYPOINT is actually running** — that's what does the
+`rm -rf /data/default-gh` on each start. **Verify that before relying on it:** run
+a conflation, let the redeploy fire, and confirm GraphHopper logs a fresh **import**
+(not just a graph _load_). If it only loads the existing graph, the stock
+`graphhopper.sh` entrypoint is running (Coolify isn't honouring the ENTRYPOINT, or
+a leftover `--entrypoint` custom docker option is overriding it), so the redeploy
+does **not** clear the graph and quality routes silently go stale.
+
+In that stock-entrypoint case the receiver must clear the graph itself:
+
+- **Fix the ENTRYPOINT** (preferred) — remove any leftover `--entrypoint` custom
+  docker option so the image's `start.sh` runs; then the plain redeploy hook works
+  as above. Or
+- **Clear-then-redeploy** — point the webhook at a small sidecar (or a manual
+  step) that runs `rm -rf /data/default-gh` on the shared volume **before**
+  triggering the GraphHopper redeploy.
+
+A non-2xx/unreachable webhook makes the conflation job throw (BullMQ retries), so
+a broken hook is visible; but a redeploy that succeeds **without** clearing the
+graph is silent — hence the verify step above.
 
 **5. Enablement order + first run.**
 
