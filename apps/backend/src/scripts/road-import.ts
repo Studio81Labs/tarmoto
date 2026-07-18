@@ -75,9 +75,20 @@ async function main(): Promise<void> {
         region,
         extractDir,
       );
+      // Fail loud, mirroring importAll's empty-dir guard: a deliberate
+      // single-region manual run that finds ZERO tiles for the requested region
+      // (empty/mis-mounted extractDir, an unrefreshed region, or a
+      // TARMOTO_OSM_ROAD_TILE_SPAN_DEG that disagrees with the producer's grid —
+      // so every derived filename is "absent") imported nothing. importRegion
+      // reports that as tilesPresent: 0 without throwing (so importAll can apply
+      // its cross-region guard); on this direct single-region path there is no
+      // such umbrella, so throw here — a non-zero exit an operator / ops
+      // automation can see, not a silent success.
       if (tilesPresent === 0) {
-        console.log(
-          `  (no tile extracts found for ${region.code} in ${extractDir} — nothing imported)`,
+        throw new Error(
+          `No tile extracts found for ${region.code} in ${extractDir} — nothing imported. ` +
+            `Check the shared volume mount, that the refresh has produced ${region.code}'s ` +
+            `tiles, and that TARMOTO_OSM_ROAD_TILE_SPAN_DEG matches the producer.`,
         );
       }
       logResult(region.code, result);
