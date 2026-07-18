@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { In, IsNull, Repository } from 'typeorm';
@@ -17,6 +18,7 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 interface VoteRow {
   road_review_id: string;
@@ -35,6 +37,9 @@ describe('ReviewsService', () => {
   let storage: jest.Mocked<ObjectStorage>;
   let configGet: jest.Mock;
   let privacy: { loadPrivateUserIds: jest.Mock };
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+  >;
   // Default — empty set → no author is private. Per-test overrides
   // populate this with specific user ids to exercise the mask via
   // `PrivacyPreferencesService.loadPrivateUserIds`.
@@ -91,6 +96,7 @@ describe('ReviewsService', () => {
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: ConfigService, useValue: { get: configGet } },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -155,6 +161,12 @@ describe('ReviewsService', () => {
       loadPrivateUserIds: jest
         .fn()
         .mockImplementation(() => Promise.resolve(new Set(privateUserIds))),
+    };
+
+    // Defaults the switch ON so every pre-existing test below is
+    // unaffected; the off-case tests set their own mock resolving `false`.
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
     };
 
     // Test fixtures use `https://app.tarmoto.test/...` everywhere —
@@ -439,6 +451,20 @@ describe('ReviewsService', () => {
       expect(result[0].user_id).toBeNull();
       expect(result[0].is_mine).toBe(false);
     });
+
+    it('returns [] without querying when sys_poi_ratings is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      const result = await service.listForSegment('seg-1', 'user-1');
+
+      expect(result).toEqual([]);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
+      // Graceful hide — no way resolution, no review query at all.
+      expect(segmentRepo.query).not.toHaveBeenCalled();
+      expect(reviewRepo.find).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {
@@ -578,6 +604,20 @@ describe('ReviewsService', () => {
       expect(reviewRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ photos: dto.photos }),
       );
+    });
+
+    it('throws 503 when sys_poi_ratings is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(
+        service.create('user-1', 'seg-1', { rating: 5 }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
+      // Gate is the first statement — no segment lookup, no write.
+      expect(segmentRepo.findOne).not.toHaveBeenCalled();
+      expect(reviewRepo.save).not.toHaveBeenCalled();
     });
   });
 
@@ -831,6 +871,20 @@ describe('ReviewsService', () => {
         }),
       );
     });
+
+    it('throws 503 when sys_poi_ratings is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(
+        service.update('user-1', 'seg-1', { rating: 2 }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
+      // Gate is the first statement — no lookup, no write.
+      expect(reviewRepo.findOne).not.toHaveBeenCalled();
+      expect(reviewRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   describe('delete', () => {
@@ -946,6 +1000,16 @@ describe('ReviewsService', () => {
       await expect(service.delete('user-1', 'seg-1')).resolves.toBeUndefined();
       expect(warn).toHaveBeenCalled();
       warn.mockRestore();
+    });
+
+    it('still works when sys_poi_ratings is off (withdrawal always allowed)', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(service.delete('user-1', 'seg-1')).resolves.not.toThrow();
+
+      expect(reviewRepo.remove).toHaveBeenCalledWith(mockReview);
+      // Withdrawal is never gated — the switch isn't even consulted.
+      expect(featureResolver.isSystemSwitchEnabled).not.toHaveBeenCalled();
     });
   });
 
@@ -1162,6 +1226,25 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test',
         ),
       ).rejects.toThrow('storage backend down');
+    });
+
+    it('throws 503 when sys_poi_ratings is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(
+        service.uploadPhotos(
+          'user-1',
+          'seg-1',
+          [fileA],
+          'https://app.tarmoto.test',
+        ),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
+      // Gate is the first statement — no segment lookup, no storage write.
+      expect(segmentRepo.findOne).not.toHaveBeenCalled();
+      expect(storage.put).not.toHaveBeenCalled();
     });
   });
 
@@ -1404,6 +1487,20 @@ describe('ReviewsService', () => {
       });
       expect(voteInsert.execute).not.toHaveBeenCalled();
     });
+
+    it('throws 503 when sys_poi_ratings is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await expect(
+        service.castVote('viewer-1', 'review-2', true),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
+      // Gate is the first statement — no lookup, no vote written.
+      expect(reviewRepo.findOne).not.toHaveBeenCalled();
+      expect(voteInsert.execute).not.toHaveBeenCalled();
+    });
   });
 
   describe('clearVote', () => {
@@ -1455,6 +1552,42 @@ describe('ReviewsService', () => {
         where: { id: 'review-2', moderation_status: 'visible' },
       });
       expect(voteRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('retracts the vote but returns neutral counts when sys_poi_ratings is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        id: 'review-2',
+        user_id: 'author-2',
+      } as unknown as RoadReview);
+      // Non-zero aggregate: if the switch-off path read it back, the result
+      // would surface 3/1 and leak the hidden counts through this DELETE.
+      voteGroupRows = [
+        {
+          road_review_id: 'review-2',
+          helpful_count: 3,
+          not_helpful_count: 1,
+        },
+      ];
+      viewerVotes = [];
+
+      const result = await service.clearVote('viewer-1', 'review-2');
+
+      // The withdrawal still happens — a kill never traps user content...
+      expect(voteRepo.delete).toHaveBeenCalledWith({
+        user_id: 'viewer-1',
+        road_review_id: 'review-2',
+      });
+      // ...but the aggregate is display data: skipped, neutral counts back,
+      // so the DELETE can't be used to read the hidden vote counts.
+      expect(result).toEqual({
+        helpful_count: 0,
+        not_helpful_count: 0,
+        my_vote: null,
+      });
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
     });
   });
 

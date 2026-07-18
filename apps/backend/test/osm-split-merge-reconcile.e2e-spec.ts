@@ -7,6 +7,7 @@ import {
   type RegionScope,
 } from '../src/modules/roads/osm-import/osm-import.service.js';
 import { RoadsService } from '../src/modules/roads/roads.service.js';
+import { FeatureResolver } from '../src/modules/features/feature-resolver.service.js';
 import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 import { FunZone } from '../src/entities/fun-zone.entity.js';
@@ -165,6 +166,13 @@ describe('OSM split/merge reconciliation (#835)', () => {
         {
           provide: osmRoadImportConfig.KEY,
           useValue: { enabled: true, extractDir: null, regions: [] },
+        },
+        // RoadsService now depends on FeatureResolver (the sys_poi_ratings
+        // gate); this reconcile test never exercises the review aggregate, so
+        // a stub is enough to satisfy DI.
+        {
+          provide: FeatureResolver,
+          useValue: { isSystemSwitchEnabled: () => Promise.resolve(true) },
         },
       ],
     }).compile();

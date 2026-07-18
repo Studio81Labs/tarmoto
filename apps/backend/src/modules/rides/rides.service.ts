@@ -15,6 +15,7 @@ import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Bike } from '../../entities/bike.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { BikesService } from '../bikes/bikes.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
 import {
@@ -83,6 +84,7 @@ export class RidesService {
     private readonly csvService: CsvService,
     private readonly privacy: PrivacyPreferencesService,
     private readonly bikesService: BikesService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async start(userId: string, dto: StartRideDto): Promise<RideResponseDto> {
@@ -165,6 +167,12 @@ export class RidesService {
     userId: string,
     rideId: string,
   ): Promise<void> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled('sys_ride_publishing'))
+    ) {
+      return; // auto-publish disabled — leave the ride private
+    }
+
     const prefs = await this.privacy.loadPreferences(userId);
     if (prefs.default_ride_sharing !== 'public') return;
 

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method */
+import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -6,6 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { AuthGuard } from '../auth/auth.guard.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { SystemSwitchGuard } from '../features/system-switch.guard.js';
+import { REQUIRED_SYSTEM_SWITCH_KEY } from '../features/require-system-switch.decorator.js';
 import { ReviewsController } from './reviews.controller.js';
 import { ReviewsService } from './reviews.service.js';
 
@@ -61,6 +66,16 @@ describe('ReviewsController', () => {
       providers: [
         { provide: ReviewsService, useValue: mockService },
         { provide: ConfigService, useValue: { get: configGet } },
+        // `SystemSwitchGuard` on the photo route is instantiated by Nest DI
+        // when the controller joins the module (its `canActivate` isn't
+        // exercised by these direct method calls), so its `FeatureResolver`
+        // dependency must resolve.
+        {
+          provide: FeatureResolver,
+          useValue: {
+            isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+          },
+        },
         ...authGuardTestProviders,
       ],
     }).compile();
@@ -296,5 +311,32 @@ describe('ReviewsController', () => {
       controller.uploadPhotos(req, 'seg-1', undefined),
     ).rejects.toThrow(BadRequestException);
     expect(service.uploadPhotos).not.toHaveBeenCalled();
+  });
+
+  // The photo route buffers a multipart payload via `FilesInterceptor`.
+  // Guards run in the guard phase, BEFORE interceptors, so gating the route
+  // with `SystemSwitchGuard` (not just the service) is what lets the
+  // `sys_poi_ratings` kill switch reject with 503 before Multer parses and
+  // buffers uploads — the load it has to shed during a photo-spam incident.
+  // These lock that wiring so it can't silently regress to a service-only gate.
+  it('POST /roads/:segmentId/reviews/photos is guarded by SystemSwitchGuard before AuthGuard (pre-Multer rejection)', () => {
+    const guards = Reflect.getMetadata(
+      '__guards__',
+      ReviewsController.prototype.uploadPhotos,
+    ) as unknown[];
+    expect(guards).toBeDefined();
+    expect(guards).toContain(SystemSwitchGuard);
+    // Ordered first so a killed feature sheds the request before any auth
+    // work — a system switch is global and needs no request user.
+    expect(guards[0]).toBe(SystemSwitchGuard);
+    expect(guards).toContain(AuthGuard);
+  });
+
+  it('POST /roads/:segmentId/reviews/photos declares the sys_poi_ratings switch', () => {
+    const key = Reflect.getMetadata(
+      REQUIRED_SYSTEM_SWITCH_KEY,
+      ReviewsController.prototype.uploadPhotos,
+    ) as string | undefined;
+    expect(key).toBe('sys_poi_ratings');
   });
 });

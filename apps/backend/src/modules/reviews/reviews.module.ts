@@ -5,6 +5,7 @@ import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { AccountModule } from '../account/account.module.js';
 import { StorageModule } from '../storage/index.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { ReviewsController } from './reviews.controller.js';
 import { ReviewsService } from './reviews.service.js';
 
@@ -13,6 +14,7 @@ import { ReviewsService } from './reviews.service.js';
     TypeOrmModule.forFeature([RoadReview, RoadReviewVote, RoadSegment]),
     AccountModule,
     StorageModule,
+    FeaturesModule,
   ],
   controllers: [ReviewsController],
   providers: [ReviewsService],
