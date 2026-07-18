@@ -331,10 +331,11 @@ function ExplorerPageInner() {
   // in whenever either is on.
   const rightPanelOpen = showFunZones || showConditionsLayer;
   // Narrow viewports render the info panel as an absolute overlay. While it's
-  // up, drop the map's floating controls (POI/search row, basemap toggle) below
-  // it so they don't paint over its edge — but the panel stays below the
-  // condition popover (z-30) that a Closures/Passes row opens, so focusing a
-  // row still shows the popover without disabling the layer.
+  // up, HIDE the map's floating controls (POI/search row, basemap toggle): on
+  // phone widths the panel covers them entirely, and leaving them mounted lets
+  // keyboard users tab into controls hidden behind the panel. The panel itself
+  // stays below the condition popover (z-30) a Closures/Passes row opens, so
+  // focusing a row still shows the popover without disabling the layer.
   const narrowInfoPanelOverlay =
     rightPanelOpen && !isWideViewport && !narrowDrawing;
   // Imperative handle to the MapLibre camera. `MapCanvas` reads
@@ -910,8 +911,8 @@ function ExplorerPageInner() {
               AuthGuard); the chips browse the public `/poi/in-bbox` store so
               they show for everyone. Mirrors the planner/preview MapToolbar. */}
           <div
-            className={`absolute left-3 right-14 top-3 flex items-center gap-2 ${
-              narrowInfoPanelOverlay ? "z-10" : "z-30"
+            className={`absolute left-3 right-14 top-3 items-center gap-2 ${
+              narrowInfoPanelOverlay ? "hidden" : "z-30 flex"
             }`}
           >
             {isAuthenticated ? (
@@ -1107,8 +1108,8 @@ function ExplorerPageInner() {
               (which restores the panel via `startDrawRegion`'s counterpart). */}
           {!isWideViewport && narrowDrawing && (
             <div
-              className={`absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm ${
-                narrowInfoPanelOverlay ? "z-10" : "z-30"
+              className={`absolute bottom-8 left-1/2 -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-cream/95 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm ${
+                narrowInfoPanelOverlay ? "hidden" : "z-30 flex"
               }`}
             >
               <Square size={12} className="shrink-0 text-accent" aria-hidden />
@@ -1133,11 +1134,10 @@ function ExplorerPageInner() {
             the pill in the top overlay dismisses the panel). */}
           {narrowInfoPanelOverlay && (
             <aside
-              // z-20: above the map controls (which drop to z-10 while this
-              // overlay is open, so they don't paint over its edge) but below
-              // the condition popover (z-30) a Closures/Passes row opens and
-              // below modals (z-40/z-50) — so focusing a row shows the popover
-              // above the panel without disabling the conditions layer.
+              // z-20: below the condition popover (z-30) a Closures/Passes row
+              // opens (so focusing a row shows it on the map above the panel)
+              // and below modals (z-40/z-50). The map controls are hidden while
+              // this overlay is up, so nothing paints over the panel.
               className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
               aria-label={t("Info layers")}
             >
