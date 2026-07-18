@@ -239,6 +239,9 @@ describe('ClosuresService', () => {
       const result = await service.list({});
       expect(result).toEqual([]);
       expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_conditions',
+      );
     });
   });
 
@@ -289,6 +292,9 @@ describe('ClosuresService', () => {
         NotFoundException,
       );
       expect(repo.findOne).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_conditions',
+      );
     });
   });
 
@@ -319,6 +325,9 @@ describe('ClosuresService', () => {
         advisory_count: 0,
       });
       expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_conditions',
+      );
     });
   });
 
@@ -394,6 +403,9 @@ describe('ClosuresService', () => {
       const result = await service.exclusionPolygons(bbox);
       expect(result).toEqual([]);
       expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_nap_routing_avoidance',
+      );
     });
   });
 

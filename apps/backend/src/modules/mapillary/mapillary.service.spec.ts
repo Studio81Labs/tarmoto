@@ -71,15 +71,18 @@ describe('MapillaryService', () => {
 
     it('returns NO_IMAGERY without calling the provider when sys_mapillary_previews is off', async () => {
       const nearestImage = jest.fn();
-      const service = makeService(
-        { nearestImage },
-        { isSystemSwitchEnabled: jest.fn().mockResolvedValue(false) },
-      );
+      const featureResolver = {
+        isSystemSwitchEnabled: jest.fn().mockResolvedValue(false),
+      };
+      const service = makeService({ nearestImage }, featureResolver);
 
       const result = await service.segmentImagery(46.5, 10.4, 90);
 
       expect(result).toEqual(NO_IMAGERY);
       expect(nearestImage).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_mapillary_previews',
+      );
     });
   });
 
@@ -108,13 +111,16 @@ describe('MapillaryService', () => {
 
     it('returns null without fetching when sys_mapillary_previews is off', async () => {
       const thumbnail = jest.fn();
-      const service = makeService(
-        { thumbnail },
-        { isSystemSwitchEnabled: jest.fn().mockResolvedValue(false) },
-      );
+      const featureResolver = {
+        isSystemSwitchEnabled: jest.fn().mockResolvedValue(false),
+      };
+      const service = makeService({ thumbnail }, featureResolver);
 
       expect(await service.thumbnail('img-1')).toBeNull();
       expect(thumbnail).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_mapillary_previews',
+      );
     });
   });
 });

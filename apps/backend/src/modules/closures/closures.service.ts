@@ -105,7 +105,9 @@ export class ClosuresService {
     dto: CheckRouteClosuresDto,
   ): Promise<CheckRouteClosuresResponseDto> {
     // Same operator kill switch as `list` — the route-check panel degrades
-    // to "no closures found" rather than erroring.
+    // to "no closures found" rather than erroring. Intentionally checked
+    // before the route-length validation below, so an off switch always
+    // wins with the same degraded shape regardless of route validity.
     if (
       !(await this.featureResolver.isSystemSwitchEnabled('sys_nap_conditions'))
     ) {

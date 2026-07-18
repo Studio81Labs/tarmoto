@@ -201,6 +201,9 @@ describe('WeatherService', () => {
         typed_alerts: [],
       });
       expect(provider.getCurrentWeather).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_weather_provider',
+      );
     });
   });
 
