@@ -661,7 +661,7 @@ function SeasonalBanner({
           </div>
           <ProgressBar
             fraction={fraction}
-            ariaLabel={`${format.percent(fraction)} complete`}
+            ariaLabel={t("{pct} complete", { pct: format.percent(fraction) })}
           />
         </div>
       </div>
@@ -774,7 +774,10 @@ function ChallengeCard({
 
       <div
         role="progressbar"
-        aria-label={`${challenge.name}: ${format.percent(fraction)} complete`}
+        aria-label={t("{name}: {pct} complete", {
+          name: challenge.name,
+          pct: format.percent(fraction),
+        })}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(safePercent)}

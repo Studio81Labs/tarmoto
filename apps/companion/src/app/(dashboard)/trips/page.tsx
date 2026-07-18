@@ -795,7 +795,7 @@ function FolderChip({
             type="button"
             data-menu-trigger
             onClick={handleToggleMenu}
-            aria-label={`Folder actions for ${label}`}
+            aria-label={t("Folder actions for {label}", { label })}
             className="absolute right-2 rounded p-0.5 text-fg-dim opacity-60 transition hover:bg-paper hover:text-ink hover:opacity-100 focus:opacity-100"
           >
             <MoreVertical size={11} />
@@ -1052,7 +1052,7 @@ function TripCard({
         <button
           type="button"
           data-menu-trigger
-          aria-label={`Trip actions for ${trip.name}`}
+          aria-label={t("Trip actions for {name}", { name: trip.name })}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();

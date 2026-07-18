@@ -852,7 +852,7 @@ function ReviewEditor({
                   onClick={() => onRemovePhoto(index)}
                   disabled={disabled || uploading}
                   className="absolute right-1 top-1 rounded-full bg-ink/80 p-1 text-cream transition hover:bg-rose-500/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label={`Remove photo ${index + 1}`}
+                  aria-label={t("Remove photo {n}", { n: index + 1 })}
                 >
                   <X size={12} />
                 </button>
@@ -1007,7 +1007,9 @@ function ReviewCard({
         </div>
         <div
           className="flex shrink-0 items-center gap-0.5"
-          aria-label={`${Math.round(review.rating)} out of 5`}
+          aria-label={t("{rating} out of 5", {
+            rating: Math.round(review.rating),
+          })}
         >
           {[1, 2, 3, 4, 5].map((n) => {
             const filled = n <= Math.round(review.rating);

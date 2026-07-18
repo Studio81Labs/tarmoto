@@ -924,7 +924,7 @@ function CalendarHeatmap({ days, label, format }: CalendarHeatmapProps) {
           aspectRatio: `${weeks} / 7`,
         }}
         role="img"
-        aria-label={`Riding calendar — ${label}`}
+        aria-label={t("Riding calendar — {label}", { label })}
       >
         {cells.map((cell, index) => (
           <CalendarCell

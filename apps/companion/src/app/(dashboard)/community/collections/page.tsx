@@ -389,7 +389,7 @@ function CollectionCard({
       <button
         type="button"
         data-menu-trigger
-        aria-label={`Actions for ${collection.title}`}
+        aria-label={t("Actions for {title}", { title: collection.title })}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -487,7 +487,7 @@ function FollowedCollectionCard({
           e.stopPropagation();
           onUnfollow();
         }}
-        aria-label={`Unfollow ${collection.title}`}
+        aria-label={t("Unfollow {title}", { title: collection.title })}
         className="absolute top-3 right-3 p-1.5 rounded-lg text-fg-dim hover:text-red-400 hover:bg-paper transition"
       >
         <Trash2 size={16} />

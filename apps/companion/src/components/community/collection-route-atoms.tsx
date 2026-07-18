@@ -62,7 +62,7 @@ export function RouteThumb({
           preserveAspectRatio="xMidYMid slice"
           className="h-full w-full"
           role="img"
-          aria-label={`${label} route preview`}
+          aria-label={t("{label} route preview", { label })}
         >
           <path
             d={thumbPath(line)}

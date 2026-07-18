@@ -61,7 +61,7 @@ export function TripRouteOverview({
         <svg
           viewBox={preview.viewBox}
           role="img"
-          aria-label={`${label} route preview`}
+          aria-label={t("{label} route preview", { label })}
           className={`h-auto w-full rounded-2xl ${svgBgClass}`}
         >
           <path
