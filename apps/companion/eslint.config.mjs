@@ -50,6 +50,24 @@ const restrictedSyntaxSelectors = [
     message:
       "Use @tarmoto/ui Textarea instead of a native <textarea>. If this element is deliberate (dark surface, read-only embed code), add a disable comment with the reason.",
   },
+  // i18n bypass guard (PR 3b): user-facing text on these JSX props must go
+  // through t()/tDynamic, not a raw string literal — the typed t() flip
+  // cannot catch a string that never reaches t(). Flags a string literal
+  // (direct or in braces) that starts with a letter, so symbols, empty
+  // alt="", and interpolated/`t(...)` values pass. Deliberate raw text
+  // (a brand name, a non-translatable token) carries a disable comment.
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label)$/] > Literal[value=/^[A-Za-z]/]",
+    message:
+      "Wrap user-facing text on label/title/alt/placeholder/aria-label with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label)$/] > JSXExpressionContainer > Literal[value=/^[A-Za-z]/]",
+    message:
+      "Wrap user-facing text on label/title/alt/placeholder/aria-label with t() (or tDynamic for a runtime key). If this literal is deliberately not translatable, add a disable comment with the reason.",
+  },
 ];
 
 export default [
