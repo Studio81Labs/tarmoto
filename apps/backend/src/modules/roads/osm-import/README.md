@@ -178,9 +178,11 @@ osmium extract -b 12.04,48.50,18.91,51.11 cz-road.osm.pbf \
 ```
 
 Repeat per region in the active set. The `apps/ingest` scheduled refresh
-(`refresh-road-extracts.ts`, `pnpm road:refresh`) automates exactly this (tiling
-each region), for
-every configured region, atomically.
+(`refresh-road-extracts.ts` — run in-container as `node
+apps/ingest/dist/scripts/refresh-road-extracts.js`, or from the repo root as
+`pnpm --filter @tarmoto/ingest-service road:refresh`; it is not a root
+`package.json` script) automates exactly this (tiling each region), for every
+configured region, atomically.
 
 ## Config
 
