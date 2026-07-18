@@ -12,6 +12,7 @@ import {
 import { AppDataSource } from '../src/data-source.js';
 import { OsmImportService } from '../src/modules/roads/osm-import/osm-import.service.js';
 import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
+import { regionPolygon } from '../src/modules/roads/osm-import/region-polygons.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 
 /**
@@ -37,16 +38,23 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  * assertion purely about the country-POLYGON scope (#1033). The disjoint-tile
  * no-wipe property is covered separately in `osm-tile-scope-reconcile.e2e-spec.ts`.
  *
- * Isolation (Codex P2): `importRegion` drives the SAME production reconcile
- * this test is proving, scoped to CZ's and SK's REAL country polygons — so if
- * the DB already holds live OSM road rows there (CZ is the launch region, the
- * most likely to be populated on a developer DB), this test's tiny synthetic
- * extract would make them look "removed" and tombstone them, and cleanup only
- * deletes this test's own tracked way ids, never restoring collateral. Each
- * test's `beforeEach` therefore DELETEs every `road_segments` row in the CZ ∪
- * SK bbox first, so the test starts from a clean scope and there's nothing
- * else for `reconcile` to tombstone — these specs own that scope and must run
- * against a disposable test DB, never one with road data you care about.
+ * Isolation (Codex P2 — non-destructive): `importRegion` drives the SAME
+ * production reconcile this test is proving, scoped to CZ's and SK's REAL
+ * country polygons — so if the DB already holds live OSM road rows there (CZ
+ * is the launch region, the most likely to be populated on a developer DB),
+ * this test's tiny synthetic extract would make them look "removed" and
+ * tombstone them. Rather than clearing that scope (a hard DELETE risks real
+ * rows and their FK history — surface_readings, road_reviews, hazard_reports,
+ * fun_zone_roads — or an FK-constraint crash), `beforeAll` COUNTs the live
+ * OSM rows already in CZ's and SK's polygon ∩ bbox scope and THROWS if either
+ * is non-empty, refusing to run rather than mutating a populated DB. Cleanup
+ * (`afterAll`) only ever deletes this spec's own tracked synthetic way ids,
+ * never a scope-wide sweep, so nothing but the fixtures is ever touched. This
+ * spec's scope (CZ ∪ SK) is disjoint from the other reconcile e2e specs'
+ * scopes (the RO tiles / the synthetic Alps region), so it's safe under
+ * Jest's file-level parallelism. Must still run against a disposable test DB
+ * with no imported OSM roads in CZ/SK — the guard just makes "populated" fail
+ * loudly instead of corrupting data.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
@@ -106,21 +114,48 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     );
   }
 
-  /** DELETE every OSM-owned road_segments row (live or tombstoned) whose
-   *  geometry overlaps `region`'s bbox — this spec owns the CZ/SK scope (see
-   *  the isolation note above), so each test starts clean and `reconcile` has
-   *  nothing pre-existing left to tombstone. Scoped to `osm_way_id IS NOT
-   *  NULL`: crowd-sourced rows are never reconcile candidates (the importer's
-   *  own existing-row loaders exclude them the same way), so narrowing here
-   *  keeps this from nuking real demo/seed data on a developer DB. */
-  async function clearRegionScope(region: PoiImportRegion): Promise<void> {
-    const { minLng, minLat, maxLng, maxLat } = region.bbox;
+  /** DELETE this spec's own tracked synthetic way ids (both cases below) —
+   *  never a scope-wide sweep. Used both as a crash-recovery pre-clean (a
+   *  prior run that died mid-test could leave these live, which would
+   *  otherwise wedge the guard below) and as the post-run cleanup. */
+  async function deleteTrackedWays(): Promise<void> {
     await dataSource.query(
-      `DELETE FROM road_segments
-       WHERE osm_way_id IS NOT NULL
-         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-      [minLng, minLat, maxLng, maxLat],
+      `DELETE FROM road_segments WHERE osm_way_id = ANY($1::bigint[])`,
+      [trackedWayIds],
     );
+  }
+
+  /** Non-destructive precondition guard (Codex P2): COUNT the live, OSM-owned
+   *  `road_segments` rows already inside `region`'s country polygon ∩ bbox —
+   *  the EXACT scope `importRegion`/`importTile` reconciles (at this file's
+   *  `TILE_SPAN_DEG` the region's sole tile bbox equals `region.bbox`, per the
+   *  header note above) — and THROW if any exist. Called before any fixture
+   *  is written (see `beforeAll`), so a non-zero count is always genuine
+   *  collateral, never this spec's own rows; refusing to run protects that
+   *  data instead of tombstoning it. Scoped to `osm_way_id IS NOT NULL AND
+   *  deactivated_at IS NULL`: the exact candidate set `reconcile` itself loads
+   *  (crowd-sourced and already-tombstoned rows are never reconcile
+   *  candidates), so this can never false-positive on demo/seed data. */
+  async function assertCleanScope(region: PoiImportRegion): Promise<void> {
+    const { minLng, minLat, maxLng, maxLat } = region.bbox;
+    const rows: Array<{ count: number }> = await dataSource.query(
+      `SELECT COUNT(*)::int AS count
+       FROM road_segments
+       WHERE osm_way_id IS NOT NULL
+         AND deactivated_at IS NULL
+         AND ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+         AND ST_Intersects(geom, ST_MakeEnvelope($2, $3, $4, $5, 4326))`,
+      [regionPolygon(region.code), minLng, minLat, maxLng, maxLat],
+    );
+    const count = rows[0]!.count;
+    if (count > 0) {
+      throw new Error(
+        `osm-region-overlap-reconcile e2e requires a clean scope — found ` +
+          `${count} pre-existing OSM road_segments in ${region.code}'s ` +
+          `polygon ∩ bbox; run against a disposable DB with no imported OSM ` +
+          `roads in this area.`,
+      );
+    }
   }
 
   beforeAll(async () => {
@@ -145,20 +180,14 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     service = module.get(OsmImportService);
     dataSource = module.get(DataSource);
     dir = await mkdtemp(join(tmpdir(), 'road-overlap-e2e-'));
-  });
 
-  beforeEach(async () => {
-    await clearRegionScope(CZ);
-    await clearRegionScope(SK);
+    await deleteTrackedWays();
+    await assertCleanScope(CZ);
+    await assertCleanScope(SK);
   });
 
   afterAll(async () => {
-    await dataSource.query(
-      `DELETE FROM road_segments WHERE osm_way_id = ANY($1::bigint[])`,
-      [trackedWayIds],
-    );
-    await clearRegionScope(CZ);
-    await clearRegionScope(SK);
+    await deleteTrackedWays();
     await rm(dir, { recursive: true, force: true });
     await module?.close();
   });

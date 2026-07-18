@@ -13,6 +13,7 @@ import {
 import { AppDataSource } from '../src/data-source.js';
 import { OsmImportService } from '../src/modules/roads/osm-import/osm-import.service.js';
 import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
+import { regionPolygon } from '../src/modules/roads/osm-import/region-polygons.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 
 /**
@@ -37,15 +38,22 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  * Real Postgres/PostGIS, driven through the public `importTile` so the whole path
  * — tile scope → extract parse → combined polygon∩bbox filter → reconcile — runs.
  *
- * Isolation (Codex P2): `importTile` drives the SAME production reconcile this
- * test is proving, scoped to RO's real country polygon ∩ the Bucharest/Cluj
- * tile bboxes — so if the DB already holds live OSM road rows there (RO is a
- * configured import region), this test's tiny synthetic extract would make
- * them look "removed" and tombstone them, and cleanup only deletes this test's
- * own tracked way ids, never restoring collateral. `beforeEach` therefore
- * DELETEs every `road_segments` row in either tile's bbox first, so the test
- * starts from a clean scope — this spec owns that scope and must run against a
- * disposable test DB, never one with road data you care about.
+ * Isolation (Codex P2 — non-destructive): `importTile` drives the SAME
+ * production reconcile this test is proving, scoped to RO's real country
+ * polygon ∩ the Bucharest/Cluj tile bboxes — so if the DB already holds live
+ * OSM road rows there (RO is a configured import region), this test's tiny
+ * synthetic extract would make them look "removed" and tombstone them. Rather
+ * than clearing that scope (a hard DELETE risks real rows and their FK
+ * history, or an FK-constraint crash), `beforeAll` COUNTs the live OSM rows
+ * already in EACH tile's polygon ∩ bbox scope and THROWS if either is
+ * non-empty, refusing to run rather than mutating a populated DB. Cleanup
+ * (`afterAll`) only ever deletes this spec's own tracked synthetic way ids,
+ * never a scope-wide sweep. This spec's scope (the Bucharest r0c2 / Cluj r1c1
+ * RO tiles) is disjoint from the other reconcile e2e specs' scopes (CZ ∪ SK /
+ * the Timișoara tile / the synthetic Alps region), so it's safe under Jest's
+ * file-level parallelism. Must still run against a disposable test DB with no
+ * imported OSM roads in RO — the guard just makes "populated" fail loudly
+ * instead of corrupting data.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
@@ -135,22 +143,36 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
     );
   }
 
-  /** DELETE every OSM-owned road_segments row (live or tombstoned) whose
-   *  geometry overlaps `tile`'s bbox — this spec owns the Bucharest/Cluj tile
-   *  scopes (see the isolation note above), so each test starts clean and
-   *  `reconcile` has nothing pre-existing left to tombstone. Scoped to
-   *  `osm_way_id IS NOT NULL`: crowd-sourced rows are never reconcile
-   *  candidates (the importer's own existing-row loaders exclude them the
-   *  same way), so narrowing here keeps this from nuking real demo/seed data
-   *  on a developer DB. */
-  async function clearTileScope(tile: RoadTile): Promise<void> {
+  /** Non-destructive precondition guard (Codex P2): COUNT the live, OSM-owned
+   *  `road_segments` rows already inside `tile`'s country polygon ∩ bbox — the
+   *  EXACT scope `importTile` reconciles — and THROW if any exist. Called
+   *  before any fixture is written (see `beforeAll`), so a non-zero count is
+   *  always genuine collateral, never this spec's own rows; refusing to run
+   *  protects that data instead of tombstoning it. Scoped to `osm_way_id IS
+   *  NOT NULL AND deactivated_at IS NULL`: the exact candidate set
+   *  `reconcile` itself loads (crowd-sourced and already-tombstoned rows are
+   *  never reconcile candidates), so this can never false-positive on demo/
+   *  seed data. */
+  async function assertCleanScope(tile: RoadTile): Promise<void> {
     const { minLng, minLat, maxLng, maxLat } = tile.bbox;
-    await dataSource.query(
-      `DELETE FROM road_segments
+    const rows: Array<{ count: number }> = await dataSource.query(
+      `SELECT COUNT(*)::int AS count
+       FROM road_segments
        WHERE osm_way_id IS NOT NULL
-         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-      [minLng, minLat, maxLng, maxLat],
+         AND deactivated_at IS NULL
+         AND ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+         AND ST_Intersects(geom, ST_MakeEnvelope($2, $3, $4, $5, 4326))`,
+      [regionPolygon(RO.code), minLng, minLat, maxLng, maxLat],
     );
+    const count = rows[0]!.count;
+    if (count > 0) {
+      throw new Error(
+        `osm-tile-scope-reconcile e2e requires a clean scope — found ` +
+          `${count} pre-existing OSM road_segments in RO tile ` +
+          `r${tile.row}c${tile.col}'s polygon ∩ bbox; run against a ` +
+          `disposable DB with no imported OSM roads in this area.`,
+      );
+    }
   }
 
   beforeAll(async () => {
@@ -180,18 +202,16 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
     tileA = tileContaining(tiles, BUCHAREST.lng, BUCHAREST.lat);
     tileB = tileContaining(tiles, CLUJ.lng, CLUJ.lat);
 
+    // Crash-recovery: a prior run that died mid-test could leave this spec's
+    // own tracked fixtures live; clear them by exact id (never collateral —
+    // see deleteTrackedWays) before the guard below inspects the scope.
     await deleteTrackedWays();
-  });
-
-  beforeEach(async () => {
-    await clearTileScope(tileA);
-    await clearTileScope(tileB);
+    await assertCleanScope(tileA);
+    await assertCleanScope(tileB);
   });
 
   afterAll(async () => {
     await deleteTrackedWays();
-    await clearTileScope(tileA);
-    await clearTileScope(tileB);
     await rm(dir, { recursive: true, force: true });
     await module?.close();
   });

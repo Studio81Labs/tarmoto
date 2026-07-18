@@ -13,6 +13,7 @@ import {
 import { AppDataSource } from '../src/data-source.js';
 import { OsmImportService } from '../src/modules/roads/osm-import/osm-import.service.js';
 import { osmRoadImportConfig } from '../src/modules/roads/osm-import/osm-import.config.js';
+import { regionPolygon } from '../src/modules/roads/osm-import/region-polygons.js';
 import { RoadSegment } from '../src/entities/road-segment.entity.js';
 
 /**
@@ -30,12 +31,27 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  * A remote, tightly-clustered interior corner of Romania (Timișoara, tile r0c0 at
  * a 2.5° span) is used so this test's roads occupy their own tile, disjoint from
  * the other reconcile e2e specs (Bucharest r0c2 / Cluj r1c1 / CZ / SK / the
- * synthetic split-merge scope). Each test starts by clearing that tile's scope, so
- * the guard's denominator (the in-scope existing rows) is exactly this test's seeded
- * roads — independent of any seed/other data. The same DELETE also protects a
- * developer DB that already holds live RO road rows there (Codex P2 — see the
- * isolation note in `osm-region-overlap-reconcile.e2e-spec.ts`): this spec owns
- * the Timișoara tile scope and must run against a disposable test DB.
+ * synthetic split-merge scope). Each test's `afterEach` deletes only this spec's
+ * own tracked synthetic way ids (the 3-road sparse cluster + the 60-road dense
+ * cluster) — never a scope-wide sweep — so the guard's denominator (the in-scope
+ * existing rows) is exactly this test's seeded roads, independent of any seed/
+ * other data.
+ *
+ * Isolation (Codex P2 — non-destructive): `importTile` drives the SAME
+ * production reconcile this test is proving, scoped to RO's real country
+ * polygon ∩ this tile's bbox — so if the DB already holds live OSM road rows
+ * there (RO is a configured import region), this test's tiny synthetic
+ * extract would make them look "removed" and tombstone them. Rather than
+ * clearing that scope (a hard DELETE risks real rows and their FK history, or
+ * an FK-constraint crash), `beforeEach` COUNTs the live OSM rows already in
+ * the tile's polygon ∩ bbox scope and THROWS if non-empty, refusing to run
+ * rather than mutating a populated DB — safe to run before every test because
+ * `afterEach` always leaves the scope holding nothing but (at most) this
+ * spec's own fixtures, which it just deleted. This spec's Timișoara tile
+ * scope is disjoint from the other reconcile e2e specs' scopes, so it's safe
+ * under Jest's file-level parallelism. Must still run against a disposable
+ * test DB with no imported OSM roads in this area — the guard just makes
+ * "populated" fail loudly instead of corrupting data.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before `pnpm --filter
  * @tarmoto/backend test:e2e`.
@@ -71,6 +87,14 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
     lng: 21.22 + i * 0.0006,
     lat: 45.75,
   }));
+
+  // Every synthetic way id this spec's tests can ever create (the sparse trio +
+  // the dense 60) — the ONLY rows `deleteFixtureRows` ever touches, by exact id,
+  // never a scope-wide sweep.
+  const allFixtureWayIds = [
+    ...trackedWayIds,
+    ...denseRoads.map((r) => String(r.wayId)),
+  ];
 
   /** One drivable way with a single ~100 m N–S segment at `(lat,lng)`. Latitude
    *  is offset by ~0.0009° (≈100 m); a longitude offset would shrink with cos(lat)
@@ -110,23 +134,50 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
     );
   }
 
-  /** Clear every OSM-owned road_segment (live or tombstoned) whose bbox
-   *  overlaps the test tile, so each test's in-scope existing set is exactly
-   *  its own seeded roads — the mass-wipe fraction denominator is then
-   *  deterministic. Bounded to this test's remote tile, so it can't touch
-   *  another spec's rows. Scoped to `osm_way_id IS NOT NULL`: crowd-sourced
-   *  rows are never reconcile candidates (the importer's own existing-row
-   *  loaders exclude them the same way, so they'd never affect the fraction
-   *  denominator anyway), so narrowing here keeps this from nuking real
-   *  demo/seed data on a developer DB. */
-  async function clearTileScope(): Promise<void> {
-    const { minLng, minLat, maxLng, maxLat } = testTile.bbox;
+  /** DELETE this spec's own tracked synthetic way ids (the sparse trio + the
+   *  dense 60) — never a scope-wide sweep. Run after EVERY test (`afterEach`)
+   *  so the tile is empty again before the next test's `assertCleanScope`
+   *  guard runs — the mass-wipe fraction denominator each test computes is
+   *  then exactly its own seeded roads, independent of any sibling test or
+   *  other data — and once more as a crash-recovery pre-clean in `beforeAll`
+   *  (a prior run that died mid-test could leave these live, which would
+   *  otherwise wedge the guard). */
+  async function deleteFixtureRows(): Promise<void> {
     await dataSource.query(
-      `DELETE FROM road_segments
-       WHERE osm_way_id IS NOT NULL
-         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-      [minLng, minLat, maxLng, maxLat],
+      `DELETE FROM road_segments WHERE osm_way_id = ANY($1::bigint[])`,
+      [allFixtureWayIds],
     );
+  }
+
+  /** Non-destructive precondition guard (Codex P2): COUNT the live, OSM-owned
+   *  `road_segments` rows already inside the test tile's country polygon ∩
+   *  bbox — the EXACT scope `importTile` reconciles — and THROW if any exist.
+   *  Runs in `beforeEach`, so it only ever sees genuine collateral: `afterEach`
+   *  guarantees the previous test (if any) left this tile holding nothing but
+   *  what it just deleted. Scoped to `osm_way_id IS NOT NULL AND
+   *  deactivated_at IS NULL`: the exact candidate set `reconcile` itself loads
+   *  (crowd-sourced and already-tombstoned rows are never reconcile
+   *  candidates), so this can never false-positive on demo/seed data. */
+  async function assertCleanScope(): Promise<void> {
+    const { minLng, minLat, maxLng, maxLat } = testTile.bbox;
+    const rows: Array<{ count: number }> = await dataSource.query(
+      `SELECT COUNT(*)::int AS count
+       FROM road_segments
+       WHERE osm_way_id IS NOT NULL
+         AND deactivated_at IS NULL
+         AND ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+         AND ST_Intersects(geom, ST_MakeEnvelope($2, $3, $4, $5, 4326))`,
+      [regionPolygon(RO.code), minLng, minLat, maxLng, maxLat],
+    );
+    const count = rows[0]!.count;
+    if (count > 0) {
+      throw new Error(
+        `osm-authoritative-empty-reconcile e2e requires a clean scope — ` +
+          `found ${count} pre-existing OSM road_segments in RO tile ` +
+          `r${testTile.row}c${testTile.col}'s polygon ∩ bbox; run against a ` +
+          `disposable DB with no imported OSM roads in this area.`,
+      );
+    }
   }
 
   beforeAll(async () => {
@@ -172,14 +223,23 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
         r.lat <= tile.bbox.maxLat;
       if (!inTile) throw new Error(`road ${r.wayId} is not in the test tile`);
     }
+
+    // Crash-recovery: a prior run that died mid-test could leave this spec's
+    // own tracked fixtures live; clear them by exact id (never collateral —
+    // see deleteFixtureRows) before the first test's guard inspects the scope.
+    await deleteFixtureRows();
   });
 
   beforeEach(async () => {
-    await clearTileScope();
+    await assertCleanScope();
+  });
+
+  afterEach(async () => {
+    await deleteFixtureRows();
   });
 
   afterAll(async () => {
-    await clearTileScope();
+    await deleteFixtureRows();
     await rm(dir, { recursive: true, force: true });
     await module?.close();
   });

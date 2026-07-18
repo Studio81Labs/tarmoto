@@ -20,15 +20,21 @@ import type { OsmWay } from '../src/modules/roads/osm-import/segment-rows.js';
  * write, both against real Postgres/PostGIS, so the only meaningful test drives
  * the real queries.
  *
- * Isolation (Codex P2): `importFrom` drives the SAME production reconcile this
- * test is proving, scoped to the explicit REGION below — a real ~30 km patch of
- * map near the Alps, not a synthetic no-man's-land. If the DB already holds
- * live OSM road rows there, this test's tiny two-way snapshot would make them
- * look "removed" and tombstone them, and cleanup only deletes this test's own
- * tracked row ids, never restoring collateral. `beforeEach` therefore DELETEs
- * every `road_segments` row in REGION's bbox first, so the test starts from a
- * clean scope — this spec owns that scope and must run against a disposable
- * test DB, never one with road data you care about.
+ * Isolation (Codex P2 — non-destructive): `importFrom` drives the SAME
+ * production reconcile this test is proving, scoped to the explicit REGION
+ * below — a real ~30 km patch of map near the Alps, not a synthetic
+ * no-man's-land. If the DB already holds live OSM road rows there, this
+ * test's tiny two-way snapshot would make them look "removed" and tombstone
+ * them. Rather than clearing that scope (a hard DELETE risks real rows and
+ * their FK history — surface_readings — or an FK-constraint crash),
+ * `beforeAll` COUNTs the live OSM rows already in REGION's polygon ∩ bbox
+ * scope and THROWS if non-empty, refusing to run rather than mutating a
+ * populated DB. Cleanup (`afterAll`) only ever deletes this run's own tracked
+ * row/way ids, never a scope-wide sweep. REGION is a remote synthetic patch
+ * disjoint from the other reconcile e2e specs' scopes (CZ ∪ SK / the RO
+ * tiles), so it's safe under Jest's file-level parallelism. Must still run
+ * against a disposable test DB with no imported OSM roads in this area — the
+ * guard just makes "populated" fail loudly instead of corrupting data.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate` before running
  * `pnpm --filter @tarmoto/backend test:e2e`.
@@ -91,23 +97,60 @@ describe('OSM split/merge reconciliation (#835)', () => {
     );
   }
 
-  /** DELETE every OSM-owned road_segments row (live or tombstoned) whose
-   *  geometry overlaps REGION's bbox — this spec owns that scope (see the
-   *  isolation note above), so each test starts clean and `reconcile` has
-   *  nothing pre-existing left to tombstone. REGION's bbox IS its polygon
-   *  here (a synthetic rectangle), so this clears exactly reconcile's real
-   *  scope. Scoped to `osm_way_id IS NOT NULL`: crowd-sourced rows are never
-   *  reconcile candidates (the importer's own existing-row loaders exclude
-   *  them the same way), so narrowing here keeps this from nuking real
-   *  demo/seed data on a developer DB. */
-  async function clearRegionScope(): Promise<void> {
-    const [minLng, minLat, maxLng, maxLat] = REGION.bbox;
+  /** This test's synthetic OSM way ids — 8100 (the original way), 8199 (the
+   *  stale way), and 8200 (8100's re-keyed identity after the simulated
+   *  split/merge). Used only for a crash-recovery pre-clean (by exact id,
+   *  never a scope-wide sweep) before the guard below inspects REGION's
+   *  scope — the PRIMARY cleanup is `afterAll`'s `trackedIds` (this run's
+   *  actual row uuids), which also covers the FK `surface_readings` row this
+   *  test attaches. */
+  const FIXTURE_WAY_IDS = ['8100', '8199', '8200'];
+
+  /** DELETE this spec's own fixture rows by their known synthetic
+   *  `osm_way_id`s — never a scope-wide sweep. `surface_readings` is cleared
+   *  first (FK) via a subquery on the same ids. */
+  async function deleteFixtureWayIds(): Promise<void> {
     await dataSource.query(
-      `DELETE FROM road_segments
-       WHERE osm_way_id IS NOT NULL
-         AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
-      [minLng, minLat, maxLng, maxLat],
+      `DELETE FROM surface_readings WHERE road_segment_id IN (
+         SELECT id FROM road_segments WHERE osm_way_id = ANY($1::bigint[])
+       )`,
+      [FIXTURE_WAY_IDS],
     );
+    await dataSource.query(
+      `DELETE FROM road_segments WHERE osm_way_id = ANY($1::bigint[])`,
+      [FIXTURE_WAY_IDS],
+    );
+  }
+
+  /** Non-destructive precondition guard (Codex P2): COUNT the live, OSM-owned
+   *  `road_segments` rows already inside REGION's polygon ∩ bbox — the EXACT
+   *  scope `importFrom` reconciles — and THROW if any exist. Called before
+   *  any fixture is written (see `beforeAll`), so a non-zero count is always
+   *  genuine collateral, never this spec's own rows; refusing to run protects
+   *  that data instead of tombstoning it. Scoped to `osm_way_id IS NOT NULL
+   *  AND deactivated_at IS NULL`: the exact candidate set `reconcile` itself
+   *  loads (crowd-sourced and already-tombstoned rows are never reconcile
+   *  candidates), so this can never false-positive on demo/seed data. */
+  async function assertCleanScope(): Promise<void> {
+    const [minLng, minLat, maxLng, maxLat] = REGION.bbox;
+    const rows: Array<{ count: number }> = await dataSource.query(
+      `SELECT COUNT(*)::int AS count
+       FROM road_segments
+       WHERE osm_way_id IS NOT NULL
+         AND deactivated_at IS NULL
+         AND ST_Intersects(geom, ST_GeomFromGeoJSON($1))
+         AND ST_Intersects(geom, ST_MakeEnvelope($2, $3, $4, $5, 4326))`,
+      [REGION.polygon, minLng, minLat, maxLng, maxLat],
+    );
+    const count = rows[0]!.count;
+    if (count > 0) {
+      throw new Error(
+        `osm-split-merge-reconcile e2e requires a clean scope — found ` +
+          `${count} pre-existing OSM road_segments in REGION's polygon ∩ ` +
+          `bbox (near lat ${LAT}, lng ${LNG}); run against a disposable DB ` +
+          `with no imported OSM roads in this area.`,
+      );
+    }
   }
 
   beforeAll(async () => {
@@ -128,10 +171,12 @@ describe('OSM split/merge reconciliation (#835)', () => {
     service = module.get(OsmImportService);
     roads = module.get(RoadsService);
     dataSource = module.get(DataSource);
-  });
 
-  beforeEach(async () => {
-    await clearRegionScope();
+    // Crash-recovery: a prior run that died mid-test could leave this spec's
+    // own fixtures live under their known synthetic way ids; clear them
+    // (never collateral) before the guard below inspects REGION's scope.
+    await deleteFixtureWayIds();
+    await assertCleanScope();
   });
 
   afterAll(async () => {
@@ -145,7 +190,10 @@ describe('OSM split/merge reconciliation (#835)', () => {
         [trackedIds],
       );
     }
-    await clearRegionScope();
+    // Catch-all: if the test threw before `trackedIds` was populated (e.g.
+    // the first `importFrom` call itself failed), this still removes any
+    // fixture row left behind, by the same known synthetic way ids.
+    await deleteFixtureWayIds();
     await module?.close();
   });
 
