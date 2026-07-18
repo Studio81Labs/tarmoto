@@ -483,12 +483,13 @@ describe("subscription translator wiring", () => {
     ]);
   });
 
-  it("normalizeSubscriptionSnapshot leaves backend-provided plan name/features untranslated", () => {
-    // Deliberately reuse "Pro"/"Premium" — both registered sentinel keys
-    // above — as the WIRE-provided name/features. If normalizePlans ever
-    // started running backend-provided plan data through t(), these would
-    // come back as sentinels instead of verbatim, which a plain unrelated
-    // fixture string could not catch.
+  it("normalizeSubscriptionSnapshot routes backend-provided plan name/features through the translator", () => {
+    // The backend PLAN_CATALOG sends plan copy in English that mirrors the
+    // registered catalog keys, so wire-provided name/features are localized at
+    // the normalize boundary (Codex P2 — previously this path was bypassed and
+    // /settings/subscription stayed English for normal users). Reuse
+    // "Pro"/"Premium" — both registered sentinel keys above — as the WIRE
+    // values: they come back as sentinels, proving the wire path is translated.
     const snapshot = normalizeSubscriptionSnapshot(
       {
         plans: [
@@ -503,8 +504,8 @@ describe("subscription translator wiring", () => {
       t,
     );
     const premiumPlan = snapshot.plans.find((p) => p.tier === "premium");
-    expect(premiumPlan?.name).toBe("Premium");
-    expect(premiumPlan?.features).toEqual(["Pro", "Premium"]);
+    expect(premiumPlan?.name).toBe("XX-Premium");
+    expect(premiumPlan?.features).toEqual(["XX-Pro", "XX-Premium"]);
   });
 
   it("normalizeSubscriptionSnapshot routes the missing-amount-label invoice fallback through the translator", () => {

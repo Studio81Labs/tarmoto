@@ -166,7 +166,7 @@ export function normalizeSubscriptionSnapshot(
   const currentTier = normalizedTier ?? fallback.currentPlan.tier;
   const currentPlan: CurrentSubscriptionPlan = {
     tier: currentTier,
-    name: stringOr(currentPlanRaw.name, tierLabel(currentTier, t)),
+    name: planNameFrom(currentPlanRaw.name, currentTier, t),
     status: normalizedStatus ?? fallback.currentPlan.status,
     priceLabel: normalizedPriceLabel ?? fallback.currentPlan.priceLabel,
     renewsAt: optionalString(currentPlanRaw.renews_at),
@@ -297,10 +297,14 @@ function normalizePlans(
                 typeof feature === "string" ? feature.trim() : "",
               )
               .filter(Boolean)
+              // Backend feature strings mirror the registered DEFAULT_PLAN_FEATURES
+              // catalog keys — translate them at this boundary (English-identical
+              // today, localized once a locale ships; unknown strings fall back).
+              .map((feature) => t(feature))
           : DEFAULT_PLAN_FEATURES[tier].map((feature) => t(feature));
       return {
         tier,
-        name: stringOr(rawPlan.name, tierLabel(tier, t)),
+        name: planNameFrom(rawPlan.name, tier, t),
         priceLabel: stringOr(
           rawPlan.price_label,
           formatSubscriptionPriceLabel(tier),
@@ -412,6 +416,23 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/**
+ * Resolve a plan's display name. The backend `PLAN_CATALOG` sends the name in
+ * English (`Free`/`Pro`/`Premium`), which mirrors the registered catalog keys,
+ * so a wire-provided name is routed through the translator (English-identical
+ * today, localized once a locale ships; unknown strings fall back to English).
+ * When the wire omits a name we use the already-translated tier label.
+ */
+function planNameFrom(
+  rawName: unknown,
+  tier: SubscriptionTier,
+  t: LooseTranslate,
+): string {
+  return typeof rawName === "string" && rawName.trim()
+    ? t(rawName.trim())
+    : tierLabel(tier, t);
 }
 
 function optionalString(value: unknown): string | null {
