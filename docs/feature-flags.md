@@ -157,23 +157,25 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 
 - **The registry is code-defined**, not a DB table with JSONB per-tier defaults. `FEATURE_DEFINITIONS` in `packages/shared/src/feature-flags.ts` is the single source of truth (shared by backend, mobile, companion, admin). The database stores **only override state** — `user_features` / `feature_states` (booleans) and `user_limits` / `limit_states` (numbers). This preserves compile-time DTO⇄registry shape guards and the monotone-tier invariant test that a runtime JSONB table can't. Operators change override values, never the vocabulary.
 - **Resolution** is the pure `resolveFeature` / `resolveLimit` (min-clamp) precedence in the shared package; the backend `FeatureResolver` only loads state and folds it through. Enforcement guards: `@RequireFeature(key)` (`FeatureGuard`) for booleans; service-level count checks for limits (e.g. `max_active_trips` via `TripsService.assertCanMintOpenTrip`).
-- **System switches (§3) are NOT implemented yet** (Phase 2 — see §6.3). The _planned_ design: a **third registry kind** (`kind: "system"`, `default: true`, no tiers), resolving through the existing global `feature_states` table (operator `force_off` kills a switch for everyone) and served on `/config/flags`, reusing the entitlement machinery but grouped separately in the admin console and never riding on the per-user `/users/me` payload. The shipped `FEATURE_DEFINITIONS` currently has only `toggle` and `limit` kinds; no `sys_*` key exists at runtime today.
+- **System switches (§3) — mechanism + admin SHIPPED** (Phase 2). A **third registry kind** (`kind: "system"`, `default: true`, no tiers) with all 14 `sys_*` keys, resolved by the pure `resolveSystemSwitch`/`buildSystemSwitchSnapshot` (on unless an operator `force_off`) and `FeatureResolver.getSystemSwitches`. Overrides reuse the existing global `feature_states` table and already ride on `GET /config/flags`; a dedicated `/admin/system-switches` surface (disable/enable, reason-required) manages them, grouped separately in the admin console, and they never ride on the per-user `/users/me` payload. **Still pending:** per-switch enforcement wiring (no `sys_*` gates its subsystem yet) and client consumption — each is a per-subsystem follow-up (the `getSystemSwitches` resolver makes them small).
 - **Endpoint naming:** resolved entitlements ride on `GET /users/me` as `features` + `limits` (not a dedicated `GET /me/entitlements`; the `features` field name is retained for contract stability). Global override maps: `GET /api/v1/config/flags` and `GET /api/v1/config/limits`.
 - **Operator settings precedent:** the generic `app_settings` key/value store (backs `launch_tier` today) is the sibling operator-config pattern; system switches stay in `feature_states` rather than `app_settings` so they share the entitlement kill-switch tooling and audit log.
 
 ### 6.2 What ships today
 
-**Phase 1 (this branch) — all §1 flags + §2 limits are in the registry:**
+**Phase 1 — all §1 flags + §2 limits are in the registry** (merged, #1034):
 
 - **Flags (22):** the full §1 vocabulary — 11 Free, 6 Pro, 5 Premium. `full_road_quality_zoom` renamed to `road_quality_full_zoom`; `unlimited_trip_planning` retired (superseded by the `max_active_trips` limit).
 - **Limits (6):** the full §2 set. Only `max_active_trips` (Free = 1) is **enforced** today — across every trip mint + completed→open promotion path. The other five are defined vocabulary with no enforcement yet.
+
+**Phase 2 — the system-switch mechanism + admin surface** (see §6.1): the `kind: "system"` registry kind, all 14 `sys_*` keys, `resolveSystemSwitch`/`getSystemSwitches`, and the `/admin/system-switches` operator surface. No `sys_*` switch stops its subsystem yet (per-switch enforcement is a follow-up); no migration or seed (default-on).
+
 - Migration `1814-AlignFeatureFlagCatalog` is a faithful key rename: it moves the launch-mode `force_on` row (and any per-user override) from `full_road_quality_zoom` to `road_quality_full_zoom`, preserving each row's state. The retired `unlimited_trip_planning` override rows are left in place as inert orphans (the resolver ignores keys outside the registry) so a rollback can't lose operator state. The newly-added flags/limits carry **no override rows and no launch seed** — they are inert registry vocabulary until a feature is wired to them.
 - Existing launch-mode dark-ship posture is unchanged (`max_active_trips = NULL`; several Pro/Premium flags seeded `force_on`) until monetization goes live. Clients still do not consume the snapshot for gating — that remains the next workstream.
 
 ### 6.3 Remaining to reach this catalog
 
-- **System switches (§3):** the `kind: "system"` mechanism + the 14 `sys_*` switches — a separate follow-up (Phase 2).
-- **Per-feature enforcement:** defining a flag does not gate a feature until a guard/limit check is wired. Most §1 flags gate features that are currently ungated (e.g. `crash_detection`, `carplay_android_auto`); wiring each is a per-feature follow-up. Among limits, only `max_active_trips` is enforced.
+- **Per-feature / per-switch enforcement:** defining a flag, limit, or system switch does not gate a feature until a guard/limit check is wired. Most §1 flags gate features that are currently ungated (e.g. `crash_detection`, `carplay_android_auto`); among limits, only `max_active_trips` is enforced; and no `sys_*` switch yet stops its subsystem. Wiring each is a per-feature follow-up.
 - **Client consumption:** UI gating/upsell reading the `features`/`limits` snapshot (+ the `/config/*` kill-switch fast path).
 - **Marketing / `PLAN_CATALOG` copy** and any launch-mode seeding decisions land with the enforcement PR for the relevant capability.
 
