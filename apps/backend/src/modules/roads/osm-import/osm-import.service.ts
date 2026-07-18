@@ -325,11 +325,11 @@ export class OsmImportService {
   /**
    * Import one region tile-by-tile. The region is subdivided into a deterministic
    * grid of `<= tileSpanDeg` cells ({@link subdivideRegion}, the SAME grid the
-   * producer clips), and each tile's `<code>-r<row>c<col>.osm` extract is imported
-   * against the country polygon ∩ that tile's bbox ({@link importTile}). Peak
-   * memory is therefore bounded to one tile no matter how large the country is —
-   * a whole-country buffer could otherwise OOM the import worker. Results
-   * aggregate across the region's tiles.
+   * producer clips), and each tile's `roadTileFileName(tile, tileSpanDeg)`
+   * extract is imported against the country polygon ∩ that tile's bbox
+   * ({@link importTile}). Peak memory is therefore bounded to one tile no
+   * matter how large the country is — a whole-country buffer could otherwise
+   * OOM the import worker. Results aggregate across the region's tiles.
    */
   async importRegion(
     region: PoiImportRegion,
@@ -354,7 +354,12 @@ export class OsmImportService {
   }
 
   /**
-   * Import one tile's `<extractDir>/<code>-r<row>c<col>.osm`.
+   * Import one tile's `<extractDir>/roadTileFileName(tile, tileSpanDeg)`
+   * (`<code>-r<row>c<col>-s<span>.osm`). The span is a grid-identity
+   * discriminator (#4): it comes from `this.config.tileSpanDeg`, NEVER parsed
+   * back out of an on-disk filename, so a retuned span simply looks for
+   * differently-named files — a stale-grid leftover from a previous span is
+   * just "absent" (skipped below), never mis-reconciled against the wrong scope.
    *
    * A **present** extract is AUTHORITATIVE — the producer's refresh is atomic
    * keep-last-good (a failed refresh keeps the previous extract and NEVER writes an
@@ -382,7 +387,10 @@ export class OsmImportService {
     extractDir: string,
   ): Promise<OsmImportResult> {
     const label = `${region.code} r${tile.row}c${tile.col}`;
-    const path = join(extractDir, roadTileFileName(tile));
+    const path = join(
+      extractDir,
+      roadTileFileName(tile, this.config.tileSpanDeg),
+    );
     if (!(await this.fileExists(path))) {
       this.logger.warn(
         `OSM import (${label}): no extract at ${path} — skipping`,

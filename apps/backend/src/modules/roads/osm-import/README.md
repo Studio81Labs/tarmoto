@@ -8,7 +8,7 @@ all dependent FKs (`surface_readings`, `road_reviews`, `hazard_reports`,
 ## Pipeline
 
 ```
-apps/ingest refresh-road-extracts.js → <extractDir>/<code>-r<row>c<col>.osm (a tile grid per region)
+apps/ingest refresh-road-extracts.js → <extractDir>/<code>-r<row>c<col>-s<span>.osm (a tile grid per region)
                                                     │
                                                     ▼
          OsmImportService.importAll() loops the configured regions
@@ -22,7 +22,12 @@ apps/ingest refresh-road-extracts.js → <extractDir>/<code>-r<row>c<col>.osm (a
   (`ROAD_TAGS_FILTER_EXPRESSIONS` — the same `DRIVABLE_HIGHWAYS` list this
   module's `osm-tags.ts` gates on, so the two can't drift), then per tile of
   `subdivideRegion(region, tileSpanDeg)` `osmium extract -b`s it to that tile's
-  bbox and atomically writes `<extractDir>/<code>-r<row>c<col>.osm`. See
+  bbox **padded** by `TILE_EXTRACT_PAD_DEG` (0.05° — `complete_ways` only
+  selects a way with a node inside the clip bbox, so the pad keeps a way
+  crossing the tile with no node inside the EXACT tile from being dropped) and
+  atomically writes `<extractDir>/roadTileFileName(tile, tileSpanDeg)`
+  (`<code>-r<row>c<col>-s<span>.osm`) — the output filename and the importer's
+  reconcile scope stay the exact, unpadded tile. See
   `refresh-road-extracts.ts` and
   [the runbook](../../../../../../docs/process/runbook.md#road-quality-extract-refresh-sub-project-b)
   § "Road-quality extract refresh (Sub-project B)".
@@ -43,9 +48,15 @@ env pair — a `FILE` path + a `BBOX` rectangle). It now reads a **folder** of
 per-region, per-tile extracts, mirroring the POI importer's model:
 
 - **`extractDir`** (`TARMOTO_OSM_ROAD_IMPORT_DIR`) — a directory of
-  `<code>-r<row>c<col>.osm` files, a deterministic **tile grid** per region
-  (lower-case ISO 3166-1 alpha-2 code + 0-based row/col, e.g. `cz-r0c1.osm`). The
-  SAME shared volume the `apps/ingest` producer writes and this importer reads —
+  `<code>-r<row>c<col>-s<span>.osm` files, a deterministic **tile grid** per
+  region (lower-case ISO 3166-1 alpha-2 code + 0-based row/col + the tile span
+  with `.` replaced by `_`, e.g. `cz-r0c1-s2_5.osm`). The `-s<span>` suffix is a
+  grid-identity discriminator (`roadTileFileName`): the importer always derives
+  the span from ITS OWN `tileSpanDeg` config, never by parsing it back out of a
+  filename, so a retuned span looks for differently-named files rather than
+  reconciling a same-named-but-now-wrong-bbox stale file — a leftover from a
+  previous span is simply "absent" (skipped), never mis-reconciled. The SAME
+  shared volume the `apps/ingest` producer writes and this importer reads —
   both apps must point at the same path. `null`/unset skips the whole job
   (nothing to read).
 - **`regions`** (`TARMOTO_OSM_ROAD_IMPORT_REGIONS`, default all
@@ -64,7 +75,11 @@ per-region, per-tile extracts, mirroring the POI importer's model:
   span the importer subdivides each region by (`subdivideRegion`). It **MUST match
   the producer's value** — both call `subdivideRegion` with it to derive the
   identical grid, so a mismatch means the importer looks for tile files the
-  producer never wrote (or vice-versa). Invalid/≤0 fails fast.
+  producer never wrote (or vice-versa). Invalid/≤0 fails fast. Since the span is
+  also baked into `roadTileFileName`'s `-s<span>` suffix, a mismatch fails SAFE:
+  the importer looks for a differently-named file, finds it absent, and skips —
+  it can never reconcile a stale-grid file (same row/col, different bbox)
+  against the wrong scope.
 - **`OsmImportService.importAll()`** loops the configured regions and calls
   `importRegion()` for each; `importRegion()` subdivides the region into its tile
   grid and calls `importTile()` per tile, all aggregating the
@@ -86,12 +101,23 @@ per-region, per-tile extracts, mirroring the POI importer's model:
   run forever. So a genuine partial removal (a few roads deleted/retagged) always
   propagates; only a dense cell "emptied" by a broken extract is held back.
 
-### The `complete_ways` contract
+### The `complete_ways` contract (and the extract pad)
 
 `osmium extract -b` (the producer's clip step) does **not** cut geometries —
-its default `complete_ways` strategy emits every way that crosses the bbox
-**whole**, extending beyond it. A way straddling two adjacent tiles (or regions)
-therefore lands, complete, in **both** tiles' `<code>-r<row>c<col>.osm` files.
+its default `complete_ways` strategy emits, **whole**, every way with **at
+least one node** inside the bbox, extending beyond it. A way straddling two
+adjacent tiles (or regions) therefore lands, complete, in **both** tiles'
+`<code>-r<row>c<col>-s<span>.osm` files.
+
+That same "at least one node inside the bbox" rule is also why the producer
+clips a **padded** bbox (`paddedTileBbox`, `TILE_EXTRACT_PAD_DEG` = 0.05° ≈
+5 km, `packages/ingest/src/roads/road-tiles.ts`) rather than the exact tile:
+a way that crosses the tile but whose nearest nodes sit just outside the exact
+tile has NO node inside it, so `complete_ways` would otherwise drop it from
+this tile's extract entirely — a hole on first import, or a wrongful tombstone
+on retile. The pad only widens the producer's `osmium` SELECTION; the output
+filename and the importer's reconcile scope both stay the exact, unpadded tile
+bbox, so the padded overhang is simply filtered out below (never double-counted).
 
 The importer reconciles this **per tile** against the region's **country polygon
 ∩ the tile bbox** (not the bbox alone — adjacent countries' rectangles overlap,
@@ -107,7 +133,8 @@ existing-row load, and only **absent** rows inside that polygon ∩ bbox cell ar
 tombstoned. So:
 
 - the extract only has to **cover** its tile — the producer never clips
-  geometries itself, and any neighbouring overhang is dropped by the combined
+  geometries itself (and pads its clip bbox so a node-less crossing way is
+  still selected), and any neighbouring overhang is dropped by the combined
   filter;
 - a way straddling a tile seam or country edge is scoped to whichever tile/country
   actually contains each part, and its shared segment upserts idempotently;
@@ -137,14 +164,17 @@ osmium tags-filter cz-latest.osm.pbf \
   w/highway=motorway,motorway_link,trunk,trunk_link,primary,primary_link,secondary,secondary_link,tertiary,tertiary_link,unclassified,residential,living_street,service,track \
   -o cz-road.osm.pbf
 
-# 3. Extract to CZ's r0c0 tile bbox (complete_ways default — see above; the
-#    importer scopes the overhang, so this just needs to COVER the tile). The
-#    importer reads per-tile files, so a manual single-file prep is only valid at
-#    a tile span >= the region (one r0c0 tile == the region bbox). Real coverage
-#    is a grid of subdivideRegion(region, TARMOTO_OSM_ROAD_TILE_SPAN_DEG) tiles;
-#    the automated refresh below writes every <code>-r<row>c<col>.osm.
-osmium extract -b 12.09,48.55,18.86,51.06 cz-road.osm.pbf \
-  -f osm -o "$TARMOTO_OSM_ROAD_IMPORT_DIR/cz-r0c0.osm"
+# 3. Extract to CZ's r0c0 tile bbox, PADDED by TILE_EXTRACT_PAD_DEG (0.05°) on
+#    every side (complete_ways default — see above; the importer scopes the
+#    overhang, so this just needs to COVER the tile). The importer reads
+#    per-tile files, so a manual single-file prep is only valid at a tile span
+#    >= the region (one r0c0 tile == the region bbox — here assuming
+#    TARMOTO_OSM_ROAD_TILE_SPAN_DEG=10, hence the `-s10` suffix below). Real
+#    coverage is a grid of subdivideRegion(region, TARMOTO_OSM_ROAD_TILE_SPAN_DEG)
+#    tiles; the automated refresh below writes every
+#    roadTileFileName(tile, tileSpanDeg), padding included.
+osmium extract -b 12.04,48.50,18.91,51.11 cz-road.osm.pbf \
+  -f osm -o "$TARMOTO_OSM_ROAD_IMPORT_DIR/cz-r0c0-s10.osm"
 ```
 
 Repeat per region in the active set. The `apps/ingest` scheduled refresh
@@ -154,12 +184,12 @@ every configured region, atomically.
 
 ## Config
 
-| env                               | default               | meaning                                                                          |
-| --------------------------------- | --------------------- | -------------------------------------------------------------------------------- |
-| `TARMOTO_OSM_ROAD_IMPORT_ENABLED` | `false`               | turn the weekly job on                                                           |
-| `TARMOTO_OSM_ROAD_IMPORT_DIR`     | —                     | folder of per-tile `<code>-r<row>c<col>.osm` extracts (required when enabled)    |
-| `TARMOTO_OSM_ROAD_IMPORT_REGIONS` | all `DEFAULT_REGIONS` | comma-separated ISO 3166-1 alpha-2 codes to import; an unknown code fails fast   |
-| `TARMOTO_OSM_ROAD_TILE_SPAN_DEG`  | `2.5`                 | max tile span (deg) to subdivide each region by; MUST match the producer's value |
+| env                               | default               | meaning                                                                               |
+| --------------------------------- | --------------------- | ------------------------------------------------------------------------------------- |
+| `TARMOTO_OSM_ROAD_IMPORT_ENABLED` | `false`               | turn the weekly job on                                                                |
+| `TARMOTO_OSM_ROAD_IMPORT_DIR`     | —                     | folder of per-tile `<code>-r<row>c<col>-s<span>.osm` extracts (required when enabled) |
+| `TARMOTO_OSM_ROAD_IMPORT_REGIONS` | all `DEFAULT_REGIONS` | comma-separated ISO 3166-1 alpha-2 codes to import; an unknown code fails fast        |
+| `TARMOTO_OSM_ROAD_TILE_SPAN_DEG`  | `2.5`                 | max tile span (deg) to subdivide each region by; MUST match the producer's value      |
 
 Dormant by default: an off tick is a cheap no-op.
 
@@ -175,7 +205,7 @@ snapshot against the existing rows in the same area, so a run buffers one
 deterministic non-overlapping grid of `<= TARMOTO_OSM_ROAD_TILE_SPAN_DEG`-degree
 cells (`subdivideRegion`, shared with the `apps/ingest` producer so both derive
 the identical grid), and `importRegion()` imports the region **tile-by-tile** —
-one `<code>-r<row>c<col>.osm` extract at a time. Each tile reconciles against the
+one `<code>-r<row>c<col>-s<span>.osm` extract at a time. Each tile reconciles against the
 country **polygon ∩ that tile's bbox**, so peak memory is bounded to one tile's
 segment rows (plus the assembler's node map and the incoming array) **regardless
 of the country's overall size**. `importAll()`'s region loop and `importRegion()`'s

@@ -91,7 +91,7 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
    *  ROADS). Overwrites the previous extract — the re-import reads the new set. */
   async function writeTile(...roadIdx: number[]): Promise<void> {
     await writeFile(
-      join(dir, roadTileFileName(testTile)),
+      join(dir, roadTileFileName(testTile, TILE_SPAN_DEG)),
       osmDoc(
         ...roadIdx.map((i) => {
           const r = ROADS[i]!;
@@ -249,13 +249,16 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
     const seedDoc = osmDoc(
       ...denseRoads.map((r) => wayXml(r.wayId, r.lat, r.lng)),
     );
-    await writeFile(join(dir, roadTileFileName(testTile)), seedDoc);
+    await writeFile(
+      join(dir, roadTileFileName(testTile, TILE_SPAN_DEG)),
+      seedDoc,
+    );
     const seed = await service.importTile(RO, testTile, dir);
     expect(seed.upserted).toBe(DENSE_COUNT); // premise: all 60 inside RO ∩ the tile
 
     const kept = denseRoads.slice(0, 20);
     await writeFile(
-      join(dir, roadTileFileName(testTile)),
+      join(dir, roadTileFileName(testTile, TILE_SPAN_DEG)),
       osmDoc(...kept.map((r) => wayXml(r.wayId, r.lat, r.lng))),
     );
     const reimport = await service.importTile(RO, testTile, dir);

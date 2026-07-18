@@ -31,7 +31,7 @@ import { RoadSegment } from '../src/entities/road-segment.entity.js';
  *
  * Real Postgres/PostGIS, driven through `importRegion` (the folder-model entry
  * point) so the whole path — tile subdivision → extract parse → region filter →
- * reconcile — runs. The extracts are now per-tile `<code>-r<row>c<col>.osm` files
+ * reconcile — runs. The extracts are now per-tile `<code>-r<row>c<col>-s<span>.osm` files
  * (the sub-region tiling model); this test runs at a large tile span so each
  * region is a single r0c0 tile whose bbox equals the region bbox, keeping the
  * assertion purely about the country-POLYGON scope (#1033). The disjoint-tile
@@ -76,7 +76,7 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
    *  tile) — the file `importRegion` reads for that region. */
   function soleTileFile(region: PoiImportRegion): string {
     const tiles = subdivideRegion(region, TILE_SPAN_DEG);
-    return roadTileFileName(tiles[0]!);
+    return roadTileFileName(tiles[0]!, TILE_SPAN_DEG);
   }
 
   // Way ids this test owns (across both cases) — deleted in afterAll.

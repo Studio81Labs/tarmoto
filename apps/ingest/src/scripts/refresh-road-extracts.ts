@@ -8,9 +8,13 @@
  * tags-filter`s it to the drivable-highway set (`ROAD_TAGS_FILTER_EXPRESSIONS`)
  * ONCE, then for each tile of `subdivideRegion(region, tileSpanDeg)`
  * (`TARMOTO_OSM_ROAD_TILE_SPAN_DEG`) `osmium extract -b`s the filtered PBF to
- * that tile's bbox (default `complete_ways` — boundary-crossing ways stay
- * whole) and writes `roadTileFileName(tile)` to `TARMOTO_OSM_ROAD_IMPORT_DIR`
- * — the shared volume the backend `road.import` cron reads. Tiling bounds one
+ * that tile's PADDED bbox (`paddedTileBbox`, `TILE_EXTRACT_PAD_DEG` — default
+ * `complete_ways` keeps boundary-crossing ways whole, but a way whose nodes
+ * sit just outside the tile still needs the pad to be selected at all) and
+ * writes `roadTileFileName(tile, tileSpanDeg)` to `TARMOTO_OSM_ROAD_IMPORT_DIR`
+ * — the shared volume the backend `road.import` cron reads. The backend still
+ * reconciles to the EXACT tile bbox, so the padded overhang is dropped there,
+ * never double-counted. Tiling bounds one
  * extract's road count (and, in the importer, its node map) regardless of the
  * region's overall size — a whole-country extract could otherwise OOM the
  * import worker.
@@ -37,10 +41,12 @@ import type { PoiImportRegion, RoadTile } from "@tarmoto/ingest";
 import {
   bboxArg,
   geofabrikUrl,
+  paddedTileBbox,
   roadTileFileName,
   ROAD_TAGS_FILTER_EXPRESSIONS,
   resolveRoadRefreshConfig,
   subdivideRegion,
+  TILE_EXTRACT_PAD_DEG,
   type RoadRefreshConfig,
 } from "@tarmoto/ingest";
 import {
@@ -86,7 +92,21 @@ async function runOsmium(args: readonly string[]): Promise<void> {
  * step's and (Part 2) the importer's per-extract memory regardless of the
  * region's overall size. `tiles` is the caller's `subdivideRegion(region,
  * spanDeg)` result — computed by the caller (not here) so a caller looping
- * regions computes each region's grid exactly once.
+ * regions computes each region's grid exactly once. `spanDeg` is threaded
+ * through separately (rather than re-derived from `tiles`) because
+ * {@link roadTileFileName} needs it too — it encodes the grid identity into
+ * the filename so a retuned span never collides with a stale-grid file of the
+ * same row/col (see the doc comment on `roadTileFileName`).
+ *
+ * Each tile's `osmium extract -b` clips a PADDED bbox (`paddedTileBbox`,
+ * {@link TILE_EXTRACT_PAD_DEG}) — `complete_ways` only selects a way that has
+ * at least one NODE inside the clip bbox, so a way crossing the tile whose
+ * nearby nodes sit just outside the exact tile would otherwise be silently
+ * dropped from this tile's extract. The output filename and "which tile"
+ * stay the EXACT tile (`roadTileFileName(tile, spanDeg)`); the backend
+ * importer reconciles to the exact tile bbox too, so the padded overhang is
+ * filtered out on that side and never double-counted — the pad only prevents
+ * node-less-crossing holes.
  *
  * Publishes the region atomically-ish, in two phases:
  *  1. **Extract** — every tile is clipped to a unique sibling `.part` file;
@@ -113,6 +133,7 @@ export async function refreshRegion(
   targetDir: string,
   workDir: string,
   tiles: readonly RoadTile[],
+  spanDeg: number,
   deps: RefreshDeps,
 ): Promise<void> {
   const url = geofabrikUrl(region.code);
@@ -136,13 +157,15 @@ export async function refreshRegion(
     // Phase 1 — extract every tile to its `.part` sibling; publish NONE yet.
     const parts: { tmpOut: string; finalOut: string }[] = [];
     for (const tile of tiles) {
-      const finalOut = join(targetDir, roadTileFileName(tile));
+      const finalOut = join(targetDir, roadTileFileName(tile, spanDeg));
       const tmpOut = refreshTmpPath(finalOut);
       tmpPaths.push(tmpOut);
       await deps.osmium([
         "extract",
         "-b",
-        bboxArg(tile.bbox),
+        // PADDED clip (see the doc comment above) — the exact tile bbox stays
+        // the filename + reconcile scope; only the osmium selection grows.
+        bboxArg(paddedTileBbox(tile.bbox, TILE_EXTRACT_PAD_DEG)),
         filtered,
         // Write OSM XML explicitly — osmium can't detect the format from our `.part`
         // temp suffix, so without `-f osm` the extract fails for every tile.
@@ -202,7 +225,14 @@ export async function refreshAll(
       log(
         `road refresh (${region.code}): download → filter once → clip ${tiles.length} tile(s)…`,
       );
-      await refreshRegion(region, config.targetDir, workDir, tiles, deps);
+      await refreshRegion(
+        region,
+        config.targetDir,
+        workDir,
+        tiles,
+        config.tileSpanDeg,
+        deps,
+      );
       summary.ok.push(region.code);
       log(`road refresh (${region.code}): wrote ${tiles.length} tile file(s)`);
     } catch (err) {

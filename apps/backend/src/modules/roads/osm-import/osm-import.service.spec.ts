@@ -805,9 +805,17 @@ describe('OsmImportService', () => {
     bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
   };
   // A single 1×1 tile equal to the CZ bbox (what `subdivideRegion(CZ, span≥6.77)`
-  // yields) — file `cz-r0c0.osm`. Its bbox travels into the scope's
-  // `ST_MakeEnvelope` binds.
+  // yields) — file `roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)`. Its bbox
+  // travels into the scope's `ST_MakeEnvelope` binds.
   const CZ_TILE: RoadTile = { code: 'CZ', row: 0, col: 0, bbox: CZ.bbox };
+  // A second CZ tile (col 1) — used by the multi-tile `importRegion` tests below.
+  const CZ_TILE_R0C1: RoadTile = { code: 'CZ', row: 0, col: 1, bbox: CZ.bbox };
+  const SK_TILE: RoadTile = {
+    code: 'SK',
+    row: 0,
+    col: 0,
+    bbox: { minLng: 16.83, minLat: 47.73, maxLng: 22.57, maxLat: 49.61 },
+  };
 
   describe('importTile', () => {
     let dir: string;
@@ -834,7 +842,7 @@ describe('OsmImportService', () => {
       // rows it's a harmless no-op: an info log (empty cell is expected), never a
       // warn, and reconcile ran (the existing-row load WAS issued).
       await writeFile(
-        join(dir, roadTileFileName(CZ_TILE)),
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
         '<osm version="0.6"></osm>',
       );
       loadExisting.mockResolvedValue([]); // empty sea/border cell
@@ -856,7 +864,7 @@ describe('OsmImportService', () => {
       // single-row cell is below the wipe-guard's row floor, so it deactivates freely
       // (no warn); the ≥50-row withhold is covered in the guard describe.
       await writeFile(
-        join(dir, roadTileFileName(CZ_TILE)),
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
         '<osm version="0.6"></osm>',
       );
       loadExisting.mockResolvedValueOnce([
@@ -879,7 +887,10 @@ describe('OsmImportService', () => {
       // wipe-guard's floor, so the now-absent row is tombstoned). The guard — not a
       // pre-reconcile skip — is what would withhold a mass wipe on a dense tile.
       // (filterToRegion returns no ordinals → inScope empty → authoritative empty.)
-      await writeFile(join(dir, roadTileFileName(CZ_TILE)), wayXml(1, 60, 30));
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        wayXml(1, 60, 30),
+      );
       filterRegion.mockResolvedValueOnce([]); // nothing inside the polygon ∩ bbox
       loadExisting.mockResolvedValueOnce([
         existingRow('live', '7', 0, [
@@ -895,7 +906,10 @@ describe('OsmImportService', () => {
     });
 
     it('reconciles a non-empty tile scoped to the country polygon ∩ tile bbox', async () => {
-      await writeFile(join(dir, roadTileFileName(CZ_TILE)), wayXml(1));
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        wayXml(1),
+      );
       loadExisting.mockResolvedValue([]); // no existing rows
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(result.upserted).toBe(1);
@@ -935,8 +949,14 @@ describe('OsmImportService', () => {
       // ceil(2.51/4)=1 row → 2 tiles: r0c0 + r0c1. Each tile file carries its own
       // way, so the per-tile loop reads both and the upserts aggregate.
       osmConfig.tileSpanDeg = 4;
-      await writeFile(join(dir, 'cz-r0c0.osm'), wayXml(1));
-      await writeFile(join(dir, 'cz-r0c1.osm'), wayXml(2));
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        wayXml(1),
+      );
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE_R0C1, osmConfig.tileSpanDeg)),
+        wayXml(2),
+      );
       loadExisting.mockResolvedValue([]);
       const result = await service.importRegion(CZ, dir);
       // Both tiles imported (1 way each) → 2 upserts, one reconcile flush per tile.
@@ -949,7 +969,10 @@ describe('OsmImportService', () => {
       // no tombstone), r0c1 imports — a region needn't have every cell on disk
       // (all-water/empty cells are simply never written by the producer).
       osmConfig.tileSpanDeg = 4;
-      await writeFile(join(dir, 'cz-r0c1.osm'), wayXml(2));
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE_R0C1, osmConfig.tileSpanDeg)),
+        wayXml(2),
+      );
       loadExisting.mockResolvedValue([]);
       const result = await service.importRegion(CZ, dir);
       expect(result.upserted).toBe(1);
@@ -972,8 +995,16 @@ describe('OsmImportService', () => {
       // scopes each extract to its country polygon ∩ tile bbox via filterToRegion
       // (a DB query, mocked here to accept every incoming way), so both regions
       // contribute one upsert.
-      await writeFile(join(dir, 'cz-r0c0.osm'), wayXml(1));
-      await writeFile(join(dir, 'sk-r0c0.osm'), wayXml(2, 48.5, 19.5));
+      // tileSpanDeg is still the beforeEach default (100) here — unchanged by
+      // this test — so both filenames use osmConfig.tileSpanDeg for the span.
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        wayXml(1),
+      );
+      await writeFile(
+        join(dir, roadTileFileName(SK_TILE, osmConfig.tileSpanDeg)),
+        wayXml(2, 48.5, 19.5),
+      );
       osmConfig.extractDir = dir;
       osmConfig.regions = [
         {

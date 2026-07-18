@@ -1,6 +1,8 @@
 import type { PoiImportRegion } from "../poi/regions.js";
 import {
+  TILE_EXTRACT_PAD_DEG,
   TILE_MAX_SPAN_DEG_DEFAULT,
+  paddedTileBbox,
   resolveTileSpanDeg,
   roadTileFileName,
   subdivideRegion,
@@ -140,9 +142,71 @@ describe("subdivideRegion", () => {
 });
 
 describe("roadTileFileName", () => {
-  it("formats <code>-r<row>c<col>.osm, lowercasing the code", () => {
+  it("formats <code>-r<row>c<col>-s<span>.osm, lowercasing the code", () => {
     const tile: RoadTile = { code: "CZ", row: 1, col: 2, bbox: CZ.bbox };
-    expect(roadTileFileName(tile)).toBe("cz-r1c2.osm");
+    expect(roadTileFileName(tile, 2.5)).toBe("cz-r1c2-s2_5.osm");
+  });
+
+  it("leaves an integer span untouched — no decimal point to replace", () => {
+    const tile: RoadTile = { code: "CZ", row: 0, col: 0, bbox: CZ.bbox };
+    expect(roadTileFileName(tile, 2)).toBe("cz-r0c0-s2.osm");
+  });
+
+  it("encodes the span as a grid-identity discriminator — a different span yields a different name for the SAME tile", () => {
+    const tile: RoadTile = { code: "CZ", row: 0, col: 0, bbox: CZ.bbox };
+    const nameAtDefaultSpan = roadTileFileName(tile, TILE_MAX_SPAN_DEG_DEFAULT);
+    const nameAtRetunedSpan = roadTileFileName(tile, 1.5);
+    expect(nameAtDefaultSpan).not.toBe(nameAtRetunedSpan);
+    expect(nameAtDefaultSpan).toBe("cz-r0c0-s2_5.osm");
+    expect(nameAtRetunedSpan).toBe("cz-r0c0-s1_5.osm");
+  });
+});
+
+describe("paddedTileBbox", () => {
+  it("grows every side of the bbox by padDeg", () => {
+    const bbox: RoadTile["bbox"] = {
+      minLng: 12.09,
+      minLat: 48.55,
+      maxLng: 18.86,
+      maxLat: 51.06,
+    };
+    expect(paddedTileBbox(bbox, 0.05)).toEqual({
+      minLng: 12.04,
+      minLat: 48.5,
+      maxLng: 18.91,
+      maxLat: 51.11,
+    });
+  });
+
+  it("grows outward (min shrinks, max grows) rather than shifting the box", () => {
+    const bbox: RoadTile["bbox"] = {
+      minLng: 0,
+      minLat: 0,
+      maxLng: 1,
+      maxLat: 1,
+    };
+    const padded = paddedTileBbox(bbox, TILE_EXTRACT_PAD_DEG);
+    expect(padded.minLng).toBeLessThan(bbox.minLng);
+    expect(padded.minLat).toBeLessThan(bbox.minLat);
+    expect(padded.maxLng).toBeGreaterThan(bbox.maxLng);
+    expect(padded.maxLat).toBeGreaterThan(bbox.maxLat);
+    // Symmetric growth — the padded box is centered on the same point.
+    expect(padded.maxLng - padded.minLng).toBeCloseTo(
+      bbox.maxLng - bbox.minLng + 2 * TILE_EXTRACT_PAD_DEG,
+    );
+    expect(padded.maxLat - padded.minLat).toBeCloseTo(
+      bbox.maxLat - bbox.minLat + 2 * TILE_EXTRACT_PAD_DEG,
+    );
+  });
+
+  it("a zero pad is a no-op", () => {
+    const bbox: RoadTile["bbox"] = {
+      minLng: 12.09,
+      minLat: 48.55,
+      maxLng: 18.86,
+      maxLat: 51.06,
+    };
+    expect(paddedTileBbox(bbox, 0)).toEqual(bbox);
   });
 });
 

@@ -10,9 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   bboxArg,
+  paddedTileBbox,
   roadTileFileName,
   ROAD_TAGS_FILTER_EXPRESSIONS,
   subdivideRegion,
+  TILE_EXTRACT_PAD_DEG,
   type PoiImportRegion,
 } from "@tarmoto/ingest";
 import {
@@ -67,7 +69,7 @@ describe("refresh-road-extracts", () => {
       const download = fakeDownload();
       const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
       expect(tiles.length).toBeGreaterThan(1); // this test exercises real tiling
-      const finalNames = tiles.map((t) => roadTileFileName(t));
+      const finalNames = tiles.map((t) => roadTileFileName(t, MULTI_TILE_SPAN));
 
       const osmium = jest.fn(async (args: readonly string[]) => {
         if (args[0] === "extract") {
@@ -82,7 +84,7 @@ describe("refresh-road-extracts", () => {
         if (out) await writeFile(out, `built:${args[0]}`);
       });
 
-      await refreshRegion(CZ, targetDir, workDir, tiles, {
+      await refreshRegion(CZ, targetDir, workDir, tiles, MULTI_TILE_SPAN, {
         download,
         osmium,
       });
@@ -113,12 +115,27 @@ describe("refresh-road-extracts", () => {
       }
 
       for (const tile of tiles) {
-        expect(extractCalls.some((c) => c.includes(bboxArg(tile.bbox)))).toBe(
-          true,
+        // The `-b` clip uses the PADDED bbox (Codex P2 #1) — a way crossing the
+        // tile whose nodes sit just outside the exact tile must still be
+        // captured. The bare (unpadded) tile bbox must NOT appear as the `-b`
+        // arg — that was the pre-fix behaviour that dropped node-less crossers.
+        const paddedArg = bboxArg(
+          paddedTileBbox(tile.bbox, TILE_EXTRACT_PAD_DEG),
         );
-        expect(
-          await readFile(join(targetDir, roadTileFileName(tile)), "utf8"),
-        ).toBe("built:extract");
+        const bareArg = bboxArg(tile.bbox);
+        expect(paddedArg).not.toBe(bareArg); // sanity: the pad actually changes the arg
+        expect(extractCalls.some((c) => c.includes(paddedArg))).toBe(true);
+        expect(extractCalls.some((c) => c.includes(bareArg))).toBe(false);
+
+        // The FILENAME (which tile, and its on-disk name) stays the EXACT tile —
+        // only the osmium clip selection is padded, never the reconcile identity.
+        const fileName = roadTileFileName(tile, MULTI_TILE_SPAN);
+        expect(fileName).toContain(
+          `-s${String(MULTI_TILE_SPAN).replace(".", "_")}.osm`,
+        );
+        expect(await readFile(join(targetDir, fileName), "utf8")).toBe(
+          "built:extract",
+        );
       }
       expect(
         extractCalls.every(
@@ -128,13 +145,38 @@ describe("refresh-road-extracts", () => {
 
       expect(await readdir(workDir)).toEqual([]);
       expect((await readdir(targetDir)).sort()).toEqual(
-        tiles.map((t) => roadTileFileName(t)).sort(),
+        tiles.map((t) => roadTileFileName(t, MULTI_TILE_SPAN)).sort(),
       );
+    });
+
+    it("clips every tile's extract to the PADDED bbox, not the exact tile bbox (Codex P2 #1)", async () => {
+      // A dedicated, minimal assertion of the pad contract (beyond the happy-path
+      // test above): `osmium extract -b` gets `paddedTileBbox(tile.bbox,
+      // TILE_EXTRACT_PAD_DEG)`, never the bare `tile.bbox` — the padding is what
+      // lets a way crossing the tile with no node inside the exact tile still be
+      // selected by osmium's node-in-bbox `complete_ways` test.
+      const tiles = subdivideRegion(CZ, SINGLE_TILE_SPAN);
+      const tile = tiles[0]!;
+      const osmium = fakeOsmium();
+
+      await refreshRegion(CZ, targetDir, workDir, tiles, SINGLE_TILE_SPAN, {
+        download: fakeDownload(),
+        osmium,
+      });
+
+      const extractCall = osmium.mock.calls
+        .map((c) => c[0])
+        .find((c) => c[0] === "extract")!;
+      const bIndex = extractCall.indexOf("-b");
+      expect(extractCall[bIndex + 1]).toBe(
+        bboxArg(paddedTileBbox(tile.bbox, TILE_EXTRACT_PAD_DEG)),
+      );
+      expect(extractCall[bIndex + 1]).not.toBe(bboxArg(tile.bbox));
     });
 
     it("keeps the previous tile extract when a step fails", async () => {
       const tiles = subdivideRegion(CZ, MULTI_TILE_SPAN);
-      const firstTile = roadTileFileName(tiles[0]!);
+      const firstTile = roadTileFileName(tiles[0]!, MULTI_TILE_SPAN);
       await writeFile(join(targetDir, firstTile), "OLD-GOOD");
       const download = fakeDownload();
       const osmium = jest.fn(async (args: readonly string[]) => {
@@ -143,7 +185,7 @@ describe("refresh-road-extracts", () => {
         if (out) await writeFile(out, "filtered");
       });
       await expect(
-        refreshRegion(CZ, targetDir, workDir, tiles, {
+        refreshRegion(CZ, targetDir, workDir, tiles, MULTI_TILE_SPAN, {
           download,
           osmium,
         }),
@@ -159,14 +201,17 @@ describe("refresh-road-extracts", () => {
       expect(tiles.length).toBeGreaterThanOrEqual(2); // exercises mixed tile state
       const tile1 = tiles[0]!;
       const tile2 = tiles[1]!;
-      const tile1File = roadTileFileName(tile1);
-      const tile2File = roadTileFileName(tile2);
+      const tile1File = roadTileFileName(tile1, MULTI_TILE_SPAN);
+      const tile2File = roadTileFileName(tile2, MULTI_TILE_SPAN);
       await writeFile(join(targetDir, tile1File), "OLD-TILE-1");
       await writeFile(join(targetDir, tile2File), "OLD-TILE-2");
 
       const download = fakeDownload();
+      const tile2PaddedArg = bboxArg(
+        paddedTileBbox(tile2.bbox, TILE_EXTRACT_PAD_DEG),
+      );
       const osmium = jest.fn(async (args: readonly string[]) => {
-        if (args[0] === "extract" && args.includes(bboxArg(tile2.bbox))) {
+        if (args[0] === "extract" && args.includes(tile2PaddedArg)) {
           throw new Error("tile 2 clip boom");
         }
         const out = args[args.indexOf("-o") + 1];
@@ -174,7 +219,7 @@ describe("refresh-road-extracts", () => {
       });
 
       await expect(
-        refreshRegion(CZ, targetDir, workDir, tiles, {
+        refreshRegion(CZ, targetDir, workDir, tiles, MULTI_TILE_SPAN, {
           download,
           osmium,
         }),
@@ -199,7 +244,7 @@ describe("refresh-road-extracts", () => {
 
     it("leaves everything untouched and skips osmium when the download fails", async () => {
       const tiles = subdivideRegion(CZ, SINGLE_TILE_SPAN);
-      const firstTile = roadTileFileName(tiles[0]!);
+      const firstTile = roadTileFileName(tiles[0]!, SINGLE_TILE_SPAN);
       await writeFile(join(targetDir, firstTile), "OLD");
       const download = jest.fn(
         (): Promise<void> =>
@@ -208,7 +253,7 @@ describe("refresh-road-extracts", () => {
       const osmium = fakeOsmium();
 
       await expect(
-        refreshRegion(CZ, targetDir, workDir, tiles, {
+        refreshRegion(CZ, targetDir, workDir, tiles, SINGLE_TILE_SPAN, {
           download,
           osmium,
         }),
@@ -224,7 +269,7 @@ describe("refresh-road-extracts", () => {
 
       await expect(
         // Tiles are never touched — the slug check throws before any tile work.
-        refreshRegion(unknown, targetDir, workDir, [], deps),
+        refreshRegion(unknown, targetDir, workDir, [], SINGLE_TILE_SPAN, deps),
       ).rejects.toThrow(/no Geofabrik slug/);
       expect(deps.download).not.toHaveBeenCalled();
     });
@@ -233,10 +278,14 @@ describe("refresh-road-extracts", () => {
   describe("refreshAll", () => {
     it("isolates a per-region failure, continues, and surfaces it in the summary", async () => {
       const download = fakeDownload();
+      // Fail only SK's clip; CZ's succeeds. At SINGLE_TILE_SPAN each region is
+      // exactly one tile == its own bbox, so this still targets SK only — the
+      // `-b` arg osmium actually receives is the PADDED bbox now.
+      const skPaddedArg = bboxArg(
+        paddedTileBbox(SK.bbox, TILE_EXTRACT_PAD_DEG),
+      );
       const osmium = jest.fn(async (args: readonly string[]) => {
-        // Fail only SK's clip; CZ's succeeds. At SINGLE_TILE_SPAN each region
-        // is exactly one tile == its own bbox, so this still targets SK only.
-        if (args[0] === "extract" && args.includes(bboxArg(SK.bbox))) {
+        if (args[0] === "extract" && args.includes(skPaddedArg)) {
           throw new Error("SK clip boom");
         }
         const out = args[args.indexOf("-o") + 1];
@@ -261,7 +310,10 @@ describe("refresh-road-extracts", () => {
       expect(summary.failed[0]?.error).toContain("SK clip boom");
       // Only CZ's tile landed; SK kept nothing (it had none) — no sk tile file.
       expect(await readdir(targetDir)).toEqual([
-        roadTileFileName(subdivideRegion(CZ, SINGLE_TILE_SPAN)[0]!),
+        roadTileFileName(
+          subdivideRegion(CZ, SINGLE_TILE_SPAN)[0]!,
+          SINGLE_TILE_SPAN,
+        ),
       ]);
     });
   });

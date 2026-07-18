@@ -207,7 +207,7 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
     // 1) Seed road A inside tile A (inside the RO polygon); capture its id. That
     //    it imports at all confirms Bucharest is inside RO ∩ tileA.
     await writeFile(
-      join(dir, roadTileFileName(tileA)),
+      join(dir, roadTileFileName(tileA, TILE_SPAN_DEG)),
       osmDoc(wayXml(883001, BUCHAREST.lat, BUCHAREST.lng)),
     );
     await service.importTile(RO, tileA, dir);
@@ -219,7 +219,7 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
     // 2) Import ONLY tile B, carrying its own disjoint road. Its stale-by-absence
     //    scope is RO polygon ∩ tileB bbox — which does not reach tile A's cell.
     await writeFile(
-      join(dir, roadTileFileName(tileB)),
+      join(dir, roadTileFileName(tileB, TILE_SPAN_DEG)),
       osmDoc(wayXml(883002, CLUJ.lat, CLUJ.lng)),
     );
     const resB = await service.importTile(RO, tileB, dir);

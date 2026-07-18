@@ -66,7 +66,43 @@ export function subdivideRegion(
   return tiles;
 }
 
-/** Per-tile extract filename: `<code>-r<row>c<col>.osm` (lowercase code). */
-export function roadTileFileName(tile: RoadTile): string {
-  return `${tile.code.toLowerCase()}-r${tile.row}c${tile.col}.osm`;
+/** Degrees the producer grows each tile's `osmium extract -b` bbox beyond the
+ *  exact tile, so a way crossing the tile whose nodes sit just outside is still
+ *  captured (complete_ways selects by nodes-in-bbox). The backend reconciles to
+ *  the EXACT tile bbox, so this overhang is filtered out — it only prevents
+ *  node-less-crossing holes. 0.05° ≈ 5 km comfortably exceeds any real road's
+ *  inter-node gap. (A way with a single un-noded edge longer than the pad would
+ *  still slip through, but that's a >5 km straight road with no intermediate
+ *  node, which does not occur — documented, not further guarded.) */
+export const TILE_EXTRACT_PAD_DEG = 0.05;
+
+/** The tile bbox grown by `padDeg` on every side (for the producer's extract
+ *  clip only — the backend's reconcile scope + the tile filename stay the
+ *  EXACT tile bbox, so the padded overhang is dropped by its `polygon ∩
+ *  tile_bbox` filter and never double-counted). */
+export function paddedTileBbox(
+  bbox: RoadTile["bbox"],
+  padDeg: number,
+): RoadTile["bbox"] {
+  return {
+    minLng: bbox.minLng - padDeg,
+    minLat: bbox.minLat - padDeg,
+    maxLng: bbox.maxLng + padDeg,
+    maxLat: bbox.maxLat + padDeg,
+  };
+}
+
+/** Per-tile extract filename: `<code>-r<row>c<col>-s<span>.osm` (lowercase
+ *  code, `spanDeg` with `.` replaced by `_`, e.g. `cz-r0c0-s2_5.osm`). The span
+ *  is a grid-identity DISCRIMINATOR only — the importer derives the real span
+ *  from its own config, never from the filename — so a retuned
+ *  `TARMOTO_OSM_ROAD_TILE_SPAN_DEG` yields different names instead of a
+ *  same-named file now meaning a DIFFERENT bbox: a stale-grid file is then
+ *  simply "absent" to the current importer (skipped), never mis-reconciled
+ *  against the wrong scope. Both the producer and the backend importer must
+ *  call this with their config's span, so they derive identical names when
+ *  the spans agree. */
+export function roadTileFileName(tile: RoadTile, spanDeg: number): string {
+  const span = String(spanDeg).replace(".", "_");
+  return `${tile.code.toLowerCase()}-r${tile.row}c${tile.col}-s${span}.osm`;
 }
