@@ -618,6 +618,19 @@ rule as Valhalla — and is a later step.
 - A **shared volume** both the backend (writer) and the GraphHopper app (reader)
   mount — the conflation output has to land where GraphHopper reads it. Same
   pattern as the road-extract volume between `apps/ingest` and the backend.
+  **Ownership (same gotcha as the road-extract volume):** the backend runs as
+  **uid 100**, but its image pre-chowns only the POI/FSQ/road-import dirs — **not**
+  the conflation output dir. A fresh Coolify volume comes up **root-owned**, so
+  the first `quality:conflation` run's temp-write + rename fails with `EACCES`
+  before the webhook ever fires. Chown it once after mounting:
+
+  ```bash
+  docker exec -u 0 <backend-staging> chown -R 100:101 /data/routing
+  ```
+
+  (The conflation writes the output world-readable, so GraphHopper reads it
+  regardless of its own uid, and GraphHopper owns its own `graph-cache`.)
+
 - Coolify **"Connect To Predefined Network"** on both apps so the backend reaches
   GraphHopper by network alias (see the ingest networking note above).
 
