@@ -73,7 +73,10 @@ export function SegmentedControl<T extends string>({
             onClick={() => !disabled && onChange(opt.value)}
             onKeyDown={(e) => !disabled && handleKeyDown(e, index)}
             className={cn(
-              "rounded-[5px] px-3 py-1.5",
+              // Compact horizontal padding through the tablet range so a
+              // 4-option group (e.g. the ride-history time window) isn't
+              // cramped; roomier px at lg+ where there's space.
+              "rounded-[5px] px-2 py-1.5 lg:px-3",
               "font-sans text-[11px] font-bold tracking-[0.4px] capitalize",
               "transition-colors duration-100 cursor-pointer border-0",
               "disabled:cursor-not-allowed",

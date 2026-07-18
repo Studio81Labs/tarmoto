@@ -1118,7 +1118,10 @@ function ExplorerPageInner() {
             the pill in the top overlay dismisses the panel). */}
           {rightPanelOpen && !isWideViewport && !narrowDrawing && (
             <aside
-              className="absolute inset-y-0 right-0 z-20 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
+              // z-40 to sit above the map's floating controls — the POI/search
+              // row and basemap toggle are z-30; at z-20 they painted over this
+              // overlay panel's right edge.
+              className="absolute inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col overflow-y-auto border-l border-line bg-paper p-4 pt-16 shadow-[-6px_0_16px_rgba(14,14,16,0.08)]"
               aria-label={t("Info layers")}
             >
               <button
