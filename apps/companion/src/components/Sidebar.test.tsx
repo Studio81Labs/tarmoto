@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Sidebar } from "./Sidebar";
 
 const signOutMock = vi.fn();
@@ -73,7 +73,49 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear();
+  vi.unstubAllGlobals();
 });
+
+// Stub matchMedia so a test can pretend it's on a compact (tablet) viewport:
+// the compact query "(max-width: 1023px)" reports matched.
+function stubCompactViewport(compact: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: compact && query.includes("max-width: 1023px"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
+
+// A controllable matchMedia for the compact query: captures the `change`
+// listener so a test can simulate crossing the breakpoint (setCompact) and
+// assert the sidebar reacts — the initial-read stub above can't cover that.
+function installControllableMatchMedia(initialCompact = false) {
+  const state = { compact: initialCompact };
+  let listener: (() => void) | null = null;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      get matches() {
+        return state.compact && query.includes("max-width: 1023px");
+      },
+      addEventListener: (_event: string, cb: () => void) => {
+        listener = cb;
+      },
+      removeEventListener: () => {
+        listener = null;
+      },
+    })),
+  );
+  return {
+    setCompact(compact: boolean) {
+      state.compact = compact;
+      act(() => listener?.());
+    },
+  };
+}
 
 describe("Sidebar — Web App v2 nav", () => {
   it("hides the contribution badge when the rider has mapped nothing", () => {
@@ -279,6 +321,52 @@ describe("Sidebar — Web App v2 nav", () => {
     expect(
       JSON.parse(localStorage.getItem("tarmoto:sidebar-collapsed") ?? ""),
     ).toBe(false);
+  });
+
+  it("defaults to collapsed on a compact (tablet) viewport with no saved preference", () => {
+    stubCompactViewport(true);
+    render(<Sidebar />);
+
+    // Collapsed: the expand affordance shows, and nav/section labels are hidden.
+    expect(screen.getByLabelText(/expand sidebar/i)).toBeInTheDocument();
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan")).not.toBeInTheDocument();
+    // A viewport-driven default is not written to storage — only a real toggle
+    // persists (so a later desktop visit still opens expanded).
+    expect(localStorage.getItem("tarmoto:sidebar-collapsed")).toBeNull();
+  });
+
+  it("follows the viewport across the breakpoint until a preference is saved", () => {
+    const mq = installControllableMatchMedia(false);
+    render(<Sidebar />);
+
+    // Desktop: expanded.
+    expect(screen.getByText("Home")).toBeInTheDocument();
+
+    // Crossing below 1024px collapses it (the change listener must fire — if
+    // it were dropped, the sidebar would stay expanded and this would fail).
+    mq.setCompact(true);
+    expect(screen.getByLabelText(/expand sidebar/i)).toBeInTheDocument();
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+
+    // Back to desktop re-expands.
+    mq.setCompact(false);
+    expect(screen.getByText("Home")).toBeInTheDocument();
+
+    // Once the rider collapses by hand, resizing no longer moves it.
+    fireEvent.click(screen.getByLabelText(/collapse sidebar/i));
+    mq.setCompact(false); // desktop again
+    expect(screen.getByLabelText(/expand sidebar/i)).toBeInTheDocument();
+  });
+
+  it("lets a saved preference win over the compact-viewport default", () => {
+    // Compact viewport, but the rider previously chose expanded.
+    stubCompactViewport(true);
+    localStorage.setItem("tarmoto:sidebar-collapsed", "false");
+    render(<Sidebar />);
+
+    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByLabelText(/collapse sidebar/i)).toBeInTheDocument();
   });
 
   it("opens a menu (Settings + Log out) when the user button is clicked", () => {
