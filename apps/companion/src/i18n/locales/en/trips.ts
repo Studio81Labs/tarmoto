@@ -247,6 +247,7 @@ export const trips = {
   "a viewer": "a viewer",
   "an editor": "an editor",
   "e.g. Summer 2026 Alps": "e.g. Summer 2026 Alps",
+  "waypoint {n}": "waypoint {n}",
   "{count, plural, one {# member} other {# members}}":
     "{count, plural, one {# member} other {# members}}",
   "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.":

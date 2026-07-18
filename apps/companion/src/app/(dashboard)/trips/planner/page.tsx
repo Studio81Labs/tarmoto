@@ -4255,7 +4255,9 @@ function WaypointEditor({
                   // until the rider types a new place.
                   <GeocodeSearchField
                     variant="spine"
-                    placeholder={waypoint.name ?? `Waypoint ${index + 1}`}
+                    placeholder={
+                      waypoint.name ?? t("Waypoint {n}", { n: index + 1 })
+                    }
                     ariaLabel={t("Search location for {role} waypoint", {
                       role: tDynamic(role),
                     })}
@@ -4263,7 +4265,7 @@ function WaypointEditor({
                   />
                 ) : (
                   <span className="block truncate text-[13px] font-bold text-ink">
-                    {waypoint.name ?? `Waypoint ${index + 1}`}
+                    {waypoint.name ?? t("Waypoint {n}", { n: index + 1 })}
                   </span>
                 )}
               </div>
@@ -4271,7 +4273,7 @@ function WaypointEditor({
                 <button
                   type="button"
                   aria-label={t("Remove {name}", {
-                    name: waypoint.name ?? `waypoint ${index + 1}`,
+                    name: waypoint.name ?? t("waypoint {n}", { n: index + 1 }),
                   })}
                   onClick={() => onRemove(waypoint.id)}
                   className="shrink-0 rounded p-0.5 text-fg-mute transition hover:text-quality-q1"

@@ -21,9 +21,9 @@ describe("GeocodeSearchField", () => {
     ]);
     render(
       <GeocodeSearchField
-        /* eslint-disable-next-line no-restricted-syntax -- bare fixture
-           placeholder standing in for whatever caller-supplied copy the
-           field renders; production callers always pass placeholder={t(...)}. */
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           placeholder for a required prop; not asserted on. Production
+           callers localize this prop via t(). */
         placeholder="Search"
         ariaLabel="Search start"
         onSelect={vi.fn()}
@@ -53,9 +53,9 @@ describe("GeocodeSearchField", () => {
     );
     render(
       <GeocodeSearchField
-        /* eslint-disable-next-line no-restricted-syntax -- bare fixture
-           placeholder standing in for whatever caller-supplied copy the
-           field renders; production callers always pass placeholder={t(...)}. */
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           placeholder for a required prop; not asserted on. Production
+           callers localize this prop via t(). */
         placeholder="Search"
         ariaLabel="Search start"
         onSelect={vi.fn()}
@@ -79,9 +79,9 @@ describe("GeocodeSearchField", () => {
     const onSelect = vi.fn();
     render(
       <GeocodeSearchField
-        /* eslint-disable-next-line no-restricted-syntax -- bare fixture
-           placeholder standing in for whatever caller-supplied copy the
-           field renders; production callers always pass placeholder={t(...)}. */
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           placeholder for a required prop; not asserted on. Production
+           callers localize this prop via t(). */
         placeholder="Search"
         ariaLabel="Search finish"
         onSelect={onSelect}
@@ -109,9 +109,9 @@ describe("GeocodeSearchField", () => {
     ]);
     render(
       <GeocodeSearchField
-        /* eslint-disable-next-line no-restricted-syntax -- bare fixture
-           placeholder standing in for whatever caller-supplied copy the
-           field renders; production callers always pass placeholder={t(...)}. */
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           placeholder for a required prop; not asserted on. Production
+           callers localize this prop via t(). */
         placeholder="Search"
         ariaLabel="Search start"
         onSelect={vi.fn()}
@@ -136,9 +136,9 @@ describe("GeocodeSearchField", () => {
     ]);
     render(
       <GeocodeSearchField
-        /* eslint-disable-next-line no-restricted-syntax -- bare fixture
-           placeholder standing in for whatever caller-supplied copy the
-           field renders; production callers always pass placeholder={t(...)}. */
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           placeholder for a required prop; not asserted on. Production
+           callers localize this prop via t(). */
         placeholder="Add via"
         ariaLabel="Search via"
         onSelect={vi.fn()}
@@ -155,9 +155,9 @@ describe("GeocodeSearchField", () => {
   it("does not search short queries", async () => {
     render(
       <GeocodeSearchField
-        /* eslint-disable-next-line no-restricted-syntax -- bare fixture
-           placeholder standing in for whatever caller-supplied copy the
-           field renders; production callers always pass placeholder={t(...)}. */
+        /* eslint-disable-next-line no-restricted-syntax -- bare test-fixture
+           placeholder for a required prop; not asserted on. Production
+           callers localize this prop via t(). */
         placeholder="Search"
         ariaLabel="Search start"
         onSelect={vi.fn()}
