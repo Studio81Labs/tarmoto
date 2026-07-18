@@ -2689,6 +2689,7 @@ export default function TripPlannerPage() {
               variant="secondary"
               size="sm"
               uppercase
+              collapseLabel
               leftIcon={<Lightbulb size={14} />}
               onClick={() => setSuggestionsOpen(true)}
             >
@@ -2700,6 +2701,7 @@ export default function TripPlannerPage() {
               variant="secondary"
               size="sm"
               uppercase
+              collapseLabel
               leftIcon={<Users size={14} />}
               onClick={() => setCollaborateOpen(true)}
             >
@@ -2710,6 +2712,7 @@ export default function TripPlannerPage() {
               variant="secondary"
               size="sm"
               uppercase
+              collapseLabel
               loading={leaving}
               leftIcon={<LogOut size={14} />}
               onClick={() => setConfirmLeaveOpen(true)}
@@ -2729,6 +2732,7 @@ export default function TripPlannerPage() {
             variant="accent"
             size="sm"
             uppercase
+            collapseLabel
             loading={savingRoute}
             leftIcon={<Save size={14} />}
             disabled={!canSaveRoute || savingRoute || routing}

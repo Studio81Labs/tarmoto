@@ -55,6 +55,15 @@ export interface ButtonProps extends Omit<
    * `aria-label` so the control stays announced.
    */
   iconOnly?: boolean;
+  /**
+   * Collapse to an icon-only control below `lg`: the label is hidden but kept
+   * for screen readers (`sr-only`) and the control goes square, expanding to
+   * icon + label at `lg` and up. For header action rows that must stay on one
+   * line on tablet/compact viewports. Pair with `leftIcon`/`rightIcon` — the
+   * glyph stays visible and the label text remains the accessible name, so no
+   * separate `aria-label` is needed.
+   */
+  collapseLabel?: boolean;
   /** Uppercase the label with the CTA letter-spacing (header action style). */
   uppercase?: boolean;
   /**
@@ -76,6 +85,14 @@ const iconSizeClass: Record<ButtonSize, string> = {
   sm: "h-[34px] w-[34px] text-xs rounded-lg",
   md: "h-10 w-10 text-[13px] rounded-[10px]",
   lg: "h-12 w-12 text-sm rounded-xl",
+};
+
+// `collapseLabel` renders as a square (iconSizeClass) below `lg`; at `lg`+ it
+// drops the fixed width and re-applies each size's labeled horizontal padding.
+const collapseLabelLgClass: Record<ButtonSize, string> = {
+  sm: "lg:w-auto lg:px-3.5",
+  md: "lg:w-auto lg:px-[18px]",
+  lg: "lg:w-auto lg:px-[22px]",
 };
 
 const variantClass: Record<ButtonVariant, string> = {
@@ -107,6 +124,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       leftIcon,
       rightIcon,
       iconOnly = false,
+      collapseLabel = false,
       uppercase = false,
       renderLink,
       type = "button",
@@ -129,7 +147,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       "transition-colors duration-100",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-cream",
       "disabled:opacity-40 disabled:cursor-not-allowed",
-      iconOnly ? iconSizeClass[size] : sizeClass[size],
+      iconOnly
+        ? iconSizeClass[size]
+        : collapseLabel
+          ? cn(iconSizeClass[size], collapseLabelLgClass[size])
+          : sizeClass[size],
       variantClass[variant],
       uppercase && "uppercase tracking-[0.4px]",
       block && "flex w-full",
@@ -144,7 +166,20 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ) : (
       <>
         {loading ? spinner : leftIcon}
-        <span>{children}</span>
+        {/* `sr-only` (not `hidden`) below lg so the collapsed label stays the
+            button's accessible name; `not-sr-only` restores it in-flow at lg.
+            `not-sr-only` also resets white-space to normal, so re-assert
+            nowrap at lg or a two-word label (e.g. "Save route") can wrap and
+            clip inside the fixed-height button. */}
+        <span
+          className={
+            collapseLabel
+              ? "sr-only lg:not-sr-only lg:whitespace-nowrap"
+              : undefined
+          }
+        >
+          {children}
+        </span>
         {!loading && rightIcon}
       </>
     );

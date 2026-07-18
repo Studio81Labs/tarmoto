@@ -486,6 +486,7 @@ export default function TripDetailPage() {
               variant="secondary"
               size="sm"
               uppercase
+              collapseLabel
               leftIcon={<Lightbulb size={14} />}
               onClick={() => setSuggestionsOpen(true)}
             >
@@ -497,6 +498,7 @@ export default function TripDetailPage() {
               variant="secondary"
               size="sm"
               uppercase
+              collapseLabel
               leftIcon={<Users size={14} />}
               onClick={() => setCollaborateOpen(true)}
             >
@@ -507,6 +509,7 @@ export default function TripDetailPage() {
               variant="secondary"
               size="sm"
               uppercase
+              collapseLabel
               loading={leaving}
               leftIcon={<LogOut size={14} />}
               onClick={() => setConfirmLeaveOpen(true)}
@@ -519,6 +522,7 @@ export default function TripDetailPage() {
               variant="accent"
               size="sm"
               uppercase
+              collapseLabel
               leftIcon={<Edit size={14} />}
               renderLink={({ className, children }) => (
                 <Link

@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { CommunityRideCard } from "@/components/community/CommunityRideCard";
 import { CommunitySidebar } from "@/components/community/CommunitySidebar";
+import { Pagination } from "@/components/Pagination";
 import {
   PlaceSearch,
   type PlaceValue,
@@ -319,43 +320,21 @@ export default function CommunityFeedPage() {
               ))}
 
               {pageCount > 1 && (
-                <Card
-                  padded={false}
-                  className="flex items-center justify-between gap-3 p-4"
-                >
-                  <p className="font-mono text-sm text-fg-dim tabular-nums">
-                    {t("Page {currentPage} of {pageCount}", {
-                      currentPage,
-                      pageCount,
-                    })}
-                  </p>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOffset((current) => Math.max(current - PAGE_SIZE, 0))
-                      }
-                      disabled={offset === 0}
-                      className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {t("Previous ")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOffset((current) =>
-                          current + PAGE_SIZE >= total
-                            ? current
-                            : current + PAGE_SIZE,
-                        )
-                      }
-                      disabled={offset + PAGE_SIZE >= total}
-                      className="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-full border border-line-strong bg-cream text-ink text-[11px] font-bold uppercase tracking-[0.2px] hover:bg-paper transition disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {t("Next ")}
-                    </button>
-                  </div>
+                <Card padded={false} className="p-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    pageCount={pageCount}
+                    onPrevious={() =>
+                      setOffset((current) => Math.max(current - PAGE_SIZE, 0))
+                    }
+                    onNext={() =>
+                      setOffset((current) =>
+                        current + PAGE_SIZE >= total
+                          ? current
+                          : current + PAGE_SIZE,
+                      )
+                    }
+                  />
                 </Card>
               )}
             </>

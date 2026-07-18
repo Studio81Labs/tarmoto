@@ -508,7 +508,12 @@ function RoadMapPageInner() {
       }
     >
       <div className="flex-1 min-h-0 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
-        <div className="relative min-h-[320px] overflow-hidden rounded-[14px] border border-line bg-cream">
+        {/* Below lg the map + aside stack in one grid column, so the grid's
+            height gets shared between them; a taller aside (coverage view has
+            an extra tile + the nearby card) would otherwise shrink the map.
+            Pin a fixed map height below lg so it stays consistent across views;
+            at lg it fills its own grid track. */}
+        <div className="relative min-h-[320px] overflow-hidden rounded-[14px] border border-line bg-cream max-lg:h-[60vh]">
           <PersonalRoadMap
             ref={mapRef}
             initialCenter={{
@@ -585,7 +590,14 @@ function RoadMapPageInner() {
           </button>
         </div>
 
-        <aside className="space-y-3.5 overflow-y-auto">
+        {/* Data tiles go 2-up through the tablet range (matching the other KPI
+            rows), collapsing to the single 360px rail column at lg. The nearby
+            card spans both columns below lg. */}
+        {/* content-start: on lg the fill layout gives this rail a definite
+            height; without it the grid stretches its row tracks to fill the
+            viewport, expanding the KPI tiles (e.g. Routes view's two cards).
+            Pack the rows at the top so tiles keep their natural height. */}
+        <aside className="grid grid-cols-2 content-start gap-3.5 overflow-y-auto lg:grid-cols-1">
           {/* 1 — Hero tile. Routes view leads with the ride count; the coverage
                view leads with matched segments (period-aware, so an all-time
                total wouldn't contradict a windowed map). */}
@@ -636,7 +648,10 @@ function RoadMapPageInner() {
                 unit="%"
               />
 
-              <Card padded={false} className="overflow-hidden">
+              <Card
+                padded={false}
+                className="col-span-2 overflow-hidden lg:col-span-1"
+              >
                 <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
                   <Stamp>{t("Nearby unridden")}</Stamp>
                   {center.label && (

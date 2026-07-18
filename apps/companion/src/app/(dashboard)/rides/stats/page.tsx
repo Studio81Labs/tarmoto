@@ -507,8 +507,10 @@ const WINDOW_OPTIONS: { value: StatsWindow; label: EnglishMessageKey }[] =
 // Filters mirror the Ride History controls: a time-window pill group + a
 // ride-type group, both the shared `SegmentedControl`.
 function FilterBar({ filters, onChange }: FilterBarProps) {
+  // Space the two toggle groups apart on tablet/compact so they use the row
+  // width; right-align them together at lg+ where there's room.
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 lg:justify-end">
       <SegmentedControl
         ariaLabel={t("Time window")}
         value={filters.window}

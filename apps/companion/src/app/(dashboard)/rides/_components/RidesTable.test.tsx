@@ -138,6 +138,5 @@ describe("RidesTable", () => {
       screen.getByRole("button", { name: /next page/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument();
-    expect(screen.getByText("42 rides")).toBeInTheDocument();
   });
 });

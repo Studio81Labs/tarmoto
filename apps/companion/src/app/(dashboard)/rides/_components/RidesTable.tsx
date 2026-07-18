@@ -2,7 +2,6 @@
 import { t } from "@/i18n";
 import Link from "next/link";
 import { useMemo } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   DataTable,
   Mono,
@@ -10,6 +9,7 @@ import {
   type DataTableColumn,
 } from "@tarmoto/ui";
 import { scoreToQualityTier } from "@/lib/utils";
+import { Pagination } from "@/components/Pagination";
 import { useFormat } from "@/format/FormatProvider";
 import type { Formatters } from "@tarmoto/shared";
 import type { RideSummary, RidesQueryState, SortField } from "./useRidesQuery";
@@ -176,40 +176,13 @@ export function RidesTable({
       // so the last row sits flush to the card edge.
       footer={
         totalPages > 1 ? (
-          <div className="flex items-center justify-between px-5 py-2.5 text-sm text-fg-dim">
-            <span className="font-mono tabular-nums">
-              {t("{count, plural, one {{n} ride} other {{n} rides}}", {
-                count: total,
-                n: format.integer(total),
-              })}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onPage(state.page - 1)}
-                disabled={state.page <= 1}
-                aria-label={t("Previous page")}
-                className="rounded p-1 transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="font-mono tabular-nums">
-                {t("Page {currentPage} of {pageCount}", {
-                  currentPage: state.page,
-                  pageCount: totalPages,
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={() => onPage(state.page + 1)}
-                disabled={state.page >= totalPages}
-                aria-label={t("Next page")}
-                className="rounded p-1 transition hover:bg-paper hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
+          <Pagination
+            className="px-5 py-3"
+            currentPage={state.page}
+            pageCount={totalPages}
+            onPrevious={() => onPage(state.page - 1)}
+            onNext={() => onPage(state.page + 1)}
+          />
         ) : undefined
       }
     />

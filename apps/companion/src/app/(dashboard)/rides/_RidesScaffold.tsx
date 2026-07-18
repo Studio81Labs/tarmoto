@@ -30,6 +30,12 @@ import { useRidesTotal } from "./_useRidesTotal";
  * content and scroll through the AppShell's scroller; forcing `h-full` there
  * would squeeze a tall table into the viewport and clip its last rows under
  * the card's `overflow-hidden`.
+ *
+ * `fill` only engages at lg+. Below lg the map and its sidebar stack in one
+ * column, and a bounded height would force them to share it — a short sidebar
+ * (Road map's Routes view) then leaves distributed free space that stretches
+ * the tiles and gaps the map. So below lg the body flows and scrolls through
+ * the AppShell's scroller like the default, and the map pins its own height.
  */
 export function RidesScaffold({
   headerRight,
@@ -52,7 +58,7 @@ export function RidesScaffold({
   return (
     <div
       className={`mx-auto w-full max-w-page animate-fade-in p-4 md:p-7 ${
-        fill ? "flex h-full min-h-0 flex-col" : ""
+        fill ? "lg:flex lg:h-full lg:min-h-0 lg:flex-col" : ""
       }`}
     >
       <PageHeader
@@ -68,7 +74,9 @@ export function RidesScaffold({
         <RidesTabsBar allRidesBadge={badge} />
       </div>
       {fill ? (
-        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <div className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+          {children}
+        </div>
       ) : (
         children
       )}

@@ -64,7 +64,10 @@ export function SubRouteTabs({
             href={tab.href}
             aria-current={active ? "page" : undefined}
             className={clsx(
-              "inline-flex items-center gap-1.5 rounded-md px-3.5 py-2 text-[12px] font-bold transition-colors",
+              // Compact padding through the tablet range so a 3-tab strip
+              // (+ its badge) stays roomy next to the time-window pills;
+              // fuller padding at lg+.
+              "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-bold transition-colors lg:px-3.5 lg:py-2",
               active
                 ? "bg-ink text-cream"
                 : "bg-transparent text-fg-dim hover:text-ink",
