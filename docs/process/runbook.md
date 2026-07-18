@@ -426,3 +426,171 @@ CONDITIONS OF ANY KIND, either express or implied.
 ```
 
 Tarmoto serves the Data unmodified aside from filtering to our coverage regions + POI categories and mapping FSQ categories to our store `kind` vocabulary.
+
+### Road-quality extract refresh (Sub-project B)
+
+The weekly OSM **road** import (`road.import`, in the **backend**, Sunday
+01:00 UTC — see [Scheduled jobs](../reference/architecture.md#scheduled-jobs))
+reads a grid of per-**tile** `.osm` XML files per active region from
+`TARMOTO_OSM_ROAD_IMPORT_DIR`, named `<code>-r<row>c<col>-s<span>.osm`
+(lower-case ISO 3166-1 alpha-2 + 0-based row/col + the tile span with `.`
+replaced by `_`, e.g. `cz-r0c1-s2_5.osm`) — the `-s<span>` suffix is a
+grid-identity discriminator (`roadTileFileName`): it encodes
+`TARMOTO_OSM_ROAD_TILE_SPAN_DEG` so a retuned span can never collide with a
+stale-grid file of the same row/col that denotes a DIFFERENT bbox — a
+stale-grid file is simply "absent" to the current importer (skipped), never
+mis-reconciled — the **folder model**
+(Sub-project B) with **sub-region tiling**: each region is subdivided into a
+deterministic `<= TARMOTO_OSM_ROAD_TILE_SPAN_DEG`-degree grid (default 2.5°) and
+imported tile-by-tile, so peak memory is bounded to one tile regardless of country
+size (large countries like DE/IT/PL are safe to enable). The span **MUST match**
+on `apps/ingest` (producer) and the backend (importer) — both call
+`subdivideRegion` with it to derive the identical grid. The full config and the
+`complete_ways` per-tile polygon∩bbox scoping contract are documented in
+[`apps/backend/src/modules/roads/osm-import/README.md`](../../apps/backend/src/modules/roads/osm-import/README.md);
+this section covers producing (and automating) the extracts themselves, which
+mirrors the [OSM POI refresh](#automating-the-osm-refresh-scheduled-container-976)
+above with one key difference: **`apps/ingest` only produces the road
+extracts — the backend, not `apps/ingest`, is the importer.**
+
+**The road extract dir MUST differ from the POI one**
+(`TARMOTO_OSM_ROAD_IMPORT_DIR` ≠ `TARMOTO_OSM_POI_IMPORT_DIR`) — both write
+`.osm` files, so sharing a directory would let the two refreshes silently
+overwrite each other's extracts.
+
+#### Producing per-region road extracts
+
+Per region, mirroring the POI OSM pipeline but filtered to the
+**drivable-highway** tag set (`ROAD_TAGS_FILTER_EXPRESSIONS`,
+`packages/ingest/src/roads/road-tags.ts` — the same `DRIVABLE_HIGHWAYS` list
+the backend importer gates on) instead of the POI tag set:
+
+1. **Download** the Geofabrik per-country `<country>-latest.osm.pbf`.
+2. **`osmium tags-filter`** down to `w/highway=motorway,motorway_link,trunk,…`
+   (the drivable classes — footways/cycleways/paths excluded).
+3. **`osmium extract -b`** once **per tile** of
+   `subdivideRegion(region, TARMOTO_OSM_ROAD_TILE_SPAN_DEG)`, clipped to that
+   tile's bbox **padded** by `TILE_EXTRACT_PAD_DEG` (0.05°,
+   `packages/ingest/src/roads/road-tiles.ts`) — `complete_ways` only selects a
+   way with at least one NODE inside the clip bbox, so the pad keeps a way that
+   crosses the tile but whose nearest nodes sit just outside it from being
+   silently dropped from this tile's extract; the output filename and reconcile
+   scope stay the EXACT (unpadded) tile. Each tile is a cell of the region's
+   bbox from `DEFAULT_REGIONS` (`packages/ingest/src/poi/regions.ts` — roads
+   reuse the same 17-region list as POI/FSQ). `osmium extract -b` does not
+   clip geometries — it keeps every **complete way** that crosses the box
+   (`complete_ways`, the default strategy) — so a way straddling two tiles (or
+   regions) is written whole into **both** tiles' extracts; the backend importer's
+   `filterToRegion` filter scopes the rows it actually reconciles to each tile's
+   country-polygon ∩ tile-bbox, so the shared segment upserts idempotently on
+   either side. The extract just has to COVER its tile.
+4. **Place** the results in `TARMOTO_OSM_ROAD_IMPORT_DIR` as
+   `<code>-r<row>c<col>-s<span>.osm` (one file per tile — `roadTileFileName`,
+   see above).
+
+**Worked example — Czech Republic (`CZ`):**
+
+```bash
+# 1. Same Geofabrik extract the POI/routing infra uses (often already on disk
+#    from that refresh)
+curl -L -o cz-latest.osm.pbf \
+  https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+
+# 2. Filter to the drivable-highway set (packages/ingest/src/roads/road-tags.ts)
+osmium tags-filter cz-latest.osm.pbf \
+  w/highway=motorway,motorway_link,trunk,trunk_link,primary,primary_link,secondary,secondary_link,tertiary,tertiary_link,unclassified,residential,living_street,service,track \
+  -o cz-road.osm.pbf
+
+# 3. Extract to CZ's r0c0 tile bbox — PADDED by TILE_EXTRACT_PAD_DEG (0.05°) on
+#    every side, so a way crossing the tile whose nodes sit just outside it is
+#    still captured — and write .osm XML. The importer reads per-tile files, so
+#    this single-file example is only valid at a tile span >= the region (one
+#    r0c0 tile == the region bbox 12.09,48.55,18.86,51.06 — here assuming
+#    TARMOTO_OSM_ROAD_TILE_SPAN_DEG=10, hence the `-s10` in the filename below).
+#    Real coverage is a grid — the automated refresh below writes every tile,
+#    padding included — so prefer it over hand-tiling.
+osmium extract -b 12.04,48.50,18.91,51.11 cz-road.osm.pbf \
+  -f osm -o "$TARMOTO_OSM_ROAD_IMPORT_DIR/cz-r0c0-s10.osm"
+```
+
+Repeat per region in the active set. Then enable the import on the **backend**:
+`TARMOTO_OSM_ROAD_IMPORT_ENABLED=true`, point `TARMOTO_OSM_ROAD_IMPORT_DIR` at
+the folder of `.osm` files, and narrow coverage with
+`TARMOTO_OSM_ROAD_IMPORT_REGIONS` (e.g. `CZ,SK,AT`); unset imports all 17
+`DEFAULT_REGIONS`.
+
+**Not yet wired for a live prod region.** Enabling this in production should
+wait on **#809** (aggregate-safe road detail / exact clustered-member-set) —
+see the module README's "Not yet wired for a live prod region" note.
+Dev/staging can enable it freely.
+
+#### Automating the road refresh (scheduled container, Sub-project B)
+
+Like the POI OSM refresh, the manual steps above run automatically from the
+**same** always-on `apps/ingest` container (it already carries `osmium` for the
+POI refresh — no additional tooling needed). The `apps/ingest` script
+`road:refresh` (run from the container as `node
+apps/ingest/dist/scripts/refresh-road-extracts.js`, or from the repo root as
+`pnpm --filter @tarmoto/ingest-service road:refresh` — it is NOT a root
+`package.json` script) runs the drivable-highway
+filter once per region then a per-**tile** clip (padded by
+`TILE_EXTRACT_PAD_DEG`, see above) for every configured region, writing each
+`<code>-r<row>c<col>-s<span>.osm` **atomically** to
+`TARMOTO_OSM_ROAD_IMPORT_DIR`.
+
+Region set comes from the **same** `DEFAULT_REGIONS` list as POI (so the clip
+bbox can't drift), narrowed by its own `TARMOTO_OSM_ROAD_IMPORT_REGIONS` — an
+env independent of the POI one, but conventionally kept in sync since most
+deployments want the same coverage for both.
+
+Operate the refresh as a **scheduled task** (Coolify scheduled task / cron),
+timed to finish comfortably **before** the Sunday 01:00 UTC `road.import`
+tick — note this is **earlier** than the POI import's 03:00 tick, and the road
+refresh should be **staggered from the POI OSM refresh** (not run at the same
+time — both are osmium/PBF-heavy and would otherwise contend for disk/CPU) —
+e.g. Friday, a day before the POI refresh's Saturday:
+
+- `TARMOTO_OSM_ROAD_REFRESH_ENABLED=true` — off by default; the script no-ops
+  otherwise.
+- Mount a **shared extract volume** at `TARMOTO_OSM_ROAD_IMPORT_DIR` — distinct
+  from the POI/FSQ one — that both `apps/ingest` (writer) and the backend
+  (reader) mount. Same **uid 100** ownership convention as the POI/FSQ volume
+  (see above): one `apps/ingest` deployment can feed staging + prod from a
+  single shared volume, same as POI.
+- (optional) `TARMOTO_OSM_ROAD_IMPORT_REGIONS` to refresh a subset, and
+  `TARMOTO_OSM_ROAD_TILE_SPAN_DEG` to tune the tile span (default 2.5°) — set it
+  **identically** on `apps/ingest` and the backend, or the two derive different
+  grids and the importer looks for tiles the producer never wrote.
+- **Deploy model:** add a second **Scheduled Task** that `docker exec`s
+  `node apps/ingest/dist/scripts/refresh-road-extracts.js` into the
+  already-running `apps/ingest` container on the cron — the same
+  never-one-shot pattern as the POI/FSQ scheduled tasks.
+- **Memory / swap:** same osmium RAM spike caveat as the POI refresh (~1–2 GB
+  per country PBF); ensure real swap headroom on a small/shared host.
+
+Behaviour matches the POI refresh: **atomic keep-last-good** (`.part` sibling,
+renamed onto each `<code>-r<row>c<col>-s<span>.osm` only after that tile's clip succeeds,
+so a partially-refreshed region may mix fresh + previous tiles) and a **non-zero
+exit** if any region failed, so the scheduler can alert; the next import
+simply re-imports whatever landed — a region whose refresh failed re-imports
+its prior extracts.
+
+**Enablement order** (ops sequencing — do this in order, not all at once):
+
+1. Set `TARMOTO_OSM_ROAD_IMPORT_DIR` + `TARMOTO_OSM_ROAD_IMPORT_REGIONS` (and, if
+   overriding it, `TARMOTO_OSM_ROAD_TILE_SPAN_DEG`) — the **same** values — on
+   **both** `apps/ingest` (producer) and the backend (importer). They must agree,
+   or the importer reads an empty or wrong folder / a mismatched tile grid.
+2. Add the `apps/ingest` scheduled task (`refresh-road-extracts.js`) and set
+   `TARMOTO_OSM_ROAD_REFRESH_ENABLED=true` on `apps/ingest`. Let it run at
+   least once and confirm `<code>-r<row>c<col>-s<span>.osm` tile files land in
+   the shared dir.
+3. Only then flip `TARMOTO_OSM_ROAD_IMPORT_ENABLED=true` on the **backend** —
+   enabling the importer before the first extracts land just means its first
+   weekly tick skips every tile (`no extract at … — skipping`) until the
+   refresh has produced them; safe, but pointless to enable early.
+
+On a successful import, the backend automatically chains the road-quality →
+GraphHopper conflation (`quality.conflation`, whole-network as of Sub-project
+B) — see
+[`apps/backend/src/modules/roads/quality-conflation/README.md`](../../apps/backend/src/modules/roads/quality-conflation/README.md).

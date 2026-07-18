@@ -6,11 +6,11 @@ import { OsmImportService } from '../../roads/osm-import/osm-import.service.js';
 import { JobsProducer } from '../jobs.producer.js';
 
 /**
- * Recurring worker (#781): imports the configured OSM `.osm` extract into
- * `road_segments`. The read+parse+upsert lives in `OsmImportService`; this is
- * just the BullMQ trigger. Skips (no file read) unless
- * `TARMOTO_OSM_ROAD_IMPORT_ENABLED=true`, so a tick is a cheap no-op when the import
- * is off — letting a read/parse error propagate so BullMQ retries.
+ * Recurring worker (#781): imports every configured region's OSM extract (the
+ * folder model, Sub-project B) into `road_segments`. The read+parse+upsert lives
+ * in `OsmImportService`; this is just the BullMQ trigger. Skips (no file read)
+ * unless `TARMOTO_OSM_ROAD_IMPORT_ENABLED=true`, so a tick is a cheap no-op when
+ * the import is off — letting a read/parse error propagate so BullMQ retries.
  *
  * On a **successful** import it chains the road-quality conflation (#779) so the
  * derived GraphHopper extract is always built from a freshly-imported network,
@@ -37,7 +37,7 @@ export class OsmImportProcessor extends WorkerHost {
       );
       return { skipped: true };
     }
-    const result = await this.osmImport.importFromConfiguredFile();
+    const result = await this.osmImport.importAll();
     // Chain the quality conflation only after a successful import, so it never
     // runs on a stale/partial snapshot of the network.
     await this.producer.enqueueQualityConflation();
