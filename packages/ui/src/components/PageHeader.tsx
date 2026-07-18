@@ -12,8 +12,8 @@ import { Stamp } from "../atoms/Stamp";
  *   stamp  (optional) · mono category label above the title
  *   icon   (optional) · accent-coloured glyph inline with the title
  *   title  · 32 px Heading (Heading xl)
- *   sub    (optional) · 13 px fg-dim body, capped at ~720 px
- *   right  (optional) · CTA slot on the right; flex-shrink-0
+ *   right  (optional) · CTA slot on the title row, right-aligned; flex-shrink-0
+ *   sub    (optional) · 13 px fg-dim body below, spanning the column, ~720 px
  *
  * Once the header scrolls out of view a condensed sticky bar (icon +
  * title + the `right` actions) pins to the top of the scroll container,
@@ -97,34 +97,40 @@ export function PageHeader({
           </div>
         </div>
       )}
-      <div
-        ref={headerRef}
-        className={cn("mb-6 flex items-end justify-between gap-6", className)}
-      >
-        <div className="min-w-0 flex-1">
-          {stamp && <Stamp>{stamp}</Stamp>}
-          <div className={cn("flex items-center gap-3", stamp && "mt-1")}>
+      <div ref={headerRef} className={cn("mb-6", className)}>
+        {stamp && <Stamp>{stamp}</Stamp>}
+        {/* Title and actions share the first row on every size; the sub sits
+            below spanning the full column. `items-center` keeps the CTAs
+            aligned to the title, and the title truncates so it never pushes
+            the shrink-0 action slot off-screen on narrow viewports. */}
+        <div
+          className={cn(
+            "flex items-center justify-between gap-6",
+            stamp && "mt-1",
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-3">
             {icon && (
-              <span className="text-accent" aria-hidden="true">
+              <span className="shrink-0 text-accent" aria-hidden="true">
                 {icon}
               </span>
             )}
-            <Heading size="xl" as="h1">
+            <Heading size="xl" as="h1" className="truncate">
               {title}
             </Heading>
           </div>
-          {sub && (
-            <p className="mt-2 max-w-[720px] text-[13px] leading-[1.55] text-fg-dim">
-              {sub}
-            </p>
+          {right && (
+            // While the condensed bar carries the live copy of the actions,
+            // the off-screen originals go inert — one focusable instance.
+            <div className="shrink-0" inert={condensed || undefined}>
+              {right}
+            </div>
           )}
         </div>
-        {right && (
-          // While the condensed bar carries the live copy of the actions,
-          // the off-screen originals go inert — one focusable instance.
-          <div className="shrink-0" inert={condensed || undefined}>
-            {right}
-          </div>
+        {sub && (
+          <p className="mt-2 max-w-[720px] text-[13px] leading-[1.55] text-fg-dim">
+            {sub}
+          </p>
         )}
       </div>
     </>
