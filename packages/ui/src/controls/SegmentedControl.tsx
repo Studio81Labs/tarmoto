@@ -60,9 +60,12 @@ export function SegmentedControl<T extends string>({
       aria-disabled={disabled || undefined}
       className={cn(
         "inline-flex gap-1 rounded-[7px] bg-paper p-[3px]",
-        // `field` lines the control up with the shared 38px form-control
-        // height; the buttons stretch to fill (flex align-items: stretch).
-        size === "field" && "h-[38px]",
+        // `field` matches the shared form-control chrome (fieldChrome): the
+        // 38px height AND the line-strong border, so it reads as a field-sized
+        // box next to Inputs/Selects rather than a shorter borderless track
+        // whose 38px frame blends into the page. Buttons stretch to fill (flex
+        // align-items: stretch).
+        size === "field" && "h-[38px] border border-line-strong",
         disabled && "opacity-50",
         className,
       )}
