@@ -1007,6 +1007,7 @@ export const en = {
   "Segments ": "Segments ",
   "Segments ridden": "Segments ridden",
   "Select a day to focus": "Select a day to focus",
+  "Select a ride to preview its route.": "Select a ride to preview its route.",
   "Select at least one paved surface or turn off Avoid unpaved roads before saving.":
     "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
   "Select review photos": "Select review photos",
@@ -1366,6 +1367,7 @@ export const en = {
   "{label} email": "{label} email",
   "{label} no longer available": "{label} no longer available",
   "{label} push": "{label} push",
+  "{label} has no GPS track.": "{label} has no GPS track.",
   "{label} route map": "{label} route map",
   "{name} review photo {n}": "{name} review photo {n}",
   "{name}: {pct} complete": "{name}: {pct} complete",
