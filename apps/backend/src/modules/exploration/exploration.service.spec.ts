@@ -7,6 +7,7 @@ import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('ExplorationService', () => {
   let service: ExplorationService;
@@ -14,6 +15,7 @@ describe('ExplorationService', () => {
   let roadSegmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
   let privacy: { loadPreferences: jest.Mock };
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
 
   const mockRideSegmentQb = {
     select: jest.fn().mockReturnThis(),
@@ -92,6 +94,12 @@ describe('ExplorationService', () => {
       }),
     };
 
+    // Default: switch ON so every pre-existing test below is unaffected;
+    // the off-case tests override with `mockResolvedValue(false)`.
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExplorationService,
@@ -99,6 +107,7 @@ describe('ExplorationService', () => {
         { provide: getRepositoryToken(RoadSegment), useValue: roadSegmentRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -152,6 +161,21 @@ describe('ExplorationService', () => {
       expect(mockRideSegmentQb.andWhere).toHaveBeenCalledWith(
         "r.status = 'completed'",
       );
+    });
+
+    it('getStats returns zeroed stats without querying when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.getStats('user-1');
+      expect(result).toEqual({
+        ridden_segments: 0,
+        total_segments: 0,
+        percent_explored: 0,
+        total_distance_km: 0,
+      });
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(roadSegmentRepo.count).not.toHaveBeenCalled();
     });
   });
 
@@ -243,6 +267,24 @@ describe('ExplorationService', () => {
       expect(result).toHaveLength(1);
       expect(mockRoadSegmentQb.getRawMany).toHaveBeenCalled();
     });
+
+    it('getNearbyUnridden returns [] when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.getNearbyUnridden(
+        'user-1',
+        49.1,
+        16.7,
+        10,
+        20,
+      );
+      expect(result).toEqual([]);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      // The switch gate is the FIRST statement — it must short-circuit
+      // before the privacy-consent lookup, not just before the query.
+      expect(privacy.loadPreferences).not.toHaveBeenCalled();
+    });
   });
 
   describe('getRiddenIds', () => {
@@ -274,6 +316,16 @@ describe('ExplorationService', () => {
       expect(mockRideSegmentQb.andWhere).toHaveBeenCalledWith(
         "r.status = 'completed'",
       );
+    });
+
+    it('getRiddenIds returns empty when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.getRiddenIds('user-1');
+      expect(result).toEqual({ segment_ids: [] });
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(mockRideSegmentQb.getRawMany).not.toHaveBeenCalled();
     });
   });
 
@@ -319,6 +371,18 @@ describe('ExplorationService', () => {
       const result = await service.getRiddenSegments('user-1');
 
       expect(result.segments).toEqual([]);
+    });
+
+    it('getRiddenSegments returns empty when sys_gamification is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.getRiddenSegments('user-1');
+      expect(result).toEqual({ segments: [] });
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_gamification',
+      );
+      expect(
+        rideSegmentRepo.manager!.createQueryBuilder,
+      ).not.toHaveBeenCalled();
     });
   });
 });

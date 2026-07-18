@@ -4,6 +4,7 @@ import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { AccountModule } from '../account/account.module.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { ExplorationController } from './exploration.controller.js';
 import { ExplorationService } from './exploration.service.js';
 
@@ -11,6 +12,7 @@ import { ExplorationService } from './exploration.service.js';
   imports: [
     TypeOrmModule.forFeature([RideSegment, RoadSegment, Ride]),
     AccountModule,
+    FeaturesModule,
   ],
   controllers: [ExplorationController],
   providers: [ExplorationService],
