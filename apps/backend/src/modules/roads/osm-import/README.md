@@ -241,12 +241,22 @@ large multi-tile countries (**DE / IT / PL**); the launch region set
 (**cz / sk / at**) and the dormant, weekly-cadence rollout are **not** gated on
 them.
 
-- **Cross-region refresh atomicity (Codex P2 #1):** the producer publishes each
-  region atomically, but a _partial cross-region_ refresh (one country's tiles
-  fresh, an adjacent country's stale) can make the importer reconcile a
-  cross-border way's fresh rows against its neighbour's stale rows
-  (tombstone/re-key). Track: publish the whole configured region set atomically
-  (a manifest / all-or-nothing swap) before enabling multiple adjacent countries.
+- **Cross-region atomicity — publish AND import (Codex P2 #1):** the producer
+  publishes each region atomically, but a _partial cross-region_ refresh (one
+  country's tiles fresh, an adjacent country's stale) can make the importer
+  reconcile a cross-border way's fresh rows against its neighbour's stale rows
+  (tombstone/re-key). The importer has the same shape of gap on its own side:
+  each region's import IS atomic (one transaction per region, `importRegion`),
+  but `importAll` commits each region INDEPENDENTLY — so when multiple adjacent
+  regions are configured and a LATER region fails, the EARLIER regions are
+  already committed from the new snapshot while the later ones stay on the old
+  one, and a cross-border way/key that moved between those countries can be
+  tombstoned/re-keyed just as inconsistently, from the import side instead of
+  the refresh side. Track (both halves): publish the whole configured region
+  set atomically on the producer side (a manifest / all-or-nothing swap), and
+  wrap the whole configured region set in ONE transaction on the importer side
+  (one bad region rolls back all, at the cost of a very long-running
+  transaction) — before enabling multiple adjacent countries.
 - **Tile filename grid identity (Codex P2 #3):** the tile filename discriminates
   by span but not the tile bbox, so if `DEFAULT_REGIONS` bboxes are
   corrected/expanded at the same span, an old `<code>-r_c_-s<span>.osm` could be

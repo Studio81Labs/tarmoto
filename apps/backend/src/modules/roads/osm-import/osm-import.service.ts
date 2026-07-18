@@ -359,6 +359,23 @@ export class OsmImportService {
    * on disk (an absent tile does not increment it) — {@link importAll}'s empty-dir
    * guard sums this across regions to tell "every configured tile was genuinely
    * absent" apart from "every tile resolved to nothing to import".
+   *
+   * Partial-snapshot guard (Codex P2): the producer publishes a region's tile grid
+   * ATOMICALLY — every cell, including empty ones, as a present XML file — so a
+   * region whose expected tiles are SOME present / SOME absent is never a normal
+   * partial refresh (that's every tile absent, below, and is unaffected); it is a
+   * genuine anomaly — a mount glitch, a partial copy, or a `tileSpanDeg` mismatch
+   * against the producer. Importing the present siblings while the absent cells
+   * keep their stale rows would corrupt identity for any way crossing into a
+   * missing cell (split/merge would reconcile the fresh cells against this
+   * region's OLD rows in the missing ones). So a lightweight presence-only scan
+   * (`fileExists` per expected tile — no parsing, no row buffering) runs BEFORE
+   * anything imports and classifies the region: all-present falls into the loop
+   * below as normal; all-absent also falls into the loop below, where each tile's
+   * own `fileExists` check (in {@link importTile}) resolves it to `EMPTY_RESULT` /
+   * `present: false` exactly as before; some-present-some-absent THROWS — before
+   * the region transaction even opens — failing this region (and `importAll`)
+   * loudly instead of partially importing it.
    */
   async importRegion(
     region: PoiImportRegion,
@@ -368,6 +385,26 @@ export class OsmImportService {
     this.logger.log(
       `OSM import (${region.code}): ${tiles.length} tile(s) from ${extractDir}`,
     );
+    // Presence-only pre-scan — see the partial-snapshot guard above. A bare
+    // `fs.access` per expected tile (no XML parsing, no row buffering), so it
+    // never touches the per-tile heap bound the transaction loop below preserves
+    // — even a large-country tile count is cheap to just stat.
+    let tilesFound = 0;
+    for (const tile of tiles) {
+      const path = join(
+        extractDir,
+        roadTileFileName(tile, this.config.tileSpanDeg),
+      );
+      if (await this.fileExists(path)) tilesFound++;
+    }
+    if (tilesFound > 0 && tilesFound < tiles.length) {
+      throw new Error(
+        `OSM road import: region ${region.code} has an incomplete tile ` +
+          `snapshot — ${tilesFound}/${tiles.length} expected tiles present in ` +
+          `${extractDir}. Refusing to partially import (check the volume mount ` +
+          `/ that TARMOTO_OSM_ROAD_TILE_SPAN_DEG matches the producer).`,
+      );
+    }
     // One transaction for the WHOLE region (#835 identity safety, Codex P1): a
     // region's tiles reconcile as a UNIT. A mid-region tile failure (a parse/read
     // error on a present-but-malformed extract, or a DB error) propagates out of
@@ -381,9 +418,12 @@ export class OsmImportService {
     // returns EMPTY_RESULT WITHOUT throwing (a missing extract is not a failure and
     // must not roll the region back) — but it also does NOT count toward
     // `tilesPresent`, so a region whose every tile is absent reports 0 present
-    // tiles even though it resolves cleanly. `importAll` loops regions, each its
-    // own transaction, so cross-region imports stay independent; a region that
-    // throws still rejects `importAll` and skips conflation, as before.
+    // tiles even though it resolves cleanly (the presence pre-scan above has
+    // already ruled out the some-absent/some-present case by this point, so every
+    // tile reaching this loop is on the same side of that split). `importAll`
+    // loops regions, each its own transaction, so cross-region imports stay
+    // independent; a region that throws still rejects `importAll` and skips
+    // conflation, as before.
     return this.repo.manager.transaction(async (tx) => {
       const total: OsmImportResult = {
         upserted: 0,

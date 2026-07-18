@@ -989,23 +989,50 @@ describe('OsmImportService', () => {
       expect(qb.execute).toHaveBeenCalledTimes(2);
     });
 
-    it('skips the region tiles with no extract, imports the ones present', async () => {
-      // span 4° → 2 tiles; only r0c1 has an extract. The absent r0c0 skips (warn,
-      // no tombstone), r0c1 imports — a region needn't have every cell on disk
-      // (all-water/empty cells are simply never written by the producer).
+    it('skips a region whose tiles are ALL absent (not refreshed yet, no throw)', async () => {
+      // span 4° → 2 tiles (r0c0 + r0c1); NEITHER has an extract. A region simply
+      // not refreshed yet is not the partial-snapshot anomaly (that's SOME present
+      // + SOME absent, covered below) — it resolves cleanly with a zero result,
+      // exactly as before. (importAll's OWN empty-dir guard, aggregated across
+      // every configured region, is what turns an entirely-absent RUN into a
+      // throw — not importRegion itself; see the importAll describe below.)
+      osmConfig.tileSpanDeg = 4;
+      loadExisting.mockResolvedValue([]);
+      const warn = jest.spyOn(service['logger'], 'warn');
+
+      const result = await service.importRegion(CZ, dir);
+
+      expect(result).toEqual({
+        result: { upserted: 0, carriedOver: 0, deactivated: 0 },
+        tilesPresent: 0,
+      });
+      expect(warn).toHaveBeenCalled(); // one "no extract … skipping" per tile
+      expect(loadExisting).not.toHaveBeenCalled(); // neither tile reached reconcile
+      expect(qb.execute).not.toHaveBeenCalled();
+    });
+
+    it('rejects a region whose tiles are SOME present + SOME absent (incomplete tile snapshot, Codex P2)', async () => {
+      // span 4° → 2 tiles; only r0c1 has an extract. The producer publishes a
+      // region's whole tile grid atomically (every cell, incl. empty ones, as a
+      // present file), so this mix is never a normal partial refresh — it's a
+      // mount glitch / partial copy / TARMOTO_OSM_ROAD_TILE_SPAN_DEG mismatch.
+      // Importing r0c1 alone while r0c0 keeps its stale rows would corrupt
+      // identity for any way crossing into the missing cell, so the region must
+      // REJECT instead of silently importing just the present sibling (the old,
+      // now-replaced behavior this test used to assert).
       osmConfig.tileSpanDeg = 4;
       await writeFile(
         join(dir, roadTileFileName(CZ_TILE_R0C1, osmConfig.tileSpanDeg)),
         wayXml(2),
       );
-      loadExisting.mockResolvedValue([]);
-      const result = await service.importRegion(CZ, dir);
-      expect(result.result.upserted).toBe(1);
-      // Only the present tile counts — the subdivided grid has 2 cells, but the
-      // absent r0c0 does not increment tilesPresent (it's not a genuine "present
-      // extract with nothing to import", it was never found at all).
-      expect(result.tilesPresent).toBe(1);
-      expect(qb.execute).toHaveBeenCalledTimes(1);
+
+      await expect(service.importRegion(CZ, dir)).rejects.toThrow(
+        /incomplete tile snapshot/,
+      );
+      // Rejects BEFORE the region transaction even opens — no partial import, no
+      // write for the present sibling either.
+      expect(managerTransaction).not.toHaveBeenCalled();
+      expect(qb.execute).not.toHaveBeenCalled();
     });
 
     it('runs every tile of a region in ONE transaction and rejects when a later tile fails (atomic per-region, Codex P1)', async () => {
