@@ -243,7 +243,10 @@ export function RidesFilters({ state, update, reset }: Props) {
 
         <div className="flex flex-col gap-1.5">
           <span className={labelClass}>{t("Type")}</span>
+          {/* size="field" so the segmented control lines up with the
+              38px Inputs/Selects it sits among in this filter grid. */}
           <SegmentedControl
+            size="field"
             ariaLabel={t("Ride type filter")}
             value={state.type ?? "all"}
             onChange={(next) =>
