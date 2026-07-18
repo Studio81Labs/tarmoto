@@ -243,8 +243,9 @@ describe('OSM intra-country tile-scope reconciliation — polygon ∩ tile bbox'
       osmDoc(wayXml(883002, CLUJ.lat, CLUJ.lng)),
     );
     const resB = await service.importTile(RO, tileB, dir);
-    expect(resB.upserted).toBe(1); // tile B's own road imported (proves in-scope)
-    expect(resB.deactivated).toBe(0); // and nothing tombstoned
+    expect(resB.present).toBe(true);
+    expect(resB.result.upserted).toBe(1); // tile B's own road imported (in-scope)
+    expect(resB.result.deactivated).toBe(0); // and nothing tombstoned
 
     // 3) Tile A's road survives with its ORIGINAL id and still live. On a
     //    polygon-ONLY tombstone scope (no ∩ tile bbox), tile B's import loads

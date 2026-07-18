@@ -214,7 +214,7 @@ describe('OSM region-overlap reconciliation — polygon scope (#1033)', () => {
     // 2) SK import — SK's rectangle contains the CZ road (overlap strip), but the
     //    CZ road is OUTSIDE the SK polygon, so it must never be a stale candidate.
     const sk = await service.importRegion(SK, dir);
-    expect(sk.upserted).toBe(1); // SK's own road imported
+    expect(sk.result.upserted).toBe(1); // SK's own road imported
 
     // 3) The CZ road survives with its ORIGINAL id and still live. On the buggy
     //    rectangle scope, SK's bbox load picks it up and tombstones it → this fails.

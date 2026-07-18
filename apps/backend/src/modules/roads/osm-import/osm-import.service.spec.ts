@@ -844,7 +844,10 @@ describe('OsmImportService', () => {
     it('skips a tile whose extract file is absent (no tombstone)', async () => {
       const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importTile(CZ, CZ_TILE, dir);
-      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      expect(result).toEqual({
+        result: { upserted: 0, carriedOver: 0, deactivated: 0 },
+        present: false, // the ONLY path that reports absent
+      });
       // reconcile never ran → no load/transaction
       expect(loadExisting).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalled();
@@ -864,7 +867,10 @@ describe('OsmImportService', () => {
       const warn = jest.spyOn(service['logger'], 'warn');
       const log = jest.spyOn(service['logger'], 'log');
       const result = await service.importTile(CZ, CZ_TILE, dir);
-      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+      expect(result).toEqual({
+        result: { upserted: 0, carriedOver: 0, deactivated: 0 },
+        present: true, // a present extract, even 0-way, still counts as present
+      });
       expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
       expect(warn).not.toHaveBeenCalled();
       expect(log).toHaveBeenCalledWith(
@@ -891,7 +897,8 @@ describe('OsmImportService', () => {
       const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
-      expect(result.deactivated).toBe(1); // the now-absent row propagates
+      expect(result.present).toBe(true);
+      expect(result.result.deactivated).toBe(1); // the now-absent row propagates
       expect(warn).not.toHaveBeenCalled(); // below the floor → no withhold warn
     });
 
@@ -916,7 +923,8 @@ describe('OsmImportService', () => {
       const warn = jest.spyOn(service['logger'], 'warn');
       const result = await service.importTile(CZ, CZ_TILE, dir);
       expect(loadExisting).toHaveBeenCalled(); // reconcile RAN (not skipped)
-      expect(result.deactivated).toBe(1); // the now-absent row propagates
+      expect(result.present).toBe(true);
+      expect(result.result.deactivated).toBe(1); // the now-absent row propagates
       expect(warn).not.toHaveBeenCalled(); // below the floor → no withhold warn
     });
 
@@ -927,7 +935,8 @@ describe('OsmImportService', () => {
       );
       loadExisting.mockResolvedValue([]); // no existing rows
       const result = await service.importTile(CZ, CZ_TILE, dir);
-      expect(result.upserted).toBe(1);
+      expect(result.present).toBe(true);
+      expect(result.result.upserted).toBe(1);
       // loadExistingInRegion is called with the CZ country polygon AND the tile
       // bbox tuple — the SAME combined scope filterToRegion filtered the incoming
       // set to (the #1033 invariant, extended to the tile bbox).
@@ -975,7 +984,8 @@ describe('OsmImportService', () => {
       loadExisting.mockResolvedValue([]);
       const result = await service.importRegion(CZ, dir);
       // Both tiles imported (1 way each) → 2 upserts, one reconcile flush per tile.
-      expect(result.upserted).toBe(2);
+      expect(result.result.upserted).toBe(2);
+      expect(result.tilesPresent).toBe(2); // both tile files were on disk
       expect(qb.execute).toHaveBeenCalledTimes(2);
     });
 
@@ -990,7 +1000,11 @@ describe('OsmImportService', () => {
       );
       loadExisting.mockResolvedValue([]);
       const result = await service.importRegion(CZ, dir);
-      expect(result.upserted).toBe(1);
+      expect(result.result.upserted).toBe(1);
+      // Only the present tile counts — the subdivided grid has 2 cells, but the
+      // absent r0c0 does not increment tilesPresent (it's not a genuine "present
+      // extract with nothing to import", it was never found at all).
+      expect(result.tilesPresent).toBe(1);
       expect(qb.execute).toHaveBeenCalledTimes(1);
     });
 
@@ -1070,6 +1084,63 @@ describe('OsmImportService', () => {
       await expect(service.importAll()).rejects.toThrow(
         /TARMOTO_OSM_ROAD_IMPORT_DIR/,
       );
+    });
+
+    it('throws when regions are configured but every tile is absent (empty/mis-mounted dir, Codex P2)', async () => {
+      // No extract files written for either region — every configured tile is
+      // absent. Before this guard, importAll resolved a silent {0,0,0} and the
+      // processor chained quality conflation onto an empty snapshot; now the
+      // whole-run presence count is 0 with regions configured, so it must fail
+      // loudly instead (BullMQ retries + alerts, and conflation is never chained).
+      osmConfig.extractDir = dir;
+      osmConfig.regions = [
+        {
+          code: 'CZ',
+          bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+        },
+        {
+          code: 'SK',
+          bbox: { minLng: 16.83, minLat: 47.73, maxLng: 22.57, maxLat: 49.61 },
+        },
+      ];
+      await expect(service.importAll()).rejects.toThrow(
+        /no tile extracts were found/,
+      );
+    });
+
+    it('does NOT throw when at least one configured tile is present, even if it parses to zero ways', async () => {
+      // CZ's tile is present but 0-way — still counts as PRESENT (the guard is
+      // about presence on disk, not content). SK's tile is entirely absent. The
+      // whole-run total (1) is > 0, so the guard never arms.
+      await writeFile(
+        join(dir, roadTileFileName(CZ_TILE, osmConfig.tileSpanDeg)),
+        '<osm version="0.6"></osm>',
+      );
+      osmConfig.extractDir = dir;
+      osmConfig.regions = [
+        {
+          code: 'CZ',
+          bbox: { minLng: 12.09, minLat: 48.55, maxLng: 18.86, maxLat: 51.06 },
+        },
+        {
+          code: 'SK',
+          bbox: { minLng: 16.83, minLat: 47.73, maxLng: 22.57, maxLat: 49.61 },
+        },
+      ];
+      loadExisting.mockResolvedValue([]);
+      const result = await service.importAll();
+      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
+    });
+
+    it('does NOT throw when zero regions are configured (nothing to import is not "everything absent")', async () => {
+      // regions.length === 0 → the guard never arms, regardless of
+      // totalTilesPresent (vacuously 0) — an intentionally-empty region list
+      // means there is nothing to import, not that a configured import found
+      // nothing on disk.
+      osmConfig.extractDir = dir;
+      osmConfig.regions = [];
+      const result = await service.importAll();
+      expect(result).toEqual({ upserted: 0, carriedOver: 0, deactivated: 0 });
     });
   });
 });

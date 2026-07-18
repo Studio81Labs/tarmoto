@@ -233,6 +233,37 @@ cell (below the floor) has a tiny blast radius, so it propagates removals freely
 past 50% — never withheld/warned forever against a correct-but-small extract. Only an
 **absent** file still skips outright.
 
+### Known limitations (tracked, pre-large-country-enablement)
+
+Three tiling-inherent edge cases — surfaced in a Codex P2 review pass on this PR —
+are tracked here rather than fixed now. They must be addressed before enabling
+large multi-tile countries (**DE / IT / PL**); the launch region set
+(**cz / sk / at**) and the dormant, weekly-cadence rollout are **not** gated on
+them.
+
+- **Cross-region refresh atomicity (Codex P2 #1):** the producer publishes each
+  region atomically, but a _partial cross-region_ refresh (one country's tiles
+  fresh, an adjacent country's stale) can make the importer reconcile a
+  cross-border way's fresh rows against its neighbour's stale rows
+  (tombstone/re-key). Track: publish the whole configured region set atomically
+  (a manifest / all-or-nothing swap) before enabling multiple adjacent countries.
+- **Tile filename grid identity (Codex P2 #3):** the tile filename discriminates
+  by span but not the tile bbox, so if `DEFAULT_REGIONS` bboxes are
+  corrected/expanded at the same span, an old `<code>-r_c_-s<span>.osm` could be
+  reconciled as authoritative for a different derived bbox. Track: include a
+  bbox/grid hash in the filename (or a validated manifest) whenever
+  `DEFAULT_REGIONS` bboxes change.
+- **Carry-over across tile seams (Codex P2 #4):** split/merge carry-over matches
+  an incoming segment to an existing row by geometry within the tile's scope; when
+  an OSM edit moves/reshapes a segment across a tile seam, the old row is in the
+  adjacent tile's scope and is not a carry-over candidate, so the segment is
+  re-inserted with a new `id` (losing rider history) instead of carried over. This
+  is a regression from the pre-tiling whole-region reconcile and affects any
+  multi-tile region (incl. cz/sk/at at the 2.5° default). Track: load
+  adjacent/region-wide carry-over candidates for claimed keys, or stage
+  reconciliation at region scope before applying per-tile tombstones — noting this
+  trades against the per-tile memory bound tiling exists to provide.
+
 ## Cadence & manual runs
 
 Recurring weekly (Sunday 01:00 UTC, `road.import` queue) — before the POI

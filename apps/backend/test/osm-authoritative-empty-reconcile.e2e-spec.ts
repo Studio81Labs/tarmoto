@@ -248,7 +248,7 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
     // 1) Seed three roads in the tile (proves each is inside RO ∩ the tile).
     await writeTile(0, 1, 2);
     const seed = await service.importTile(RO, testTile, dir);
-    expect(seed.upserted).toBe(3);
+    expect(seed.result.upserted).toBe(3);
     const seededC = await segmentsForWay(trackedWayIds[2]!);
     expect(seededC).toHaveLength(1);
     expect(seededC[0]!.deactivated_at).toBeNull();
@@ -260,7 +260,7 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
     //    the removal propagates.
     await writeTile(0, 1);
     const reimport = await service.importTile(RO, testTile, dir);
-    expect(reimport.deactivated).toBe(1); // exactly road C
+    expect(reimport.result.deactivated).toBe(1); // exactly road C
 
     // 3) Road C is TOMBSTONED (deactivated_at set) with its id preserved — a
     //    soft-delete UPDATE, never a row deletion (its history FKs survive).
@@ -286,7 +286,7 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
 
     await writeTile(0);
     const reimport = await service.importTile(RO, testTile, dir);
-    expect(reimport.deactivated).toBe(2); // both dropped roads propagate
+    expect(reimport.result.deactivated).toBe(2); // both dropped roads propagate
 
     // Roads B + C, absent from the shrunken extract, are TOMBSTONED (not deleted).
     for (const wayId of [trackedWayIds[1]!, trackedWayIds[2]!]) {
@@ -314,7 +314,7 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
       seedDoc,
     );
     const seed = await service.importTile(RO, testTile, dir);
-    expect(seed.upserted).toBe(DENSE_COUNT); // premise: all 60 inside RO ∩ the tile
+    expect(seed.result.upserted).toBe(DENSE_COUNT); // premise: all 60 inside RO ∩ the tile
 
     const kept = denseRoads.slice(0, 20);
     await writeFile(
@@ -322,7 +322,7 @@ describe('OSM authoritative-empty tile reconciliation — remove propagates, mas
       osmDoc(...kept.map((r) => wayXml(r.wayId, r.lat, r.lng))),
     );
     const reimport = await service.importTile(RO, testTile, dir);
-    expect(reimport.deactivated).toBe(0); // withheld — nothing tombstoned
+    expect(reimport.result.deactivated).toBe(0); // withheld — nothing tombstoned
 
     // Sample of the 40 dropped roads (last + a middle one) — both remain LIVE.
     for (const r of [denseRoads[DENSE_COUNT - 1]!, denseRoads[40]!]) {

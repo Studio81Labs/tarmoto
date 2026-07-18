@@ -225,7 +225,7 @@ describe('OSM per-region import atomicity — region rolls back on a mid-region 
       osmDoc(wayXml(ROAD_A.wayId, ROAD_A.lat, ROAD_A.lng)),
     );
     const seed = await service.importTile(RO_SUB, tileA, dir);
-    expect(seed.upserted).toBe(1);
+    expect(seed.result.upserted).toBe(1);
     const seeded = await segmentsForWay(String(ROAD_A.wayId));
     expect(seeded).toHaveLength(1);
     expect(seeded[0]!.deactivated_at).toBeNull();

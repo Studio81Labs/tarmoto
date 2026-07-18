@@ -35,9 +35,9 @@ const UPSERT_CHUNK = 500;
 const REGION_FILTER_CHUNK = 2000;
 
 /** Zero result — a skipped (absent-file) tile contributes nothing. Frozen:
- *  used by the single skip path, and `importAll` only ever reads its fields
- *  into a fresh accumulator, so a stray in-place mutation would otherwise leak
- *  across calls. */
+ *  used by the single skip path, and its immediate caller (`importRegion`)
+ *  only ever reads its fields into a fresh accumulator, so a stray in-place
+ *  mutation would otherwise leak across calls. */
 const EMPTY_RESULT: OsmImportResult = Object.freeze({
   upserted: 0,
   carriedOver: 0,
@@ -295,6 +295,19 @@ export class OsmImportService {
    * (removals propagate, guarded by reconcile's mass-wipe fraction — see
    * {@link importTile}), so one missing extract can't abort the others and no single
    * extract can wipe most of a tile.
+   *
+   * Whole-run safety valve (Codex P2): each region also reports how many of its
+   * tiles were actually PRESENT on disk ({@link importRegion}'s `tilesPresent`),
+   * summed here into `totalTilesPresent`. The per-tile "absent is not a failure"
+   * tolerance above means an empty or mis-mounted `extractDir` — every configured
+   * tile absent-skips — would otherwise resolve a silent `{0,0,0}`, indistinguishable
+   * from a genuinely quiet run. `OsmImportProcessor` treats any resolved result as
+   * success and chains quality conflation, which would then rebuild routing from an
+   * empty/stale snapshot. So when regions ARE configured but NOT ONE of their tiles
+   * was found anywhere, this THROWS instead of returning — failing the job (BullMQ
+   * retries + alerts) before conflation is ever reached. A present-but-empty tile
+   * still counts as present (this guard is about presence on disk, not content) and
+   * never trips it; the public return shape is unchanged on the success path.
    */
   async importAll(): Promise<OsmImportResult> {
     const { extractDir, regions } = this.config;
@@ -313,11 +326,23 @@ export class OsmImportService {
       carriedOver: 0,
       deactivated: 0,
     };
+    let totalTilesPresent = 0;
     for (const region of regions) {
-      const r = await this.importRegion(region, extractDir);
+      const { result: r, tilesPresent } = await this.importRegion(
+        region,
+        extractDir,
+      );
       total.upserted += r.upserted;
       total.carriedOver += r.carriedOver;
       total.deactivated += r.deactivated;
+      totalTilesPresent += tilesPresent;
+    }
+    if (this.config.regions.length > 0 && totalTilesPresent === 0) {
+      throw new Error(
+        `OSM road import is enabled with ${this.config.regions.length} region(s) configured, ` +
+          `but no tile extracts were found in ${extractDir} — check the shared volume mount ` +
+          `or that the refresh has produced tiles. Refusing to run conflation on an empty snapshot.`,
+      );
     }
     return total;
   }
@@ -329,12 +354,16 @@ export class OsmImportService {
    * extract is imported against the country polygon ∩ that tile's bbox
    * ({@link importTile}). Peak memory is therefore bounded to one tile no
    * matter how large the country is — a whole-country buffer could otherwise
-   * OOM the import worker. Results aggregate across the region's tiles.
+   * OOM the import worker. Results aggregate across the region's tiles, alongside
+   * a `tilesPresent` count of how many of those tiles actually had an extract file
+   * on disk (an absent tile does not increment it) — {@link importAll}'s empty-dir
+   * guard sums this across regions to tell "every configured tile was genuinely
+   * absent" apart from "every tile resolved to nothing to import".
    */
   async importRegion(
     region: PoiImportRegion,
     extractDir: string,
-  ): Promise<OsmImportResult> {
+  ): Promise<{ result: OsmImportResult; tilesPresent: number }> {
     const tiles = subdivideRegion(region, this.config.tileSpanDeg);
     this.logger.log(
       `OSM import (${region.code}): ${tiles.length} tile(s) from ${extractDir}`,
@@ -350,22 +379,31 @@ export class OsmImportService {
     // DB transaction, not the row buffer, spans the region — and a later tile's
     // existing-row reads see earlier tiles' in-transaction writes. An ABSENT tile
     // returns EMPTY_RESULT WITHOUT throwing (a missing extract is not a failure and
-    // must not roll the region back). `importAll` loops regions, each its own
-    // transaction, so cross-region imports stay independent; a region that throws
-    // still rejects `importAll` and skips conflation, as before.
+    // must not roll the region back) — but it also does NOT count toward
+    // `tilesPresent`, so a region whose every tile is absent reports 0 present
+    // tiles even though it resolves cleanly. `importAll` loops regions, each its
+    // own transaction, so cross-region imports stay independent; a region that
+    // throws still rejects `importAll` and skips conflation, as before.
     return this.repo.manager.transaction(async (tx) => {
       const total: OsmImportResult = {
         upserted: 0,
         carriedOver: 0,
         deactivated: 0,
       };
+      let tilesPresent = 0;
       for (const tile of tiles) {
-        const r = await this.importTile(region, tile, extractDir, tx);
+        const { result: r, present } = await this.importTile(
+          region,
+          tile,
+          extractDir,
+          tx,
+        );
         total.upserted += r.upserted;
         total.carriedOver += r.carriedOver;
         total.deactivated += r.deactivated;
+        if (present) tilesPresent++;
       }
-      return total;
+      return { result: total, tilesPresent };
     });
   }
 
@@ -396,13 +434,21 @@ export class OsmImportService {
    * incoming filter ({@link filterToRegion}) and the existing-row load
    * ({@link loadExistingInRegion}) run the SAME combined PostGIS `ST_Intersects`
    * pair, so a border/tile-seam row is judged identically on both sides.
+   *
+   * The return's `present` flag mirrors the absent-vs-everything-else distinction
+   * above exactly: `false` ONLY on the absent-file skip, `true` on every other path
+   * (including a present-but-empty or present-but-all-out-of-scope extract, both of
+   * which still reconcile). It carries no content signal by itself — {@link
+   * importRegion} sums it into `tilesPresent`, and {@link importAll} uses the
+   * region-wide total to tell "found nothing to import" apart from "found no
+   * extract at all" across a whole run.
    */
   async importTile(
     region: PoiImportRegion,
     tile: RoadTile,
     extractDir: string,
     manager?: EntityManager,
-  ): Promise<OsmImportResult> {
+  ): Promise<{ result: OsmImportResult; present: boolean }> {
     const label = `${region.code} r${tile.row}c${tile.col}`;
     const path = join(
       extractDir,
@@ -412,7 +458,7 @@ export class OsmImportService {
       this.logger.warn(
         `OSM import (${label}): no extract at ${path} — skipping`,
       );
-      return EMPTY_RESULT;
+      return { result: EMPTY_RESULT, present: false };
     }
     this.logger.log(`OSM import (${label}): reading ${path}`);
     const incoming = await this.bufferRows(
@@ -451,7 +497,8 @@ export class OsmImportService {
           `(removals propagate; mass-wipe guarded)`,
       );
     }
-    return this.reconcile(inScope, scope, manager);
+    const result = await this.reconcile(inScope, scope, manager);
+    return { result, present: true };
   }
 
   private async fileExists(path: string): Promise<boolean> {
