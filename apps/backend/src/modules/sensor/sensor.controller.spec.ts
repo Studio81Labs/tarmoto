@@ -54,14 +54,17 @@ describe('SensorController', () => {
       expect(result.segments_updated).toBe(3);
     });
 
-    it('POST /sensor/upload is guarded by SystemSwitchGuard before AuthGuard', () => {
+    it('POST /sensor/upload authenticates before the system-switch lookup', () => {
       const guards = Reflect.getMetadata(
         '__guards__',
         SensorController.prototype.upload,
       ) as unknown[];
       expect(guards).toBeDefined();
-      expect(guards[0]).toBe(SystemSwitchGuard);
-      expect(guards).toContain(AuthGuard);
+      // AuthGuard first: an anonymous request is 401'd without the switch
+      // guard's feature_states read / state leak. SystemSwitchGuard still
+      // runs in the guard phase (before validation) for authenticated uploads.
+      expect(guards[0]).toBe(AuthGuard);
+      expect(guards).toContain(SystemSwitchGuard);
     });
 
     it('POST /sensor/upload declares the sys_surface_upload switch', () => {

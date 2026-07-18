@@ -319,17 +319,19 @@ describe('ReviewsController', () => {
   // `sys_poi_ratings` kill switch reject with 503 before Multer parses and
   // buffers uploads — the load it has to shed during a photo-spam incident.
   // These lock that wiring so it can't silently regress to a service-only gate.
-  it('POST /roads/:segmentId/reviews/photos is guarded by SystemSwitchGuard before AuthGuard (pre-Multer rejection)', () => {
+  it('POST /roads/:segmentId/reviews/photos authenticates before the system-switch lookup (still pre-Multer)', () => {
     const guards = Reflect.getMetadata(
       '__guards__',
       ReviewsController.prototype.uploadPhotos,
     ) as unknown[];
     expect(guards).toBeDefined();
     expect(guards).toContain(SystemSwitchGuard);
-    // Ordered first so a killed feature sheds the request before any auth
-    // work — a system switch is global and needs no request user.
-    expect(guards[0]).toBe(SystemSwitchGuard);
-    expect(guards).toContain(AuthGuard);
+    // AuthGuard first: an anonymous request is 401'd without the switch
+    // guard's feature_states read / state leak. SystemSwitchGuard still runs
+    // in the guard phase (before FilesInterceptor), so a killed feature is
+    // 503'd before Multer buffers the payload for an authenticated upload.
+    expect(guards[0]).toBe(AuthGuard);
+    expect(guards).toContain(SystemSwitchGuard);
   });
 
   it('POST /roads/:segmentId/reviews/photos declares the sys_poi_ratings switch', () => {
