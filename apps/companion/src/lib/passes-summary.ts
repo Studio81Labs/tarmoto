@@ -1,4 +1,5 @@
 import type { paths } from "@tarmoto/openapi-client";
+import type { EnglishMessageKey } from "@/i18n";
 
 export type MountainPass = NonNullable<
   paths["/api/v1/passes"]["get"]["responses"][200]["content"]["application/json"]
@@ -19,11 +20,11 @@ export const MONTH_NAMES = [
   "October",
   "November",
   "December",
-] as const;
+] as const satisfies readonly EnglishMessageKey[];
 
 export type MonthNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
-export function monthLabel(month: number): string {
+export function monthLabel(month: number): (typeof MONTH_NAMES)[number] | "" {
   if (!Number.isInteger(month) || month < 1 || month > 12) return "";
   return MONTH_NAMES[month - 1] ?? "";
 }

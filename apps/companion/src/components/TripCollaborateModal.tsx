@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import {
   useCallback,
   useEffect,
@@ -337,7 +337,7 @@ export function TripCollaborateModal({
                   { id: "activity", label: "Activity" },
                 ] as {
                   id: Tab;
-                  label: string;
+                  label: EnglishMessageKey;
                   badge?: number | null;
                 }[]
               ).map(({ id, label, badge }) => (

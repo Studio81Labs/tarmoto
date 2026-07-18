@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type Translate } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Loader2, Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -18,7 +18,6 @@ import {
   type PassStatus,
 } from "@/lib/passes-summary";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
-import type { LooseTranslate } from "@tarmoto/shared";
 interface PassesPanelProps {
   month?: number;
   onMonthChange?: (month: number) => void;
@@ -204,6 +203,7 @@ function PassesPanelBody({
     routeHitCount: routeClosedCount + routeUnknownCount,
   });
   const routeBoxVisible = showRouteWarnings && routes.length > 0;
+  const m = monthLabel(month);
   return (
     <div className="space-y-3 pt-2 border-t border-line">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
@@ -306,7 +306,7 @@ function PassesPanelBody({
         <>
           <p className="text-xs text-fg-dim">
             {t("In ")}
-            {t(monthLabel(month))}:{" "}
+            {m ? t(m) : ""}:{" "}
             <span className="text-quality-q1">
               {t("{count} closed", { count: counts.closed })}
             </span>
@@ -467,7 +467,7 @@ function OnRoutePassCard({
 function buildRouteSummary(
   closedCount: number,
   unknownCount: number,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   const parts: string[] = [];
   if (closedCount > 0) {

@@ -6,7 +6,9 @@ import {
   isSupportedLocale,
   resolveLocale,
   setActiveLocale,
+  translate as isomorphicTranslate,
   type SupportedLocale,
+  type Translate,
 } from ".";
 
 /**
@@ -87,3 +89,13 @@ export async function readLocale(): Promise<SupportedLocale> {
 export function getServerLocale(): SupportedLocale {
   return requestLocaleRef().current;
 }
+
+/**
+ * Server-bound translator: defaults the locale to `getServerLocale()` (the
+ * per-request `cache()` ref), so an awaiting server component is request-safe
+ * without threading `locale` by hand. Import `t` from `@/i18n/server` (not
+ * `@/i18n`) in server components that render text after an `await`.
+ */
+export const t: Translate = (key, values, locale) =>
+  isomorphicTranslate(key, values, locale ?? getServerLocale());
+export const translate = t;

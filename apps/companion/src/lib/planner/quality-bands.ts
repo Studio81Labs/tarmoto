@@ -1,5 +1,6 @@
 import { dedupeAdjacentPoints, type LngLat } from "./polyline";
 import type { QualityBand, QualitySpan, RouteSegment } from "./types";
+import type { EnglishMessageKey } from "@/i18n";
 
 /**
  * Route-quality band vocabulary for the Plan & inspect planner, per the
@@ -14,7 +15,7 @@ export const QUALITY_BAND_COLORS: Record<QualityBand, string> = {
   no_data: "#A89D8B",
 };
 
-export const QUALITY_BAND_LABELS: Record<QualityBand, string> = {
+export const QUALITY_BAND_LABELS: Record<QualityBand, EnglishMessageKey> = {
   good: "Good or better",
   fair: "Fair",
   rough: "Rough",
@@ -22,12 +23,13 @@ export const QUALITY_BAND_LABELS: Record<QualityBand, string> = {
 };
 
 /** Short variants used where space is tight (map legend, preview header). */
-export const QUALITY_BAND_LABELS_SHORT: Record<QualityBand, string> = {
-  good: "Good+",
-  fair: "Fair",
-  rough: "Rough",
-  no_data: "No data",
-};
+export const QUALITY_BAND_LABELS_SHORT: Record<QualityBand, EnglishMessageKey> =
+  {
+    good: "Good+",
+    fair: "Fair",
+    rough: "Rough",
+    no_data: "No data",
+  };
 
 export const GOOD_BAND_MIN_SCORE = 3.5;
 export const FAIR_BAND_MIN_SCORE = 2.5;

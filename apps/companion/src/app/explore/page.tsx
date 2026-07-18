@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
@@ -73,7 +73,7 @@ declare global {
  */
 const QUALITY_OPTIONS: {
   key: QualityTier;
-  label: string;
+  label: EnglishMessageKey;
   color: string;
 }[] = [
   { key: "excellent", label: "Excellent", color: "bg-quality-excellent" },
@@ -90,7 +90,7 @@ const EXPLORE_QUALITY_LEGEND = QUALITY_OPTIONS.map((opt) => ({
 }));
 const SURFACE_OPTIONS: {
   key: FilterableSurface;
-  label: string;
+  label: EnglishMessageKey;
   color: string;
 }[] = [
   { key: "asphalt", label: "Asphalt", color: "bg-surface-asphalt" },
@@ -101,7 +101,7 @@ const SURFACE_OPTIONS: {
 ];
 const HAZARD_OPTIONS: {
   key: HazardType;
-  label: string;
+  label: EnglishMessageKey;
   emoji: string;
   hex: string;
 }[] = HAZARD_TYPES_UI.map((key) => ({

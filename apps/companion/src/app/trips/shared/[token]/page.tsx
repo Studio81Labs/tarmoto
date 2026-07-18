@@ -1,5 +1,4 @@
-import { t } from "@/i18n";
-import { getServerLocale, readLocale } from "@/i18n/server";
+import { readLocale, t } from "@/i18n/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
@@ -47,11 +46,6 @@ export default async function SharedTripPage({
   const format = await getServerFormatters();
   const share = await fetchSharedTrip(token);
   if (!share) notFound();
-  // This server component awaits before rendering, so resolve the request
-  // locale from the per-request store and thread it explicitly into every
-  // t() call below — the module-global t() default can be stomped by a
-  // concurrent request at the await/Suspense boundary (see i18n/server.ts).
-  const locale = getServerLocale();
   const trip = parseTripSnapshot(share.snapshot);
   const summary = trip ? tripSummary(trip) : null;
   const stops = trip ? tripStops(trip) : [];
@@ -80,13 +74,13 @@ export default async function SharedTripPage({
 
   return (
     <div className="min-h-screen bg-cream text-ink">
-      <PublicShareHeader breadcrumb={t("Shared trip", undefined, locale)} />
+      <PublicShareHeader breadcrumb={t("Shared trip")} />
 
       <main className="mx-auto max-w-[980px] px-7 pb-16 pt-8">
         {/* Hero */}
         <Card className="mb-6 p-[30px]">
           <Stamp tone="accent" as="div" className="mb-3">
-            {t("Public trip share", undefined, locale)}
+            {t("Public trip share")}
           </Stamp>
           <h1 className="font-sans text-[42px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
             {share.title}
@@ -95,13 +89,9 @@ export default async function SharedTripPage({
             {share.trip_id
               ? t(
                   "A planned Tarmoto trip. Sign in to join the group plan, suggest route changes, and vote with the riders.",
-                  undefined,
-                  locale,
                 )
               : t(
                   "A read-only preview of a planned Tarmoto trip. You can view the route without an account.",
-                  undefined,
-                  locale,
                 )}
           </p>
           <div className="mt-[18px] flex flex-wrap gap-2.5">
@@ -109,24 +99,16 @@ export default async function SharedTripPage({
               {share.owner_name}
             </SharePill>
             <SharePill icon={<Activity size={13} />}>
-              {t(
-                "{count, plural, one {{n} view} other {{n} views}}",
-                {
-                  count: share.view_count,
-                  n: format.integer(share.view_count),
-                },
-                locale,
-              )}
+              {t("{count, plural, one {{n} view} other {{n} views}}", {
+                count: share.view_count,
+                n: format.integer(share.view_count),
+              })}
             </SharePill>
             {summary && (
               <SharePill icon={<CalendarDays size={13} />}>
-                {t(
-                  "{count, plural, one {# day} other {# days}}",
-                  {
-                    count: summary.dayCount,
-                  },
-                  locale,
-                )}
+                {t("{count, plural, one {# day} other {# days}}", {
+                  count: summary.dayCount,
+                })}
               </SharePill>
             )}
           </div>
@@ -144,24 +126,18 @@ export default async function SharedTripPage({
             {/* Route preview */}
             <SharedRoutePreviewCard
               preview={preview}
-              label={t("{title} route preview", { title: share.title }, locale)}
-              title={t("Route preview", undefined, locale)}
+              label={t("{title} route preview", { title: share.title })}
+              title={t("Route preview")}
               subtitle={t(
                 "Simplified overview of the planned route across all days.",
-                undefined,
-                locale,
               )}
-              emptyText={t(
-                "Route preview unavailable for this shared trip.",
-                undefined,
-                locale,
-              )}
+              emptyText={t("Route preview unavailable for this shared trip.")}
             />
 
             {/* Stat tiles */}
             <div className="mb-6 grid grid-cols-2 gap-3.5 md:grid-cols-4">
               <MetricTile
-                label={t("Distance", undefined, locale)}
+                label={t("Distance")}
                 value={distance ? distance.value : "—"}
                 variant="ink"
                 accentNumber
@@ -169,29 +145,21 @@ export default async function SharedTripPage({
                   ? { unit: distance.unit }
                   : {})}
               />
+              <MetricTile label={t("Days")} value={summary.dayCount} />
               <MetricTile
-                label={t("Days", undefined, locale)}
-                value={summary.dayCount}
-              />
-              <MetricTile
-                label={t("Est. time", undefined, locale)}
+                label={t("Est. time")}
                 value={duration.value}
                 {...(duration.unit !== undefined
                   ? { unit: duration.unit }
                   : {})}
               />
-              <MetricTile
-                label={t("Stops", undefined, locale)}
-                value={stops.length}
-              />
+              <MetricTile label={t("Stops")} value={stops.length} />
             </div>
           </>
         ) : (
           <Card className="mb-6 p-6 text-sm text-fg-dim">
             {t(
               "This shared trip's snapshot is in an unexpected format — the owner may have saved it with a newer version of the planner. Ask them to regenerate the share link.",
-              undefined,
-              locale,
             )}
           </Card>
         )}
@@ -200,7 +168,7 @@ export default async function SharedTripPage({
       <PublicShareFooter
         cta={{
           href: "/trips/planner",
-          label: t("Plan your own trip", undefined, locale),
+          label: t("Plan your own trip"),
           icon: <MapPin size={14} />,
         }}
         year={new Date().getFullYear()}

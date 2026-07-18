@@ -2,10 +2,10 @@ import {
   formatSubscriptionAmountLabel,
   formatSubscriptionPriceLabel,
   type Formatters,
-  type LooseTranslate,
   type SubscriptionTier,
 } from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 
 export type { SubscriptionTier };
 export type SubscriptionStatus =
@@ -60,7 +60,7 @@ export interface SubscriptionSnapshot {
 
 // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
 // decided 2026-07 — earlier copy had the two names swapped).
-const DEFAULT_PLAN_FEATURES: Record<SubscriptionTier, string[]> = {
+const DEFAULT_PLAN_FEATURES: Record<SubscriptionTier, EnglishMessageKey[]> = {
   free: ["Basic navigation", "Hazard alerts", "1 active trip"],
   pro: ["Unlimited trip planning", "Offline maps", "GPX export"],
   premium: ["Unlimited group rides", "Priority hazard alerts", "API access"],
@@ -73,7 +73,7 @@ const TIER_ORDER: Record<SubscriptionTier, number> = {
 };
 
 export function buildFallbackSubscriptionSnapshot(
-  t: LooseTranslate,
+  t: Translate,
 ): SubscriptionSnapshot {
   return {
     currentPlan: {
@@ -150,7 +150,7 @@ export function buildFallbackSubscriptionSnapshot(
 
 export function normalizeSubscriptionSnapshot(
   raw: unknown,
-  t: LooseTranslate,
+  t: Translate,
 ): SubscriptionSnapshot {
   const fallback = buildFallbackSubscriptionSnapshot(t);
   const root = asRecord(raw);
@@ -196,7 +196,7 @@ export function shouldUseSubscriptionPreview(error: unknown): boolean {
   );
 }
 
-export function tierLabel(tier: SubscriptionTier, t: LooseTranslate): string {
+export function tierLabel(tier: SubscriptionTier, t: Translate): string {
   if (tier === "pro") return t("Pro");
   if (tier === "premium") return t("Premium");
   return t("Free");
@@ -205,7 +205,7 @@ export function tierLabel(tier: SubscriptionTier, t: LooseTranslate): string {
 export function planActionLabel(
   planTier: SubscriptionTier,
   currentTier: SubscriptionTier,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   if (planTier === currentTier) return t("Current plan");
   return TIER_ORDER[planTier] > TIER_ORDER[currentTier]
@@ -216,7 +216,7 @@ export function planActionLabel(
 export function describeRenewal(
   plan: CurrentSubscriptionPlan,
   format: Formatters,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   // `format.date()` renders "" for an unparseable timestamp; without the
   // "soon" fallback a malformed (but present) `renews_at` would silently
@@ -240,7 +240,7 @@ export function describeRenewal(
 
 export function formatPaymentMethodLabel(
   paymentMethod: SubscriptionPaymentMethod,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   return t("{brand} ending in {last4}", {
     brand: titleCase(paymentMethod.brand, t),
@@ -250,7 +250,7 @@ export function formatPaymentMethodLabel(
 
 export function formatPaymentMethodExpiry(
   paymentMethod: SubscriptionPaymentMethod,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   return t("Expires {mm}/{yyyy}", {
     mm: String(paymentMethod.expMonth).padStart(2, "0"),
@@ -269,7 +269,7 @@ export function formatInvoiceDate(date: string, format: Formatters): string {
 
 export function invoiceStatusLabel(
   status: InvoiceStatus,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   if (status === "open") return t("Open");
   if (status === "refunded") return t("Refunded");
@@ -279,7 +279,7 @@ export function invoiceStatusLabel(
 function normalizePlans(
   rawPlans: unknown,
   fallbackPlans: SubscriptionPlanSummary[],
-  t: LooseTranslate,
+  t: Translate,
 ): SubscriptionPlanSummary[] {
   if (!Array.isArray(rawPlans) || rawPlans.length === 0) {
     return fallbackPlans;
@@ -300,7 +300,8 @@ function normalizePlans(
               // Backend feature strings mirror the registered DEFAULT_PLAN_FEATURES
               // catalog keys — translate them at this boundary (English-identical
               // today, localized once a locale ships; unknown strings fall back).
-              .map((feature) => t(feature))
+              // dynamic: arbitrary wire copy, not a compile-time literal.
+              .map((feature) => t(feature as EnglishMessageKey))
           : DEFAULT_PLAN_FEATURES[tier].map((feature) => t(feature));
       // Backend-provided plan descriptions are English (e.g. the Premium
       // catalog copy) — translate at this boundary like the name/features
@@ -315,7 +316,10 @@ function normalizePlans(
           formatSubscriptionPriceLabel(tier),
         ),
         features,
-        description: description ? t(description) : undefined,
+        // dynamic: arbitrary wire copy, not a compile-time literal.
+        description: description
+          ? t(description as EnglishMessageKey)
+          : undefined,
         highlighted: Boolean(rawPlan.highlighted),
       } as SubscriptionPlanSummary;
     })
@@ -343,10 +347,7 @@ function normalizePaymentMethod(
   };
 }
 
-function normalizeInvoices(
-  raw: unknown,
-  t: LooseTranslate,
-): SubscriptionInvoice[] {
+function normalizeInvoices(raw: unknown, t: Translate): SubscriptionInvoice[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry, index) => {
@@ -390,7 +391,7 @@ function normalizeInvoiceStatus(value: unknown): InvoiceStatus | null {
 
 function buildPlanFromCurrent(
   currentPlan: CurrentSubscriptionPlan,
-  t: LooseTranslate,
+  t: Translate,
 ): SubscriptionPlanSummary {
   return {
     tier: currentPlan.tier,
@@ -408,7 +409,7 @@ function sortPlans(
   return [...plans].sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
 }
 
-function titleCase(value: string, t: LooseTranslate): string {
+function titleCase(value: string, t: Translate): string {
   if (!value) return t("Card");
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
@@ -433,10 +434,11 @@ function stringOr(value: unknown, fallback: string): string {
 function planNameFrom(
   rawName: unknown,
   tier: SubscriptionTier,
-  t: LooseTranslate,
+  t: Translate,
 ): string {
   return typeof rawName === "string" && rawName.trim()
-    ? t(rawName.trim())
+    ? // dynamic: arbitrary wire copy, not a compile-time literal.
+      t(rawName.trim() as EnglishMessageKey)
     : tierLabel(tier, t);
 }
 

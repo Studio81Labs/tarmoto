@@ -15,6 +15,7 @@ import {
 import { GeocodeSearchField } from "@/components/planner/GeocodeSearchField";
 import type { GeoResult, PoiCategory } from "@/lib/planner/types";
 import { useTripStore } from "@/stores/trip";
+import type { EnglishMessageKey } from "@/i18n";
 
 /**
  * Map-top toolbar (revision 4 §C): address search + the multi-select POI
@@ -24,7 +25,7 @@ import { useTripStore } from "@/stores/trip";
  */
 export const POI_CATEGORY_META: ReadonlyArray<{
   category: PoiCategory;
-  label: string;
+  label: EnglishMessageKey;
   icon: LucideIcon;
 }> = [
   { category: "fuel", label: "Fuel", icon: Fuel },
