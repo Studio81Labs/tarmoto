@@ -4,6 +4,7 @@ import {
   SUPPORTED_LOCALES,
   resolveLocale,
   setActiveLocale,
+  tDynamic,
   translate,
 } from ".";
 import { companionCatalogs } from "./locales";
@@ -47,5 +48,19 @@ describe("companion i18n barrel", () => {
     expect(
       translate("{count, plural, one {# day} other {# days}}", { count: 3 }),
     ).toBe("3 days");
+  });
+});
+
+describe("tDynamic", () => {
+  it("falls back to the raw key for an unregistered string", () => {
+    expect(tDynamic("this key is not registered")).toBe(
+      "this key is not registered",
+    );
+  });
+  it("resolves and interpolates a registered key", () => {
+    // "Level {level} · {xp} XP" is a registered catalog key.
+    expect(tDynamic("Level {level} · {xp} XP", { level: 3, xp: 120 })).toBe(
+      "Level 3 · 120 XP",
+    );
   });
 });
