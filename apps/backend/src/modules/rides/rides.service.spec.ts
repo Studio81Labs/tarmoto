@@ -13,6 +13,7 @@ import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Bike } from '../../entities/bike.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { BikesService } from '../bikes/bikes.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 function makeQbSpy() {
   const andWhere = jest.fn().mockReturnThis();
@@ -38,6 +39,9 @@ describe('RidesService', () => {
   let bikeRepo: Partial<jest.Mocked<Repository<Bike>>>;
   let privacy: { loadPreferences: jest.Mock };
   let bikesService: { findActive: jest.Mock };
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+  >;
 
   const mockRide = {
     id: 'ride-1',
@@ -99,6 +103,11 @@ describe('RidesService', () => {
     bikesService = {
       findActive: jest.fn().mockResolvedValue(null),
     };
+    // Default ON so every pre-existing test is unaffected; the off-case
+    // test below overrides with mockResolvedValue(false).
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -111,6 +120,7 @@ describe('RidesService', () => {
         { provide: getRepositoryToken(Bike), useValue: bikeRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: BikesService, useValue: bikesService },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -335,6 +345,28 @@ describe('RidesService', () => {
 
       expect(result.status).toBe('completed');
       expect(result.ended_at).not.toBeNull();
+    });
+
+    // sys_ride_publishing (operator kill switch) — directional gate on the
+    // auto-publish-on-stop path. Off means auto-publish is skipped entirely
+    // (the ride stays private); it does not affect stop() itself.
+    it('skips default auto-publish when sys_ride_publishing is off', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      // Mirrors the happy-path setup (default_ride_sharing: 'public') so
+      // this test fails for the right reason pre-fix — without the new
+      // gate, this setup alone would auto-share.
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        default_ride_sharing: 'public',
+      });
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+
+      await service.stop('user-1', 'ride-1');
+
+      expect(sharedRideRepo.save).not.toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_ride_publishing',
+      );
     });
 
     it('treats unique-violation on auto-share as success (concurrent stop race)', async () => {

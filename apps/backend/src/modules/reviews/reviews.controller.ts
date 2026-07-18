@@ -30,6 +30,8 @@ import * as express from 'express';
 import { resolvePublicBaseUrl as sharedResolvePublicBaseUrl } from '../../common/public-base-url.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
+import { SystemSwitchGuard } from '../features/system-switch.guard.js';
+import { RequireSystemSwitch } from '../features/require-system-switch.decorator.js';
 import { ReviewsService } from './reviews.service.js';
 import {
   CreateReviewDto,
@@ -105,8 +107,15 @@ export class ReviewsController {
     );
   }
 
+  // `SystemSwitchGuard` runs first (guard phase, before `FilesInterceptor`)
+  // so that when `sys_poi_ratings` is off the request is rejected with 503
+  // BEFORE Multer parses and buffers the photo payload — the kill switch has
+  // to shed exactly this upload load during a photo-spam incident. It needs
+  // no auth (a system switch is global), so it may precede `AuthGuard`. The
+  // service-level gate in `uploadPhotos` stays as the authoritative guarantee.
   @Post(':segmentId/reviews/photos')
-  @UseGuards(AuthGuard)
+  @UseGuards(SystemSwitchGuard, AuthGuard)
+  @RequireSystemSwitch('sys_poi_ratings')
   @ApiBearerAuth()
   @UseInterceptors(
     FilesInterceptor('files', MAX_REVIEW_PHOTOS, {

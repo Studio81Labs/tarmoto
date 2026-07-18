@@ -6,11 +6,15 @@ import { RoadsService } from './roads.service.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
 import { MAX_FUN_ZONE_CORRIDOR_RESULTS } from './dto/corridor-fun-zones.dto.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 describe('RoadsService', () => {
   let service: RoadsService;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
   let funZoneRepo: Partial<jest.Mocked<Repository<FunZone>>>;
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'isSystemSwitchEnabled'>
+  >;
 
   beforeEach(async () => {
     segmentRepo = {
@@ -19,12 +23,18 @@ describe('RoadsService', () => {
     funZoneRepo = {
       query: jest.fn().mockResolvedValue([]),
     };
+    // Defaults the switch ON so every pre-existing test below is
+    // unaffected; the off-case test sets its own mock resolving `false`.
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RoadsService,
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(FunZone), useValue: funZoneRepo },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -281,6 +291,58 @@ describe('RoadsService', () => {
         photos: ['https://media.tarmoto.app/r/abc.jpg'],
       });
       expect(result.riders_per_month).toBe(12);
+    });
+
+    it('zeroes the embedded review aggregate when sys_poi_ratings is off (and skips the review query)', async () => {
+      // #1038-class leak: review aggregates are embedded in the road-detail
+      // DTO via a second query path (this service), independent of
+      // ReviewsService.listForSegment. Confirms the switch is consulted
+      // AND that the review sub-queries themselves are skipped — not just
+      // zeroed after the fact.
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const queries: string[] = [];
+      (segmentRepo.query as jest.Mock).mockImplementation((sql: string) => {
+        queries.push(sql);
+        if (queries.length === 1) {
+          // First call: segment lookup — must return a row to avoid NotFoundException.
+          return Promise.resolve([
+            {
+              id: 'seg-off',
+              road_name: 'Silent Pass',
+              road_number: null,
+              quality_score: 4.0,
+              curviness_score: 2.5,
+              surface_type: 'asphalt',
+              length_m: 200,
+              confidence: 70,
+              reading_count: 7,
+              last_updated: new Date('2026-04-13T10:00:00Z'),
+              elevation_min: null,
+              elevation_max: null,
+              elevation_profile: null,
+              geojson: { coordinates: [[16.75, 49.1]] },
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const result = await service.findById('seg-off');
+
+      expect(result.review_count).toBe(0);
+      expect(result.avg_review_rating).toBeNull();
+      expect(result.recent_reviews).toEqual([]);
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_poi_ratings',
+      );
+      // The rest of the segment DTO is still populated — only the review
+      // block is zeroed.
+      expect(result.id).toBe('seg-off');
+      expect(result.road_name).toBe('Silent Pass');
+      expect(result.quality_score).toBe(4.0);
+      // The review sub-queries are skipped entirely when the switch is off —
+      // not merely zeroed after the fact.
+      expect(queries.some((q) => q.includes('road_reviews'))).toBe(false);
     });
 
     it('maps quality_source + osm_quality_seed from the aggregated way query', async () => {

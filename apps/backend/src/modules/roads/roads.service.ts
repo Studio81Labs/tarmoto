@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { HazardResponseDto } from '../hazards/dto/hazard-response.dto.js';
 import { sanitizeHazardPhotoUrl } from '../hazards/dto/hazard-photo.dto.js';
 import {
@@ -67,6 +68,7 @@ export class RoadsService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(FunZone)
     private readonly funZoneRepo: Repository<FunZone>,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   /**
@@ -424,6 +426,15 @@ export class RoadsService {
     // The community sub-queries run over every sub-segment of the way.
     const waySegmentIds = row.way_segment_ids as string[];
 
+    // Operator kill switch: resolved once, up front, so both review
+    // sub-queries below can be skipped together. A disable degrades the
+    // embedded review block gracefully (zeroed count/rating/list) rather
+    // than throwing — mirroring the standalone /roads/:id/reviews endpoint
+    // (ReviewsService.listForSegment), which hides the same way's reviews
+    // behind the same switch, so the preview and the panel never disagree.
+    const ratingsEnabled =
+      await this.featureResolver.isSystemSwitchEnabled('sys_poi_ratings');
+
     // Run all six independent queries in parallel. Share a single `asOf`
     // cutoff for the hazard count + hazard-rows queries so a report that
     // expires between the two Promise.all statements can't drift the count
@@ -488,37 +499,45 @@ export class RoadsService {
         LIMIT $3`,
         [waySegmentIds, asOf, ACTIVE_HAZARD_LIMIT],
       ),
-      this.segmentRepo.query(
-        // Reviews aggregate over the whole way's segment set, like every other
-        // sub-query — a road's rating is the union across its ~100 m sub-segments,
-        // consistent with the aggregated list/detail (#809). The standalone
-        // /roads/:id/reviews endpoint (ReviewsService.listForSegment) resolves the
-        // SAME way set, so the embedded preview and the panel stay in sync.
-        `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
+      // Operator kill switch (sys_poi_ratings): when off, skip the review
+      // queries entirely rather than run them and discard the rows — the
+      // assembly below already treats an empty `reviewStatsRows`/
+      // `reviewRows` as "no reviews" (review_count: 0, avg_review_rating:
+      // null, recent_reviews: []), so no other code path needs to change.
+      ratingsEnabled
+        ? this.segmentRepo.query(
+            // Reviews aggregate over the whole way's segment set, like every other
+            // sub-query — a road's rating is the union across its ~100 m sub-segments,
+            // consistent with the aggregated list/detail (#809). The standalone
+            // /roads/:id/reviews endpoint (ReviewsService.listForSegment) resolves the
+            // SAME way set, so the embedded preview and the panel stay in sync.
+            `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
         FROM road_reviews
         WHERE road_segment_id = ANY($1)
           AND moderation_status = 'visible'`,
-        [waySegmentIds],
-      ),
-      this.segmentRepo.query(
-        // Left-join the helpful-vote counts via a lateral subquery so a
-        // review with zero votes still returns (0, 0) rather than being
-        // silently dropped. `my_vote` is intentionally omitted here — the
-        // embedded reviews on /roads/:id are served to anonymous callers,
-        // and the standalone /roads/:id/reviews endpoint is where the
-        // authenticated viewer personalisation lives.
-        // `u.id` and `u.deleted_at` are surfaced so the mapper can mask
-        // both `user_id` and the display name when the author has been
-        // soft-deleted or hard-deleted (#335) — the review row stays for
-        // road-quality history, but the byline must not deep-link to a
-        // tombstoned profile.
-        // #279 / #501 — `is_private_author` flag joins `privacy_preferences`
-        // so the mapper can also mask private riders, mirroring the same
-        // gate on the standalone /roads/:id/reviews endpoint
-        // (`ReviewsService.toResponse`). The road preview is anonymous-
-        // friendly so there's no self-view exemption — every viewer sees
-        // the masked tombstone for a private author.
-        `SELECT
+            [waySegmentIds],
+          )
+        : [],
+      ratingsEnabled
+        ? this.segmentRepo.query(
+            // Left-join the helpful-vote counts via a lateral subquery so a
+            // review with zero votes still returns (0, 0) rather than being
+            // silently dropped. `my_vote` is intentionally omitted here — the
+            // embedded reviews on /roads/:id are served to anonymous callers,
+            // and the standalone /roads/:id/reviews endpoint is where the
+            // authenticated viewer personalisation lives.
+            // `u.id` and `u.deleted_at` are surfaced so the mapper can mask
+            // both `user_id` and the display name when the author has been
+            // soft-deleted or hard-deleted (#335) — the review row stays for
+            // road-quality history, but the byline must not deep-link to a
+            // tombstoned profile.
+            // #279 / #501 — `is_private_author` flag joins `privacy_preferences`
+            // so the mapper can also mask private riders, mirroring the same
+            // gate on the standalone /roads/:id/reviews endpoint
+            // (`ReviewsService.toResponse`). The road preview is anonymous-
+            // friendly so there's no self-view exemption — every viewer sees
+            // the masked tombstone for a private author.
+            `SELECT
           rr.id, rr.rating, rr.comment, rr.bike_model, rr.photos, rr.created_at,
           rr.user_id, u.id AS user_join_id, u.deleted_at AS user_deleted_at,
           u.display_name,
@@ -539,8 +558,9 @@ export class RoadsService {
           AND rr.moderation_status = 'visible'
         ORDER BY rr.created_at DESC
         LIMIT $2`,
-        [waySegmentIds, RECENT_REVIEW_LIMIT],
-      ),
+            [waySegmentIds, RECENT_REVIEW_LIMIT],
+          )
+        : [],
       this.segmentRepo.query(
         `SELECT COUNT(DISTINCT user_id)::int AS count
         FROM surface_readings

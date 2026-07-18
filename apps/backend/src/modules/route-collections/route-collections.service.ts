@@ -12,6 +12,7 @@ import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
@@ -50,6 +51,7 @@ export class RouteCollectionsService {
     private readonly followRepo: Repository<RouteCollectionFollow>,
     private readonly privacy: PrivacyPreferencesService,
     private readonly dataSource: DataSource,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async listMine(userId: string): Promise<RouteCollectionListResponseDto> {
@@ -101,6 +103,14 @@ export class RouteCollectionsService {
     limit = 12,
     offset = 0,
   ): Promise<RouteCollectionDiscoverResponseDto> {
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_community_collections',
+      ))
+    ) {
+      return { items: [], total: 0, limit, offset };
+    }
+
     const search = q?.trim();
 
     const base = (): SelectQueryBuilder<RouteCollection> => {

@@ -15,6 +15,7 @@ import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { TripsService } from '../trips/trips.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   SharedRideResponseDto,
   SharedRideDetailDto,
@@ -48,6 +49,7 @@ export class SharingService {
     private readonly tripMemberRepo: Repository<TripMember>,
     private readonly tripsService: TripsService,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async toggleShare(
@@ -66,6 +68,13 @@ export class SharingService {
       throw new BadRequestException('Only completed rides can be shared');
     }
 
+    // sys_ride_publishing is directional: block only the publish direction.
+    // Unpublishing (isPublic=false) always works so a kill can't trap a
+    // ride as public.
+    const effectiveIsPublic =
+      isPublic &&
+      (await this.featureResolver.isSystemSwitchEnabled('sys_ride_publishing'));
+
     const shared = await this.sharedRideRepo.findOne({
       where: { ride_id: rideId },
     });
@@ -77,9 +86,9 @@ export class SharingService {
       // write (lost-update race against concurrent `getByToken` hits).
       await this.sharedRideRepo.update(
         { id: shared.id },
-        { is_public: isPublic },
+        { is_public: effectiveIsPublic },
       );
-      shared.is_public = isPublic;
+      shared.is_public = effectiveIsPublic;
       return this.toShareResponse(shared);
     }
 
@@ -91,7 +100,7 @@ export class SharingService {
         ride_id: rideId,
         user_id: userId,
         share_token: randomBytes(16).toString('hex'),
-        is_public: isPublic,
+        is_public: effectiveIsPublic,
       }),
     );
     return this.toShareResponse(created);
