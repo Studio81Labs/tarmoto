@@ -11,6 +11,7 @@ import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 
 describe('RouteCollectionsService', () => {
@@ -19,6 +20,7 @@ describe('RouteCollectionsService', () => {
   let itemRepo: Partial<jest.Mocked<Repository<RouteCollectionItem>>>;
   let followRepo: Partial<jest.Mocked<Repository<RouteCollectionFollow>>>;
   let privacy: { loadPrivateUserIds: jest.Mock };
+  let featureResolver: { isSystemSwitchEnabled: jest.Mock };
   let privateUserIds: Set<string>;
   let queryMock: jest.Mock;
 
@@ -103,6 +105,10 @@ describe('RouteCollectionsService', () => {
         .mockImplementation(() => Promise.resolve(new Set(privateUserIds))),
     };
 
+    featureResolver = {
+      isSystemSwitchEnabled: jest.fn().mockResolvedValue(true),
+    };
+
     // The service's `addItem` opens a transaction; mock it to invoke the
     // callback with a manager that returns the same mocks. Avoids needing a
     // real DataSource for unit tests. `query` is mocked to return [] by
@@ -137,6 +143,7 @@ describe('RouteCollectionsService', () => {
         },
         { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: DataSource, useValue: dataSource },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -465,7 +472,38 @@ describe('RouteCollectionsService', () => {
       return qb;
     }
 
+    it('returns an empty page when sys_community_collections is off', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      const result = await service.listDiscover(ownerId, undefined, 12, 0);
+      expect(result).toEqual({ items: [], total: 0, limit: 12, offset: 0 });
+      expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
+        'sys_community_collections',
+      );
+      // Scope guard: the discover query was NOT run
+      expect(collectionRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('does NOT gate the personal library (listMine) on sys_community_collections', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
+      (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValueOnce({
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getRawAndEntities: jest
+          .fn()
+          .mockResolvedValue({ entities: [], raw: [] }),
+      });
+      await service.listMine(ownerId);
+      // listMine ran its query normally (should not consult the switch)
+      expect(collectionRepo.createQueryBuilder).toHaveBeenCalled();
+      expect(featureResolver.isSystemSwitchEnabled).not.toHaveBeenCalled();
+    });
+
     it("excludes the viewer's own collections so Discover stays other members'", async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(true);
       const clauses: string[] = [];
       (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValue(
         mockDiscoverQb(clauses),
@@ -477,6 +515,7 @@ describe('RouteCollectionsService', () => {
     });
 
     it('does not apply the owner filter for anonymous viewers', async () => {
+      featureResolver.isSystemSwitchEnabled.mockResolvedValue(true);
       const clauses: string[] = [];
       (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValue(
         mockDiscoverQb(clauses),

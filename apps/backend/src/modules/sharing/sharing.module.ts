@@ -9,6 +9,7 @@ import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { AccountModule } from '../account/index.js';
 import { TripsModule } from '../trips/trips.module.js';
+import { FeaturesModule } from '../features/features.module.js';
 import { SharingController } from './sharing.controller.js';
 import { SharingService } from './sharing.service.js';
 
@@ -27,6 +28,7 @@ import { SharingService } from './sharing.service.js';
     // Reuse TripsService.withTripTransaction for the atomic trip+membership
     // +day commit when cloning a community ride into a trip.
     TripsModule,
+    FeaturesModule,
   ],
   controllers: [SharingController],
   providers: [SharingService],
