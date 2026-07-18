@@ -8,6 +8,7 @@ import { SegmentImageryDto } from './dto/segment-imagery.dto.js';
 // Shared, dependency-free LRU+TTL cache (lives with the geocode proxy it was
 // introduced for, #909). Imagery caching has the same shape.
 import { TtlCache } from '../geocode/ttl-cache.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 
 // Street imagery for a coordinate is static day-to-day (Mapillary coverage
 // changes slowly), so a generous TTL keeps the hit rate high across repeated
@@ -44,6 +45,7 @@ export class MapillaryService {
   constructor(
     @Inject(STREET_IMAGERY_PROVIDER)
     private readonly provider: StreetImageryProvider,
+    private readonly featureResolver: FeatureResolver,
   ) {}
 
   async segmentImagery(
@@ -51,6 +53,16 @@ export class MapillaryService {
     lng: number,
     bearing?: number,
   ): Promise<SegmentImageryDto> {
+    // Operator kill switch: short-circuit before the cache/provider so a
+    // disable takes effect immediately, even for a previously-cached point.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_mapillary_previews',
+      ))
+    ) {
+      return NO_IMAGERY;
+    }
+
     // Round to ~11 m so near-identical hover points share an entry, and bucket
     // the bearing to 45° so an out-and-back / opposite carriageway at the same
     // midpoint (bearings ~180° apart) gets its own forward-facing image rather
@@ -91,6 +103,15 @@ export class MapillaryService {
    * image so the endpoint can 404 without exposing upstream detail.
    */
   async thumbnail(imageId: string): Promise<StreetImageBytes | null> {
+    // Same kill-switch short-circuit as segmentImagery — before the cache.
+    if (
+      !(await this.featureResolver.isSystemSwitchEnabled(
+        'sys_mapillary_previews',
+      ))
+    ) {
+      return null;
+    }
+
     const cached = this.thumbCache.get(imageId);
     if (cached) return cached;
 
