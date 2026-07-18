@@ -155,4 +155,24 @@ describe("usePersistentState", () => {
     expect(localStorage.getItem("tarmoto:sidebar-collapsed")).toBe("false");
     expect(values[values.length - 1]).toBe(false);
   });
+
+  it("still applies the update when the localStorage write fails (private mode)", () => {
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("QuotaExceededError");
+      });
+
+    const { values, set } = recordPersistentRenders<boolean | null>(
+      "tarmoto:sidebar-collapsed",
+      null,
+    );
+
+    set(true);
+    // Persistence threw, but the in-memory mirror keeps the toggle working —
+    // it does not silently no-op the way a storage-only setter would.
+    expect(values[values.length - 1]).toBe(true);
+
+    setItem.mockRestore();
+  });
 });

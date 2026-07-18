@@ -192,6 +192,14 @@ export function usePersistentState<T extends string | number | boolean | null>(
   key: string,
   fallback: T,
 ): readonly [T, (value: T) => void] {
+  // Per-instance in-memory mirror of the last locally-set value. It lets a
+  // write take effect even when localStorage is unavailable (Safari private
+  // mode, blocked storage, quota-full) — matching the useState-backed
+  // useLocalStorage this replaces, where the toggle updated React state
+  // regardless of persistence — instead of the setter silently no-op'ing.
+  // Tagged with `key` so it self-invalidates if the key ever changes.
+  const memoryRef = useRef<{ key: string; value: T } | null>(null);
+
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       if (typeof window === "undefined") return () => {};
@@ -199,7 +207,11 @@ export function usePersistentState<T extends string | number | boolean | null>(
         if ((event as CustomEvent<string>).detail === key) onStoreChange();
       };
       const onStorage = (event: StorageEvent) => {
-        if (event.key === key) onStoreChange();
+        if (event.key !== key) return;
+        // A write from another tab is authoritative — drop our mirror so
+        // getSnapshot re-reads the freshly-persisted value from storage.
+        memoryRef.current = null;
+        onStoreChange();
       };
       window.addEventListener(PERSISTENT_STATE_EVENT, onLocal);
       window.addEventListener("storage", onStorage);
@@ -212,6 +224,8 @@ export function usePersistentState<T extends string | number | boolean | null>(
   );
 
   const getSnapshot = (): T => {
+    const mirror = memoryRef.current;
+    if (mirror && mirror.key === key) return mirror.value;
     if (typeof window === "undefined") return fallback;
     try {
       const raw = localStorage.getItem(key);
@@ -226,12 +240,14 @@ export function usePersistentState<T extends string | number | boolean | null>(
   const setValue = useCallback(
     (next: T) => {
       if (typeof window === "undefined") return;
+      // Mirror in memory first so the update lands even if persistence throws.
+      memoryRef.current = { key, value: next };
       try {
         localStorage.setItem(key, JSON.stringify(next));
       } catch {
-        // Quota / private mode — best-effort persistence.
+        // Quota / private mode — best-effort; the in-memory mirror still holds.
       }
-      // Nudge same-tab subscribers (the `storage` event won't).
+      // Nudge same-tab subscribers (the native `storage` event won't fire here).
       window.dispatchEvent(
         new CustomEvent(PERSISTENT_STATE_EVENT, { detail: key }),
       );
