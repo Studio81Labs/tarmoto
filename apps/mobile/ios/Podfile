@@ -30,6 +30,18 @@ target 'TarmotoApp' do
     )
     $MLRN.post_install(installer)
 
+    # RNFirebase is intentionally linked as a static framework, while its
+    # public Objective-C headers import React Native headers that are not
+    # modular. Xcode 16's explicit module precompilation otherwise promotes
+    # those imports to errors in Release simulator builds.
+    installer.pods_project.targets
+      .select { |pod_target| %w[RNFBApp RNFBMessaging].include?(pod_target.name) }
+      .each do |pod_target|
+        pod_target.build_configurations.each do |configuration|
+          configuration.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        end
+      end
+
     app_target = installer.aggregate_targets
       .flat_map(&:user_targets)
       .find { |user_target| user_target.name == 'TarmotoApp' }

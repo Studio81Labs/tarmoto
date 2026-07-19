@@ -27,9 +27,10 @@ export default function App() {
 
   useEffect(() => {
     void bootstrapAuth({
-      isAuthenticated: () => api.isAuthenticated(),
+      getSessionSnapshot: () => api.getAuthSessionSnapshot(),
       getCachedProfile: () => api.getCachedProfile(),
       getProfile: () => api.getProfile(),
+      cacheProfile: (user) => api.cacheProfile(user),
       setUser,
       setLoading,
     });

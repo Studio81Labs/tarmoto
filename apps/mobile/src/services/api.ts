@@ -105,6 +105,7 @@ import {
 import { registerForPush, unregisterPush } from "./pushRegistration";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
+import type { AuthSessionSnapshot } from "./authBootstrap";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -279,8 +280,21 @@ class ApiService {
     return hasAccessToken();
   }
 
+  getAuthSessionSnapshot(): AuthSessionSnapshot | null {
+    const accessToken = getAccessToken();
+    if (!accessToken) return null;
+    return {
+      accessToken,
+      userId: getAuthenticatedUserId(),
+    };
+  }
+
   getCachedProfile(): User | null {
     return getCachedUser();
+  }
+
+  cacheProfile(user: User): void {
+    setCachedUser(user);
   }
 
   /**
@@ -338,9 +352,7 @@ class ApiService {
 
   async getProfile(): Promise<User> {
     const result = await client.GET("/api/v1/users/me");
-    const user = unwrap(result, "Failed to load profile");
-    setCachedUser(user);
-    return user;
+    return unwrap(result, "Failed to load profile");
   }
 
   /**
