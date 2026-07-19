@@ -17,7 +17,7 @@ pre_install do |installer|
   # includes that CocoaPods does not expose while compiling static frameworks.
   # Keep these React Native bridge pods as libraries while their dependencies
   # continue to use the static-framework integration required by Firebase.
-  static_library_pods = %w[RNReanimated RNWorklets]
+  static_library_pods = %w[RNReanimated RNWorklets react-native-carplay]
 
   installer.pod_targets.each do |pod|
     next unless pod.name.start_with?('RNFB') || static_library_pods.include?(pod.name)

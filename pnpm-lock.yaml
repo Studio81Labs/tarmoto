@@ -8,7 +8,7 @@ overrides:
   '@maplibre/maplibre-gl-style-spec': 24.8.3
 
 patchedDependencies:
-  react-native-carplay@2.4.1-beta.0: 2384ced6d8e3b758644f5cafce817792197772a03357045f01c61c6add40e73a
+  react-native-carplay@2.4.1-beta.0: cdbf17f52efb67f78486846ee806236e55100840db47e9c6874ea3da826fd542
 
 importers:
 
@@ -693,7 +693,7 @@ importers:
         version: 4.1.0(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))
       react-native-carplay:
         specifier: 2.4.1-beta.0
-        version: 2.4.1-beta.0(patch_hash=2384ced6d8e3b758644f5cafce817792197772a03357045f01c61c6add40e73a)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
+        version: 2.4.1-beta.0(patch_hash=cdbf17f52efb67f78486846ee806236e55100840db47e9c6874ea3da826fd542)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5)
       react-native-device-info:
         specifier: ^15.0.2
         version: 15.0.2(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))
@@ -19747,7 +19747,7 @@ snapshots:
       eventemitter3: 4.0.7
       react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)
 
-  react-native-carplay@2.4.1-beta.0(patch_hash=2384ced6d8e3b758644f5cafce817792197772a03357045f01c61c6add40e73a)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
+  react-native-carplay@2.4.1-beta.0(patch_hash=cdbf17f52efb67f78486846ee806236e55100840db47e9c6874ea3da826fd542)(react-native@0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2))(react@19.2.5):
     optionalDependencies:
       react: 19.2.5
       react-native: 0.85.2(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.2(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.2(@babel/core@7.29.0)(supports-color@10.2.2))(@types/react@19.2.14)(react@19.2.5)(supports-color@10.2.2)

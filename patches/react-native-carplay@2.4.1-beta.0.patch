@@ -89,3 +89,15 @@ index 71e5908..e0099c8 100644
 @@ -18 +18,2 @@ Pod::Spec.new do |s|
    s.source_files  = "ios/*.{h,m}"
 +  s.public_header_files = "ios/{RNCarPlay,RNCarPlayViewController,RNCPStore}.h"
+diff --git a/ios/RNCarPlay.h b/ios/RNCarPlay.h
+index ee477e3..5ffbba1 100644
+--- a/ios/RNCarPlay.h
++++ b/ios/RNCarPlay.h
+@@ -5 +4,0 @@
+-#import "RCTConvert+RNCarPlay.h"
+diff --git a/ios/RNCarPlay.m b/ios/RNCarPlay.m
+index 29caab2..186f974 100644
+--- a/ios/RNCarPlay.m
++++ b/ios/RNCarPlay.m
+@@ -1,0 +2 @@
++#import "RCTConvert+RNCarPlay.h"
