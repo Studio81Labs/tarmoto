@@ -2775,7 +2775,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 6d90559701f1b2793edb70f296a1f06a40dd7d82
   React-microtasksnativemodule: cbd9be010701fa23a8786dfff87ad058411a1174
   react-native-background-actions: 35a1e298faed0957d36469eb21d634f0b6243bcb
-  react-native-carplay: 8f388f6f73e5e0f73ed154ad8794371343ee20c0
+  react-native-carplay: 44b37fbfec34704fb6129ccbdabd52debe14085c
   react-native-document-picker: d74eb20980217096d3794a63ee5105b5f70772e3
   react-native-fast-tflite: bb60f3efe4edaabfad5e7f3ef805b0f45ae43c66
   react-native-geolocation: aba0b4dbf0f9a84c328059efd93af22e9e6190d7

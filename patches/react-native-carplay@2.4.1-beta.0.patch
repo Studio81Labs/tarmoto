@@ -82,3 +82,10 @@ index 01dbabd..0e55be3 100644
 @@ -321 +320 @@ abstract class RCTTemplate(
 -          addEndHeaderAction(parseAction(it.getMap(i)))
 +          it.getMap(i)?.let { action -> addEndHeaderAction(parseAction(action)) }
+diff --git a/react-native-carplay.podspec b/react-native-carplay.podspec
+index 71e5908..e0099c8 100644
+--- a/react-native-carplay.podspec
++++ b/react-native-carplay.podspec
+@@ -18 +18,2 @@ Pod::Spec.new do |s|
+   s.source_files  = "ios/*.{h,m}"
++  s.public_header_files = "ios/{RNCarPlay,RNCarPlayViewController,RNCPStore}.h"
