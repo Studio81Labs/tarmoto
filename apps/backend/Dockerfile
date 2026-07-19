@@ -99,10 +99,16 @@ COPY docs/database/ docs/database/
 ARG TARMOTO_OSM_POI_IMPORT_DIR=/data/poi-extracts
 ARG TARMOTO_FSQ_POI_IMPORT_DIR=""
 ARG TARMOTO_OSM_ROAD_IMPORT_DIR=/data/road-extracts
+# The ROUTING dir holds the whole-network `<code>.osm` the quality conflation
+# WRITES (its tagged `<code>.quality.osm` output) and reads — apps/ingest's
+# refresh-road-extracts produces the base `.osm` there and GraphHopper imports it.
+# Same shared-volume, same uid-100 ownership seeding as the extract dirs.
+ARG TARMOTO_OSM_ROAD_ROUTING_DIR=/data/routing
 RUN poi_dir="${TARMOTO_OSM_POI_IMPORT_DIR:-/data/poi-extracts}"; \
     fsq_dir="${TARMOTO_FSQ_POI_IMPORT_DIR:-$poi_dir}"; \
     road_dir="${TARMOTO_OSM_ROAD_IMPORT_DIR:-/data/road-extracts}"; \
-    mkdir -p "$poi_dir" "$fsq_dir" "$road_dir" && chown tarmoto:tarmoto "$poi_dir" "$fsq_dir" "$road_dir"
+    routing_dir="${TARMOTO_OSM_ROAD_ROUTING_DIR:-/data/routing}"; \
+    mkdir -p "$poi_dir" "$fsq_dir" "$road_dir" "$routing_dir" && chown tarmoto:tarmoto "$poi_dir" "$fsq_dir" "$road_dir" "$routing_dir"
 
 USER tarmoto
 EXPOSE 3000

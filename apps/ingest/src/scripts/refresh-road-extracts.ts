@@ -131,6 +131,7 @@ async function runOsmium(args: readonly string[]): Promise<void> {
 export async function refreshRegion(
   region: PoiImportRegion,
   targetDir: string,
+  routingDir: string | null,
   workDir: string,
   tiles: readonly RoadTile[],
   spanDeg: number,
@@ -154,8 +155,28 @@ export async function refreshRegion(
       filtered,
       "--overwrite",
     ]);
-    // Phase 1 — extract every tile to its `.part` sibling; publish NONE yet.
+    // Phase 1 — extract every output to its `.part` sibling; publish NONE yet.
     const parts: { tmpOut: string; finalOut: string }[] = [];
+    // The whole-network drivable ROUTING extract (`<code>.osm`) that GraphHopper
+    // imports and the quality conflation tags — from the SAME `filtered` PBF,
+    // before tiling, so it's drivable-sized and nearly free. Published atomically
+    // with the tiles below (all of the region's outputs, or none). Skipped when
+    // no routing dir is configured.
+    if (routingDir !== null) {
+      const finalOut = join(routingDir, `${region.code.toLowerCase()}.osm`);
+      const tmpOut = refreshTmpPath(finalOut);
+      tmpPaths.push(tmpOut);
+      await deps.osmium([
+        "cat",
+        filtered,
+        "-f",
+        "osm",
+        "-o",
+        tmpOut,
+        "--overwrite",
+      ]);
+      parts.push({ tmpOut, finalOut });
+    }
     for (const tile of tiles) {
       const finalOut = join(targetDir, roadTileFileName(tile, spanDeg));
       const tmpOut = refreshTmpPath(finalOut);
@@ -211,6 +232,12 @@ export async function refreshAll(
     );
   }
   await sweepStaleTempFiles(config.targetDir, log);
+  if (config.routingDir !== null) {
+    // The routing extract lands in its own dir (GraphHopper import + conflation
+    // input) — create it if a fresh volume hasn't, and sweep any stale `.part`s.
+    await mkdir(config.routingDir, { recursive: true });
+    await sweepStaleTempFiles(config.routingDir, log);
+  }
   const summary: RefreshSummary = { ok: [], failed: [] };
   log(
     `road refresh: ${config.regions.length} region(s) — ` +
@@ -222,19 +249,24 @@ export async function refreshAll(
     // the actual refresh below (not recomputed inside refreshRegion).
     const tiles = subdivideRegion(region, config.tileSpanDeg);
     try {
+      const routingNote =
+        config.routingDir !== null ? " + 1 routing extract" : "";
       log(
-        `road refresh (${region.code}): download → filter once → clip ${tiles.length} tile(s)…`,
+        `road refresh (${region.code}): download → filter once → clip ${tiles.length} tile(s)${routingNote}…`,
       );
       await refreshRegion(
         region,
         config.targetDir,
+        config.routingDir,
         workDir,
         tiles,
         config.tileSpanDeg,
         deps,
       );
       summary.ok.push(region.code);
-      log(`road refresh (${region.code}): wrote ${tiles.length} tile file(s)`);
+      log(
+        `road refresh (${region.code}): wrote ${tiles.length} tile file(s)${routingNote}`,
+      );
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       summary.failed.push({ code: region.code, error });

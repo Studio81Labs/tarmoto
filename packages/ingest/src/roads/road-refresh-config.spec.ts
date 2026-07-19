@@ -24,11 +24,13 @@ describe("resolveRoadRefreshConfig", () => {
     const cfg = resolveRoadRefreshConfig({
       TARMOTO_OSM_ROAD_REFRESH_ENABLED: "true",
       TARMOTO_OSM_ROAD_IMPORT_DIR: "/data/road-extracts",
+      TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/routing",
       TARMOTO_OSM_ROAD_IMPORT_REGIONS: "CZ,SK",
       TARMOTO_OSM_ROAD_TILE_SPAN_DEG: "1.5",
     } as NodeJS.ProcessEnv);
     expect(cfg.enabled).toBe(true);
     expect(cfg.targetDir).toBe("/data/road-extracts");
+    expect(cfg.routingDir).toBe("/data/routing");
     expect(cfg.regions.map((r) => r.code)).toEqual(["CZ", "SK"]);
     expect(cfg.tileSpanDeg).toBe(1.5);
   });
@@ -37,6 +39,7 @@ describe("resolveRoadRefreshConfig", () => {
     const cfg = resolveRoadRefreshConfig({} as NodeJS.ProcessEnv);
     expect(cfg.enabled).toBe(false);
     expect(cfg.targetDir).toBeNull();
+    expect(cfg.routingDir).toBeNull();
     expect(cfg.regions.length).toBe(DEFAULT_REGIONS.length);
     expect(cfg.tileSpanDeg).toBe(TILE_MAX_SPAN_DEG_DEFAULT);
   });

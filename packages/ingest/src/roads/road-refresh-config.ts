@@ -27,6 +27,16 @@ export interface RoadRefreshConfig {
    */
   targetDir: string | null;
   /**
+   * Directory the whole-network drivable `<code>.osm` **routing extract** is
+   * written to (`TARMOTO_OSM_ROAD_ROUTING_DIR`) — the file GraphHopper imports
+   * and the quality conflation tags (a single per-region `.osm`, NOT the tiled
+   * `road-extracts`). Written from the SAME filtered PBF the tiles come from, so
+   * it's drivable-sized and nearly free. `null` when unset → the routing extract
+   * is skipped (tiles still produced). MUST differ from `targetDir` (the tiles)
+   * and the POI dir.
+   */
+  routingDir: string | null;
+  /**
    * Regions to refresh: `DEFAULT_REGIONS` narrowed by
    * `TARMOTO_OSM_ROAD_IMPORT_REGIONS` (default all). Shares the importer's region
    * env so refresh and import always target the same set; an unknown code fails
@@ -51,9 +61,11 @@ export function resolveRoadRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): RoadRefreshConfig {
   const dir = env.TARMOTO_OSM_ROAD_IMPORT_DIR?.trim();
+  const routing = env.TARMOTO_OSM_ROAD_ROUTING_DIR?.trim();
   return {
     enabled: boolEnv(env.TARMOTO_OSM_ROAD_REFRESH_ENABLED),
     targetDir: dir ? dir : null,
+    routingDir: routing ? routing : null,
     regions: parseRegions(
       env.TARMOTO_OSM_ROAD_IMPORT_REGIONS,
       "TARMOTO_OSM_ROAD_IMPORT_REGIONS",
