@@ -33,3 +33,6 @@ allowBuilds:
 
 overrides:
   "@maplibre/maplibre-gl-style-spec": "24.8.3"
+
+patchedDependencies:
+  react-native-carplay@2.4.1-beta.0: patches/react-native-carplay@2.4.1-beta.0.patch

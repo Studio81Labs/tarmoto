@@ -13,6 +13,8 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
+import { bootstrapAuth } from "@/services/authBootstrap";
+import { useAuthStore } from "@/stores";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -20,6 +22,20 @@ LogBox.ignoreLogs([
 ]);
 
 export default function App() {
+  const setUser = useAuthStore((state) => state.setUser);
+  const setLoading = useAuthStore((state) => state.setLoading);
+
+  useEffect(() => {
+    void bootstrapAuth({
+      getSessionSnapshot: () => api.getAuthSessionSnapshot(),
+      getCachedProfile: () => api.getCachedProfile(),
+      getProfile: () => api.getProfile(),
+      cacheProfile: (user) => api.cacheProfile(user),
+      setUser,
+      setLoading,
+    });
+  }, [setLoading, setUser]);
+
   // US-15 AC #2: run a commute hazard check on every cold start and
   // foreground transition. Mounted once at the app root so the monitor
   // keeps running across navigation — CommuteScreen's diff UI remains

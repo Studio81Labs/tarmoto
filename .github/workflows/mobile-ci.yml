@@ -7,6 +7,8 @@ on:
       - "apps/mobile/**"
       - "packages/shared/**"
       - "packages/openapi/**"
+      - "patches/**"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/mobile-ci.yml"
       - ".github/workflows/_build-openapi.yml"
   pull_request:
@@ -15,6 +17,8 @@ on:
       - "apps/mobile/**"
       - "packages/shared/**"
       - "packages/openapi/**"
+      - "patches/**"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/mobile-ci.yml"
       - ".github/workflows/_build-openapi.yml"
 
@@ -77,3 +81,91 @@ jobs:
 
       - name: Test
         run: pnpm --filter @tarmoto/mobile test
+
+  android-preview:
+    name: Android Preview APK
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared package
+        run: pnpm shared:build
+      # Release builds bundle Hermes/JS and assets, so the uploaded APK runs
+      # without Metro and catches bundling failures that assembleDebug misses.
+      - name: Build standalone preview APK
+        working-directory: apps/mobile/android
+        run: >-
+          ./gradlew :app:assembleRelease
+          -PTARMOTO_PREVIEW_SIGNING=true
+          -PreactNativeArchitectures=arm64-v8a,x86_64
+          --console=plain
+      - name: Upload Android preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tarmoto-android-preview
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 7
+
+  ios-preview:
+    name: iOS Simulator Preview
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ruby/setup-ruby@0dafeac902942906541bc140009cdbf32665b601 # v1.315.0
+        with:
+          ruby-version: "3.3.6"
+          bundler-cache: true
+          working-directory: apps/mobile
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared package
+        run: pnpm shared:build
+      - name: Install CocoaPods
+        working-directory: apps/mobile
+        run: bundle exec pod install --project-directory=ios
+      - name: Build simulator app
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace TarmotoApp.xcworkspace \
+            -scheme TarmotoApp \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/tarmoto-derived-data" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipPackageUpdates \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/tarmoto-derived-data/Build/Products/Release-iphonesimulator/TarmotoApp.app" \
+            "$RUNNER_TEMP/TarmotoApp-simulator.zip"
+      - name: Upload iOS preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tarmoto-ios-simulator-preview
+          path: ${{ runner.temp }}/TarmotoApp-simulator.zip
+          retention-days: 7

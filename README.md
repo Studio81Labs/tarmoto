@@ -32,7 +32,8 @@ read it directly on GitHub.
 - Node.js >= 24 (see `.nvmrc`)
 - pnpm >= 11
 - Docker & Docker Compose
-- Xcode (iOS) or Android Studio (Android) for mobile development
+- Xcode 16.4+ and Ruby 3.3.6 for iOS development
+- Android Studio with Android SDK 36, NDK 27.1, and Java 17+ for Android development
 
 ## Manual Setup
 
@@ -50,6 +51,23 @@ pnpm db:migrate          # Run migrations against Postgres
 pnpm backend:dev         # Start backend in watch mode
 ```
 
+### Mobile setup
+
+The mobile `.env` may be left at its defaults for simulators: iOS uses
+`localhost` and Android uses the emulator host alias `10.0.2.2`. Set
+`TARMOTO_API_URL` to the development machine's LAN address when testing on a
+physical phone. Firebase configuration is optional for local UI work; push
+notifications remain disabled until the platform config file is provided.
+
+```bash
+pnpm mobile:ios       # checks Ruby, installs gems/pods, then launches iOS
+pnpm mobile:android   # checks Java/SDK, then launches Android
+```
+
+See [mobile development and release](./docs/process/mobile-development-release.md)
+for native prerequisites, local build checks, CI preview artifacts, Firebase,
+and store-release setup.
+
 ### After editing `Info.plist` or `AndroidManifest.xml`
 
 Native manifest changes don't propagate through a Metro reload — the
@@ -58,7 +76,7 @@ still embeds the old manifest. After editing either file:
 
 ```bash
 # iOS
-cd apps/mobile/ios && pod install && cd -
+pnpm --filter @tarmoto/mobile ios:setup
 pnpm mobile:ios     # forces a fresh xcodebuild
 
 # Android

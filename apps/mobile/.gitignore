@@ -1,17 +1,25 @@
 # iOS
 ios/Pods/
 ios/build/
-ios/*.xcworkspace/
+ios/*.xcworkspace/*
+!ios/TarmotoApp.xcworkspace/xcshareddata/
+ios/TarmotoApp.xcworkspace/xcshareddata/*
+!ios/TarmotoApp.xcworkspace/xcshareddata/swiftpm/
+ios/TarmotoApp.xcworkspace/xcshareddata/swiftpm/*
+!ios/TarmotoApp.xcworkspace/xcshareddata/swiftpm/Package.resolved
 ios/*.xcodeproj/project.xcworkspace/
 ios/.xcode.env.local
 *.ipa
 
 # Android
 android/.gradle/
+android/app/.cxx/
 android/app/build/
 android/build/
 *.apk
 *.aab
+android/app/google-services.json
+ios/TarmotoApp/GoogleService-Info.plist
 
 # JS bundle
 *.jsbundle

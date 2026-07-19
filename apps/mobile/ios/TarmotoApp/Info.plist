@@ -64,7 +64,7 @@
 		  US-17 — CarPlay scene-based architecture.
 		  CarPlay templates run in a dedicated UIScene whose role is
 		  `CPTemplateApplicationSceneSessionRoleApplication`. The scene
-		  delegate class is `CarSceneDelegate`, the Swift class shipped
+		  delegate class is `CarSceneDelegate`, the Objective-C class shipped
 		  alongside this Info.plist. It implements
 		  `CPTemplateApplicationSceneDelegate` and forwards
 		  `didConnect`/`didDisconnect` into
@@ -98,7 +98,7 @@
 					<key>UISceneClassName</key>
 					<string>CPTemplateApplicationScene</string>
 					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).CarSceneDelegate</string>
+					<string>CarSceneDelegate</string>
 				</dict>
 			</array>
 		</dict>

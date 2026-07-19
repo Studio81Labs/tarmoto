@@ -75,7 +75,9 @@ import {
   clearTokens,
   getAccessToken,
   getAuthenticatedUserId,
+  getCachedUser,
   isAuthenticated as hasAccessToken,
+  setCachedUser,
   setAuthenticatedUserId,
   storeTokens,
   rawFetch,
@@ -103,6 +105,10 @@ import {
 import { registerForPush, unregisterPush } from "./pushRegistration";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
+import {
+  isCurrentAuthSession,
+  type AuthSessionSnapshot,
+} from "./authBootstrap";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -277,6 +283,23 @@ class ApiService {
     return hasAccessToken();
   }
 
+  getAuthSessionSnapshot(): AuthSessionSnapshot | null {
+    const accessToken = getAccessToken();
+    if (!accessToken) return null;
+    return {
+      accessToken,
+      userId: getAuthenticatedUserId(),
+    };
+  }
+
+  getCachedProfile(): User | null {
+    return getCachedUser();
+  }
+
+  cacheProfile(user: User): void {
+    setCachedUser(user);
+  }
+
   /**
    * Persist the device's IANA timezone to notification preferences so the
    * weekly digest sends at the rider's local Sunday 08:00 instead of the backend
@@ -347,10 +370,18 @@ class ApiService {
   }
 
   async updateProfile(updates: Partial<User>): Promise<User> {
+    const sessionAtStart = this.getAuthSessionSnapshot();
     const result = await client.PATCH("/api/v1/users/me", {
       body: updates as Schemas["UpdateProfileDto"],
     });
-    return unwrap(result, "Failed to update profile");
+    const user = unwrap(result, "Failed to update profile");
+    if (
+      sessionAtStart &&
+      isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
+    ) {
+      setCachedUser(user);
+    }
+    return user;
   }
 
   // ── Rider profiles + follow (US-27) ──
@@ -430,6 +461,7 @@ class ApiService {
     mimeType?: string;
     fileName?: string;
   }): Promise<User> {
+    const sessionAtStart = this.getAuthSessionSnapshot();
     const form = new FormData();
     // TODO drift-detection-irrelevant: multipart — openapi-fetch lacks
     // first-class RN FormData support, so the casts on the body and the
@@ -448,7 +480,14 @@ class ApiService {
       // multipart boundary.
       bodySerializer: (body) => body as unknown as FormData,
     });
-    return unwrap(result, "Failed to upload avatar");
+    const user = unwrap(result, "Failed to upload avatar");
+    if (
+      sessionAtStart &&
+      isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
+    ) {
+      setCachedUser(user);
+    }
+    return user;
   }
 
   // ── Emergency Contacts (US-12) ──

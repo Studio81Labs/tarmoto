@@ -26,6 +26,7 @@ import {
 type LinkAccountRoute = RouteProp<ProfileStackParamList, "LinkAccount">;
 
 const t = brandColorsLight;
+type AuthMode = "login" | "register";
 
 export default function LinkAccountScreen() {
   const route = useRoute<LinkAccountRoute>();
@@ -36,6 +37,8 @@ export default function LinkAccountScreen() {
     route.params?.email ?? existingUser?.email ?? "",
   );
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [mode, setMode] = useState<AuthMode>("login");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -45,16 +48,32 @@ export default function LinkAccountScreen() {
   }, [route.params?.email]);
 
   const helperText = useMemo(() => {
+    if (mode === "register") {
+      return "Create your rider account to sync rides, bikes, trips, and safety preferences.";
+    }
     if (existingUser?.email && existingUser.email === email.trim()) {
       return "This phone is already linked to that Tarmoto account.";
     }
     return "Sign in here to sync your rides, bikes, and profile details to this phone.";
-  }, [email, existingUser?.email]);
+  }, [email, existingUser?.email, mode]);
 
   const handleSubmit = async () => {
     const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      setErrorMessage("Enter your email and password to link this phone.");
+    const trimmedDisplayName = displayName.trim();
+    if (
+      !trimmedEmail ||
+      !password ||
+      (mode === "register" && !trimmedDisplayName)
+    ) {
+      setErrorMessage(
+        mode === "register"
+          ? "Enter your display name, email, and password."
+          : "Enter your email and password to link this phone.",
+      );
+      return;
+    }
+    if (mode === "register" && password.length < 8) {
+      setErrorMessage("Use at least 8 characters for your password.");
       return;
     }
 
@@ -62,11 +81,16 @@ export default function LinkAccountScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      const auth = await api.login(trimmedEmail, password);
+      const auth =
+        mode === "register"
+          ? await api.register(trimmedEmail, password, trimmedDisplayName)
+          : await api.login(trimmedEmail, password);
       setUser(auth.user);
       setPassword("");
       setSuccessMessage(
-        "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
+        mode === "register"
+          ? "Account created. Your rides, bikes, trips, and preferences will now sync."
+          : "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
       );
     } catch (err) {
       setErrorMessage(
@@ -87,12 +111,71 @@ export default function LinkAccountScreen() {
           <View style={styles.heroIcon}>
             <Icon name="cellphone-link" size={28} color={t.fg} />
           </View>
-          <Text style={styles.title}>Link your Tarmoto account</Text>
+          <Text style={styles.title}>
+            {mode === "register"
+              ? "Create your Tarmoto account"
+              : "Link your Tarmoto account"}
+          </Text>
           <Text style={styles.subtitle}>{helperText}</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
+          <View style={styles.modeSelector}>
+            {(["login", "register"] as const).map((option) => (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  option === "login" ? "Sign in mode" : "Create account mode"
+                }
+                accessibilityState={{ selected: mode === option }}
+                onPress={() => {
+                  setMode(option);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                style={[
+                  styles.modeButton,
+                  mode === option ? styles.modeButtonSelected : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.modeButtonLabel,
+                    mode === option ? styles.modeButtonLabelSelected : null,
+                  ]}
+                >
+                  {option === "login" ? "Sign in" : "Create account"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {mode === "register" ? (
+            <>
+              <Text style={styles.label}>Display name</Text>
+              <TextInput
+                accessibilityLabel="Display name"
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={100}
+                placeholder="Martin CZ"
+                placeholderTextColor={t.mute}
+                style={styles.input}
+                value={displayName}
+                onChangeText={setDisplayName}
+              />
+            </>
+          ) : null}
+
+          <Text
+            style={[
+              styles.label,
+              mode === "register" ? styles.labelSpacing : null,
+            ]}
+          >
+            Email
+          </Text>
           <TextInput
             accessibilityLabel="Email"
             autoCapitalize="none"
@@ -129,8 +212,11 @@ export default function LinkAccountScreen() {
           ) : null}
 
           <Pressable
+            testID="auth-submit"
             accessibilityRole="button"
-            accessibilityLabel="Link account"
+            accessibilityLabel={
+              mode === "register" ? "Create account" : "Link account"
+            }
             accessibilityState={{ disabled: submitting }}
             disabled={submitting}
             onPress={() => void handleSubmit()}
@@ -141,7 +227,9 @@ export default function LinkAccountScreen() {
             ) : (
               <>
                 <Icon name="login-variant" size={18} color={t.invFg} />
-                <Text style={styles.buttonLabel}>Link account</Text>
+                <Text style={styles.buttonLabel}>
+                  {mode === "register" ? "Create account" : "Link account"}
+                </Text>
               </>
             )}
           </Pressable>
@@ -192,6 +280,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: t.line,
     padding: brandSpacing.s4,
+  },
+  modeSelector: {
+    flexDirection: "row",
+    gap: brandSpacing.s2,
+    marginBottom: brandSpacing.s4,
+    padding: 3,
+    borderRadius: brandRadii.pill,
+    backgroundColor: t.sunken,
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: brandRadii.pill,
+  },
+  modeButtonSelected: {
+    backgroundColor: t.invBg,
+  },
+  modeButtonLabel: {
+    color: t.dim,
+    fontFamily: brandFonts.sans,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modeButtonLabelSelected: {
+    color: t.invFg,
   },
   label: {
     color: t.fg,

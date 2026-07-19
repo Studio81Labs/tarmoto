@@ -75,7 +75,7 @@ import {
   type Maneuver,
   type ManeuverType,
 } from "@/services/navigation";
-import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { resolveNavigationRoute } from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 
@@ -278,7 +278,7 @@ export default function NavigationScreen() {
       <StatusBar barStyle="light-content" backgroundColor={t.bg} translucent />
       <Map
         style={styles.map}
-        mapStyle={DEV_MAP_STYLE_URL}
+        mapStyle={APP_MAP_STYLE_URL}
         attribution={false}
         logo={false}
       >

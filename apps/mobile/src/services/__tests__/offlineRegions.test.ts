@@ -109,12 +109,9 @@ describe("tile math", () => {
 
 describe("URL + path helpers", () => {
   it("tileUrl embeds the xyz coords and the quality layer filter", () => {
-    const url = tileUrl(
-      { z: 12, x: 2259, y: 1410 },
-      "https://api.tarmoto.app/v1",
-    );
+    const url = tileUrl({ z: 12, x: 2259, y: 1410 }, "https://api.tarmoto.app");
     expect(url).toBe(
-      "https://api.tarmoto.app/v1/roads/tiles/12/2259/1410.mvt?layers=quality",
+      "https://api.tarmoto.app/api/v1/roads/tiles/12/2259/1410.mvt?layers=quality",
     );
   });
 
@@ -216,7 +213,7 @@ describe("downloadRegion", () => {
       spec,
       docsDir: "/docs",
       downloader,
-      apiBase: "https://api.tarmoto.app/v1",
+      apiBase: "https://api.tarmoto.app",
       onProgress: (p) => progress.push(p.downloaded),
     });
 
@@ -226,7 +223,7 @@ describe("downloadRegion", () => {
     expect(result.bytesOnDisk).toBe(tileCount * 1024);
     expect(calls.downloads.length).toBe(tileCount);
     expect(calls.downloads[0]).toContain(
-      "https://api.tarmoto.app/v1/roads/tiles/",
+      "https://api.tarmoto.app/api/v1/roads/tiles/",
     );
     // First progress emit is the initial 0/N report so the UI can flip
     // to "downloading" immediately.

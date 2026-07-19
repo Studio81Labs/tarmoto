@@ -3,7 +3,7 @@ import {
   BELOW_THRESHOLD_OPACITY,
   bboxFromVisibleBounds,
   buildQualityLineStyle,
-  DEV_MAP_STYLE_URL,
+  APP_MAP_STYLE_URL,
   filterDismissedFromRest,
   mergeHazardsRest,
   FUN_ZONE_COLORS,
@@ -56,23 +56,23 @@ function makePass(overrides: Partial<MountainPass> = {}): MountainPass {
 
 describe("getQualityTileUrlTemplate", () => {
   it("appends the MVT tile path to the given api base", () => {
-    expect(getQualityTileUrlTemplate("http://localhost:3000/v1")).toBe(
-      "http://localhost:3000/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality",
+    expect(getQualityTileUrlTemplate("http://localhost:3000")).toBe(
+      "http://localhost:3000/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality",
     );
-    expect(getQualityTileUrlTemplate("https://api.tarmoto.app/v1")).toBe(
-      "https://api.tarmoto.app/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality",
+    expect(getQualityTileUrlTemplate("https://api.tarmoto.app")).toBe(
+      "https://api.tarmoto.app/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality",
     );
   });
 
   it("keeps xyz placeholders unsubstituted so MapLibre can fill them", () => {
-    const template = getQualityTileUrlTemplate("http://localhost:3000/v1");
+    const template = getQualityTileUrlTemplate("http://localhost:3000");
     expect(template).toContain("{z}");
     expect(template).toContain("{x}");
     expect(template).toContain("{y}");
   });
 
   it("requests only the quality MVT layer (hazards/surface are separate features)", () => {
-    expect(getQualityTileUrlTemplate("http://localhost:3000/v1")).toContain(
+    expect(getQualityTileUrlTemplate("http://localhost:3000")).toContain(
       "layers=quality",
     );
   });
@@ -141,9 +141,11 @@ describe("qualityLineStyle", () => {
   });
 });
 
-describe("DEV_MAP_STYLE_URL", () => {
-  it("uses the MapLibre public demotiles style until a Tarmoto basemap ships", () => {
-    expect(DEV_MAP_STYLE_URL).toMatch(/^https:\/\/demotiles\.maplibre\.org\//);
+describe("APP_MAP_STYLE_URL", () => {
+  it("uses the production OpenFreeMap basemap by default", () => {
+    expect(APP_MAP_STYLE_URL).toBe(
+      "https://tiles.openfreemap.org/styles/liberty",
+    );
   });
 });
 

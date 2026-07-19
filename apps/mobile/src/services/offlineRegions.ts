@@ -2,7 +2,7 @@
  * Offline map regions — US-18 AC #1 "Download map regions for offline use".
  *
  * The road-quality overlay and future basemap live behind the backend's
- * MVT tile endpoint (`/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`). When a
+ * MVT tile endpoint (`/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`). When a
  * rider is about to head into a rural area we want those tiles cached on
  * disk so the map still renders without cell service. This module is the
  * caching backbone:
@@ -28,7 +28,7 @@
  *     and let them delete regions manually).
  *   - Offline routing / turn-by-turn (US-18 AC #2 — separate workstream).
  *   - Basemap style JSON + glyphs/sprites (follow-up once the Tarmoto
- *     basemap ships; see `DEV_MAP_STYLE_URL`).
+ *     basemap ships; see `APP_MAP_STYLE_URL`).
  */
 
 import { API_BASE_URL } from "@/config";
@@ -255,7 +255,7 @@ export function tileUrl(
   tile: TileCoord,
   apiBase: string = API_BASE_URL,
 ): string {
-  return `${apiBase}/roads/tiles/${tile.z}/${tile.x}/${tile.y}.mvt?layers=quality`;
+  return `${apiBase}/api/v1/roads/tiles/${tile.z}/${tile.x}/${tile.y}.mvt?layers=quality`;
 }
 
 /**

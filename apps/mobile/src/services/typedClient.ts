@@ -22,8 +22,15 @@ import { API_BASE_URL } from "@/config";
 import { clearCachedPreferences } from "./privacyCache";
 
 type AuthResponse = Schemas["AuthResponseDto"];
+type CachedUser = Schemas["UserResponseDto"];
 
-const storage = createMMKV({ id: "tarmoto-auth" });
+interface AuthStorage {
+  getString(key: string): string | undefined;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+}
+
+let storage: AuthStorage = createMMKV({ id: "tarmoto-auth" });
 
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
@@ -33,6 +40,7 @@ const REFRESH_TOKEN_KEY = "refresh_token";
 // or "different user signed in" mid-flight while still allowing
 // the normal access-token rotation by the 401 refresh middleware.
 const USER_ID_KEY = "user_id";
+const CACHED_USER_KEY = "cached_user";
 
 /**
  * Per-request timeout. Matches the previous axios default (`timeout:
@@ -138,10 +146,51 @@ function asTimeoutErrorIfFired(
   return err;
 }
 
-let inflightRefresh: Promise<boolean> | null = null;
+let inflightRefresh: Promise<string | null> | null = null;
+
+interface StoredAuthSession {
+  accessToken: string | null;
+  refreshToken: string;
+  userId: string | null;
+}
+
+function isStoredSessionCurrent(session: StoredAuthSession): boolean {
+  return (
+    getAccessToken() === session.accessToken &&
+    getRefreshToken() === session.refreshToken &&
+    getAuthenticatedUserId() === session.userId
+  );
+}
 
 export function getAccessToken(): string | null {
   return storage.getString(ACCESS_TOKEN_KEY) ?? null;
+}
+
+/** Last authenticated profile for an offline-safe cold start. */
+export function getCachedUser(): CachedUser | null {
+  const raw = storage.getString(CACHED_USER_KEY);
+  if (!raw) return null;
+  try {
+    const user = JSON.parse(raw) as Partial<CachedUser>;
+    const authenticatedUserId = storage.getString(USER_ID_KEY);
+    if (
+      typeof user.id !== "string" ||
+      !user.id ||
+      (authenticatedUserId && authenticatedUserId !== user.id)
+    ) {
+      storage.remove(CACHED_USER_KEY);
+      return null;
+    }
+    return user as CachedUser;
+  } catch {
+    storage.remove(CACHED_USER_KEY);
+    return null;
+  }
+}
+
+export function setCachedUser(user: CachedUser): void {
+  storage.set(CACHED_USER_KEY, JSON.stringify(user));
+  storage.set(USER_ID_KEY, user.id);
 }
 
 function getRefreshToken(): string | null {
@@ -181,7 +230,7 @@ export function storeTokens(auth: AuthResponse): void {
   // so a refresh-without-user doesn't clobber the stable session
   // identifier the privacy-cache snapshot relies on.
   if (incomingUserId) {
-    storage.set(USER_ID_KEY, incomingUserId);
+    setCachedUser(auth.user);
   }
 }
 
@@ -189,6 +238,7 @@ export function clearTokens(): void {
   storage.remove(ACCESS_TOKEN_KEY);
   storage.remove(REFRESH_TOKEN_KEY);
   storage.remove(USER_ID_KEY);
+  storage.remove(CACHED_USER_KEY);
   // #279 / #501 — every token-invalidation path (logout, refresh
   // 4xx, refresh fetch failure / timeout) must also wipe the
   // cached privacy preferences. Otherwise a different rider
@@ -240,10 +290,15 @@ export function setAuthenticatedUserId(userId: string): void {
  * itself can't loop). Persists new tokens on success, clears them on
  * failure. Concurrent calls share a single inflight promise.
  */
-async function refreshAccessToken(): Promise<boolean> {
+async function refreshAccessToken(): Promise<string | null> {
   if (inflightRefresh) return inflightRefresh;
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+  if (!refreshToken) return null;
+  const sessionAtStart: StoredAuthSession = {
+    accessToken: getAccessToken(),
+    refreshToken,
+    userId: getAuthenticatedUserId(),
+  };
 
   inflightRefresh = (async () => {
     const handle = withTimeout(undefined, REQUEST_TIMEOUT_MS);
@@ -255,18 +310,23 @@ async function refreshAccessToken(): Promise<boolean> {
         signal: handle.signal,
       });
       if (!res.ok) {
-        clearTokens();
-        return false;
+        if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+        return null;
       }
       const auth = (await res.json()) as AuthResponse;
+      // Login, registration, or logout may have replaced the session while
+      // this refresh was in flight. Never let an old response overwrite (or
+      // later clear) the newer rider's credentials.
+      if (!isStoredSessionCurrent(sessionAtStart)) return null;
       storeTokens(auth);
-      return true;
+      return auth.access_token;
     } catch {
       // Refresh timed out OR network failure — either way the user's
       // session can't be salvaged here; clear tokens so subsequent
-      // requests fail fast instead of looping.
-      clearTokens();
-      return false;
+      // requests fail fast instead of looping. A concurrently replaced
+      // session is still valid and must remain untouched.
+      if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+      return null;
     } finally {
       handle.dispose();
       inflightRefresh = null;
@@ -327,8 +387,8 @@ baseClient.use({
       if (response.status !== 401) return response;
       if (SKIP_REFRESH_PATHS.includes(schemaPath)) return response;
 
-      const refreshed = await refreshAccessToken();
-      if (!refreshed) return response;
+      const refreshedToken = await refreshAccessToken();
+      if (!refreshedToken) return response;
 
       // Dispose the ORIGINAL request's timer NOW, before chaining
       // the retry to its signal. The 401-detection plus refresh
@@ -347,10 +407,9 @@ baseClient.use({
       // immutable, and on RN's whatwg-fetch polyfill `set()` is a
       // silent no-op there — the retried request would otherwise go
       // out with the same expired bearer and 401 again.
-      const newToken = getAccessToken();
       const headers = new Headers();
       request.headers.forEach((value, key) => headers.set(key, value));
-      if (newToken) headers.set("Authorization", `Bearer ${newToken}`);
+      headers.set("Authorization", `Bearer ${refreshedToken}`);
 
       // Fresh 15 s deadline for the retry chained to the caller's
       // signal (via the original combined signal whose timer we
@@ -409,6 +468,14 @@ baseClient.use({
 });
 
 export const client = baseClient;
+
+/** Test hooks for deterministic refresh-race coverage. */
+export function __setAuthStorageForTest(next: AuthStorage): void {
+  storage = next;
+  inflightRefresh = null;
+}
+
+export const __refreshAccessTokenForTest = refreshAccessToken;
 
 /**
  * Raw fetch escape hatch for endpoints that must bypass the typed

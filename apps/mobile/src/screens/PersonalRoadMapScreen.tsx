@@ -46,7 +46,7 @@ import {
 } from "@/theme/brand";
 import type { ExplorationStats, RiddenSegment, UnriddenSegment } from "@/types";
 import {
-  DEV_MAP_STYLE_URL,
+  APP_MAP_STYLE_URL,
   getQualityTileUrlTemplate,
 } from "./MapScreen.helpers";
 import {
@@ -176,7 +176,7 @@ export default function PersonalRoadMapScreen() {
       <View style={styles.mapWrap}>
         <Map
           style={styles.map}
-          mapStyle={DEV_MAP_STYLE_URL}
+          mapStyle={APP_MAP_STYLE_URL}
           attribution
           logo={false}
         >

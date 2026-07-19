@@ -2,6 +2,14 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// Firebase credentials are injected from GitHub secrets for store releases and
+// may be absent from local/PR preview builds. Applying the plugin only when the
+// file exists keeps those builds usable while release preflight still requires
+// a real configuration.
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -103,9 +111,13 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // PR previews explicitly opt into the debug key so their APK can
+            // be installed. Store builds remain unsigned here and Fastlane
+            // injects the protected upload key at invocation time; this avoids
+            // accidentally publishing a debug-signed release bundle.
+            if (project.findProperty("TARMOTO_PREVIEW_SIGNING") == "true") {
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
