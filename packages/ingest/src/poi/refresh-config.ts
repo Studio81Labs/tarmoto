@@ -1,3 +1,4 @@
+import { assertRoutingDirDistinct } from "../roads/road-refresh-config.js";
 import { parseRegions, type PoiImportRegion } from "./regions.js";
 
 /**
@@ -109,10 +110,17 @@ export interface PoiRefreshConfig {
  * code fails fast rather than being silently dropped (#976 review) — otherwise
  * the scheduled task would exit green having refreshed nothing while the import
  * keeps reusing stale files.
+ *
+ * Also runs {@link assertRoutingDirDistinct}: this refresh writes `<code>.osm` to
+ * `TARMOTO_OSM_POI_IMPORT_DIR`, the SAME filename the road routing extract writes
+ * to `TARMOTO_OSM_ROAD_ROUTING_DIR`, so a shared dir would let the two clobber
+ * each other. The check lives on both refresh paths (not just the road one)
+ * because a POI refresh can be scheduled ahead of any road refresh.
  */
 export function resolvePoiRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): PoiRefreshConfig {
+  assertRoutingDirDistinct(env);
   const dir = env.TARMOTO_OSM_POI_IMPORT_DIR?.trim();
   return {
     enabled: boolEnv(env.TARMOTO_OSM_POI_REFRESH_ENABLED),

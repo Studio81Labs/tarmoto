@@ -77,6 +77,44 @@ export interface RoadRefreshConfig {
 }
 
 /**
+ * Fail fast if `TARMOTO_OSM_ROAD_ROUTING_DIR` (the whole-network routing extract's
+ * `<code>.osm` dir) collides with either dir that ALSO writes `<code>.osm`: the
+ * road TILE dir (`TARMOTO_OSM_ROAD_IMPORT_DIR`) or the OSM POI extract dir
+ * (`TARMOTO_OSM_POI_IMPORT_DIR`). A shared dir lets one producer's `<code>.osm`
+ * clobber the other's — e.g. a road refresh overwriting the POI `cz.osm`, then the
+ * next POI import re-tombstoning against the wrong file.
+ *
+ * Called from BOTH refresh-config resolvers ({@link resolveRoadRefreshConfig} and
+ * `resolvePoiRefreshConfig`) so the guard fires no matter which scheduled task
+ * runs first: the road producer is not the only writer of `<code>.osm`, so a
+ * road-side-only check would miss a POI refresh scheduled ahead of any road one.
+ * Compares RESOLVED paths so a trailing slash / `.` / `..` spelling
+ * (`/data/routing` vs `/data/routing/`) can't slip past.
+ */
+export function assertRoutingDirDistinct(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const routing = env.TARMOTO_OSM_ROAD_ROUTING_DIR?.trim();
+  if (!routing) return;
+  const routingResolved = resolve(routing);
+  const clash = (
+    [
+      ["TARMOTO_OSM_ROAD_IMPORT_DIR", env.TARMOTO_OSM_ROAD_IMPORT_DIR?.trim()],
+      ["TARMOTO_OSM_POI_IMPORT_DIR", env.TARMOTO_OSM_POI_IMPORT_DIR?.trim()],
+    ] as const
+  ).find(
+    ([, value]) =>
+      value !== undefined && value !== "" && resolve(value) === routingResolved,
+  );
+  if (clash) {
+    throw new Error(
+      `TARMOTO_OSM_ROAD_ROUTING_DIR (${routing}) must differ from ${clash[0]} ` +
+        `— the routing extract writes <code>.osm and would collide with that directory.`,
+    );
+  }
+}
+
+/**
  * Resolve the road refresh config from the environment — standalone (no Nest
  * DI), so the refresh container needn't boot the app. Mirrors
  * `resolvePoiRefreshConfig` but for the road source's env (`TARMOTO_OSM_ROAD_*`).
@@ -84,40 +122,13 @@ export interface RoadRefreshConfig {
 export function resolveRoadRefreshConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): RoadRefreshConfig {
+  assertRoutingDirDistinct(env);
   const dir = env.TARMOTO_OSM_ROAD_IMPORT_DIR?.trim();
   const routing = env.TARMOTO_OSM_ROAD_ROUTING_DIR?.trim();
-  const routingDir = routing ? routing : null;
-  if (routingDir !== null) {
-    // The routing extract is written as `<code>.osm` — the SAME filename the OSM
-    // POI refresh/import uses per country (and it must not mix with the road
-    // tiles). A shared dir would let a road refresh overwrite the POI `<code>.osm`
-    // and corrupt the next POI import. Fail fast on the documented "MUST differ"
-    // rather than trusting the operator to notice.
-    // Compare RESOLVED paths so a trailing slash / `.` / `..` spelling
-    // (`/data/poi-extracts` vs `/data/poi-extracts/`) can't slip past the guard.
-    const routingResolved = resolve(routingDir);
-    const clash = (
-      [
-        ["TARMOTO_OSM_ROAD_IMPORT_DIR", dir],
-        ["TARMOTO_OSM_POI_IMPORT_DIR", env.TARMOTO_OSM_POI_IMPORT_DIR?.trim()],
-      ] as const
-    ).find(
-      ([, value]) =>
-        value !== undefined &&
-        value !== "" &&
-        resolve(value) === routingResolved,
-    );
-    if (clash) {
-      throw new Error(
-        `TARMOTO_OSM_ROAD_ROUTING_DIR (${routingDir}) must differ from ${clash[0]} ` +
-          `— the routing extract writes <code>.osm and would collide with that directory.`,
-      );
-    }
-  }
   return {
     enabled: boolEnv(env.TARMOTO_OSM_ROAD_REFRESH_ENABLED),
     targetDir: dir ? dir : null,
-    routingDir,
+    routingDir: routing ? routing : null,
     regions: parseRegions(
       env.TARMOTO_OSM_ROAD_IMPORT_REGIONS,
       "TARMOTO_OSM_ROAD_IMPORT_REGIONS",
