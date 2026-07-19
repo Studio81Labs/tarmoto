@@ -2,6 +2,7 @@ import { DEFAULT_REGIONS } from "../poi/regions.js";
 import {
   DRIVABLE_HIGHWAYS,
   ROAD_TAGS_FILTER_EXPRESSIONS,
+  ROUTING_TAGS_FILTER_EXPRESSIONS,
   TILE_MAX_SPAN_DEG_DEFAULT,
   resolveRoadRefreshConfig,
 } from "./index.js";
@@ -16,6 +17,20 @@ describe("road tag filter", () => {
     }
     // ways only — roads are ways, not nodes/relations (unlike the POI nwr/ filter)
     expect(expr.startsWith("nwr/")).toBe(false);
+  });
+
+  it("routing filter is a superset: every drivable class + `road` + ferries (what GraphHopper routes)", () => {
+    const hwExpr = ROUTING_TAGS_FILTER_EXPRESSIONS.find((e) =>
+      e.startsWith("w/highway="),
+    );
+    expect(hwExpr).toBeDefined();
+    const values = hwExpr!.slice("w/highway=".length).split(",");
+    for (const hw of DRIVABLE_HIGHWAYS) {
+      expect(values).toContain(hw); // superset of road_segments' filter
+    }
+    expect(values).toContain("road"); // routable in GraphHopper, but not a road_segments class
+    // ferry ways GraphHopper routes over, kept for routing (never for road_segments)
+    expect(ROUTING_TAGS_FILTER_EXPRESSIONS).toContain("w/route=ferry");
   });
 });
 

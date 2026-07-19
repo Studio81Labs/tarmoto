@@ -14,16 +14,25 @@ export const ROAD_TAGS_FILTER_EXPRESSIONS: readonly string[] = [
 ];
 
 /**
- * `osmium tags-filter` expression for the ROUTING extract (the GraphHopper import
- * + conflation input) — the drivable highways PLUS `route=ferry` ways, which
- * GraphHopper routes over (a car/motorcycle route can legitimately need a vehicle
- * ferry). This is deliberately a superset of {@link ROAD_TAGS_FILTER_EXPRESSIONS}:
- * the road TILES (→ `road_segments`) must NOT include ferries — there's no road
- * surface quality on a ferry — so the routing extract uses its own filter rather
- * than reusing the tiles' drivable-highway-only one.
+ * `highway=*` classes GraphHopper's (10.2) car parser routes but that we do NOT
+ * import into `road_segments`: `road` — the "unknown classification" tag. It's
+ * routable upstream (in `highwayValues` + `defaultSpeedMap`), so omitting it from
+ * the GraphHopper input drops any corridor that relies on it; but it carries no
+ * meaningful road class, so it's not a quality candidate for `road_segments`.
+ */
+const ROUTING_ONLY_HIGHWAYS: readonly string[] = ["road"];
+
+/**
+ * `osmium tags-filter` expressions for the ROUTING extract (the GraphHopper import
+ * + conflation input) — every `highway=*` GraphHopper routes (the drivable set
+ * PLUS {@link ROUTING_ONLY_HIGHWAYS}) AND `route=ferry` ways, which GraphHopper
+ * routes over (a car/motorcycle route can legitimately need a vehicle ferry).
+ * Deliberately a SUPERSET of {@link ROAD_TAGS_FILTER_EXPRESSIONS}: the road TILES
+ * (→ `road_segments`) exclude ferries and `road` (no surface quality there), so
+ * the routing extract uses its own filter rather than the tiles' one.
  */
 export const ROUTING_TAGS_FILTER_EXPRESSIONS: readonly string[] = [
-  ...ROAD_TAGS_FILTER_EXPRESSIONS,
+  `w/highway=${[...DRIVABLE_HIGHWAYS, ...ROUTING_ONLY_HIGHWAYS].join(",")}`,
   "w/route=ferry",
 ];
 
