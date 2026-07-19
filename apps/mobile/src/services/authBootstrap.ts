@@ -14,7 +14,7 @@ export interface AuthBootstrapDependencies {
   setLoading: (loading: boolean) => void;
 }
 
-function isCurrentSession(
+export function isCurrentAuthSession(
   initial: AuthSessionSnapshot,
   current: AuthSessionSnapshot | null,
   profile: User,
@@ -49,7 +49,9 @@ export async function bootstrapAuth(
 
   try {
     const profile = await deps.getProfile();
-    if (!isCurrentSession(initialSession, deps.getSessionSnapshot(), profile)) {
+    if (
+      !isCurrentAuthSession(initialSession, deps.getSessionSnapshot(), profile)
+    ) {
       deps.setLoading(false);
       return;
     }

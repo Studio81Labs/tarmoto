@@ -105,7 +105,10 @@ import {
 import { registerForPush, unregisterPush } from "./pushRegistration";
 import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
-import type { AuthSessionSnapshot } from "./authBootstrap";
+import {
+  isCurrentAuthSession,
+  type AuthSessionSnapshot,
+} from "./authBootstrap";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -367,11 +370,17 @@ class ApiService {
   }
 
   async updateProfile(updates: Partial<User>): Promise<User> {
+    const sessionAtStart = this.getAuthSessionSnapshot();
     const result = await client.PATCH("/api/v1/users/me", {
       body: updates as Schemas["UpdateProfileDto"],
     });
     const user = unwrap(result, "Failed to update profile");
-    setCachedUser(user);
+    if (
+      sessionAtStart &&
+      isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
+    ) {
+      setCachedUser(user);
+    }
     return user;
   }
 
@@ -452,6 +461,7 @@ class ApiService {
     mimeType?: string;
     fileName?: string;
   }): Promise<User> {
+    const sessionAtStart = this.getAuthSessionSnapshot();
     const form = new FormData();
     // TODO drift-detection-irrelevant: multipart — openapi-fetch lacks
     // first-class RN FormData support, so the casts on the body and the
@@ -471,7 +481,12 @@ class ApiService {
       bodySerializer: (body) => body as unknown as FormData,
     });
     const user = unwrap(result, "Failed to upload avatar");
-    setCachedUser(user);
+    if (
+      sessionAtStart &&
+      isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
+    ) {
+      setCachedUser(user);
+    }
     return user;
   }
 
