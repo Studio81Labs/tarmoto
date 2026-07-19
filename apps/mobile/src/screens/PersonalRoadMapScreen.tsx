@@ -27,11 +27,11 @@ import {
 import {
   Camera,
   Layer,
+  type LineLayerSpecification,
   Map,
   UserLocation,
   VectorSource,
 } from "@maplibre/maplibre-react-native";
-import type { LineLayerStyle } from "@maplibre/maplibre-react-native";
 import { Icon } from "@/components/Icon";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
@@ -198,7 +198,7 @@ export default function PersonalRoadMapScreen() {
               id="tarmoto-personal-lines"
               source="tarmoto-personal-quality"
               source-layer="quality"
-              style={lineStyle}
+              {...lineStyle}
             />
           </VectorSource>
         </Map>
@@ -373,7 +373,7 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
 // ── Map style helper ──
 
 /**
- * Build a `LineLayerStyle` that paints ridden segments in the brand
+ * Build style-spec `paint` and `layout` props that render ridden segments in the brand
  * accent and dims unridden segments in a neutral grey. Uses a `match`
  * expression on the
  * feature `id` so we can highlight thousands of segments without
@@ -387,9 +387,10 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
  * when the list is empty rather than producing an invalid match
  * expression.
  */
-export function buildPersonalLineStyle(
-  riddenIds: readonly string[],
-): LineLayerStyle {
+export function buildPersonalLineStyle(riddenIds: readonly string[]): {
+  paint: NonNullable<LineLayerSpecification["paint"]>;
+  layout: NonNullable<LineLayerSpecification["layout"]>;
+} {
   const dimmedColor = UNRIDDEN_COLOR;
   const riddenColor = t.accent;
 
@@ -397,11 +398,25 @@ export function buildPersonalLineStyle(
   // "match expression must have at least one stop" MapLibre error.
   if (riddenIds.length === 0) {
     return {
-      lineColor: dimmedColor,
-      lineWidth: ["interpolate", ["linear"], ["zoom"], 8, 1, 14, 2.5, 18, 4],
-      lineOpacity: 0.5,
-      lineCap: "round",
-      lineJoin: "round",
+      paint: {
+        "line-color": dimmedColor,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8,
+          1,
+          14,
+          2.5,
+          18,
+          4,
+        ],
+        "line-opacity": 0.5,
+      },
+      layout: {
+        "line-cap": "round",
+        "line-join": "round",
+      },
     };
   }
 
@@ -422,35 +437,27 @@ export function buildPersonalLineStyle(
   const labels = [...ids];
 
   return {
-    lineColor: [
-      "match",
-      ["get", "id"],
-      labels,
-      riddenColor,
-      dimmedColor,
-    ] as unknown as NonNullable<LineLayerStyle["lineColor"]>,
-    lineWidth: [
-      "interpolate",
-      ["linear"],
-      ["zoom"],
-      8,
-      1,
-      12,
-      2.5,
-      16,
-      5,
-      20,
-      8,
-    ],
-    lineOpacity: [
-      "match",
-      ["get", "id"],
-      labels,
-      1,
-      0.45,
-    ] as unknown as NonNullable<LineLayerStyle["lineOpacity"]>,
-    lineCap: "round",
-    lineJoin: "round",
+    paint: {
+      "line-color": ["match", ["get", "id"], labels, riddenColor, dimmedColor],
+      "line-width": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        8,
+        1,
+        12,
+        2.5,
+        16,
+        5,
+        20,
+        8,
+      ],
+      "line-opacity": ["match", ["get", "id"], labels, 1, 0.45],
+    },
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
   };
 }
 

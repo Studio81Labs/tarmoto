@@ -1,5 +1,4 @@
 import React from "react";
-import { Image } from "react-native";
 import { render, screen } from "@testing-library/react-native";
 import Avatar, { initialsFromName } from "../Avatar";
 
@@ -25,22 +24,24 @@ describe("initialsFromName", () => {
 });
 
 describe("Avatar", () => {
-  it("renders an image when a uri is provided", () => {
-    render(<Avatar uri="https://example.com/avatar.png" name="Adam Kadlec" />);
-    const image = screen.UNSAFE_getByType(Image);
+  it("renders an image when a uri is provided", async () => {
+    await render(
+      <Avatar uri="https://example.com/avatar.png" name="Adam Kadlec" />,
+    );
+    const image = screen.getByLabelText("Adam Kadlec avatar");
     expect(image.props.source).toEqual({
       uri: "https://example.com/avatar.png",
     });
     expect(image.props.accessibilityLabel).toBe("Adam Kadlec avatar");
   });
 
-  it("renders the initials fallback when no uri is provided", () => {
-    render(<Avatar name="Adam Kadlec" />);
+  it("renders the initials fallback when no uri is provided", async () => {
+    await render(<Avatar name="Adam Kadlec" />);
     expect(screen.getByText("AK")).toBeTruthy();
   });
 
-  it("renders the fallback for null uri", () => {
-    render(<Avatar uri={null} name="Jane Doe" />);
+  it("renders the fallback for null uri", async () => {
+    await render(<Avatar uri={null} name="Jane Doe" />);
     expect(screen.getByText("JD")).toBeTruthy();
   });
 });

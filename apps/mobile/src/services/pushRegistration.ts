@@ -26,6 +26,7 @@
 
 import { PermissionsAndroid, Platform } from "react-native";
 import DeviceInfo from "react-native-device-info";
+import { requestNotifications, RESULTS } from "react-native-permissions";
 import { requestWithRationale } from "./permissions";
 
 type FirebaseMessagingModule =
@@ -67,9 +68,7 @@ function loadMessaging(): ReturnType<FirebaseMessagingModule> | null {
   }
 }
 
-async function requestPermission(
-  messaging: ReturnType<FirebaseMessagingModule>,
-): Promise<boolean> {
+async function requestPermission(): Promise<boolean> {
   // Show the in-app rationale first (issue #280) so the rider knows
   // what they're saying yes (or no) to. On Android 13+ this runs
   // ahead of the POST_NOTIFICATIONS prompt; on iOS the messaging
@@ -86,13 +85,12 @@ async function requestPermission(
   });
   if (rationaleStatus !== "granted") return false;
 
-  // `messaging.requestPermission()` covers both iOS (real prompt) and
-  // Android (POST_NOTIFICATIONS on 13+, auto-granted on older). On
-  // Android 13+ the rationale call above has already taken the OS
-  // prompt to a granted state, so this becomes a no-op confirm.
-  // 1 = AUTHORIZED, 2 = PROVISIONAL — both let us deliver pushes.
-  const status = await messaging.requestPermission();
-  return status === 1 || status === 2;
+  // React Native Firebase 25 removes notification permission ownership from
+  // Messaging. Use the platform permission module for both iOS and Android;
+  // on Android 13+ the rationale path above has already requested the same
+  // permission, so this call simply returns the current status.
+  const { status } = await requestNotifications(["alert", "badge", "sound"]);
+  return status === RESULTS.GRANTED || status === RESULTS.LIMITED;
 }
 
 /**
@@ -125,7 +123,7 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
   const mySession = registrationSession;
 
   try {
-    const granted = await requestPermission(messaging);
+    const granted = await requestPermission();
     if (!granted || mySession !== registrationSession) return;
 
     const token = await messaging.getToken();

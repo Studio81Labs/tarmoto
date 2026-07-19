@@ -191,13 +191,45 @@ export default function BrandIcon({
     ),
     grid: (
       <>
-        <Rect x={4} y={4} width={6.5} height={6.5} rx={1.5} {...p} />
-        <Rect x={13.5} y={4} width={6.5} height={6.5} rx={1.5} {...p} />
-        <Rect x={4} y={13.5} width={6.5} height={6.5} rx={1.5} {...p} />
-        <Rect x={13.5} y={13.5} width={6.5} height={6.5} rx={1.5} {...p} />
+        <Rect
+          transform={[{ translateX: 4 }, { translateY: 4 }]}
+          width={6.5}
+          height={6.5}
+          rx={1.5}
+          {...p}
+        />
+        <Rect
+          transform={[{ translateX: 13.5 }, { translateY: 4 }]}
+          width={6.5}
+          height={6.5}
+          rx={1.5}
+          {...p}
+        />
+        <Rect
+          transform={[{ translateX: 4 }, { translateY: 13.5 }]}
+          width={6.5}
+          height={6.5}
+          rx={1.5}
+          {...p}
+        />
+        <Rect
+          transform={[{ translateX: 13.5 }, { translateY: 13.5 }]}
+          width={6.5}
+          height={6.5}
+          rx={1.5}
+          {...p}
+        />
       </>
     ),
-    phone: <Rect x={6.5} y={2.5} width={11} height={19} rx={2.5} {...p} />,
+    phone: (
+      <Rect
+        transform={[{ translateX: 6.5 }, { translateY: 2.5 }]}
+        width={11}
+        height={19}
+        rx={2.5}
+        {...p}
+      />
+    ),
     heart: (
       <Path
         d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20Z"

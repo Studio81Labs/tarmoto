@@ -34,7 +34,7 @@ All faces in a family share the internal family name (`"SpaceGrotesk"` /
 > ExtraBold is a real face.
 
 > **Upright only — no italics.** Both families are vendored as upright `wght`
-> sources, so no italic faces are instanced. RN 0.85 can't honour
+> sources, so no italic faces are instanced. RN 0.86 can't honour
 > `fontStyle: "italic"` on these without a registered italic face: Android
 > probes `<family>_italic.ttf` (absent → system-italic fallback in the wrong
 > family) and iOS filters the registered family to italics before matching

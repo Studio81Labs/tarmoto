@@ -76,11 +76,11 @@ describe("RideScreen", () => {
   it("shows the empty state and starts a free ride from the CTA", async () => {
     listMock.mockResolvedValueOnce({ rides: [], total: 0 });
 
-    render(<RideScreen />);
+    await render(<RideScreen />);
 
     await waitFor(() => expect(screen.getByText(/no rides yet/i)).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText("Start your first ride"));
+    await fireEvent.press(screen.getByLabelText("Start your first ride"));
     expect(mockNavigate).toHaveBeenCalledWith("RideActive", {
       rideType: "free",
     });
@@ -94,7 +94,7 @@ describe("RideScreen", () => {
     // EmptyState provides the only CTA the rider needs).
     listMock.mockResolvedValueOnce({ rides: [], total: 0 });
 
-    render(<RideScreen />);
+    await render(<RideScreen />);
 
     await waitFor(() => expect(screen.getByText(/no rides yet/i)).toBeTruthy());
     expect(screen.queryByLabelText("Start a free ride")).toBeNull();
@@ -106,7 +106,7 @@ describe("RideScreen", () => {
     mockIsRiding = true;
     listMock.mockResolvedValueOnce({ rides: [], total: 0 });
 
-    render(<RideScreen />);
+    await render(<RideScreen />);
 
     await waitFor(() =>
       expect(screen.getByLabelText("Return to active ride")).toBeTruthy(),
@@ -122,7 +122,7 @@ describe("RideScreen", () => {
     mockIsRiding = true;
     listMock.mockRejectedValueOnce(new Error("offline"));
 
-    render(<RideScreen />);
+    await render(<RideScreen />);
 
     await waitFor(() =>
       expect(screen.getByText(/can't load rides/i)).toBeTruthy(),
@@ -150,7 +150,7 @@ describe("RideScreen", () => {
     ];
     listMock.mockResolvedValueOnce({ rides: mockRecentRides, total: 1 });
 
-    render(<RideScreen />);
+    await render(<RideScreen />);
 
     await waitFor(() => expect(screen.getByText(/42.5 km/)).toBeTruthy());
     expect(screen.getByLabelText("Start a free ride")).toBeTruthy();
@@ -180,13 +180,13 @@ describe("RideScreen", () => {
       total: 1,
     });
 
-    render(<RideScreen />);
+    await render(<RideScreen />);
 
     await waitFor(() => expect(screen.getByText(/42.5 km/)).toBeTruthy());
     expect(screen.getByText(/Apr 17, 2026/)).toBeTruthy();
     expect(screen.getByText(/1h 30m/)).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText(/Ride Apr 17, 2026/));
+    await fireEvent.press(screen.getByLabelText(/Ride Apr 17, 2026/));
     expect(mockNavigate).toHaveBeenCalledWith("RideDetail", {
       rideId: "ride-1",
     });

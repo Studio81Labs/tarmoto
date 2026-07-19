@@ -74,13 +74,13 @@ describe("FollowersScreen", () => {
       },
     ]);
 
-    render(<FollowersScreen />);
+    await render(<FollowersScreen />);
 
     expect(await screen.findByText("Jane Rider")).toBeTruthy();
     expect(screen.getByText("John Rider")).toBeTruthy();
     expect(mockedApi.listFollowers).toHaveBeenCalledWith("user-2");
 
-    fireEvent.press(screen.getByLabelText("Open Jane Rider's profile"));
+    await fireEvent.press(screen.getByLabelText("Open Jane Rider's profile"));
     expect(mockPush).toHaveBeenCalledWith("ViewProfile", {
       userId: "user-3",
     });
@@ -89,7 +89,7 @@ describe("FollowersScreen", () => {
   it("shows an empty state when there are no followers", async () => {
     mockedApi.listFollowers.mockResolvedValue([]);
 
-    render(<FollowersScreen />);
+    await render(<FollowersScreen />);
 
     expect(
       await screen.findByText("Other Rider has no followers yet."),
@@ -99,7 +99,7 @@ describe("FollowersScreen", () => {
   it("surfaces a load error and offers retry", async () => {
     mockedApi.listFollowers.mockRejectedValueOnce(new Error("offline"));
 
-    render(<FollowersScreen />);
+    await render(<FollowersScreen />);
 
     expect(await screen.findByText("offline")).toBeTruthy();
 
@@ -111,7 +111,7 @@ describe("FollowersScreen", () => {
       },
     ]);
 
-    fireEvent.press(screen.getByText("Retry"));
+    await fireEvent.press(screen.getByText("Retry"));
     await waitFor(() =>
       expect(mockedApi.listFollowers).toHaveBeenCalledTimes(2),
     );

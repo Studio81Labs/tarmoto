@@ -108,7 +108,7 @@ describe("ChallengesScreen", () => {
 
   it("renders the active challenge list with metadata pills", async () => {
     mockedApi.listChallenges.mockResolvedValue([baseChallenge]);
-    render(<ChallengesScreen />);
+    await render(<ChallengesScreen />);
 
     await waitFor(() => expect(screen.getByText("May Distance")).toBeTruthy());
     expect(screen.getByText("Ride 200 km in May")).toBeTruthy();
@@ -118,7 +118,7 @@ describe("ChallengesScreen", () => {
 
   it("renders an empty state when no challenges are active", async () => {
     mockedApi.listChallenges.mockResolvedValue([]);
-    render(<ChallengesScreen />);
+    await render(<ChallengesScreen />);
     await waitFor(() =>
       expect(screen.getByText("No active challenges")).toBeTruthy(),
     );
@@ -132,11 +132,13 @@ describe("ChallengesScreen", () => {
       joined_at: "2026-05-01T10:00:00Z",
     });
 
-    render(<ChallengesScreen />);
+    await render(<ChallengesScreen />);
     await waitFor(() => expect(screen.getByText("May Distance")).toBeTruthy());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Expand May Distance details"));
+      await fireEvent.press(
+        screen.getByLabelText("Expand May Distance details"),
+      );
       // Flush the detail fetch promise.
       await Promise.resolve();
       await Promise.resolve();
@@ -155,7 +157,9 @@ describe("ChallengesScreen", () => {
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Join challenge May Distance"));
+      await fireEvent.press(
+        screen.getByLabelText("Join challenge May Distance"),
+      );
       await Promise.resolve();
       await Promise.resolve();
     });

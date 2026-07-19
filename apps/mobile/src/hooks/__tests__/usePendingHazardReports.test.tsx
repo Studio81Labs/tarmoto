@@ -53,11 +53,11 @@ describe("usePendingHazardReports", () => {
       severity: "medium",
     });
 
-    const { result } = renderHook(() => usePendingHazardReports());
+    const { result } = await renderHook(() => usePendingHazardReports());
 
     expect(result.current.count).toBe(1);
 
-    act(() => {
+    await act(() => {
       enqueueHazardReport({
         lat: 49.3,
         lng: 16.7,
@@ -108,7 +108,7 @@ describe("usePendingHazardReports", () => {
       },
     );
 
-    const { result } = renderHook(() => usePendingHazardReports());
+    const { result } = await renderHook(() => usePendingHazardReports());
     expect(result.current.count).toBe(3);
 
     await act(async () => {
@@ -144,7 +144,7 @@ describe("usePendingHazardReports", () => {
       transientServerError: false,
     });
 
-    const { result } = renderHook(() => usePendingHazardReports());
+    const { result } = await renderHook(() => usePendingHazardReports());
     await act(async () => {
       await result.current.retry();
     });
@@ -179,7 +179,7 @@ describe("usePendingHazardReports", () => {
       },
     );
 
-    const { result } = renderHook(() => usePendingHazardReports());
+    const { result } = await renderHook(() => usePendingHazardReports());
     await act(async () => {
       await result.current.retry();
     });
@@ -195,7 +195,7 @@ describe("usePendingHazardReports", () => {
     // Rider submits another report offline. The previous "Uploaded 1
     // report." outcome no longer describes the queue and must clear,
     // otherwise it would sit next to the fresh pending-count copy.
-    act(() => {
+    await act(() => {
       enqueueHazardReport({
         lat: 49.3,
         lng: 16.7,
@@ -232,10 +232,10 @@ describe("usePendingHazardReports", () => {
         }),
     );
 
-    const { result } = renderHook(() => usePendingHazardReports());
+    const { result } = await renderHook(() => usePendingHazardReports());
 
     let firstCall: Promise<void>;
-    act(() => {
+    await act(() => {
       firstCall = result.current.retry();
       // Second call hits the synchronous re-entrancy guard before React
       // commits `isRetrying = true`. It must no-op without touching the

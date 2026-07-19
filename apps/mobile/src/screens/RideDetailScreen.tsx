@@ -262,13 +262,15 @@ function RouteMap({
             type="line"
             id="ride-route-line"
             source="ride-route"
-            style={{
-              lineWidth: 5,
-              lineCap: "round",
-              lineJoin: "round",
+            paint={{
+              "line-width": 5,
               // Step expression mirrors the shared `qualityColor` buckets
               // — see `rideRouteLineColorExpression` for the full mapping.
-              lineColor: rideRouteLineColorExpression() as unknown as string,
+              "line-color": rideRouteLineColorExpression(),
+            }}
+            layout={{
+              "line-cap": "round",
+              "line-join": "round",
             }}
           />
         </GeoJSONSource>

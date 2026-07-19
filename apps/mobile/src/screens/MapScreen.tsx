@@ -529,7 +529,7 @@ export default function MapScreen() {
               id="tarmoto-quality-lines"
               source="tarmoto-quality"
               source-layer="quality"
-              style={qualityStyle}
+              {...qualityStyle}
             />
           </VectorSource>
         ) : null}
@@ -543,7 +543,7 @@ export default function MapScreen() {
               type="circle"
               id="tarmoto-passes-markers"
               source="tarmoto-passes"
-              style={passMarkerStyle}
+              {...passMarkerStyle}
             />
           </GeoJSONSource>
         ) : null}
@@ -554,7 +554,7 @@ export default function MapScreen() {
               type="circle"
               id="tarmoto-hazards-markers"
               source="tarmoto-hazards"
-              style={hazardMarkerStyle}
+              {...hazardMarkerStyle}
             />
           </GeoJSONSource>
         ) : null}
@@ -570,13 +570,13 @@ export default function MapScreen() {
               type="fill"
               id="tarmoto-fun-zones-fill"
               source="tarmoto-fun-zones"
-              style={funZoneFillStyle}
+              {...funZoneFillStyle}
             />
             <Layer
               type="line"
               id="tarmoto-fun-zones-line"
               source="tarmoto-fun-zones"
-              style={funZoneLineStyle}
+              {...funZoneLineStyle}
             />
           </GeoJSONSource>
         ) : null}

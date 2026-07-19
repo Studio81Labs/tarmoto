@@ -88,7 +88,7 @@ describe("PersonalRoadMapScreen", () => {
   });
 
   it("renders the stats card and the nearby unridden list", async () => {
-    render(<PersonalRoadMapScreen />);
+    await render(<PersonalRoadMapScreen />);
 
     await waitFor(() => expect(screen.getByText("12.5%")).toBeTruthy());
     expect(screen.getByText("of 800 segments")).toBeTruthy();
@@ -100,7 +100,7 @@ describe("PersonalRoadMapScreen", () => {
 
   it("renders the empty CTA for a brand-new rider with no recorded rides", async () => {
     mockedApi.getRiddenSegments.mockResolvedValue({ segments: [] });
-    render(<PersonalRoadMapScreen />);
+    await render(<PersonalRoadMapScreen />);
     await waitFor(() =>
       expect(screen.getByText("No rides recorded yet")).toBeTruthy(),
     );
@@ -110,14 +110,14 @@ describe("PersonalRoadMapScreen", () => {
 describe("buildPersonalLineStyle", () => {
   it("returns a uniform-dim style when the rider has no ridden segments", () => {
     const style = __test.buildPersonalLineStyle([]);
-    // No `match` expression — `lineColor` is a flat string.
-    expect(typeof style.lineColor).toBe("string");
+    // No `match` expression — `line-color` is a flat string.
+    expect(typeof style.paint["line-color"]).toBe("string");
   });
 
   it("emits a single grouped match expression so ids aren't duplicated per stop", () => {
     const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
-    expect(Array.isArray(style.lineColor)).toBe(true);
-    const expr = style.lineColor as unknown as unknown[];
+    expect(Array.isArray(style.paint["line-color"])).toBe(true);
+    const expr = style.paint["line-color"] as unknown[];
     // Grouped form: ["match", ["get", "id"], [labels…], output, fallback]
     expect(expr[0]).toBe("match");
     expect(Array.isArray(expr[2])).toBe(true);
@@ -130,8 +130,8 @@ describe("buildPersonalLineStyle", () => {
 
   it("uses the same id list across lineColor and lineOpacity instead of duplicating it", () => {
     const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
-    const colorExpr = style.lineColor as unknown as unknown[];
-    const opacityExpr = style.lineOpacity as unknown as unknown[];
+    const colorExpr = style.paint["line-color"] as unknown[];
+    const opacityExpr = style.paint["line-opacity"] as unknown[];
     expect(opacityExpr[0]).toBe("match");
     expect(opacityExpr[2]).toEqual(colorExpr[2]);
   });

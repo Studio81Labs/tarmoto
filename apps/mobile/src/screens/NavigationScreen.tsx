@@ -296,12 +296,14 @@ export default function NavigationScreen() {
             type="line"
             id="nav-route-line"
             source="nav-route"
-            style={{
-              lineColor: ACCENT,
-              lineWidth: 6,
-              lineCap: "round",
-              lineJoin: "round",
-              lineOpacity: offRoute ? 0.4 : 0.9,
+            paint={{
+              "line-color": ACCENT,
+              "line-width": 6,
+              "line-opacity": offRoute ? 0.4 : 0.9,
+            }}
+            layout={{
+              "line-cap": "round",
+              "line-join": "round",
             }}
           />
         </GeoJSONSource>

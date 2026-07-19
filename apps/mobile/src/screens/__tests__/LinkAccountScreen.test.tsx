@@ -86,12 +86,15 @@ describe("LinkAccountScreen", () => {
       },
     });
 
-    render(<LinkAccountScreen />);
+    await render(<LinkAccountScreen />);
 
     expect(screen.getByDisplayValue("rider@example.com")).toBeTruthy();
 
-    fireEvent.changeText(screen.getByLabelText("Password"), "secret-pass");
-    fireEvent.press(screen.getByRole("button", { name: "Link account" }));
+    await fireEvent.changeText(
+      screen.getByLabelText("Password"),
+      "secret-pass",
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Link account" }));
 
     await waitFor(() =>
       expect(loginMock).toHaveBeenCalledWith(
@@ -121,14 +124,23 @@ describe("LinkAccountScreen", () => {
       },
     } as Awaited<ReturnType<typeof api.register>>);
 
-    render(<LinkAccountScreen />);
-    fireEvent.press(
+    await render(<LinkAccountScreen />);
+    await fireEvent.press(
       screen.getByRole("button", { name: "Create account mode" }),
     );
-    fireEvent.changeText(screen.getByLabelText("Display name"), "New Rider");
-    fireEvent.changeText(screen.getByLabelText("Email"), "new@example.com");
-    fireEvent.changeText(screen.getByLabelText("Password"), "secret-pass");
-    fireEvent.press(screen.getByTestId("auth-submit"));
+    await fireEvent.changeText(
+      screen.getByLabelText("Display name"),
+      "New Rider",
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Email"),
+      "new@example.com",
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Password"),
+      "secret-pass",
+    );
+    await fireEvent.press(screen.getByTestId("auth-submit"));
 
     await waitFor(() =>
       expect(registerMock).toHaveBeenCalledWith(

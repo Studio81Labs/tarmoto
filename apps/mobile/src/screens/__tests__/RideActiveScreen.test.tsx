@@ -99,9 +99,7 @@ jest.mock("react-native-device-info", () => ({
   default: { getModel: jest.fn(() => "iPhone 15") },
 }));
 
-jest.mock("react-native-keep-awake", () => ({
-  __esModule: true,
-  default: { activate: jest.fn(), deactivate: jest.fn() },
+jest.mock("@thehale/react-native-keep-awake", () => ({
   activate: jest.fn(),
   deactivate: jest.fn(),
 }));
@@ -182,7 +180,7 @@ describe("RideActiveScreen", () => {
   });
 
   it("renders speed, distance, surface, and segment count from the ride store", async () => {
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(screen.getByText("62")).toBeTruthy());
     expect(screen.getByText("12.5 km")).toBeTruthy();
@@ -193,7 +191,7 @@ describe("RideActiveScreen", () => {
   });
 
   it("does not POST a new ride when resuming with an existing activeRide id", async () => {
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     // Resume path: store already carries a backend id from a prior
     // mount. The screen must not double-post `/rides/start` — that
@@ -218,7 +216,7 @@ describe("RideActiveScreen", () => {
       updatedAt: "2026-04-01T00:00:00.000Z",
     });
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     // The chip carries an `accessibilityLabel` so screen readers can
     // announce the active bike before the rider tries to start.
@@ -232,7 +230,7 @@ describe("RideActiveScreen", () => {
   it("hides the active-bike chip when the rider has no garage yet", async () => {
     (api.getActiveBike as jest.Mock).mockResolvedValueOnce(null);
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(api.getActiveBike).toHaveBeenCalled());
     expect(screen.queryByLabelText(/Active bike/)).toBeNull();
@@ -242,7 +240,7 @@ describe("RideActiveScreen", () => {
     mockState.isRiding = false;
     mockState.activeRide = null;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(startRideMock).toHaveBeenCalledWith("free"));
     await waitFor(() =>
@@ -263,7 +261,7 @@ describe("RideActiveScreen", () => {
       typeof locationService.start
     >;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     // Fresh start: both telemetry singletons must be started, otherwise
     // the HUD's live store fields (currentSpeed, distance, segmentCount,
@@ -284,7 +282,7 @@ describe("RideActiveScreen", () => {
       typeof locationService.start
     >;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(screen.getByText("12.5 km")).toBeTruthy());
     expect(sensorStart).not.toHaveBeenCalled();
@@ -310,9 +308,9 @@ describe("RideActiveScreen", () => {
       typeof locationService.start
     >;
 
-    const first = render(<RideActiveScreen />);
+    const first = await render(<RideActiveScreen />);
     await waitFor(() => expect(startRideMock).toHaveBeenCalledTimes(1));
-    first.unmount();
+    await first.unmount();
 
     sensorStart.mockClear();
     locationStart.mockClear();
@@ -321,7 +319,7 @@ describe("RideActiveScreen", () => {
     mockState.isRiding = true;
     mockState.activeRide = null;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(screen.getByText("12.5 km")).toBeTruthy());
     expect(sensorStart).not.toHaveBeenCalled();
@@ -360,7 +358,7 @@ describe("RideActiveScreen", () => {
       bike_id: null,
     });
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(startRideMock).toHaveBeenCalledWith("free"));
     expect(sensorService.start).not.toHaveBeenCalled();
@@ -397,7 +395,7 @@ describe("RideActiveScreen", () => {
         }),
     );
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     // Wait for the screen to wire up the in-flight POST.
     await waitFor(() => expect(startRideMock).toHaveBeenCalledTimes(1));
@@ -432,7 +430,7 @@ describe("RideActiveScreen", () => {
     // when the rider backs out of the HUD mid-ride.
     mockState.duration = 125; // 2 minutes 5 seconds
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(screen.getByText("2:05")).toBeTruthy());
     // The HUD should never write back into the store from a local tick.
@@ -452,7 +450,7 @@ describe("RideActiveScreen", () => {
       typeof locationService.start
     >;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
     expect(sensorStart).not.toHaveBeenCalled();
@@ -469,7 +467,7 @@ describe("RideActiveScreen", () => {
       typeof locationService.start
     >;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
     expect(locationStart).not.toHaveBeenCalled();
@@ -484,7 +482,7 @@ describe("RideActiveScreen", () => {
     mockState.isRiding = true;
     mockState.activeRide = null;
 
-    render(<RideActiveScreen />);
+    await render(<RideActiveScreen />);
 
     await waitFor(() => expect(startRideMock).toHaveBeenCalledTimes(1));
     expect(requestWithRationale).not.toHaveBeenCalled();

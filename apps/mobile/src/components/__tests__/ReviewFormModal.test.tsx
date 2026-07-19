@@ -137,8 +137,8 @@ describe("ReviewFormModal", () => {
     capturePhotoMock.mockReset();
   });
 
-  it("disables submit until the rider taps a star", () => {
-    render(
+  it("disables submit until the rider taps a star", async () => {
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -150,7 +150,7 @@ describe("ReviewFormModal", () => {
     const submit = screen.getByLabelText("Submit review");
     expect(submit.props.accessibilityState).toMatchObject({ disabled: true });
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
     expect(submit.props.accessibilityState).toMatchObject({ disabled: false });
   });
 
@@ -161,7 +161,7 @@ describe("ReviewFormModal", () => {
       pending: 0,
     });
     const onSubmitted = jest.fn();
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -170,8 +170,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 3 stars"));
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 3 stars"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
     expect(submitWithQueueMock).toHaveBeenCalledWith(
@@ -195,7 +195,7 @@ describe("ReviewFormModal", () => {
       source: "camera",
     });
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -204,7 +204,7 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Add photo from camera"));
+    await fireEvent.press(screen.getByLabelText("Add photo from camera"));
 
     expect(await screen.findByText(/camera access was denied/i)).toBeTruthy();
     expect(uploadPhotosMock).not.toHaveBeenCalled();
@@ -229,7 +229,7 @@ describe("ReviewFormModal", () => {
       pending: 0,
     });
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -238,11 +238,11 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 5 stars"));
-    fireEvent.press(screen.getByLabelText("Add photo from library"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 5 stars"));
+    await fireEvent.press(screen.getByLabelText("Add photo from library"));
 
     await waitFor(() => expect(uploadPhotosMock).toHaveBeenCalled());
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
     expect(submitWithQueueMock).toHaveBeenCalledWith(
@@ -262,7 +262,7 @@ describe("ReviewFormModal", () => {
     });
     const onSubmitted = jest.fn();
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -271,8 +271,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 2 stars"));
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 2 stars"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
     expect(onSubmitted).toHaveBeenCalledWith(
@@ -293,7 +293,7 @@ describe("ReviewFormModal", () => {
     });
     updateReviewMock.mockResolvedValueOnce(makeReview());
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -304,10 +304,10 @@ describe("ReviewFormModal", () => {
     );
 
     // Clear comment, bike model, and remove the seeded photo.
-    fireEvent.changeText(screen.getByLabelText("Review notes"), "");
-    fireEvent.changeText(screen.getByLabelText("Bike model"), "");
-    fireEvent.press(screen.getByLabelText("Remove photo 1"));
-    fireEvent.press(screen.getByLabelText("Save review changes"));
+    await fireEvent.changeText(screen.getByLabelText("Review notes"), "");
+    await fireEvent.changeText(screen.getByLabelText("Bike model"), "");
+    await fireEvent.press(screen.getByLabelText("Remove photo 1"));
+    await fireEvent.press(screen.getByLabelText("Save review changes"));
 
     await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
     expect(updateReviewMock).toHaveBeenCalledWith({
@@ -325,7 +325,7 @@ describe("ReviewFormModal", () => {
       makeReview({ rating: 2, comment: "Worse now" }),
     );
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -335,9 +335,12 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 2 stars"));
-    fireEvent.changeText(screen.getByLabelText("Review notes"), "Worse now");
-    fireEvent.press(screen.getByLabelText("Save review changes"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 2 stars"));
+    await fireEvent.changeText(
+      screen.getByLabelText("Review notes"),
+      "Worse now",
+    );
+    await fireEvent.press(screen.getByLabelText("Save review changes"));
 
     await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
     expect(updateReviewMock).toHaveBeenCalledWith(
@@ -352,7 +355,7 @@ describe("ReviewFormModal", () => {
     const onSubmitted = jest.fn();
     const onConflict = jest.fn().mockResolvedValue(true);
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -362,8 +365,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     expect(
       await screen.findByText(/your existing review is loaded for editing/i),
@@ -384,7 +387,7 @@ describe("ReviewFormModal", () => {
     submitWithQueueMock.mockRejectedValueOnce(conflictError);
     const onConflict = jest.fn().mockRejectedValue(new Error("refresh failed"));
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -394,8 +397,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     // Plain error surfaces; the misleading "loaded for editing"
     // banner does NOT.
@@ -416,7 +419,7 @@ describe("ReviewFormModal", () => {
     submitWithQueueMock.mockRejectedValueOnce(conflictError);
     const onConflict = jest.fn().mockResolvedValue(false);
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -426,8 +429,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     expect(
       await screen.findByText(/loading the existing review failed/i),
@@ -445,7 +448,7 @@ describe("ReviewFormModal", () => {
     });
     uploadPhotosMock.mockRejectedValueOnce(new Error("network"));
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -454,8 +457,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
-    fireEvent.press(screen.getByLabelText("Add photo from library"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Add photo from library"));
 
     await waitFor(() => expect(uploadPhotosMock).toHaveBeenCalled());
     await waitFor(() =>
@@ -465,7 +468,7 @@ describe("ReviewFormModal", () => {
       ).toBeFalsy(),
     );
 
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     expect(
       await screen.findByText(
@@ -493,7 +496,7 @@ describe("ReviewFormModal", () => {
       });
     });
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -502,12 +505,12 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Add photo from library"));
+    await fireEvent.press(screen.getByLabelText("Add photo from library"));
     await waitFor(() =>
       expect(screen.getByLabelText("Remove photo 1")).toBeTruthy(),
     );
 
-    fireEvent.press(screen.getByLabelText("Remove photo 1"));
+    await fireEvent.press(screen.getByLabelText("Remove photo 1"));
 
     await waitFor(() => expect(aborted).toEqual([true]));
   });
@@ -530,7 +533,7 @@ describe("ReviewFormModal", () => {
       });
     });
 
-    const { rerender } = render(
+    const { rerender } = await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -539,13 +542,13 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Add photo from library"));
+    await fireEvent.press(screen.getByLabelText("Add photo from library"));
     await waitFor(() =>
       expect(screen.getByLabelText("Remove photo 1")).toBeTruthy(),
     );
 
     // Parent toggles `visible` false (rider tapped X / Cancel).
-    rerender(
+    await rerender(
       <ReviewFormModal
         visible={false}
         segmentId="seg-1"
@@ -566,7 +569,7 @@ describe("ReviewFormModal", () => {
     });
     const onDeleted = jest.fn();
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -577,7 +580,7 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Delete review"));
+    await fireEvent.press(screen.getByLabelText("Delete review"));
 
     await waitFor(() => expect(deleteReviewMock).toHaveBeenCalledWith("seg-1"));
     expect(onDeleted).toHaveBeenCalledTimes(1);
@@ -598,7 +601,7 @@ describe("ReviewFormModal", () => {
         }),
     );
 
-    render(
+    await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -607,8 +610,8 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     // Wait for the async backend resolve and the parent callback to fire.
     await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
@@ -636,7 +639,7 @@ describe("ReviewFormModal", () => {
     // mid-typing. Without this guard, the seeding effect would silently
     // overwrite their unsaved input.
     const onSubmitted = jest.fn();
-    const { rerender } = render(
+    const { rerender } = await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -646,14 +649,17 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 5 stars"));
-    fireEvent.changeText(
+    await fireEvent.press(screen.getByLabelText("Set rating to 5 stars"));
+    await fireEvent.changeText(
       screen.getByLabelText("Review notes"),
       "Newly composed note",
     );
-    fireEvent.changeText(screen.getByLabelText("Bike model"), "Yamaha MT-09");
+    await fireEvent.changeText(
+      screen.getByLabelText("Bike model"),
+      "Yamaha MT-09",
+    );
 
-    rerender(
+    await rerender(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -689,7 +695,7 @@ describe("ReviewFormModal", () => {
       pending: 0,
     });
     const onSubmitted = jest.fn();
-    const { rerender } = render(
+    const { rerender } = await render(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -699,11 +705,11 @@ describe("ReviewFormModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    await fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
 
     // Mid-session prop flip — drain landed a flushed review into the
     // parent's `myReview` while the form is still open.
-    rerender(
+    await rerender(
       <ReviewFormModal
         visible
         segmentId="seg-1"
@@ -720,7 +726,7 @@ describe("ReviewFormModal", () => {
     expect(screen.getByLabelText("Submit review")).toBeTruthy();
     expect(screen.queryByLabelText("Save review changes")).toBeNull();
 
-    fireEvent.press(screen.getByLabelText("Submit review"));
+    await fireEvent.press(screen.getByLabelText("Submit review"));
 
     await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
     // Routes through the offline-aware create path, NOT updateReview.

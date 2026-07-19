@@ -81,34 +81,34 @@ def enableProguardInReleaseBuilds = false
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-    compileSdk rootProject.ext.compileSdkVersion
+    ndkVersion = rootProject.ext.ndkVersion
+    buildToolsVersion = rootProject.ext.buildToolsVersion
+    compileSdk = rootProject.ext.compileSdkVersion
 
-    namespace "app.tarmoto"
+    namespace = "app.tarmoto"
     defaultConfig {
-        applicationId "app.tarmoto"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        applicationId = "app.tarmoto"
+        minSdk = rootProject.ext.minSdkVersion
+        targetSdk = rootProject.ext.targetSdkVersion
+        versionCode = 1
+        versionName = "1.0"
     }
     // Keep the bundled TF Lite road-surface classifier (US-3) verbatim
     // so `react-native-fast-tflite` can mmap it without a copy.
     androidResources {
-        noCompress 'tflite'
+        noCompress += ['tflite']
     }
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            storeFile = file('debug.keystore')
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
         }
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
         }
         release {
             // PR previews explicitly opt into the debug key so their APK can
@@ -116,9 +116,9 @@ android {
             // injects the protected upload key at invocation time; this avoids
             // accidentally publishing a debug-signed release bundle.
             if (project.findProperty("TARMOTO_PREVIEW_SIGNING") == "true") {
-                signingConfig signingConfigs.debug
+                signingConfig = signingConfigs.debug
             }
-            minifyEnabled enableProguardInReleaseBuilds
+            minifyEnabled = enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
@@ -131,7 +131,7 @@ dependencies {
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
-        implementation jscFlavor
+        implementation(jscFlavor)
     }
 
     // US-17 — Android Auto (Jetpack Car App library).
@@ -145,10 +145,8 @@ dependencies {
     // android/src/main/java/.../RNCarPlayService.kt` — and merged into the
     // app's manifest at build time, so we don't subclass it here.
     //
-    // Pinned to 1.4.0 (the floor that exposes `androidx.car.app.notification`
-    // for hazard markers + the navigation template surface — older 1.2.x
-    // releases lack the `NavigationTemplate` API the package targets).
-    // The value is intentionally a hard pin rather than a `+` so a silent
-    // bump can't break the head-unit template parse path between releases.
-    implementation("androidx.car.app:app:1.4.0")
+    // Pin the current stable release rather than using `+`; 1.7.0 includes
+    // the upstream fix for CVE-2024-10382 while retaining the navigation and
+    // notification APIs used by the head-unit integration.
+    implementation("androidx.car.app:app:1.7.0")
 }

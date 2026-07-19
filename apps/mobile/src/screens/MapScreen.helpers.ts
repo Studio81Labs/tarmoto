@@ -11,9 +11,9 @@
  */
 
 import type {
-  CircleLayerStyle,
-  FillLayerStyle,
-  LineLayerStyle,
+  CircleLayerSpecification,
+  FillLayerSpecification,
+  LineLayerSpecification,
 } from "@maplibre/maplibre-react-native";
 import { API_BASE_URL, MAP_STYLE_URL } from "@/config";
 import { MIN_QUALITY_BOUNDS } from "@/theme";
@@ -32,6 +32,19 @@ import type {
   PassStatus,
   Severity,
 } from "@/types";
+
+type LineLayerConfig = {
+  paint: NonNullable<LineLayerSpecification["paint"]>;
+  layout: NonNullable<LineLayerSpecification["layout"]>;
+};
+
+type CircleLayerConfig = {
+  paint: NonNullable<CircleLayerSpecification["paint"]>;
+};
+
+type FillLayerConfig = {
+  paint: NonNullable<FillLayerSpecification["paint"]>;
+};
 
 /**
  * Return the MapLibre xyz tile URL template for the road-quality MVT layer.
@@ -75,44 +88,48 @@ export const QUALITY_STEP_BREAKS = [1.5, 2.5, 3.5, 4.5] as const;
  *   readings"), not 0-1 — so the interpolation stops match that range.
  */
 export const qualityLineStyle = {
-  lineColor: [
-    "step",
-    ["get", "quality_score"],
-    QUALITY_COLORS[0],
-    QUALITY_STEP_BREAKS[0],
-    QUALITY_COLORS[1],
-    QUALITY_STEP_BREAKS[1],
-    QUALITY_COLORS[2],
-    QUALITY_STEP_BREAKS[2],
-    QUALITY_COLORS[3],
-    QUALITY_STEP_BREAKS[3],
-    QUALITY_COLORS[4],
-  ],
-  lineWidth: [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    8,
-    1.5,
-    12,
-    2.5,
-    16,
-    5,
-    20,
-    8,
-  ],
-  lineCap: "round",
-  lineJoin: "round",
-  lineOpacity: [
-    "interpolate",
-    ["linear"],
-    ["get", "confidence"],
-    0,
-    0.35,
-    100,
-    1,
-  ],
-} satisfies LineLayerStyle;
+  paint: {
+    "line-color": [
+      "step",
+      ["get", "quality_score"],
+      QUALITY_COLORS[0],
+      QUALITY_STEP_BREAKS[0],
+      QUALITY_COLORS[1],
+      QUALITY_STEP_BREAKS[1],
+      QUALITY_COLORS[2],
+      QUALITY_STEP_BREAKS[2],
+      QUALITY_COLORS[3],
+      QUALITY_STEP_BREAKS[3],
+      QUALITY_COLORS[4],
+    ],
+    "line-width": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      8,
+      1.5,
+      12,
+      2.5,
+      16,
+      5,
+      20,
+      8,
+    ],
+    "line-opacity": [
+      "interpolate",
+      ["linear"],
+      ["get", "confidence"],
+      0,
+      0.35,
+      100,
+      1,
+    ],
+  },
+  layout: {
+    "line-cap": "round",
+    "line-join": "round",
+  },
+} satisfies LineLayerConfig;
 
 /**
  * Opacity applied to segments below the rider's minimum-quality threshold.
@@ -137,25 +154,28 @@ export const BELOW_THRESHOLD_OPACITY = 0.2;
  * needed and we return the baseline `qualityLineStyle` untouched so the step
  * expression tests (and MapLibre's style diffing) stay cheap.
  */
-export function buildQualityLineStyle(minQuality: number): LineLayerStyle {
+export function buildQualityLineStyle(minQuality: number): LineLayerConfig {
   if (minQuality <= MIN_QUALITY_BOUNDS.min) return qualityLineStyle;
 
   const threshold = minQuality - 0.5;
 
   return {
     ...qualityLineStyle,
-    lineColor: [
-      "case",
-      ["<", ["get", "quality_score"], threshold],
-      UNSCORED_COLOR,
-      qualityLineStyle.lineColor,
-    ] as NonNullable<LineLayerStyle["lineColor"]>,
-    lineOpacity: [
-      "case",
-      ["<", ["get", "quality_score"], threshold],
-      BELOW_THRESHOLD_OPACITY,
-      qualityLineStyle.lineOpacity,
-    ] as NonNullable<LineLayerStyle["lineOpacity"]>,
+    paint: {
+      ...qualityLineStyle.paint,
+      "line-color": [
+        "case",
+        ["<", ["get", "quality_score"], threshold],
+        UNSCORED_COLOR,
+        qualityLineStyle.paint["line-color"],
+      ],
+      "line-opacity": [
+        "case",
+        ["<", ["get", "quality_score"], threshold],
+        BELOW_THRESHOLD_OPACITY,
+        qualityLineStyle.paint["line-opacity"],
+      ],
+    },
   };
 }
 
@@ -214,20 +234,22 @@ export function passesToFeatureCollection(
  * `circleRadius` — interpolates with zoom so passes stay visible at
  *   country level (z6) and don't dominate the map up close (z14+).
  */
-export const passMarkerStyle: CircleLayerStyle = {
-  circleColor: [
-    "match",
-    ["get", "status"],
-    "open",
-    PASS_STATUS_COLORS.open,
-    "closed",
-    PASS_STATUS_COLORS.closed,
-    PASS_STATUS_COLORS.unknown,
-  ],
-  circleRadius: ["interpolate", ["linear"], ["zoom"], 6, 5, 10, 7, 14, 10],
-  circleStrokeColor: brandColorsLight.fg,
-  circleStrokeWidth: 2,
-  circleOpacity: 0.95,
+export const passMarkerStyle: CircleLayerConfig = {
+  paint: {
+    "circle-color": [
+      "match",
+      ["get", "status"],
+      "open",
+      PASS_STATUS_COLORS.open,
+      "closed",
+      PASS_STATUS_COLORS.closed,
+      PASS_STATUS_COLORS.unknown,
+    ],
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 5, 10, 7, 14, 10],
+    "circle-stroke-color": brandColorsLight.fg,
+    "circle-stroke-width": 2,
+    "circle-opacity": 0.95,
+  },
 };
 
 // ── US-6 Fun Zones ──
@@ -350,31 +372,33 @@ function toClosedRing(boundary: LatLng[]): [number, number][] {
  *   heatmap patches at low zoom and fade out before they start obscuring
  *   individual roads at high zoom. US-6 explicitly asks for a heatmap feel.
  */
-export const funZoneFillStyle: FillLayerStyle = {
-  fillColor: [
-    "step",
-    ["get", "composite_score"],
-    FUN_ZONE_COLORS.veryPoor,
-    FUN_ZONE_SCORE_BREAKS[0],
-    FUN_ZONE_COLORS.poor,
-    FUN_ZONE_SCORE_BREAKS[1],
-    FUN_ZONE_COLORS.fair,
-    FUN_ZONE_SCORE_BREAKS[2],
-    FUN_ZONE_COLORS.good,
-    FUN_ZONE_SCORE_BREAKS[3],
-    FUN_ZONE_COLORS.excellent,
-  ],
-  fillOpacity: [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    6,
-    0.35,
-    12,
-    0.22,
-    16,
-    0.1,
-  ],
+export const funZoneFillStyle: FillLayerConfig = {
+  paint: {
+    "fill-color": [
+      "step",
+      ["get", "composite_score"],
+      FUN_ZONE_COLORS.veryPoor,
+      FUN_ZONE_SCORE_BREAKS[0],
+      FUN_ZONE_COLORS.poor,
+      FUN_ZONE_SCORE_BREAKS[1],
+      FUN_ZONE_COLORS.fair,
+      FUN_ZONE_SCORE_BREAKS[2],
+      FUN_ZONE_COLORS.good,
+      FUN_ZONE_SCORE_BREAKS[3],
+      FUN_ZONE_COLORS.excellent,
+    ],
+    "fill-opacity": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      6,
+      0.35,
+      12,
+      0.22,
+      16,
+      0.1,
+    ],
+  },
 };
 
 /**
@@ -382,23 +406,27 @@ export const funZoneFillStyle: FillLayerStyle = {
  * fill so the boundary keeps reading as part of the same zone even when the
  * fill fades out at high zoom.
  */
-export const funZoneLineStyle: LineLayerStyle = {
-  lineColor: [
-    "step",
-    ["get", "composite_score"],
-    FUN_ZONE_COLORS.veryPoor,
-    FUN_ZONE_SCORE_BREAKS[0],
-    FUN_ZONE_COLORS.poor,
-    FUN_ZONE_SCORE_BREAKS[1],
-    FUN_ZONE_COLORS.fair,
-    FUN_ZONE_SCORE_BREAKS[2],
-    FUN_ZONE_COLORS.good,
-    FUN_ZONE_SCORE_BREAKS[3],
-    FUN_ZONE_COLORS.excellent,
-  ],
-  lineWidth: ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.5, 16, 2],
-  lineOpacity: 0.85,
-  lineJoin: "round",
+export const funZoneLineStyle: LineLayerConfig = {
+  paint: {
+    "line-color": [
+      "step",
+      ["get", "composite_score"],
+      FUN_ZONE_COLORS.veryPoor,
+      FUN_ZONE_SCORE_BREAKS[0],
+      FUN_ZONE_COLORS.poor,
+      FUN_ZONE_SCORE_BREAKS[1],
+      FUN_ZONE_COLORS.fair,
+      FUN_ZONE_SCORE_BREAKS[2],
+      FUN_ZONE_COLORS.good,
+      FUN_ZONE_SCORE_BREAKS[3],
+      FUN_ZONE_COLORS.excellent,
+    ],
+    "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.5, 16, 2],
+    "line-opacity": 0.85,
+  },
+  layout: {
+    "line-join": "round",
+  },
 };
 
 // ── #341 Hazard markers ──
@@ -446,20 +474,22 @@ export function hazardsToFeatureCollection(
  * Marker style for the hazard layer. Markers grow with zoom so they're
  * still visible at country level but don't dominate at street level.
  */
-export const hazardMarkerStyle: CircleLayerStyle = {
-  circleColor: [
-    "match",
-    ["get", "severity"],
-    "high",
-    HAZARD_SEVERITY_COLORS.high,
-    "medium",
-    HAZARD_SEVERITY_COLORS.medium,
-    HAZARD_SEVERITY_COLORS.low,
-  ],
-  circleRadius: ["interpolate", ["linear"], ["zoom"], 6, 4, 10, 6, 14, 9],
-  circleStrokeColor: brandColorsLight.fg,
-  circleStrokeWidth: 2,
-  circleOpacity: 0.9,
+export const hazardMarkerStyle: CircleLayerConfig = {
+  paint: {
+    "circle-color": [
+      "match",
+      ["get", "severity"],
+      "high",
+      HAZARD_SEVERITY_COLORS.high,
+      "medium",
+      HAZARD_SEVERITY_COLORS.medium,
+      HAZARD_SEVERITY_COLORS.low,
+    ],
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 4, 10, 6, 14, 9],
+    "circle-stroke-color": brandColorsLight.fg,
+    "circle-stroke-width": 2,
+    "circle-opacity": 0.9,
+  },
 };
 
 /**

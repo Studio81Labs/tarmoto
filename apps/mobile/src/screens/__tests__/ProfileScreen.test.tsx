@@ -195,7 +195,7 @@ describe("ProfileScreen", () => {
   });
 
   it("renders the rider's display name and follower/following counts after fetch", async () => {
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
 
     await waitFor(() => {
       expect(mockedApi.getPublicProfile).toHaveBeenCalledWith("user-1");
@@ -210,7 +210,7 @@ describe("ProfileScreen", () => {
   });
 
   it("renders riding totals from the me-profile summary (#334)", async () => {
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
 
     await waitFor(() =>
       expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(1),
@@ -224,7 +224,7 @@ describe("ProfileScreen", () => {
   it("falls back gracefully when the me-profile call fails", async () => {
     mockedApi.getMyProfile.mockRejectedValueOnce(new Error("offline"));
 
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
 
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
     // The header still renders the public-profile fields even if the
@@ -252,7 +252,7 @@ describe("ProfileScreen", () => {
       badges_earned: 0,
     });
 
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
 
     await waitFor(() =>
       expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(1),
@@ -264,18 +264,18 @@ describe("ProfileScreen", () => {
   });
 
   it("opens the EditProfile modal when Edit profile is tapped", async () => {
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
-    fireEvent.press(screen.getByLabelText("Edit profile"));
+    await fireEvent.press(screen.getByLabelText("Edit profile"));
     expect(mockNavigate).toHaveBeenCalledWith("EditProfile");
   });
 
   it("navigates to the followers list when the Followers tile is tapped", async () => {
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
-    fireEvent.press(screen.getByLabelText("12 followers, open list"));
+    await fireEvent.press(screen.getByLabelText("12 followers, open list"));
     expect(mockNavigate).toHaveBeenCalledWith("Followers", {
       userId: "user-1",
       displayName: "Rider One",
@@ -287,10 +287,10 @@ describe("ProfileScreen", () => {
       const destructive = buttons?.find((b) => b.style === "destructive");
       destructive?.onPress?.();
     });
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
-    fireEvent.press(screen.getByLabelText("Sign out"));
+    await fireEvent.press(screen.getByLabelText("Sign out"));
 
     expect(mockedApi.logout).toHaveBeenCalled();
     expect(mockLogout).toHaveBeenCalled();
@@ -317,11 +317,11 @@ describe("ProfileScreen", () => {
       created_at: "2025-04-01T10:00:00.000Z",
     } as never);
 
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Change avatar"));
+      await fireEvent.press(screen.getByLabelText("Change avatar"));
     });
 
     await waitFor(() =>
@@ -348,11 +348,11 @@ describe("ProfileScreen", () => {
     });
     mockedApi.uploadAvatar.mockRejectedValue(new Error("offline"));
 
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Change avatar"));
+      await fireEvent.press(screen.getByLabelText("Change avatar"));
     });
 
     await waitFor(() => expect(mockedApi.uploadAvatar).toHaveBeenCalled());
@@ -367,7 +367,7 @@ describe("ProfileScreen", () => {
 
   it("renders sign-in prompt when no user is authenticated", async () => {
     mockAuthState.user = null;
-    render(<ProfileScreen />);
+    await render(<ProfileScreen />);
     expect(await screen.findByText("Sign in to see your profile")).toBeTruthy();
   });
 });

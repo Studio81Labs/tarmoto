@@ -61,7 +61,7 @@ describe("EmergencyContactsScreen", () => {
   });
 
   it("renders contacts after loading", async () => {
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
     expect(screen.getByText("John Doe")).toBeTruthy();
     expect(screen.getByText("Will not be alerted")).toBeTruthy();
@@ -76,16 +76,19 @@ describe("EmergencyContactsScreen", () => {
       created_at: "2026-04-25T11:00:00Z",
     });
 
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText("Add emergency contact"));
+    await fireEvent.press(screen.getByLabelText("Add emergency contact"));
 
-    fireEvent.changeText(screen.getByLabelText("Contact name"), "Mom");
-    fireEvent.changeText(screen.getByLabelText("Contact phone"), "+420333");
+    await fireEvent.changeText(screen.getByLabelText("Contact name"), "Mom");
+    await fireEvent.changeText(
+      screen.getByLabelText("Contact phone"),
+      "+420333",
+    );
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Save contact"));
+      await fireEvent.press(screen.getByLabelText("Save contact"));
     });
 
     await waitFor(() =>
@@ -110,21 +113,24 @@ describe("EmergencyContactsScreen", () => {
       created_at: "2026-04-25T12:00:00Z",
     });
 
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText("Add emergency contact"));
-    fireEvent.changeText(screen.getByLabelText("Contact name"), "Dad");
-    fireEvent.changeText(screen.getByLabelText("Contact phone"), "+420444");
+    await fireEvent.press(screen.getByLabelText("Add emergency contact"));
+    await fireEvent.changeText(screen.getByLabelText("Contact name"), "Dad");
+    await fireEvent.changeText(
+      screen.getByLabelText("Contact phone"),
+      "+420444",
+    );
 
     const alertToggle = screen.getByLabelText("Alert this contact in a crash");
     expect(alertToggle.props.accessibilityState).toMatchObject({
       checked: true,
     });
-    fireEvent.press(alertToggle);
+    await fireEvent.press(alertToggle);
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Save contact"));
+      await fireEvent.press(screen.getByLabelText("Save contact"));
     });
 
     await waitFor(() =>
@@ -137,12 +143,12 @@ describe("EmergencyContactsScreen", () => {
   });
 
   it("validates that name and phone are required", async () => {
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText("Add emergency contact"));
+    await fireEvent.press(screen.getByLabelText("Add emergency contact"));
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Save contact"));
+      await fireEvent.press(screen.getByLabelText("Save contact"));
     });
 
     await waitFor(() =>
@@ -160,14 +166,17 @@ describe("EmergencyContactsScreen", () => {
       created_at: "2026-04-25T10:00:00Z",
     });
 
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
 
-    fireEvent.press(screen.getByLabelText("Edit Jane Doe"));
+    await fireEvent.press(screen.getByLabelText("Edit Jane Doe"));
 
-    fireEvent.changeText(screen.getByLabelText("Contact name"), "Janet Doe");
+    await fireEvent.changeText(
+      screen.getByLabelText("Contact name"),
+      "Janet Doe",
+    );
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Save contact"));
+      await fireEvent.press(screen.getByLabelText("Save contact"));
     });
 
     await waitFor(() =>
@@ -189,11 +198,11 @@ describe("EmergencyContactsScreen", () => {
       destructive?.onPress?.();
     });
 
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Delete Jane Doe"));
+      await fireEvent.press(screen.getByLabelText("Delete Jane Doe"));
     });
 
     await waitFor(() =>
@@ -205,7 +214,7 @@ describe("EmergencyContactsScreen", () => {
   it("surfaces a load error and offers retry", async () => {
     mockedApi.listContacts.mockRejectedValueOnce(new Error("offline"));
 
-    render(<EmergencyContactsScreen />);
+    await render(<EmergencyContactsScreen />);
     await waitFor(() => expect(screen.getByText(/offline/i)).toBeTruthy());
 
     mockedApi.listContacts.mockResolvedValueOnce([
@@ -218,7 +227,7 @@ describe("EmergencyContactsScreen", () => {
       },
     ]);
 
-    fireEvent.press(screen.getByText("Retry"));
+    await fireEvent.press(screen.getByText("Retry"));
     await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
   });
 });

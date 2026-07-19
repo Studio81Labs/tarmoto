@@ -136,8 +136,8 @@ beforeEach(() => {
 });
 
 describe("SettingsScreen pending hazard reports", () => {
-  it("shows the empty state and no Retry button when there is no backlog", () => {
-    render(<SettingsScreen />);
+  it("shows the empty state and no Retry button when there is no backlog", async () => {
+    await render(<SettingsScreen />);
     expect(screen.queryByLabelText("Retry pending hazard reports")).toBeNull();
     expect(
       screen.getByText(
@@ -146,9 +146,9 @@ describe("SettingsScreen pending hazard reports", () => {
     ).toBeTruthy();
   });
 
-  it("renders the pending count and a Retry now button when there is a backlog", () => {
+  it("renders the pending count and a Retry now button when there is a backlog", async () => {
     mockHazardState = { count: 3, isRetrying: false, lastResult: null };
-    render(<SettingsScreen />);
+    await render(<SettingsScreen />);
     expect(
       screen.getByText(
         "3 hazard reports waiting to upload. We'll retry automatically next time you submit a report.",
@@ -157,9 +157,9 @@ describe("SettingsScreen pending hazard reports", () => {
     expect(screen.getByLabelText("Retry pending hazard reports")).toBeTruthy();
   });
 
-  it("uses singular phrasing for a single queued report", () => {
+  it("uses singular phrasing for a single queued report", async () => {
     mockHazardState = { count: 1, isRetrying: false, lastResult: null };
-    render(<SettingsScreen />);
+    await render(<SettingsScreen />);
     expect(
       screen.getByText(
         "1 hazard report waiting to upload. We'll retry automatically next time you submit a report.",
@@ -169,44 +169,46 @@ describe("SettingsScreen pending hazard reports", () => {
 
   it("invokes the hook retry on press", async () => {
     mockHazardState = { count: 2, isRetrying: false, lastResult: null };
-    render(<SettingsScreen />);
+    await render(<SettingsScreen />);
 
-    fireEvent.press(screen.getByLabelText("Retry pending hazard reports"));
+    await fireEvent.press(
+      screen.getByLabelText("Retry pending hazard reports"),
+    );
 
     await waitFor(() => {
       expect(mockHazardRetry).toHaveBeenCalledTimes(1);
     });
   });
 
-  it("renders the success-only outcome after a clean flush", () => {
+  it("renders the success-only outcome after a clean flush", async () => {
     mockHazardState = {
       count: 0,
       isRetrying: false,
       lastResult: { flushed: 3, failed: 0, remaining: 0 },
     };
-    render(<SettingsScreen />);
+    await render(<SettingsScreen />);
     expect(screen.getByText("Uploaded 3 reports.")).toBeTruthy();
   });
 
-  it("renders the mixed outcome with failed + still-queued segments", () => {
+  it("renders the mixed outcome with failed + still-queued segments", async () => {
     mockHazardState = {
       count: 1,
       isRetrying: false,
       lastResult: { flushed: 2, failed: 1, remaining: 1 },
     };
-    render(<SettingsScreen />);
+    await render(<SettingsScreen />);
     expect(
       screen.getByText("Uploaded 2 reports · 1 failed · 1 still queued."),
     ).toBeTruthy();
   });
 
-  it("renders the still-queued-only outcome when the network was down", () => {
+  it("renders the still-queued-only outcome when the network was down", async () => {
     mockHazardState = {
       count: 2,
       isRetrying: false,
       lastResult: { flushed: 0, failed: 0, remaining: 2 },
     };
-    render(<SettingsScreen />);
+    await render(<SettingsScreen />);
     expect(screen.getByText("2 still queued.")).toBeTruthy();
   });
 });

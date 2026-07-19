@@ -139,13 +139,13 @@ describe("HazardReportScreen", () => {
     getCurrentLocationMock.mockResolvedValue(makeLocation());
   });
 
-  it("disables submit until a hazard type is selected", () => {
-    render(<HazardReportScreen />);
+  it("disables submit until a hazard type is selected", async () => {
+    await render(<HazardReportScreen />);
 
     const submit = screen.getByLabelText("Submit hazard report");
     expect(submit.props.accessibilityState).toMatchObject({ disabled: true });
 
-    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
 
     expect(submit.props.accessibilityState).toMatchObject({ disabled: false });
   });
@@ -157,12 +157,15 @@ describe("HazardReportScreen", () => {
       pending: 0,
     });
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
-    fireEvent.press(screen.getByLabelText("High severity"));
-    fireEvent.changeText(screen.getByLabelText("Note"), "after the bridge");
-    fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    await fireEvent.press(screen.getByLabelText("High severity"));
+    await fireEvent.changeText(
+      screen.getByLabelText("Note"),
+      "after the bridge",
+    );
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
 
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
     expect(submitMock).toHaveBeenCalledWith({
@@ -187,10 +190,10 @@ describe("HazardReportScreen", () => {
     const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     submitMock.mockResolvedValueOnce({ status: "queued", pending: 1 });
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Hazard type Gravel"));
-    fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Gravel"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
     expect(alertSpy).toHaveBeenCalledWith(
@@ -203,10 +206,10 @@ describe("HazardReportScreen", () => {
     alertSpy.mockRestore();
   });
 
-  it("preselects a hazard type from route params (long-press quick-pick)", () => {
+  it("preselects a hazard type from route params (long-press quick-pick)", async () => {
     mockRouteParams = { preselectedType: "ice" };
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
     expect(
       screen.getByLabelText("Hazard type Ice").props.accessibilityState,
@@ -222,9 +225,9 @@ describe("HazardReportScreen", () => {
       source: "camera",
     });
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Take photo with camera"));
+    await fireEvent.press(screen.getByLabelText("Take photo with camera"));
 
     expect(await screen.findByText(/camera access denied/i)).toBeTruthy();
     // No submit was attempted — the rider can still proceed without
@@ -243,13 +246,13 @@ describe("HazardReportScreen", () => {
       pending: 0,
     });
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Pick photo from library"));
+    await fireEvent.press(screen.getByLabelText("Pick photo from library"));
     expect(await screen.findByText("photo.jpg")).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText("Hazard type Roadworks"));
-    fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Roadworks"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
 
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
     expect(submitMock).toHaveBeenCalledWith(
@@ -272,9 +275,9 @@ describe("HazardReportScreen", () => {
       pending: 0,
     });
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
 
     // Submit becomes enabled only after the async fix resolves —
     // accessibilityState reflects the current canSubmit boolean.
@@ -285,7 +288,7 @@ describe("HazardReportScreen", () => {
     );
     expect(getCurrentLocationMock).toHaveBeenCalled();
 
-    fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
     await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
     expect(submitMock).toHaveBeenCalledWith(
       expect.objectContaining({ lat: 49.82, lng: 18.26 }),
@@ -301,9 +304,9 @@ describe("HazardReportScreen", () => {
     getCurrentLocationMock.mockResolvedValueOnce(makeLocation(stale));
     getCurrentLocationMock.mockResolvedValueOnce(makeLocation());
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
 
     // Stale fix → submit stays disabled even with a hazard type chosen.
     await waitFor(() =>
@@ -313,7 +316,7 @@ describe("HazardReportScreen", () => {
     );
 
     // Tapping Refresh pulls the fresh fix (mock #2) → submit enables.
-    fireEvent.press(screen.getByLabelText("Refresh location"));
+    await fireEvent.press(screen.getByLabelText("Refresh location"));
     await waitFor(() =>
       expect(
         screen.getByLabelText("Submit hazard report").props.accessibilityState,
@@ -331,9 +334,9 @@ describe("HazardReportScreen", () => {
     getLastLocationMock.mockReturnValue(makeLocation(baseTime));
     getCurrentLocationMock.mockResolvedValueOnce(makeLocation(baseTime));
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
     // Wait for async on-mount fix to land so submit is enabled.
     await waitFor(() =>
       expect(
@@ -346,7 +349,7 @@ describe("HazardReportScreen", () => {
     // closure. The submit handler must re-check.
     Date.now = jest.fn(() => baseTime + 60_000);
     try {
-      fireEvent.press(screen.getByLabelText("Submit hazard report"));
+      await fireEvent.press(screen.getByLabelText("Submit hazard report"));
       expect(await screen.findByText(/location is stale/i)).toBeTruthy();
       expect(submitMock).not.toHaveBeenCalled();
     } finally {
@@ -357,10 +360,10 @@ describe("HazardReportScreen", () => {
   it("shows an error banner if the API rejects the report", async () => {
     submitMock.mockRejectedValueOnce(new Error("Validation failed"));
 
-    render(<HazardReportScreen />);
+    await render(<HazardReportScreen />);
 
-    fireEvent.press(screen.getByLabelText("Hazard type Other"));
-    fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await fireEvent.press(screen.getByLabelText("Hazard type Other"));
+    await fireEvent.press(screen.getByLabelText("Submit hazard report"));
 
     expect(await screen.findByText("Validation failed")).toBeTruthy();
     expect(mockGoBack).not.toHaveBeenCalled();

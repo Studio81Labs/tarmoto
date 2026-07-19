@@ -79,15 +79,15 @@ describe("CrashAlertOverlay", () => {
     jest.useRealTimers();
   });
 
-  it("renders nothing when the store is idle", () => {
-    const { toJSON } = render(<CrashAlertOverlay countdownMs={1_000} />);
+  it("renders nothing when the store is idle", async () => {
+    const { toJSON } = await render(<CrashAlertOverlay countdownMs={1_000} />);
     // Modal returns null when no alert is active.
     expect(toJSON()).toBeNull();
   });
 
-  it("shows the countdown when an alert is active", () => {
-    render(<CrashAlertOverlay countdownMs={3_000} />);
-    act(() => {
+  it("shows the countdown when an alert is active", async () => {
+    await render(<CrashAlertOverlay countdownMs={3_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
 
@@ -95,21 +95,21 @@ describe("CrashAlertOverlay", () => {
     expect(screen.getByLabelText(/cancel crash alert/i)).toBeTruthy();
   });
 
-  it("clears the store and never calls the API when the rider cancels", () => {
-    render(<CrashAlertOverlay countdownMs={3_000} />);
-    act(() => {
+  it("clears the store and never calls the API when the rider cancels", async () => {
+    await render(<CrashAlertOverlay countdownMs={3_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
 
-    fireEvent.press(screen.getByLabelText(/cancel crash alert/i));
+    await fireEvent.press(screen.getByLabelText(/cancel crash alert/i));
 
     expect(useCrashStore.getState().phase).toBe("idle");
     expect(mockedApi.sendCrashAlert).not.toHaveBeenCalled();
   });
 
   it("dispatches the alert when the countdown elapses", async () => {
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
 
@@ -144,8 +144,8 @@ describe("CrashAlertOverlay", () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("network down"));
     mockedApi.sendCrashAlert.mockResolvedValueOnce(mockCrashAlertResponse);
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -154,7 +154,7 @@ describe("CrashAlertOverlay", () => {
     await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
     expect(useCrashStore.getState().failureSource).toBe("transient");
 
-    fireEvent.press(screen.getByLabelText(/retry crash alert/i));
+    await fireEvent.press(screen.getByLabelText(/retry crash alert/i));
     await waitFor(() =>
       expect(useCrashStore.getState().phase).toBe("dispatched"),
     );
@@ -184,8 +184,8 @@ describe("CrashAlertOverlay", () => {
         dispatch_in_progress: false,
       });
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -224,8 +224,8 @@ describe("CrashAlertOverlay", () => {
         dispatch_in_progress: false,
       });
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -264,8 +264,8 @@ describe("CrashAlertOverlay", () => {
       dispatch_in_progress: true,
     });
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -308,8 +308,8 @@ describe("CrashAlertOverlay", () => {
     });
     mockedApi.sendCrashAlert.mockResolvedValueOnce(mockCrashAlertResponse);
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -317,7 +317,7 @@ describe("CrashAlertOverlay", () => {
     });
     await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
 
-    fireEvent.press(screen.getByLabelText(/retry crash alert/i));
+    await fireEvent.press(screen.getByLabelText(/retry crash alert/i));
     await waitFor(() =>
       expect(useCrashStore.getState().phase).toBe("dispatched"),
     );
@@ -347,8 +347,8 @@ describe("CrashAlertOverlay", () => {
       ],
     });
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -366,8 +366,8 @@ describe("CrashAlertOverlay", () => {
       contacts: [],
     });
 
-    render(<CrashAlertOverlay countdownMs={1_000} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
     await act(async () => {
@@ -392,8 +392,8 @@ describe("CrashAlertOverlay", () => {
           resolveSend = () => resolve(mockCrashAlertResponse);
         }),
     );
-    render(<CrashAlertOverlay countdownMs={500} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={500} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
 
@@ -409,7 +409,7 @@ describe("CrashAlertOverlay", () => {
     // Even calling cancel() programmatically while dispatching must be
     // a no-op so a stale tap from before the phase flipped can't reset
     // the store.
-    act(() => useCrashStore.getState().cancel());
+    await act(() => useCrashStore.getState().cancel());
     expect(useCrashStore.getState().phase).toBe("dispatching");
 
     await act(async () => {
@@ -425,8 +425,8 @@ describe("CrashAlertOverlay", () => {
     // lat/lng, dispatching a Null Island location to contacts during a
     // real crash. The overlay must surface a failure instead so the
     // rider knows to fall back to a manual call.
-    render(<CrashAlertOverlay countdownMs={500} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={500} />);
+    await act(() => {
       useCrashStore.getState().startCountdown({
         triggeredAt: 1,
         rideId: "ride-99",
@@ -466,10 +466,10 @@ describe("CrashAlertOverlay", () => {
     );
 
     try {
-      render(<CrashAlertOverlay countdownMs={10_000} />);
+      await render(<CrashAlertOverlay countdownMs={10_000} />);
       const baseline = Date.now();
       jest.setSystemTime(baseline);
-      act(() => {
+      await act(() => {
         useCrashStore.getState().startCountdown(snapshot());
       });
 
@@ -512,15 +512,15 @@ describe("CrashAlertOverlay", () => {
           };
         }),
     );
-    render(<CrashAlertOverlay countdownMs={300} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={300} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
       // Skip the countdown — drop straight into the failed terminal
       // state so the retry path is the only thing under test.
       useCrashStore.setState({ phase: "failed", errorMessage: "offline" });
     });
 
-    fireEvent.press(screen.getByLabelText(/retry crash alert/i));
+    await fireEvent.press(screen.getByLabelText(/retry crash alert/i));
 
     // Single fire only — the button must unmount synchronously and any
     // re-invocation of `dispatch()` must short-circuit on the in-flight
@@ -540,8 +540,8 @@ describe("CrashAlertOverlay", () => {
 
   it("flips to failed state when the API rejects", async () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("offline"));
-    render(<CrashAlertOverlay countdownMs={500} />);
-    act(() => {
+    await render(<CrashAlertOverlay countdownMs={500} />);
+    await act(() => {
       useCrashStore.getState().startCountdown(snapshot());
     });
 

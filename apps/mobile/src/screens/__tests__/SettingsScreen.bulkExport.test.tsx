@@ -122,8 +122,8 @@ beforeEach(() => {
 
 describe("SettingsScreen bulk export", () => {
   it("downloads the GPX bundle and opens the share sheet", async () => {
-    render(<SettingsScreen />);
-    fireEvent.press(screen.getByLabelText("Export all rides as GPX"));
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Export all rides as GPX"));
 
     await waitFor(() => {
       expect(api.exportAllRidesGpx).toHaveBeenCalledTimes(1);
@@ -143,8 +143,8 @@ describe("SettingsScreen bulk export", () => {
   });
 
   it("downloads the CSV bundle and opens the share sheet", async () => {
-    render(<SettingsScreen />);
-    fireEvent.press(screen.getByLabelText("Export all rides as CSV"));
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Export all rides as CSV"));
 
     await waitFor(() => {
       expect(api.exportAllRidesCsv).toHaveBeenCalledTimes(1);
@@ -174,11 +174,11 @@ describe("SettingsScreen bulk export", () => {
       }),
     );
 
-    render(<SettingsScreen />);
-    fireEvent.press(screen.getByLabelText("Export all rides as GPX"));
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Export all rides as GPX"));
     // CSV button should be disabled — calling press still works in the
     // stub, so we assert via call counts on the API.
-    fireEvent.press(screen.getByLabelText("Export all rides as CSV"));
+    await fireEvent.press(screen.getByLabelText("Export all rides as CSV"));
 
     expect(api.exportAllRidesGpx).toHaveBeenCalledTimes(1);
     expect(api.exportAllRidesCsv).not.toHaveBeenCalled();

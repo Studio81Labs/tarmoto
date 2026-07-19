@@ -33,6 +33,8 @@ export default [
     languageOptions: {
       parserOptions: {
         ecmaFeatures: { jsx: true },
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
       },
       globals: {
         __DEV__: "readonly",
@@ -47,6 +49,7 @@ export default [
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-deprecated": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },

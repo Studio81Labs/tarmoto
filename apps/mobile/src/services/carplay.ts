@@ -1348,17 +1348,3 @@ export function resumeRideStatusBoard(): void {
   templateMounted = false;
   mountedTitle = null;
 }
-
-// ── Backwards-compatible aliases ──
-
-/**
- * @deprecated Use `VehicleStatusBridge`. Kept as an alias because
- * older test fakes referenced the iOS-leaning name; will be removed
- * in a follow-up sweep.
- */
-export type CarPlayBridge = VehicleStatusBridge;
-
-/**
- * @deprecated Use `StatusBoardItem`.
- */
-export type InformationTemplateItem = StatusBoardItem;

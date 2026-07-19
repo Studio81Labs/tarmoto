@@ -87,7 +87,7 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    render(
+    await render(
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
@@ -115,7 +115,7 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    render(
+    await render(
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
@@ -132,7 +132,9 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    render(<SharedRidesSection userId="user-1" isSelf displayName="Me" />);
+    await render(
+      <SharedRidesSection userId="user-1" isSelf displayName="Me" />,
+    );
 
     await screen.findByText("42.5 km");
     expect(screen.getByText("Private")).toBeTruthy();
@@ -147,7 +149,9 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    render(<SharedRidesSection userId="user-1" isSelf displayName="Me" />);
+    await render(
+      <SharedRidesSection userId="user-1" isSelf displayName="Me" />,
+    );
 
     expect(
       await screen.findByText("You haven't shared any rides yet."),
@@ -163,7 +167,7 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    render(
+    await render(
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
@@ -180,7 +184,7 @@ describe("SharedRidesSection", () => {
       new ApiError("not found", 404, undefined),
     );
 
-    render(
+    await render(
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
@@ -194,7 +198,7 @@ describe("SharedRidesSection", () => {
   it("surfaces non-404 failures as an inline error", async () => {
     mockedApi.listUserSharedRides.mockRejectedValue(new Error("offline"));
 
-    render(
+    await render(
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
@@ -212,7 +216,7 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    const { rerender } = render(
+    const { rerender } = await render(
       <SharedRidesSection
         userId="user-2"
         isSelf={false}
@@ -225,7 +229,7 @@ describe("SharedRidesSection", () => {
       expect(mockedApi.listUserSharedRides).toHaveBeenCalledTimes(1),
     );
 
-    rerender(
+    await rerender(
       <SharedRidesSection
         userId="user-2"
         isSelf={false}
@@ -248,7 +252,7 @@ describe("SharedRidesSection", () => {
       offset: 0,
     });
 
-    const { rerender } = render(
+    const { rerender } = await render(
       <SharedRidesSection userId="user-2" isSelf={false} displayName="A" />,
     );
 
@@ -258,7 +262,7 @@ describe("SharedRidesSection", () => {
       }),
     );
 
-    rerender(
+    await rerender(
       <SharedRidesSection userId="user-3" isSelf={false} displayName="B" />,
     );
 

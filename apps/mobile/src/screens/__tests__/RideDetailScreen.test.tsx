@@ -163,7 +163,7 @@ describe("RideDetailScreen", () => {
   it("renders ride stats after fetching the ride detail", async () => {
     getRideMock.mockResolvedValueOnce(RIDE);
 
-    render(<RideDetailScreen />);
+    await render(<RideDetailScreen />);
 
     await waitFor(() => expect(screen.getByText("42.5 km")).toBeTruthy());
     expect(screen.getByText(/Apr 17, 2026/)).toBeTruthy();
@@ -214,7 +214,7 @@ describe("RideDetailScreen", () => {
     };
     getRideMock.mockResolvedValueOnce(rideWithMissing);
 
-    render(<RideDetailScreen />);
+    await render(<RideDetailScreen />);
 
     // 4 segments in the fixture, only 2 contribute to the histogram —
     // the meta line must show the lower count to agree with the bars.
@@ -225,7 +225,7 @@ describe("RideDetailScreen", () => {
   it("shows an error state and a retry button when the fetch fails", async () => {
     getRideMock.mockRejectedValueOnce(new Error("offline"));
 
-    render(<RideDetailScreen />);
+    await render(<RideDetailScreen />);
 
     await waitFor(() =>
       expect(screen.getByText(/Couldn't load ride/i)).toBeTruthy(),
@@ -237,12 +237,12 @@ describe("RideDetailScreen", () => {
     getRideMock.mockResolvedValueOnce(RIDE);
     exportGpxMock.mockResolvedValueOnce("<gpx>…</gpx>");
 
-    render(<RideDetailScreen />);
+    await render(<RideDetailScreen />);
     await waitFor(() =>
       expect(screen.getByLabelText("Export ride as GPX")).toBeTruthy(),
     );
 
-    fireEvent.press(screen.getByLabelText("Export ride as GPX"));
+    await fireEvent.press(screen.getByLabelText("Export ride as GPX"));
 
     await waitFor(() => expect(exportGpxMock).toHaveBeenCalledWith("ride-1"));
     // The screen must write the bytes to disk and share that path —

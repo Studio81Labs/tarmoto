@@ -13,11 +13,17 @@ import {
   type LeanBucketId,
   type LeanDistribution,
 } from "@tarmoto/shared";
+import type { LineLayerSpecification } from "@maplibre/maplibre-react-native";
 
 import type { IconName } from "@/components/Icon";
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
 import { QUALITY_COLORS, UNSCORED_COLOR } from "@/theme/brand";
+
+type LineColorExpression = Extract<
+  NonNullable<NonNullable<LineLayerSpecification["paint"]>["line-color"]>,
+  unknown[]
+>;
 
 /**
  * Format an ISO timestamp as "Apr 17, 2026 · 14:32" for ride-history rows.
@@ -188,7 +194,7 @@ export const NO_QUALITY_READING = -1;
  *   - 3.5..4.5    → Q4
  *   - ≥ 4.5       → Q5
  */
-export function rideRouteLineColorExpression(): unknown[] {
+export function rideRouteLineColorExpression(): LineColorExpression {
   return [
     "step",
     ["coalesce", ["get", "quality_reading"], NO_QUALITY_READING],

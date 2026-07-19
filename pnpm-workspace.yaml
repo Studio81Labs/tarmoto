@@ -36,3 +36,5 @@ overrides:
 
 patchedDependencies:
   react-native-carplay@2.4.1-beta.0: patches/react-native-carplay@2.4.1-beta.0.patch
+  react-native-sensors@7.3.6: patches/react-native-sensors@7.3.6.patch
+  react-native-tts@4.1.1: patches/react-native-tts@4.1.1.patch

@@ -35,7 +35,7 @@ export type {
 
 import { useEffect, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
-import KeepAwake from "react-native-keep-awake";
+import { activate, deactivate } from "@thehale/react-native-keep-awake";
 import { formatDurationSeconds } from "@/theme";
 
 /**
@@ -44,8 +44,8 @@ import { formatDurationSeconds } from "@/theme";
 export function useKeepAwake(enabled: boolean = true) {
   useEffect(() => {
     if (enabled) {
-      KeepAwake.activate();
-      return () => KeepAwake.deactivate();
+      activate();
+      return deactivate;
     }
   }, [enabled]);
 }

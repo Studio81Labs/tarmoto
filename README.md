@@ -32,7 +32,7 @@ read it directly on GitHub.
 - Node.js >= 24 (see `.nvmrc`)
 - pnpm >= 11
 - Docker & Docker Compose
-- Xcode 16.4+ and Ruby 3.3.6 for iOS development
+- Xcode 26.2+ and Ruby 3.3.6 for iOS development
 - Android Studio with Android SDK 36, NDK 27.1, and Java 17+ for Android development
 
 ## Manual Setup
@@ -178,7 +178,7 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 | Layer           | Technology                                      |
 | --------------- | ----------------------------------------------- |
-| Mobile          | Bare React Native 0.85, Zustand, MapLibre GL    |
+| Mobile          | Bare React Native 0.86, Zustand, MapLibre GL    |
 | Companion (web) | Next.js, TailwindCSS, Zustand, MapLibre GL      |
 | Backend         | NestJS 11, TypeORM, TypeScript strict           |
 | Database        | PostgreSQL 16 + PostGIS 3.4                     |

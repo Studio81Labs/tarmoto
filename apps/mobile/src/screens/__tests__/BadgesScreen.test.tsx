@@ -88,7 +88,7 @@ describe("BadgesScreen", () => {
       },
     ]);
 
-    render(<BadgesScreen />);
+    await render(<BadgesScreen />);
 
     await waitFor(() => expect(screen.getByText("Road Warrior")).toBeTruthy());
     expect(screen.getByText("Earned (1)")).toBeTruthy();
@@ -112,7 +112,7 @@ describe("BadgesScreen", () => {
       },
     ]);
 
-    render(<BadgesScreen />);
+    await render(<BadgesScreen />);
 
     await waitFor(() => expect(screen.getByText("No badges yet")).toBeTruthy());
     expect(
@@ -122,7 +122,7 @@ describe("BadgesScreen", () => {
 
   it("calls checkBadges before listing so newly-earned tiers appear immediately", async () => {
     mockedApi.listUserBadges.mockResolvedValue([]);
-    render(<BadgesScreen />);
+    await render(<BadgesScreen />);
     await waitFor(() => expect(mockedApi.listUserBadges).toHaveBeenCalled());
     expect(mockedApi.checkBadges).toHaveBeenCalled();
   });

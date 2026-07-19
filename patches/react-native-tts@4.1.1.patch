@@ -1,0 +1,58 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index dbbe04624a266f34bd194d3f3c25414869e49e04..46905d16ff4363563d4cf6a0429c483a5b6cac5b 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -5,10 +4,0 @@ def safeExtGet(prop, fallback) {
+-buildscript {
+-    repositories {
+-        jcenter()
+-    }
+-
+-    dependencies {
+-        classpath 'com.android.tools.build:gradle:1.3.1'
+-    }
+-}
+-
+@@ -18,2 +8,2 @@ android {
+-    compileSdkVersion safeExtGet('compileSdkVersion', 26)
+-    buildToolsVersion safeExtGet('buildToolsVersion', '26.0.3')
++    namespace = "net.no_mad.tts"
++    compileSdk = safeExtGet('compileSdkVersion', 36)
+@@ -22,4 +12,2 @@ android {
+-        minSdkVersion safeExtGet('minSdkVersion', 16)
+-        targetSdkVersion safeExtGet('targetSdkVersion', 26)
+-        versionCode 1
+-        versionName "1.0"
++        minSdk = safeExtGet('minSdkVersion', 24)
++        targetSdk = safeExtGet('targetSdkVersion', 36)
+@@ -29,4 +16,0 @@ android {
+-repositories {
+-    mavenCentral()
+-}
+-
+@@ -34 +18 @@ dependencies {
+-    implementation 'com.facebook.react:react-native:+'
++    implementation 'com.facebook.react:react-android'
+diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
+index ed0c0a69..a2f47b60 100644
+--- a/android/src/main/AndroidManifest.xml
++++ b/android/src/main/AndroidManifest.xml
+@@ -1 +1 @@
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="net.no_mad.tts">
++<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+diff --git a/android/src/main/java/net/no_mad/tts/TextToSpeechModule.java b/android/src/main/java/net/no_mad/tts/TextToSpeechModule.java
+index 8c1bbc53..c096254e 100644
+--- a/android/src/main/java/net/no_mad/tts/TextToSpeechModule.java
++++ b/android/src/main/java/net/no_mad/tts/TextToSpeechModule.java
+@@ -355 +355 @@ public class TextToSpeechModule extends ReactContextBaseJavaModule {
+-            onCatalystInstanceDestroy();
++            shutdown();
+@@ -441,2 +441,6 @@ public class TextToSpeechModule extends ReactContextBaseJavaModule {
+-    public void onCatalystInstanceDestroy() {
+-        super.onCatalystInstanceDestroy();
++    public void invalidate() {
++        super.invalidate();
++        shutdown();
++    }
++
++    private void shutdown() {
