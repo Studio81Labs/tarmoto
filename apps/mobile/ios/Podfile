@@ -11,6 +11,19 @@ prepare_react_native_project!
 
 $RNFirebaseAsStaticFramework = true
 
+pre_install do |installer|
+  # RNFirebase frameworks expose React Native headers through their module
+  # maps, which conflicts with RN 0.84+'s precompiled iOS core. RNFirebase's
+  # recommended RN CLI workaround is to keep its pods as static libraries.
+  installer.pod_targets.each do |pod|
+    next unless pod.name.start_with?('RNFB')
+
+    def pod.build_type
+      Pod::BuildType.static_library
+    end
+  end
+end
+
 target 'TarmotoApp' do
   config = use_native_modules!
   use_frameworks! :linkage => :static
@@ -29,18 +42,6 @@ target 'TarmotoApp' do
       # :ccache_enabled => true
     )
     $MLRN.post_install(installer)
-
-    # RNFirebase is intentionally linked as a static framework, while its
-    # public Objective-C headers import React Native headers that are not
-    # modular. Xcode 16's explicit module precompilation otherwise promotes
-    # those imports to errors in Release simulator builds.
-    installer.pods_project.targets
-      .select { |pod_target| %w[RNFBApp RNFBMessaging].include?(pod_target.name) }
-      .each do |pod_target|
-        pod_target.build_configurations.each do |configuration|
-          configuration.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
-        end
-      end
 
     app_target = installer.aggregate_targets
       .flat_map(&:user_targets)
