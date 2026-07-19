@@ -2,6 +2,7 @@ import { DEFAULT_REGIONS } from "../poi/regions.js";
 import {
   DRIVABLE_HIGHWAYS,
   ROAD_TAGS_FILTER_EXPRESSIONS,
+  ROUTING_TAGS_FILTER_EXPRESSIONS,
   TILE_MAX_SPAN_DEG_DEFAULT,
   resolveRoadRefreshConfig,
 } from "./index.js";
@@ -17,6 +18,20 @@ describe("road tag filter", () => {
     // ways only — roads are ways, not nodes/relations (unlike the POI nwr/ filter)
     expect(expr.startsWith("nwr/")).toBe(false);
   });
+
+  it("routing filter is a superset: every drivable class + `road` + ferries (what GraphHopper routes)", () => {
+    const hwExpr = ROUTING_TAGS_FILTER_EXPRESSIONS.find((e) =>
+      e.startsWith("w/highway="),
+    );
+    expect(hwExpr).toBeDefined();
+    const values = hwExpr!.slice("w/highway=".length).split(",");
+    for (const hw of DRIVABLE_HIGHWAYS) {
+      expect(values).toContain(hw); // superset of road_segments' filter
+    }
+    expect(values).toContain("road"); // routable in GraphHopper, but not a road_segments class
+    // ferry ways GraphHopper routes over, kept for routing (never for road_segments)
+    expect(ROUTING_TAGS_FILTER_EXPRESSIONS).toContain("w/route=ferry");
+  });
 });
 
 describe("resolveRoadRefreshConfig", () => {
@@ -24,11 +39,13 @@ describe("resolveRoadRefreshConfig", () => {
     const cfg = resolveRoadRefreshConfig({
       TARMOTO_OSM_ROAD_REFRESH_ENABLED: "true",
       TARMOTO_OSM_ROAD_IMPORT_DIR: "/data/road-extracts",
+      TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/routing",
       TARMOTO_OSM_ROAD_IMPORT_REGIONS: "CZ,SK",
       TARMOTO_OSM_ROAD_TILE_SPAN_DEG: "1.5",
     } as NodeJS.ProcessEnv);
     expect(cfg.enabled).toBe(true);
     expect(cfg.targetDir).toBe("/data/road-extracts");
+    expect(cfg.routingDir).toBe("/data/routing");
     expect(cfg.regions.map((r) => r.code)).toEqual(["CZ", "SK"]);
     expect(cfg.tileSpanDeg).toBe(1.5);
   });
@@ -37,6 +54,7 @@ describe("resolveRoadRefreshConfig", () => {
     const cfg = resolveRoadRefreshConfig({} as NodeJS.ProcessEnv);
     expect(cfg.enabled).toBe(false);
     expect(cfg.targetDir).toBeNull();
+    expect(cfg.routingDir).toBeNull();
     expect(cfg.regions.length).toBe(DEFAULT_REGIONS.length);
     expect(cfg.tileSpanDeg).toBe(TILE_MAX_SPAN_DEG_DEFAULT);
   });
@@ -55,5 +73,38 @@ describe("resolveRoadRefreshConfig", () => {
         TARMOTO_OSM_ROAD_TILE_SPAN_DEG: "0",
       } as NodeJS.ProcessEnv),
     ).toThrow(/TARMOTO_OSM_ROAD_TILE_SPAN_DEG/);
+  });
+
+  it("rejects a routing dir that overlaps the POI extract dir (the <code>.osm would collide)", () => {
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/poi-extracts",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
+  });
+
+  it("rejects a routing dir that overlaps the road tile dir", () => {
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/road-extracts",
+        TARMOTO_OSM_ROAD_IMPORT_DIR: "/data/road-extracts",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_ROAD_IMPORT_DIR/);
+  });
+
+  it("normalizes paths before the overlap check (trailing slash / dot spellings)", () => {
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/poi-extracts",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts/",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/routing/../poi-extracts",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
   });
 });

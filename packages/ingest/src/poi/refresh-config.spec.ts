@@ -85,6 +85,24 @@ describe("poi-refresh.config", () => {
         resolvePoiRefreshConfig({ TARMOTO_OSM_POI_IMPORT_REGIONS: "CZ,ZZ" }),
       ).toThrow(/unknown region "ZZ"/);
     });
+
+    it("rejects a POI dir that collides with the road routing dir (both write <code>.osm) — the guard also fires on the POI path, which may run first", () => {
+      expect(() =>
+        resolvePoiRefreshConfig({
+          TARMOTO_OSM_POI_IMPORT_DIR: "/data/routing",
+          TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/routing/",
+        }),
+      ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
+    });
+
+    it("allows a POI dir distinct from the routing dir", () => {
+      expect(() =>
+        resolvePoiRefreshConfig({
+          TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts",
+          TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/routing",
+        }),
+      ).not.toThrow();
+    });
   });
 
   describe("resolveFsqRefreshConfig", () => {

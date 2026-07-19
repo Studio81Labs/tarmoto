@@ -635,20 +635,28 @@ rule as Valhalla — and is a later step.
 - Coolify **"Connect To Predefined Network"** on both apps so the backend reaches
   GraphHopper by network alias (see the ingest networking note above).
 
-**1. Prepare the CZ source extract (`.osm`).** The conflation INPUT is the
-**whole-network** `.osm` GraphHopper imports — the full routable network, **not**
-the drivable-filtered road tiles the importer uses. Conflation reads `.osm` XML
-(not `.pbf`), so convert once:
+**1. The routing extract is produced by `road:refresh` — no manual step.** The
+conflation INPUT is a whole-network `<code>.osm` of the **drivable highways plus
+`route=ferry` ways** (GraphHopper routes ferries), and the ingest `road:refresh`
+now writes it (its own `osmium tags-filter` of the region PBF — routable-sized,
+not the ~12 GB full country) when `TARMOTO_OSM_ROAD_ROUTING_DIR` is set. On
+**ingest**, alongside the road-refresh env, add:
 
 ```bash
-curl -L -o cz.osm.pbf https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
-osmium cat cz.osm.pbf -o cz.osm            # XML form the conflation job reads
-cp cz.osm cz.quality.osm                   # seed: GraphHopper imports the TAGGED file;
-                                           # the first conflation overwrites it with tags
+TARMOTO_OSM_ROAD_ROUTING_DIR=/data/routing   # its own shared dir (≠ the tile dir)
 ```
 
-Place both on the shared volume, e.g. `/data/routing/cz.osm` (input) and
-`/data/routing/cz.quality.osm` (output GraphHopper imports).
+`road:refresh` then writes `/data/routing/cz.osm` next to the tiles. The backend
+conflation reads it as `TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/routing/cz.osm`
+and writes `TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/routing/cz.quality.osm`,
+which GraphHopper imports. All three apps mount `/data/routing` (ingest writes the
+base `.osm`, backend writes the tagged one, GraphHopper reads it); the images
+pre-create it owned by uid 100, but a pre-existing **root-owned** volume still
+needs a one-time `chown -R 100:101 /data/routing` (same gotcha as the road-extract
+volume).
+
+GraphHopper crash-loops until `cz.quality.osm` exists — it **self-heals** the
+moment the first conflation writes it (step 5); no manual seed needed.
 
 **2. Stand up the GraphHopper Coolify app — build it from
 [`infra/graphhopper/Dockerfile`](../../infra/graphhopper/Dockerfile).** Coolify's
@@ -665,9 +673,15 @@ launches GraphHopper against `/data/routing/cz.quality.osm`. Point the Coolify a
 **Dockerfile build pack** (build context `infra/graphhopper`), or build + push the
 image to a registry the app pulls from.
 
-- **Persistent storage**: the shared volume at `/data` — holds `routing/` (the
-  extract) + the graph dir (`/data/default-gh`). `config.yml` is **baked into the
-  image**, not placed here.
+- **Persistent storage** — mount the **shared routing volume at `/data/routing`**,
+  the SAME path ingest + backend use (step 1), so `cz.osm`/`cz.quality.osm` resolve
+  to `/data/routing/*` for all three apps. ⚠️ Mounting that same volume at a
+  DIFFERENT depth here (e.g. `/data`) puts the files at `/data/cz.quality.osm`
+  inside GraphHopper while its config reads `/data/routing/…`, so it keeps
+  crash-looping — use the identical path everywhere. GraphHopper's graph cache
+  (`/data/default-gh`) is **separate** — its own storage, NOT the routing volume
+  (a volume mounted at `/data`, or left unpersisted so every restart re-imports —
+  simplest for staging). `config.yml` is baked into the image, on neither.
 - **Port** 8989. **Env** `JAVA_OPTS=-Xms1g -Xmx4g` (a CZ import peaks ~4–5 GB —
   size the app + swap accordingly).
 - **Network alias** e.g. `tarmoto-graphhopper`.
@@ -728,19 +742,24 @@ A non-2xx/unreachable webhook makes the conflation job throw (BullMQ retries), s
 a broken hook is visible; but a redeploy that succeeds **without** clearing the
 graph is silent — hence the verify step above.
 
-**5. Enablement order + first run.**
+**5. Enablement order + first run** — the whole pipeline, no manual upload:
 
-1. Shared volume on both apps; `cz.osm` + seeded `cz.quality.osm` present.
-2. GraphHopper app up and imported (`GET http://…:8989/health` green).
-3. Backend env set + redeployed.
-4. Produce the first **tagged** extract on demand rather than waiting for the
-   Sunday import tick:
+1. **ingest** — `TARMOTO_OSM_ROAD_ROUTING_DIR` set + `road:refresh` run once
+   (scheduled task or `docker exec … node apps/ingest/dist/scripts/refresh-road-extracts.js`)
+   → writes `/data/routing/cz.osm` alongside the tiles. Confirm `cz.osm` landed.
+2. **backend** — env set (step 3) + redeployed; `road:import` (the Sunday cron, or
+   `docker exec <backend> node apps/backend/dist/scripts/road-import.js`) →
+   `road_segments` populated.
+3. **backend** — produce the first tagged extract on demand rather than waiting
+   for the next import tick:
    ```bash
    docker exec <backend-staging> node apps/backend/dist/scripts/quality-conflation.js
    ```
-   It tags `cz.quality.osm`, then fires the webhook → GraphHopper redeploys and
-   re-imports the quality-weighted graph. (Every subsequent road import chains it
-   automatically.)
+   It reads `/data/routing/cz.osm` + `road_segments`, writes
+   `/data/routing/cz.quality.osm`, then fires the re-import webhook.
+4. **GraphHopper** — now that `cz.quality.osm` exists it imports it and comes up
+   serving on 8989 (it was crash-looping until this point — self-healed). Every
+   subsequent road import chains the conflation automatically.
 
 **6. Validate — [ADR-0005](../decisions/0005-road-quality-routing-via-smoothness.md)
 acceptance.** Find a low-quality road on a routable corridor:

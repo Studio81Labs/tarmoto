@@ -91,11 +91,16 @@ COPY --from=build /workspace/packages/poi-db/dist packages/poi-db/dist
 ARG TARMOTO_OSM_POI_IMPORT_DIR=/data/poi-extracts
 ARG TARMOTO_FSQ_POI_IMPORT_DIR=/data/poi-extracts
 ARG TARMOTO_OSM_ROAD_IMPORT_DIR=/data/road-extracts
+# The ROUTING dir holds the whole-network `<code>.osm` GraphHopper imports (the
+# road:refresh writes it, the backend conflation tags it) — its own path, seeded
+# writable like the others so a fresh shared volume comes up owned by uid 100.
+ARG TARMOTO_OSM_ROAD_ROUTING_DIR=/data/routing
 RUN osm="${TARMOTO_OSM_POI_IMPORT_DIR:-/data/poi-extracts}" \
  && fsq="${TARMOTO_FSQ_POI_IMPORT_DIR:-/data/poi-extracts}" \
  && road="${TARMOTO_OSM_ROAD_IMPORT_DIR:-/data/road-extracts}" \
- && mkdir -p "$osm" "$fsq" "$road" \
- && chown tarmoto:tarmoto "$osm" "$fsq" "$road"
+ && routing="${TARMOTO_OSM_ROAD_ROUTING_DIR:-/data/routing}" \
+ && mkdir -p "$osm" "$fsq" "$road" "$routing" \
+ && chown tarmoto:tarmoto "$osm" "$fsq" "$road" "$routing"
 
 ENV HOME=/home/tarmoto
 USER tarmoto
