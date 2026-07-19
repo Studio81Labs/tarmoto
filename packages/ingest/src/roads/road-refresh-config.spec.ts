@@ -77,4 +77,19 @@ describe("resolveRoadRefreshConfig", () => {
       } as NodeJS.ProcessEnv),
     ).toThrow(/must differ from TARMOTO_OSM_ROAD_IMPORT_DIR/);
   });
+
+  it("normalizes paths before the overlap check (trailing slash / dot spellings)", () => {
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/poi-extracts",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts/",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/routing/../poi-extracts",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
+  });
 });

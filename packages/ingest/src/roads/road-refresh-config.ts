@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { parseRegions, type PoiImportRegion } from "../poi/regions.js";
 import { DRIVABLE_HIGHWAYS } from "./road-tags.js";
 import { resolveTileSpanDeg } from "./road-tiles.js";
@@ -69,6 +70,9 @@ export function resolveRoadRefreshConfig(
     // tiles). A shared dir would let a road refresh overwrite the POI `<code>.osm`
     // and corrupt the next POI import. Fail fast on the documented "MUST differ"
     // rather than trusting the operator to notice.
+    // Compare RESOLVED paths so a trailing slash / `.` / `..` spelling
+    // (`/data/poi-extracts` vs `/data/poi-extracts/`) can't slip past the guard.
+    const routingResolved = resolve(routingDir);
     const clash = (
       [
         ["TARMOTO_OSM_ROAD_IMPORT_DIR", dir],
@@ -76,7 +80,9 @@ export function resolveRoadRefreshConfig(
       ] as const
     ).find(
       ([, value]) =>
-        value !== undefined && value !== "" && value === routingDir,
+        value !== undefined &&
+        value !== "" &&
+        resolve(value) === routingResolved,
     );
     if (clash) {
       throw new Error(
