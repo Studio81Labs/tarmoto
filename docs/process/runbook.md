@@ -673,9 +673,15 @@ launches GraphHopper against `/data/routing/cz.quality.osm`. Point the Coolify a
 **Dockerfile build pack** (build context `infra/graphhopper`), or build + push the
 image to a registry the app pulls from.
 
-- **Persistent storage**: the shared volume at `/data` — holds `routing/` (the
-  extract) + the graph dir (`/data/default-gh`). `config.yml` is **baked into the
-  image**, not placed here.
+- **Persistent storage** — mount the **shared routing volume at `/data/routing`**,
+  the SAME path ingest + backend use (step 1), so `cz.osm`/`cz.quality.osm` resolve
+  to `/data/routing/*` for all three apps. ⚠️ Mounting that same volume at a
+  DIFFERENT depth here (e.g. `/data`) puts the files at `/data/cz.quality.osm`
+  inside GraphHopper while its config reads `/data/routing/…`, so it keeps
+  crash-looping — use the identical path everywhere. GraphHopper's graph cache
+  (`/data/default-gh`) is **separate** — its own storage, NOT the routing volume
+  (a volume mounted at `/data`, or left unpersisted so every restart re-imports —
+  simplest for staging). `config.yml` is baked into the image, on neither.
 - **Port** 8989. **Env** `JAVA_OPTS=-Xms1g -Xmx4g` (a CZ import peaks ~4–5 GB —
   size the app + swap accordingly).
 - **Network alias** e.g. `tarmoto-graphhopper`.
