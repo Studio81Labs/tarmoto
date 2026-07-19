@@ -12,11 +12,15 @@ prepare_react_native_project!
 $RNFirebaseAsStaticFramework = true
 
 pre_install do |installer|
-  # RNFirebase frameworks expose React Native headers through their module
-  # maps, which conflicts with RN 0.84+'s precompiled iOS core. RNFirebase's
-  # recommended RN CLI workaround is to keep its pods as static libraries.
+  # RN 0.84+'s precompiled iOS core is not compatible with RNFirebase's
+  # framework module maps. Reanimated and Worklets also use namespaced C++
+  # includes that CocoaPods does not expose while compiling static frameworks.
+  # Keep these React Native bridge pods as libraries while their dependencies
+  # continue to use the static-framework integration required by Firebase.
+  static_library_pods = %w[RNReanimated RNWorklets]
+
   installer.pod_targets.each do |pod|
-    next unless pod.name.start_with?('RNFB')
+    next unless pod.name.start_with?('RNFB') || static_library_pods.include?(pod.name)
 
     def pod.build_type
       Pod::BuildType.static_library
