@@ -45,10 +45,12 @@ describe('RoadsService', () => {
     it('should query with correct spatial parameters', async () => {
       await service.findNearby({ lat: 49.1, lng: 16.75 });
 
-      expect(segmentRepo.query).toHaveBeenCalledWith(
-        expect.stringContaining('ST_DWithin'),
-        [16.75, 49.1, 5000],
+      const sql = String(segmentRepo.query!.mock.calls[0][0]);
+      expect(sql).toContain(
+        'ST_DWithin(\n          rs.geom,\n          ST_SetSRID(ST_MakePoint($1, $2), 4326)',
       );
+      expect(sql).toContain('rs.geom::geography');
+      expect(segmentRepo.query).toHaveBeenCalledWith(sql, [16.75, 49.1, 5000]);
     });
 
     it('should use custom radius', async () => {

@@ -63,6 +63,38 @@ describe('RouteEnrichmentService.aggregate', () => {
     expect(hazardSql).toContain("moderation_status = 'visible'");
   });
 
+  it('road_segments queries use an indexable degree prefilter, not just geom::geography (which seq-scans the 3.2M-row table)', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          avg_quality: null,
+          avg_curviness: null,
+          elevation_span: null,
+          total_length_m: null,
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ count: 0 }])
+      .mockResolvedValueOnce([{ avg_scenic: null, zone_count: 0 }]);
+    const ds = { query } as unknown as DataSource;
+
+    await new RouteEnrichmentService(ds).aggregate([
+      { lat: 50.08, lng: 14.42 },
+      { lat: 50.1, lng: 14.5 },
+    ]);
+
+    // The two road_segments queries (quality = call 0, surface = call 1) must
+    // carry the bare-geometry ST_DWithin that hits idx_road_segments_geom to
+    // narrow candidates BEFORE the exact geography refine — the geography cast
+    // alone can't use the GiST index and full-scans the table.
+    for (const i of [0, 1]) {
+      const sql = String((query.mock.calls[i] as unknown[])[0]);
+      expect(sql).toContain('ST_DWithin(rs.geom, ST_GeomFromText($1, 4326)');
+      expect(sql).toContain('rs.geom::geography'); // exact refine still present
+    }
+  });
+
   it('returns empty metrics without querying for degenerate geometry', async () => {
     const query = jest.fn();
     const ds = { query } as unknown as DataSource;

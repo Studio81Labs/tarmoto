@@ -876,6 +876,14 @@ describe('CommuteService', () => {
       expect(result.alternatives[0].distance_km).toBe(14.2);
       expect(result.alternatives[0].hazard_count).toBe(0);
       expect(result.alternatives[0].avg_quality).toBe(4.1);
+
+      const qualitySql = routeRepo
+        .query!.mock.calls.map(([sql]) => String(sql))
+        .find((sql) => sql.includes('AVG(rs.quality_score)'));
+      expect(qualitySql).toContain(
+        'ST_DWithin(rs.geom, ST_GeomFromText($1, 4326)',
+      );
+      expect(qualitySql).toContain('rs.geom::geography');
     });
 
     it('should throw NotFoundException when no primary route', async () => {

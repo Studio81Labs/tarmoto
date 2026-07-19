@@ -508,6 +508,13 @@ export class CommuteService {
        FROM road_segments rs
        WHERE rs.quality_score IS NOT NULL
          AND rs.deactivated_at IS NULL
+         -- Indexable degree prefilter (uses idx_road_segments_geom) before the
+         -- exact geography check; a bare geom::geography distance can't use the
+         -- geometry GiST index and full-scans road_segments (3.2M+ rows once the
+         -- OSM road import runs). 100 m / 111320 * 2 = a generous degree box that
+         -- still covers 100 m; the geography ST_DWithin refines. Mirrors
+         -- roads.service.ts / route-enrichment.service.ts.
+         AND ST_DWithin(rs.geom, ST_GeomFromText($1, 4326), (100 / 111320.0 * 2))
          AND ST_DWithin(
            rs.geom::geography,
            ST_GeomFromText($1, 4326)::geography,
