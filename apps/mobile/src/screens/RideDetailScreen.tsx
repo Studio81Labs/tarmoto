@@ -60,7 +60,7 @@ import type {
   RideStackParamList,
 } from "@/navigation/RootNavigator";
 import RideMetric from "@/components/RideMetric";
-import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import {
   buildRideShareMessage,
   formatCurveCount,
@@ -248,7 +248,7 @@ function RouteMap({
     <View style={styles.mapWrap}>
       <Map
         style={styles.map}
-        mapStyle={DEV_MAP_STYLE_URL}
+        mapStyle={APP_MAP_STYLE_URL}
         attribution={false}
         logo={false}
       >

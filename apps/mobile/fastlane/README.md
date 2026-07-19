@@ -20,6 +20,9 @@ source. The workflow that drives them lives at
    Push the resulting profiles to the match repo. Use a deploy key
    scoped read-only to that repo for CI.
 3. Configure repo secrets (see "Required CI secrets" below).
+4. Obtain Apple's CarPlay maps entitlement for `app.tarmoto` and include it in
+   the App Store provisioning profile. TestFlight distribution is blocked until
+   Apple grants this entitlement.
 
 ### Android
 
@@ -37,22 +40,28 @@ source. The workflow that drives them lives at
 Set under **Settings → Secrets and variables → Actions** for the
 `mobile-release` environment.
 
-| Secret                              | Used by | Notes                                           |
-| ----------------------------------- | ------- | ----------------------------------------------- |
-| `APP_STORE_CONNECT_API_KEY_ID`      | iOS     | The 10-char Key ID.                             |
-| `APP_STORE_CONNECT_API_ISSUER_ID`   | iOS     | UUID issuer id from ASC.                        |
-| `APP_STORE_CONNECT_API_KEY_CONTENT` | iOS     | Full `.p8` body, including `BEGIN PRIVATE KEY`. |
-| `MATCH_GIT_BASIC_AUTHORIZATION`     | iOS     | `base64(user:token)` for the match repo.        |
-| `MATCH_PASSWORD`                    | iOS     | Symmetric password for the match repo.          |
-| `FASTLANE_APPLE_ID`                 | iOS     | Apple ID email.                                 |
-| `FASTLANE_TEAM_ID`                  | iOS     | Apple Developer team id (10 chars).             |
-| `FASTLANE_ITC_TEAM_ID`              | iOS     | App Store Connect team id (numeric).            |
-| `IOS_KEYCHAIN_PASSWORD`             | iOS     | Random per-run keychain password.               |
-| `ANDROID_KEYSTORE_BASE64`           | Android | Base64'd keystore — workflow writes it to disk. |
-| `ANDROID_KEYSTORE_PASSWORD`         | Android | Keystore password.                              |
-| `ANDROID_KEY_ALIAS`                 | Android | Key alias inside the store (e.g. `tarmoto`).    |
-| `ANDROID_KEY_PASSWORD`              | Android | Key password.                                   |
-| `PLAY_STORE_JSON_KEY`               | Android | Full service-account JSON, single line.         |
+| Secret                                   | Used by | Notes                                           |
+| ---------------------------------------- | ------- | ----------------------------------------------- |
+| `TARMOTO_FIREBASE_IOS_CONFIG_BASE64`     | iOS     | Base64-encoded `GoogleService-Info.plist`.      |
+| `APP_STORE_CONNECT_API_KEY_ID`           | iOS     | The 10-char Key ID.                             |
+| `APP_STORE_CONNECT_API_ISSUER_ID`        | iOS     | UUID issuer id from ASC.                        |
+| `APP_STORE_CONNECT_API_KEY_CONTENT`      | iOS     | Full `.p8` body, including `BEGIN PRIVATE KEY`. |
+| `MATCH_GIT_URL`                          | iOS     | URL of the encrypted match repository.          |
+| `MATCH_GIT_BASIC_AUTHORIZATION`          | iOS     | `base64(user:token)` for the match repo.        |
+| `MATCH_PASSWORD`                         | iOS     | Symmetric password for the match repo.          |
+| `FASTLANE_APPLE_ID`                      | iOS     | Apple ID email.                                 |
+| `FASTLANE_TEAM_ID`                       | iOS     | Apple Developer team id (10 chars).             |
+| `FASTLANE_ITC_TEAM_ID`                   | iOS     | App Store Connect team id (numeric).            |
+| `IOS_KEYCHAIN_PASSWORD`                  | iOS     | Random per-run keychain password.               |
+| `TARMOTO_FIREBASE_ANDROID_CONFIG_BASE64` | Android | Base64-encoded `google-services.json`.          |
+| `ANDROID_KEYSTORE_BASE64`                | Android | Base64'd keystore — workflow writes it to disk. |
+| `ANDROID_KEYSTORE_PASSWORD`              | Android | Keystore password.                              |
+| `ANDROID_KEY_ALIAS`                      | Android | Key alias inside the store (e.g. `tarmoto`).    |
+| `ANDROID_KEY_PASSWORD`                   | Android | Key password.                                   |
+| `PLAY_STORE_JSON_KEY`                    | Android | Full service-account JSON, single line.         |
+
+The workflow validates every required value before spending time on native
+compilation. It never prints decoded Firebase or signing material.
 
 ## Local dry-run
 

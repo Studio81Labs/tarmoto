@@ -75,7 +75,9 @@ import {
   clearTokens,
   getAccessToken,
   getAuthenticatedUserId,
+  getCachedUser,
   isAuthenticated as hasAccessToken,
+  setCachedUser,
   setAuthenticatedUserId,
   storeTokens,
   rawFetch,
@@ -277,6 +279,10 @@ class ApiService {
     return hasAccessToken();
   }
 
+  getCachedProfile(): User | null {
+    return getCachedUser();
+  }
+
   /**
    * Persist the device's IANA timezone to notification preferences so the
    * weekly digest sends at the rider's local Sunday 08:00 instead of the backend
@@ -332,7 +338,9 @@ class ApiService {
 
   async getProfile(): Promise<User> {
     const result = await client.GET("/api/v1/users/me");
-    return unwrap(result, "Failed to load profile");
+    const user = unwrap(result, "Failed to load profile");
+    setCachedUser(user);
+    return user;
   }
 
   /**
@@ -350,7 +358,9 @@ class ApiService {
     const result = await client.PATCH("/api/v1/users/me", {
       body: updates as Schemas["UpdateProfileDto"],
     });
-    return unwrap(result, "Failed to update profile");
+    const user = unwrap(result, "Failed to update profile");
+    setCachedUser(user);
+    return user;
   }
 
   // ── Rider profiles + follow (US-27) ──
@@ -448,7 +458,9 @@ class ApiService {
       // multipart boundary.
       bodySerializer: (body) => body as unknown as FormData,
     });
-    return unwrap(result, "Failed to upload avatar");
+    const user = unwrap(result, "Failed to upload avatar");
+    setCachedUser(user);
+    return user;
   }
 
   // ── Emergency Contacts (US-12) ──

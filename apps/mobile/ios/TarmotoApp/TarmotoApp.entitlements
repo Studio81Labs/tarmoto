@@ -14,5 +14,7 @@
 	-->
 	<key>com.apple.developer.carplay-maps</key>
 	<true/>
+	<key>aps-environment</key>
+	<string>$(APS_ENVIRONMENT)</string>
 </dict>
 </plist>

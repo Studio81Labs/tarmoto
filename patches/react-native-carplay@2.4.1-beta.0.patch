@@ -1,0 +1,84 @@
+diff --git a/android/src/main/java/org/birkir/carplay/CarPlayModule.kt b/android/src/main/java/org/birkir/carplay/CarPlayModule.kt
+index ef6aa04..c569995 100644
+--- a/android/src/main/java/org/birkir/carplay/CarPlayModule.kt
++++ b/android/src/main/java/org/birkir/carplay/CarPlayModule.kt
+@@ -218 +218 @@ class CarPlayModule internal constructor(private val reactContext: ReactApplicat
+-            addAction(parser.parseAction(it.getMap(i)));
++            it.getMap(i)?.let { action -> addAction(parser.parseAction(action)) };
+diff --git a/android/src/main/java/org/birkir/carplay/CarPlaySession.kt b/android/src/main/java/org/birkir/carplay/CarPlaySession.kt
+index 2235853..80cf453 100644
+--- a/android/src/main/java/org/birkir/carplay/CarPlaySession.kt
++++ b/android/src/main/java/org/birkir/carplay/CarPlaySession.kt
+@@ -22 +21,0 @@ import com.facebook.react.modules.appregistry.AppRegistry
+-import com.facebook.react.modules.core.TimingModule
+@@ -79 +78 @@ class CarPlaySession(private val reactInstanceManager: ReactInstanceManager) : S
+-      catalystInstance.getJSModule(AppRegistry::class.java)
++      requireNotNull(catalystInstance.getJSModule(AppRegistry::class.java))
+@@ -82,3 +80,0 @@ class CarPlaySession(private val reactInstanceManager: ReactInstanceManager) : S
+-      val timingModule = reactContext.getNativeModule(
+-        TimingModule::class.java
+-      )
+@@ -87,2 +83,2 @@ class CarPlaySession(private val reactInstanceManager: ReactInstanceManager) : S
+-      carModule!!.setCarContext(carContext, screen)
+-      timingModule!!.onHostResume()
++      requireNotNull(carModule).setCarContext(carContext, screen)
++      reactContext.onHostResume(null)
+@@ -115 +110,0 @@ class CarPlaySession(private val reactInstanceManager: ReactInstanceManager) : S
+-
+diff --git a/android/src/main/java/org/birkir/carplay/parser/RCTListTemplate.kt b/android/src/main/java/org/birkir/carplay/parser/RCTListTemplate.kt
+index f6f441a..cc3b9bd 100644
+--- a/android/src/main/java/org/birkir/carplay/parser/RCTListTemplate.kt
++++ b/android/src/main/java/org/birkir/carplay/parser/RCTListTemplate.kt
+@@ -38 +38 @@ class RCTListTemplate(
+-          val section = it.getMap(i)
++          val section = it.getMap(i) ?: continue
+diff --git a/android/src/main/java/org/birkir/carplay/parser/RCTTabTemplate.kt b/android/src/main/java/org/birkir/carplay/parser/RCTTabTemplate.kt
+index 11d8261..fe84878 100644
+--- a/android/src/main/java/org/birkir/carplay/parser/RCTTabTemplate.kt
++++ b/android/src/main/java/org/birkir/carplay/parser/RCTTabTemplate.kt
+@@ -24 +24 @@ class RCTTabTemplate(
+-          addTab(parseTab(it.getMap(i)))
++          it.getMap(i)?.let { tab -> addTab(parseTab(tab)) }
+@@ -27 +27 @@ class RCTTabTemplate(
+-        it.getMap(0).getString("id")?.let { it1 ->
++        it.getMap(0)?.getString("id")?.let { it1 ->
+diff --git a/android/src/main/java/org/birkir/carplay/parser/RCTTemplate.kt b/android/src/main/java/org/birkir/carplay/parser/RCTTemplate.kt
+index 01dbabd..0e55be3 100644
+--- a/android/src/main/java/org/birkir/carplay/parser/RCTTemplate.kt
++++ b/android/src/main/java/org/birkir/carplay/parser/RCTTemplate.kt
+@@ -142,3 +142,3 @@ abstract class RCTTemplate(
+-      val actionMap = actions.getMap(i)
+-      val action = parseAction(actionMap)
+-      builder.addAction(action)
++      actions.getMap(i)?.let { actionMap ->
++        builder.addAction(parseAction(actionMap))
++      }
+@@ -156 +156 @@ abstract class RCTTemplate(
+-          addItem(parseRowItem(items.getMap(i), i))
++          items.getMap(i)?.let { addItem(parseRowItem(it, i)) }
+@@ -158 +158 @@ abstract class RCTTemplate(
+-          addItem(parseGridItem(items.getMap(i), i))
++          items.getMap(i)?.let { addItem(parseGridItem(it, i)) }
+@@ -189,4 +189,3 @@ abstract class RCTTemplate(
+-          setTitle(parseCarText(
+-            titleVariants.getString(0),
+-            metadata
+-          ))
++          titleVariants.getString(0)?.let {
++            setTitle(parseCarText(it, metadata))
++          }
+@@ -195 +194 @@ abstract class RCTTemplate(
+-          setText(titleVariants.getString(1))
++          titleVariants.getString(1)?.let { setText(it) }
+@@ -262 +261 @@ abstract class RCTTemplate(
+-        builder.addText(it.getString(i))
++        it.getString(i)?.let(builder::addText)
+@@ -304 +303 @@ abstract class RCTTemplate(
+-          addAction(parseAction(it.getMap(i)))
++          it.getMap(i)?.let { action -> addAction(parseAction(action)) }
+@@ -309 +308 @@ abstract class RCTTemplate(
+-          addRow(parseRowItem(it.getMap(i), i))
++          it.getMap(i)?.let { row -> addRow(parseRowItem(row, i)) }
+@@ -321 +320 @@ abstract class RCTTemplate(
+-          addEndHeaderAction(parseAction(it.getMap(i)))
++          it.getMap(i)?.let { action -> addEndHeaderAction(parseAction(action)) }

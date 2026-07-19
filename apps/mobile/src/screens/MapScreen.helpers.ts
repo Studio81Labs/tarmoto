@@ -7,7 +7,7 @@
  *     interpolates into actual tile requests.
  *   - `qualityLineStyle` — MapLibre style expression mapping
  *     `quality_score` (1..5) → color buckets and zoom → line width.
- *   - `DEV_MAP_STYLE_URL` — default basemap until the Tarmoto style ships.
+ *   - `APP_MAP_STYLE_URL` — configurable production basemap.
  */
 
 import type {
@@ -15,7 +15,7 @@ import type {
   FillLayerStyle,
   LineLayerStyle,
 } from "@maplibre/maplibre-react-native";
-import { API_BASE_URL } from "@/config";
+import { API_BASE_URL, MAP_STYLE_URL } from "@/config";
 import { MIN_QUALITY_BOUNDS } from "@/theme";
 import {
   brandColorsLight,
@@ -45,16 +45,10 @@ import type {
 export function getQualityTileUrlTemplate(
   apiBase: string = API_BASE_URL,
 ): string {
-  return `${apiBase}/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`;
+  return `${apiBase}/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`;
 }
 
-/**
- * Fallback basemap style. The Tarmoto-branded style lives at
- * `MAP_STYLE_URL` (see `.env.example`) but isn't deployed yet — falling
- * back to MapLibre's public demo tiles keeps the map rendering during
- * development without blocking this feature on infra work.
- */
-export const DEV_MAP_STYLE_URL = "https://demotiles.maplibre.org/style.json";
+export const APP_MAP_STYLE_URL = MAP_STYLE_URL;
 
 /**
  * Quality-score bucket boundaries. Mirror the brand `qualityIndex` half-point

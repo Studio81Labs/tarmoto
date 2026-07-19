@@ -7,7 +7,7 @@
  * preferences survive tab switches.
  *
  *   - Quality: vector-tile overlay fed by the backend's
- *     `/roads/tiles/{z}/{x}/{y}.mvt?layers=quality` endpoint. Segments
+ *     `/api/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality` endpoint. Segments
  *     are coloured by `quality_score` (1..5) and faded by `confidence`.
  *
  *   - Passes (US-11): point markers fetched once from `/passes`,
@@ -87,7 +87,7 @@ import {
   applyHazardAlert,
   bboxFromVisibleBounds,
   buildQualityLineStyle,
-  DEV_MAP_STYLE_URL,
+  APP_MAP_STYLE_URL,
   mergeHazardsRest,
   FUN_ZONE_COLORS,
   funZoneFillStyle,
@@ -499,7 +499,7 @@ export default function MapScreen() {
     <View style={styles.container}>
       <Map
         style={styles.map}
-        mapStyle={DEV_MAP_STYLE_URL}
+        mapStyle={APP_MAP_STYLE_URL}
         onRegionDidChange={handleRegionDidChange}
         attribution
         logo={false}

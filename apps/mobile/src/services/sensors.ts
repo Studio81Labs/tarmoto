@@ -11,7 +11,6 @@ import {
   SensorTypes,
 } from "react-native-sensors";
 import { Subscription } from "rxjs";
-import { map, bufferCount } from "rxjs/operators";
 import type { SensorReading, QualityClass, SurfaceType } from "@/types";
 import {
   MAX_TAG_EVENTS_PER_UPLOAD,

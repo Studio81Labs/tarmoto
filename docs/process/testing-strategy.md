@@ -63,7 +63,10 @@ When adding tests, colocate next to source (`screens/HomeScreen.test.tsx` next t
 
 ### Command
 
-`pnpm --filter @tarmoto/mobile test` (runs in CI via `mobile-ci.yml`).
+`pnpm --filter @tarmoto/mobile test` (runs in CI via `mobile-ci.yml`). Native
+release-mode preview builds also run for Android and iOS on every mobile PR;
+successful runs upload a standalone APK and zipped simulator `.app` for seven
+days. See [mobile development and release](./mobile-development-release.md).
 
 ## Companion (Next.js web)
 
@@ -118,7 +121,7 @@ Each PR triggers (path-filtered per app):
 - `companion-e2e.yml` — runs the Playwright suite against the in-process mock backend; uploads traces and the HTML report on failure
 - `admin-ci.yml` — lint, typecheck, Vitest, `node --test` worker tests, and build for the admin console
 - `marketing-ci.yml` — build, typecheck, `node --test` worker tests, and a `wrangler` dry-run
-- `mobile-ci.yml` — lint, typecheck, and Jest tests for the mobile app
+- `mobile-ci.yml` — lint, typecheck, Jest, Android release APK, and iOS release simulator build for the mobile app
 - `packages-ci.yml` — build/test/typecheck of `packages/*` (Vitest)
 - `openapi-check.yml` — OpenAPI freshness gate: regenerates the spec + client (`pnpm openapi:gen`) and fails if the committed `packages/openapi-client` schema is stale
 - `poc-ci.yml` — PoC sensor build

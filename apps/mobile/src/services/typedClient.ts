@@ -22,6 +22,7 @@ import { API_BASE_URL } from "@/config";
 import { clearCachedPreferences } from "./privacyCache";
 
 type AuthResponse = Schemas["AuthResponseDto"];
+type CachedUser = Schemas["UserResponseDto"];
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
@@ -33,6 +34,7 @@ const REFRESH_TOKEN_KEY = "refresh_token";
 // or "different user signed in" mid-flight while still allowing
 // the normal access-token rotation by the 401 refresh middleware.
 const USER_ID_KEY = "user_id";
+const CACHED_USER_KEY = "cached_user";
 
 /**
  * Per-request timeout. Matches the previous axios default (`timeout:
@@ -144,6 +146,33 @@ export function getAccessToken(): string | null {
   return storage.getString(ACCESS_TOKEN_KEY) ?? null;
 }
 
+/** Last authenticated profile for an offline-safe cold start. */
+export function getCachedUser(): CachedUser | null {
+  const raw = storage.getString(CACHED_USER_KEY);
+  if (!raw) return null;
+  try {
+    const user = JSON.parse(raw) as Partial<CachedUser>;
+    const authenticatedUserId = storage.getString(USER_ID_KEY);
+    if (
+      typeof user.id !== "string" ||
+      !user.id ||
+      (authenticatedUserId && authenticatedUserId !== user.id)
+    ) {
+      storage.remove(CACHED_USER_KEY);
+      return null;
+    }
+    return user as CachedUser;
+  } catch {
+    storage.remove(CACHED_USER_KEY);
+    return null;
+  }
+}
+
+export function setCachedUser(user: CachedUser): void {
+  storage.set(CACHED_USER_KEY, JSON.stringify(user));
+  storage.set(USER_ID_KEY, user.id);
+}
+
 function getRefreshToken(): string | null {
   return storage.getString(REFRESH_TOKEN_KEY) ?? null;
 }
@@ -181,7 +210,7 @@ export function storeTokens(auth: AuthResponse): void {
   // so a refresh-without-user doesn't clobber the stable session
   // identifier the privacy-cache snapshot relies on.
   if (incomingUserId) {
-    storage.set(USER_ID_KEY, incomingUserId);
+    setCachedUser(auth.user);
   }
 }
 
@@ -189,6 +218,7 @@ export function clearTokens(): void {
   storage.remove(ACCESS_TOKEN_KEY);
   storage.remove(REFRESH_TOKEN_KEY);
   storage.remove(USER_ID_KEY);
+  storage.remove(CACHED_USER_KEY);
   // #279 / #501 — every token-invalidation path (logout, refresh
   // 4xx, refresh fetch failure / timeout) must also wipe the
   // cached privacy preferences. Otherwise a different rider

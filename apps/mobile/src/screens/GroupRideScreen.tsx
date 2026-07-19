@@ -54,7 +54,7 @@ import {
 } from "@/theme/brand";
 import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
-import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import type {
   GroupEndedEvent,
@@ -522,7 +522,7 @@ export default function GroupRideScreen() {
       </View>
 
       <View style={styles.mapWrap}>
-        <Map style={styles.map} mapStyle={DEV_MAP_STYLE_URL} logo={false}>
+        <Map style={styles.map} mapStyle={APP_MAP_STYLE_URL} logo={false}>
           <Camera
             initialViewState={{
               center: initialCenter,

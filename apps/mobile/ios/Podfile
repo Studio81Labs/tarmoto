@@ -4,18 +4,16 @@ require Pod::Executable.execute_command('node', ['-p',
     "react-native/scripts/react_native_pods.rb",
     {paths: [process.argv[1]]},
   )', __dir__]).strip
+require_relative './cocoapods_pathname_workaround'
 
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
-end
+$RNFirebaseAsStaticFramework = true
 
 target 'TarmotoApp' do
   config = use_native_modules!
+  use_frameworks! :linkage => :static
 
   use_react_native!(
     :path => config[:reactNativePath],
@@ -31,5 +29,23 @@ target 'TarmotoApp' do
       # :ccache_enabled => true
     )
     $MLRN.post_install(installer)
+
+    app_target = installer.aggregate_targets
+      .flat_map(&:user_targets)
+      .find { |user_target| user_target.name == 'TarmotoApp' }
+    firebase_phase = app_target.shell_script_build_phases
+      .find { |phase| phase.name == '[Tarmoto] Copy Firebase configuration' }
+    firebase_phase ||= app_target.new_shell_script_build_phase('[Tarmoto] Copy Firebase configuration')
+    firebase_phase.shell_script = <<~SCRIPT
+      set -e
+      FIREBASE_CONFIG="${SRCROOT}/TarmotoApp/GoogleService-Info.plist"
+      if [ -f "$FIREBASE_CONFIG" ]; then
+        DESTINATION="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+        mkdir -p "$DESTINATION"
+        cp "$FIREBASE_CONFIG" "$DESTINATION/GoogleService-Info.plist"
+      else
+        echo "warning: GoogleService-Info.plist is absent; Firebase messaging is disabled for this build."
+      fi
+    SCRIPT
   end
 end
