@@ -59,4 +59,22 @@ describe("resolveRoadRefreshConfig", () => {
       } as NodeJS.ProcessEnv),
     ).toThrow(/TARMOTO_OSM_ROAD_TILE_SPAN_DEG/);
   });
+
+  it("rejects a routing dir that overlaps the POI extract dir (the <code>.osm would collide)", () => {
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/poi-extracts",
+        TARMOTO_OSM_POI_IMPORT_DIR: "/data/poi-extracts",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_POI_IMPORT_DIR/);
+  });
+
+  it("rejects a routing dir that overlaps the road tile dir", () => {
+    expect(() =>
+      resolveRoadRefreshConfig({
+        TARMOTO_OSM_ROAD_ROUTING_DIR: "/data/road-extracts",
+        TARMOTO_OSM_ROAD_IMPORT_DIR: "/data/road-extracts",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/must differ from TARMOTO_OSM_ROAD_IMPORT_DIR/);
+  });
 });

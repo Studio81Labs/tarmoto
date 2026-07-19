@@ -62,10 +62,33 @@ export function resolveRoadRefreshConfig(
 ): RoadRefreshConfig {
   const dir = env.TARMOTO_OSM_ROAD_IMPORT_DIR?.trim();
   const routing = env.TARMOTO_OSM_ROAD_ROUTING_DIR?.trim();
+  const routingDir = routing ? routing : null;
+  if (routingDir !== null) {
+    // The routing extract is written as `<code>.osm` — the SAME filename the OSM
+    // POI refresh/import uses per country (and it must not mix with the road
+    // tiles). A shared dir would let a road refresh overwrite the POI `<code>.osm`
+    // and corrupt the next POI import. Fail fast on the documented "MUST differ"
+    // rather than trusting the operator to notice.
+    const clash = (
+      [
+        ["TARMOTO_OSM_ROAD_IMPORT_DIR", dir],
+        ["TARMOTO_OSM_POI_IMPORT_DIR", env.TARMOTO_OSM_POI_IMPORT_DIR?.trim()],
+      ] as const
+    ).find(
+      ([, value]) =>
+        value !== undefined && value !== "" && value === routingDir,
+    );
+    if (clash) {
+      throw new Error(
+        `TARMOTO_OSM_ROAD_ROUTING_DIR (${routingDir}) must differ from ${clash[0]} ` +
+          `— the routing extract writes <code>.osm and would collide with that directory.`,
+      );
+    }
+  }
   return {
     enabled: boolEnv(env.TARMOTO_OSM_ROAD_REFRESH_ENABLED),
     targetDir: dir ? dir : null,
-    routingDir: routing ? routing : null,
+    routingDir,
     regions: parseRegions(
       env.TARMOTO_OSM_ROAD_IMPORT_REGIONS,
       "TARMOTO_OSM_ROAD_IMPORT_REGIONS",
