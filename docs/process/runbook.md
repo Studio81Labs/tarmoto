@@ -636,11 +636,11 @@ rule as Valhalla — and is a later step.
   GraphHopper by network alias (see the ingest networking note above).
 
 **1. The routing extract is produced by `road:refresh` — no manual step.** The
-conflation INPUT is a whole-network **drivable** `<code>.osm`, and the ingest
-`road:refresh` now writes it (from the same filtered PBF it already builds for
-the tiles, so it's cheap and drivable-sized, not the ~12 GB full country) when
-`TARMOTO_OSM_ROAD_ROUTING_DIR` is set. On **ingest**, alongside the road-refresh
-env, add:
+conflation INPUT is a whole-network `<code>.osm` of the **drivable highways plus
+`route=ferry` ways** (GraphHopper routes ferries), and the ingest `road:refresh`
+now writes it (its own `osmium tags-filter` of the region PBF — routable-sized,
+not the ~12 GB full country) when `TARMOTO_OSM_ROAD_ROUTING_DIR` is set. On
+**ingest**, alongside the road-refresh env, add:
 
 ```bash
 TARMOTO_OSM_ROAD_ROUTING_DIR=/data/routing   # its own shared dir (≠ the tile dir)

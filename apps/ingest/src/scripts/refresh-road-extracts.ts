@@ -44,6 +44,7 @@ import {
   paddedTileBbox,
   roadTileFileName,
   ROAD_TAGS_FILTER_EXPRESSIONS,
+  ROUTING_TAGS_FILTER_EXPRESSIONS,
   resolveRoadRefreshConfig,
   subdivideRegion,
   TILE_EXTRACT_PAD_DEG,
@@ -157,9 +158,11 @@ export async function refreshRegion(
     ]);
     // Phase 1 — extract every output to its `.part` sibling; publish NONE yet.
     const parts: { tmpOut: string; finalOut: string }[] = [];
-    // The whole-network drivable ROUTING extract (`<code>.osm`) that GraphHopper
-    // imports and the quality conflation tags — from the SAME `filtered` PBF,
-    // before tiling, so it's drivable-sized and nearly free. Published atomically
+    // The whole-network ROUTING extract (`<code>.osm`) that GraphHopper imports
+    // and the quality conflation tags. It has its OWN filter of the downloaded
+    // PBF — drivable highways PLUS `route=ferry` ways GraphHopper routes over —
+    // NOT the tiles' `filtered` (highways-only), so ferry-connected corridors
+    // aren't dropped. Still far smaller than the raw PBF. Published atomically
     // with the tiles below (all of the region's outputs, or none). Skipped when
     // no routing dir is configured.
     if (routingDir !== null) {
@@ -167,12 +170,13 @@ export async function refreshRegion(
       const tmpOut = refreshTmpPath(finalOut);
       tmpPaths.push(tmpOut);
       await deps.osmium([
-        "cat",
-        filtered,
-        "-f",
-        "osm",
+        "tags-filter",
+        pbf,
+        ...ROUTING_TAGS_FILTER_EXPRESSIONS,
         "-o",
         tmpOut,
+        "-f",
+        "osm",
         "--overwrite",
       ]);
       parts.push({ tmpOut, finalOut });

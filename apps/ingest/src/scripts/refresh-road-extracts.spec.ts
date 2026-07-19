@@ -158,10 +158,11 @@ describe("refresh-road-extracts", () => {
       );
     });
 
-    it("also writes a whole-network routing extract (<code>.osm) when a routing dir is set", async () => {
+    it("writes a routing extract (drivable highways + ferries) from the PBF when a routing dir is set", async () => {
       const routingDir = join(targetDir, "..", "routing");
       await mkdir(routingDir, { recursive: true });
       const tiles = subdivideRegion(CZ, SINGLE_TILE_SPAN); // 1 tile keeps it simple
+      const download = fakeDownload();
       const osmium = fakeOsmium();
 
       await refreshRegion(
@@ -171,28 +172,29 @@ describe("refresh-road-extracts", () => {
         workDir,
         tiles,
         SINGLE_TILE_SPAN,
-        { download: fakeDownload(), osmium },
+        { download, osmium },
       );
 
       const calls = osmium.mock.calls.map((c) => c[0]);
-      const filterCall = calls.find((c) => c[0] === "tags-filter");
-      const filteredPath = filterCall?.[filterCall.indexOf("-o") + 1];
-      const catCalls = calls.filter((c) => c[0] === "cat");
+      const pbfPath = download.mock.calls[0]?.[1];
 
-      // Exactly one `osmium cat`, reading the FILTERED pbf (same source as the
-      // tile clips, not the raw download) and writing OSM XML to <dir>/cz.osm.
-      expect(catCalls).toHaveLength(1);
-      const catCall = catCalls[0] as string[];
-      expect(catCall).toContain(filteredPath);
-      expect(catCall[catCall.indexOf("-f") + 1]).toBe("osm");
-      // osmium writes to a `.part` sibling; the atomic rename publishes cz.osm.
-      expect(catCall[catCall.indexOf("-o") + 1]).toContain(
-        join(routingDir, "cz.osm"),
-      );
+      // TWO tags-filter passes: the tiles' (highways only → filtered pbf), and the
+      // routing extract's OWN filter of the raw PBF that ALSO keeps ferries
+      // (GraphHopper routes route=ferry), written straight to <dir>/cz.osm.
+      const tagFilterCalls = calls.filter((c) => c[0] === "tags-filter");
+      expect(tagFilterCalls).toHaveLength(2);
+      const routingCall = tagFilterCalls.find((c) =>
+        c.some((a) => a.includes(join(routingDir, "cz.osm"))),
+      ) as string[] | undefined;
+      expect(routingCall).toBeDefined();
+      const rc = routingCall as string[];
+      expect(rc).toContain(pbfPath); // filters the raw PBF, not the highways-only `filtered`
+      expect(rc).toContain("w/route=ferry"); // ferries preserved for routing
+      expect(rc[rc.indexOf("-f") + 1]).toBe("osm");
 
       // Published (via the atomic `.part` → rename) alongside the tiles; work dir clean.
       expect(await readFile(join(routingDir, "cz.osm"), "utf8")).toBe(
-        "built:cat",
+        "built:tags-filter",
       );
       expect(await readdir(targetDir)).toEqual([
         roadTileFileName(tiles[0] as RoadTile, SINGLE_TILE_SPAN),

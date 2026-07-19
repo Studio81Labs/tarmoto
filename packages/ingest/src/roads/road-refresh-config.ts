@@ -13,6 +13,20 @@ export const ROAD_TAGS_FILTER_EXPRESSIONS: readonly string[] = [
   `w/highway=${DRIVABLE_HIGHWAYS.join(",")}`,
 ];
 
+/**
+ * `osmium tags-filter` expression for the ROUTING extract (the GraphHopper import
+ * + conflation input) — the drivable highways PLUS `route=ferry` ways, which
+ * GraphHopper routes over (a car/motorcycle route can legitimately need a vehicle
+ * ferry). This is deliberately a superset of {@link ROAD_TAGS_FILTER_EXPRESSIONS}:
+ * the road TILES (→ `road_segments`) must NOT include ferries — there's no road
+ * surface quality on a ferry — so the routing extract uses its own filter rather
+ * than reusing the tiles' drivable-highway-only one.
+ */
+export const ROUTING_TAGS_FILTER_EXPRESSIONS: readonly string[] = [
+  ...ROAD_TAGS_FILTER_EXPRESSIONS,
+  "w/route=ferry",
+];
+
 function boolEnv(value: string | undefined): boolean {
   return (value ?? "false").trim().toLowerCase() === "true";
 }
