@@ -96,6 +96,15 @@ export class RouteEnrichmentService {
            FROM road_segments rs
            WHERE rs.quality_score IS NOT NULL
              AND rs.deactivated_at IS NULL
+             -- Indexable degree prefilter (uses idx_road_segments_geom) narrows
+             -- to candidates first; a bare geom::geography distance can't use the
+             -- geometry GiST index and full-scans road_segments (3.2M+ rows once
+             -- the OSM road import runs, so an empty-table query that was instant
+             -- becomes a 100s+ timeout). Dividing by 111320 and doubling gives a
+             -- generous degrees-of-latitude box that still covers $2 m across Tarmoto's
+             -- latitudes; the geography ST_DWithin then refines to the exact
+             -- buffer. Mirrors roads.service.ts.
+             AND ST_DWithin(rs.geom, ST_GeomFromText($1, 4326), ($2 / 111320.0 * 2))
              AND ST_DWithin(
                rs.geom::geography,
                ST_GeomFromText($1, 4326)::geography,
@@ -107,6 +116,8 @@ export class RouteEnrichmentService {
           `SELECT rs.surface_type, SUM(rs.length_m)::float AS length_m
            FROM road_segments rs
            WHERE rs.deactivated_at IS NULL
+             -- Indexable degree prefilter — see the quality query above.
+             AND ST_DWithin(rs.geom, ST_GeomFromText($1, 4326), ($2 / 111320.0 * 2))
              AND ST_DWithin(
              rs.geom::geography,
              ST_GeomFromText($1, 4326)::geography,

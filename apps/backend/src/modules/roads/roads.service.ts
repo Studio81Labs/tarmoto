@@ -315,6 +315,16 @@ export class RoadsService {
         ) AS distance_m
       FROM road_segments rs
       WHERE rs.deactivated_at IS NULL
+        -- Indexable degree prefilter (uses idx_road_segments_geom) before the
+        -- exact geography check — same reason as the route-quality sampling
+        -- query above: a bare geom::geography distance full-scans road_segments
+        -- (3.2M+ rows once the OSM import runs). $3 m / 111320 * 2 = a generous
+        -- degree box that still covers the radius; geography ST_DWithin refines.
+        AND ST_DWithin(
+          rs.geom,
+          ST_SetSRID(ST_MakePoint($1, $2), 4326),
+          ($3 / 111320.0 * 2)
+        )
         AND ST_DWithin(
         rs.geom::geography,
         ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
