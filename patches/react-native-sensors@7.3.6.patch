@@ -1,0 +1,66 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index f1526eccb43c87ec73a200c23acd8ab3f3549380..fe339c02989db4158f54b1c18ddaedb49fc1850f 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -6,17 +5,0 @@ def safeExtGet(prop, fallback) {
+-repositories {
+-  mavenCentral()
+-  google()
+-  jcenter()
+-}
+-
+-buildscript {
+-    repositories {
+-        google()
+-        jcenter()
+-    }
+-
+-    dependencies {
+-        classpath("com.android.tools.build:gradle:3.5.1")
+-    }
+-}
+-
+@@ -26 +9,2 @@ android {
+-    compileSdkVersion safeExtGet('compileSdkVersion', 23)
++    namespace = "com.sensors"
++    compileSdk = safeExtGet('compileSdkVersion', 36)
+@@ -29,10 +13,2 @@ android {
+-        minSdkVersion 17
+-        targetSdkVersion 29
+-        versionCode 1
+-        versionName "1.0"
+-        ndk {
+-            abiFilters "armeabi-v7a", "x86"
+-        }
+-    }
+-    lintOptions {
+-       warning 'InvalidPackage'
++        minSdk = safeExtGet('minSdkVersion', 24)
++        targetSdk = safeExtGet('targetSdkVersion', 36)
+@@ -42,2 +17,0 @@ android {
+-
+-
+@@ -45,3 +19 @@ dependencies {
+-    implementation 'com.facebook.react:react-native:+'
+-    implementation 'androidx.appcompat:appcompat:1.0.2'
+-    implementation 'androidx.annotation:annotation:1.0.2'
++    implementation 'com.facebook.react:react-android'
+diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
+index 6d0f8b06..5f5d7a23 100644
+--- a/android/src/main/AndroidManifest.xml
++++ b/android/src/main/AndroidManifest.xml
+@@ -2,2 +2 @@
+-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+-          package="com.sensors">
++<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+diff --git a/android/src/main/java/com/sensors/RNSensorsPackage.java b/android/src/main/java/com/sensors/RNSensorsPackage.java
+index e1d068d7..664cc73f 100644
+--- a/android/src/main/java/com/sensors/RNSensorsPackage.java
++++ b/android/src/main/java/com/sensors/RNSensorsPackage.java
+@@ -13 +12,0 @@ import com.facebook.react.uimanager.ViewManager;
+-import com.facebook.react.bridge.JavaScriptModule;
+@@ -27,4 +25,0 @@ public class RNSensorsPackage implements ReactPackage {
+-    public List<Class<? extends JavaScriptModule>> createJSModules() {
+-      return Collections.emptyList();
+-    }
+-

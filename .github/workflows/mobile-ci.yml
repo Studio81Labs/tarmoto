@@ -122,7 +122,8 @@ jobs:
   ios-preview:
     name: iOS Simulator Preview
     needs: build
-    runs-on: macos-15
+    # React Native Firebase 25's Apple SDK requires Xcode 26.2 or newer.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -137,14 +138,14 @@ jobs:
           bundler-cache: true
           working-directory: apps/mobile
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+        run: sudo xcode-select -s /Applications/Xcode_26.4.app
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build shared package
         run: pnpm shared:build
       - name: Install CocoaPods
         working-directory: apps/mobile
-        run: bundle exec pod install --project-directory=ios
+        run: pnpm exec react-native build-ios --only-pods
       - name: Build simulator app
         working-directory: apps/mobile/ios
         run: |

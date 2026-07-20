@@ -89,10 +89,10 @@ function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
   };
 }
 
-function resetStores(): void {
+async function resetStores(): Promise<void> {
   // Drop ride + hazard state between cases so a leak from a previous
   // case can't make the next one pass spuriously.
-  act(() => {
+  await act(() => {
     useRideStore.setState({
       isRiding: false,
       rideType: "free",
@@ -113,10 +113,10 @@ function resetStores(): void {
 describe("useCarPlayRideMirror — unified bridge", () => {
   let bridge: FakeBridge;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     bridge = createFakeBridge();
     __setCarPlayBridgeForTest(bridge);
-    resetStores();
+    await resetStores();
   });
 
   afterEach(() => {
@@ -124,11 +124,11 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     __resetCarPlayStateForTest();
   });
 
-  it("mounts the ride status board when isRiding flips on, unmounts when off", () => {
-    const { unmount } = renderHook(() => useCarPlayRideMirror());
+  it("mounts the ride status board when isRiding flips on, unmounts when off", async () => {
+    const { unmount } = await renderHook(() => useCarPlayRideMirror());
     expect(bridge.mountStatusBoard).not.toHaveBeenCalled();
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({
         isRiding: true,
         rideType: "free",
@@ -139,18 +139,18 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     });
     expect(bridge.mountStatusBoard).toHaveBeenCalledTimes(1);
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({ isRiding: false });
     });
     expect(bridge.clearStatusBoard).toHaveBeenCalledTimes(1);
 
-    unmount();
+    await unmount();
   });
 
-  it("presents a hazard alert mid-ride only when one is within the alert radius", () => {
-    renderHook(() => useCarPlayRideMirror());
+  it("presents a hazard alert mid-ride only when one is within the alert radius", async () => {
+    await renderHook(() => useCarPlayRideMirror());
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({
         isRiding: true,
         rideType: "free",
@@ -166,7 +166,7 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     });
 
     // Hazard well outside the 750 m alert radius — no alert.
-    act(() => {
+    await act(() => {
       useHazardStore.setState({
         nearbyHazards: [makeHazard({ id: "far", lat: 49.6, lng: 18.2 })],
         routeHazards: [],
@@ -175,7 +175,7 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.presentHazardAlert).not.toHaveBeenCalled();
 
     // Hazard inside the radius — alert fires.
-    act(() => {
+    await act(() => {
       useHazardStore.setState({
         nearbyHazards: [makeHazard({ id: "near", lat: 49.503, lng: 18.103 })],
         routeHazards: [],
@@ -185,7 +185,7 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.presentHazardAlert.mock.calls[0]?.[0].id).toBe("near");
 
     // Same hazard re-emitted — controller dedupes by id, no flicker.
-    act(() => {
+    await act(() => {
       useHazardStore.setState({
         nearbyHazards: [makeHazard({ id: "near", lat: 49.503, lng: 18.103 })],
         routeHazards: [],
@@ -194,10 +194,10 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.presentHazardAlert).toHaveBeenCalledTimes(1);
   });
 
-  it("dismisses the hazard alert when no hazards remain in range", () => {
-    renderHook(() => useCarPlayRideMirror());
+  it("dismisses the hazard alert when no hazards remain in range", async () => {
+    await renderHook(() => useCarPlayRideMirror());
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({
         isRiding: true,
         rideType: "free",
@@ -219,16 +219,16 @@ describe("useCarPlayRideMirror — unified bridge", () => {
 
     // Hazard cleared from the nearby list — alert template should be
     // dismissed so the bike display goes back to the ride board.
-    act(() => {
+    await act(() => {
       useHazardStore.setState({ nearbyHazards: [], routeHazards: [] });
     });
     expect(bridge.dismissHazardAlert).toHaveBeenCalledTimes(1);
   });
 
-  it("dismisses the hazard alert when isRiding flips off", () => {
-    renderHook(() => useCarPlayRideMirror());
+  it("dismisses the hazard alert when isRiding flips off", async () => {
+    await renderHook(() => useCarPlayRideMirror());
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({
         isRiding: true,
         rideType: "free",
@@ -248,15 +248,15 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     });
     expect(bridge.presentHazardAlert).toHaveBeenCalledTimes(1);
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({ isRiding: false });
     });
     expect(bridge.dismissHazardAlert).toHaveBeenCalledTimes(1);
   });
 
-  it("mounts Start Commute pre-ride and unmounts (does not pivot) mid-ride", () => {
+  it("mounts Start Commute pre-ride and unmounts (does not pivot) mid-ride", async () => {
     const onQuickAction = jest.fn();
-    renderHook(() =>
+    await renderHook(() =>
       useCarPlayRideMirror({ onQuickAction, hasCommuteRoute: true }),
     );
 
@@ -264,7 +264,7 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     const preRideItems = bridge.mountQuickActions.mock.calls[0]?.[0];
     expect(preRideItems?.map((i) => i.id)).toEqual(["start-commute"]);
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({ isRiding: true, rideType: "commute" });
     });
     // Mid-ride the quick-actions list goes empty so the live ride
@@ -275,14 +275,14 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.unmountQuickActions).toHaveBeenCalledTimes(1);
   });
 
-  it("does not mount quick actions when the host hasn't supplied a callback", () => {
-    renderHook(() => useCarPlayRideMirror({ hasCommuteRoute: true }));
+  it("does not mount quick actions when the host hasn't supplied a callback", async () => {
+    await renderHook(() => useCarPlayRideMirror({ hasCommuteRoute: true }));
     expect(bridge.mountQuickActions).not.toHaveBeenCalled();
   });
 
-  it("forwards quick-action selections back to the host callback", () => {
+  it("forwards quick-action selections back to the host callback", async () => {
     const onQuickAction = jest.fn();
-    renderHook(() =>
+    await renderHook(() =>
       useCarPlayRideMirror({ onQuickAction, hasCommuteRoute: true }),
     );
 
@@ -292,12 +292,12 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(onQuickAction).toHaveBeenCalledWith("start-commute");
   });
 
-  it("cleans up all three surfaces on hook unmount (hot-reload safe)", () => {
-    const { unmount } = renderHook(() =>
+  it("cleans up all three surfaces on hook unmount (hot-reload safe)", async () => {
+    const { unmount } = await renderHook(() =>
       useCarPlayRideMirror({ onQuickAction: jest.fn(), hasCommuteRoute: true }),
     );
 
-    act(() => {
+    await act(() => {
       useRideStore.setState({
         isRiding: true,
         rideType: "free",
@@ -316,7 +316,7 @@ describe("useCarPlayRideMirror — unified bridge", () => {
       });
     });
 
-    unmount();
+    await unmount();
     expect(bridge.clearStatusBoard).toHaveBeenCalledTimes(1);
     expect(bridge.dismissHazardAlert).toHaveBeenCalledTimes(1);
     expect(bridge.unmountQuickActions).toHaveBeenCalledTimes(1);

@@ -31,4 +31,4 @@ fi
 
 bundle check >/dev/null 2>&1 || bundle install
 bash "../../scripts/mobile/prepare-firebase-config.sh" ios optional
-bundle exec pod install --project-directory=ios
+pnpm exec react-native build-ios --only-pods

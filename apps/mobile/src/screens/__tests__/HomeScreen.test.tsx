@@ -46,14 +46,14 @@ describe("HomeScreen", () => {
     mockNavigate.mockReset();
   });
 
-  it("hides the Start commute CTA in the learning state", () => {
+  it("hides the Start commute CTA in the learning state", async () => {
     mockUseCommuteResult = {
       phase: "learning",
       route: null,
       newHazardCount: 0,
     };
 
-    render(<HomeScreen />);
+    await render(<HomeScreen />);
 
     expect(screen.queryByLabelText(/^Start commute /)).toBeNull();
     // The hazard-check card stays available so the rider can still
@@ -61,19 +61,19 @@ describe("HomeScreen", () => {
     expect(screen.getByLabelText(/Open commute hazard check/)).toBeTruthy();
   });
 
-  it("shows the Start commute CTA when a primary commute is saved and launches the ride on tap", () => {
+  it("shows the Start commute CTA when a primary commute is saved and launches the ride on tap", async () => {
     mockUseCommuteResult = {
       phase: "ready",
       route: baseRoute,
       newHazardCount: 0,
     };
 
-    render(<HomeScreen />);
+    await render(<HomeScreen />);
 
     const cta = screen.getByLabelText("Start commute to Home → Work");
     expect(cta).toBeTruthy();
 
-    fireEvent.press(cta);
+    await fireEvent.press(cta);
 
     // The CTA jumps cross-tab into RideTab → RideActive with
     // ride_type='commute'. Asserting the full nested-nav payload guards
@@ -84,14 +84,14 @@ describe("HomeScreen", () => {
     });
   });
 
-  it("surfaces the new-hazard count badge on the hazard-check card", () => {
+  it("surfaces the new-hazard count badge on the hazard-check card", async () => {
     mockUseCommuteResult = {
       phase: "ready",
       route: baseRoute,
       newHazardCount: 3,
     };
 
-    render(<HomeScreen />);
+    await render(<HomeScreen />);
 
     // The CTA label includes the count + plural so we assert against the
     // full accessible label rather than scraping the badge's two split

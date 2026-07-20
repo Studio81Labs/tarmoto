@@ -674,13 +674,13 @@ export default function ReviewFormModal({
               <PhotoButton
                 icon="camera"
                 label="Camera"
-                onPress={() => handlePickPhoto("camera")}
+                onPress={() => void handlePickPhoto("camera")}
                 disabled={photosFull || submitting}
               />
               <PhotoButton
                 icon="image-multiple"
                 label="Library"
-                onPress={() => handlePickPhoto("library")}
+                onPress={() => void handlePickPhoto("library")}
                 disabled={photosFull || submitting}
               />
             </View>
@@ -721,7 +721,7 @@ export default function ReviewFormModal({
               styles.submitButton,
               !canSubmit && styles.submitButtonDisabled,
             ]}
-            onPress={submit}
+            onPress={() => void submit()}
             disabled={!canSubmit}
           >
             {submitting ? (

@@ -72,8 +72,8 @@ describe("useRouteWeatherAlerts", () => {
     speakMock.mockReset();
   });
 
-  it("returns no alerts and skips polling when disabled", () => {
-    const { result } = renderHook(() =>
+  it("returns no alerts and skips polling when disabled", async () => {
+    const { result } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -86,8 +86,8 @@ describe("useRouteWeatherAlerts", () => {
     expect(getRouteWeatherMock).not.toHaveBeenCalled();
   });
 
-  it("returns no alerts and skips polling when polyline is unusable", () => {
-    renderHook(() =>
+  it("returns no alerts and skips polling when polyline is unusable", async () => {
+    await renderHook(() =>
       useRouteWeatherAlerts({
         polyline: [{ lat: 1, lng: 1 }],
         progressM: null,
@@ -103,7 +103,7 @@ describe("useRouteWeatherAlerts", () => {
     const alert = buildAlert({ id: "storm-1", distance_km_from_start: 25 });
     getRouteWeatherMock.mockResolvedValue(buildResponse([alert]));
 
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -114,7 +114,7 @@ describe("useRouteWeatherAlerts", () => {
 
     await waitFor(() => expect(result.current.alerts).toHaveLength(1));
     expect(result.current.alerts[0]?.id).toBe("storm-1");
-    unmount();
+    await unmount();
   });
 
   it("hides alerts the rider has already passed", async () => {
@@ -131,7 +131,7 @@ describe("useRouteWeatherAlerts", () => {
     getRouteWeatherMock.mockResolvedValue(buildResponse([passed, ahead]));
 
     // Rider is 10 km in — `passed` (5 km) is behind, `ahead` (30 km) is not.
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: 10_000,
@@ -142,14 +142,14 @@ describe("useRouteWeatherAlerts", () => {
 
     await waitFor(() => expect(result.current.alerts).toHaveLength(1));
     expect(result.current.alerts[0]?.id).toBe("storm-3");
-    unmount();
+    await unmount();
   });
 
   it("speaks critical alerts on mount", async () => {
     const critical = buildAlert({ id: "storm-9", distance_km_from_start: 12 });
     getRouteWeatherMock.mockResolvedValue(buildResponse([critical]));
 
-    const { unmount } = renderHook(() =>
+    const { unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -166,7 +166,7 @@ describe("useRouteWeatherAlerts", () => {
       // re-fired identical alert from stacking inside that lane.
       expect.objectContaining({ priority: "high" }),
     );
-    unmount();
+    await unmount();
   });
 
   it("does not speak critical alerts the rider has already passed", async () => {
@@ -189,7 +189,7 @@ describe("useRouteWeatherAlerts", () => {
     // Rider is at 10 km in. The banner already filters `passed` out at
     // render time; this test guards the parallel filter inside the
     // polling effect so TTS doesn't contradict the visual UI.
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: 10_000,
@@ -204,7 +204,7 @@ describe("useRouteWeatherAlerts", () => {
     const spokenPhrases = speakMock.mock.calls.map((c) => c[0]);
     expect(spokenPhrases.some((p) => p.includes("AHEAD"))).toBe(true);
     expect(spokenPhrases.some((p) => p.includes("PASSED"))).toBe(false);
-    unmount();
+    await unmount();
   });
 
   it("speaks critical alerts on the high-priority lane regardless of nav-voice mute", async () => {
@@ -218,7 +218,7 @@ describe("useRouteWeatherAlerts", () => {
     const critical = buildAlert({ id: "ice-0", kind: "ice" });
     getRouteWeatherMock.mockResolvedValue(buildResponse([critical]));
 
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -233,7 +233,7 @@ describe("useRouteWeatherAlerts", () => {
       expect.any(String),
       expect.objectContaining({ priority: "high" }),
     );
-    unmount();
+    await unmount();
   });
 
   it("skips TTS entirely when the weather-alerts preference is off", async () => {
@@ -243,7 +243,7 @@ describe("useRouteWeatherAlerts", () => {
     const critical = buildAlert({ id: "ice-1", kind: "ice" });
     getRouteWeatherMock.mockResolvedValue(buildResponse([critical]));
 
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -255,7 +255,7 @@ describe("useRouteWeatherAlerts", () => {
     expect(result.current.alerts).toEqual([]);
     expect(getRouteWeatherMock).not.toHaveBeenCalled();
     expect(speakMock).not.toHaveBeenCalled();
-    unmount();
+    await unmount();
   });
 
   it("never speaks non-critical alerts", async () => {
@@ -271,7 +271,7 @@ describe("useRouteWeatherAlerts", () => {
     });
     getRouteWeatherMock.mockResolvedValue(buildResponse([wind, wet]));
 
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -282,13 +282,13 @@ describe("useRouteWeatherAlerts", () => {
 
     await waitFor(() => expect(result.current.alerts).toHaveLength(2));
     expect(speakMock).not.toHaveBeenCalled();
-    unmount();
+    await unmount();
   });
 
   it("swallows transport failures with no banner update — no error to the rider", async () => {
     getRouteWeatherMock.mockRejectedValue(new Error("offline"));
 
-    const { result, unmount } = renderHook(() =>
+    const { result, unmount } = await renderHook(() =>
       useRouteWeatherAlerts({
         polyline,
         progressM: null,
@@ -301,6 +301,6 @@ describe("useRouteWeatherAlerts", () => {
     await waitFor(() => expect(getRouteWeatherMock).toHaveBeenCalledTimes(1));
     expect(result.current.alerts).toEqual([]);
     expect(speakMock).not.toHaveBeenCalled();
-    unmount();
+    await unmount();
   });
 });

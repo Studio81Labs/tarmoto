@@ -1,3 +1,10 @@
+diff --git a/android/build.gradle b/android/build.gradle
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -10 +10,0 @@ buildscript {
+-    jcenter()
+@@ -81 +80,0 @@ repositories {
+-  jcenter()
 diff --git a/android/src/main/java/org/birkir/carplay/CarPlayModule.kt b/android/src/main/java/org/birkir/carplay/CarPlayModule.kt
 index ef6aa04..c569995 100644
 --- a/android/src/main/java/org/birkir/carplay/CarPlayModule.kt

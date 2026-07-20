@@ -79,37 +79,37 @@ describe("CrashDetectionRunner", () => {
     });
   });
 
-  it("does nothing when no ride is active", () => {
+  it("does nothing when no ride is active", async () => {
     useAuthStore.getState().setUser(userWithCrashDetection(true));
-    render(<CrashDetectionRunner />);
+    await render(<CrashDetectionRunner />);
     expect(mockedSensors.subscribeReadings).not.toHaveBeenCalled();
   });
 
-  it("does nothing when crash detection is disabled", () => {
+  it("does nothing when crash detection is disabled", async () => {
     useAuthStore.getState().setUser(userWithCrashDetection(false));
-    act(() => useRideStore.getState().startRide("free"));
-    render(<CrashDetectionRunner />);
+    await act(() => useRideStore.getState().startRide("free"));
+    await render(<CrashDetectionRunner />);
     expect(mockedSensors.subscribeReadings).not.toHaveBeenCalled();
   });
 
-  it("subscribes when a ride starts with the preference enabled", () => {
+  it("subscribes when a ride starts with the preference enabled", async () => {
     useAuthStore.getState().setUser(userWithCrashDetection(true));
-    act(() => useRideStore.getState().startRide("free"));
-    render(<CrashDetectionRunner />);
+    await act(() => useRideStore.getState().startRide("free"));
+    await render(<CrashDetectionRunner />);
     expect(mockedSensors.subscribeReadings).toHaveBeenCalledTimes(1);
   });
 
-  it("unsubscribes on ride stop", () => {
+  it("unsubscribes on ride stop", async () => {
     useAuthStore.getState().setUser(userWithCrashDetection(true));
-    act(() => useRideStore.getState().startRide("free"));
-    render(<CrashDetectionRunner />);
+    await act(() => useRideStore.getState().startRide("free"));
+    await render(<CrashDetectionRunner />);
 
-    act(() => useRideStore.getState().stopRide());
+    await act(() => useRideStore.getState().stopRide());
 
     expect(unsubscribe).toHaveBeenCalled();
   });
 
-  it("re-subscribes when the alert phase returns to idle mid-ride", () => {
+  it("re-subscribes when the alert phase returns to idle mid-ride", async () => {
     // Bugbot 4ee09bc2: previously the effect only re-evaluated on
     // [isRiding, crashDetectionEnabled] changes. If the rider entered
     // a non-idle phase (countdown / dispatched / failed) and later
@@ -117,13 +117,13 @@ describe("CrashDetectionRunner", () => {
     // never re-attached the listener — crash detection silently went
     // dark for the rest of the ride.
     useAuthStore.getState().setUser(userWithCrashDetection(true));
-    act(() => useRideStore.getState().startRide("free"));
+    await act(() => useRideStore.getState().startRide("free"));
 
-    render(<CrashDetectionRunner />);
+    await render(<CrashDetectionRunner />);
     expect(mockedSensors.subscribeReadings).toHaveBeenCalledTimes(1);
 
     // Simulate a triggered countdown that the rider dismisses.
-    act(() => {
+    await act(() => {
       useCrashStore.getState().startCountdown({
         triggeredAt: 1,
         rideId: null,
@@ -135,16 +135,16 @@ describe("CrashDetectionRunner", () => {
     // Subscription torn down while the alert is up.
     expect(unsubscribe).toHaveBeenCalledTimes(1);
 
-    act(() => useCrashStore.getState().reset());
+    await act(() => useCrashStore.getState().reset());
 
     // Phase back to idle → runner must re-subscribe so the detector
     // is live for the rest of the ride.
     expect(mockedSensors.subscribeReadings).toHaveBeenCalledTimes(2);
   });
 
-  it("flips the crash store into countdown when the detector fires", () => {
+  it("flips the crash store into countdown when the detector fires", async () => {
     useAuthStore.getState().setUser(userWithCrashDetection(true));
-    act(() => {
+    await act(() => {
       useRideStore.setState({
         isRiding: true,
         startedAtMs: Date.now(),
@@ -169,7 +169,7 @@ describe("CrashDetectionRunner", () => {
       return unsubscribe;
     });
 
-    render(<CrashDetectionRunner />);
+    await render(<CrashDetectionRunner />);
     expect(registered).not.toBeNull();
 
     // Drive a synthetic crash sequence: a sustained 5g spike plus 6
@@ -182,7 +182,7 @@ describe("CrashDetectionRunner", () => {
     // though the immobility window has elapsed by the time we fire.
     const G = 9.81;
     let t = 0;
-    act(() => {
+    await act(() => {
       // Spike well above the 4g default for 200ms.
       registered!({
         t,

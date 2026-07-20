@@ -115,7 +115,7 @@ describe("AchievementsScreen", () => {
   });
 
   it("summarises each surface and routes the rider on tap", async () => {
-    render(<AchievementsScreen />);
+    await render(<AchievementsScreen />);
 
     await waitFor(() =>
       expect(
@@ -127,13 +127,13 @@ describe("AchievementsScreen", () => {
       screen.getByText(/12\.5% explored · 100 of 800 segments ridden/),
     ).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText("Open Badges"));
+    await fireEvent.press(screen.getByLabelText("Open Badges"));
     expect(mockNavigate).toHaveBeenCalledWith("Badges");
 
-    fireEvent.press(screen.getByLabelText("Open Challenges"));
+    await fireEvent.press(screen.getByLabelText("Open Challenges"));
     expect(mockNavigate).toHaveBeenCalledWith("Challenges");
 
-    fireEvent.press(screen.getByLabelText("Open Personal road map"));
+    await fireEvent.press(screen.getByLabelText("Open Personal road map"));
     expect(mockNavigate).toHaveBeenCalledWith("PersonalRoadMap");
   });
 
@@ -142,7 +142,7 @@ describe("AchievementsScreen", () => {
     mockedApi.listChallenges.mockRejectedValue(new Error("Network down"));
     mockedApi.getExplorationStats.mockRejectedValue(new Error("Network down"));
 
-    render(<AchievementsScreen />);
+    await render(<AchievementsScreen />);
 
     // Without the all-settled flow this would have rendered "0 of 0
     // earned" + "No active challenges right now" — the misleading state
@@ -156,7 +156,7 @@ describe("AchievementsScreen", () => {
   it("renders a soft-warning banner when only some sources fail", async () => {
     mockedApi.listChallenges.mockRejectedValue(new Error("Slow"));
 
-    render(<AchievementsScreen />);
+    await render(<AchievementsScreen />);
 
     // Working sources still render their summaries — the rider gets
     // partial value rather than a blank screen — but the banner makes

@@ -33,7 +33,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!--
-      WAKE_LOCK is declared by react-native-keep-awake's manifest and merged
+      WAKE_LOCK is declared by @thehale/react-native-keep-awake's manifest and merged
       in, but re-declaring keeps it visible to any audit that diffs the app
       manifest in isolation (e.g. the Play Console pre-launch report).
     -->

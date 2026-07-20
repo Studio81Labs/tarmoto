@@ -534,27 +534,29 @@ export default function GroupRideScreen() {
               type="circle"
               id="group-members-dot"
               source="group-members"
-              style={{
-                circleRadius: 8,
-                circleColor: ["get", "color"],
-                circleStrokeColor: "#ffffff",
-                circleStrokeWidth: 2,
+              paint={{
+                "circle-radius": 8,
+                "circle-color": ["get", "color"],
+                "circle-stroke-color": "#ffffff",
+                "circle-stroke-width": 2,
               }}
             />
             <Layer
               type="symbol"
               id="group-members-label"
               source="group-members"
-              style={{
-                textField: ["get", "display_name"],
-                textSize: 11,
-                textOffset: [0, 1.4],
+              layout={{
+                "text-field": ["get", "display_name"],
+                "text-size": 11,
+                "text-offset": [0, 1.4],
+              }}
+              paint={{
                 // Ink label with a cream halo so member names stay legible
                 // over the basemap. The dot colours below are the essential
                 // per-member encoding and are left as-is.
-                textColor: t.fg,
-                textHaloColor: t.bg,
-                textHaloWidth: 1.5,
+                "text-color": t.fg,
+                "text-halo-color": t.bg,
+                "text-halo-width": 1.5,
               }}
             />
           </GeoJSONSource>

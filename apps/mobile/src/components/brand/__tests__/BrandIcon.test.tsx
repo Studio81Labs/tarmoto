@@ -26,15 +26,15 @@ jest.mock("react-native-svg", () => {
 import BrandIcon from "../BrandIcon";
 
 describe("BrandIcon", () => {
-  it("renders a glyph for a known name", () => {
-    const { toJSON } = render(<BrandIcon name="nav" />);
+  it("renders a glyph for a known name", async () => {
+    const { toJSON } = await render(<BrandIcon name="nav" />);
     const tree = toJSON();
     expect(tree).toBeTruthy();
     // The root is the Svg stub and it has at least one child path.
     expect(JSON.stringify(tree)).toContain("Path");
   });
 
-  it("renders without throwing for every icon in the set", () => {
+  it("renders without throwing for every icon in the set", async () => {
     const names = [
       "home",
       "roads",
@@ -58,7 +58,7 @@ describe("BrandIcon", () => {
       "moon",
     ] as const;
     for (const name of names) {
-      expect(() => render(<BrandIcon name={name} />)).not.toThrow();
+      await expect(render(<BrandIcon name={name} />)).resolves.toBeDefined();
     }
   });
 });

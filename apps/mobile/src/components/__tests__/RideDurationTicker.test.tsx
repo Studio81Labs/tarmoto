@@ -34,36 +34,36 @@ describe("RideDurationTicker", () => {
     jest.useRealTimers();
   });
 
-  it("does nothing when no ride is active", () => {
-    render(<RideDurationTicker />);
-    act(() => {
+  it("does nothing when no ride is active", async () => {
+    await render(<RideDurationTicker />);
+    await act(() => {
       jest.advanceTimersByTime(5000);
     });
     expect(mockUpdateDuration).not.toHaveBeenCalled();
   });
 
-  it("ticks store.duration once per second derived from startedAtMs", () => {
+  it("ticks store.duration once per second derived from startedAtMs", async () => {
     const now = Date.now();
     mockState.isRiding = true;
     mockState.startedAtMs = now - 30_000; // 30 s ago
 
-    render(<RideDurationTicker />);
+    await render(<RideDurationTicker />);
     // Mount fires an immediate tick so the HUD doesn't show 0 for the
     // first second of a fresh ride.
     expect(mockUpdateDuration).toHaveBeenLastCalledWith(30);
 
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(1000);
     });
     expect(mockUpdateDuration).toHaveBeenLastCalledWith(31);
 
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(2000);
     });
     expect(mockUpdateDuration).toHaveBeenLastCalledWith(33);
   });
 
-  it("self-corrects after a missed tick (e.g. app suspended) by re-deriving from wall clock", () => {
+  it("self-corrects after a missed tick (e.g. app suspended) by re-deriving from wall clock", async () => {
     // The ticker writes the absolute elapsed seconds, not s+1, so even
     // if the OS suspends the JS interval for a few seconds the next
     // tick lands at the right total instead of accumulating drift.
@@ -72,7 +72,7 @@ describe("RideDurationTicker", () => {
     mockState.isRiding = true;
     mockState.startedAtMs = startedAtMs;
 
-    render(<RideDurationTicker />);
+    await render(<RideDurationTicker />);
 
     // Fast-forward the wall clock by 10 seconds without firing the
     // interval (simulating a suspension). When the interval finally
@@ -81,7 +81,7 @@ describe("RideDurationTicker", () => {
       .spyOn(Date, "now")
       .mockImplementation(() => startedAtMs + 10_000);
     try {
-      act(() => {
+      await act(() => {
         jest.advanceTimersByTime(1000);
       });
       expect(mockUpdateDuration).toHaveBeenLastCalledWith(10);

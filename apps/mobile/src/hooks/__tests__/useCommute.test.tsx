@@ -134,7 +134,7 @@ describe("useCommute", () => {
     altMock.mockResolvedValueOnce(baseAlternatives);
     statsMock.mockResolvedValueOnce(baseStats);
 
-    const { result } = renderHook(() => useCommute());
+    const { result } = await renderHook(() => useCommute());
 
     await waitFor(() => expect(result.current.phase).toBe("ready"));
     expect(result.current.alternatives).toEqual(baseAlternatives);
@@ -160,7 +160,9 @@ describe("useCommute", () => {
     routesMock.mockResolvedValue([baseRoute]);
     statusMock.mockResolvedValue(baseStatus);
 
-    const { result } = renderHook(() => useCommute({ withSecondary: false }));
+    const { result } = await renderHook(() =>
+      useCommute({ withSecondary: false }),
+    );
 
     await waitFor(() => expect(result.current.phase).toBe("ready"));
 

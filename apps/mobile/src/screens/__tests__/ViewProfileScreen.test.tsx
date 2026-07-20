@@ -122,7 +122,7 @@ describe("ViewProfileScreen", () => {
   });
 
   it("renders the rider profile after fetch", async () => {
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
 
     await waitFor(() =>
       expect(mockedApi.getPublicProfile).toHaveBeenCalledWith("user-2"),
@@ -142,7 +142,7 @@ describe("ViewProfileScreen", () => {
       buildProfile({ follows_you: true }),
     );
 
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
 
     expect(await screen.findByText("Other Rider")).toBeTruthy();
     expect(screen.getByText("Follows you")).toBeTruthy();
@@ -157,11 +157,11 @@ describe("ViewProfileScreen", () => {
         }),
     );
 
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Follow rider"));
+      await fireEvent.press(screen.getByLabelText("Follow rider"));
     });
 
     // Optimistic: button reads "Following", count is 4.
@@ -184,11 +184,11 @@ describe("ViewProfileScreen", () => {
     );
     mockedApi.unfollowUser.mockResolvedValue();
 
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Unfollow rider"));
+      await fireEvent.press(screen.getByLabelText("Unfollow rider"));
     });
 
     expect(mockedApi.unfollowUser).toHaveBeenCalledWith("user-2");
@@ -199,11 +199,11 @@ describe("ViewProfileScreen", () => {
   it("reverts the optimistic follow state when the request fails", async () => {
     mockedApi.followUser.mockRejectedValue(new Error("server died"));
 
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Follow rider"));
+      await fireEvent.press(screen.getByLabelText("Follow rider"));
     });
 
     // Reverted: still "Follow", count back to 3.
@@ -216,7 +216,7 @@ describe("ViewProfileScreen", () => {
     mockedApi.getPublicProfile.mockResolvedValue(
       buildProfile({ is_self: true, is_following: null }),
     );
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
     await screen.findByText("Other Rider");
     expect(screen.queryByLabelText("Follow rider")).toBeNull();
@@ -224,17 +224,19 @@ describe("ViewProfileScreen", () => {
   });
 
   it("opens followers / following lists from the stat tiles", async () => {
-    render(<ViewProfileScreen />);
+    await render(<ViewProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
     await screen.findByText("Other Rider");
 
-    fireEvent.press(screen.getByLabelText("3 followers, open list"));
+    await fireEvent.press(screen.getByLabelText("3 followers, open list"));
     expect(mockPush).toHaveBeenCalledWith("Followers", {
       userId: "user-2",
       displayName: "Other Rider",
     });
 
-    fireEvent.press(screen.getByLabelText("Following 1 riders, open list"));
+    await fireEvent.press(
+      screen.getByLabelText("Following 1 riders, open list"),
+    );
     expect(mockPush).toHaveBeenCalledWith("Following", {
       userId: "user-2",
       displayName: "Other Rider",

@@ -36,8 +36,8 @@ function buildAlert(overrides: Partial<WeatherAlert>): WeatherAlert {
 }
 
 describe("WeatherAlertBanner", () => {
-  it("renders nothing when there are no alerts", () => {
-    const { queryByRole } = render(
+  it("renders nothing when there are no alerts", async () => {
+    const { queryByRole } = await render(
       <WeatherAlertBanner
         alerts={[]}
         detailOpen={false}
@@ -48,7 +48,7 @@ describe("WeatherAlertBanner", () => {
     expect(queryByRole("button")).toBeNull();
   });
 
-  it("surfaces the highest-severity alert at the top", () => {
+  it("surfaces the highest-severity alert at the top", async () => {
     const wind = buildAlert({
       id: "wind-1",
       kind: "wind",
@@ -64,7 +64,7 @@ describe("WeatherAlertBanner", () => {
       message: "Severe storm.",
     });
 
-    render(
+    await render(
       <WeatherAlertBanner
         alerts={[wind, storm]}
         detailOpen={false}
@@ -79,9 +79,9 @@ describe("WeatherAlertBanner", () => {
     expect(screen.getByText(/Severe storm.*\+1 more/)).toBeTruthy();
   });
 
-  it("calls onOpenDetail when tapped", () => {
+  it("calls onOpenDetail when tapped", async () => {
     const handleOpen = jest.fn();
-    render(
+    await render(
       <WeatherAlertBanner
         alerts={[buildAlert({})]}
         detailOpen={false}
@@ -90,11 +90,11 @@ describe("WeatherAlertBanner", () => {
       />,
     );
 
-    fireEvent.press(screen.getByRole("button"));
+    await fireEvent.press(screen.getByRole("button"));
     expect(handleOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the full list inside the detail sheet when detailOpen is true", () => {
+  it("renders the full list inside the detail sheet when detailOpen is true", async () => {
     const a = buildAlert({
       id: "storm-1",
       title: "Storm warning",
@@ -110,7 +110,7 @@ describe("WeatherAlertBanner", () => {
       distance_km_from_start: 28,
     });
 
-    render(
+    await render(
       <WeatherAlertBanner
         alerts={[a, b]}
         detailOpen

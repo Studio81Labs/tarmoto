@@ -81,7 +81,7 @@ describe("getQualityTileUrlTemplate", () => {
 describe("qualityLineStyle", () => {
   it("uses brand quality colours in ascending-score order", () => {
     // step: default, t1, c1, t2, c2, t3, c3, t4, c4
-    const expr = qualityLineStyle.lineColor as unknown as unknown[];
+    const expr = qualityLineStyle.paint["line-color"] as unknown[];
     expect(expr[0]).toBe("step");
     expect(expr[2]).toBe(QUALITY_COLORS[0]);
     expect(expr[3]).toBe(QUALITY_STEP_BREAKS[0]);
@@ -95,7 +95,7 @@ describe("qualityLineStyle", () => {
   });
 
   it("reads quality_score from the vector-tile feature", () => {
-    const expr = qualityLineStyle.lineColor as unknown as unknown[];
+    const expr = qualityLineStyle.paint["line-color"] as unknown[];
     expect(expr[1]).toEqual(["get", "quality_score"]);
   });
 
@@ -109,7 +109,7 @@ describe("qualityLineStyle", () => {
   });
 
   it("scales line width with zoom so roads stay visible at every level", () => {
-    const expr = qualityLineStyle.lineWidth as unknown as unknown[];
+    const expr = qualityLineStyle.paint["line-width"] as unknown[];
     expect(expr[0]).toBe("interpolate");
     expect(expr[2]).toEqual(["zoom"]);
     // At country zoom roads are thin; at street zoom they're thick.
@@ -120,7 +120,7 @@ describe("qualityLineStyle", () => {
   });
 
   it("fades segments with low confidence via lineOpacity (0-100 scale per backend DTO)", () => {
-    const expr = qualityLineStyle.lineOpacity as unknown as unknown[];
+    const expr = qualityLineStyle.paint["line-opacity"] as unknown[];
     expect(expr[0]).toBe("interpolate");
     expect(expr[2]).toEqual(["get", "confidence"]);
     // Backend serves confidence as an int 0-100 ("0-100, based on number of
@@ -159,32 +159,36 @@ describe("buildQualityLineStyle (US-5 minimum-quality filter)", () => {
 
   it("wraps the color expression in a case so below-threshold segments go gray", () => {
     const style = buildQualityLineStyle(3);
-    const expr = style.lineColor as unknown as unknown[];
+    const expr = style.paint["line-color"] as unknown[];
     expect(expr[0]).toBe("case");
     // Condition: quality_score < (minQuality - 0.5) = 2.5
     expect(expr[1]).toEqual(["<", ["get", "quality_score"], 2.5]);
     // Neutral unscored fill for segments below threshold.
     expect(expr[2]).toBe(UNSCORED_COLOR);
     // Fallback: the baseline step expression untouched.
-    expect(expr[3]).toBe(qualityLineStyle.lineColor);
+    expect(expr[3]).toBe(qualityLineStyle.paint["line-color"]);
   });
 
   it("fades below-threshold segments via lineOpacity case", () => {
     const style = buildQualityLineStyle(4);
-    const expr = style.lineOpacity as unknown as unknown[];
+    const expr = style.paint["line-opacity"] as unknown[];
     expect(expr[0]).toBe("case");
     // minQuality 4 → below-threshold = quality_score < 3.5
     expect(expr[1]).toEqual(["<", ["get", "quality_score"], 3.5]);
     expect(expr[2]).toBe(BELOW_THRESHOLD_OPACITY);
     // Fallback keeps the confidence-driven opacity for qualifying segments.
-    expect(expr[3]).toBe(qualityLineStyle.lineOpacity);
+    expect(expr[3]).toBe(qualityLineStyle.paint["line-opacity"]);
   });
 
   it("keeps line width, cap, and join from the baseline style", () => {
     const style = buildQualityLineStyle(5);
-    expect(style.lineWidth).toBe(qualityLineStyle.lineWidth);
-    expect(style.lineCap).toBe(qualityLineStyle.lineCap);
-    expect(style.lineJoin).toBe(qualityLineStyle.lineJoin);
+    expect(style.paint["line-width"]).toBe(
+      qualityLineStyle.paint["line-width"],
+    );
+    expect(style.layout["line-cap"]).toBe(qualityLineStyle.layout["line-cap"]);
+    expect(style.layout["line-join"]).toBe(
+      qualityLineStyle.layout["line-join"],
+    );
   });
 
   it("uses half-point bucket boundaries to match qualityLabel buckets", () => {
@@ -193,7 +197,7 @@ describe("buildQualityLineStyle (US-5 minimum-quality filter)", () => {
     // The filter threshold is minQuality - 0.5, not minQuality itself.
     for (const minQ of [2, 3, 4, 5] as const) {
       const style = buildQualityLineStyle(minQ);
-      const expr = style.lineColor as unknown as unknown[];
+      const expr = style.paint["line-color"] as unknown[];
       const condition = expr[1] as unknown[];
       expect(condition[2]).toBe(minQ - 0.5);
     }
@@ -224,7 +228,7 @@ describe("passesToFeatureCollection", () => {
 
 describe("passMarkerStyle", () => {
   it("matches each PassStatus to its theme colour with unknown as fallback", () => {
-    const expr = passMarkerStyle.circleColor as unknown as unknown[];
+    const expr = passMarkerStyle.paint["circle-color"] as unknown[];
     expect(expr[0]).toBe("match");
     expect(expr[1]).toEqual(["get", "status"]);
     expect(expr[2]).toBe("open");
@@ -242,7 +246,7 @@ describe("passMarkerStyle", () => {
   });
 
   it("scales marker radius with zoom so passes are visible at country level", () => {
-    const expr = passMarkerStyle.circleRadius as unknown as unknown[];
+    const expr = passMarkerStyle.paint["circle-radius"] as unknown[];
     expect(expr[0]).toBe("interpolate");
     expect(expr[2]).toEqual(["zoom"]);
     const radiusAtLowZoom = expr[4] as number;
@@ -424,12 +428,12 @@ describe("funZoneFillStyle / funZoneLineStyle", () => {
   });
 
   it("applies a step colour expression keyed on composite_score", () => {
-    const fillExpr = funZoneFillStyle.fillColor as unknown as unknown[];
+    const fillExpr = funZoneFillStyle.paint["fill-color"] as unknown[];
     expect(fillExpr[0]).toBe("step");
     expect(fillExpr[1]).toEqual(["get", "composite_score"]);
     expect(fillExpr[2]).toBe(FUN_ZONE_COLORS.veryPoor);
     expect(fillExpr[fillExpr.length - 1]).toBe(FUN_ZONE_COLORS.excellent);
-    const lineExpr = funZoneLineStyle.lineColor as unknown as unknown[];
+    const lineExpr = funZoneLineStyle.paint["line-color"] as unknown[];
     expect(lineExpr[0]).toBe("step");
     expect(lineExpr[1]).toEqual(["get", "composite_score"]);
   });
@@ -437,7 +441,7 @@ describe("funZoneFillStyle / funZoneLineStyle", () => {
   it("fades the fill out at high zoom so individual roads stay readable", () => {
     // Heatmap vibes at country zoom; at street level the layer is nearly
     // transparent so quality-overlay lines show through.
-    const expr = funZoneFillStyle.fillOpacity as unknown as unknown[];
+    const expr = funZoneFillStyle.paint["fill-opacity"] as unknown[];
     expect(expr[0]).toBe("interpolate");
     expect(expr[2]).toEqual(["zoom"]);
     const opacityAtLowZoom = expr[4] as number;
@@ -492,7 +496,7 @@ describe("hazardsToFeatureCollection", () => {
 
 describe("hazardMarkerStyle", () => {
   it("data-drives circleColor off the severity property", () => {
-    const expr = hazardMarkerStyle.circleColor as unknown as unknown[];
+    const expr = hazardMarkerStyle.paint["circle-color"] as unknown[];
     expect(expr[0]).toBe("match");
     expect(expr[1]).toEqual(["get", "severity"]);
     expect(expr).toContain(HAZARD_SEVERITY_COLORS.high);
@@ -509,7 +513,9 @@ describe("hazardMarkerStyle", () => {
   });
 
   it("rings the marker in brand ink so it separates from the basemap", () => {
-    expect(hazardMarkerStyle.circleStrokeColor).toBe(brandColorsLight.fg);
+    expect(hazardMarkerStyle.paint["circle-stroke-color"]).toBe(
+      brandColorsLight.fg,
+    );
   });
 });
 

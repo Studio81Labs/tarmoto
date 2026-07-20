@@ -23,3 +23,7 @@ jest.mock("react-native-safe-area-context", () => {
     initialWindowMetrics: { insets: inset, frame },
   };
 });
+
+jest.mock("react-native-permissions", () =>
+  require("react-native-permissions/mock"),
+);

@@ -161,16 +161,18 @@ describe("CommuteScreen", () => {
     mockUseCommuteResult = buildResult();
   });
 
-  it("starts a commute ride from the primary route CTA", () => {
-    render(<CommuteScreen />);
-    fireEvent.press(screen.getByLabelText("Start commute ride to Home → Work"));
+  it("starts a commute ride from the primary route CTA", async () => {
+    await render(<CommuteScreen />);
+    await fireEvent.press(
+      screen.getByLabelText("Start commute ride to Home → Work"),
+    );
     expect(mockNavigate).toHaveBeenCalledWith("RideTab", {
       screen: "RideActive",
       params: { rideType: "commute" },
     });
   });
 
-  it("launches NavigationScreen with the primary route's polyline when the navigate button is tapped (#361)", () => {
+  it("launches NavigationScreen with the primary route's polyline when the navigate button is tapped (#361)", async () => {
     // Same `source: 'polyline'` discriminator the alternative cards use
     // (#342) — keeps the trip-day shim out of the commute hot path.
     const primaryGeometry = [
@@ -189,9 +191,9 @@ describe("CommuteScreen", () => {
       alternatives: { ...baseAlternatives, primary_route: resolvedRoute },
     });
 
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByLabelText("Navigate primary commute route to Home → Work"),
     );
 
@@ -202,23 +204,23 @@ describe("CommuteScreen", () => {
     });
   });
 
-  it("does not push Navigate when the primary route polyline has not been resolved yet (#361)", () => {
+  it("does not push Navigate when the primary route polyline has not been resolved yet (#361)", async () => {
     // Backend lazily fills `route_geometry` after the first read; while
     // it's still null (fresh route, routing-provider outage) the nav
     // button should be disabled rather than push a dead Navigate.
     // `baseRoute.route_geometry` is `[]` in the fixture so the button
     // renders disabled and the tap is a no-op.
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByLabelText("Navigate primary commute route to Home → Work"),
     );
 
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("renders alternative routes ranked by hazards then duration", () => {
-    render(<CommuteScreen />);
+  it("renders alternative routes ranked by hazards then duration", async () => {
+    await render(<CommuteScreen />);
 
     // The ranker prioritises 0-hazard routes regardless of duration; among
     // hazard-tied entries, the shorter one wins. Resulting visual order
@@ -233,10 +235,10 @@ describe("CommuteScreen", () => {
     ]);
   });
 
-  it("starts a commute ride when a rider taps an alternative row", () => {
-    render(<CommuteScreen />);
+  it("starts a commute ride when a rider taps an alternative row", async () => {
+    await render(<CommuteScreen />);
     // The first alternative row is the highest-ranked (14.6 km, CLEAR).
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByLabelText(/Start commute on alternative route, 14\.6/),
     );
     expect(mockNavigate).toHaveBeenCalledWith("RideTab", {
@@ -245,7 +247,7 @@ describe("CommuteScreen", () => {
     });
   });
 
-  it("launches NavigationScreen with the alternative's polyline when the navigate button is tapped (#342)", () => {
+  it("launches NavigationScreen with the alternative's polyline when the navigate button is tapped (#342)", async () => {
     // Same fixture as `baseAlternatives` but with real geometry on the
     // first ranked alternative so the navigate button isn't disabled.
     // The screen passes the polyline straight through the new
@@ -269,9 +271,9 @@ describe("CommuteScreen", () => {
       },
     });
 
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByLabelText("Navigate alternative route, 14.6 kilometres"),
     );
 
@@ -282,14 +284,14 @@ describe("CommuteScreen", () => {
     });
   });
 
-  it("does not crash when the navigate button is tapped on an alternative without geometry", () => {
+  it("does not crash when the navigate button is tapped on an alternative without geometry", async () => {
     // Defensive: alternatives backend currently always returns geometry
     // but the new nav button is disabled when geometry has < 2 points
     // so a tap is a no-op (the rider sees the disabled state).
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
     // The base fixture has empty geometry on every alternative.
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByLabelText("Navigate alternative route, 14.6 kilometres"),
     );
 
@@ -324,10 +326,12 @@ describe("CommuteScreen", () => {
         }
       });
 
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Use Long way as primary commute"));
+      await fireEvent.press(
+        screen.getByLabelText("Use Long way as primary commute"),
+      );
       // Two flushes: one for the rejected setPrimary promise, one for
       // the chained `.finally()` setPendingId(null).
       await Promise.resolve();
@@ -361,14 +365,16 @@ describe("CommuteScreen", () => {
         confirm?.onPress?.();
       });
 
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
     // Wrap the press + microtask drain in act() because setPrimary
     // resolves asynchronously and triggers a setPendingId(null) state
     // update on completion. Without this, React 19 logs an act warning
     // and the assertion can race the state flush.
     await act(async () => {
-      fireEvent.press(screen.getByLabelText("Use Long way as primary commute"));
+      await fireEvent.press(
+        screen.getByLabelText("Use Long way as primary commute"),
+      );
       // Flush the setPrimary promise + the trailing setPendingId(null).
       await Promise.resolve();
     });
@@ -377,8 +383,8 @@ describe("CommuteScreen", () => {
     alertSpy.mockRestore();
   });
 
-  it("renders the weekly summary trend with this-week vs last-week deltas", () => {
-    render(<CommuteScreen />);
+  it("renders the weekly summary trend with this-week vs last-week deltas", async () => {
+    await render(<CommuteScreen />);
     expect(screen.getByText("This week")).toBeTruthy();
     // Each metric trends differently in the fixture so we can pin them
     // by exact percent label: distance 50→65 (+30%), time 100→80 (-20%),
@@ -389,17 +395,17 @@ describe("CommuteScreen", () => {
     expect(screen.getByText("+20%")).toBeTruthy();
   });
 
-  it("renders the rides delta as a whole number, not '+1.0'", () => {
+  it("renders the rides delta as a whole number, not '+1.0'", async () => {
     // Fixture has rides 4 → 5, so delta = 1. The Rides cell is the only
     // one that doesn't pass a `deltaText` percentage, so it falls back
     // to formatAbsDelta — which used to produce "+1.0" because of
     // toFixed(1). Asserting the integer form regression-guards that.
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
     expect(screen.getByText("+1")).toBeTruthy();
     expect(screen.queryByText("+1.0")).toBeNull();
   });
 
-  it("renders a Δ time placeholder instead of NaN when the primary's avg_duration_min is null", () => {
+  it("renders a Δ time placeholder instead of NaN when the primary's avg_duration_min is null", async () => {
     // Backend caches `avg_duration_min` on `CommuteRouteResponseDto` but
     // leaves it null until the routing provider resolves the route (and
     // on a provider outage). Without the guard, the alternative row's
@@ -420,7 +426,7 @@ describe("CommuteScreen", () => {
       },
     });
 
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
     // Three alternative rows × one Δ time chip that depended on the
     // primary number = three placeholders. Assert no `NaN min` sneaks
@@ -429,7 +435,7 @@ describe("CommuteScreen", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("does not expose a Start-on-tap affordance on saved (non-primary) routes", () => {
+  it("does not expose a Start-on-tap affordance on saved (non-primary) routes", async () => {
     // Tapping a saved route ONLY promotes it; "Start commute on …"
     // would have been a lie because RideActive uses whichever route
     // the backend treats as primary, not the row that was tapped.
@@ -443,7 +449,7 @@ describe("CommuteScreen", () => {
       savedRoutes: [baseRoute, secondary],
     });
 
-    render(<CommuteScreen />);
+    await render(<CommuteScreen />);
 
     expect(screen.queryByLabelText("Start commute on Long way")).toBeNull();
     expect(
