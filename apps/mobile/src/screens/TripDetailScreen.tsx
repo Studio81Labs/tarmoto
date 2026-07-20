@@ -356,10 +356,14 @@ function DayCard({
       style={styles.card}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={translate("Day {value0}{value1}", {
-        value0: day.day_number,
-        value1: day.title ? `, ${day.title}` : "",
-      })}
+      accessibilityLabel={
+        day.title
+          ? translate("Day {day}, {title}", {
+              day: day.day_number,
+              title: day.title,
+            })
+          : translate("Day {day}", { day: day.day_number })
+      }
     >
       <View style={styles.dayHeaderRow}>
         <View style={styles.dayNumberBubble}>

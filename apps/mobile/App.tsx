@@ -25,6 +25,8 @@ LogBox.ignoreLogs([
 export default function App() {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
+  const isAuthLoading = useAuthStore((state) => state.isLoading);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const locale = useAuthStore((state) => state.user?.language);
 
   useEffect(() => {
@@ -43,7 +45,10 @@ export default function App() {
   // keeps running across navigation — CommuteScreen's diff UI remains
   // the view-of-record; this hook just surfaces NEW hazards as a
   // pre-ride alert without forcing the rider to visit that tab first.
-  useEffect(() => startCommuteHazardMonitor(), []);
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
+    return startCommuteHazardMonitor();
+  }, [isAuthLoading, isAuthenticated]);
 
   // #279 / #501 — keep the local privacy preferences cache in sync
   // with the server on every cold start and foreground transition.

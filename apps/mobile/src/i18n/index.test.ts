@@ -19,6 +19,10 @@ describe("mobile i18n", () => {
     expect(translate("Home")).toBe("Home");
     expect(translate("Code: {code}", { code: "ABC123" })).toBe("Code: ABC123");
     expect(translate("e.g. 8f3d0c1e-...")).toBe("e.g. 8f3d0c1e-...");
+    expect(translate("Day {day}", { day: 2 })).toBe("Day 2");
+    expect(translate("Day {day}, {title}", { day: 2, title: "The Alps" })).toBe(
+      "Day 2, The Alps",
+    );
     expect(
       translate("{count, plural, one {# day} other {# days}}", { count: 2 }),
     ).toBe("2 days");
