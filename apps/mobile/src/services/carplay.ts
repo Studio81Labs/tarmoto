@@ -446,12 +446,27 @@ export function formatHazardAlertText(snapshot: HazardAlertSnapshot): {
 } {
   const label = hazardTypeLabel(snapshot.hazard_type);
   const distance = formatHazardDistance(snapshot.distanceMeters);
-  const subtitleSegments = [distance];
-  if (snapshot.roadName) subtitleSegments.push(`on ${snapshot.roadName}`);
-  if (snapshot.note) subtitleSegments.push(snapshot.note);
+  let subtitle = distance;
+  if (snapshot.roadName && snapshot.note) {
+    subtitle = translate("{distance} · on {roadName} · {note}", {
+      distance,
+      roadName: snapshot.roadName,
+      note: snapshot.note,
+    });
+  } else if (snapshot.roadName) {
+    subtitle = translate("{distance} · on {roadName}", {
+      distance,
+      roadName: snapshot.roadName,
+    });
+  } else if (snapshot.note) {
+    subtitle = translate("{distance} · {note}", {
+      distance,
+      note: snapshot.note,
+    });
+  }
   return {
     title: label,
-    subtitle: subtitleSegments.join(" · "),
+    subtitle,
   };
 }
 

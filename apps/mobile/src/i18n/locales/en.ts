@@ -64,6 +64,9 @@ export const en = {
   "{distance} from path": "{distance} from path",
   "{distance} from the planned path — return when it's safe.":
     "{distance} from the planned path — return when it's safe.",
+  "{distance} · {note}": "{distance} · {note}",
+  "{distance} · on {roadName} · {note}": "{distance} · on {roadName} · {note}",
+  "{distance} · on {roadName}": "{distance} · on {roadName}",
   "{distance} km": "{distance} km",
   "{distance} km · {duration} min": "{distance} km · {duration} min",
   "{distance} km · Quality {quality}": "{distance} km · Quality {quality}",
