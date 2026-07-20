@@ -55,6 +55,7 @@ import {
 import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { translateTerminalGroupRideError } from "./GroupRideScreen.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import type {
   GroupEndedEvent,
@@ -193,14 +194,10 @@ export default function GroupRideScreen() {
     // Anything else (transient network blip, throttle complaint) is
     // surfaced as an inline error banner without ripping the screen
     // down.
-    const TERMINAL_ERROR_MESSAGES = new Set([
-      "Group ride has ended",
-      "Group ride not found or access denied",
-    ]);
-
     const handleError = (msg: string): void => {
-      if (TERMINAL_ERROR_MESSAGES.has(msg)) {
-        Alert.alert(translate("Group ride"), msg);
+      const terminalMessage = translateTerminalGroupRideError(msg);
+      if (terminalMessage !== null) {
+        Alert.alert(translate("Group ride"), terminalMessage);
         teardownToIdle();
         return;
       }

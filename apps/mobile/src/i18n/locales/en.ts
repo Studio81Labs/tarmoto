@@ -429,6 +429,9 @@ export const en = {
   "Group ride": "Group ride",
   "Group Ride": "Group Ride",
   "Group ride ended": "Group ride ended",
+  "Group ride has ended": "Group ride has ended",
+  "Group ride not found or access denied":
+    "Group ride not found or access denied",
   "Guest house": "Guest house",
   Hazard: "Hazard",
   "Hazard reported: {hazard}": "Hazard reported: {hazard}",
