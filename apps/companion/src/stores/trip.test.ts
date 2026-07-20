@@ -3012,6 +3012,23 @@ describe("useTripStore applyRouteQuality (#862)", () => {
     ).toBeUndefined();
   });
 
+  it("preserves stored quality when re-routing returns the exact same line", () => {
+    const geometry = seedRoutedDay();
+    const segments = [qualitySegment("d1-s0")];
+    useTripStore.getState().applyRouteQuality(1, geometry, segments);
+
+    useTripStore
+      .getState()
+      .applyRouteResult(
+        1,
+        routeResult(geometry.map((point) => ({ ...point }))),
+      );
+
+    expect(
+      useTripStore.getState().activeTrip?.days[0]?.qualitySegments,
+    ).toEqual(segments);
+  });
+
   it("rejects a response for a different interior path with matching endpoints", () => {
     const store = useTripStore.getState();
     store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });

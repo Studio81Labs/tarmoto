@@ -1,6 +1,12 @@
 import { render, waitFor } from "@testing-library/react";
 import { act } from "react";
-import { MapCanvas } from "./MapCanvas";
+import {
+  MapCanvas,
+  TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROADS_SOURCE,
+  TARMOTO_SURFACE_LAYER,
+  TARMOTO_SURFACE_SOURCE,
+} from "./MapCanvas";
 import { applyTarmotoMapTheme } from "@/lib/map-style";
 
 const mapStub = {
@@ -142,5 +148,53 @@ describe("MapCanvas", () => {
     });
 
     expect(applyTarmotoMapTheme).not.toHaveBeenCalledWith(mapStub, "dark");
+  });
+
+  it("gates general overlays without hiding the shared road-map source", async () => {
+    render(
+      <div className="h-[400px] w-[600px]">
+        <MapCanvas
+          center={{ lng: 14.5, lat: 50.1 }}
+          zoom={7}
+          showQuality={true}
+          showSurface={false}
+        />
+      </div>,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+
+    act(() => {
+      for (const handler of loadHandlers) handler();
+    });
+
+    expect(mapStub.addSource).toHaveBeenCalledWith(
+      TARMOTO_ROADS_SOURCE,
+      expect.objectContaining({
+        // PersonalRoadMap adds its own z8 layers to this source.
+        minzoom: 6,
+        tiles: [expect.stringMatching(/\.mvt\?layers=quality$/)],
+      }),
+    );
+    expect(mapStub.addSource).toHaveBeenCalledWith(
+      TARMOTO_SURFACE_SOURCE,
+      expect.objectContaining({
+        minzoom: 10,
+        tiles: [expect.stringMatching(/\.mvt\?layers=surface$/)],
+      }),
+    );
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: TARMOTO_QUALITY_LAYER,
+        source: TARMOTO_ROADS_SOURCE,
+        minzoom: 10,
+      }),
+    );
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: TARMOTO_SURFACE_LAYER,
+        source: TARMOTO_SURFACE_SOURCE,
+        minzoom: 10,
+      }),
+    );
   });
 });
