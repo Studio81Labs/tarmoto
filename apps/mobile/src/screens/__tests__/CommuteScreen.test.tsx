@@ -183,6 +183,7 @@ describe("CommuteScreen", () => {
 
     expect(screen.getByText("14°C · Clear")).toBeTruthy();
     expect(screen.getByText("Road: Dry · Wind 8 km/h")).toBeTruthy();
+    expect(screen.queryByText("Clear and mild")).toBeNull();
   });
 
   it("uses the cataloged hazard label for photo accessibility", async () => {

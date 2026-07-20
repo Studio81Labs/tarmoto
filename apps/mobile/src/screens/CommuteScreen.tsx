@@ -390,7 +390,6 @@ function WeatherCard({ weather }: { weather: Weather }) {
               condition: translate(WEATHER_CONDITION_LABELS[weather.condition]),
             })}
           </Text>
-          <Text style={styles.weatherDetail}>{weather.description}</Text>
           <Text style={styles.weatherDetail}>
             {translate("Road: {condition} · Wind {speed} km/h", {
               condition: translate(
