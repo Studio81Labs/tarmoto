@@ -181,6 +181,8 @@ describe("useRouteWeatherAlerts", () => {
       id: "storm-ahead",
       severity: "critical",
       kind: "storm",
+      lat: 50.5,
+      lng: 17.5,
       distance_km_from_start: 30,
       message: "AHEAD storm message",
     });
@@ -202,8 +204,8 @@ describe("useRouteWeatherAlerts", () => {
     expect(result.current.alerts[0]?.id).toBe("storm-ahead");
     expect(speakMock).toHaveBeenCalledTimes(1);
     const spokenPhrases = speakMock.mock.calls.map((c) => c[0]);
-    expect(spokenPhrases.some((p) => p.includes("AHEAD"))).toBe(true);
-    expect(spokenPhrases.some((p) => p.includes("PASSED"))).toBe(false);
+    expect(spokenPhrases.some((p) => p.includes("50.50,17.50"))).toBe(true);
+    expect(spokenPhrases.some((p) => p.includes("49.00,16.00"))).toBe(false);
     await unmount();
   });
 

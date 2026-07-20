@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/services/api";
 import { ttsService } from "@/services/tts";
+import { t as translate } from "@/i18n";
+import { localizeWeatherAlert } from "@/services/weatherAlertCopy";
 import type { LatLng, WeatherAlert } from "@/types";
 
 /** Default poll cadence — every 5 minutes per US-13 acceptance criteria. */
@@ -142,10 +144,17 @@ export function useRouteWeatherAlerts(
           // `priority: "high"` tag also bypasses the voice-FAB mute,
           // the volume<=0 mute, and the external-audio guard inside
           // `ttsService` so the alert always reaches the rider.
-          ttsService.speak(`${alert.title}. ${alert.message}`, {
-            priority: "high",
-            key: `weather:${alert.id}`,
-          });
+          const copy = localizeWeatherAlert(alert);
+          ttsService.speak(
+            translate("{title}. {message}", {
+              title: copy.title,
+              message: copy.message,
+            }),
+            {
+              priority: "high",
+              key: `weather:${alert.id}`,
+            },
+          );
           spokenIdsRef.current.add(alert.id);
           lastSpokenAtRef.current = now;
         }

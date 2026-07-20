@@ -104,6 +104,7 @@ export const en = {
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
   "{title}, {count, plural, one {# day} other {# days}}, {status}":
     "{title}, {count, plural, one {# day} other {# days}}, {status}",
+  "{title}. {message}": "{title}. {message}",
   "{type} · {duration} stop": "{type} · {duration} stop",
   '"{value0}" will be removed from your device. You can re-save it later.':
     '"{value0}" will be removed from your device. You can re-save it later.',
@@ -444,6 +445,9 @@ export const en = {
   Hero: "Hero",
   "Hide {label} overlay": "Hide {label} overlay",
   High: "High",
+  "High wind ahead": "High wind ahead",
+  "High wind near {location}. Brace for sudden crosswinds.":
+    "High wind near {location}. Brace for sudden crosswinds.",
   Highlights: "Highlights",
   Home: "Home",
   "Home region": "Home region",
@@ -457,6 +461,9 @@ export const en = {
   Ice: "Ice",
   "Ice, black ice, or frozen patch": "Ice, black ice, or frozen patch",
   Icy: "Icy",
+  "Icy roads ahead": "Icy roads ahead",
+  "Icy roads near {location}. Reduce speed and avoid sudden inputs.":
+    "Icy roads near {location}. Reduce speed and avoid sudden inputs.",
   Imperial: "Imperial",
   "Import failed": "Import failed",
   "Import GPX or KML file": "Import GPX or KML file",
@@ -780,6 +787,8 @@ export const en = {
   "Set rating to {count, plural, one {# star} other {# stars}}":
     "Set rating to {count, plural, one {# star} other {# stars}}",
   Settings: "Settings",
+  "Severe storm at {location} — consider rerouting or pulling over.":
+    "Severe storm at {location} — consider rerouting or pulling over.",
   Severity: "Severity",
   "Shapes how the generator picks between speed and fun.":
     "Shapes how the generator picks between speed and fun.",
@@ -846,6 +855,7 @@ export const en = {
   "Stop ride?": "Stop ride?",
   "Stopping…": "Stopping…",
   Storm: "Storm",
+  "Storm warning": "Storm warning",
   "Straight, transit-style road.": "Straight, transit-style road.",
   Submit: "Submit",
   "Submit hazard report": "Submit hazard report",
@@ -1008,6 +1018,9 @@ export const en = {
   "Weather alerts ahead": "Weather alerts ahead",
   "Weather warning": "Weather warning",
   Wet: "Wet",
+  "Wet roads ahead": "Wet roads ahead",
+  "Wet roads near {location}. Allow extra braking distance.":
+    "Wet roads near {location}. Allow extra braking distance.",
   "What's the surface like? Any switchbacks worth flagging?":
     "What's the surface like? Any switchbacks worth flagging?",
   "When off, this contact stays in your list but is not notified.":

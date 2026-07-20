@@ -27,6 +27,7 @@ import {
 } from "@/theme/brand";
 import type { WeatherAlert, WeatherAlertSeverity } from "@/types";
 import { t as translate } from "@/i18n";
+import { localizeWeatherAlert } from "@/services/weatherAlertCopy";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -87,6 +88,7 @@ export function WeatherAlertBanner({
   if (!top) return null;
   const additionalCount = sortedAlerts.length - 1;
   const accent = severityColor(top.severity);
+  const topCopy = localizeWeatherAlert(top);
 
   return (
     <>
@@ -94,7 +96,7 @@ export function WeatherAlertBanner({
         accessibilityRole="button"
         accessibilityLabel={translate(
           "Weather alert: {value0}. Tap for details.",
-          { value0: top.title },
+          { value0: topCopy.title },
         )}
         accessibilityLiveRegion="polite"
         onPress={onOpenDetail}
@@ -107,15 +109,15 @@ export function WeatherAlertBanner({
         />
         <View style={styles.bannerBody}>
           <Text style={styles.bannerTitle} numberOfLines={1}>
-            {top.title}
+            {topCopy.title}
           </Text>
           <Text style={styles.bannerMessage} numberOfLines={1}>
             {additionalCount > 0
               ? translate("{value0} · +{value1} more", {
-                  value0: top.message,
+                  value0: topCopy.message,
                   value1: additionalCount,
                 })
-              : top.message}
+              : topCopy.message}
           </Text>
         </View>
         <Icon name="chevron-right" size={18} color={t.dim} />
@@ -143,30 +145,33 @@ export function WeatherAlertBanner({
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.sheetList}>
-              {sortedAlerts.map((alert) => (
-                <View
-                  key={alert.id}
-                  style={[
-                    styles.sheetRow,
-                    { borderLeftColor: severityColor(alert.severity) },
-                  ]}
-                >
-                  <Icon
-                    name={KIND_ICON[alert.kind] ?? "weather-cloudy-alert"}
-                    size={22}
-                    color={severityColor(alert.severity)}
-                  />
-                  <View style={styles.sheetRowBody}>
-                    <Text style={styles.sheetRowTitle}>{alert.title}</Text>
-                    <Text style={styles.sheetRowMessage}>{alert.message}</Text>
-                    <Text style={styles.sheetRowDistance}>
-                      {translate("{distance} from start", {
-                        distance: formatKm(alert.distance_km_from_start),
-                      })}
-                    </Text>
+              {sortedAlerts.map((alert) => {
+                const copy = localizeWeatherAlert(alert);
+                return (
+                  <View
+                    key={alert.id}
+                    style={[
+                      styles.sheetRow,
+                      { borderLeftColor: severityColor(alert.severity) },
+                    ]}
+                  >
+                    <Icon
+                      name={KIND_ICON[alert.kind] ?? "weather-cloudy-alert"}
+                      size={22}
+                      color={severityColor(alert.severity)}
+                    />
+                    <View style={styles.sheetRowBody}>
+                      <Text style={styles.sheetRowTitle}>{copy.title}</Text>
+                      <Text style={styles.sheetRowMessage}>{copy.message}</Text>
+                      <Text style={styles.sheetRowDistance}>
+                        {translate("{distance} from start", {
+                          distance: formatKm(alert.distance_km_from_start),
+                        })}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           </Pressable>
         </Pressable>

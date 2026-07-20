@@ -120,8 +120,16 @@ describe("WeatherAlertBanner", () => {
     );
 
     expect(screen.getByText("Weather alerts ahead")).toBeTruthy();
-    expect(screen.getByText("Severe storm.")).toBeTruthy();
-    expect(screen.getByText("75 km/h wind.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Severe storm at 0.00,0.00 — consider rerouting or pulling over.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "High wind near 0.00,0.00. Brace for sudden crosswinds.",
+      ),
+    ).toBeTruthy();
     // Distance is formatted in km when >= 1.
     expect(screen.getByText(/12.0 km from start/)).toBeTruthy();
   });
