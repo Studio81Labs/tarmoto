@@ -22,7 +22,7 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
-import { t as translate } from "@/i18n";
+import { resolveLocale, t as translate } from "@/i18n";
 
 type LinkAccountRoute = RouteProp<ProfileStackParamList, "LinkAccount">;
 
@@ -92,15 +92,20 @@ export default function LinkAccountScreen() {
         mode === "register"
           ? await api.register(trimmedEmail, password, trimmedDisplayName)
           : await api.login(trimmedEmail, password);
+      const userLocale = resolveLocale(auth.user.language);
       setUser(auth.user);
       setPassword("");
       setSuccessMessage(
         mode === "register"
           ? translate(
               "Account created. Your rides, bikes, trips, and preferences will now sync.",
+              undefined,
+              userLocale,
             )
           : translate(
               "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
+              undefined,
+              userLocale,
             ),
       );
     } catch (err) {
