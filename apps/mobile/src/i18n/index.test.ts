@@ -89,6 +89,18 @@ describe("mobile i18n", () => {
     ).toBe("High · 5m ago · 2 confirmations");
     expect(
       translate(
+        "{title}, {count, plural, one {# day} other {# days}}, {status}",
+        { title: "Alpine loop", count: 1, status: "Planned" },
+      ),
+    ).toBe("Alpine loop, 1 day, Planned");
+    expect(
+      translate(
+        "{title}, {count, plural, one {# day} other {# days}}, {status}",
+        { title: "Alpine loop", count: 3, status: "Planned" },
+      ),
+    ).toBe("Alpine loop, 3 days, Planned");
+    expect(
+      translate(
         "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period",
         { count: 1 },
       ),

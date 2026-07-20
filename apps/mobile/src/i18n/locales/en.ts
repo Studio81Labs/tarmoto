@@ -102,6 +102,8 @@ export const en = {
   "{temperature}°C · {condition}": "{temperature}°C · {condition}",
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
+  "{title}, {count, plural, one {# day} other {# days}}, {status}":
+    "{title}, {count, plural, one {# day} other {# days}}, {status}",
   "{type} · {duration} stop": "{type} · {duration} stop",
   '"{value0}" will be removed from your device. You can re-save it later.':
     '"{value0}" will be removed from your device. You can re-save it later.',
@@ -123,7 +125,6 @@ export const en = {
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
     "{value0} will no longer be alerted in a crash.",
-  "{value0}, {value1} days, {value2}": "{value0}, {value1} days, {value2}",
   "{value0}, {value1} kilometres away": "{value0}, {value1} kilometres away",
   "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
   "{value0}: {value1}": "{value0}: {value1}",

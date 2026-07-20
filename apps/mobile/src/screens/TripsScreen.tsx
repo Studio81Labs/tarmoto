@@ -325,11 +325,14 @@ function TripCard({
       style={styles.card}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={translate("{value0}, {value1} days, {value2}", {
-        value0: trip.title,
-        value1: trip.num_days,
-        value2: formatStatus(trip.status),
-      })}
+      accessibilityLabel={translate(
+        "{title}, {count, plural, one {# day} other {# days}}, {status}",
+        {
+          title: trip.title,
+          count: trip.num_days,
+          status: formatStatus(trip.status),
+        },
+      )}
     >
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle} numberOfLines={1}>
