@@ -198,10 +198,12 @@ export class RouteEnrichmentService {
              ) matched ON matched.segment_id = rs.id
            ),
            surface_lengths AS (
-             SELECT surface_type, SUM(step_m)::float AS length_m
+             SELECT
+               COALESCE(surface_type, 'unknown') AS surface_type,
+               SUM(step_m)::float AS length_m
              FROM snapped
              WHERE segment_id IS NOT NULL
-             GROUP BY surface_type
+             GROUP BY COALESCE(surface_type, 'unknown')
            ),
            surfaces AS (
              SELECT COALESCE(

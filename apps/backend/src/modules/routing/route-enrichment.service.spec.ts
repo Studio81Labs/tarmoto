@@ -92,6 +92,7 @@ describe('RouteEnrichmentService.aggregate', () => {
       'ST_DWithin(\n                   rs.geom,\n                   samples.point',
     );
     expect(roadSql).toContain('rs.geom::geography');
+    expect(roadSql).toContain("COALESCE(surface_type, 'unknown')");
     // The cap and minimum spacing are bound parameters, so route length cannot
     // grow the number of nearest-segment index lookups without bound.
     expect(roadParams).toEqual([expect.any(String), 100, 2500, 40]);
