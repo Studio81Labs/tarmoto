@@ -4,6 +4,8 @@ export const en = {
     "{count, plural, one {# active challenge} other {# active challenges}}",
   "{count, plural, one {# closed pass} other {# closed passes}} on this route":
     "{count, plural, one {# closed pass} other {# closed passes}} on this route",
+  "{count, plural, one {# confirmation} other {# confirmations}} · {time}":
+    "{count, plural, one {# confirmation} other {# confirmations}} · {time}",
   "{count, plural, one {# day left} other {# days left}}":
     "{count, plural, one {# day left} other {# days left}}",
   "{count, plural, one {# day} other {# days}}":
@@ -41,6 +43,7 @@ export const en = {
   "{count, plural, one {# waypoint} other {# waypoints}}":
     "{count, plural, one {# waypoint} other {# waypoints}}",
   "{count} failed": "{count} failed",
+  "{count} NEW": "{count} NEW",
   "{count} riders": "{count} riders",
   "{count} still queued": "{count} still queued",
   "{count}d ago": "{count}d ago",
@@ -50,6 +53,8 @@ export const en = {
   "{count}y ago": "{count}y ago",
   "{distance} from start": "{distance} from start",
   "{distance} from path": "{distance} from path",
+  "{distance} from the planned path — return when it's safe.":
+    "{distance} from the planned path — return when it's safe.",
   "{distance} km": "{distance} km",
   "{distance} km · {duration} min": "{distance} km · {duration} min",
   "{distance} km · Quality {quality}": "{distance} km · Quality {quality}",
@@ -65,6 +70,8 @@ export const en = {
   "{label} {percent}%": "{label} {percent}%",
   "{label}, {count, plural, one {# trip} other {# trips}}":
     "{label}, {count, plural, one {# trip} other {# trips}}",
+  "{length} · {distance} from you": "{length} · {distance} from you",
+  "{min}–{max} km / day": "{min}–{max} km / day",
   "{name} · {distance} km": "{name} · {distance} km",
   "{name} (you)": "{name} (you)",
   "{name} hasn't earned any badges yet.":
@@ -229,7 +236,6 @@ export const en = {
   Completed: "Completed",
   Concrete: "Concrete",
   Confirm: "Confirm",
-  "confirmations ·": "confirmations ·",
   "Construction, lane closures, or cones":
     "Construction, lane closures, or cones",
   "Contact name": "Contact name",
@@ -385,9 +391,6 @@ export const en = {
   "Free ride": "Free ride",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",
-  "from the planned path — return when it's safe.":
-    "from the planned path — return when it's safe.",
-  "from you": "from you",
   Fuel: "Fuel",
   FUEL: "FUEL",
   "Fuel est.": "Fuel est.",
@@ -452,7 +455,6 @@ export const en = {
   "Join with invite code": "Join with invite code",
   "Keep riding": "Keep riding",
   km: "km",
-  "km / day": "km / day",
   "km/h": "km/h",
   "Know the road before you ride it.": "Know the road before you ride it.",
   "Known hazards on your route — none new.":

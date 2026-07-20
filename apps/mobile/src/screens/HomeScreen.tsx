@@ -152,7 +152,7 @@ export default function HomeScreen() {
               importantForAccessibility="no-hide-descendants"
             >
               <Text style={styles.newBadgeText}>
-                {displayCount} {translate("NEW")}
+                {translate("{count} NEW", { count: displayCount })}
               </Text>
             </View>
           ) : null}

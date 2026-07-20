@@ -372,8 +372,10 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
           {segment.road_name ?? translate("Unnamed road")}
         </Text>
         <Text style={styles.unriddenMeta}>
-          {formatSegmentLength(segment.length_m)} ·{" "}
-          {formatDistanceFromHere(segment.distance_m)} {translate("from you")}
+          {translate("{length} · {distance} from you", {
+            length: formatSegmentLength(segment.length_m),
+            distance: formatDistanceFromHere(segment.distance_m),
+          })}
         </Text>
         <Text style={styles.unriddenQuality}>
           {segment.surface_type

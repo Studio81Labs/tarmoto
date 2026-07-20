@@ -443,8 +443,10 @@ function OffRouteBanner({ distanceM }: { distanceM: number }) {
       <View style={styles.offRouteBody}>
         <Text style={styles.offRouteTitle}>{translate("Off route")}</Text>
         <Text style={styles.offRouteBodyText}>
-          {formatMeters(distanceM)}{" "}
-          {translate("from the planned path — return when it's safe.")}
+          {translate(
+            "{distance} from the planned path — return when it's safe.",
+            { distance: formatMeters(distanceM) },
+          )}
         </Text>
       </View>
     </View>

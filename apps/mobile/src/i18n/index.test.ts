@@ -45,6 +45,28 @@ describe("mobile i18n", () => {
     expect(translate("{distance} from start", { distance: "12.0 km" })).toBe(
       "12.0 km from start",
     );
+    expect(translate("{distance} km", { distance: 250 })).toBe("250 km");
+    expect(
+      translate(
+        "{count, plural, one {# confirmation} other {# confirmations}} · {time}",
+        { count: 2, time: "5m ago" },
+      ),
+    ).toBe("2 confirmations · 5m ago");
+    expect(
+      translate("{length} · {distance} from you", {
+        length: "2.5 km",
+        distance: "800 m",
+      }),
+    ).toBe("2.5 km · 800 m from you");
+    expect(translate("{count} NEW", { count: 3 })).toBe("3 NEW");
+    expect(translate("{min}–{max} km / day", { min: 180, max: 250 })).toBe(
+      "180–250 km / day",
+    );
+    expect(
+      translate("{distance} from the planned path — return when it's safe.", {
+        distance: "120 m",
+      }),
+    ).toBe("120 m from the planned path — return when it's safe.");
   });
 
   it("keeps the deliberate dynamic-key fallback", () => {

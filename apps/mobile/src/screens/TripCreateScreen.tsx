@@ -425,7 +425,10 @@ export default function TripCreateScreen() {
                       selected && styles.stackPillMetaSelected,
                     ]}
                   >
-                    {preset.min}–{preset.max} {translate("km / day")}
+                    {translate("{min}–{max} km / day", {
+                      min: preset.min,
+                      max: preset.max,
+                    })}
                   </Text>
                 </TouchableOpacity>
               );

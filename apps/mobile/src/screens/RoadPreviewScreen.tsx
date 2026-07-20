@@ -592,8 +592,13 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
           </Text>
         ) : null}
         <Text style={styles.hazardMeta}>
-          {hazard.confirmations} {translate("confirmations ·")}{" "}
-          {formatRelativeTime(hazard.created_at)}
+          {translate(
+            "{count, plural, one {# confirmation} other {# confirmations}} · {time}",
+            {
+              count: hazard.confirmations,
+              time: formatRelativeTime(hazard.created_at),
+            },
+          )}
         </Text>
       </View>
     </View>

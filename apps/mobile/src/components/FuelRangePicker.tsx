@@ -66,7 +66,7 @@ export default function FuelRangePicker({
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
           <Text style={styles.value}>
-            {active} {translate("km")}
+            {translate("{distance} km", { distance: active })}
           </Text>
         </View>
       ) : null}
