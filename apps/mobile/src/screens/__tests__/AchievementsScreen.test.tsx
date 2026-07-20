@@ -119,7 +119,7 @@ describe("AchievementsScreen", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/1 of 2 earned · SILVER tier reached/),
+        screen.getByText(/1 of 2 earned · Silver tier reached/),
       ).toBeTruthy(),
     );
     expect(screen.getByText("1 active challenge")).toBeTruthy();
@@ -180,7 +180,7 @@ describe("AchievementsScreen", () => {
     // the staleness visible.
     await waitFor(() =>
       expect(
-        screen.getByText(/1 of 2 earned · SILVER tier reached/),
+        screen.getByText(/1 of 2 earned · Silver tier reached/),
       ).toBeTruthy(),
     );
     expect(

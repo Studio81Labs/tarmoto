@@ -37,7 +37,7 @@ import {
 } from "@/theme/brand";
 import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
-import { tierRank } from "./AchievementsScreen.helpers";
+import { tierLabel, tierRank } from "./AchievementsScreen.helpers";
 import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
@@ -172,7 +172,7 @@ export default function AchievementsScreen() {
               ? translate("{earned} of {total} earned · {tier} tier reached", {
                   earned: snapshot.earnedBadges,
                   total: snapshot.totalBadges,
-                  tier: snapshot.topTier.toUpperCase(),
+                  tier: tierLabel(snapshot.topTier),
                 })
               : translate("{earned} of {total} earned", {
                   earned: snapshot.earnedBadges,

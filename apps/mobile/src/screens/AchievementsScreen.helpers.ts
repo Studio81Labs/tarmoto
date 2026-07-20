@@ -23,6 +23,18 @@ export const TIER_ORDER: readonly BadgeTier[] = [
   "gold",
 ] as const;
 
+const TIER_LABELS: Record<BadgeTier, EnglishMessageKey> = {
+  bronze: "Bronze",
+  silver: "Silver",
+  gold: "Gold",
+};
+
+/** Cataloged badge-tier label with a forward-compatible raw fallback. */
+export function tierLabel(tier: string): string {
+  const key = TIER_LABELS[tier as BadgeTier];
+  return key ? translate(key) : tier;
+}
+
 /** Tier rank used to compare progression — higher is better, 0 = unearned. */
 export function tierRank(tier: string | null): number {
   if (!tier) return 0;
