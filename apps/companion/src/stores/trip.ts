@@ -1729,6 +1729,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
         );
         if (dayIndex < 0) return state;
         const day = activeTrip.days[dayIndex]!;
+        const geometryUnchanged = geometryMatchesPoints(
+          day.routeGeometry,
+          result.geometry,
+        );
         const days = [...activeTrip.days];
         days[dayIndex] = {
           ...day,
@@ -1744,9 +1748,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           // Always overwritten (or cleared) so a stale leg mapping can't
           // outlive the geometry it described. Client-only; never saved.
           legBreaks,
-          // New geometry invalidates any prior per-segment quality — the map
-          // falls back to the no_data baseline until getRouteQuality refills it.
-          qualitySegments: undefined,
+          // Preserve the expensive detailed overlay when a preference change
+          // or save re-route returns the exact same polyline. Any vertex change
+          // still invalidates it and falls back to no_data until hydration.
+          qualitySegments: geometryUnchanged ? day.qualitySegments : undefined,
         };
         return {
           ...state,

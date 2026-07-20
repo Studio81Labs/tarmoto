@@ -30,11 +30,26 @@ export class TilesController {
     @Query() query: TileQueryDto,
     @Res() res: express.Response,
   ): Promise<void> {
+    res.set('Access-Control-Allow-Origin', '*');
+
     const tile = await this.tilesService.getTile(
       params.z,
       params.x,
       params.y,
       query.layers ?? 'all',
+    );
+
+    // Tiles are public and identical for every rider. Apply cacheability only
+    // after generation succeeds so a transient PostGIS error cannot turn a
+    // framework-generated 500 response into a cacheable response. Keep the
+    // browser TTL short enough for recent quality updates, while allowing the
+    // CDN to absorb cross-user viewport bursts and serve stale during
+    // revalidation. `CDN-Cache-Control` is intentionally separate so browser
+    // freshness does not have to match the edge cache policy.
+    res.set('Cache-Control', 'public, max-age=300');
+    res.set(
+      'CDN-Cache-Control',
+      'public, max-age=900, stale-while-revalidate=86400',
     );
 
     if (!tile) {
@@ -43,8 +58,6 @@ export class TilesController {
     }
 
     res.set('Content-Type', 'application/vnd.mapbox-vector-tile');
-    res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
-    res.set('Access-Control-Allow-Origin', '*');
     res.send(tile);
   }
 }
