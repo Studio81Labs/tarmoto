@@ -3,6 +3,7 @@ import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 import type { RouteSegment } from "@/lib/planner/types";
 import {
   buildPlannerQualityRouteCollection,
+  buildPlannerRouteOverviewCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
   deriveDayQualitySegments,
@@ -254,6 +255,36 @@ describe("buildPlannerQualityRouteCollection", () => {
       collection.features.map((f) => f.properties.dayNumber),
     );
     expect(dayNumbers).toEqual(new Set([1, 2]));
+  });
+});
+
+describe("buildPlannerRouteOverviewCollection", () => {
+  it("keeps each day as one continuous low-zoom feature", () => {
+    const sourceTrip = trip();
+    const collection = buildPlannerRouteOverviewCollection(sourceTrip);
+
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [14.41, 50.08],
+      [14.52, 50.13],
+      [14.61, 50.19],
+    ]);
+    expect(collection.features[1]?.geometry.coordinates).toEqual(
+      sourceTrip.days[1]?.routeGeometry?.coordinates,
+    );
+    expect(
+      collection.features.every((feature) => feature.properties.selected),
+    ).toBe(true);
+  });
+
+  it("honours the focused-day filter", () => {
+    const collection = buildPlannerRouteOverviewCollection(trip(), 2, true);
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.properties).toEqual({
+      dayNumber: 2,
+      selected: true,
+    });
   });
 });
 
