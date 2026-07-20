@@ -74,6 +74,28 @@ describe("localizeWeatherAlert", () => {
     );
   });
 
+  it.each([
+    [
+      "ice",
+      "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
+    ],
+    [
+      "wet",
+      "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
+    ],
+  ] as const)("preserves sampled conditions for %s alerts", (kind, key) => {
+    localizeWeatherAlert(
+      buildAlert({ kind, temperature_c: -2, wind_kmh: 28 }),
+      translate,
+    );
+
+    expect(translate).toHaveBeenCalledWith(key, {
+      location: "49.12,16.75",
+      temperature: -2,
+      wind: 28,
+    });
+  });
+
   it("keeps server copy for an unknown future alert kind", () => {
     const alert = buildAlert({
       kind: "hail" as WeatherAlert["kind"],

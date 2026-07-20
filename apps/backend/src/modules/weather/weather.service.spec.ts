@@ -96,7 +96,10 @@ describe('WeatherService', () => {
       expect(result.alerts.some((a) => a.includes('High wind'))).toBe(true);
       // Each kind shows up exactly once per sampled point so the mobile
       // banner never has to dedupe inside a single response.
-      expect(result.typed_alerts.some((a) => a.kind === 'wet')).toBe(true);
+      expect(result.typed_alerts.find((a) => a.kind === 'wet')).toMatchObject({
+        temperature_c: 14,
+        wind_kmh: 75,
+      });
       expect(result.typed_alerts.some((a) => a.kind === 'storm')).toBe(true);
       expect(result.typed_alerts.find((a) => a.kind === 'wind')).toMatchObject({
         wind_kmh: 75,
@@ -124,6 +127,7 @@ describe('WeatherService', () => {
       // Ice lifts severity to `critical` because it triggers a voice
       // read-out on the mobile client.
       expect(icy?.severity).toBe('critical');
+      expect(icy).toMatchObject({ temperature_c: -3, wind_kmh: 12 });
     });
 
     it('should expose stable typed alert ids and a distance from route start', async () => {

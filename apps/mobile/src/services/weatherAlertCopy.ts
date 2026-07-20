@@ -23,6 +23,11 @@ const MESSAGE_KEYS = {
 const WIND_SPEED_MESSAGE_KEY =
   "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds." satisfies EnglishMessageKey;
 
+const SURFACE_CONDITIONS_MESSAGE_KEYS = {
+  ice: "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
+  wet: "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
+} as const satisfies Record<"ice" | "wet", EnglishMessageKey>;
+
 function isWeatherAlertKind(kind: string): kind is WeatherAlertKind {
   return Object.hasOwn(TITLE_KEYS, kind);
 }
@@ -42,10 +47,19 @@ export function localizeWeatherAlert(
   }
 
   const location = `${alert.lat.toFixed(2)},${alert.lng.toFixed(2)}`;
+  const hasSurfaceConditions =
+    (kind === "ice" || kind === "wet") &&
+    Number.isFinite(alert.temperature_c) &&
+    Number.isFinite(alert.wind_kmh);
   return {
     title: t(TITLE_KEYS[kind]),
-    message:
-      kind === "wind" && Number.isFinite(alert.wind_kmh)
+    message: hasSurfaceConditions
+      ? t(SURFACE_CONDITIONS_MESSAGE_KEYS[kind], {
+          location,
+          temperature: alert.temperature_c ?? 0,
+          wind: alert.wind_kmh ?? 0,
+        })
+      : kind === "wind" && Number.isFinite(alert.wind_kmh)
         ? t(WIND_SPEED_MESSAGE_KEY, { location, speed: alert.wind_kmh ?? 0 })
         : t(MESSAGE_KEYS[kind], { location }),
   };

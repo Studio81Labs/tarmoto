@@ -480,6 +480,8 @@ export const en = {
   "Icy roads ahead": "Icy roads ahead",
   "Icy roads near {location}. Reduce speed and avoid sudden inputs.":
     "Icy roads near {location}. Reduce speed and avoid sudden inputs.",
+  "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.":
+    "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
   Imperial: "Imperial",
   "Import failed": "Import failed",
   "Import GPX or KML file": "Import GPX or KML file",
@@ -1042,6 +1044,8 @@ export const en = {
   "Wet roads ahead": "Wet roads ahead",
   "Wet roads near {location}. Allow extra braking distance.":
     "Wet roads near {location}. Allow extra braking distance.",
+  "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.":
+    "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
   "What's the surface like? Any switchbacks worth flagging?":
     "What's the surface like? Any switchbacks worth flagging?",
   "When off, this contact stays in your list but is not notified.":
