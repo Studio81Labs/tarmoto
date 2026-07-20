@@ -85,6 +85,9 @@ jobs:
   android-preview:
     name: Android Preview APK
     needs: build
+    # Preview artifacts are expensive and only useful from an integrated
+    # revision. PRs still run the full lint/typecheck/test job above.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -122,6 +125,9 @@ jobs:
   ios-preview:
     name: iOS Simulator Preview
     needs: build
+    # macOS minutes are especially costly; build the simulator artifact once
+    # after merge instead of on every PR synchronization/review-fix push.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # React Native Firebase 25's Apple SDK requires Xcode 26.2 or newer.
     runs-on: macos-26
     timeout-minutes: 60
