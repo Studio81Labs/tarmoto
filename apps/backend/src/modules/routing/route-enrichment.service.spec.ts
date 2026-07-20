@@ -2,22 +2,18 @@ import { RouteEnrichmentService } from './route-enrichment.service.js';
 import type { DataSource } from 'typeorm';
 
 describe('RouteEnrichmentService.aggregate', () => {
-  it('maps the four PostGIS rows into RouteMetrics', async () => {
+  it('maps the three PostGIS rows into RouteMetrics', async () => {
     const query = jest
       .fn()
-      // quality row
+      // Bounded road-sampling aggregate.
       .mockResolvedValueOnce([
         {
           avg_quality: 4.0,
           avg_curviness: 6.1,
           elevation_span: 540,
           total_length_m: 88900,
+          surface_mix: { asphalt: 82000, gravel: 6900 },
         },
-      ])
-      // surface rows
-      .mockResolvedValueOnce([
-        { surface_type: 'asphalt', length_m: 82000 },
-        { surface_type: 'gravel', length_m: 6900 },
       ])
       // hazard rows
       .mockResolvedValueOnce([{ count: 0 }])
@@ -34,7 +30,7 @@ describe('RouteEnrichmentService.aggregate', () => {
     expect(m.curvinessScore).toBe(6.1);
     expect(m.elevationGain).toBe(540);
     expect(m.surfaceMixMetres).toEqual({ asphalt: 82000, gravel: 6900 });
-    expect(query).toHaveBeenCalledTimes(4);
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it('hazard count query excludes hidden hazards (moderation_status filter)', async () => {
@@ -46,9 +42,9 @@ describe('RouteEnrichmentService.aggregate', () => {
           avg_curviness: 4.0,
           elevation_span: 200,
           total_length_m: 10000,
+          surface_mix: '{}',
         },
       ])
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ count: 0 }])
       .mockResolvedValueOnce([{ avg_scenic: null, zone_count: 0 }]);
     const ds = { query } as unknown as DataSource;
@@ -58,12 +54,12 @@ describe('RouteEnrichmentService.aggregate', () => {
       { lat: 50.1, lng: 14.5 },
     ]);
 
-    // Third query issued is the hazard count — check it carries the moderation filter
-    const hazardSql = String((query.mock.calls[2] as unknown[])[0]);
+    // Second query issued is the hazard count — check it carries the moderation filter.
+    const hazardSql = String((query.mock.calls[1] as unknown[])[0]);
     expect(hazardSql).toContain("moderation_status = 'visible'");
   });
 
-  it('road_segments queries use an indexable degree prefilter, not just geom::geography (which seq-scans the 3.2M-row table)', async () => {
+  it('bounds long-route work with capped point-local GiST lookups', async () => {
     const query = jest
       .fn()
       .mockResolvedValueOnce([
@@ -72,27 +68,35 @@ describe('RouteEnrichmentService.aggregate', () => {
           avg_curviness: null,
           elevation_span: null,
           total_length_m: null,
+          surface_mix: {},
         },
       ])
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ count: 0 }])
       .mockResolvedValueOnce([{ avg_scenic: null, zone_count: 0 }]);
     const ds = { query } as unknown as DataSource;
 
-    await new RouteEnrichmentService(ds).aggregate([
-      { lat: 50.08, lng: 14.42 },
-      { lat: 50.1, lng: 14.5 },
-    ]);
+    await new RouteEnrichmentService(ds).aggregate(
+      Array.from({ length: 2_000 }, (_, i) => ({
+        lat: 49 + i * 0.0001,
+        lng: 14 + i * 0.0002,
+      })),
+    );
 
-    // The two road_segments queries (quality = call 0, surface = call 1) must
-    // carry the bare-geometry ST_DWithin that hits idx_road_segments_geom to
-    // narrow candidates BEFORE the exact geography refine — the geography cast
-    // alone can't use the GiST index and full-scans the table.
-    for (const i of [0, 1]) {
-      const sql = String((query.mock.calls[i] as unknown[])[0]);
-      expect(sql).toContain('ST_DWithin(rs.geom, ST_GeomFromText($1, 4326)');
-      expect(sql).toContain('rs.geom::geography'); // exact refine still present
-    }
+    const roadSql = String((query.mock.calls[0] as unknown[])[0]);
+    const roadParams = (query.mock.calls[0] as unknown[])[1];
+    expect(roadSql).toContain('LEAST(\n                 $3::int');
+    expect(roadSql).toContain('generate_series(');
+    expect(roadSql).toContain('sampling.sample_count - 1');
+    expect(roadSql).toContain('LEFT JOIN LATERAL');
+    expect(roadSql).toContain(
+      'ST_DWithin(\n                   rs.geom,\n                   samples.point',
+    );
+    expect(roadSql).toContain('rs.geom::geography');
+    expect(roadSql).toContain("COALESCE(surface_type, 'unknown')");
+    // The cap and minimum spacing are bound parameters, so route length cannot
+    // grow the number of nearest-segment index lookups without bound.
+    expect(roadParams).toEqual([expect.any(String), 100, 2500, 40]);
+    expect(query).toHaveBeenCalledTimes(3);
   });
 
   it('returns empty metrics without querying for degenerate geometry', async () => {

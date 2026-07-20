@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 export interface RouteMetrics {
@@ -13,13 +13,22 @@ export interface RouteMetrics {
 }
 
 /**
- * Buffer (metres) for ST_DWithin queries that intersect a route line
- * with `road_segments`. 100m matches the `commute` module's quality
- * lookup — narrow enough to filter out segments parallel to the route
- * but wide enough to catch the slight offset between OSRM's geometry
- * and our segment table.
+ * Buffer (metres) for snapping route samples to `road_segments`. 100m matches
+ * the `commute` module's quality lookup — narrow enough to avoid most parallel
+ * roads but wide enough to catch offsets between routed geometry and our
+ * segment table.
  */
 const ROAD_BUFFER_M = 100;
+
+/**
+ * Aggregate cards do not need the segment-by-segment resolution used by the
+ * route-quality overlay. Keep 40 m fidelity for normal routes, but cap the
+ * total samples so a cross-country line costs roughly the same as a day ride.
+ * The detailed segment overlay remains on `/roads/route-quality`; this bounded
+ * query only computes the summary metrics returned with route planning.
+ */
+const AGGREGATE_SAMPLE_SPACING_M = 40;
+const MAX_AGGREGATE_SAMPLES = 2_500;
 
 /**
  * Same buffer rule as the commute module — half a kilometre captures
@@ -46,6 +55,8 @@ function geometryToWkt(
 
 @Injectable()
 export class RouteEnrichmentService {
+  private readonly logger = new Logger(RouteEnrichmentService.name);
+
   constructor(private readonly dataSource: DataSource) {}
 
   async aggregate(
@@ -72,62 +83,149 @@ export class RouteEnrichmentService {
     }
     const wkt = geometryToWkt(finite);
 
-    type QualityRow = {
+    type RoadMetricRow = {
       avg_quality: number | null;
       avg_curviness: number | null;
       elevation_span: number | null;
       total_length_m: number | null;
+      surface_mix: unknown;
     };
-    type SurfaceRow = { surface_type: string; length_m: number };
     type HazardRow = { count: number };
     type ScenicRow = { avg_scenic: number | null; zone_count: number };
 
-    // One round-trip per metric — could be combined into a CTE later,
-    // but for typical day lengths (<500 km) the four queries each return
-    // in <50 ms on the index.
-    const [qualityRows, surfaceRows, hazardRows, scenicRows] =
-      (await Promise.all([
-        this.dataSource.query(
-          `SELECT
-             AVG(rs.quality_score)::float AS avg_quality,
-             AVG(rs.curviness_score)::float AS avg_curviness,
-             SUM(GREATEST(rs.elevation_max - rs.elevation_min, 0))::float AS elevation_span,
-             SUM(rs.length_m)::float AS total_length_m
-           FROM road_segments rs
-           WHERE rs.quality_score IS NOT NULL
-             AND rs.deactivated_at IS NULL
-             -- Indexable degree prefilter (uses idx_road_segments_geom) narrows
-             -- to candidates first; a bare geom::geography distance can't use the
-             -- geometry GiST index and full-scans road_segments (3.2M+ rows once
-             -- the OSM road import runs, so an empty-table query that was instant
-             -- becomes a 100s+ timeout). Dividing by 111320 and doubling gives a
-             -- generous degrees-of-latitude box that still covers $2 m across Tarmoto's
-             -- latitudes; the geography ST_DWithin then refines to the exact
-             -- buffer. Mirrors roads.service.ts.
-             AND ST_DWithin(rs.geom, ST_GeomFromText($1, 4326), ($2 / 111320.0 * 2))
-             AND ST_DWithin(
-               rs.geom::geography,
-               ST_GeomFromText($1, 4326)::geography,
-               $2
-             )`,
-          [wkt, ROAD_BUFFER_M],
-        ),
-        this.dataSource.query(
-          `SELECT rs.surface_type, SUM(rs.length_m)::float AS length_m
-           FROM road_segments rs
-           WHERE rs.deactivated_at IS NULL
-             -- Indexable degree prefilter — see the quality query above.
-             AND ST_DWithin(rs.geom, ST_GeomFromText($1, 4326), ($2 / 111320.0 * 2))
-             AND ST_DWithin(
-             rs.geom::geography,
-             ST_GeomFromText($1, 4326)::geography,
-             $2
+    const queryDurations = new Map<string, number>();
+    const timedQuery = async <T>(
+      label: string,
+      sql: string,
+      params: unknown[],
+    ): Promise<T> => {
+      const startedAt = Date.now();
+      try {
+        return await this.dataSource.query(sql, params);
+      } finally {
+        queryDurations.set(label, Date.now() - startedAt);
+      }
+    };
+
+    const aggregateStartedAt = Date.now();
+    const [roadRows, hazardRows, scenicRows] = await Promise.all([
+      timedQuery<RoadMetricRow[]>(
+        'roads',
+        `WITH route AS MATERIALIZED (
+             SELECT
+               ST_GeomFromText($1, 4326) AS line,
+               ST_Length(ST_GeomFromText($1, 4326)::geography) AS length_m
+           ),
+           sampling AS MATERIALIZED (
+             SELECT
+               line,
+               length_m,
+               LEAST(
+                 $3::int,
+                 GREATEST(2, CEIL(length_m / $4::float)::int)
+               ) AS sample_count
+             FROM route
+           ),
+           samples AS MATERIALIZED (
+             SELECT
+               series.idx,
+               sampling.length_m / sampling.sample_count AS step_m,
+               ST_LineInterpolatePoint(
+                 sampling.line,
+                 (series.idx + 0.5)::float / sampling.sample_count
+               ) AS point
+             FROM sampling
+             CROSS JOIN LATERAL generate_series(
+               0,
+               sampling.sample_count - 1
+             ) AS series(idx)
+           ),
+           snapped AS MATERIALIZED (
+             SELECT
+               samples.idx,
+               samples.step_m,
+               nearest.id AS segment_id,
+               nearest.quality_score,
+               nearest.curviness_score,
+               nearest.surface_type
+             FROM samples
+             LEFT JOIN LATERAL (
+               SELECT
+                 rs.id,
+                 rs.quality_score,
+                 rs.curviness_score,
+                 rs.surface_type
+               FROM road_segments rs
+               WHERE rs.deactivated_at IS NULL
+                 -- Every lookup is a small point-local GiST search. Unlike a
+                 -- whole-route predicate, its bounding box does not grow from
+                 -- a few km to half a continent as route length increases.
+                 AND ST_DWithin(
+                   rs.geom,
+                   samples.point,
+                   ($2 / 111320.0 * 2)
+                 )
+                 AND ST_DWithin(
+                   rs.geom::geography,
+                   samples.point::geography,
+                   $2
+                 )
+               ORDER BY ST_Distance(
+                 rs.geom::geography,
+                 samples.point::geography
+               )
+               LIMIT 1
+             ) nearest ON TRUE
+           ),
+           metrics AS (
+             SELECT
+               AVG(quality_score)::float AS avg_quality,
+               AVG(curviness_score)::float AS avg_curviness,
+               SUM(step_m) FILTER (WHERE segment_id IS NOT NULL)::float
+                 AS total_length_m
+             FROM snapped
+           ),
+           elevation AS (
+             SELECT
+               SUM(
+                 GREATEST(rs.elevation_max - rs.elevation_min, 0)
+               )::float AS elevation_span
+             FROM road_segments rs
+             INNER JOIN (
+               SELECT DISTINCT segment_id
+               FROM snapped
+               WHERE segment_id IS NOT NULL
+             ) matched ON matched.segment_id = rs.id
+           ),
+           surface_lengths AS (
+             SELECT
+               COALESCE(surface_type, 'unknown') AS surface_type,
+               SUM(step_m)::float AS length_m
+             FROM snapped
+             WHERE segment_id IS NOT NULL
+             GROUP BY COALESCE(surface_type, 'unknown')
+           ),
+           surfaces AS (
+             SELECT COALESCE(
+               jsonb_object_agg(surface_type, length_m),
+               '{}'::jsonb
+             ) AS surface_mix
+             FROM surface_lengths
            )
-           GROUP BY rs.surface_type`,
-          [wkt, ROAD_BUFFER_M],
-        ),
-        this.dataSource.query(
-          `SELECT COUNT(*)::int AS count
+           SELECT
+             metrics.avg_quality,
+             metrics.avg_curviness,
+             elevation.elevation_span,
+             metrics.total_length_m,
+             surfaces.surface_mix
+           FROM metrics
+           CROSS JOIN elevation
+           CROSS JOIN surfaces`,
+        [wkt, ROAD_BUFFER_M, MAX_AGGREGATE_SAMPLES, AGGREGATE_SAMPLE_SPACING_M],
+      ),
+      timedQuery<HazardRow[]>(
+        'hazards',
+        `SELECT COUNT(*)::int AS count
            FROM hazard_reports h
            WHERE h.is_active = true AND h.expires_at > NOW()
              AND h.moderation_status = 'visible'
@@ -136,10 +234,11 @@ export class RouteEnrichmentService {
                ST_GeomFromText($1, 4326)::geography,
                $2
              )`,
-          [wkt, HAZARD_BUFFER_M],
-        ),
-        this.dataSource.query(
-          `SELECT
+        [wkt, HAZARD_BUFFER_M],
+      ),
+      timedQuery<ScenicRow[]>(
+        'scenic',
+        `SELECT
              AVG(fz.composite_score)::float AS avg_scenic,
              COUNT(*)::int AS zone_count
            FROM fun_zones fz
@@ -148,16 +247,23 @@ export class RouteEnrichmentService {
              ST_GeomFromText($1, 4326)::geography,
              $2
            )`,
-          [wkt, SCENIC_OVERLAP_BUFFER_KM * 1000],
-        ),
-      ])) as [QualityRow[], SurfaceRow[], HazardRow[], ScenicRow[]];
+        [wkt, SCENIC_OVERLAP_BUFFER_KM * 1000],
+      ),
+    ]);
 
-    const q: QualityRow | undefined = qualityRows[0];
+    const q: RoadMetricRow | undefined = roadRows[0];
     const s: ScenicRow | undefined = scenicRows[0];
     const h: HazardRow | undefined = hazardRows[0];
-    const surfaceMixMetres: Record<string, number> = {};
-    for (const row of surfaceRows) {
-      surfaceMixMetres[row.surface_type] = row.length_m;
+    const surfaceMixMetres = parseSurfaceMix(q?.surface_mix);
+
+    const totalDurationMs = Date.now() - aggregateStartedAt;
+    if (totalDurationMs >= 1_000) {
+      this.logger.warn(
+        `Route enrichment took ${totalDurationMs}ms ` +
+          `(roads=${queryDurations.get('roads') ?? -1}ms, ` +
+          `hazards=${queryDurations.get('hazards') ?? -1}ms, ` +
+          `scenic=${queryDurations.get('scenic') ?? -1}ms)`,
+      );
     }
 
     // Elevation gain/loss: we don't have a pre-aggregated profile per
@@ -209,4 +315,24 @@ export class RouteEnrichmentService {
       surfaceMixMetres,
     };
   }
+}
+
+function parseSurfaceMix(value: unknown): Record<string, number> {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      return {};
+    }
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {};
+  }
+  const result: Record<string, number> = {};
+  for (const [surface, metres] of Object.entries(parsed)) {
+    const numeric = typeof metres === 'number' ? metres : Number(metres);
+    if (Number.isFinite(numeric)) result[surface] = numeric;
+  }
+  return result;
 }
