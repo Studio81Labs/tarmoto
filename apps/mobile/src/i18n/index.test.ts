@@ -31,6 +31,7 @@ describe("mobile i18n", () => {
         count: 2,
       }),
     ).toBe("2 new hazards");
+    expect(translate("Hazards ({count})", { count: 3 })).toBe("Hazards (3)");
   });
 
   it("keeps the deliberate dynamic-key fallback", () => {

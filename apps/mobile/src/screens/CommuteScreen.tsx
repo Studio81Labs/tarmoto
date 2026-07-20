@@ -414,8 +414,7 @@ function HazardsCard({
     <View style={styles.card}>
       <View style={styles.hazardsHeader}>
         <Text style={styles.sectionTitle}>
-          {translate("Hazards (")}
-          {hazards.length})
+          {translate("Hazards ({count})", { count: hazards.length })}
         </Text>
         {newHazardCount > 0 ? (
           <TouchableOpacity

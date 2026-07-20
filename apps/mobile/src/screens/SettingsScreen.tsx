@@ -78,7 +78,9 @@ export default function SettingsScreen() {
           value={minQuality}
           onChange={setMinQuality}
           label={translate("Minimum quality")}
-          helpText={`Currently showing ${qualityLabel(minQuality)} and above.`}
+          helpText={translate("Currently showing {quality} and above.", {
+            quality: qualityLabel(minQuality),
+          })}
         />
       </Card>
 
@@ -94,7 +96,7 @@ export default function SettingsScreen() {
           value={fuelRangeKm}
           onChange={setFuelRangeKm}
           label={translate("Fuel range")}
-          helpText="Tap a distance to match your bike."
+          helpText={translate("Tap a distance to match your bike.")}
         />
       </Card>
 

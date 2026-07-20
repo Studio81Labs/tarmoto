@@ -281,6 +281,8 @@ export const en = {
   Curves: "Curves",
   Curviness: "Curviness",
   Curvy: "Curvy",
+  "Currently showing {quality} and above.":
+    "Currently showing {quality} and above.",
   "Daily distance": "Daily distance",
   "Day {day}": "Day {day}",
   "Day {day} not found": "Day {day} not found",
@@ -416,7 +418,7 @@ export const en = {
   "Hazard type": "Hazard type",
   "Hazard type {value0}": "Hazard type {value0}",
   Hazards: "Hazards",
-  "Hazards (": "Hazards (",
+  "Hazards ({count})": "Hazards ({count})",
   "HELP IS ON THE WAY": "HELP IS ON THE WAY",
   Hero: "Hero",
   "Hide {label} overlay": "Hide {label} overlay",
@@ -835,6 +837,7 @@ export const en = {
   "Take photo with camera": "Take photo with camera",
   "Tap a hazard type — you can adjust severity on the next screen.":
     "Tap a hazard type — you can adjust severity on the next screen.",
+  "Tap a distance to match your bike.": "Tap a distance to match your bike.",
   "Tap a star to rate this road": "Tap a star to rate this road",
   "Tap the surface you're on now — applies until you tag again.":
     "Tap the surface you're on now — applies until you tag again.",

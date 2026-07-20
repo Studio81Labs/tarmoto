@@ -16,7 +16,7 @@ import { MANEUVER_LABELS } from "@/services/navigation";
 import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { t as translate, type EnglishMessageKey, type Translate } from "@/i18n";
 
 export type VehicleNavigationSnapshot = VehicleDisplaySnapshot;
 
@@ -101,7 +101,10 @@ const HAZARD_COPY: Record<
   },
 };
 
-export function matchHazardTypeFromText(query: string): HazardType | null {
+export function matchHazardTypeFromText(
+  query: string,
+  translateCopy: Translate = translate,
+): HazardType | null {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return null;
 
@@ -110,6 +113,15 @@ export function matchHazardTypeFromText(query: string): HazardType | null {
     [HazardType, (typeof HAZARD_COPY)[HazardType]]
   >) {
     let score = 0;
+    const translatedLabel = translateCopy(copy.label).trim().toLowerCase();
+    if (translatedLabel) {
+      if (normalized === translatedLabel) score = Math.max(score, 100);
+      else if (normalized.includes(translatedLabel)) {
+        score = Math.max(score, 80);
+      } else if (translatedLabel.includes(normalized)) {
+        score = Math.max(score, 60);
+      }
+    }
     for (const alias of copy.aliases) {
       if (normalized === alias) score = Math.max(score, 100);
       else if (normalized.includes(alias)) score = Math.max(score, 80);
@@ -122,7 +134,10 @@ export function matchHazardTypeFromText(query: string): HazardType | null {
   return best?.type ?? null;
 }
 
-export function buildHazardSearchItems(query: string): HazardSearchItem[] {
+export function buildHazardSearchItems(
+  query: string,
+  translateCopy: Translate = translate,
+): HazardSearchItem[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {
     return (
@@ -131,8 +146,8 @@ export function buildHazardSearchItems(query: string): HazardSearchItem[] {
       >
     ).map(([id, copy]) => ({
       id,
-      text: translate(copy.label),
-      detailText: translate(copy.detail),
+      text: translateCopy(copy.label),
+      detailText: translateCopy(copy.detail),
     }));
   }
   const scored = (
@@ -140,7 +155,7 @@ export function buildHazardSearchItems(query: string): HazardSearchItem[] {
       [HazardType, (typeof HAZARD_COPY)[HazardType]]
     >
   ).map(([id, copy]) => {
-    const translatedLabel = translate(copy.label);
+    const translatedLabel = translateCopy(copy.label);
     let score = 0;
     for (const alias of copy.aliases) {
       if (normalized === alias) score = Math.max(score, 100);
@@ -156,7 +171,7 @@ export function buildHazardSearchItems(query: string): HazardSearchItem[] {
     return {
       id,
       text: translatedLabel,
-      detailText: translate(copy.detail),
+      detailText: translateCopy(copy.detail),
       score,
     };
   });
@@ -284,6 +299,7 @@ export function buildNavigationPaneItems(
 interface VehicleDisplayControllerOptions {
   bridge: VehicleDisplayBridge;
   reportHazard: (location: LatLng, type: HazardType) => Promise<void>;
+  translate?: Translate;
 }
 
 export class VehicleDisplayController {
@@ -292,6 +308,10 @@ export class VehicleDisplayController {
   private mounted = false;
 
   constructor(private readonly options: VehicleDisplayControllerOptions) {}
+
+  private get translate(): Translate {
+    return this.options.translate ?? translate;
+  }
 
   sync(snapshot: VehicleNavigationSnapshot): void {
     this.snapshot = snapshot;
@@ -320,20 +340,20 @@ export class VehicleDisplayController {
 
   handleTemplateAction(actionId: string): void {
     if (actionId !== "report-hazard") return;
-    this.searchItems = buildHazardSearchItems("");
+    this.searchItems = buildHazardSearchItems("", this.translate);
     this.options.bridge.openSearch(this.searchItems);
   }
 
   handleSearchTextChange(query: string): void {
-    this.searchItems = buildHazardSearchItems(query);
+    this.searchItems = buildHazardSearchItems(query, this.translate);
     this.options.bridge.updateSearch(this.searchItems);
   }
 
   async submitSearchQuery(query: string): Promise<boolean> {
-    const type = matchHazardTypeFromText(query);
+    const type = matchHazardTypeFromText(query, this.translate);
     if (!type) {
       this.options.bridge.showBanner(
-        translate(
+        this.translate(
           "Say pothole, gravel, oil spill, roadworks, animals, police, flooding, or ice.",
         ),
         "danger",
@@ -354,7 +374,7 @@ export class VehicleDisplayController {
     const location = this.snapshot?.currentLocation;
     if (!location) {
       this.options.bridge.showBanner(
-        translate("Waiting for GPS before reporting a hazard."),
+        this.translate("Waiting for GPS before reporting a hazard."),
         "danger",
       );
       return false;
@@ -363,8 +383,8 @@ export class VehicleDisplayController {
     await this.options.reportHazard(location, type);
     this.options.bridge.closeSearch();
     this.options.bridge.showBanner(
-      translate("Hazard reported: {hazard}", {
-        hazard: translate(HAZARD_COPY[type].label),
+      this.translate("Hazard reported: {hazard}", {
+        hazard: this.translate(HAZARD_COPY[type].label),
       }),
       "success",
     );
