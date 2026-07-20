@@ -91,6 +91,8 @@ export const en = {
   "{name}, {tier} tier earned": "{name}, {tier} tier earned",
   "{name}, locked, {progress}% to {nextTier}":
     "{name}, locked, {progress}% to {nextTier}",
+  "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden":
+    "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
   "{progress} · {percent}%": "{progress} · {percent}%",
   "{progress} · {percent}% · COMPLETE": "{progress} · {percent}% · COMPLETE",
   "{progress} / {target} {unit}": "{progress} / {target} {unit}",
@@ -132,8 +134,6 @@ export const en = {
   "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
   "{value0}: {value1}": "{value0}: {value1}",
   "{value0}% confidence": "{value0}% confidence",
-  "{value0}% explored · {value1} of {value2} segments ridden":
-    "{value0}% explored · {value1} of {value2} segments ridden",
   "{value0}°": "{value0}°",
   "6-character code": "6-character code",
   "A few words about your riding": "A few words about your riding",
@@ -852,8 +852,8 @@ export const en = {
   "Start a ride to broadcast your position to the group.":
     "Start a ride to broadcast your position to the group.",
   "Start commute": "Start commute",
-  "Start commute on alternative route, {distance} kilometres, {duration} minutes, {count, plural, one {# hazard} other {# hazards}}":
-    "Start commute on alternative route, {distance} kilometres, {duration} minutes, {count, plural, one {# hazard} other {# hazards}}",
+  "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}":
+    "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
   "Start commute ride to {value0}": "Start commute ride to {value0}",
   "Start commute to {value0}": "Start commute to {value0}",
   "Start location": "Start location",

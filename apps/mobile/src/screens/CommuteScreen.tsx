@@ -640,7 +640,7 @@ function AlternativeRow({
         onPress={onStart}
         accessibilityRole="button"
         accessibilityLabel={translate(
-          "Start commute on alternative route, {distance} kilometres, {duration} minutes, {count, plural, one {# hazard} other {# hazards}}",
+          "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
           {
             distance: alt.distance_km.toFixed(1),
             duration: alt.duration_min,

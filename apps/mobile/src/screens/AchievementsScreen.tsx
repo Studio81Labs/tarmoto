@@ -205,11 +205,11 @@ export default function AchievementsScreen() {
         body={
           snapshot?.exploration
             ? translate(
-                "{value0}% explored · {value1} of {value2} segments ridden",
+                "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
                 {
-                  value0: snapshot.exploration.percent_explored.toFixed(1),
-                  value1: snapshot.exploration.ridden_segments,
-                  value2: snapshot.exploration.total_segments,
+                  percent: snapshot.exploration.percent_explored.toFixed(1),
+                  ridden: snapshot.exploration.ridden_segments,
+                  total: snapshot.exploration.total_segments,
                 },
               )
             : translate("See ridden vs unridden roads")

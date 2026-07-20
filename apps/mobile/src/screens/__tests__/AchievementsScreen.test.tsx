@@ -137,6 +137,23 @@ describe("AchievementsScreen", () => {
     expect(mockNavigate).toHaveBeenCalledWith("PersonalRoadMap");
   });
 
+  it("uses the singular segment form for a one-segment exploration snapshot", async () => {
+    mockedApi.getExplorationStats.mockResolvedValue({
+      ridden_segments: 1,
+      total_segments: 1,
+      percent_explored: 100,
+      total_distance_km: 2.5,
+    });
+
+    await render(<AchievementsScreen />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("100.0% explored · 1 of 1 segment ridden"),
+      ).toBeTruthy(),
+    );
+  });
+
   it("surfaces an error banner when every source fails so the rider isn't shown empty defaults", async () => {
     mockedApi.listUserBadges.mockRejectedValue(new Error("Network down"));
     mockedApi.listChallenges.mockRejectedValue(new Error("Network down"));

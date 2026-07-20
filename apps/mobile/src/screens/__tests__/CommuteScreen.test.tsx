@@ -271,6 +271,31 @@ describe("CommuteScreen", () => {
     ).toEqual(["14.6 km · 28 min", "13.4 km · 24 min", "12.9 km · 20 min"]);
   });
 
+  it("uses the singular minute form in alternative accessibility copy", async () => {
+    mockUseCommuteResult = buildResult({
+      alternatives: {
+        ...baseAlternatives,
+        alternatives: [
+          {
+            distance_km: 1.2,
+            duration_min: 1,
+            avg_quality: 4.2,
+            hazard_count: 0,
+            geometry: [],
+          },
+        ],
+      },
+    });
+
+    await render(<CommuteScreen />);
+
+    expect(
+      screen.getByLabelText(
+        "Start commute on alternative route, 1.2 kilometres, 1 minute, 0 hazards",
+      ),
+    ).toBeTruthy();
+  });
+
   it("starts a commute ride when a rider taps an alternative row", async () => {
     await render(<CommuteScreen />);
     // The first alternative row is the highest-ranked (14.6 km, CLEAR).
