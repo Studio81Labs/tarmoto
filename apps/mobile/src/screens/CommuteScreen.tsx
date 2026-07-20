@@ -771,7 +771,9 @@ function SavedRoutesCard({
                   const message =
                     err instanceof Error
                       ? err.message
-                      : "Couldn't switch your primary commute. Try again.";
+                      : translate(
+                          "Couldn't switch your primary commute. Try again.",
+                        );
                   Alert.alert(translate("Couldn't update primary"), message);
                 })
                 .finally(() => setPendingId(null));

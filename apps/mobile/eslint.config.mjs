@@ -184,6 +184,18 @@ export default [
         },
         {
           selector:
+            "VariableDeclarator[id.name=/^(error|errorMessage|message|notice|validation|warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing conditional status-copy variables with translate() before passing them to state setters or alerts.",
+        },
+        {
+          selector:
+            "VariableDeclarator[id.name=/^(error|errorMessage|message|notice|validation|warning)$/] > ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Replace rider-facing conditional status-copy templates with one translate() ICU message.",
+        },
+        {
+          selector:
             "CallExpression[callee.name='markFailed'] > Literal:first-child[value=/[A-Za-z]{2,}/]",
           message: "Wrap rider-facing failure messages with translate().",
         },

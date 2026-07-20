@@ -65,7 +65,9 @@ export default function BadgesScreen() {
         setErrorMessage(null);
       } catch (err: unknown) {
         const message =
-          err instanceof Error ? err.message : "Couldn't load badges.";
+          err instanceof Error
+            ? err.message
+            : translate("Couldn't load badges.");
         setErrorMessage(message);
       } finally {
         if (!initial) setIsRefreshing(false);

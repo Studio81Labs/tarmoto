@@ -329,7 +329,9 @@ export default function HazardReportScreen() {
       navigation.goBack();
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Couldn't submit the report.";
+        err instanceof Error
+          ? err.message
+          : translate("Couldn't submit the report.");
       setErrorMessage(message);
     } finally {
       setSubmitting(false);

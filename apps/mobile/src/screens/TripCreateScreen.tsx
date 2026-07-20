@@ -205,7 +205,9 @@ export default function TripCreateScreen() {
       navigation.replace("TripDetail", { tripId: trip.id });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Unable to import route";
+        err instanceof Error
+          ? err.message
+          : translate("Unable to import route");
       setErrorMessage(message);
       Alert.alert(translate("Import failed"), message);
     } finally {
@@ -263,7 +265,9 @@ export default function TripCreateScreen() {
       navigation.replace("TripDetail", { tripId });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Unable to generate trip";
+        err instanceof Error
+          ? err.message
+          : translate("Unable to generate trip");
       setErrorMessage(message);
       // Also pop an alert so the user can't miss it behind the keyboard.
       Alert.alert(translate("Generation failed"), message);

@@ -78,7 +78,7 @@ export default function JoinTripScreen() {
       navigation.replace("TripDetail", { tripId: trimmedId });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Unable to join trip";
+        err instanceof Error ? err.message : translate("Unable to join trip");
       setErrorMessage(message);
     } finally {
       setSubmitting(false);
