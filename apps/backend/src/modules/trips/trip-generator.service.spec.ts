@@ -518,7 +518,7 @@ describe('TripGeneratorService', () => {
             { lat: 47.2, lng: 11.4, composite_score: 8 },
           ]);
         }
-        if (sql.includes('AVG(rs.quality_score)')) {
+        if (sql.includes('AVG(quality_score)')) {
           // The return leg has no quality-scored segments at all.
           const wkt = typeof params?.[0] === 'string' ? params[0] : '';
           if (wkt.includes(String(BACK_LNG))) return Promise.resolve([]);
@@ -712,7 +712,7 @@ describe('TripGeneratorService', () => {
       const aggCalls = queryCalls.filter(
         (sql) =>
           sql.includes('FROM road_segments') &&
-          sql.includes('AVG(rs.quality_score)'),
+          sql.includes('AVG(quality_score)'),
       );
       expect(aggCalls.length).toBeGreaterThan(0);
     });
