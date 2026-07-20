@@ -3,6 +3,7 @@ import {
   findOwnerId,
   tripFromDetail,
   tripSummaryFromWire,
+  withRequestOnlyRouteOptions,
   type TripDetailDay,
   type TripDetailMember,
   type TripDetailResponse,
@@ -349,6 +350,30 @@ describe("tripFromDetail", () => {
     // `null` matches the wire convention for "unfiled"; consumers
     // can distinguish that from an absent field with `folder_id ?? null`.
     expect(trip.folder_id).toBeNull();
+  });
+});
+
+describe("withRequestOnlyRouteOptions", () => {
+  it("retains the rider's surface and avoidance choices after response hydration", () => {
+    const hydrated = tripFromDetail(makeDetail());
+
+    const trip = withRequestOnlyRouteOptions(hydrated, {
+      surfacePreference: ["asphalt", "concrete"],
+      avoidHighways: false,
+      avoidTolls: true,
+      avoidUnpaved: false,
+    });
+
+    expect(trip.parameters).toEqual(
+      expect.objectContaining({
+        surfacePreference: ["asphalt", "concrete"],
+        avoidHighways: false,
+        avoidTolls: true,
+        avoidUnpaved: false,
+      }),
+    );
+    expect(trip.parameters.roadPreference).toBe("scenic");
+    expect(trip.parameters.minQuality).toBe(4);
   });
 });
 

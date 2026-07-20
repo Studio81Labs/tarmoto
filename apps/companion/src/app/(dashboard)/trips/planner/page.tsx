@@ -146,6 +146,7 @@ import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import {
   findOwnerId,
   tripFromDetail,
+  withRequestOnlyRouteOptions,
   type TripDetailMember,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
@@ -1043,18 +1044,21 @@ export default function TripPlannerPage() {
       // event is for. The hook already filters but a defensive check
       // here covers a future change in subscription scope.
       if (detail.id !== serverTripId) return;
-      const hydrated = tripFromDetail(detail);
+      const hydrated = withRequestOnlyRouteOptions(tripFromDetail(detail), {
+        surfacePreference,
+        avoidHighways,
+        avoidTolls,
+        avoidUnpaved,
+      });
       setActiveTrip(hydrated);
       setServerTripOwnerId(findOwnerId(detail));
       setServerTripCallerRole(findCallerRole(detail, currentUserId));
       // Mirror the REST hydration path below: the planner's control
-      // strip (days / dailyKmTarget / road preference / surfaces /
-      // minQuality / avoid* toggles) is local React state, NOT
-      // derived from `activeTrip`, so a remote regenerate that
-      // changed `num_days` would otherwise leave the controls stuck
-      // at their old values — and the next local Save would
-      // re-serialize the stale controls back to the server, undoing
-      // the collaborator's just-committed change.
+      // strip is local React state, NOT derived from `activeTrip`, so a remote
+      // regenerate that changed persisted values such as `num_days` would
+      // otherwise leave those controls stale. Surface / avoid values are
+      // request-only, so `hydrated` deliberately carries this rider's current
+      // choices instead of adapter defaults.
       const params = hydrated.parameters;
       setDays(params.days);
       setDailyKmTarget(params.dailyKmTarget);
@@ -1064,11 +1068,19 @@ export default function TripPlannerPage() {
       setAvoidHighways(params.avoidHighways);
       setAvoidTolls(params.avoidTolls);
       setAvoidUnpaved(params.avoidUnpaved);
-      // Collaborator values, not rider edits — never write them back as
-      // the rider's saved defaults (§F).
+      // State synchronization, not a rider edit — never write it back as a
+      // new set of rider defaults (§F).
       prefsTouchedRef.current = false;
     },
-    [currentUserId, serverTripId, setActiveTrip],
+    [
+      avoidHighways,
+      avoidTolls,
+      avoidUnpaved,
+      currentUserId,
+      serverTripId,
+      setActiveTrip,
+      surfacePreference,
+    ],
   );
   const handleRemoteTripDeleted = useCallback(() => {
     // Owner deleted the trip out from under everyone. Drop local trip
@@ -1622,8 +1634,11 @@ export default function TripPlannerPage() {
         setSavingRoute(true);
         try {
           const { data } = await persistNames();
-          const hydrated = tripFromDetail(
-            data as unknown as Parameters<typeof tripFromDetail>[0],
+          const hydrated = withRequestOnlyRouteOptions(
+            tripFromDetail(
+              data as unknown as Parameters<typeof tripFromDetail>[0],
+            ),
+            plannerParams,
           );
           setActiveTrip(hydrated);
           if (promotesOnCreate) {
@@ -1753,8 +1768,11 @@ export default function TripPlannerPage() {
         });
         detail = updated as typeof data;
       }
-      const hydrated = tripFromDetail(
-        detail as unknown as Parameters<typeof tripFromDetail>[0],
+      const hydrated = withRequestOnlyRouteOptions(
+        tripFromDetail(
+          detail as unknown as Parameters<typeof tripFromDetail>[0],
+        ),
+        plannerParams,
       );
       setActiveTrip(hydrated);
       if (!existingTripId) {
