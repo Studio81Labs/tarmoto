@@ -161,6 +161,13 @@ describe("CommuteScreen", () => {
     mockUseCommuteResult = buildResult();
   });
 
+  it("renders registered weather and road-condition labels", async () => {
+    await render(<CommuteScreen />);
+
+    expect(screen.getByText("14°C · Clear")).toBeTruthy();
+    expect(screen.getByText("Road: Dry · Wind 8 km/h")).toBeTruthy();
+  });
+
   it("starts a commute ride from the primary route CTA", async () => {
     await render(<CommuteScreen />);
     await fireEvent.press(

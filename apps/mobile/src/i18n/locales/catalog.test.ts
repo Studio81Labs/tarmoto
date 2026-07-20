@@ -32,12 +32,12 @@ describe("mobile English catalog", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("uses count and an other branch for every plural", () => {
+  it("uses an other branch for every plural", () => {
     const offenders = entries
       .filter(
         ([, message]) =>
-          message.includes(", plural,") &&
-          !(message.includes("{count, plural,") && message.includes("other {")),
+          (message.match(/,\s*plural,/g)?.length ?? 0) >
+          (message.match(/\bother\s*\{/g)?.length ?? 0),
       )
       .map(([key]) => key);
 

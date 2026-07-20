@@ -236,12 +236,23 @@ describe("formatHazardRetryResult", () => {
     ).toEqual({ text: "Uploaded 2 reports.", tone: "success" });
   });
 
-  it("uses warning tone when anything still failed or queued", () => {
-    expect(
-      formatHazardRetryResult({ flushed: 0, failed: 0, remaining: 1 }, false),
-    ).toEqual({ text: "1 still queued.", tone: "warning" });
-    expect(
-      formatHazardRetryResult({ flushed: 1, failed: 1, remaining: 0 }, false),
-    ).toEqual({ text: "Uploaded 1 report · 1 failed.", tone: "warning" });
+  it.each([
+    [{ flushed: 0, failed: 1, remaining: 0 }, "1 failed."],
+    [{ flushed: 0, failed: 0, remaining: 1 }, "1 still queued."],
+    [{ flushed: 1, failed: 1, remaining: 0 }, "Uploaded 1 report · 1 failed."],
+    [
+      { flushed: 1, failed: 0, remaining: 1 },
+      "Uploaded 1 report · 1 still queued.",
+    ],
+    [{ flushed: 0, failed: 1, remaining: 1 }, "1 failed · 1 still queued."],
+    [
+      { flushed: 2, failed: 1, remaining: 1 },
+      "Uploaded 2 reports · 1 failed · 1 still queued.",
+    ],
+  ])("uses warning tone for retry outcome %#", (result, text) => {
+    expect(formatHazardRetryResult(result, false)).toEqual({
+      text,
+      tone: "warning",
+    });
   });
 });

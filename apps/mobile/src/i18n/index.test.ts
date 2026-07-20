@@ -76,6 +76,18 @@ describe("mobile i18n", () => {
   it("pluralizes count-bearing labels", () => {
     expect(
       translate(
+        "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
+        { severity: "High", time: "5m ago", count: 1 },
+      ),
+    ).toBe("High · 5m ago · 1 confirmation");
+    expect(
+      translate(
+        "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
+        { severity: "High", time: "5m ago", count: 2 },
+      ),
+    ).toBe("High · 5m ago · 2 confirmations");
+    expect(
+      translate(
         "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period",
         { count: 1 },
       ),

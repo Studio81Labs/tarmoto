@@ -58,8 +58,7 @@ import {
   formatHazardType,
   formatRelativeTime,
 } from "./RoadPreviewScreen.helpers";
-import { capitalize } from "./TripScreens.helpers";
-import { t as translate, tDynamic } from "@/i18n";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -72,6 +71,23 @@ const t = brandColorsLight;
 // Low-severity hazards have no brand "info" tone (the palette is cream/ink +
 // the three status colours), so they read as neutral ink rather than blue.
 const SEVERITY_LOW_COLOR = t.dim;
+
+const WEATHER_CONDITION_LABELS = {
+  clear: "Clear",
+  cloudy: "Cloudy",
+  rain: "Rain",
+  storm: "Storm",
+  snow: "Snow",
+  fog: "Fog",
+  ice: "Ice",
+} satisfies Record<Weather["condition"], EnglishMessageKey>;
+
+const ROAD_CONDITION_LABELS = {
+  dry: "Dry",
+  wet: "Wet",
+  icy: "Icy",
+  unknown: "Unknown",
+} satisfies Record<Weather["road_condition"], EnglishMessageKey>;
 
 export default function CommuteScreen() {
   const {
@@ -371,13 +387,17 @@ function WeatherCard({ weather }: { weather: Weather }) {
         <Icon name={weatherIcon(weather.condition)} size={32} color={t.fg} />
         <View style={styles.weatherText}>
           <Text style={styles.weatherTemp}>
-            {Math.round(weather.temperature_c)}°C ·{" "}
-            {tDynamic(capitalize(weather.condition))}
+            {translate("{temperature}°C · {condition}", {
+              temperature: Math.round(weather.temperature_c),
+              condition: translate(WEATHER_CONDITION_LABELS[weather.condition]),
+            })}
           </Text>
           <Text style={styles.weatherDetail}>{weather.description}</Text>
           <Text style={styles.weatherDetail}>
             {translate("Road: {condition} · Wind {speed} km/h", {
-              condition: tDynamic(capitalize(weather.road_condition)),
+              condition: translate(
+                ROAD_CONDITION_LABELS[weather.road_condition],
+              ),
               speed: Math.round(weather.wind_kmh),
             })}
           </Text>
@@ -465,17 +485,20 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
         ) : null}
         <Text style={styles.hazardMeta}>
           {hazard.confirmations > 0
-            ? translate("{severity} · {time} · {count} confirmed", {
-                severity: translate(
-                  hazard.severity === "high"
-                    ? "High"
-                    : hazard.severity === "medium"
-                      ? "Medium"
-                      : "Low",
-                ),
-                time: formatRelativeTime(hazard.created_at),
-                count: hazard.confirmations,
-              })
+            ? translate(
+                "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
+                {
+                  severity: translate(
+                    hazard.severity === "high"
+                      ? "High"
+                      : hazard.severity === "medium"
+                        ? "Medium"
+                        : "Low",
+                  ),
+                  time: formatRelativeTime(hazard.created_at),
+                  count: hazard.confirmations,
+                },
+              )
             : translate("{severity} · {time}", {
                 severity: translate(
                   hazard.severity === "high"

@@ -722,7 +722,7 @@ interface HazardRetryToast {
   tone: "success" | "warning";
 }
 
-// Builds the "success / N failed / N still queued" outcome text from a
+// Builds a complete, independently translatable outcome message from a
 // drain result. Returns null when there's nothing to show (no retry yet
 // or one is in flight). Exported for direct unit testing — keeps the
 // branching logic out of the JSX.
@@ -734,26 +734,41 @@ export function formatHazardRetryResult(
   const { flushed, failed, remaining } = lastResult;
   if (flushed === 0 && failed === 0 && remaining === 0) return null;
 
-  const parts: string[] = [];
-  if (flushed > 0) {
-    parts.push(
-      translate("Uploaded {count, plural, one {# report} other {# reports}}", {
-        count: flushed,
-      }),
+  const values = { flushed, failed, remaining };
+  let text: string;
+  if (flushed > 0 && failed > 0 && remaining > 0) {
+    text = translate(
+      "Uploaded {flushed, plural, one {# report} other {# reports}} · {failed} failed · {remaining} still queued.",
+      values,
     );
-  }
-  if (failed > 0) {
-    parts.push(translate("{count} failed", { count: failed }));
-  }
-  if (remaining > 0) {
-    parts.push(translate("{count} still queued", { count: remaining }));
+  } else if (flushed > 0 && failed > 0) {
+    text = translate(
+      "Uploaded {flushed, plural, one {# report} other {# reports}} · {failed} failed.",
+      values,
+    );
+  } else if (flushed > 0 && remaining > 0) {
+    text = translate(
+      "Uploaded {flushed, plural, one {# report} other {# reports}} · {remaining} still queued.",
+      values,
+    );
+  } else if (failed > 0 && remaining > 0) {
+    text = translate("{failed} failed · {remaining} still queued.", values);
+  } else if (flushed > 0) {
+    text = translate(
+      "Uploaded {flushed, plural, one {# report} other {# reports}}.",
+      values,
+    );
+  } else if (failed > 0) {
+    text = translate("{failed} failed.", values);
+  } else {
+    text = translate("{remaining} still queued.", values);
   }
   // Pure-failure / pure-stuck outcomes get a warning tone; anything
   // with a successful flush leans on success styling because the rider
   // actually moved their backlog forward.
   const tone: "success" | "warning" =
     flushed > 0 && failed === 0 && remaining === 0 ? "success" : "warning";
-  return { text: translate("{value0}.", { value0: parts.join(" · ") }), tone };
+  return { text, tone };
 }
 
 const styles = StyleSheet.create({

@@ -52,9 +52,7 @@ export const en = {
     "{count, plural, one {# turn} other {# turns}}",
   "{count, plural, one {# waypoint} other {# waypoints}}":
     "{count, plural, one {# waypoint} other {# waypoints}}",
-  "{count} failed": "{count} failed",
   "{count} NEW": "{count} NEW",
-  "{count} still queued": "{count} still queued",
   "{count}d ago": "{count}d ago",
   "{count}h ago": "{count}h ago",
   "{count}m ago": "{count}m ago",
@@ -75,6 +73,9 @@ export const en = {
   "{earned} of {total} earned": "{earned} of {total} earned",
   "{earned} of {total} earned · {tier} tier reached":
     "{earned} of {total} earned · {tier} tier reached",
+  "{failed} failed · {remaining} still queued.":
+    "{failed} failed · {remaining} still queued.",
+  "{failed} failed.": "{failed} failed.",
   "{label} · {percent}% conf": "{label} · {percent}% conf",
   "{label} {percent}%": "{label} {percent}%",
   "{label}, {count, plural, one {# trip} other {# trips}}":
@@ -94,9 +95,11 @@ export const en = {
   "{quality} · {surface}": "{quality} · {surface}",
   "{ready} of {count, plural, one {# region} other {# regions}} ready offline.":
     "{ready} of {count, plural, one {# region} other {# regions}} ready offline.",
+  "{remaining} still queued.": "{remaining} still queued.",
   "{severity} · {time}": "{severity} · {time}",
-  "{severity} · {time} · {count} confirmed":
-    "{severity} · {time} · {count} confirmed",
+  "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}":
+    "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
+  "{temperature}°C · {condition}": "{temperature}°C · {condition}",
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
   "{type} · {duration} stop": "{type} · {duration} stop",
@@ -124,7 +127,6 @@ export const en = {
   "{value0}, {value1} kilometres away": "{value0}, {value1} kilometres away",
   "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
   "{value0}: {value1}": "{value0}: {value1}",
-  "{value0}.": "{value0}.",
   "{value0}% confidence": "{value0}% confidence",
   "{value0}% explored · {value1} of {value2} segments ridden":
     "{value0}% explored · {value1} of {value2} segments ridden",
@@ -219,12 +221,14 @@ export const en = {
   "Check your connection and try again.":
     "Check your connection and try again.",
   CLEAR: "CLEAR",
+  Clear: "Clear",
   "Close fun zone details": "Close fun zone details",
   "Close hazard quick-pick": "Close hazard quick-pick",
   "Close review form": "Close review form",
   "Close surface tag picker": "Close surface tag picker",
   "Close weather alerts": "Close weather alerts",
   Closed: "Closed",
+  Cloudy: "Cloudy",
   Cobblestone: "Cobblestone",
   "Code: {code}": "Code: {code}",
   "Codes are 6 characters.": "Codes are 6 characters.",
@@ -326,6 +330,7 @@ export const en = {
     "Download your full ride history as GPX (for Garmin / RideWithGPS) or CSV (for spreadsheets).",
   "Downloading…": "Downloading…",
   Draft: "Draft",
+  Dry: "Dry",
   Duration: "Duration",
   "e.g. Beskydy weekend": "e.g. Beskydy weekend",
   "e.g. BMW R1250GS": "e.g. BMW R1250GS",
@@ -382,6 +387,7 @@ export const en = {
     "File is larger than 10 MB. Trim the GPX and try again.",
   "Flat profile.": "Flat profile.",
   Flooding: "Flooding",
+  Fog: "Fog",
   Follow: "Follow",
   "Follow rider": "Follow rider",
   Followers: "Followers",
@@ -439,6 +445,7 @@ export const en = {
   "I'm OK, cancel crash alert": "I'm OK, cancel crash alert",
   Ice: "Ice",
   "Ice, black ice, or frozen patch": "Ice, black ice, or frozen patch",
+  Icy: "Icy",
   Imperial: "Imperial",
   "Import failed": "Import failed",
   "Import GPX or KML file": "Import GPX or KML file",
@@ -656,6 +663,7 @@ export const en = {
   "Quality pending": "Quality pending",
   "Quality unscored": "Quality unscored",
   "Quick report": "Quick report",
+  Rain: "Rain",
   Range: "Range",
   Rating: "Rating",
   "Read maneuvers aloud through the helmet headset, with motorcycle- friendly early warnings ~300 m before each turn.":
@@ -785,6 +793,7 @@ export const en = {
   "Sit upright and tap to re-zero": "Sit upright and tap to re-zero",
   SK: "SK",
   "Smooth asphalt": "Smooth asphalt",
+  Snow: "Snow",
   "Some achievements couldn't load. Pull to refresh.":
     "Some achievements couldn't load. Pull to refresh.",
   "Some photos failed to upload — retry or remove them before submitting.":
@@ -819,6 +828,7 @@ export const en = {
   "Stop ride": "Stop ride",
   "Stop ride?": "Stop ride?",
   "Stopping…": "Stopping…",
+  Storm: "Storm",
   "Straight, transit-style road.": "Straight, transit-style road.",
   Submit: "Submit",
   "Submit hazard report": "Submit hazard report",
@@ -928,8 +938,14 @@ export const en = {
     "Upload failed — tap × to remove and try again.",
   "Uploaded {count, plural, one {# pending ride} other {# pending rides}}.":
     "Uploaded {count, plural, one {# pending ride} other {# pending rides}}.",
-  "Uploaded {count, plural, one {# report} other {# reports}}":
-    "Uploaded {count, plural, one {# report} other {# reports}}",
+  "Uploaded {flushed, plural, one {# report} other {# reports}} · {failed} failed · {remaining} still queued.":
+    "Uploaded {flushed, plural, one {# report} other {# reports}} · {failed} failed · {remaining} still queued.",
+  "Uploaded {flushed, plural, one {# report} other {# reports}} · {failed} failed.":
+    "Uploaded {flushed, plural, one {# report} other {# reports}} · {failed} failed.",
+  "Uploaded {flushed, plural, one {# report} other {# reports}} · {remaining} still queued.":
+    "Uploaded {flushed, plural, one {# report} other {# reports}} · {remaining} still queued.",
+  "Uploaded {flushed, plural, one {# report} other {# reports}}.":
+    "Uploaded {flushed, plural, one {# report} other {# reports}}.",
   "Use {value0} as primary commute": "Use {value0} as primary commute",
   "Use as primary": "Use as primary",
   "Use at least 8 characters for your password.":
@@ -974,6 +990,7 @@ export const en = {
   "Weather alerts": "Weather alerts",
   "Weather alerts ahead": "Weather alerts ahead",
   "Weather warning": "Weather warning",
+  Wet: "Wet",
   "What's the surface like? Any switchbacks worth flagging?":
     "What's the surface like? Any switchbacks worth flagging?",
   "When off, this contact stays in your list but is not notified.":
