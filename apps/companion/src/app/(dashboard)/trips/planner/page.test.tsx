@@ -23,6 +23,15 @@ const { mockPush } = vi.hoisted(() => ({
   mockPush: vi.fn(),
 }));
 
+const collabHarness = vi.hoisted(() => ({
+  callbacks: undefined as
+    | {
+        onTripUpdated?: (detail: unknown) => void;
+        onTripDeleted?: (detail: unknown) => void;
+      }
+    | undefined,
+}));
+
 const mockedTripPlannerMap = vi.fn((_props?: unknown) => (
   <div data-testid="trip-planner-map" />
 ));
@@ -97,6 +106,23 @@ vi.mock("@/lib/api", async () => {
 // Prevent the live-routing hook from firing real API calls in unit tests.
 vi.mock("@/hooks/usePlannerRouting", () => ({
   usePlannerRouting: vi.fn(() => ({ routing: false })),
+}));
+
+vi.mock("@/hooks/useTripCollabSession", () => ({
+  useTripCollabSession: vi.fn(
+    (_tripId: string | null, callbacks: typeof collabHarness.callbacks) => {
+      collabHarness.callbacks = callbacks;
+      return {
+        cursors: new Map(),
+        presence: new Map(),
+        members: new Map(),
+        suggestions: [],
+        setSuggestions: vi.fn(),
+        suggestionsError: null,
+        emitCursor: vi.fn(),
+      };
+    },
+  ),
 }));
 
 vi.mock("@/lib/closures-summary", async () => {
@@ -457,6 +483,7 @@ describe("TripPlannerPage", () => {
     mockedPassesPanel.mockClear();
     mockedClosuresPanel.mockClear();
     mockedTripCollaborateModal.mockClear();
+    collabHarness.callbacks = undefined;
     mockPush.mockClear();
     // The selected-day route-quality effect (#862) fires for any committed
     // day; stub the fetch so these tests don't reach the real client.
@@ -1625,6 +1652,50 @@ describe("TripPlannerPage", () => {
   });
 
   // ── Save route (Task 11) ─────────────────────────────────────────────
+
+  it("keeps request-only surface and avoid choices after the save collaboration echo", async () => {
+    const tripId = "11111111-2222-4333-8444-777777777777";
+    window.history.replaceState({}, "", `/trips/planner?tripId=${tripId}`);
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: tripId,
+      parameters: {
+        ...activeTrip.parameters,
+        surfacePreference: ["asphalt", "concrete"],
+        avoidTolls: true,
+      },
+    };
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Best fit", { id: tripId }),
+    } as never);
+
+    render(<TripPlannerPage />);
+
+    const concrete = screen.getByRole("checkbox", { name: "Concrete" });
+    const tolls = screen.getByRole("checkbox", { name: "Avoid tolls" });
+    await waitFor(() => {
+      expect(concrete).toBeChecked();
+      expect(tolls).toBeChecked();
+      expect(collabHarness.callbacks?.onTripUpdated).toBeTypeOf("function");
+    });
+
+    act(() => {
+      collabHarness.callbacks?.onTripUpdated?.(
+        buildTripDetail("Best fit", { id: tripId }),
+      );
+    });
+
+    expect(concrete).toBeChecked();
+    expect(tolls).toBeChecked();
+    expect(setActiveTrip).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        parameters: expect.objectContaining({
+          surfacePreference: ["asphalt", "concrete"],
+          avoidTolls: true,
+        }),
+      }),
+    );
+  });
 
   it("disables Save route when fewer than 2 routing waypoints exist", () => {
     // No activeTrip → activeDayWaypoints is null → routingWaypoints is []

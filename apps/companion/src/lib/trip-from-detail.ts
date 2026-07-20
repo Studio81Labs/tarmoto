@@ -17,6 +17,16 @@ export type TripDetailMember = components["schemas"]["TripMemberDto"];
 export type TripDetailDay = components["schemas"]["TripDayDto"];
 export type TripDetailWaypoint = components["schemas"]["TripWaypointDto"];
 
+/**
+ * Route inputs that are deliberately request-scoped rather than persisted on
+ * the shared Trip record. A REST response or collaboration broadcast therefore
+ * cannot rehydrate them and must retain the current rider's local choices.
+ */
+export type RequestOnlyRouteOptions = Pick<
+  TripParameters,
+  "surfacePreference" | "avoidHighways" | "avoidTolls" | "avoidUnpaved"
+>;
+
 const VALID_ROAD_PREFERENCES: ReadonlySet<TripParameters["roadPreference"]> =
   new Set(["curvy", "scenic", "mixed", "direct"]);
 
@@ -150,6 +160,30 @@ export function tripFromDetail(detail: TripDetailResponse): Trip {
   };
 }
 
+/**
+ * Restore request-only routing inputs after adapting a TripDetailDto.
+ *
+ * The backend intentionally omits these fields from TripDetailDto because
+ * collaborators may experiment with their own filters without changing the
+ * shared trip metadata. Without this merge, a save response (and its
+ * `trip:updated` echo) replaces the rider's selections with adapter defaults.
+ */
+export function withRequestOnlyRouteOptions(
+  trip: Trip,
+  options: RequestOnlyRouteOptions,
+): Trip {
+  return {
+    ...trip,
+    parameters: {
+      ...trip.parameters,
+      surfacePreference: [...options.surfacePreference],
+      avoidHighways: options.avoidHighways,
+      avoidTolls: options.avoidTolls,
+      avoidUnpaved: options.avoidUnpaved,
+    },
+  };
+}
+
 /** Pick the owner's user id, or null if the trip has no owner row. */
 export function findOwnerId(detail: TripDetailResponse): string | null {
   return detail.members?.find((m) => m.role === "owner")?.user_id ?? null;
@@ -236,10 +270,9 @@ function parametersFromDetail(detail: TripDetailResponse): TripParameters {
     // default the rider can adjust.
     dailyKmTarget: Math.round((min + max) / 2),
     roadPreference: mapRoadPreference(detail.road_preference),
-    // The backend doesn't persist the surface filter or avoidance flags
-    // yet; default to the planner's initial values so the UI loads in a
-    // consistent state. Once the backend grows these columns this should
-    // be replaced with the persisted values.
+    // Surface and avoidance inputs are request-scoped rather than shared trip
+    // metadata. New hydration defaults consistently; planner mutations merge
+    // the current rider's choices back with `withRequestOnlyRouteOptions`.
     surfacePreference: ["asphalt"] as SurfaceType[],
     avoidHighways: true,
     avoidTolls: false,
