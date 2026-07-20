@@ -384,7 +384,10 @@ describe("TripPlannerMap", () => {
 
   it("toggles the active line-coloring mode off entirely on re-click", () => {
     mockMap.getLayer.mockImplementation((layerId: string) =>
-      layerId === "trip-planner-route-line" ? { id: layerId } : undefined,
+      layerId === "trip-planner-route-line" ||
+      layerId === "trip-planner-route-overview-line"
+        ? { id: layerId }
+        : undefined,
     );
     render(<TripPlannerMap trip={trip()} month={7} />);
 
@@ -407,6 +410,11 @@ describe("TripPlannerMap", () => {
         layerId === "trip-planner-route-line" && prop === "line-color",
     );
     expect(lineColorCalls.at(-1)?.[2]).toBe("#0E0E10");
+    const overviewColorCalls = mockMap.setPaintProperty.mock.calls.filter(
+      ([layerId, prop]) =>
+        layerId === "trip-planner-route-overview-line" && prop === "line-color",
+    );
+    expect(overviewColorCalls.at(-1)?.[2]).toBe("#0E0E10");
     expect(screen.queryByText("Good+")).not.toBeInTheDocument();
 
     // Clicking it again re-enables the layer.
@@ -2193,6 +2201,35 @@ describe("TripPlannerMap", () => {
       } as Parameters<typeof expression.createPropertyExpression>[1],
     );
     expect(compiled.result).toBe("success");
+  });
+
+  it("uses a continuous overview line below the detailed route zoom", () => {
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(mockMap.addSource).toHaveBeenCalledWith(
+      "trip-planner-route-overview",
+      expect.objectContaining({ type: "geojson" }),
+    );
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "trip-planner-route-casing",
+        source: "trip-planner-route-overview",
+      }),
+    );
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "trip-planner-route-overview-line",
+        source: "trip-planner-route-overview",
+        maxzoom: 10,
+      }),
+    );
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "trip-planner-route-line",
+        source: "trip-planner-route",
+        minzoom: 10,
+      }),
+    );
   });
 
   it("publishes the focused segment's geometry as a highlight feature", async () => {
