@@ -98,6 +98,7 @@ import {
 } from "@/lib/trip-planner-overlays";
 import {
   buildPlannerQualityRouteCollection,
+  buildPlannerRouteOverviewCollection,
   buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
   findPlannerQualitySegment,
@@ -186,8 +187,10 @@ const PLANNER_QUALITY_LEGEND = (
 }));
 
 const ROUTE_SOURCE = "trip-planner-route";
+const ROUTE_OVERVIEW_SOURCE = "trip-planner-route-overview";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
 const ROUTE_CASING_LINE = "trip-planner-route-casing";
+const ROUTE_OVERVIEW_LINE = "trip-planner-route-overview-line";
 const ROUTE_LINE = "trip-planner-route-line";
 const ROUTE_HIT_LINE = "trip-planner-route-hit";
 const WAYPOINT_PIN = "trip-planner-waypoint-pin";
@@ -214,6 +217,8 @@ const POI_FETCH_DEBOUNCE_MS = 400;
  * off): plain ink so the route reads as geometry, not as a measurement.
  */
 const NEUTRAL_ROUTE_LINE_COLOR = "#0E0E10";
+const ROUTE_OVERVIEW_LINE_COLOR = "#FF6A1A";
+const DETAILED_ROUTE_MIN_ZOOM = 10;
 const POI_PIN_IMAGE_PREFIX = "tarmoto-poi-pin-";
 
 /**
@@ -1017,6 +1022,15 @@ const TripPlannerMapContent = forwardRef<
       ),
     [trip, selectedDayNumber, focusSelectedDay],
   );
+  const routeOverviewCollection = useMemo(
+    () =>
+      buildPlannerRouteOverviewCollection(
+        trip,
+        selectedDayNumber,
+        focusSelectedDay,
+      ),
+    [trip, selectedDayNumber, focusSelectedDay],
+  );
   // Resolve the selected quality segment against current geometry — a stale
   // id (after a reroute or undo) simply resolves to null and closes the card.
   const previewSegment = useMemo(
@@ -1631,6 +1645,7 @@ const TripPlannerMapContent = forwardRef<
     const map = handleRef.current?.map;
     if (!map || !ready) return;
     syncGeoJsonSource(map, ROUTE_SOURCE, routeCollection);
+    syncGeoJsonSource(map, ROUTE_OVERVIEW_SOURCE, routeOverviewCollection);
     syncGeoJsonSource(map, WAYPOINT_SOURCE, waypointCollection);
     syncGeoJsonSource(map, CLOSURE_LINE_SOURCE, closureLineCollection);
     syncGeoJsonSource(map, CLOSURE_MARKER_SOURCE, closureMarkerCollection);
@@ -1648,6 +1663,7 @@ const TripPlannerMapContent = forwardRef<
     passMarkerCollection,
     ready,
     routeCollection,
+    routeOverviewCollection,
     segmentHighlightCollection,
     waypointCollection,
   ]);
@@ -1764,14 +1780,23 @@ const TripPlannerMapContent = forwardRef<
   // Line-coloring toggle — recolors the route line in place.
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || !map.getLayer(ROUTE_LINE)) return;
-    map.setPaintProperty(
-      ROUTE_LINE,
-      "line-color",
-      lineColorMode
-        ? plannerRouteLineColor(lineColorMode, SURFACE_COLORS)
-        : NEUTRAL_ROUTE_LINE_COLOR,
-    );
+    if (!map || !ready) return;
+    if (map.getLayer(ROUTE_LINE)) {
+      map.setPaintProperty(
+        ROUTE_LINE,
+        "line-color",
+        lineColorMode
+          ? plannerRouteLineColor(lineColorMode, SURFACE_COLORS)
+          : NEUTRAL_ROUTE_LINE_COLOR,
+      );
+    }
+    if (map.getLayer(ROUTE_OVERVIEW_LINE)) {
+      map.setPaintProperty(
+        ROUTE_OVERVIEW_LINE,
+        "line-color",
+        lineColorMode ? ROUTE_OVERVIEW_LINE_COLOR : NEUTRAL_ROUTE_LINE_COLOR,
+      );
+    }
   }, [lineColorMode, ready]);
   // Basemap toggle — swaps the imagery UNDER the route line; the quality
   // line and every planner overlay stay drawn on top.
@@ -3271,13 +3296,19 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       data: buildPlannerQualityRouteCollection(null),
     });
   }
+  if (!map.getSource(ROUTE_OVERVIEW_SOURCE)) {
+    map.addSource(ROUTE_OVERVIEW_SOURCE, {
+      type: "geojson",
+      data: buildPlannerRouteOverviewCollection(null),
+    });
+  }
   // Cream casing under the colored segments so the quality line reads
   // against both the cream basemap and aerial imagery (design frames).
   if (!map.getLayer(ROUTE_CASING_LINE)) {
     map.addLayer({
       id: ROUTE_CASING_LINE,
       type: "line",
-      source: ROUTE_SOURCE,
+      source: ROUTE_OVERVIEW_SOURCE,
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": "#F5EFE6",
@@ -3296,11 +3327,37 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
+  // At country scale, thousands of short quality features are smaller than a
+  // pixel and MapLibre simplifies them independently, which looks like a
+  // dashed route. Draw one continuous accent line until inspection zoom.
+  if (!map.getLayer(ROUTE_OVERVIEW_LINE)) {
+    map.addLayer({
+      id: ROUTE_OVERVIEW_LINE,
+      type: "line",
+      source: ROUTE_OVERVIEW_SOURCE,
+      maxzoom: DETAILED_ROUTE_MIN_ZOOM,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": ROUTE_OVERVIEW_LINE_COLOR,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          ["case", ["get", "selected"], 3, 1.5],
+          10,
+          ["case", ["get", "selected"], 5, 3],
+        ],
+        "line-opacity": ["case", ["get", "selected"], 1, 0.45],
+      },
+    });
+  }
   if (!map.getLayer(ROUTE_LINE)) {
     map.addLayer({
       id: ROUTE_LINE,
       type: "line",
       source: ROUTE_SOURCE,
+      minzoom: DETAILED_ROUTE_MIN_ZOOM,
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         // Quality-segmented coloring by default; the [Road quality|Surface]

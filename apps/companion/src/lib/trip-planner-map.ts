@@ -35,6 +35,11 @@ export type QualityRouteProperties = {
   selected: boolean;
 };
 
+export type RouteOverviewProperties = {
+  dayNumber: number;
+  selected: boolean;
+};
+
 type WaypointProperties = {
   dayNumber: number;
   waypointId: string;
@@ -94,6 +99,41 @@ export function buildPlannerQualityRouteCollection(
     type: "FeatureCollection",
     features,
   };
+}
+
+/**
+ * One continuous feature per day for country-scale route rendering. Detailed
+ * quality runs are deliberately split into many short features; at low zoom
+ * those sub-pixel features can be simplified independently and look dashed.
+ * This collection preserves the full route geometry until the detailed line
+ * becomes useful at inspection zoom.
+ */
+export function buildPlannerRouteOverviewCollection(
+  trip: Trip | null,
+  selectedDayNumber?: number,
+  focusSelectedDay?: boolean,
+): FeatureCollection<LineString, RouteOverviewProperties> {
+  if (!trip) return emptyRouteOverviewCollection();
+
+  const features: Feature<LineString, RouteOverviewProperties>[] = [];
+  for (const day of trip.days) {
+    if (focusSelectedDay && day.dayNumber !== selectedDayNumber) continue;
+    const coordinates = getDayRouteCoordinates(day);
+    if (coordinates.length < 2) continue;
+    features.push({
+      type: "Feature",
+      properties: {
+        dayNumber: day.dayNumber,
+        selected:
+          selectedDayNumber !== undefined
+            ? day.dayNumber === selectedDayNumber
+            : true,
+      },
+      geometry: { type: "LineString", coordinates },
+    });
+  }
+
+  return { type: "FeatureCollection", features };
 }
 
 /**
@@ -495,6 +535,16 @@ function fallbackWaypointLabel(type: string): string {
 function emptyQualityLineCollection(): FeatureCollection<
   LineString,
   QualityRouteProperties
+> {
+  return {
+    type: "FeatureCollection",
+    features: [],
+  };
+}
+
+function emptyRouteOverviewCollection(): FeatureCollection<
+  LineString,
+  RouteOverviewProperties
 > {
   return {
     type: "FeatureCollection",
