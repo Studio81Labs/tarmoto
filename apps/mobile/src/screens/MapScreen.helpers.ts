@@ -32,7 +32,7 @@ import type {
   PassStatus,
   Severity,
 } from "@/types";
-import type { EnglishMessageKey } from "@/i18n";
+import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 
 type LineLayerConfig = {
   paint: NonNullable<LineLayerSpecification["paint"]>;
@@ -63,6 +63,21 @@ export function getQualityTileUrlTemplate(
 }
 
 export const APP_MAP_STYLE_URL = MAP_STYLE_URL;
+
+const FUN_ZONE_SEASON_LABELS = {
+  summer: "Summer",
+  year_round: "Year-round",
+} as const satisfies Record<string, EnglishMessageKey>;
+
+/** Translate every season value currently emitted by the fun-zone query. */
+export function formatFunZoneSeason(
+  season: string,
+  t: Translate = translate,
+): string {
+  const key =
+    FUN_ZONE_SEASON_LABELS[season as keyof typeof FUN_ZONE_SEASON_LABELS];
+  return key ? t(key) : season;
+}
 
 /**
  * Quality-score bucket boundaries. Mirror the brand `qualityIndex` half-point

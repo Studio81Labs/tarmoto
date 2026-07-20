@@ -93,6 +93,7 @@ import {
   funZoneFillStyle,
   funZoneLineStyle,
   funZonesToFeatureCollection,
+  formatFunZoneSeason,
   getQualityTileUrlTemplate,
   hazardsToFeatureCollection,
   hazardMarkerStyle,
@@ -892,7 +893,7 @@ function FunZoneCard({
           {zone.best_season ? (
             <Text style={styles.funZoneCardSubtitle}>
               {translate("Best: {season}", {
-                season: formatSeason(zone.best_season),
+                season: formatFunZoneSeason(zone.best_season),
               })}
             </Text>
           ) : null}
@@ -928,12 +929,6 @@ function FunZoneStat({ label, value }: { label: string; value: string }) {
       <Text style={styles.funZoneStatValue}>{value}</Text>
     </View>
   );
-}
-
-function formatSeason(season: string): string {
-  const cleaned = season.replace(/_/g, " ").trim();
-  if (!cleaned) return season;
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 const styles = StyleSheet.create({

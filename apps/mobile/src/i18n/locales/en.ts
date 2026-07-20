@@ -874,6 +874,7 @@ export const en = {
   "Submit hazard report": "Submit hazard report",
   "Submit review": "Submit review",
   "Suggested stay": "Suggested stay",
+  Summer: "Summer",
   Surface: "Surface",
   "Surface quality": "Surface quality",
   "Surface storms, ice, wet roads, and high wind ahead while navigating. Critical alerts (storm, ice) are also read aloud.":
@@ -1045,6 +1046,7 @@ export const en = {
   "within {distance} km": "within {distance} km",
   "Write a review": "Write a review",
   "Write a review for this road": "Write a review for this road",
+  "Year-round": "Year-round",
   You: "You",
   "You already reviewed this road — your existing review is loaded for editing.":
     "You already reviewed this road — your existing review is loaded for editing.",
