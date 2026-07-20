@@ -53,6 +53,7 @@ import {
   WAYPOINT_ICONS,
   formatDurationMin,
   formatKm,
+  formatNearbyPlaceMeta,
   formatWaypointType,
   isLastDay,
   pickDayEndAnchor,
@@ -605,8 +606,11 @@ function AccommodationRow({ item }: { item: Accommodation }) {
   const kindLabel = translate(ACCOMMODATION_KIND_LABELS[item.kind]);
   const label = item.name?.trim() || kindLabel;
   const icon = ACCOMMODATION_KIND_ICONS[item.kind];
-  const metaParts = [kindLabel, `${item.distance_km.toFixed(1)} km`];
-  if (item.stars) metaParts.push("★".repeat(item.stars));
+  const meta = formatNearbyPlaceMeta(
+    kindLabel,
+    item.distance_km,
+    item.stars ? "★".repeat(item.stars) : undefined,
+  );
 
   return (
     <TouchableOpacity
@@ -628,7 +632,7 @@ function AccommodationRow({ item }: { item: Accommodation }) {
           {label}
         </Text>
         <Text style={styles.accommodationMeta} numberOfLines={1}>
-          {metaParts.join(" · ")}
+          {meta}
         </Text>
       </View>
       <Icon
@@ -735,8 +739,11 @@ function PoiRow({ item }: { item: Poi }) {
   const kindLabel = translate(POI_KIND_LABELS[item.kind]);
   const label = item.name?.trim() || kindLabel;
   const icon = POI_KIND_ICONS[item.kind];
-  const metaParts = [kindLabel, `${item.distance_km.toFixed(1)} km`];
-  if (item.hint) metaParts.push(item.hint);
+  const meta = formatNearbyPlaceMeta(
+    kindLabel,
+    item.distance_km,
+    item.hint ?? undefined,
+  );
 
   return (
     <TouchableOpacity
@@ -758,7 +765,7 @@ function PoiRow({ item }: { item: Poi }) {
           {label}
         </Text>
         <Text style={styles.accommodationMeta} numberOfLines={1}>
-          {metaParts.join(" · ")}
+          {meta}
         </Text>
       </View>
       <Icon

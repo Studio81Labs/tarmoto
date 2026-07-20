@@ -5,6 +5,7 @@ import {
   flattenTripRoute,
   formatDurationMin,
   formatKm,
+  formatNearbyPlaceMeta,
   formatStatus,
   formatWaypointType,
   isLastDay,
@@ -89,6 +90,20 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
     expect(formatWaypointType("fuel")).toBe("Fuel");
     expect(formatWaypointType("start")).toBe("Start");
     expect(formatWaypointType("rest")).toBe("Rest");
+  });
+});
+
+describe("formatNearbyPlaceMeta", () => {
+  it("uses one catalog message for kind and distance", () => {
+    expect(formatNearbyPlaceMeta("Guest house", 1.24)).toBe(
+      "Guest house · 1.2 km",
+    );
+  });
+
+  it("keeps optional stay or POI detail in the same catalog message", () => {
+    expect(formatNearbyPlaceMeta("Viewpoint", 0.76, "Panoramic")).toBe(
+      "Viewpoint · 0.8 km · Panoramic",
+    );
   });
 });
 

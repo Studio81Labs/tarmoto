@@ -10,7 +10,7 @@ import {
   type TripGpxInput,
 } from "@tarmoto/shared";
 import type { IconName } from "@/components/Icon";
-import { translate, type EnglishMessageKey } from "@/i18n";
+import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 import type {
   Accommodation,
   AccommodationKind,
@@ -55,6 +55,23 @@ const ACCOMMODATION_KIND_PRIORITY: Record<AccommodationKind, number> = {
 export function formatKm(km: number): string {
   if (!Number.isFinite(km)) return "0 km";
   return `${Math.round(km)} km`;
+}
+
+/** Complete catalog message for stay/POI metadata; no UI-side joining. */
+export function formatNearbyPlaceMeta(
+  kind: string,
+  distanceKm: number,
+  detail?: string,
+  t: Translate = translate,
+): string {
+  const values = {
+    kind,
+    distance: distanceKm.toFixed(1),
+    ...(detail ? { detail } : {}),
+  };
+  return detail
+    ? t("{kind} · {distance} km · {detail}", values)
+    : t("{kind} · {distance} km", values);
 }
 
 /** "2h 30m" / "45m" — keep short for metric rows. */

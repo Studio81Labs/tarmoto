@@ -76,6 +76,8 @@ export const en = {
   "{failed} failed · {remaining} still queued.":
     "{failed} failed · {remaining} still queued.",
   "{failed} failed.": "{failed} failed.",
+  "{kind} · {distance} km": "{kind} · {distance} km",
+  "{kind} · {distance} km · {detail}": "{kind} · {distance} km · {detail}",
   "{label} · {percent}% conf": "{label} · {percent}% conf",
   "{label} {percent}%": "{label} {percent}%",
   "{label}, {count, plural, one {# trip} other {# trips}}":
