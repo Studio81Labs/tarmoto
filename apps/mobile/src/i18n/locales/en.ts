@@ -52,6 +52,8 @@ export const en = {
     "{count, plural, one {# turn} other {# turns}}",
   "{count, plural, one {# waypoint} other {# waypoints}}":
     "{count, plural, one {# waypoint} other {# waypoints}}",
+  "{seconds, plural, one {second} other {seconds}}":
+    "{seconds, plural, one {second} other {seconds}}",
   "{count} NEW": "{count} NEW",
   "{count}d ago": "{count}d ago",
   "{count}h ago": "{count}h ago",
@@ -791,7 +793,6 @@ export const en = {
   "Say pothole, gravel, oil spill…": "Say pothole, gravel, oil spill…",
   Scenic: "Scenic",
   score: "score",
-  seconds: "seconds",
   "See active hazards and weather on your regular route.":
     "See active hazards and weather on your regular route.",
   "See ridden vs unridden roads": "See ridden vs unridden roads",

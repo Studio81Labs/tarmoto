@@ -126,6 +126,16 @@ describe("mobile i18n", () => {
         { count: 2 },
       ),
     ).toBe("Following 2 riders, open list");
+    expect(
+      translate("{seconds, plural, one {second} other {seconds}}", {
+        seconds: 1,
+      }),
+    ).toBe("second");
+    expect(
+      translate("{seconds, plural, one {second} other {seconds}}", {
+        seconds: 2,
+      }),
+    ).toBe("seconds");
   });
 
   it("re-exports the shared locale registry and resolver", () => {

@@ -95,11 +95,21 @@ describe("CrashAlertOverlay", () => {
     });
 
     expect(screen.getByText("CRASH DETECTED")).toBeTruthy();
+    expect(screen.getByText("seconds")).toBeTruthy();
     expect(screen.getByLabelText(/cancel crash alert/i)).toBeTruthy();
     expect(mockedSpeak).toHaveBeenCalledWith(
       "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
       { priority: "high", key: "crash:countdown" },
     );
+  });
+
+  it("uses the singular countdown unit at one second", async () => {
+    await render(<CrashAlertOverlay countdownMs={1_000} />);
+    await act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+
+    expect(screen.getByText("second")).toBeTruthy();
   });
 
   it("clears the store and never calls the API when the rider cancels", async () => {

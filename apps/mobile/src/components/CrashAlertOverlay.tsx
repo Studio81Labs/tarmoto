@@ -359,7 +359,11 @@ export default function CrashAlertOverlay({
             <Text style={styles.countdown} accessibilityLiveRegion="assertive">
               {seconds}
             </Text>
-            <Text style={styles.subhead}>{translate("seconds")}</Text>
+            <Text style={styles.subhead}>
+              {translate("{seconds, plural, one {second} other {seconds}}", {
+                seconds,
+              })}
+            </Text>
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={cancel}
