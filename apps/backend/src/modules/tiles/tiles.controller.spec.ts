@@ -84,5 +84,28 @@ describe('TilesController', () => {
 
       expect(service.getTile).toHaveBeenCalledWith(10, 550, 335, 'quality');
     });
+
+    it('should not mark a tile-generation error as cacheable', async () => {
+      service.getTile.mockRejectedValueOnce(new Error('PostGIS unavailable'));
+      const res = {
+        set: jest.fn(),
+        send: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        end: jest.fn(),
+      } as never;
+
+      await expect(
+        controller.getTile({ z: 10, x: 550, y: 335 }, {}, res),
+      ).rejects.toThrow('PostGIS unavailable');
+
+      expect((res as { set: jest.Mock }).set).not.toHaveBeenCalledWith(
+        'Cache-Control',
+        expect.anything(),
+      );
+      expect((res as { set: jest.Mock }).set).not.toHaveBeenCalledWith(
+        'CDN-Cache-Control',
+        expect.anything(),
+      );
+    });
   });
 });

@@ -39,6 +39,11 @@ export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
 // Routed lines still render at every zoom; this only gates the all-roads
 // background overlays until the rider zooms in far enough to inspect them.
 const TARMOTO_ROADS_MIN_ZOOM = 10;
+// The personal road-map adds its own coverage layers to the shared quality
+// source and opens at z8. Keep the source available there; the MapCanvas
+// quality layer's higher minzoom still prevents country-scale background
+// overlay requests everywhere else.
+const TARMOTO_ROADS_SOURCE_MIN_ZOOM = 6;
 // Accent glow + line painted over the selected road segment (the one whose
 // detail drawer is open), filtered on the segment's `id` property. Lives here
 // so every MapCanvas surface — /explore and the trip planner — highlights the
@@ -304,7 +309,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         // Do not download the separate surface layer when only quality is
         // visible (the common planner/explore path from the performance HAR).
         tiles: [`${roadTileBase}?layers=quality`],
-        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        minzoom: TARMOTO_ROADS_SOURCE_MIN_ZOOM,
         maxzoom: 18,
         // Hoist the segment UUID from properties to the feature `id` so
         // consumers (notably the personal road-map US-50) can drive

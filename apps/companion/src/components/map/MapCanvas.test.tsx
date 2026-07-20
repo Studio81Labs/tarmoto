@@ -150,7 +150,7 @@ describe("MapCanvas", () => {
     expect(applyTarmotoMapTheme).not.toHaveBeenCalledWith(mapStub, "dark");
   });
 
-  it("loads separate quality/surface tiles only from inspectable zooms", async () => {
+  it("gates general overlays without hiding the shared road-map source", async () => {
     render(
       <div className="h-[400px] w-[600px]">
         <MapCanvas
@@ -170,7 +170,8 @@ describe("MapCanvas", () => {
     expect(mapStub.addSource).toHaveBeenCalledWith(
       TARMOTO_ROADS_SOURCE,
       expect.objectContaining({
-        minzoom: 10,
+        // PersonalRoadMap adds its own z8 layers to this source.
+        minzoom: 6,
         tiles: [expect.stringMatching(/\.mvt\?layers=quality$/)],
       }),
     );
