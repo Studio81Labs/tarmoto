@@ -13,6 +13,7 @@ import {
 import CrashAlertOverlay from "../CrashAlertOverlay";
 import { useCrashStore } from "@/stores";
 import { api, type CrashAlertResponse } from "@/services/api";
+import { ttsService } from "@/services/tts";
 
 const mockCrashAlertResponse: CrashAlertResponse = {
   alert_id: "00000000-0000-4000-8000-000000000000",
@@ -52,6 +53,7 @@ jest.mock("@/services/api", () => ({
 }));
 
 const mockedApi = api as jest.Mocked<typeof api>;
+const mockedSpeak = jest.mocked(ttsService.speak);
 
 function snapshot() {
   return {
@@ -73,6 +75,7 @@ describe("CrashAlertOverlay", () => {
     });
     mockedApi.sendCrashAlert.mockReset();
     mockedApi.sendCrashAlert.mockResolvedValue(mockCrashAlertResponse);
+    mockedSpeak.mockReset();
   });
 
   afterEach(() => {
@@ -93,6 +96,10 @@ describe("CrashAlertOverlay", () => {
 
     expect(screen.getByText("CRASH DETECTED")).toBeTruthy();
     expect(screen.getByLabelText(/cancel crash alert/i)).toBeTruthy();
+    expect(mockedSpeak).toHaveBeenCalledWith(
+      "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
+      { priority: "high", key: "crash:countdown" },
+    );
   });
 
   it("clears the store and never calls the API when the rider cancels", async () => {
@@ -538,7 +545,7 @@ describe("CrashAlertOverlay", () => {
     );
   });
 
-  it("flips to failed state when the API rejects", async () => {
+  it("stores a translated generic failure when the API rejects", async () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("offline"));
     await render(<CrashAlertOverlay countdownMs={500} />);
     await act(() => {
@@ -550,6 +557,8 @@ describe("CrashAlertOverlay", () => {
     });
 
     await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
-    expect(useCrashStore.getState().errorMessage).toBe("offline");
+    expect(useCrashStore.getState().errorMessage).toBe(
+      "Couldn't reach the server.",
+    );
   });
 });

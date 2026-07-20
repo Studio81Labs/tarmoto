@@ -76,7 +76,7 @@ export default [
         // Mobile i18n guard (#1049): typed translate() catches unregistered
         // keys only after copy reaches the translator. These selectors close
         // the common React Native bypasses: raw JSX children, rider-facing
-        // props, alerts, and validation state.
+        // props, alerts, spoken prompts, and validation state.
         {
           selector: "JSXText[value=/[A-Za-z]{2,}/]",
           message:
@@ -161,6 +161,17 @@ export default [
         },
         {
           selector:
+            "CallExpression[callee.object.name='ttsService'][callee.property.name='speak'] > Literal[value=/[A-Za-z]{2,}/]",
+          message: "Wrap rider-facing spoken prompts with translate().",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='ttsService'][callee.property.name='speak'] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Replace rider-facing spoken templates with one translate() ICU message and named values.",
+        },
+        {
+          selector:
             "CallExpression[callee.name=/^set.*(Error|Message|Notice|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing validation/status messages with translate().",
@@ -170,6 +181,17 @@ export default [
             "CallExpression[callee.name=/^set.*(Error|Message|Notice|Warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing conditional validation/status messages with translate().",
+        },
+        {
+          selector:
+            "CallExpression[callee.name='markFailed'] > Literal:first-child[value=/[A-Za-z]{2,}/]",
+          message: "Wrap rider-facing failure messages with translate().",
+        },
+        {
+          selector:
+            "CallExpression[callee.name='markFailed'] > ConditionalExpression:first-child > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap every rider-facing conditional failure message with translate().",
         },
       ],
     },

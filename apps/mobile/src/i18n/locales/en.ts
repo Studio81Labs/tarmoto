@@ -270,6 +270,9 @@ export const en = {
   "Couldn't load nearby stays": "Couldn't load nearby stays",
   "Couldn't load ride": "Couldn't load ride",
   "Couldn't load rider": "Couldn't load rider",
+  "Couldn't reach any of your emergency contacts.":
+    "Couldn't reach any of your emergency contacts.",
+  "Couldn't reach the server.": "Couldn't reach the server.",
   "Couldn't save contact.": "Couldn't save contact.",
   "Couldn't save this area": "Couldn't save this area",
   "Couldn't save your review.": "Couldn't save your review.",
@@ -280,6 +283,8 @@ export const en = {
   "Couldn't update primary": "Couldn't update primary",
   "CRASH DETECTED": "CRASH DETECTED",
   "Crash detection": "Crash detection",
+  "Crash detected. Tap I'm OK to cancel, or help will be alerted.":
+    "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
   Create: "Create",
   "Create a new group ride": "Create a new group ride",
   "Create account": "Create account",
@@ -462,6 +467,7 @@ export const en = {
   "Join trip": "Join trip",
   "Join with a code": "Join with a code",
   "Join with invite code": "Join with invite code",
+  "just now": "just now",
   "Keep riding": "Keep riding",
   km: "km",
   "km/h": "km/h",
@@ -548,8 +554,11 @@ export const en = {
     "No contacts yet. Add at least one so help can reach you in a crash.",
   "No data yet": "No data yet",
   "No days generated yet": "No days generated yet",
+  "No emergency contacts on file.": "No emergency contacts on file.",
+  "No GPS fix at the moment of impact.": "No GPS fix at the moment of impact.",
   "No leaderboard yet — be first to join.":
     "No leaderboard yet — be first to join.",
+  "No location captured for the alert.": "No location captured for the alert.",
   "No new hazards since you last checked.":
     "No new hazards since you last checked.",
   "No offline regions yet": "No offline regions yet",
@@ -613,6 +622,8 @@ export const en = {
     "Other riders will stop seeing your position immediately.",
   Overnight: "Overnight",
   "Overnight: {name}": "Overnight: {name}",
+  "Original alert is still being sent. Please wait a moment, then tap RETRY.":
+    "Original alert is still being sent. Please wait a moment, then tap RETRY.",
   "Overrides your default of {quality}.":
     "Overrides your default of {quality}.",
   "Pan the map to find fun zones": "Pan the map to find fun zones",

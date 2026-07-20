@@ -158,7 +158,9 @@ export default function CrashAlertOverlay({
     if (phase !== "countdown") return;
     haptics.trigger();
     ttsService.speak(
-      "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
+      translate(
+        "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
+      ),
       // Crash followup must preempt any in-flight nav prompt — a rider
       // mid-turn can't afford to hear "in 300 meters, turn left" over
       // the top of their crash countdown.
@@ -191,7 +193,10 @@ export default function CrashAlertOverlay({
         // Defensive: no snapshot means we have nothing to send. Surface as
         // a failure so the rider knows the alert didn't go out. Treat as
         // transient — a fresh incident would generate a new snapshot.
-        markFailed("No location captured for the alert.", "transient");
+        markFailed(
+          translate("No location captured for the alert."),
+          "transient",
+        );
         return;
       }
       // GPS may have had no fix when the spike landed (tunnel, indoor
@@ -200,7 +205,10 @@ export default function CrashAlertOverlay({
       // to emergency contacts during a real crash. Better to fail loudly
       // so the rider can fall back to a manual call. (Bugbot 5069fc01.)
       if (alert.lat === null || alert.lng === null) {
-        markFailed("No GPS fix at the moment of impact.", "transient");
+        markFailed(
+          translate("No GPS fix at the moment of impact."),
+          "transient",
+        );
         return;
       }
       // A new dispatch supersedes any pending in-flight-replay poll —
@@ -248,7 +256,9 @@ export default function CrashAlertOverlay({
             // a manual RETRY should keep the same alertId to replay
             // the eventual outcome (instead of dispatching twice).
             markFailed(
-              "Original alert is still being sent. Please wait a moment, then tap RETRY.",
+              translate(
+                "Original alert is still being sent. Please wait a moment, then tap RETRY.",
+              ),
               "transient",
             );
           }
@@ -263,22 +273,20 @@ export default function CrashAlertOverlay({
         if (result.contacts_notified === 0) {
           markFailed(
             result.contacts.length === 0
-              ? "No emergency contacts on file."
-              : "Couldn't reach any of your emergency contacts.",
+              ? translate("No emergency contacts on file.")
+              : translate("Couldn't reach any of your emergency contacts."),
             "completed",
           );
         } else {
           markDispatched();
         }
-      } catch (err) {
+      } catch {
         // Network / timeout / 5xx — request never reached completion
         // server-side, so the original `alertId` was never (or only
         // partially) recorded. Treat as transient so RETRY keeps the
         // same id; if the backend ends up with the row anyway, the
         // retry will replay it instead of double-notifying.
-        const message =
-          err instanceof Error ? err.message : "Couldn't reach the server.";
-        markFailed(message, "transient");
+        markFailed(translate("Couldn't reach the server."), "transient");
       } finally {
         inFlightRef.current = false;
       }

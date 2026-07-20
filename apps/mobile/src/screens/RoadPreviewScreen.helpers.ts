@@ -6,6 +6,7 @@
  */
 
 import type { LatLng, RoadReview } from "@/types";
+import { translate } from "@/i18n";
 
 export function formatLengthKm(m: number): string {
   if (!Number.isFinite(m) || m <= 0) return "";
@@ -25,7 +26,7 @@ export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
   const diffS = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffS < 60) return "just now";
+  if (diffS < 60) return translate("just now");
   const mins = Math.floor(diffS / 60);
   if (mins < 60) return translate("{count}m ago", { count: mins });
   const hrs = Math.floor(mins / 60);
@@ -280,4 +281,3 @@ export function applyVoteDelta(
     my_vote: next,
   };
 }
-import { translate } from "@/i18n";
