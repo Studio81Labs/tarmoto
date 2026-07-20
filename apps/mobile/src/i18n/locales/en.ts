@@ -337,6 +337,7 @@ export const en = {
   Draft: "Draft",
   Dry: "Dry",
   Duration: "Duration",
+  "e.g. 8f3d0c1e-...": "e.g. 8f3d0c1e-...",
   "e.g. Beskydy weekend": "e.g. Beskydy weekend",
   "e.g. BMW R1250GS": "e.g. BMW R1250GS",
   "e.g. Moravia": "e.g. Moravia",

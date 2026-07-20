@@ -18,6 +18,7 @@ describe("mobile i18n", () => {
   it("translates registered copy and ICU values", () => {
     expect(translate("Home")).toBe("Home");
     expect(translate("Code: {code}", { code: "ABC123" })).toBe("Code: ABC123");
+    expect(translate("e.g. 8f3d0c1e-...")).toBe("e.g. 8f3d0c1e-...");
     expect(
       translate("{count, plural, one {# day} other {# days}}", { count: 2 }),
     ).toBe("2 days");

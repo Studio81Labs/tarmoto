@@ -111,7 +111,7 @@ export default function JoinTripScreen() {
           <Text style={styles.label}>{translate("Trip ID")}</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. 8f3d0c1e-..."
+            placeholder={translate("e.g. 8f3d0c1e-...")}
             placeholderTextColor={t.mute}
             value={tripId}
             onChangeText={setTripId}
