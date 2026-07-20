@@ -57,6 +57,7 @@ import {
   isFlatElevationProfile,
   normalizeBreakdown,
 } from "./RoadPreviewScreen.helpers";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
@@ -74,7 +75,7 @@ type IconName = ComponentProps<typeof Icon>["name"];
 
 const QUALITY_BUCKETS: Array<{
   key: keyof RoadSegmentDetail["quality_breakdown"];
-  label: string;
+  label: EnglishMessageKey;
   color: string;
 }> = [
   // Brand Q1–Q5 ramp (visual fills on the breakdown bar + legend dots; the
@@ -99,7 +100,7 @@ export default function RoadPreviewScreen() {
 
   useEffect(() => {
     if (!segmentId) {
-      setError("Missing segment id");
+      setError(translate("Missing segment id"));
       setLoading(false);
       return;
     }
@@ -115,7 +116,9 @@ export default function RoadPreviewScreen() {
       } catch (e) {
         if (!ignore) {
           setError(
-            e instanceof Error ? e.message : "Failed to load road segment",
+            e instanceof Error
+              ? e.message
+              : translate("Failed to load road segment"),
           );
         }
       } finally {
@@ -156,10 +159,12 @@ export default function RoadPreviewScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
-        <Text style={styles.errorTitle}>Unable to load road preview</Text>
+        <Text style={styles.errorTitle}>
+          {translate("Unable to load road preview")}
+        </Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
         <TouchableOpacity style={styles.retryButton} onPress={retry}>
-          <Text style={styles.retryLabel}>Try again</Text>
+          <Text style={styles.retryLabel}>{translate("Try again")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -205,7 +210,8 @@ function HeaderCard({
   segment: RoadSegmentDetail;
   minQuality: number;
 }) {
-  const title = segment.road_name || segment.road_number || "Unnamed road";
+  const title =
+    segment.road_name || segment.road_number || translate("Unnamed road");
   const subtitle = [
     segment.road_number && segment.road_name ? segment.road_number : null,
     formatLengthKm(segment.length_m),
@@ -231,7 +237,8 @@ function HeaderCard({
         <View style={styles.thresholdBadge}>
           <Icon name="eye-off-outline" size={12} color={t.dim} />
           <Text style={styles.thresholdBadgeLabel}>
-            Below your minimum ({qualityLabel(minQuality)})
+            {translate("Below your minimum (")}
+            {qualityLabel(minQuality)})
           </Text>
         </View>
       ) : null}
@@ -242,7 +249,9 @@ function HeaderCard({
       <View style={styles.metaRow}>
         <MetaPill
           icon="account-multiple"
-          label={`${segment.reading_count} passes`}
+          label={translate("{value0} passes", {
+            value0: segment.reading_count,
+          })}
         />
         <MetaPill
           icon="calendar-clock"
@@ -250,7 +259,9 @@ function HeaderCard({
         />
         <MetaPill
           icon="shield-check"
-          label={`${Math.round(segment.confidence)}% confidence`}
+          label={translate("{value0}% confidence", {
+            value0: Math.round(segment.confidence),
+          })}
         />
       </View>
     </View>
@@ -271,7 +282,7 @@ function QualityCard({
     !meetsQualityThreshold(segment.quality_score, minQuality);
   return (
     <View style={styles.card}>
-      <SectionTitle icon="road-variant" title="Surface quality" />
+      <SectionTitle icon="road-variant" title={translate("Surface quality")} />
       <View style={styles.qualityHeader}>
         <View>
           {/* The headline score stays ink (the ramp fails AA as text on the
@@ -304,8 +315,10 @@ function QualityCard({
       </View>
       {belowThreshold ? (
         <Text style={styles.thresholdHint}>
-          Your filter is set to {qualityLabel(minQuality)} and above — this road
-          falls below it.
+          {translate(
+            "Your filter is set to {quality} and above — this road falls below it.",
+            { quality: qualityLabel(minQuality) },
+          )}
         </Text>
       ) : null}
       <QualityBreakdownBar breakdown={segment.quality_breakdown} />
@@ -324,7 +337,11 @@ function QualityBreakdownBar({
   );
 
   if (segments.length === 0) {
-    return <Text style={styles.emptyInline}>No breakdown data yet.</Text>;
+    return (
+      <Text style={styles.emptyInline}>
+        {translate("No breakdown data yet.")}
+      </Text>
+    );
   }
 
   const bucketByKey = new Map(QUALITY_BUCKETS.map((b) => [b.key, b]));
@@ -353,7 +370,10 @@ function QualityBreakdownBar({
                 style={[styles.legendDot, { backgroundColor: bucket.color }]}
               />
               <Text style={styles.legendLabel}>
-                {bucket.label} {Math.round(s.pct * 100)}%
+                {translate("{label} {percent}%", {
+                  label: translate(bucket.label),
+                  percent: Math.round(s.pct * 100),
+                })}
               </Text>
             </View>
           );
@@ -377,10 +397,12 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
     <View style={styles.card}>
       <SectionTitle
         icon="sine-wave"
-        title="Curviness"
+        title={translate("Curviness")}
         rightLabel={
           curveCount > 0
-            ? `${curveCount} ${curveCount === 1 ? "turn" : "turns"}`
+            ? translate("{count, plural, one {# turn} other {# turns}}", {
+                count: curveCount,
+              })
             : undefined
         }
       />
@@ -431,7 +453,7 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
     <View style={styles.card}>
       <SectionTitle
         icon="terrain"
-        title="Elevation"
+        title={translate("Elevation")}
         rightLabel={
           stats && (stats.ascent > 0 || stats.descent > 0)
             ? `↑${Math.round(stats.ascent)} m  ↓${Math.round(stats.descent)} m`
@@ -442,19 +464,19 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
         <ElevationProfileChart profile={elevation_profile} />
       ) : null}
       {isFlatProfile ? (
-        <Text style={styles.emptyInline}>Flat profile.</Text>
+        <Text style={styles.emptyInline}>{translate("Flat profile.")}</Text>
       ) : null}
       <View style={styles.elevationRow}>
         <ElevationStat
-          label="Min"
+          label={translate("Min")}
           value={hasMin ? `${Math.round(elevation_min!)} m` : "—"}
         />
         <ElevationStat
-          label="Max"
+          label={translate("Max")}
           value={hasMax ? `${Math.round(elevation_max!)} m` : "—"}
         />
         <ElevationStat
-          label="Range"
+          label={translate("Range")}
           value={range !== null ? `${Math.round(range)} m` : "—"}
         />
       </View>
@@ -521,11 +543,13 @@ function HazardsCard({
     <View style={styles.card}>
       <SectionTitle
         icon="alert"
-        title="Active hazards"
+        title={translate("Active hazards")}
         rightLabel={badgeCount ? `${badgeCount}` : undefined}
       />
       {badgeCount === 0 ? (
-        <Text style={styles.empty}>No active hazards reported.</Text>
+        <Text style={styles.empty}>
+          {translate("No active hazards reported.")}
+        </Text>
       ) : (
         <>
           {hazards.map((h) => (
@@ -533,7 +557,10 @@ function HazardsCard({
           ))}
           {truncated ? (
             <Text style={styles.emptyInline}>
-              Showing the {hazards.length} most recent of {totalCount}.
+              {translate("Showing the {shown} most recent of {total}.", {
+                shown: hazards.length,
+                total: totalCount,
+              })}
             </Text>
           ) : null}
         </>
@@ -564,7 +591,7 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
           </Text>
         ) : null}
         <Text style={styles.hazardMeta}>
-          {hazard.confirmations} confirmations ·{" "}
+          {hazard.confirmations} {translate("confirmations ·")}{" "}
           {formatRelativeTime(hazard.created_at)}
         </Text>
       </View>
@@ -778,13 +805,15 @@ function ReviewsCard({
     <View style={styles.card}>
       <SectionTitle
         icon="star-outline"
-        title="Recent reviews"
+        title={translate("Recent reviews")}
         rightLabel={showAvg ? `${avgRating!.toFixed(1)} ★` : undefined}
       />
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityLabel={
-          myReview ? "Edit your review" : "Write a review for this road"
+          myReview
+            ? translate("Edit your review")
+            : translate("Write a review for this road")
         }
         style={styles.writeReviewButton}
         onPress={openForm}
@@ -795,7 +824,9 @@ function ReviewsCard({
           color={INTERACTIVE}
         />
         <Text style={styles.writeReviewLabel}>
-          {myReview ? "Edit your review" : "Write a review"}
+          {myReview
+            ? translate("Edit your review")
+            : translate("Write a review")}
         </Text>
       </TouchableOpacity>
       {statusBanner ? (
@@ -803,7 +834,7 @@ function ReviewsCard({
       ) : null}
       {reviews.length === 0 ? (
         <Text style={styles.empty}>
-          No reviews yet — be the first to review this road.
+          {translate("No reviews yet — be the first to review this road.")}
         </Text>
       ) : (
         reviews.map((r) => (
@@ -861,7 +892,9 @@ function ReviewRow({
             <TouchableOpacity
               onPress={openProfile}
               accessibilityRole="button"
-              accessibilityLabel={`Open ${review.user_display_name}'s profile`}
+              accessibilityLabel={translate("Open {value0}'s profile", {
+                value0: review.user_display_name,
+              })}
             >
               <Text style={styles.reviewAuthorLink}>
                 {review.user_display_name}
@@ -872,7 +905,9 @@ function ReviewRow({
           )}
           {review.is_mine ? (
             <View style={styles.reviewMineBadge}>
-              <Text style={styles.reviewMineBadgeLabel}>You</Text>
+              <Text style={styles.reviewMineBadgeLabel}>
+                {translate("You")}
+              </Text>
             </View>
           ) : null}
         </View>
@@ -898,12 +933,14 @@ function ReviewRow({
       {onEditOwn ? (
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel="Edit or delete your review"
+          accessibilityLabel={translate("Edit or delete your review")}
           style={styles.reviewEditButton}
           onPress={onEditOwn}
         >
           <Icon name="pencil-outline" size={14} color={INTERACTIVE} />
-          <Text style={styles.reviewEditLabel}>Edit / delete</Text>
+          <Text style={styles.reviewEditLabel}>
+            {translate("Edit / delete")}
+          </Text>
         </TouchableOpacity>
       ) : (
         <ReviewHelpfulRow review={review} onVoteChange={onVoteChange} />
@@ -969,7 +1006,9 @@ function ReviewHelpfulRow({
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityLabel={
-          helpfulActive ? "Remove helpful vote" : "Mark this review as helpful"
+          helpfulActive
+            ? translate("Remove helpful vote")
+            : translate("Mark this review as helpful")
         }
         accessibilityState={{ selected: helpfulActive, busy: pending }}
         style={[
@@ -997,8 +1036,8 @@ function ReviewHelpfulRow({
         accessibilityRole="button"
         accessibilityLabel={
           notHelpfulActive
-            ? "Remove not-helpful vote"
-            : "Mark this review as not helpful"
+            ? translate("Remove not-helpful vote")
+            : translate("Mark this review as not helpful")
         }
         accessibilityState={{ selected: notHelpfulActive, busy: pending }}
         style={[
@@ -1035,9 +1074,10 @@ function ReviewPhotos({ photos }: { photos: string[] }) {
       // Allow scrolling photos without fighting the parent vertical scroll;
       // RN handles the gesture handoff but we hint it explicitly here.
       directionalLockEnabled
-      accessibilityLabel={`${photos.length} review photo${
-        photos.length === 1 ? "" : "s"
-      }`}
+      accessibilityLabel={translate(
+        "{count, plural, one {# review photo} other {# review photos}}",
+        { count: photos.length },
+      )}
     >
       {photos.map((uri, idx) => (
         <Image

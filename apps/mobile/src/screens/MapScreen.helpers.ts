@@ -32,6 +32,7 @@ import type {
   PassStatus,
   Severity,
 } from "@/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 type LineLayerConfig = {
   paint: NonNullable<LineLayerSpecification["paint"]>;
@@ -195,7 +196,7 @@ export const PASS_STATUS_COLORS: Record<PassStatus, string> = {
 };
 
 /** Status → human label used in the legend and trip warning copy. */
-export const PASS_STATUS_LABELS: Record<PassStatus, string> = {
+export const PASS_STATUS_LABELS: Record<PassStatus, EnglishMessageKey> = {
   open: "Open",
   closed: "Closed",
   unknown: "Unknown",

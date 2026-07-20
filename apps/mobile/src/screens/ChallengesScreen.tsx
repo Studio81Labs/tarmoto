@@ -51,6 +51,7 @@ import {
   metricUnit,
   rankChallenges,
 } from "./AchievementsScreen.helpers";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 
@@ -115,7 +116,7 @@ export default function ChallengesScreen() {
           err instanceof Error
             ? err.message
             : "Couldn't join this challenge. Try again.";
-        Alert.alert("Couldn't join", message);
+        Alert.alert(translate("Couldn't join"), message);
       } finally {
         setPendingJoinId(null);
       }
@@ -135,7 +136,9 @@ export default function ChallengesScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="wifi-off" size={40} color={t.dim} />
-        <Text style={styles.emptyTitle}>Can't load challenges</Text>
+        <Text style={styles.emptyTitle}>
+          {translate("Can't load challenges")}
+        </Text>
         <Text style={styles.emptyBody}>{errorMessage}</Text>
       </View>
     );
@@ -181,9 +184,9 @@ function EmptyState() {
   return (
     <View style={styles.emptyCard}>
       <Icon name="flag-outline" size={48} color={ACCENT_DARK} />
-      <Text style={styles.emptyTitle}>No active challenges</Text>
+      <Text style={styles.emptyTitle}>{translate("No active challenges")}</Text>
       <Text style={styles.emptyBody}>
-        Check back soon — new challenges launch regularly.
+        {translate("Check back soon — new challenges launch regularly.")}
       </Text>
     </View>
   );
@@ -219,8 +222,10 @@ function ChallengeCard({
         accessibilityRole="button"
         accessibilityLabel={
           expanded
-            ? `Collapse ${challenge.title} details`
-            : `Expand ${challenge.title} details`
+            ? translate("Collapse {value0} details", {
+                value0: challenge.title,
+              })
+            : translate("Expand {value0} details", { value0: challenge.title })
         }
         style={styles.cardHeader}
       >
@@ -234,10 +239,18 @@ function ChallengeCard({
         </View>
         <Text style={styles.cardBody}>{challenge.description}</Text>
         <View style={styles.metaRow}>
-          <MetaPill icon="target" label={`${challenge.target} ${unit}`} />
+          <MetaPill
+            icon="target"
+            label={translate("{value0} {value1}", {
+              value0: challenge.target,
+              value1: unit,
+            })}
+          />
           <MetaPill
             icon="account-multiple"
-            label={`${challenge.participant_count} riders`}
+            label={translate("{value0} riders", {
+              value0: challenge.participant_count,
+            })}
           />
           <MetaPill
             icon="clock-outline"
@@ -250,12 +263,23 @@ function ChallengeCard({
               <View style={[styles.progressFill, { width: `${percent}%` }]} />
             </View>
             <Text style={styles.progressLabel}>
-              {formatChallengeProgress(
-                detail.my_progress ?? 0,
-                challenge.target,
-                challenge.metric,
-              )}{" "}
-              · {percent}%{detail.my_completed ? " · COMPLETE" : ""}
+              {detail.my_completed
+                ? translate("{progress} · {percent}% · COMPLETE", {
+                    progress: formatChallengeProgress(
+                      detail.my_progress ?? 0,
+                      challenge.target,
+                      challenge.metric,
+                    ),
+                    percent,
+                  })
+                : translate("{progress} · {percent}%", {
+                    progress: formatChallengeProgress(
+                      detail.my_progress ?? 0,
+                      challenge.target,
+                      challenge.metric,
+                    ),
+                    percent,
+                  })}
             </Text>
           </>
         ) : null}
@@ -276,14 +300,18 @@ function ChallengeCard({
                     isJoining ? styles.joinBtnDisabled : null,
                   ]}
                   accessibilityRole="button"
-                  accessibilityLabel={`Join challenge ${challenge.title}`}
+                  accessibilityLabel={translate("Join challenge {value0}", {
+                    value0: challenge.title,
+                  })}
                 >
                   {isJoining ? (
                     <ActivityIndicator color={t.invFg} />
                   ) : (
                     <>
                       <Icon name="flag-checkered" size={18} color={t.invFg} />
-                      <Text style={styles.joinLabel}>Join challenge</Text>
+                      <Text style={styles.joinLabel}>
+                        {translate("Join challenge")}
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -326,7 +354,7 @@ function Leaderboard({
   if (entries.length === 0) {
     return (
       <Text style={styles.emptyLeaderboard}>
-        No leaderboard yet — be first to join.
+        {translate("No leaderboard yet — be first to join.")}
       </Text>
     );
   }
@@ -335,7 +363,7 @@ function Leaderboard({
   const top = entries.slice(0, 5);
   return (
     <View style={styles.leaderboard}>
-      <Text style={styles.leaderboardTitle}>Leaderboard</Text>
+      <Text style={styles.leaderboardTitle}>{translate("Leaderboard")}</Text>
       {top.map((e) => {
         const isMe = myUserId !== null && e.user_id === myUserId;
         const percent = challengePercent(e.progress, target);
@@ -346,8 +374,9 @@ function Leaderboard({
           >
             <Text style={styles.lbRank}>#{e.rank}</Text>
             <Text style={[styles.lbName, isMe ? styles.lbNameMe : null]}>
-              {e.display_name}
-              {isMe ? " (you)" : ""}
+              {isMe
+                ? translate("{name} (you)", { name: e.display_name })
+                : e.display_name}
             </Text>
             <Text style={styles.lbProgress}>
               {Math.round(e.progress)} {unit} · {percent}%

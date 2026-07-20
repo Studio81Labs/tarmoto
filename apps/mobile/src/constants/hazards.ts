@@ -13,8 +13,9 @@
  */
 
 import type { HazardType } from "@/types";
+import type { EnglishMessageKey } from "@/i18n";
 
-export const HAZARD_TYPE_LABELS: Record<HazardType, string> = {
+export const HAZARD_TYPE_LABELS: Record<HazardType, EnglishMessageKey> = {
   pothole: "Pothole",
   gravel: "Gravel",
   oil_spill: "Oil spill",

@@ -35,6 +35,7 @@ import {
 import { usePendingHazardReports, usePendingUploads } from "@/hooks";
 import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
@@ -61,36 +62,38 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Settings</Text>
+      <Text style={styles.title}>{translate("Settings")}</Text>
 
       <Card raised pad={brandSpacing.s4} style={styles.card}>
         {/* These stamps are the section headings — use the readable `dim`
             tone (AA on white), not the default muted eyebrow colour. */}
-        <Stamp color={t.dim}>Route quality</Stamp>
+        <Stamp color={t.dim}>{translate("Route quality")}</Stamp>
         <Text style={styles.sectionBody}>
-          Routes and road segments below your minimum are grayed out so you can
-          focus on the roads you actually want to ride.
+          {translate(
+            "Routes and road segments below your minimum are grayed out so you can focus on the roads you actually want to ride.",
+          )}
         </Text>
 
         <QualityThresholdSlider
           value={minQuality}
           onChange={setMinQuality}
-          label="Minimum quality"
+          label={translate("Minimum quality")}
           helpText={`Currently showing ${qualityLabel(minQuality)} and above.`}
         />
       </Card>
 
       <Card raised pad={brandSpacing.s4} style={styles.card}>
-        <Stamp color={t.dim}>Fuel range</Stamp>
+        <Stamp color={t.dim}>{translate("Fuel range")}</Stamp>
         <Text style={styles.sectionBody}>
-          How far your bike comfortably goes on a tank. Trip days with a stretch
-          longer than this between fuel stops will trigger a warning.
+          {translate(
+            "How far your bike comfortably goes on a tank. Trip days with a stretch longer than this between fuel stops will trigger a warning.",
+          )}
         </Text>
 
         <FuelRangePicker
           value={fuelRangeKm}
           onChange={setFuelRangeKm}
-          label="Fuel range"
+          label={translate("Fuel range")}
           helpText="Tap a distance to match your bike."
         />
       </Card>
@@ -98,16 +101,21 @@ export default function SettingsScreen() {
       <Card raised pad={brandSpacing.s4} style={styles.card}>
         <View style={styles.toggleRow}>
           <View style={styles.toggleBody}>
-            <Text style={styles.sectionTitle}>Weather alerts</Text>
+            <Text style={styles.sectionTitle}>
+              {translate("Weather alerts")}
+            </Text>
             <Text style={styles.sectionBody}>
-              Surface storms, ice, wet roads, and high wind ahead while
-              navigating. Critical alerts (storm, ice) are also read aloud.
+              {translate(
+                "Surface storms, ice, wet roads, and high wind ahead while navigating. Critical alerts (storm, ice) are also read aloud.",
+              )}
             </Text>
           </View>
           <Toggle
             on={weatherAlertsEnabled}
             onToggle={setWeatherAlertsEnabled}
-            accessibilityLabel="Toggle real-time weather alerts during navigation"
+            accessibilityLabel={translate(
+              "Toggle real-time weather alerts during navigation",
+            )}
           />
         </View>
       </Card>
@@ -166,16 +174,18 @@ function BulkExportCard() {
         filename,
         title:
           format === "gpx"
-            ? "Export all rides as GPX"
-            : "Export all rides as CSV",
+            ? translate("Export all rides as GPX")
+            : translate("Export all rides as CSV"),
         // failOnCancel=false: dismissing the sheet is a normal outcome,
         // not an error worth toasting.
         failOnCancel: false,
       });
     } catch (err) {
       Alert.alert(
-        "Couldn't export",
-        err instanceof Error ? err.message : "Unable to export rides.",
+        translate("Couldn't export"),
+        err instanceof Error
+          ? err.message
+          : translate("Unable to export rides."),
       );
     } finally {
       // Same rationale as the per-ride export: leave the temp file in
@@ -190,11 +200,12 @@ function BulkExportCard() {
     <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
         <Icon name="export-variant" size={22} color={t.fg} />
-        <Text style={styles.sectionTitle}>Export rides</Text>
+        <Text style={styles.sectionTitle}>{translate("Export rides")}</Text>
       </View>
       <Text style={styles.sectionBody}>
-        Download your full ride history as GPX (for Garmin / RideWithGPS) or CSV
-        (for spreadsheets).
+        {translate(
+          "Download your full ride history as GPX (for Garmin / RideWithGPS) or CSV (for spreadsheets).",
+        )}
       </Text>
       <View style={styles.exportRow}>
         <TouchableOpacity
@@ -202,14 +213,14 @@ function BulkExportCard() {
           onPress={() => void handleExport("gpx")}
           disabled={busy !== null}
           accessibilityRole="button"
-          accessibilityLabel="Export all rides as GPX"
+          accessibilityLabel={translate("Export all rides as GPX")}
         >
           {busy === "gpx" ? (
             <ActivityIndicator color={t.accent} size="small" />
           ) : (
             <>
               <Icon name="download-outline" size={18} color={t.fg} />
-              <Text style={styles.exportBtnLabel}>GPX</Text>
+              <Text style={styles.exportBtnLabel}>{translate("GPX")}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -218,14 +229,14 @@ function BulkExportCard() {
           onPress={() => void handleExport("csv")}
           disabled={busy !== null}
           accessibilityRole="button"
-          accessibilityLabel="Export all rides as CSV"
+          accessibilityLabel={translate("Export all rides as CSV")}
         >
           {busy === "csv" ? (
             <ActivityIndicator color={t.accent} size="small" />
           ) : (
             <>
               <Icon name="table" size={18} color={t.fg} />
-              <Text style={styles.exportBtnLabel}>CSV</Text>
+              <Text style={styles.exportBtnLabel}>{translate("CSV")}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -258,21 +269,24 @@ function VoiceNavigationCard() {
     <Card raised pad={brandSpacing.s4} style={styles.card}>
       <View style={styles.uploadsHeader}>
         <Icon name="volume-high" size={22} color={enabled ? t.accent : t.fg} />
-        <Text style={styles.sectionTitle}>Voice navigation</Text>
+        <Text style={styles.sectionTitle}>{translate("Voice navigation")}</Text>
       </View>
 
       <View style={styles.toggleRow}>
         <View style={styles.toggleBody}>
-          <Text style={styles.toggleLabel}>Speak turn-by-turn cues</Text>
+          <Text style={styles.toggleLabel}>
+            {translate("Speak turn-by-turn cues")}
+          </Text>
           <Text style={styles.sectionBody}>
-            Read maneuvers aloud through the helmet headset, with motorcycle-
-            friendly early warnings ~300 m before each turn.
+            {translate(
+              "Read maneuvers aloud through the helmet headset, with motorcycle- friendly early warnings ~300 m before each turn.",
+            )}
           </Text>
         </View>
         <Toggle
           on={enabled}
           onToggle={setEnabled}
-          accessibilityLabel="Enable voice navigation"
+          accessibilityLabel={translate("Enable voice navigation")}
         />
       </View>
 
@@ -280,46 +294,64 @@ function VoiceNavigationCard() {
         <>
           <View style={styles.toggleRow}>
             <View style={styles.toggleBody}>
-              <Text style={styles.toggleLabel}>Verbose phrasing</Text>
+              <Text style={styles.toggleLabel}>
+                {translate("Verbose phrasing")}
+              </Text>
               <Text style={styles.sectionBody}>
-                Off speaks just the imperative ("Turn left now"); on adds the
-                upcoming road name and stay-left/right hints on sharp turns.
+                {translate(
+                  'Off speaks just the imperative ("Turn left now"); on adds the upcoming road name and stay-left/right hints on sharp turns.',
+                )}
               </Text>
             </View>
             <Toggle
               on={verbose}
               onToggle={setVerbose}
-              accessibilityLabel="Toggle verbose voice navigation phrasing"
+              accessibilityLabel={translate(
+                "Toggle verbose voice navigation phrasing",
+              )}
             />
           </View>
 
           <View style={styles.toggleBody}>
-            <Text style={styles.toggleLabel}>Volume</Text>
+            <Text style={styles.toggleLabel}>{translate("Volume")}</Text>
             <SegmentedRow
-              options={VOICE_VOLUME_OPTIONS}
+              options={VOICE_VOLUME_OPTIONS.map((option) => ({
+                ...option,
+                label: translate(option.label),
+              }))}
               value={volumeBucket(volume)}
               onChange={(bucket) => setVolume(VOLUME_BY_BUCKET[bucket])}
-              ariaLabel="Voice navigation volume"
+              ariaLabel={translate("Voice navigation volume")}
             />
           </View>
 
           <View style={styles.toggleBody}>
-            <Text style={styles.toggleLabel}>Spoken language</Text>
+            <Text style={styles.toggleLabel}>
+              {translate("Spoken language")}
+            </Text>
             <SegmentedRow
-              options={VOICE_LANGUAGE_OPTIONS}
+              options={VOICE_LANGUAGE_OPTIONS.map((option) => ({
+                ...option,
+                label: translate(option.label),
+              }))}
               value={language}
               onChange={(v) => setLanguage(v as VoiceNavLanguage)}
-              ariaLabel="Voice navigation language"
+              ariaLabel={translate("Voice navigation language")}
             />
           </View>
 
           <View style={styles.toggleBody}>
-            <Text style={styles.toggleLabel}>Distance units</Text>
+            <Text style={styles.toggleLabel}>
+              {translate("Distance units")}
+            </Text>
             <SegmentedRow
-              options={DISTANCE_UNIT_OPTIONS}
+              options={DISTANCE_UNIT_OPTIONS.map((option) => ({
+                ...option,
+                label: translate(option.label),
+              }))}
               value={distanceUnit}
               onChange={(v) => setDistanceUnit(v as DistanceUnitPref)}
-              ariaLabel="Spoken distance units"
+              ariaLabel={translate("Spoken distance units")}
             />
           </View>
         </>
@@ -339,7 +371,7 @@ const VOLUME_BY_BUCKET: Record<VolumeBucket, number> = {
 
 const VOICE_VOLUME_OPTIONS: ReadonlyArray<{
   value: VolumeBucket;
-  label: string;
+  label: EnglishMessageKey;
 }> = [
   { value: "off", label: "Mute" },
   { value: "low", label: "Low" },
@@ -349,7 +381,7 @@ const VOICE_VOLUME_OPTIONS: ReadonlyArray<{
 
 const VOICE_LANGUAGE_OPTIONS: ReadonlyArray<{
   value: VoiceNavLanguage;
-  label: string;
+  label: EnglishMessageKey;
 }> = [
   { value: "auto", label: "Auto" },
   { value: "en", label: "EN" },
@@ -360,7 +392,7 @@ const VOICE_LANGUAGE_OPTIONS: ReadonlyArray<{
 
 const DISTANCE_UNIT_OPTIONS: ReadonlyArray<{
   value: DistanceUnitPref;
-  label: string;
+  label: EnglishMessageKey;
 }> = [
   { value: "metric", label: "Metric" },
   { value: "imperial", label: "Imperial" },
@@ -452,7 +484,9 @@ function SafetyCard() {
         setUser(updated);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Couldn't update preference.",
+          err instanceof Error
+            ? err.message
+            : translate("Couldn't update preference."),
         );
       } finally {
         setPending(false);
@@ -469,22 +503,23 @@ function SafetyCard() {
           size={22}
           color={enabled ? t.accent : t.fg}
         />
-        <Text style={styles.sectionTitle}>Safety</Text>
+        <Text style={styles.sectionTitle}>{translate("Safety")}</Text>
       </View>
 
       <View style={styles.toggleRow}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.toggleLabel}>Crash detection</Text>
+          <Text style={styles.toggleLabel}>{translate("Crash detection")}</Text>
           <Text style={styles.sectionBody}>
-            Tarmoto will fire a 30-second countdown if it detects a hard impact
-            and call your emergency contacts if you don't cancel.
+            {translate(
+              "Tarmoto will fire a 30-second countdown if it detects a hard impact and call your emergency contacts if you don't cancel.",
+            )}
           </Text>
         </View>
         <Toggle
           on={enabled}
           onToggle={(v) => void handleToggle(v)}
           disabled={pending || !user}
-          accessibilityLabel="Enable crash detection"
+          accessibilityLabel={translate("Enable crash detection")}
         />
       </View>
 
@@ -495,10 +530,10 @@ function SafetyCard() {
         style={styles.linkRow}
         onPress={() => navigation.navigate("EmergencyContacts")}
         accessibilityRole="button"
-        accessibilityLabel="Manage emergency contacts"
+        accessibilityLabel={translate("Manage emergency contacts")}
       >
         <Icon name="account-multiple-outline" size={20} color={t.accent} />
-        <Text style={styles.linkLabel}>Emergency contacts</Text>
+        <Text style={styles.linkLabel}>{translate("Emergency contacts")}</Text>
         <Icon
           name="chevron-right"
           size={20}
@@ -522,16 +557,24 @@ function OfflineRegionsCard() {
 
   const summary =
     regions.length === 0
-      ? "Save map areas so the road-quality overlay keeps working without cell service."
+      ? translate(
+          "Save map areas so the road-quality overlay keeps working without cell service.",
+        )
       : downloading > 0
-        ? `${downloading} region${downloading === 1 ? "" : "s"} downloading now.`
-        : `${ready} of ${regions.length} region${regions.length === 1 ? "" : "s"} ready offline.`;
+        ? translate(
+            "{count, plural, one {# region} other {# regions}} downloading now.",
+            { count: downloading },
+          )
+        : translate(
+            "{ready} of {count, plural, one {# region} other {# regions}} ready offline.",
+            { ready, count: regions.length },
+          );
 
   return (
     <TouchableOpacity
       onPress={() => navigation.navigate("OfflineRegions")}
       accessibilityRole="button"
-      accessibilityLabel="Manage offline map regions"
+      accessibilityLabel={translate("Manage offline map regions")}
     >
       <Card raised pad={brandSpacing.s4} style={styles.card}>
         <View style={styles.uploadsHeader}>
@@ -540,7 +583,7 @@ function OfflineRegionsCard() {
             size={22}
             color={downloading > 0 ? t.accent : t.fg}
           />
-          <Text style={styles.sectionTitle}>Offline maps</Text>
+          <Text style={styles.sectionTitle}>{translate("Offline maps")}</Text>
           <Icon
             name="chevron-right"
             size={20}
@@ -562,8 +605,13 @@ function PendingUploadsCard() {
 
   const hasPending = count > 0;
   const description = hasPending
-    ? `${count} ride${count === 1 ? "" : "s"} waiting to upload. We'll retry automatically next time you finish a ride.`
-    : "All your sensor contributions are synced to the Tarmoto community.";
+    ? translate(
+        "{count, plural, one {# ride} other {# rides}} waiting to upload. We'll retry automatically next time you finish a ride.",
+        { count },
+      )
+    : translate(
+        "All your sensor contributions are synced to the Tarmoto community.",
+      );
 
   return (
     <Card raised pad={brandSpacing.s4} style={styles.card}>
@@ -573,7 +621,7 @@ function PendingUploadsCard() {
           size={22}
           color={hasPending ? WARNING : SUCCESS}
         />
-        <Text style={styles.sectionTitle}>Offline uploads</Text>
+        <Text style={styles.sectionTitle}>{translate("Offline uploads")}</Text>
       </View>
       <Text style={styles.sectionBody}>{description}</Text>
 
@@ -583,20 +631,23 @@ function PendingUploadsCard() {
           disabled={isRetrying}
           style={[styles.retryBtn, isRetrying ? styles.retryBtnDisabled : null]}
           accessibilityRole="button"
-          accessibilityLabel="Retry pending sensor uploads"
+          accessibilityLabel={translate("Retry pending sensor uploads")}
           accessibilityState={{ disabled: isRetrying }}
         >
           {isRetrying ? (
             <ActivityIndicator color="#0E0E10" size="small" />
           ) : (
-            <Text style={styles.retryBtnLabel}>Retry now</Text>
+            <Text style={styles.retryBtnLabel}>{translate("Retry now")}</Text>
           )}
         </TouchableOpacity>
       ) : null}
 
       {!isRetrying && lastFlushed !== null && lastFlushed > 0 && !hasPending ? (
         <Text style={styles.retrySuccess}>
-          Uploaded {lastFlushed} pending ride{lastFlushed === 1 ? "" : "s"}.
+          {translate(
+            "Uploaded {count, plural, one {# pending ride} other {# pending rides}}.",
+            { count: lastFlushed },
+          )}
         </Text>
       ) : null}
     </Card>
@@ -612,8 +663,11 @@ function PendingHazardReportsCard() {
 
   const hasPending = count > 0;
   const description = hasPending
-    ? `${count} hazard report${count === 1 ? "" : "s"} waiting to upload. We'll retry automatically next time you submit a report.`
-    : "All your hazard reports are synced to the Tarmoto community.";
+    ? translate(
+        "{count, plural, one {# hazard report} other {# hazard reports}} waiting to upload. We'll retry automatically next time you submit a report.",
+        { count },
+      )
+    : translate("All your hazard reports are synced to the Tarmoto community.");
 
   const resultMessage = formatHazardRetryResult(lastResult, isRetrying);
 
@@ -625,7 +679,7 @@ function PendingHazardReportsCard() {
           size={22}
           color={hasPending ? WARNING : SUCCESS}
         />
-        <Text style={styles.sectionTitle}>Hazard reports</Text>
+        <Text style={styles.sectionTitle}>{translate("Hazard reports")}</Text>
       </View>
       <Text style={styles.sectionBody}>{description}</Text>
 
@@ -635,13 +689,13 @@ function PendingHazardReportsCard() {
           disabled={isRetrying}
           style={[styles.retryBtn, isRetrying ? styles.retryBtnDisabled : null]}
           accessibilityRole="button"
-          accessibilityLabel="Retry pending hazard reports"
+          accessibilityLabel={translate("Retry pending hazard reports")}
           accessibilityState={{ disabled: isRetrying }}
         >
           {isRetrying ? (
             <ActivityIndicator color="#0E0E10" size="small" />
           ) : (
-            <Text style={styles.retryBtnLabel}>Retry now</Text>
+            <Text style={styles.retryBtnLabel}>{translate("Retry now")}</Text>
           )}
         </TouchableOpacity>
       ) : null}
@@ -680,20 +734,24 @@ export function formatHazardRetryResult(
 
   const parts: string[] = [];
   if (flushed > 0) {
-    parts.push(`Uploaded ${flushed} report${flushed === 1 ? "" : "s"}`);
+    parts.push(
+      translate("Uploaded {count, plural, one {# report} other {# reports}}", {
+        count: flushed,
+      }),
+    );
   }
   if (failed > 0) {
-    parts.push(`${failed} failed`);
+    parts.push(translate("{count} failed", { count: failed }));
   }
   if (remaining > 0) {
-    parts.push(`${remaining} still queued`);
+    parts.push(translate("{count} still queued", { count: remaining }));
   }
   // Pure-failure / pure-stuck outcomes get a warning tone; anything
   // with a successful flush leans on success styling because the rider
   // actually moved their backlog forward.
   const tone: "success" | "warning" =
     flushed > 0 && failed === 0 && remaining === 0 ? "success" : "warning";
-  return { text: `${parts.join(" · ")}.`, tone };
+  return { text: translate("{value0}.", { value0: parts.join(" · ") }), tone };
 }
 
 const styles = StyleSheet.create({

@@ -67,6 +67,7 @@ import {
   sumDistance,
   tripToGpxInput,
 } from "./TripScreens.helpers";
+import { t as translate } from "@/i18n";
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
 type DetailNav = NativeStackNavigationProp<TripsStackParamList, "TripDetail">;
@@ -100,7 +101,7 @@ export default function TripDetailScreen() {
   const fetchTrip = useCallback(
     async (opts: { signal?: { cancelled: boolean } } = {}) => {
       if (!tripId) {
-        if (!opts.signal?.cancelled) setError("Missing trip id");
+        if (!opts.signal?.cancelled) setError(translate("Missing trip id"));
         return;
       }
       try {
@@ -128,7 +129,9 @@ export default function TripDetailScreen() {
         await fetchTrip({ signal });
       } catch (e) {
         if (!signal.cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load trip");
+          setError(
+            e instanceof Error ? e.message : translate("Failed to load trip"),
+          );
         }
       } finally {
         if (!signal.cancelled) setLoading(false);
@@ -183,7 +186,9 @@ export default function TripDetailScreen() {
     try {
       await fetchTrip();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load trip");
+      setError(
+        e instanceof Error ? e.message : translate("Failed to load trip"),
+      );
     } finally {
       setLoading(false);
     }
@@ -220,13 +225,15 @@ export default function TripDetailScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
-        <Text style={styles.errorTitle}>Unable to load trip</Text>
+        <Text style={styles.errorTitle}>
+          {translate("Unable to load trip")}
+        </Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
         <TouchableOpacity
           style={styles.primaryBtn}
           onPress={() => void retry()}
         >
-          <Text style={styles.primaryBtnLabel}>Try again</Text>
+          <Text style={styles.primaryBtnLabel}>{translate("Try again")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -258,18 +265,23 @@ export default function TripDetailScreen() {
       <MembersCard members={trip.members} />
 
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionHeader}>Days</Text>
+        <Text style={styles.sectionHeader}>{translate("Days")}</Text>
         <Text style={styles.sectionHeaderMeta}>
-          {trip.days.length} day{trip.days.length === 1 ? "" : "s"}
+          {translate("{count, plural, one {# day} other {# days}}", {
+            count: trip.days.length,
+          })}
         </Text>
       </View>
 
       {trip.days.length === 0 ? (
         <View style={styles.card}>
-          <Text style={styles.emptyDaysTitle}>No days generated yet</Text>
+          <Text style={styles.emptyDaysTitle}>
+            {translate("No days generated yet")}
+          </Text>
           <Text style={styles.emptyDaysBody}>
-            The route generator hasn't produced any days for this trip. Pull to
-            refresh, or go back and try different parameters.
+            {translate(
+              "The route generator hasn't produced any days for this trip. Pull to refresh, or go back and try different parameters.",
+            )}
           </Text>
         </View>
       ) : (
@@ -310,14 +322,14 @@ function HeaderCard({
       </View>
       {trip.region ? <Text style={styles.region}>{trip.region}</Text> : null}
       <View style={styles.metricsRow}>
-        <Metric label="Total" value={formatKm(totalKm)} />
+        <Metric label={translate("Total")} value={formatKm(totalKm)} />
         <Metric
-          label="Days"
+          label={translate("Days")}
           value={`${trip.num_days}`}
           sub={`${trip.daily_km_min}–${trip.daily_km_max} km/day`}
         />
         <Metric
-          label="Quality"
+          label={translate("Quality")}
           value={avgQ > 0 ? qualityLabel(avgQ) : "—"}
           swatchColor={avgQ > 0 ? qualityBrandColor(avgQ) : undefined}
         />
@@ -344,7 +356,10 @@ function DayCard({
       style={styles.card}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Day ${day.day_number}${day.title ? `, ${day.title}` : ""}`}
+      accessibilityLabel={translate("Day {value0}{value1}", {
+        value0: day.day_number,
+        value1: day.title ? `, ${day.title}` : "",
+      })}
     >
       <View style={styles.dayHeaderRow}>
         <View style={styles.dayNumberBubble}>
@@ -352,7 +367,7 @@ function DayCard({
         </View>
         <View style={styles.dayHeaderText}>
           <Text style={styles.dayTitle}>
-            {day.title ?? `Day ${day.day_number}`}
+            {day.title ?? translate("Day {value0}", { value0: day.day_number })}
           </Text>
           <Text style={styles.dayMeta}>
             {formatKm(day.distance_km)} ·{" "}
@@ -365,18 +380,23 @@ function DayCard({
       <View style={styles.qualityRow}>
         <View style={[styles.qualitySwatch, { backgroundColor: qColor }]} />
         <Text style={styles.qualityText}>
-          {day.avg_quality > 0 ? qualityLabel(day.avg_quality) : "No data yet"}
+          {day.avg_quality > 0
+            ? qualityLabel(day.avg_quality)
+            : translate("No data yet")}
         </Text>
         <Text style={styles.waypointCount}>
-          {day.waypoints.length} waypoint
-          {day.waypoints.length === 1 ? "" : "s"}
+          {translate("{count, plural, one {# waypoint} other {# waypoints}}", {
+            count: day.waypoints.length,
+          })}
         </Text>
       </View>
       {overnightStop ? (
         <View style={styles.overnightRow}>
           <Icon name="bed-outline" size={15} color={t.dim} />
           <Text style={styles.overnightLabel} numberOfLines={1}>
-            Overnight: {overnightStop.name ?? "Suggested stay"}
+            {translate("Overnight: {name}", {
+              name: overnightStop.name ?? translate("Suggested stay"),
+            })}
           </Text>
         </View>
       ) : null}
@@ -425,15 +445,15 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
         url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
         type: "application/gpx+xml",
         filename,
-        title: "Export trip as GPX",
+        title: translate("Export trip as GPX"),
         // Don't surface a cancel as an error — riders dismissing the
         // sheet is a routine outcome, not a failure mode worth toasting.
         failOnCancel: false,
       });
     } catch (err) {
       Alert.alert(
-        "Couldn't export",
-        err instanceof Error ? err.message : "Unable to export GPX.",
+        translate("Couldn't export"),
+        err instanceof Error ? err.message : translate("Unable to export GPX."),
       );
     } finally {
       // Same rationale as RideDetailScreen: leave the temp file in
@@ -454,7 +474,7 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
       onPress={() => void handleExport()}
       disabled={busy}
       accessibilityRole="button"
-      accessibilityLabel="Export trip as GPX"
+      accessibilityLabel={translate("Export trip as GPX")}
       accessibilityState={{ busy }}
     >
       {busy ? (
@@ -462,7 +482,7 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
       ) : (
         <>
           <Icon name="download-outline" size={20} color={t.fg} />
-          <Text style={styles.exportLabel}>Export GPX</Text>
+          <Text style={styles.exportLabel}>{translate("Export GPX")}</Text>
         </>
       )}
     </TouchableOpacity>
@@ -480,9 +500,11 @@ function MembersCard({ members }: { members: TripMember[] }) {
   return (
     <View style={styles.card}>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionHeader}>Members</Text>
+        <Text style={styles.sectionHeader}>{translate("Members")}</Text>
         <Text style={styles.sectionHeaderMeta}>
-          {members.length} rider{members.length === 1 ? "" : "s"}
+          {translate("{count, plural, one {# rider} other {# riders}}", {
+            count: members.length,
+          })}
         </Text>
       </View>
       {sorted.map((m) => (
@@ -509,7 +531,9 @@ function MemberRow({ member }: { member: TripMember }) {
         })
       }
       accessibilityRole="button"
-      accessibilityLabel={`Open ${member.display_name}'s profile`}
+      accessibilityLabel={translate("Open {value0}'s profile", {
+        value0: member.display_name,
+      })}
     >
       <View style={styles.memberAvatar}>
         <Icon name="account" size={18} color={t.dim} />
@@ -571,10 +595,10 @@ function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {
   // Sort by elevation descending so the most consequential closure
   // (typically also the one most likely to be still snowed-in) leads.
   const sorted = [...passes].sort((a, b) => b.elevation_m - a.elevation_m);
-  const headline =
-    sorted.length === 1
-      ? "1 closed pass on this route"
-      : `${sorted.length} closed passes on this route`;
+  const headline = translate(
+    "{count, plural, one {# closed pass} other {# closed passes}} on this route",
+    { count: sorted.length },
+  );
   return (
     <View
       style={styles.warningCard}
@@ -586,8 +610,9 @@ function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {
         <Text style={styles.warningTitle}>{headline}</Text>
       </View>
       <Text style={styles.warningBody}>
-        These passes are likely closed when you ride. Plan a detour or check
-        local conditions before departing.
+        {translate(
+          "These passes are likely closed when you ride. Plan a detour or check local conditions before departing.",
+        )}
       </Text>
       {sorted.map((p) => (
         <View key={p.id} style={styles.warningPassRow}>

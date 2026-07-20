@@ -26,6 +26,7 @@ import {
   QUALITY_COLORS,
 } from "@/theme/brand";
 import type { WeatherAlert, WeatherAlertSeverity } from "@/types";
+import { t as translate } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -91,7 +92,10 @@ export function WeatherAlertBanner({
     <>
       <TouchableOpacity
         accessibilityRole="button"
-        accessibilityLabel={`Weather alert: ${top.title}. Tap for details.`}
+        accessibilityLabel={translate(
+          "Weather alert: {value0}. Tap for details.",
+          { value0: top.title },
+        )}
         accessibilityLiveRegion="polite"
         onPress={onOpenDetail}
         style={[styles.banner, { borderLeftColor: accent }]}
@@ -107,7 +111,10 @@ export function WeatherAlertBanner({
           </Text>
           <Text style={styles.bannerMessage} numberOfLines={1}>
             {additionalCount > 0
-              ? `${top.message} · +${additionalCount} more`
+              ? translate("{value0} · +{value1} more", {
+                  value0: top.message,
+                  value1: additionalCount,
+                })
               : top.message}
           </Text>
         </View>
@@ -123,11 +130,13 @@ export function WeatherAlertBanner({
         <Pressable style={styles.backdrop} onPress={onCloseDetail}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Weather alerts ahead</Text>
+              <Text style={styles.sheetTitle}>
+                {translate("Weather alerts ahead")}
+              </Text>
               <TouchableOpacity
                 onPress={onCloseDetail}
                 accessibilityRole="button"
-                accessibilityLabel="Close weather alerts"
+                accessibilityLabel={translate("Close weather alerts")}
                 style={styles.sheetClose}
               >
                 <Icon name="close" size={20} color={t.fg} />
@@ -151,7 +160,8 @@ export function WeatherAlertBanner({
                     <Text style={styles.sheetRowTitle}>{alert.title}</Text>
                     <Text style={styles.sheetRowMessage}>{alert.message}</Text>
                     <Text style={styles.sheetRowDistance}>
-                      {formatKm(alert.distance_km_from_start)} from start
+                      {formatKm(alert.distance_km_from_start)}{" "}
+                      {translate("from start")}
                     </Text>
                   </View>
                 </View>

@@ -34,6 +34,7 @@ import {
 import { Toggle } from "@/components/brand";
 import { api } from "@/services/api";
 import type { EmergencyContact, EmergencyContactInput } from "@/types";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -54,7 +55,9 @@ export default function EmergencyContactsScreen() {
       setContacts(list);
     } catch (err) {
       setLoadError(
-        err instanceof Error ? err.message : "Couldn't load contacts.",
+        err instanceof Error
+          ? err.message
+          : translate("Couldn't load contacts."),
       );
     }
   }, []);
@@ -74,12 +77,12 @@ export default function EmergencyContactsScreen() {
 
   const handleDelete = useCallback((contact: EmergencyContact) => {
     Alert.alert(
-      "Delete contact?",
+      translate("Delete contact?"),
       `${contact.name} will no longer be alerted in a crash.`,
       [
-        { text: "Cancel", style: "cancel" },
+        { text: translate("Cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: translate("Delete"),
           style: "destructive",
           onPress: async () => {
             try {
@@ -89,8 +92,8 @@ export default function EmergencyContactsScreen() {
               );
             } catch (err) {
               Alert.alert(
-                "Couldn't delete contact",
-                err instanceof Error ? err.message : "Try again.",
+                translate("Couldn't delete contact"),
+                err instanceof Error ? err.message : translate("Try again."),
               );
             }
           },
@@ -101,20 +104,21 @@ export default function EmergencyContactsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Emergency contacts</Text>
+      <Text style={styles.title}>{translate("Emergency contacts")}</Text>
       <Text style={styles.subtitle}>
-        These contacts get alerted with your location if Tarmoto detects a crash
-        and you don't cancel within 30 seconds.
+        {translate(
+          "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.",
+        )}
       </Text>
 
       <TouchableOpacity
         style={styles.addBtn}
         onPress={() => setEditing({ kind: "create" })}
         accessibilityRole="button"
-        accessibilityLabel="Add emergency contact"
+        accessibilityLabel={translate("Add emergency contact")}
       >
         <Icon name="plus" size={20} color={INK} />
-        <Text style={styles.addLabel}>Add contact</Text>
+        <Text style={styles.addLabel}>{translate("Add contact")}</Text>
       </TouchableOpacity>
 
       {loadError ? (
@@ -122,7 +126,7 @@ export default function EmergencyContactsScreen() {
           <Icon name="alert-circle-outline" size={18} color={statusFg.danger} />
           <Text style={styles.errorText}>{loadError}</Text>
           <TouchableOpacity onPress={() => void loadContacts()}>
-            <Text style={styles.retryLink}>Retry</Text>
+            <Text style={styles.retryLink}>{translate("Retry")}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -133,7 +137,9 @@ export default function EmergencyContactsScreen() {
 
       {contacts && contacts.length === 0 ? (
         <Text style={styles.emptyText}>
-          No contacts yet. Add at least one so help can reach you in a crash.
+          {translate(
+            "No contacts yet. Add at least one so help can reach you in a crash.",
+          )}
         </Text>
       ) : null}
 
@@ -145,17 +151,23 @@ export default function EmergencyContactsScreen() {
             {contact.is_emergency ? (
               <View style={styles.badge}>
                 <Icon name="bell-ring-outline" size={12} color={t.invFg} />
-                <Text style={styles.badgeLabel}>Emergency contact</Text>
+                <Text style={styles.badgeLabel}>
+                  {translate("Emergency contact")}
+                </Text>
               </View>
             ) : (
-              <Text style={styles.contactNote}>Will not be alerted</Text>
+              <Text style={styles.contactNote}>
+                {translate("Will not be alerted")}
+              </Text>
             )}
           </View>
           <View style={styles.cardActions}>
             <TouchableOpacity
               onPress={() => setEditing({ kind: "edit", contact })}
               accessibilityRole="button"
-              accessibilityLabel={`Edit ${contact.name}`}
+              accessibilityLabel={translate("Edit {value0}", {
+                value0: contact.name,
+              })}
               style={styles.iconBtn}
             >
               <Icon name="pencil-outline" size={20} color={t.fg} />
@@ -163,7 +175,9 @@ export default function EmergencyContactsScreen() {
             <TouchableOpacity
               onPress={() => handleDelete(contact)}
               accessibilityRole="button"
-              accessibilityLabel={`Delete ${contact.name}`}
+              accessibilityLabel={translate("Delete {value0}", {
+                value0: contact.name,
+              })}
               style={styles.iconBtn}
             >
               <Icon
@@ -217,11 +231,11 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
     const trimmedName = name.trim();
     const trimmedPhone = phone.trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      setError(translate("Name is required."));
       return;
     }
     if (!trimmedPhone) {
-      setError("Phone number is required.");
+      setError(translate("Phone number is required."));
       return;
     }
     setSubmitting(true);
@@ -244,7 +258,11 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
       onSaved(saved, mode);
       return;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save contact.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : translate("Couldn't save contact."),
+      );
       setSubmitting(false);
     }
   }, [mode, name, phone, isEmergency, onSaved]);
@@ -262,18 +280,18 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
       <View style={styles.modalContainer}>
         <Text style={styles.modalTitle}>{title}</Text>
 
-        <Text style={styles.label}>Name</Text>
+        <Text style={styles.label}>{translate("Name")}</Text>
         <TextInput
           value={name}
           onChangeText={setName}
-          placeholder="Jane Doe"
+          placeholder={translate("Jane Doe")}
           placeholderTextColor={t.mute}
           style={styles.input}
           autoCapitalize="words"
-          accessibilityLabel="Contact name"
+          accessibilityLabel={translate("Contact name")}
         />
 
-        <Text style={styles.label}>Phone</Text>
+        <Text style={styles.label}>{translate("Phone")}</Text>
         <TextInput
           value={phone}
           onChangeText={setPhone}
@@ -281,20 +299,22 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
           placeholderTextColor={t.mute}
           style={styles.input}
           keyboardType="phone-pad"
-          accessibilityLabel="Contact phone"
+          accessibilityLabel={translate("Contact phone")}
         />
 
         <View style={styles.toggleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Alert in a crash</Text>
+            <Text style={styles.label}>{translate("Alert in a crash")}</Text>
             <Text style={styles.helpText}>
-              When off, this contact stays in your list but is not notified.
+              {translate(
+                "When off, this contact stays in your list but is not notified.",
+              )}
             </Text>
           </View>
           <Toggle
             on={isEmergency}
             onToggle={setIsEmergency}
-            accessibilityLabel="Alert this contact in a crash"
+            accessibilityLabel={translate("Alert this contact in a crash")}
           />
         </View>
 
@@ -306,22 +326,22 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
             onPress={onClose}
             disabled={submitting}
             accessibilityRole="button"
-            accessibilityLabel="Cancel"
+            accessibilityLabel={translate("Cancel")}
           >
-            <Text style={styles.secondaryLabel}>Cancel</Text>
+            <Text style={styles.secondaryLabel}>{translate("Cancel")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.primaryBtn, submitting ? styles.disabled : null]}
             onPress={() => void submit()}
             disabled={submitting}
             accessibilityRole="button"
-            accessibilityLabel="Save contact"
+            accessibilityLabel={translate("Save contact")}
             accessibilityState={{ disabled: submitting }}
           >
             {submitting ? (
               <ActivityIndicator color={INK} />
             ) : (
-              <Text style={styles.primaryLabel}>Save</Text>
+              <Text style={styles.primaryLabel}>{translate("Save")}</Text>
             )}
           </TouchableOpacity>
         </View>

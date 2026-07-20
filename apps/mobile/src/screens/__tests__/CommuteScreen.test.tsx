@@ -228,11 +228,13 @@ describe("CommuteScreen", () => {
     // (2 hazards). Asserting the rendered title order proves the
     // ranking flowed end-to-end.
     const rows = screen.getAllByText(/^\d+\.\d km · \d+ min$/);
-    expect(rows.map((r) => r.props.children.join(""))).toEqual([
-      "14.6 km · 28 min",
-      "13.4 km · 24 min",
-      "12.9 km · 20 min",
-    ]);
+    expect(
+      rows.map((r) =>
+        Array.isArray(r.props.children)
+          ? r.props.children.join("")
+          : r.props.children,
+      ),
+    ).toEqual(["14.6 km · 28 min", "13.4 km · 24 min", "12.9 km · 20 min"]);
   });
 
   it("starts a commute ride when a rider taps an alternative row", async () => {

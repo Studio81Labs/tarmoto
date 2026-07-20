@@ -57,6 +57,8 @@ import {
   summarizeExploration,
   type RidePeriod,
 } from "./AchievementsScreen.helpers";
+import { surfaceLabel } from "./RideScreens.helpers";
+import { t as translate } from "@/i18n";
 
 // Default camera centre when we don't have a fix yet — Brno, the
 // reference city for the design + early-access community. This matches
@@ -137,7 +139,9 @@ export default function PersonalRoadMapScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="wifi-off" size={40} color={t.dim} />
-        <Text style={styles.emptyTitle}>Can't load your map</Text>
+        <Text style={styles.emptyTitle}>
+          {translate("Can't load your map")}
+        </Text>
         <Text style={styles.emptyBody}>{errorMessage}</Text>
       </View>
     );
@@ -203,17 +207,21 @@ export default function PersonalRoadMapScreen() {
           </VectorSource>
         </Map>
         <View style={styles.legend}>
-          <LegendDot color={t.accent} label="Ridden" />
-          <LegendDot color={UNRIDDEN_COLOR} label="Not ridden" />
+          <LegendDot color={t.accent} label={translate("Ridden")} />
+          <LegendDot color={UNRIDDEN_COLOR} label={translate("Not ridden")} />
         </View>
       </View>
 
       {isBrandNew ? (
         <View style={styles.emptyCard}>
           <Icon name="map-search-outline" size={40} color={t.accent} />
-          <Text style={styles.emptyTitle}>No rides recorded yet</Text>
+          <Text style={styles.emptyTitle}>
+            {translate("No rides recorded yet")}
+          </Text>
           <Text style={styles.emptyBody}>
-            Once you complete a ride, the roads you covered will light up here.
+            {translate(
+              "Once you complete a ride, the roads you covered will light up here.",
+            )}
           </Text>
         </View>
       ) : null}
@@ -237,19 +245,22 @@ function StatsCard({
       <View style={styles.statsRow}>
         <View style={styles.statCell}>
           <Text style={styles.statValue}>{summary.percentLabel}</Text>
-          <Text style={styles.statLabel}>Explored</Text>
+          <Text style={styles.statLabel}>{translate("Explored")}</Text>
         </View>
         <View style={styles.statCell}>
           <Text style={styles.statValue}>{summary.riddenCount}</Text>
-          <Text style={styles.statLabel}>of {summary.totalCount} segments</Text>
+          <Text style={styles.statLabel}>
+            {translate("of {count} segments", { count: summary.totalCount })}
+          </Text>
         </View>
         <View style={styles.statCell}>
           <Text style={styles.statValue}>{summary.distanceKmLabel}</Text>
-          <Text style={styles.statLabel}>Total ridden</Text>
+          <Text style={styles.statLabel}>{translate("Total ridden")}</Text>
         </View>
       </View>
       <Text style={styles.periodNote}>
-        {riddenInPeriod} segments highlighted for the selected period
+        {riddenInPeriod}{" "}
+        {translate("segments highlighted for the selected period")}
       </Text>
     </View>
   );
@@ -266,20 +277,20 @@ function PeriodFilter({
     <View
       style={styles.periodRow}
       accessibilityRole="radiogroup"
-      accessibilityLabel="Time period"
+      accessibilityLabel={translate("Time period")}
     >
       <PeriodButton
-        label="This month"
+        label={translate("This month")}
         active={period === "month"}
         onPress={() => onChange("month")}
       />
       <PeriodButton
-        label="This year"
+        label={translate("This year")}
         active={period === "year"}
         onPress={() => onChange("year")}
       />
       <PeriodButton
-        label="All time"
+        label={translate("All time")}
         active={period === "all"}
         onPress={() => onChange("all")}
       />
@@ -327,13 +338,15 @@ function NearbyUnridden({ segments }: { segments: UnriddenSegment[] }) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Discover roads nearby</Text>
+      <Text style={styles.sectionTitle}>
+        {translate("Discover roads nearby")}
+      </Text>
       <Text style={styles.altSubtitle}>
-        Top unridden roads near you, ranked by quality.
+        {translate("Top unridden roads near you, ranked by quality.")}
       </Text>
       {ranked.length === 0 ? (
         <Text style={styles.emptyInline}>
-          You've ridden every nearby road we know about.
+          {translate("You've ridden every nearby road we know about.")}
         </Text>
       ) : (
         ranked.map((s) => <UnriddenRow key={s.id} segment={s} />)
@@ -344,7 +357,8 @@ function NearbyUnridden({ segments }: { segments: UnriddenSegment[] }) {
 
 function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
   const score = segment.quality_score;
-  const qualityText = score !== null ? qualityLabel(score) : "Quality pending";
+  const qualityText =
+    score !== null ? qualityLabel(score) : translate("Quality pending");
   // The quality colour rides on the swatch dot (a graphical object); the
   // quality text stays `dim` ink because the ramp fails AA as text on the
   // white card. Quality is never conveyed by colour alone.
@@ -355,15 +369,19 @@ function UnriddenRow({ segment }: { segment: UnriddenSegment }) {
       <View style={[styles.qualityDot, { backgroundColor: dotColor }]} />
       <View style={styles.unriddenBody}>
         <Text style={styles.unriddenName}>
-          {segment.road_name ?? "Unnamed road"}
+          {segment.road_name ?? translate("Unnamed road")}
         </Text>
         <Text style={styles.unriddenMeta}>
           {formatSegmentLength(segment.length_m)} ·{" "}
-          {formatDistanceFromHere(segment.distance_m)} from you
+          {formatDistanceFromHere(segment.distance_m)} {translate("from you")}
         </Text>
         <Text style={styles.unriddenQuality}>
-          {qualityText}
-          {segment.surface_type ? ` · ${segment.surface_type}` : ""}
+          {segment.surface_type
+            ? translate("{quality} · {surface}", {
+                quality: qualityText,
+                surface: surfaceLabel(segment.surface_type),
+              })
+            : qualityText}
         </Text>
       </View>
     </View>

@@ -39,6 +39,7 @@ import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 /**
@@ -343,56 +344,62 @@ export default function CrashAlertOverlay({
       <View style={styles.container}>
         {phase === "countdown" ? (
           <>
-            <Text style={styles.headline}>CRASH DETECTED</Text>
+            <Text style={styles.headline}>{translate("CRASH DETECTED")}</Text>
             <Text style={styles.subhead}>
-              We'll alert your emergency contacts in
+              {translate("We'll alert your emergency contacts in")}
             </Text>
             <Text style={styles.countdown} accessibilityLiveRegion="assertive">
               {seconds}
             </Text>
-            <Text style={styles.subhead}>seconds</Text>
+            <Text style={styles.subhead}>{translate("seconds")}</Text>
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={cancel}
               accessibilityRole="button"
-              accessibilityLabel="I'm OK, cancel crash alert"
+              accessibilityLabel={translate("I'm OK, cancel crash alert")}
             >
-              <Text style={styles.cancelLabel}>I'M OK — CANCEL</Text>
+              <Text style={styles.cancelLabel}>
+                {translate("I'M OK — CANCEL")}
+              </Text>
             </TouchableOpacity>
           </>
         ) : null}
 
         {phase === "dispatching" ? (
           <>
-            <Text style={styles.headline}>ALERTING CONTACTS…</Text>
+            <Text style={styles.headline}>
+              {translate("ALERTING CONTACTS…")}
+            </Text>
             <Text style={styles.subhead}>
-              Sending your location to your emergency contacts.
+              {translate("Sending your location to your emergency contacts.")}
             </Text>
           </>
         ) : null}
 
         {phase === "dispatched" ? (
           <>
-            <Text style={styles.headline}>HELP IS ON THE WAY</Text>
+            <Text style={styles.headline}>
+              {translate("HELP IS ON THE WAY")}
+            </Text>
             <Text style={styles.subhead}>
-              Your emergency contacts have been notified.
+              {translate("Your emergency contacts have been notified.")}
             </Text>
             <TouchableOpacity
               style={styles.dismissBtn}
               onPress={resetAlert}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss crash alert"
+              accessibilityLabel={translate("Dismiss crash alert")}
             >
-              <Text style={styles.dismissLabel}>Dismiss</Text>
+              <Text style={styles.dismissLabel}>{translate("Dismiss")}</Text>
             </TouchableOpacity>
           </>
         ) : null}
 
         {phase === "failed" ? (
           <>
-            <Text style={styles.headline}>ALERT FAILED</Text>
+            <Text style={styles.headline}>{translate("ALERT FAILED")}</Text>
             <Text style={styles.subhead}>
-              {errorMessage ?? "Unable to reach the server."}
+              {errorMessage ?? translate("Unable to reach the server.")}
             </Text>
             <TouchableOpacity
               style={styles.cancelBtn}
@@ -417,17 +424,17 @@ export default function CrashAlertOverlay({
                 void dispatch();
               }}
               accessibilityRole="button"
-              accessibilityLabel="Retry crash alert"
+              accessibilityLabel={translate("Retry crash alert")}
             >
-              <Text style={styles.cancelLabel}>RETRY</Text>
+              <Text style={styles.cancelLabel}>{translate("RETRY")}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.dismissBtn}
               onPress={resetAlert}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss without alerting"
+              accessibilityLabel={translate("Dismiss without alerting")}
             >
-              <Text style={styles.dismissLabel}>Dismiss</Text>
+              <Text style={styles.dismissLabel}>{translate("Dismiss")}</Text>
             </TouchableOpacity>
           </>
         ) : null}

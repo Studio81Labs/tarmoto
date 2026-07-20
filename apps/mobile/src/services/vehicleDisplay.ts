@@ -16,6 +16,7 @@ import { MANEUVER_LABELS } from "@/services/navigation";
 import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 export type VehicleNavigationSnapshot = VehicleDisplaySnapshot;
 
@@ -47,7 +48,11 @@ export interface HazardSearchItem {
 
 const HAZARD_COPY: Record<
   HazardType,
-  { label: string; detail: string; aliases: string[] }
+  {
+    label: EnglishMessageKey;
+    detail: EnglishMessageKey;
+    aliases: string[];
+  }
 > = {
   pothole: {
     label: "Pothole",
@@ -126,8 +131,8 @@ export function buildHazardSearchItems(query: string): HazardSearchItem[] {
       >
     ).map(([id, copy]) => ({
       id,
-      text: copy.label,
-      detailText: copy.detail,
+      text: translate(copy.label),
+      detailText: translate(copy.detail),
     }));
   }
   const scored = (
@@ -135,21 +140,23 @@ export function buildHazardSearchItems(query: string): HazardSearchItem[] {
       [HazardType, (typeof HAZARD_COPY)[HazardType]]
     >
   ).map(([id, copy]) => {
+    const translatedLabel = translate(copy.label);
     let score = 0;
     for (const alias of copy.aliases) {
       if (normalized === alias) score = Math.max(score, 100);
       else if (alias.startsWith(normalized)) score = Math.max(score, 80);
       else if (
         alias.includes(normalized) ||
-        copy.label.toLowerCase().includes(normalized)
+        copy.label.toLowerCase().includes(normalized) ||
+        translatedLabel.toLowerCase().includes(normalized)
       ) {
         score = Math.max(score, 60);
       }
     }
     return {
       id,
-      text: copy.label,
-      detailText: copy.detail,
+      text: translatedLabel,
+      detailText: translate(copy.detail),
       score,
     };
   });
@@ -212,22 +219,31 @@ export function formatNextManeuverRow(
 ): NavigationPaneItem {
   if (snapshot.offRoute) {
     return {
-      title: "Off route",
-      detail: `${formatNavDistanceMeters(snapshot.offRouteDistanceM)} from path`,
+      title: translate("Off route"),
+      detail: translate("{distance} from path", {
+        distance: formatNavDistanceMeters(snapshot.offRouteDistanceM),
+      }),
     };
   }
   if (!snapshot.nextManeuver) {
     return {
-      title: "Continue",
+      title: translate("Continue"),
       detail: snapshot.title,
     };
   }
-  const verb = MANEUVER_LABELS[snapshot.nextManeuver.type] ?? "Continue";
+  const verb = translate(
+    MANEUVER_LABELS[snapshot.nextManeuver.type] ?? "Continue",
+  );
   const distance = formatNavDistanceMeters(snapshot.distanceToNextM);
   return {
-    title: `${verb} in ${distance}`,
+    title: translate("{value0} in {value1}", {
+      value0: verb,
+      value1: distance,
+    }),
     detail: snapshot.nextManeuver.roadName
-      ? `onto ${snapshot.nextManeuver.roadName}`
+      ? translate("onto {roadName}", {
+          roadName: snapshot.nextManeuver.roadName,
+        })
       : snapshot.title,
   };
 }
@@ -251,15 +267,15 @@ export function buildNavigationPaneItems(
   return [
     formatNextManeuverRow(snapshot),
     {
-      title: "Speed",
+      title: translate("Speed"),
       detail: formatSpeedKmh(snapshot.rideStats.speedKmh),
     },
     {
-      title: "Distance",
+      title: translate("Distance"),
       detail: formatDistanceKm(snapshot.rideStats.distanceKm),
     },
     {
-      title: "Duration",
+      title: translate("Duration"),
       detail: formatDurationSeconds(snapshot.rideStats.durationSeconds),
     },
   ];
@@ -317,7 +333,9 @@ export class VehicleDisplayController {
     const type = matchHazardTypeFromText(query);
     if (!type) {
       this.options.bridge.showBanner(
-        "Say pothole, gravel, oil spill, roadworks, animals, police, flooding, or ice.",
+        translate(
+          "Say pothole, gravel, oil spill, roadworks, animals, police, flooding, or ice.",
+        ),
         "danger",
       );
       return false;
@@ -336,7 +354,7 @@ export class VehicleDisplayController {
     const location = this.snapshot?.currentLocation;
     if (!location) {
       this.options.bridge.showBanner(
-        "Waiting for GPS before reporting a hazard.",
+        translate("Waiting for GPS before reporting a hazard."),
         "danger",
       );
       return false;
@@ -345,7 +363,9 @@ export class VehicleDisplayController {
     await this.options.reportHazard(location, type);
     this.options.bridge.closeSearch();
     this.options.bridge.showBanner(
-      `Hazard reported: ${HAZARD_COPY[type].label}`,
+      translate("Hazard reported: {hazard}", {
+        hazard: translate(HAZARD_COPY[type].label),
+      }),
       "success",
     );
     return true;
@@ -510,15 +530,27 @@ function createRuntimeBridge(snapshotRef: {
       if (mapTemplate) return mapTemplate;
       mapTemplate = new MapTemplate({
         id: MAP_TEMPLATE_ID,
-        title: "Tarmoto Nav",
+        title: translate("Tarmoto Nav"),
         component: VehicleDisplaySurface,
         leadingNavigationBarButtons:
           Platform.OS === "ios"
-            ? [{ id: "report-hazard", type: "text", title: "Report" }]
+            ? [
+                {
+                  id: "report-hazard",
+                  type: "text",
+                  title: translate("Report"),
+                },
+              ]
             : undefined,
         actions:
           Platform.OS === "android"
-            ? [{ id: "report-hazard", type: "custom", title: "Report" }]
+            ? [
+                {
+                  id: "report-hazard",
+                  type: "custom",
+                  title: translate("Report"),
+                },
+              ]
             : undefined,
       } as never);
       return mapTemplate;
@@ -548,14 +580,14 @@ function createRuntimeBridge(snapshotRef: {
       // CarPlay idle look matches the active ride-status board.
       if (Platform.OS === "android" && PaneTemplate) {
         const idle = new PaneTemplate({
-          title: "Tarmoto",
+          title: translate("Tarmoto"),
           pane: { items: [] },
         });
         CarPlay.setRootTemplate(idle, false);
         return;
       }
       const idle = new InformationTemplate({
-        title: "Tarmoto",
+        title: translate("Tarmoto"),
         items: [],
         actions: [],
         onActionButtonPressed: () => undefined,
@@ -619,16 +651,16 @@ function createRuntimeBridge(snapshotRef: {
         if (!searchTemplate) {
           searchTemplate = new SearchTemplate({
             id: SEARCH_TEMPLATE_ID,
-            title: "Report Hazard",
+            title: translate("Report Hazard"),
             items,
-            searchHint: "Say pothole, gravel, oil spill…",
+            searchHint: translate("Say pothole, gravel, oil spill…"),
             showKeyboardByDefault: false,
           } as never);
         } else if (Platform.OS === "android") {
           searchTemplate.updateTemplate({
-            title: "Report Hazard",
+            title: translate("Report Hazard"),
             items,
-            searchHint: "Say pothole, gravel, oil spill…",
+            searchHint: translate("Say pothole, gravel, oil spill…"),
           } as never);
         }
 
@@ -651,9 +683,9 @@ function createRuntimeBridge(snapshotRef: {
           return;
         }
         searchTemplate.updateTemplate({
-          title: "Report Hazard",
+          title: translate("Report Hazard"),
           items,
-          searchHint: "Say pothole, gravel, oil spill…",
+          searchHint: translate("Say pothole, gravel, oil spill…"),
         } as never);
       },
       closeSearch: () => {

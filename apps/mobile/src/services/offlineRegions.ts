@@ -32,6 +32,7 @@
  */
 
 import { API_BASE_URL } from "@/config";
+import { translate } from "@/i18n";
 import type { LatLng } from "@/types";
 
 // ── Types ──
@@ -387,7 +388,10 @@ export async function downloadRegion(
       failed: 0,
       total: tiles.length,
       bytesOnDisk: 0,
-      error: `Region exceeds ${MAX_TILES_PER_REGION}-tile cap (${tiles.length}). Zoom out or narrow the area.`,
+      error: translate(
+        "Region exceeds {limit}-tile cap ({count}). Zoom out or narrow the area.",
+        { limit: MAX_TILES_PER_REGION, count: tiles.length },
+      ),
     };
   }
 
@@ -505,7 +509,11 @@ export function createRNFSDownloader(): TileDownloader {
         // Best-effort cleanup so a half-written file doesn't get mistaken
         // for a valid tile on the next retry.
         await RNFS.unlink(destPath).catch(() => undefined);
-        throw new Error(`Tile request failed with HTTP ${result.statusCode}`);
+        throw new Error(
+          translate("Tile request failed with HTTP {status}", {
+            status: result.statusCode,
+          }),
+        );
       }
       return result.bytesWritten;
     },

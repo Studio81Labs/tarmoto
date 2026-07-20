@@ -38,6 +38,7 @@ import {
 import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { tierRank } from "./AchievementsScreen.helpers";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 
@@ -96,7 +97,7 @@ export default function AchievementsScreen() {
         setErrorMessage(
           reason instanceof Error
             ? reason.message
-            : "Couldn't load achievements.",
+            : translate("Couldn't load achievements."),
         );
         if (!initial) setIsRefreshing(false);
         return;
@@ -126,7 +127,9 @@ export default function AchievementsScreen() {
         challengesResult.status === "rejected" ||
         explorationResult.status === "rejected";
       setErrorMessage(
-        someFailed ? "Some achievements couldn't load. Pull to refresh." : null,
+        someFailed
+          ? translate("Some achievements couldn't load. Pull to refresh.")
+          : null,
       );
       if (!initial) setIsRefreshing(false);
     },
@@ -149,10 +152,11 @@ export default function AchievementsScreen() {
         />
       }
     >
-      <Text style={styles.title}>Achievements</Text>
+      <Text style={styles.title}>{translate("Achievements")}</Text>
       <Text style={styles.subtitle}>
-        Track badges, take on challenges, and see how much of the road network
-        you've covered.
+        {translate(
+          "Track badges, take on challenges, and see how much of the road network you've covered.",
+        )}
       </Text>
 
       {errorMessage ? (
@@ -161,41 +165,54 @@ export default function AchievementsScreen() {
 
       <HubCard
         icon="trophy"
-        title="Badges"
+        title={translate("Badges")}
         body={
           snapshot
-            ? `${snapshot.earnedBadges} of ${snapshot.totalBadges} earned${
-                snapshot.topTier
-                  ? ` · ${snapshot.topTier.toUpperCase()} tier reached`
-                  : ""
-              }`
-            : "Loading…"
+            ? snapshot.topTier
+              ? translate("{earned} of {total} earned · {tier} tier reached", {
+                  earned: snapshot.earnedBadges,
+                  total: snapshot.totalBadges,
+                  tier: snapshot.topTier.toUpperCase(),
+                })
+              : translate("{earned} of {total} earned", {
+                  earned: snapshot.earnedBadges,
+                  total: snapshot.totalBadges,
+                })
+            : translate("Loading…")
         }
         onPress={() => navigation.navigate("Badges")}
       />
 
       <HubCard
         icon="flag-checkered"
-        title="Challenges"
+        title={translate("Challenges")}
         body={
           snapshot
             ? snapshot.activeChallenges > 0
-              ? `${snapshot.activeChallenges} active challenge${
-                  snapshot.activeChallenges === 1 ? "" : "s"
-                }`
-              : "No active challenges right now"
-            : "Loading…"
+              ? translate(
+                  "{count, plural, one {# active challenge} other {# active challenges}}",
+                  { count: snapshot.activeChallenges },
+                )
+              : translate("No active challenges right now")
+            : translate("Loading…")
         }
         onPress={() => navigation.navigate("Challenges")}
       />
 
       <HubCard
         icon="map-marker-path"
-        title="Personal road map"
+        title={translate("Personal road map")}
         body={
           snapshot?.exploration
-            ? `${snapshot.exploration.percent_explored.toFixed(1)}% explored · ${snapshot.exploration.ridden_segments} of ${snapshot.exploration.total_segments} segments ridden`
-            : "See ridden vs unridden roads"
+            ? translate(
+                "{value0}% explored · {value1} of {value2} segments ridden",
+                {
+                  value0: snapshot.exploration.percent_explored.toFixed(1),
+                  value1: snapshot.exploration.ridden_segments,
+                  value2: snapshot.exploration.total_segments,
+                },
+              )
+            : translate("See ridden vs unridden roads")
         }
         onPress={() => navigation.navigate("PersonalRoadMap")}
       />
@@ -221,7 +238,7 @@ function HubCard({
       style={styles.card}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Open ${title}`}
+      accessibilityLabel={translate("Open {value0}", { value0: title })}
     >
       <View style={styles.cardIcon}>
         <Icon name={icon} size={22} color={t.fg} />

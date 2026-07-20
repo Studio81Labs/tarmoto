@@ -28,6 +28,7 @@ import {
   brandSpacing,
   qualityBrandColor,
 } from "@/theme/brand";
+import { t as translate } from "@/i18n";
 
 interface Props {
   value: number;
@@ -95,7 +96,9 @@ export default function QualityThresholdSlider({
               ]}
               onPress={() => onChange(step)}
               accessibilityRole="button"
-              accessibilityLabel={`${qualityLabel(step)} or better`}
+              accessibilityLabel={translate("{value0} or better", {
+                value0: qualityLabel(step),
+              })}
               accessibilityState={{ selected }}
             >
               <Text

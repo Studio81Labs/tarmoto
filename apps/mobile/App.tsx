@@ -15,6 +15,7 @@ import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore } from "@/stores";
+import { I18nProvider } from "@/i18n/I18nProvider";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -24,6 +25,7 @@ LogBox.ignoreLogs([
 export default function App() {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
+  const locale = useAuthStore((state) => state.user?.language);
 
   useEffect(() => {
     void bootstrapAuth({
@@ -77,12 +79,14 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor={brandColorsLight.bg}
-          translucent
-        />
-        <RootNavigator />
+        <I18nProvider locale={locale ?? null}>
+          <StatusBar
+            barStyle="dark-content"
+            backgroundColor={brandColorsLight.bg}
+            translucent
+          />
+          <RootNavigator />
+        </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

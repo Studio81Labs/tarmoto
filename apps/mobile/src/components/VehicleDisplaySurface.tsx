@@ -11,6 +11,7 @@ import {
 import { useVehicleDisplayStore } from "@/stores/vehicleDisplay";
 import type { LatLng } from "@/types";
 import { MANEUVER_LABELS } from "@/services/navigation";
+import { t as translate } from "@/i18n";
 
 // Always-dark in-vehicle (CarPlay / Android Auto) nav card → night palette.
 const t = brandColorsDark;
@@ -125,19 +126,23 @@ export default function VehicleDisplaySurface() {
   if (!snapshot) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>Waiting for navigation…</Text>
+        <Text style={styles.emptyTitle}>
+          {translate("Waiting for navigation…")}
+        </Text>
       </View>
     );
   }
 
-  const nextTurnLabel = snapshot.nextManeuver
-    ? (MANEUVER_LABELS[snapshot.nextManeuver.type] ?? "Continue")
-    : "Continue";
+  const nextTurnLabel = translate(
+    snapshot.nextManeuver
+      ? (MANEUVER_LABELS[snapshot.nextManeuver.type] ?? "Continue")
+      : "Continue",
+  );
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.kicker}>Tarmoto</Text>
+        <Text style={styles.kicker}>{translate("Tarmoto")}</Text>
         <Text style={styles.title} numberOfLines={1}>
           {snapshot.title}
         </Text>
@@ -168,7 +173,7 @@ export default function VehicleDisplaySurface() {
         ) : (
           <View style={styles.routeFallback}>
             <Text style={styles.routeFallbackText}>
-              Route preview unavailable
+              {translate("Route preview unavailable")}
             </Text>
           </View>
         )}
@@ -180,7 +185,9 @@ export default function VehicleDisplaySurface() {
           <Text style={styles.overlayLabel}>{nextTurnLabel}</Text>
           {snapshot.nextManeuver?.roadName ? (
             <Text style={styles.overlayRoad} numberOfLines={1}>
-              onto {snapshot.nextManeuver.roadName}
+              {translate("onto {roadName}", {
+                roadName: snapshot.nextManeuver.roadName,
+              })}
             </Text>
           ) : null}
         </View>
@@ -201,24 +208,29 @@ export default function VehicleDisplaySurface() {
         {snapshot.offRoute ? (
           <View style={styles.offRouteBadge}>
             <Text style={styles.offRouteLabel}>
-              Off route · {formatDistanceMeters(snapshot.offRouteDistanceM)}
+              {translate("Off route · {distance}", {
+                distance: formatDistanceMeters(snapshot.offRouteDistanceM),
+              })}
             </Text>
           </View>
         ) : null}
       </View>
 
       <View style={styles.statsRow}>
-        <Stat label="Speed" value={formatSpeed(snapshot.rideStats.speedKmh)} />
         <Stat
-          label="Ride"
+          label={translate("Speed")}
+          value={formatSpeed(snapshot.rideStats.speedKmh)}
+        />
+        <Stat
+          label={translate("Ride")}
           value={formatRideDistance(snapshot.rideStats.distanceKm)}
         />
         <Stat
-          label="Time"
+          label={translate("Time")}
           value={formatDuration(snapshot.rideStats.durationSeconds)}
         />
         <Stat
-          label="Remain"
+          label={translate("Remain")}
           value={formatDistanceMeters(snapshot.remainingM)}
         />
       </View>

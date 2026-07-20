@@ -31,6 +31,7 @@ import { Alert, AppState, type AppStateStatus } from "react-native";
 import type { Hazard } from "@/types";
 import { api } from "@/services/api";
 import { diffNewHazards, useCommuteStore } from "@/stores";
+import { t as translate } from "@/i18n";
 
 // ── Public types ──
 
@@ -172,18 +173,23 @@ export function decideCommuteHazardNotification(
   if (newIds.length === 0) return null;
 
   const count = newIds.length;
-  const plural = count === 1 ? "hazard" : "hazards";
   // Prefer the primary hazard's road name in the body so the rider knows
   // *where* before they even open the app — falling back to the route
   // name when the hazard has no road_name attached (older reports).
   const first = hazards.find((h) => newIds.includes(h.id));
   const where = first?.road_name?.trim() || routeName;
   return {
-    title: `${count} new ${plural} on your commute`,
+    title: translate(
+      "{count, plural, one {# new hazard} other {# new hazards}} on your commute",
+      { count },
+    ),
     body:
       count === 1
-        ? `Check ${where} before you head out.`
-        : `Check ${where} and ${count - 1} other spot${count - 1 === 1 ? "" : "s"} before you head out.`,
+        ? translate("Check {where} before you head out.", { where })
+        : translate(
+            "Check {where} and {count, plural, one {# other spot} other {# other spots}} before you head out.",
+            { where, count: count - 1 },
+          ),
     tag: `commute:${input.routeId}:${[...newIds].sort().join(",")}`,
     hazardIds: newIds,
   };

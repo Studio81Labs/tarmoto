@@ -14,6 +14,7 @@ import {
 } from "@react-native-documents/picker";
 import RNFS from "react-native-fs";
 import { parseImportedRoute, type ImportedRoute } from "@tarmoto/shared";
+import { translate } from "@/i18n";
 
 export type TripImportOutcome =
   | { ok: true; route: ImportedRoute; filename: string }
@@ -54,7 +55,10 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
     return {
       ok: false,
       cancelled: false,
-      error: err instanceof Error ? err.message : "Could not open file picker.",
+      error:
+        err instanceof Error
+          ? err.message
+          : translate("Could not open file picker."),
     };
   }
 
@@ -73,7 +77,7 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
     return {
       ok: false,
       cancelled: false,
-      error: "Unsupported file type. Pick a .gpx or .kml file.",
+      error: translate("Unsupported file type. Pick a .gpx or .kml file."),
     };
   }
 
@@ -106,7 +110,9 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
         return {
           ok: false,
           cancelled: false,
-          error: "File is larger than 10 MB. Trim the GPX and try again.",
+          error: translate(
+            "File is larger than 10 MB. Trim the GPX and try again.",
+          ),
         };
       }
       prevalidated = true;
@@ -123,7 +129,10 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
     return {
       ok: false,
       cancelled: false,
-      error: err instanceof Error ? err.message : "Could not read the file.",
+      error:
+        err instanceof Error
+          ? err.message
+          : translate("Could not read the file."),
     };
   }
 
@@ -136,7 +145,9 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
     return {
       ok: false,
       cancelled: false,
-      error: "File is larger than 10 MB. Trim the GPX and try again.",
+      error: translate(
+        "File is larger than 10 MB. Trim the GPX and try again.",
+      ),
     };
   }
 

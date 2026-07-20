@@ -78,6 +78,7 @@ import {
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { resolveNavigationRoute } from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
+import { t as translate } from "@/i18n";
 
 // `Navigate` is registered on both TripsStack (the planned-trip flow)
 // and HomeStack (commute), with identical params. Either RouteProp is a
@@ -231,14 +232,16 @@ export default function NavigationScreen() {
     <View style={styles.empty}>
       <StatusBar barStyle="light-content" backgroundColor={t.bg} translucent />
       <Icon name="map-marker-off-outline" size={48} color={t.mute} />
-      <Text style={styles.emptyTitle}>No route to navigate</Text>
+      <Text style={styles.emptyTitle}>{translate("No route to navigate")}</Text>
       <Text style={styles.emptyBody}>
         {params.source === "trip-day"
-          ? "Open this day from the trip detail and try again."
-          : "We couldn't load this route's geometry. Go back and try again."}
+          ? translate("Open this day from the trip detail and try again.")
+          : translate(
+              "We couldn't load this route's geometry. Go back and try again.",
+            )}
       </Text>
       <TouchableOpacity onPress={handleEnd} style={styles.endSecondary}>
-        <Text style={styles.endSecondaryLabel}>Back</Text>
+        <Text style={styles.endSecondaryLabel}>{translate("Back")}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -335,14 +338,17 @@ export default function NavigationScreen() {
       >
         <View style={styles.statsRow}>
           <Stat
-            label="Remaining"
+            label={translate("Remaining")}
             value={formatDistanceM(tick?.remainingM ?? 0)}
           />
           <Stat
-            label="Off-axis"
+            label={translate("Off-axis")}
             value={formatMeters(tick?.offRouteDistanceM ?? 0)}
           />
-          <Stat label="Maneuvers" value={`${remainingManeuvers}`} />
+          <Stat
+            label={translate("Maneuvers")}
+            value={`${remainingManeuvers}`}
+          />
         </View>
         <View style={styles.actionsRow}>
           <TouchableOpacity
@@ -351,7 +357,9 @@ export default function NavigationScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: voiceEnabled }}
             accessibilityLabel={
-              voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"
+              voiceEnabled
+                ? translate("Mute voice guidance")
+                : translate("Enable voice guidance")
             }
           >
             <Icon
@@ -365,10 +373,10 @@ export default function NavigationScreen() {
             style={styles.endBtn}
             onPress={handleEnd}
             accessibilityRole="button"
-            accessibilityLabel="End navigation"
+            accessibilityLabel={translate("End navigation")}
           >
             <Icon name="close" size={18} color={t.fg} />
-            <Text style={styles.endLabel}>End</Text>
+            <Text style={styles.endLabel}>{translate("End")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -376,7 +384,9 @@ export default function NavigationScreen() {
       {!liveLocation ? (
         <View style={styles.searchingBadge} pointerEvents="none">
           <Icon name="crosshairs-gps" size={14} color={t.fg} />
-          <Text style={styles.searchingLabel}>Acquiring GPS…</Text>
+          <Text style={styles.searchingLabel}>
+            {translate("Acquiring GPS…")}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -400,11 +410,11 @@ function NextManeuverCard({
   hasFix: boolean;
 }) {
   const icon = MANEUVER_ICONS[maneuver.type] ?? "arrow-up";
-  const label = MANEUVER_LABELS[maneuver.type] ?? "Continue";
+  const label = translate(MANEUVER_LABELS[maneuver.type] ?? "Continue");
   const distance = !hasFix
     ? "—"
     : maneuver.type === "depart"
-      ? "Depart"
+      ? translate("Depart")
       : formatManeuverDistance(distanceM);
   return (
     <View style={styles.maneuverCard}>
@@ -418,7 +428,7 @@ function NextManeuverCard({
         </Text>
         {maneuver.roadName ? (
           <Text style={styles.maneuverRoad} numberOfLines={1}>
-            onto {maneuver.roadName}
+            {translate("onto {roadName}", { roadName: maneuver.roadName })}
           </Text>
         ) : null}
       </View>
@@ -431,10 +441,10 @@ function OffRouteBanner({ distanceM }: { distanceM: number }) {
     <View style={styles.offRouteBanner} accessibilityLiveRegion="polite">
       <Icon name="alert-octagon" size={18} color={t.fg} />
       <View style={styles.offRouteBody}>
-        <Text style={styles.offRouteTitle}>Off route</Text>
+        <Text style={styles.offRouteTitle}>{translate("Off route")}</Text>
         <Text style={styles.offRouteBodyText}>
-          {formatMeters(distanceM)} from the planned path — return when it's
-          safe.
+          {formatMeters(distanceM)}{" "}
+          {translate("from the planned path — return when it's safe.")}
         </Text>
       </View>
     </View>
@@ -482,7 +492,7 @@ function buildRoadNameLookup(
 }
 
 function formatManeuverDistance(m: number): string {
-  if (m <= 15) return "Now";
+  if (m <= 15) return translate("Now");
   if (m < 1000) return `${Math.round(m / 10) * 10} m`;
   return `${(m / 1000).toFixed(1)} km`;
 }

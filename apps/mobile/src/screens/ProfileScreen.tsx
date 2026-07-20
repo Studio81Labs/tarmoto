@@ -47,6 +47,7 @@ import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { MeProfile, PublicProfile, UserBadge } from "@/types";
 import { formatDistance } from "@tarmoto/shared";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
+import { t as translate } from "@/i18n";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
 type Phase = "loading" | "ready" | "error";
@@ -87,7 +88,7 @@ export default function ProfileScreen() {
     async (mode: "initial" | "refresh") => {
       if (!userId) {
         setPhase("error");
-        setErrorMessage("Sign in to see your profile.");
+        setErrorMessage(translate("Sign in to see your profile."));
         return;
       }
       if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
@@ -116,7 +117,9 @@ export default function ProfileScreen() {
         if (signal.cancelled) return;
         setPhase("error");
         setErrorMessage(
-          err instanceof Error ? err.message : "Could not load profile.",
+          err instanceof Error
+            ? err.message
+            : translate("Could not load profile."),
         );
       } finally {
         if (!signal.cancelled) setIsRefreshing(false);
@@ -138,11 +141,11 @@ export default function ProfileScreen() {
     if (avatarUploading) return;
     const result = await capturePhoto("library");
     if (result.status === "permission-denied") {
-      setAvatarError("Photo library access was denied.");
+      setAvatarError(translate("Photo library access was denied."));
       return;
     }
     if (result.status === "unavailable") {
-      setAvatarError(result.reason ?? "Photo picker unavailable.");
+      setAvatarError(result.reason ?? translate("Photo picker unavailable."));
       return;
     }
     if (result.status !== "captured" || !result.photo) return;
@@ -173,7 +176,9 @@ export default function ProfileScreen() {
     } catch (err) {
       if (previousUser) setUser(previousUser);
       setAvatarError(
-        err instanceof Error ? err.message : "Could not upload avatar.",
+        err instanceof Error
+          ? err.message
+          : translate("Could not upload avatar."),
       );
     } finally {
       setAvatarUploading(false);
@@ -181,30 +186,36 @@ export default function ProfileScreen() {
   }, [avatarUploading, user, setUser, load]);
 
   const handleSignOut = useCallback(() => {
-    Alert.alert("Sign out?", "You'll need to sign back in next time.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: () => {
-          api.logout();
-          logout();
+    Alert.alert(
+      translate("Sign out?"),
+      translate("You'll need to sign back in next time."),
+      [
+        { text: translate("Cancel"), style: "cancel" },
+        {
+          text: translate("Sign out"),
+          style: "destructive",
+          onPress: () => {
+            api.logout();
+            logout();
+          },
         },
-      },
-    ]);
+      ],
+    );
   }, [logout]);
 
   if (!user) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>Sign in to see your profile</Text>
+        <Text style={styles.emptyTitle}>
+          {translate("Sign in to see your profile")}
+        </Text>
         <TouchableOpacity
           style={styles.primaryButton}
           onPress={() => navigation.navigate("LinkAccount", undefined)}
           accessibilityRole="button"
-          accessibilityLabel="Sign in or create account"
+          accessibilityLabel={translate("Sign in or create account")}
         >
-          <Text style={styles.primaryButtonLabel}>Continue</Text>
+          <Text style={styles.primaryButtonLabel}>{translate("Continue")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -256,7 +267,7 @@ export default function ProfileScreen() {
           onPress={() => void handleAvatarTap()}
           disabled={avatarUploading}
           accessibilityRole="button"
-          accessibilityLabel="Change avatar"
+          accessibilityLabel={translate("Change avatar")}
         >
           <Avatar uri={avatarUrl} name={displayName} size={88} />
           <View style={styles.avatarBadge}>
@@ -288,7 +299,7 @@ export default function ProfileScreen() {
 
       <View style={styles.statsRow}>
         <StatTile
-          label="Followers"
+          label={translate("Followers")}
           value={formatCount(followerCount)}
           onPress={() =>
             navigation.navigate("Followers", {
@@ -296,10 +307,12 @@ export default function ProfileScreen() {
               displayName,
             })
           }
-          accessibilityLabel={`${followerCount} followers, open list`}
+          accessibilityLabel={translate("{value0} followers, open list", {
+            value0: followerCount,
+          })}
         />
         <StatTile
-          label="Following"
+          label={translate("Following")}
           value={formatCount(followingCount)}
           onPress={() =>
             navigation.navigate("Following", {
@@ -307,13 +320,19 @@ export default function ProfileScreen() {
               displayName,
             })
           }
-          accessibilityLabel={`Following ${followingCount} riders, open list`}
+          accessibilityLabel={translate(
+            "Following {value0} riders, open list",
+            { value0: followingCount },
+          )}
         />
         <StatTile
-          label="Badges"
+          label={translate("Badges")}
           value={formatCount(earnedBadges.length)}
           onPress={() => navigation.navigate("Achievements")}
-          accessibilityLabel={`${earnedBadges.length} badges earned, open achievements`}
+          accessibilityLabel={translate(
+            "{value0} badges earned, open achievements",
+            { value0: earnedBadges.length },
+          )}
         />
       </View>
 
@@ -327,22 +346,22 @@ export default function ProfileScreen() {
       <View style={styles.actionsCard}>
         <ActionRow
           icon="account-edit-outline"
-          label="Edit profile"
+          label={translate("Edit profile")}
           onPress={() => navigation.navigate("EditProfile")}
         />
         <ActionRow
           icon="trophy-outline"
-          label="Achievements"
+          label={translate("Achievements")}
           onPress={() => navigation.navigate("Achievements")}
         />
         <ActionRow
           icon="cog-outline"
-          label="Settings"
+          label={translate("Settings")}
           onPress={() => navigation.navigate("Settings")}
         />
         <ActionRow
           icon="logout"
-          label="Sign out"
+          label={translate("Sign out")}
           destructive
           onPress={handleSignOut}
         />
@@ -355,7 +374,7 @@ export default function ProfileScreen() {
             style={styles.retryButton}
             onPress={() => void load("initial")}
           >
-            <Text style={styles.retryLabel}>Retry</Text>
+            <Text style={styles.retryLabel}>{translate("Retry")}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -389,7 +408,9 @@ function buildRidingStatLabel(
   }
   if (summary.total_rides > 0) {
     parts.push(
-      `${summary.total_rides} ride${summary.total_rides === 1 ? "" : "s"}`,
+      translate("{count, plural, one {# ride} other {# rides}}", {
+        count: summary.total_rides,
+      }),
     );
   }
   if (parts.length === 0) return null;

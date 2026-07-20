@@ -18,6 +18,7 @@
  * endpoint lands.
  */
 import type { LatLng } from "@/types";
+import type { EnglishMessageKey } from "@/i18n";
 
 // ── Maneuvers ─────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export interface Maneuver {
   roadName?: string | undefined;
 }
 
-export const MANEUVER_LABELS: Record<ManeuverType, string> = {
+export const MANEUVER_LABELS: Record<ManeuverType, EnglishMessageKey> = {
   depart: "Depart",
   arrive: "Arrive",
   continue: "Continue",

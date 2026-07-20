@@ -59,6 +59,7 @@ import {
   formatRelativeTime,
 } from "./RoadPreviewScreen.helpers";
 import { capitalize } from "./TripScreens.helpers";
+import { t as translate, tDynamic } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -112,7 +113,9 @@ export default function CommuteScreen() {
       navigation.navigate("Navigate", {
         source: "polyline",
         polyline: alt.geometry,
-        title: `Alternative · ${alt.distance_km.toFixed(1)} km`,
+        title: translate("Alternative · {value0} km", {
+          value0: alt.distance_km.toFixed(1),
+        }),
       });
     },
     [navigation],
@@ -153,12 +156,12 @@ export default function CommuteScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="wifi-off" size={40} color={t.dim} />
-        <Text style={styles.emptyTitle}>Can't load commute</Text>
+        <Text style={styles.emptyTitle}>{translate("Can't load commute")}</Text>
         <Text style={styles.emptyBody}>
-          {errorMessage ?? "Check your connection and try again."}
+          {errorMessage ?? translate("Check your connection and try again.")}
         </Text>
         <TouchableOpacity style={styles.retryBtn} onPress={retry}>
-          <Text style={styles.retryLabel}>Retry</Text>
+          <Text style={styles.retryLabel}>{translate("Retry")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -186,7 +189,7 @@ export default function CommuteScreen() {
         <Text style={styles.sectionTitle}>{route.name}</Text>
         <View style={styles.metricsRow}>
           <Metric
-            label="Distance"
+            label={translate("Distance")}
             value={
               route.distance_km != null
                 ? `${route.distance_km.toFixed(1)} km`
@@ -194,7 +197,7 @@ export default function CommuteScreen() {
             }
           />
           <Metric
-            label="Avg time"
+            label={translate("Avg time")}
             value={
               route.avg_duration_min != null
                 ? `${route.avg_duration_min} min`
@@ -204,17 +207,24 @@ export default function CommuteScreen() {
           {/* Quality value stays ink: the ramp fails AA as text on the
               white card. The label is enough; the ramp lives on map/bar
               surfaces elsewhere. */}
-          <Metric label="Quality" value={qualityLabel(status.route_quality)} />
+          <Metric
+            label={translate("Quality")}
+            value={qualityLabel(status.route_quality)}
+          />
         </View>
         <View style={styles.primaryCtaRow}>
           <TouchableOpacity
             style={styles.startCommuteBtn}
             onPress={startCommuteRide}
             accessibilityRole="button"
-            accessibilityLabel={`Start commute ride to ${route.name}`}
+            accessibilityLabel={translate("Start commute ride to {value0}", {
+              value0: route.name,
+            })}
           >
             <Icon name="play-circle" size={20} color={t.invFg} />
-            <Text style={styles.startCommuteLabel}>Start commute</Text>
+            <Text style={styles.startCommuteLabel}>
+              {translate("Start commute")}
+            </Text>
           </TouchableOpacity>
           {/*
             #361: opt-in turn-by-turn nav for the primary route, mirroring
@@ -230,7 +240,10 @@ export default function CommuteScreen() {
             onPress={navigatePrimary}
             disabled={primaryNavDisabled}
             accessibilityRole="button"
-            accessibilityLabel={`Navigate primary commute route to ${route.name}`}
+            accessibilityLabel={translate(
+              "Navigate primary commute route to {value0}",
+              { value0: route.name },
+            )}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Icon
@@ -296,10 +309,13 @@ function LearningState({
       }
     >
       <Icon name="map-marker-path" size={48} color={t.accent} />
-      <Text style={styles.emptyTitle}>Learning your commute</Text>
+      <Text style={styles.emptyTitle}>
+        {translate("Learning your commute")}
+      </Text>
       <Text style={styles.emptyBody}>
-        Take a few rides to the same destination and we'll start tracking road
-        conditions and hazards for that route.
+        {translate(
+          "Take a few rides to the same destination and we'll start tracking road conditions and hazards for that route.",
+        )}
       </Text>
     </ScrollView>
   );
@@ -350,18 +366,20 @@ function Metric({
 function WeatherCard({ weather }: { weather: Weather }) {
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Weather</Text>
+      <Text style={styles.sectionTitle}>{translate("Weather")}</Text>
       <View style={styles.weatherRow}>
         <Icon name={weatherIcon(weather.condition)} size={32} color={t.fg} />
         <View style={styles.weatherText}>
           <Text style={styles.weatherTemp}>
             {Math.round(weather.temperature_c)}°C ·{" "}
-            {capitalize(weather.condition)}
+            {tDynamic(capitalize(weather.condition))}
           </Text>
           <Text style={styles.weatherDetail}>{weather.description}</Text>
           <Text style={styles.weatherDetail}>
-            Road: {capitalize(weather.road_condition)} · Wind{" "}
-            {Math.round(weather.wind_kmh)} km/h
+            {translate("Road: {condition} · Wind {speed} km/h", {
+              condition: tDynamic(capitalize(weather.road_condition)),
+              speed: Math.round(weather.wind_kmh),
+            })}
           </Text>
         </View>
       </View>
@@ -381,11 +399,11 @@ function HazardsCard({
   if (hazards.length === 0) {
     return (
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Hazards</Text>
+        <Text style={styles.sectionTitle}>{translate("Hazards")}</Text>
         <View style={styles.clearRow}>
           <Icon name="check-circle" size={20} color={statusFg.success} />
           <Text style={styles.clearText}>
-            No active hazards on your commute.
+            {translate("No active hazards on your commute.")}
           </Text>
         </View>
       </View>
@@ -395,13 +413,18 @@ function HazardsCard({
   return (
     <View style={styles.card}>
       <View style={styles.hazardsHeader}>
-        <Text style={styles.sectionTitle}>Hazards ({hazards.length})</Text>
+        <Text style={styles.sectionTitle}>
+          {translate("Hazards (")}
+          {hazards.length})
+        </Text>
         {newHazardCount > 0 ? (
           <TouchableOpacity
             onPress={onDismissNewBadges}
-            accessibilityLabel="Dismiss new hazard badges"
+            accessibilityLabel={translate("Dismiss new hazard badges")}
           >
-            <Text style={styles.dismissLabel}>Mark all seen</Text>
+            <Text style={styles.dismissLabel}>
+              {translate("Mark all seen")}
+            </Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -434,7 +457,7 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
           </Text>
           {hazard.isNew ? (
             <View style={styles.newBadge}>
-              <Text style={styles.newBadgeText}>NEW</Text>
+              <Text style={styles.newBadgeText}>{translate("NEW")}</Text>
             </View>
           ) : null}
         </View>
@@ -442,11 +465,28 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
           <Text style={styles.hazardMeta}>{hazard.road_name}</Text>
         ) : null}
         <Text style={styles.hazardMeta}>
-          {capitalize(hazard.severity)} ·{" "}
-          {formatRelativeTime(hazard.created_at)}
           {hazard.confirmations > 0
-            ? ` · ${hazard.confirmations} confirmed`
-            : ""}
+            ? translate("{severity} · {time} · {count} confirmed", {
+                severity: translate(
+                  hazard.severity === "high"
+                    ? "High"
+                    : hazard.severity === "medium"
+                      ? "Medium"
+                      : "Low",
+                ),
+                time: formatRelativeTime(hazard.created_at),
+                count: hazard.confirmations,
+              })
+            : translate("{severity} · {time}", {
+                severity: translate(
+                  hazard.severity === "high"
+                    ? "High"
+                    : hazard.severity === "medium"
+                      ? "Medium"
+                      : "Low",
+                ),
+                time: formatRelativeTime(hazard.created_at),
+              })}
         </Text>
         {hazard.note ? (
           <Text style={styles.hazardNote}>{hazard.note}</Text>
@@ -462,7 +502,9 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
         <Image
           source={{ uri: hazard.photo_url }}
           style={styles.hazardPhoto}
-          accessibilityLabel={`Photo of ${formatHazardType(hazard.hazard_type)}`}
+          accessibilityLabel={translate("Photo of {value0}", {
+            value0: formatHazardType(hazard.hazard_type),
+          })}
         />
       ) : null}
     </View>
@@ -499,11 +541,15 @@ function AlternativesCard({
   if (ranked.length === 0) {
     return (
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Alternative routes</Text>
+        <Text style={styles.sectionTitle}>
+          {translate("Alternative routes")}
+        </Text>
         <View style={styles.clearRow}>
           <Icon name="check" size={20} color={t.dim} />
           <Text style={styles.clearText}>
-            Your usual route looks like the best option right now.
+            {translate(
+              "Your usual route looks like the best option right now.",
+            )}
           </Text>
         </View>
       </View>
@@ -513,14 +559,17 @@ function AlternativesCard({
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>
-        Alternative routes ({ranked.length})
+        {translate("Alternative routes ({count})", { count: ranked.length })}
       </Text>
       <Text style={styles.altSubtitle}>
-        Compared with your primary
         {alternatives.primary_hazard_count > 0
-          ? ` (${alternatives.primary_hazard_count} hazard${alternatives.primary_hazard_count === 1 ? "" : "s"})`
-          : ""}
-        .
+          ? translate(
+              "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).",
+              {
+                count: alternatives.primary_hazard_count,
+              },
+            )
+          : translate("Compared with your primary.")}
       </Text>
       {ranked.map((alt, idx) => (
         <AlternativeRow
@@ -571,35 +620,44 @@ function AlternativeRow({
         style={styles.altMain}
         onPress={onStart}
         accessibilityRole="button"
-        accessibilityLabel={
-          `Start commute on alternative route, ${alt.distance_km.toFixed(1)} ` +
-          `kilometres, ${alt.duration_min} minutes, ${alt.hazard_count} ` +
-          `hazard${alt.hazard_count === 1 ? "" : "s"}`
-        }
+        accessibilityLabel={translate(
+          "Start commute on alternative route, {distance} kilometres, {duration} minutes, {count, plural, one {# hazard} other {# hazards}}",
+          {
+            distance: alt.distance_km.toFixed(1),
+            duration: alt.duration_min,
+            count: alt.hazard_count,
+          },
+        )}
       >
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
-            {alt.distance_km.toFixed(1)} km · {alt.duration_min} min
+            {translate("{distance} km · {duration} min", {
+              distance: alt.distance_km.toFixed(1),
+              duration: alt.duration_min,
+            })}
           </Text>
           {alt.hazard_count === 0 ? (
             <View
               style={[styles.altPill, { backgroundColor: statusFg.success }]}
             >
-              <Text style={styles.altPillText}>CLEAR</Text>
+              <Text style={styles.altPillText}>{translate("CLEAR")}</Text>
             </View>
           ) : (
             <View
               style={[styles.altPill, { backgroundColor: statusFg.warning }]}
             >
               <Text style={styles.altPillText}>
-                {alt.hazard_count} HAZARD{alt.hazard_count === 1 ? "" : "S"}
+                {translate(
+                  "{count, plural, one {# HAZARD} other {# HAZARDS}}",
+                  { count: alt.hazard_count },
+                )}
               </Text>
             </View>
           )}
         </View>
         <View style={styles.altDeltasRow}>
           <DeltaChip
-            label="Δ km"
+            label={translate("Δ km")}
             value={
               distanceDelta != null ? formatSignedDistance(distanceDelta) : "—"
             }
@@ -607,7 +665,7 @@ function AlternativeRow({
             delta={distanceDelta ?? undefined}
           />
           <DeltaChip
-            label="Δ time"
+            label={translate("Δ time")}
             value={
               durationDelta != null ? formatSignedDuration(durationDelta) : "—"
             }
@@ -616,7 +674,7 @@ function AlternativeRow({
           />
           {/* Quality value stays ink (ramp fails AA as text on the card). */}
           <DeltaChip
-            label="Quality"
+            label={translate("Quality")}
             value={qualityLabel(alt.avg_quality ?? 0)}
           />
         </View>
@@ -626,7 +684,10 @@ function AlternativeRow({
         onPress={() => onNavigate(alt)}
         disabled={navDisabled}
         accessibilityRole="button"
-        accessibilityLabel={`Navigate alternative route, ${alt.distance_km.toFixed(1)} kilometres`}
+        accessibilityLabel={translate(
+          "Navigate alternative route, {value0} kilometres",
+          { value0: alt.distance_km.toFixed(1) },
+        )}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Icon
@@ -668,12 +729,12 @@ function SavedRoutesCard({
   const handlePromote = useCallback(
     (route: CommuteRoute) => {
       Alert.alert(
-        "Use this as primary?",
+        translate("Use this as primary?"),
         `Future commute checks will use ${route.name} as your primary route.`,
         [
-          { text: "Cancel", style: "cancel" },
+          { text: translate("Cancel"), style: "cancel" },
           {
-            text: "Use as primary",
+            text: translate("Use as primary"),
             onPress: () => {
               setPendingId(route.id);
               // Attach a `.catch()` ahead of `.finally()` so a failed
@@ -689,7 +750,7 @@ function SavedRoutesCard({
                     err instanceof Error
                       ? err.message
                       : "Couldn't switch your primary commute. Try again.";
-                  Alert.alert("Couldn't update primary", message);
+                  Alert.alert(translate("Couldn't update primary"), message);
                 })
                 .finally(() => setPendingId(null));
             },
@@ -704,9 +765,14 @@ function SavedRoutesCard({
 
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Saved routes ({others.length})</Text>
+      <Text style={styles.sectionTitle}>
+        {translate("Saved routes (")}
+        {others.length})
+      </Text>
       <Text style={styles.altSubtitle}>
-        Switch which one is your primary — hazards and weekly stats follow.
+        {translate(
+          "Switch which one is your primary — hazards and weekly stats follow.",
+        )}
       </Text>
       {others.map((r) => {
         const isPending = isUpdatingPrimary && pendingId === r.id;
@@ -717,23 +783,35 @@ function SavedRoutesCard({
             onPress={() => handlePromote(r)}
             disabled={isPending}
             accessibilityRole="button"
-            accessibilityLabel={`Use ${r.name} as primary commute`}
+            accessibilityLabel={translate("Use {value0} as primary commute", {
+              value0: r.name,
+            })}
           >
             <View style={styles.savedMain}>
               <Text style={styles.altTitle}>{r.name}</Text>
               <Text style={styles.altSubtitle}>
-                {r.distance_km != null
-                  ? `${r.distance_km.toFixed(1)} km`
-                  : "Distance pending"}
-                {r.avg_quality != null
-                  ? ` · Quality ${qualityLabel(r.avg_quality)}`
-                  : ""}
+                {r.distance_km != null && r.avg_quality != null
+                  ? translate("{distance} km · Quality {quality}", {
+                      distance: r.distance_km.toFixed(1),
+                      quality: qualityLabel(r.avg_quality),
+                    })
+                  : r.distance_km != null
+                    ? translate("{distance} km", {
+                        distance: r.distance_km.toFixed(1),
+                      })
+                    : r.avg_quality != null
+                      ? translate("Distance pending · Quality {quality}", {
+                          quality: qualityLabel(r.avg_quality),
+                        })
+                      : translate("Distance pending")}
               </Text>
             </View>
             {isPending ? (
               <ActivityIndicator color={t.fg} size="small" />
             ) : (
-              <Text style={styles.altSecondaryLabel}>Use as primary</Text>
+              <Text style={styles.altSecondaryLabel}>
+                {translate("Use as primary")}
+              </Text>
             )}
           </TouchableOpacity>
         );
@@ -781,12 +859,12 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
   return (
     <View style={styles.card}>
       <View style={styles.weeklyHeader}>
-        <Text style={styles.sectionTitle}>This week</Text>
-        <Text style={styles.weeklySubtitle}>vs last week</Text>
+        <Text style={styles.sectionTitle}>{translate("This week")}</Text>
+        <Text style={styles.weeklySubtitle}>{translate("vs last week")}</Text>
       </View>
       <View style={styles.weeklyGrid}>
         <TrendCell
-          label="Rides"
+          label={translate("Rides")}
           value={String(stats.total_rides)}
           delta={stats.total_rides - prev.total_rides}
           positiveIsGood
@@ -796,21 +874,21 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
           integer
         />
         <TrendCell
-          label="Distance"
+          label={translate("Distance")}
           value={`${stats.total_km.toFixed(1)} km`}
           delta={stats.total_km - prev.total_km}
           deltaText={trendPercent(stats.total_km, prev.total_km)}
           positiveIsGood
         />
         <TrendCell
-          label="Time"
+          label={translate("Time")}
           value={`${stats.total_time_min} min`}
           delta={stats.total_time_min - prev.total_time_min}
           deltaText={trendPercent(stats.total_time_min, prev.total_time_min)}
           positiveIsGood={false}
         />
         <TrendCell
-          label="Fuel est."
+          label={translate("Fuel est.")}
           value={`${stats.fuel_estimate_l.toFixed(1)} L`}
           delta={stats.fuel_estimate_l - prev.fuel_estimate_l}
           deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
@@ -876,8 +954,11 @@ function describeStatus(
       icon: "alert",
       color: statusFg.danger,
       message: {
-        title: `${newHazardCount} new ${plural}`,
-        body: "Check the list before you head out.",
+        title: translate("{value0} new {value1}", {
+          value0: newHazardCount,
+          value1: plural,
+        }),
+        body: translate("Check the list before you head out."),
       },
     };
   }
@@ -887,8 +968,8 @@ function describeStatus(
         icon: "check-circle",
         color: statusFg.success,
         message: {
-          title: "Route is clear",
-          body: "No new hazards since you last checked.",
+          title: translate("Route is clear"),
+          body: translate("No new hazards since you last checked."),
         },
       };
     case "hazards":
@@ -896,8 +977,8 @@ function describeStatus(
         icon: "alert-circle",
         color: statusFg.warning,
         message: {
-          title: "Active hazards",
-          body: "Known hazards on your route — none new.",
+          title: translate("Active hazards"),
+          body: translate("Known hazards on your route — none new."),
         },
       };
     case "weather_warning":
@@ -905,8 +986,8 @@ function describeStatus(
         icon: "weather-cloudy-alert",
         color: statusFg.warning,
         message: {
-          title: "Weather warning",
-          body: "Ride conditions may be tough.",
+          title: translate("Weather warning"),
+          body: translate("Ride conditions may be tough."),
         },
       };
     case "delays":
@@ -914,8 +995,8 @@ function describeStatus(
         icon: "clock-alert",
         color: statusFg.warning,
         message: {
-          title: "Delays expected",
-          body: "Give yourself extra time.",
+          title: translate("Delays expected"),
+          body: translate("Give yourself extra time."),
         },
       };
   }

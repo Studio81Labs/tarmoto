@@ -805,6 +805,9 @@ importers:
       hermes-compiler:
         specifier: 250829098.0.14
         version: 250829098.0.14
+      intl-messageformat:
+        specifier: ^10.7.18
+        version: 10.7.18
       jest:
         specifier: ~30.3.0
         version: 30.3.0(@types/node@26.1.1)

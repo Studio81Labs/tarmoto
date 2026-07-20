@@ -37,6 +37,7 @@ import {
 } from "@/theme/brand";
 import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
+import { t as translate } from "@/i18n";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
@@ -98,16 +99,16 @@ export default function JoinTripScreen() {
           <View style={styles.heroIconWrap}>
             <Icon name="account-multiple-plus" size={28} color={t.fg} />
           </View>
-          <Text style={styles.title}>Join a trip</Text>
+          <Text style={styles.title}>{translate("Join a trip")}</Text>
           <Text style={styles.subtitle}>
-            Ask the trip owner for the trip ID and invite code. Once you join,
-            you'll see the trip in your Trips list and share route updates with
-            the rest of the group.
+            {translate(
+              "Ask the trip owner for the trip ID and invite code. Once you join, you'll see the trip in your Trips list and share route updates with the rest of the group.",
+            )}
           </Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Trip ID</Text>
+          <Text style={styles.label}>{translate("Trip ID")}</Text>
           <TextInput
             style={styles.input}
             placeholder="e.g. 8f3d0c1e-..."
@@ -119,10 +120,12 @@ export default function JoinTripScreen() {
             returnKeyType="next"
           />
 
-          <Text style={[styles.label, styles.labelSpacing]}>Invite code</Text>
+          <Text style={[styles.label, styles.labelSpacing]}>
+            {translate("Invite code")}
+          </Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. TARMOTO-42"
+            placeholder={translate("e.g. TARMOTO-42")}
             placeholderTextColor={t.mute}
             value={inviteCode}
             onChangeText={setInviteCode}
@@ -146,14 +149,14 @@ export default function JoinTripScreen() {
           disabled={!canSubmit}
           accessibilityRole="button"
           accessibilityState={{ disabled: !canSubmit, busy: submitting }}
-          accessibilityLabel="Join trip"
+          accessibilityLabel={translate("Join trip")}
         >
           {submitting ? (
             <ActivityIndicator color={t.invFg} />
           ) : (
             <>
               <Icon name="login-variant" size={20} color={t.invFg} />
-              <Text style={styles.joinLabel}>Join trip</Text>
+              <Text style={styles.joinLabel}>{translate("Join trip")}</Text>
             </>
           )}
         </TouchableOpacity>

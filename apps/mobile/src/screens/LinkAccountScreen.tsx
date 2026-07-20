@@ -22,6 +22,7 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
+import { t as translate } from "@/i18n";
 
 type LinkAccountRoute = RouteProp<ProfileStackParamList, "LinkAccount">;
 
@@ -49,12 +50,16 @@ export default function LinkAccountScreen() {
 
   const helperText = useMemo(() => {
     if (mode === "register") {
-      return "Create your rider account to sync rides, bikes, trips, and safety preferences.";
+      return translate(
+        "Create your rider account to sync rides, bikes, trips, and safety preferences.",
+      );
     }
     if (existingUser?.email && existingUser.email === email.trim()) {
-      return "This phone is already linked to that Tarmoto account.";
+      return translate("This phone is already linked to that Tarmoto account.");
     }
-    return "Sign in here to sync your rides, bikes, and profile details to this phone.";
+    return translate(
+      "Sign in here to sync your rides, bikes, and profile details to this phone.",
+    );
   }, [email, existingUser?.email, mode]);
 
   const handleSubmit = async () => {
@@ -67,13 +72,15 @@ export default function LinkAccountScreen() {
     ) {
       setErrorMessage(
         mode === "register"
-          ? "Enter your display name, email, and password."
-          : "Enter your email and password to link this phone.",
+          ? translate("Enter your display name, email, and password.")
+          : translate("Enter your email and password to link this phone."),
       );
       return;
     }
     if (mode === "register" && password.length < 8) {
-      setErrorMessage("Use at least 8 characters for your password.");
+      setErrorMessage(
+        translate("Use at least 8 characters for your password."),
+      );
       return;
     }
 
@@ -89,12 +96,18 @@ export default function LinkAccountScreen() {
       setPassword("");
       setSuccessMessage(
         mode === "register"
-          ? "Account created. Your rides, bikes, trips, and preferences will now sync."
-          : "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
+          ? translate(
+              "Account created. Your rides, bikes, trips, and preferences will now sync.",
+            )
+          : translate(
+              "Account linked. We're now syncing rides, bikes, and profile details to this phone.",
+            ),
       );
     } catch (err) {
       setErrorMessage(
-        err instanceof Error ? err.message : "Could not link this account.",
+        err instanceof Error
+          ? err.message
+          : translate("Could not link this account."),
       );
     } finally {
       setSubmitting(false);
@@ -113,8 +126,8 @@ export default function LinkAccountScreen() {
           </View>
           <Text style={styles.title}>
             {mode === "register"
-              ? "Create your Tarmoto account"
-              : "Link your Tarmoto account"}
+              ? translate("Create your Tarmoto account")
+              : translate("Link your Tarmoto account")}
           </Text>
           <Text style={styles.subtitle}>{helperText}</Text>
         </View>
@@ -126,7 +139,9 @@ export default function LinkAccountScreen() {
                 key={option}
                 accessibilityRole="button"
                 accessibilityLabel={
-                  option === "login" ? "Sign in mode" : "Create account mode"
+                  option === "login"
+                    ? translate("Sign in mode")
+                    : translate("Create account mode")
                 }
                 accessibilityState={{ selected: mode === option }}
                 onPress={() => {
@@ -145,7 +160,9 @@ export default function LinkAccountScreen() {
                     mode === option ? styles.modeButtonLabelSelected : null,
                   ]}
                 >
-                  {option === "login" ? "Sign in" : "Create account"}
+                  {option === "login"
+                    ? translate("Sign in")
+                    : translate("Create account")}
                 </Text>
               </Pressable>
             ))}
@@ -153,13 +170,13 @@ export default function LinkAccountScreen() {
 
           {mode === "register" ? (
             <>
-              <Text style={styles.label}>Display name</Text>
+              <Text style={styles.label}>{translate("Display name")}</Text>
               <TextInput
-                accessibilityLabel="Display name"
+                accessibilityLabel={translate("Display name")}
                 autoCapitalize="words"
                 autoCorrect={false}
                 maxLength={100}
-                placeholder="Martin CZ"
+                placeholder={translate("Martin CZ")}
                 placeholderTextColor={t.mute}
                 style={styles.input}
                 value={displayName}
@@ -174,26 +191,28 @@ export default function LinkAccountScreen() {
               mode === "register" ? styles.labelSpacing : null,
             ]}
           >
-            Email
+            {translate("Email")}
           </Text>
           <TextInput
-            accessibilityLabel="Email"
+            accessibilityLabel={translate("Email")}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-            placeholder="rider@example.com"
+            placeholder={translate("rider@example.com")}
             placeholderTextColor={t.mute}
             style={styles.input}
             value={email}
             onChangeText={setEmail}
           />
 
-          <Text style={[styles.label, styles.labelSpacing]}>Password</Text>
+          <Text style={[styles.label, styles.labelSpacing]}>
+            {translate("Password")}
+          </Text>
           <TextInput
-            accessibilityLabel="Password"
+            accessibilityLabel={translate("Password")}
             autoCapitalize="none"
             autoCorrect={false}
-            placeholder="Your Tarmoto password"
+            placeholder={translate("Your Tarmoto password")}
             placeholderTextColor={t.mute}
             secureTextEntry
             style={styles.input}
@@ -215,7 +234,9 @@ export default function LinkAccountScreen() {
             testID="auth-submit"
             accessibilityRole="button"
             accessibilityLabel={
-              mode === "register" ? "Create account" : "Link account"
+              mode === "register"
+                ? translate("Create account")
+                : translate("Link account")
             }
             accessibilityState={{ disabled: submitting }}
             disabled={submitting}
@@ -228,7 +249,9 @@ export default function LinkAccountScreen() {
               <>
                 <Icon name="login-variant" size={18} color={t.invFg} />
                 <Text style={styles.buttonLabel}>
-                  {mode === "register" ? "Create account" : "Link account"}
+                  {mode === "register"
+                    ? translate("Create account")
+                    : translate("Link account")}
                 </Text>
               </>
             )}

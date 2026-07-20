@@ -10,6 +10,7 @@ import {
   type TripGpxInput,
 } from "@tarmoto/shared";
 import type { IconName } from "@/components/Icon";
+import { translate, type EnglishMessageKey } from "@/i18n";
 import type {
   Accommodation,
   AccommodationKind,
@@ -76,14 +77,27 @@ export function capitalize(s: string): string {
 }
 
 export function formatStatus(status: TripStatus): string {
-  return capitalize(status);
+  const labels: Record<TripStatus, EnglishMessageKey> = {
+    draft: "Draft",
+    planned: "Planned",
+    active: "Active",
+    completed: "Completed",
+  };
+  return translate(labels[status]);
 }
 
 export function formatWaypointType(t: WaypointType): string {
-  // "via" reads oddly capitalised — leave it lowercase so "Via" doesn't
-  // appear as a proper noun in the UI.
-  if (t === "via") return "Waypoint";
-  return capitalize(t);
+  const labels: Record<WaypointType, EnglishMessageKey> = {
+    start: "Start",
+    via: "Waypoint",
+    fuel: "Fuel",
+    food: "Food",
+    coffee: "Coffee",
+    hotel: "Hotel",
+    photo: "Photo",
+    end: "End",
+  };
+  return translate(labels[t]);
 }
 
 export const WAYPOINT_ICONS: Record<WaypointType, IconName> = {
@@ -445,16 +459,19 @@ export function computeFuelRangeLegs(
           bestIdx = i;
         }
       }
-      return { name: w.name ?? "Fuel", cumKm: cumKm[bestIdx] ?? 0 };
+      return {
+        name: w.name ?? translate("Fuel"),
+        cumKm: cumKm[bestIdx] ?? 0,
+      };
     })
     .sort((a, b) => a.cumKm - b.cumKm);
 
   const start = sortedWaypoints.find((w) => w.waypoint_type === "start");
   const end = sortedWaypoints.find((w) => w.waypoint_type === "end");
   const points = [
-    { name: start?.name ?? "Start", cumKm: 0 },
+    { name: start?.name ?? translate("Start"), cumKm: 0 },
     ...anchors,
-    { name: end?.name ?? "End", cumKm: totalKm },
+    { name: end?.name ?? translate("End"), cumKm: totalKm },
   ];
 
   const legs: FuelLeg[] = [];
@@ -586,7 +603,7 @@ function annotateLegsWithStations(
         // Keep unnamed pumps — an unmanned fuel stop is still a real refuel
         // option (navigable via maps_url) — with a fallback label so the
         // warning card renders it instead of claiming there is no fuel.
-        name: s.name?.trim() || UNNAMED_FUEL_STOP_LABEL,
+        name: s.name?.trim() || translate(UNNAMED_FUEL_STOP_LABEL),
         hint: s.hint,
         distanceFromLegStartKm: s.distanceAlongRouteKm - startKm,
         distanceFromRouteKm: s.distanceFromRouteKm,
@@ -717,8 +734,14 @@ function overnightFitScore(accommodation: Accommodation): number {
 }
 
 function fallbackAccommodationName(kind: AccommodationKind): string {
-  return kind
-    .split("_")
-    .map((part) => capitalize(part))
-    .join(" ");
+  const labels: Record<AccommodationKind, EnglishMessageKey> = {
+    hotel: "Hotel",
+    motel: "Motel",
+    hostel: "Hostel",
+    guest_house: "Guest house",
+    apartment: "Apartment",
+    chalet: "Chalet",
+    camp_site: "Camp site",
+  };
+  return translate(labels[kind]);
 }

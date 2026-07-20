@@ -26,6 +26,7 @@ import type {
   HomeStackParamList,
   RootTabParamList,
 } from "@/navigation/RootNavigator";
+import { t as translate } from "@/i18n";
 
 // Composite type covers the in-stack `Commute` push AND the cross-tab
 // jump into RideTab → RideActive that the US-21 "Start commute" CTA
@@ -75,26 +76,34 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Tarmoto</Text>
-        <Text style={styles.subtitle}>Know the road before you ride it.</Text>
+        <Text style={styles.title}>{translate("Tarmoto")}</Text>
+        <Text style={styles.subtitle}>
+          {translate("Know the road before you ride it.")}
+        </Text>
 
         {canStartCommute ? (
           <TouchableOpacity
             style={styles.startCard}
             onPress={handleStartCommute}
             accessibilityRole="button"
-            accessibilityLabel={`Start commute to ${route.name}`}
+            accessibilityLabel={translate("Start commute to {value0}", {
+              value0: route.name,
+            })}
           >
             <View style={styles.startIcon}>
               <Icon name="play-circle" size={24} color={t.invFg} />
             </View>
             <View style={styles.cardBody}>
-              <Text style={styles.startTitle}>Start commute</Text>
+              <Text style={styles.startTitle}>
+                {translate("Start commute")}
+              </Text>
               <Text style={styles.startBody}>
-                {route.name}
                 {route.distance_km != null
-                  ? ` · ${route.distance_km.toFixed(1)} km`
-                  : ""}
+                  ? translate("{name} · {distance} km", {
+                      name: route.name,
+                      distance: route.distance_km.toFixed(1),
+                    })
+                  : route.name}
               </Text>
             </View>
             <Icon
@@ -112,19 +121,25 @@ export default function HomeScreen() {
           accessibilityRole="button"
           accessibilityLabel={
             showBadge
-              ? `Open commute hazard check. ${displayCount} new ${
-                  newHazardCount === 1 ? "hazard" : "hazards"
-                } since your last check.`
-              : "Open commute hazard check"
+              ? translate(
+                  "Open commute hazard check. {count, plural, one {{displayCount} new hazard} other {{displayCount} new hazards}} since your last check.",
+                  {
+                    count: newHazardCount,
+                    displayCount,
+                  },
+                )
+              : translate("Open commute hazard check")
           }
         >
           <View style={styles.cardIcon}>
             <Icon name="map-marker-path" size={22} color={t.accent} />
           </View>
           <View style={styles.cardBody}>
-            <Text style={styles.cardTitle}>Commute check</Text>
+            <Text style={styles.cardTitle}>{translate("Commute check")}</Text>
             <Text style={styles.cardBodyText}>
-              See active hazards and weather on your regular route.
+              {translate(
+                "See active hazards and weather on your regular route.",
+              )}
             </Text>
           </View>
           {showBadge ? (
@@ -136,7 +151,9 @@ export default function HomeScreen() {
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants"
             >
-              <Text style={styles.newBadgeText}>{displayCount} NEW</Text>
+              <Text style={styles.newBadgeText}>
+                {displayCount} {translate("NEW")}
+              </Text>
             </View>
           ) : null}
           <Icon name="chevron-right" size={22} color={t.faint} />

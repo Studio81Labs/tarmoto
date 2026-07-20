@@ -63,6 +63,7 @@ import {
   type FuelLeg,
   type FuelStationAnchor,
 } from "./TripScreens.helpers";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
@@ -100,7 +101,9 @@ export default function TripDayScreen() {
         setActiveTrip(next);
       } catch (e) {
         if (ignore) return;
-        setError(e instanceof Error ? e.message : "Failed to load day");
+        setError(
+          e instanceof Error ? e.message : translate("Failed to load day"),
+        );
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -139,7 +142,7 @@ export default function TripDayScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
-        <Text style={styles.errorTitle}>Unable to load day</Text>
+        <Text style={styles.errorTitle}>{translate("Unable to load day")}</Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
       </View>
     );
@@ -149,10 +152,13 @@ export default function TripDayScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="calendar-remove-outline" size={48} color={t.dim} />
-        <Text style={styles.errorTitle}>Day {dayNumber} not found</Text>
+        <Text style={styles.errorTitle}>
+          {translate("Day {day} not found", { day: dayNumber })}
+        </Text>
         <Text style={styles.errorBody}>
-          The trip doesn't include this day. It may have been regenerated with a
-          different number of days.
+          {translate(
+            "The trip doesn't include this day. It may have been regenerated with a different number of days.",
+          )}
         </Text>
       </View>
     );
@@ -176,28 +182,37 @@ export default function TripDayScreen() {
       <View
         style={[styles.card, belowThreshold ? styles.cardBelowThreshold : null]}
       >
-        <Text style={styles.subLabel}>Day {day.day_number}</Text>
-        <Text style={styles.title}>{day.title ?? `Day ${day.day_number}`}</Text>
+        <Text style={styles.subLabel}>
+          {translate("Day {day}", { day: day.day_number })}
+        </Text>
+        <Text style={styles.title}>
+          {day.title ?? translate("Day {value0}", { value0: day.day_number })}
+        </Text>
         {belowThreshold ? (
           <View style={styles.thresholdBadge}>
             <Icon name="eye-off-outline" size={12} color={t.dim} />
             <Text style={styles.thresholdBadgeLabel}>
-              Below your minimum ({qualityLabel(minQuality)})
+              {translate("Below your minimum ({quality})", {
+                quality: qualityLabel(minQuality),
+              })}
             </Text>
           </View>
         ) : null}
         <View style={styles.metricsRow}>
-          <Metric label="Distance" value={formatKm(day.distance_km)} />
           <Metric
-            label="Time"
+            label={translate("Distance")}
+            value={formatKm(day.distance_km)}
+          />
+          <Metric
+            label={translate("Time")}
             value={formatDurationMin(day.estimated_time_min)}
           />
           <Metric
-            label="Elevation"
+            label={translate("Elevation")}
             value={`+${Math.round(day.elevation_gain)} m`}
           />
           <Metric
-            label="Quality"
+            label={translate("Quality")}
             value={day.avg_quality > 0 ? qualityLabel(day.avg_quality) : "—"}
             swatchColor={day.avg_quality > 0 ? qColor : undefined}
           />
@@ -238,10 +253,12 @@ export default function TripDayScreen() {
       <NearbyPoisCard day={day} />
 
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Route</Text>
+        <Text style={styles.sectionTitle}>{translate("Route")}</Text>
         {day.waypoints.length === 0 ? (
           <Text style={styles.emptyBody}>
-            No waypoints for this day yet. Try regenerating the trip.
+            {translate(
+              "No waypoints for this day yet. Try regenerating the trip.",
+            )}
           </Text>
         ) : (
           [...day.waypoints]
@@ -275,11 +292,11 @@ function StartNavigationButton({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel="Start navigation"
+      accessibilityLabel={translate("Start navigation")}
       accessibilityState={{ disabled }}
     >
       <Icon name="navigation-variant" size={22} color={t.invFg} />
-      <Text style={styles.navigateLabel}>Start navigation</Text>
+      <Text style={styles.navigateLabel}>{translate("Start navigation")}</Text>
     </TouchableOpacity>
   );
 }
@@ -371,10 +388,10 @@ function FuelRangeWarning({
     (m, l) => (l.distanceKm > m ? l.distanceKm : m),
     0,
   );
-  const headline =
-    exceedingCount === 1
-      ? "1 leg exceeds your fuel range"
-      : `${exceedingCount} legs exceed your fuel range`;
+  const headline = translate(
+    "{count, plural, one {# leg exceeds} other {# legs exceed}} your fuel range",
+    { count: exceedingCount },
+  );
   return (
     <View
       style={styles.fuelWarningCard}
@@ -386,8 +403,13 @@ function FuelRangeWarning({
         <Text style={styles.fuelWarningTitle}>{headline}</Text>
       </View>
       <Text style={styles.fuelWarningBody}>
-        Longest leg is {formatKm(longest)} — beyond your {formatKm(fuelRangeKm)}{" "}
-        range. Add a fuel stop or check that tank will make it.
+        {translate(
+          "Longest leg is {longest} — beyond your {range} range. Add a fuel stop or check that tank will make it.",
+          {
+            longest: formatKm(longest),
+            range: formatKm(fuelRangeKm),
+          },
+        )}
       </Text>
       {legs.map((leg, idx) => (
         <View key={`${idx}-${leg.fromName}-${leg.toName}`}>
@@ -414,7 +436,9 @@ function FuelRangeWarning({
           </View>
           {leg.suggestedStops && leg.suggestedStops.length > 0 ? (
             <View style={styles.fuelLegStations}>
-              <Text style={styles.fuelLegStationsLabel}>Refuel options</Text>
+              <Text style={styles.fuelLegStationsLabel}>
+                {translate("Refuel options")}
+              </Text>
               {leg.suggestedStops.map((stop, sIdx) => (
                 <View
                   key={`${idx}-station-${sIdx}`}
@@ -422,7 +446,12 @@ function FuelRangeWarning({
                 >
                   <Icon name="gas-station" size={14} color={t.dim} />
                   <Text style={styles.fuelLegStationName} numberOfLines={1}>
-                    {stop.hint ? `${stop.name} · ${stop.hint}` : stop.name}
+                    {stop.hint
+                      ? translate("{value0} · {value1}", {
+                          value0: stop.name,
+                          value1: stop.hint,
+                        })
+                      : stop.name}
                   </Text>
                   <Text style={styles.fuelLegStationDistance}>
                     {formatKm(stop.distanceFromLegStartKm)}
@@ -462,15 +491,16 @@ async function openPoiFallback(item: {
   }
 }
 
-const ACCOMMODATION_KIND_LABELS: Record<AccommodationKind, string> = {
-  hotel: "Hotel",
-  motel: "Motel",
-  hostel: "Hostel",
-  guest_house: "Guest house",
-  apartment: "Apartment",
-  chalet: "Chalet",
-  camp_site: "Camp site",
-};
+const ACCOMMODATION_KIND_LABELS: Record<AccommodationKind, EnglishMessageKey> =
+  {
+    hotel: "Hotel",
+    motel: "Motel",
+    hostel: "Hostel",
+    guest_house: "Guest house",
+    apartment: "Apartment",
+    chalet: "Chalet",
+    camp_site: "Camp site",
+  };
 
 const ACCOMMODATION_KIND_ICONS: Record<AccommodationKind, IconName> = {
   hotel: "bed",
@@ -515,7 +545,11 @@ function AccommodationsCard({
         setRadiusKm(res.radius_km);
       } catch (e) {
         if (ignore) return;
-        setError(e instanceof Error ? e.message : "Couldn't load nearby stays");
+        setError(
+          e instanceof Error
+            ? e.message
+            : translate("Couldn't load nearby stays"),
+        );
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -536,10 +570,14 @@ function AccommodationsCard({
     <View style={styles.card}>
       <View style={styles.accommodationsHeader}>
         <Icon name="bed-outline" size={20} color={t.fg} />
-        <Text style={styles.sectionTitle}>Stays near day end</Text>
+        <Text style={styles.sectionTitle}>
+          {translate("Stays near day end")}
+        </Text>
         {radiusKm !== null && items && items.length > 0 ? (
           <Text style={styles.accommodationsRadius}>
-            within {Math.round(radiusKm)} km
+            {translate("within {distance} km", {
+              distance: Math.round(radiusKm),
+            })}
           </Text>
         ) : null}
       </View>
@@ -552,8 +590,9 @@ function AccommodationsCard({
         <Text style={styles.accommodationsEmptyBody}>{error}</Text>
       ) : !items || items.length === 0 ? (
         <Text style={styles.accommodationsEmptyBody}>
-          No accommodations found near the end of this day. Try expanding the
-          day or adjusting the end point.
+          {translate(
+            "No accommodations found near the end of this day. Try expanding the day or adjusting the end point.",
+          )}
         </Text>
       ) : (
         items.map((a) => <AccommodationRow key={a.external_id} item={a} />)
@@ -563,12 +602,10 @@ function AccommodationsCard({
 }
 
 function AccommodationRow({ item }: { item: Accommodation }) {
-  const label = item.name?.trim() || ACCOMMODATION_KIND_LABELS[item.kind];
+  const kindLabel = translate(ACCOMMODATION_KIND_LABELS[item.kind]);
+  const label = item.name?.trim() || kindLabel;
   const icon = ACCOMMODATION_KIND_ICONS[item.kind];
-  const metaParts = [
-    ACCOMMODATION_KIND_LABELS[item.kind],
-    `${item.distance_km.toFixed(1)} km`,
-  ];
+  const metaParts = [kindLabel, `${item.distance_km.toFixed(1)} km`];
   if (item.stars) metaParts.push("★".repeat(item.stars));
 
   return (
@@ -578,7 +615,10 @@ function AccommodationRow({ item }: { item: Accommodation }) {
         void openPoiFallback(item);
       }}
       accessibilityRole="button"
-      accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
+      accessibilityLabel={translate("{value0}, {value1} kilometres away", {
+        value0: label,
+        value1: item.distance_km.toFixed(1),
+      })}
     >
       <View style={styles.accommodationIconWrap}>
         <Icon name={icon} size={18} color={t.dim} />
@@ -601,7 +641,7 @@ function AccommodationRow({ item }: { item: Accommodation }) {
   );
 }
 
-const POI_KIND_LABELS: Record<PoiKind, string> = {
+const POI_KIND_LABELS: Record<PoiKind, EnglishMessageKey> = {
   restaurant: "Restaurant",
   viewpoint: "Viewpoint",
   cafe: "Café",
@@ -641,7 +681,9 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
       } catch (e) {
         if (ignore) return;
         setError(
-          e instanceof Error ? e.message : "Couldn't load nearby places",
+          e instanceof Error
+            ? e.message
+            : translate("Couldn't load nearby places"),
         );
       } finally {
         if (!ignore) setLoading(false);
@@ -658,10 +700,14 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
     <View style={styles.card}>
       <View style={styles.accommodationsHeader}>
         <Icon name="map-marker-radius-outline" size={20} color={t.fg} />
-        <Text style={styles.sectionTitle}>Places near day end</Text>
+        <Text style={styles.sectionTitle}>
+          {translate("Places near day end")}
+        </Text>
         {radiusKm !== null && items && items.length > 0 ? (
           <Text style={styles.accommodationsRadius}>
-            within {Math.round(radiusKm)} km
+            {translate("within {distance} km", {
+              distance: Math.round(radiusKm),
+            })}
           </Text>
         ) : null}
       </View>
@@ -674,8 +720,9 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
         <Text style={styles.accommodationsEmptyBody}>{error}</Text>
       ) : !items || items.length === 0 ? (
         <Text style={styles.accommodationsEmptyBody}>
-          No restaurants, viewpoints, cafés, or fuel stations found near the end
-          of this day.
+          {translate(
+            "No restaurants, viewpoints, cafés, or fuel stations found near the end of this day.",
+          )}
         </Text>
       ) : (
         items.map((p) => <PoiRow key={p.external_id} item={p} />)
@@ -685,12 +732,10 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
 }
 
 function PoiRow({ item }: { item: Poi }) {
-  const label = item.name?.trim() || POI_KIND_LABELS[item.kind];
+  const kindLabel = translate(POI_KIND_LABELS[item.kind]);
+  const label = item.name?.trim() || kindLabel;
   const icon = POI_KIND_ICONS[item.kind];
-  const metaParts = [
-    POI_KIND_LABELS[item.kind],
-    `${item.distance_km.toFixed(1)} km`,
-  ];
+  const metaParts = [kindLabel, `${item.distance_km.toFixed(1)} km`];
   if (item.hint) metaParts.push(item.hint);
 
   return (
@@ -700,7 +745,10 @@ function PoiRow({ item }: { item: Poi }) {
         void openPoiFallback(item);
       }}
       accessibilityRole="button"
-      accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
+      accessibilityLabel={translate("{value0}, {value1} kilometres away", {
+        value0: label,
+        value1: item.distance_km.toFixed(1),
+      })}
     >
       <View style={styles.accommodationIconWrap}>
         <Icon name={icon} size={18} color={t.dim} />
@@ -733,12 +781,14 @@ function HighlightsCard({
   if (fuelStops.length === 0 && overnightStops.length === 0) return null;
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Highlights</Text>
+      <Text style={styles.sectionTitle}>{translate("Highlights")}</Text>
       {fuelStops.length > 0 ? (
         <HighlightRow
           icon="gas-station"
-          label="Fuel"
-          value={`${fuelStops.length} stop${fuelStops.length === 1 ? "" : "s"}`}
+          label={translate("Fuel")}
+          value={translate("{count, plural, one {# stop} other {# stops}}", {
+            count: fuelStops.length,
+          })}
           detail={fuelStops
             .map((f) => f.name)
             .filter((n): n is string => !!n)
@@ -748,8 +798,10 @@ function HighlightsCard({
       {overnightStops.length > 0 ? (
         <HighlightRow
           icon="bed"
-          label="Overnight"
-          value={`${overnightStops.length} stop${overnightStops.length === 1 ? "" : "s"}`}
+          label={translate("Overnight")}
+          value={translate("{count, plural, one {# stop} other {# stops}}", {
+            count: overnightStops.length,
+          })}
           detail={overnightStops
             .map((h) => h.name)
             .filter((n): n is string => !!n)
@@ -817,15 +869,17 @@ function WaypointRow({
           </Text>
           {isFuel ? (
             <View style={styles.fuelBadge}>
-              <Text style={styles.fuelBadgeText}>FUEL</Text>
+              <Text style={styles.fuelBadgeText}>{translate("FUEL")}</Text>
             </View>
           ) : null}
         </View>
         <Text style={styles.timelineMeta}>
-          {formatWaypointType(waypoint.waypoint_type)}
           {waypoint.duration_min
-            ? ` · ${formatDurationMin(waypoint.duration_min)} stop`
-            : ""}
+            ? translate("{type} · {duration} stop", {
+                type: formatWaypointType(waypoint.waypoint_type),
+                duration: formatDurationMin(waypoint.duration_min),
+              })
+            : formatWaypointType(waypoint.waypoint_type)}
         </Text>
         {waypoint.notes ? (
           <Text style={styles.timelineNotes}>{waypoint.notes}</Text>

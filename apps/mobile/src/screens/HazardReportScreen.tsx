@@ -72,6 +72,7 @@ import { useHazardStore } from "@/stores";
 import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import type { HazardType, Severity } from "@/types";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -88,7 +89,11 @@ const INK = "#0E0E10";
 
 // Severity fills come from the quality ramp (Q4 → Q2 → Q1), matching the
 // design prototype; ink text sits on the selected fill.
-const SEVERITIES: { value: Severity; label: string; color: string }[] = [
+const SEVERITIES: {
+  value: Severity;
+  label: EnglishMessageKey;
+  color: string;
+}[] = [
   { value: "low", label: "Low", color: QUALITY_COLORS[3] },
   { value: "medium", label: "Medium", color: QUALITY_COLORS[1] },
   { value: "high", label: "High", color: QUALITY_COLORS[0] },
@@ -230,14 +235,18 @@ export default function HazardReportScreen() {
         case "permission-denied":
           setPhotoNotice(
             source === "camera"
-              ? "Camera access denied. Enable it from Settings to attach a photo."
-              : "Photo library access denied. Enable it from Settings to attach a photo.",
+              ? translate(
+                  "Camera access denied. Enable it from Settings to attach a photo.",
+                )
+              : translate(
+                  "Photo library access denied. Enable it from Settings to attach a photo.",
+                ),
           );
           return;
         case "unavailable":
           setPhotoNotice(
             result.reason ??
-              "Photo attachment isn't available on this build yet.",
+              translate("Photo attachment isn't available on this build yet."),
           );
           return;
       }
@@ -253,11 +262,11 @@ export default function HazardReportScreen() {
 
   const handleSubmit = useCallback(async () => {
     if (hazardType === null) {
-      setErrorMessage("Pick a hazard type to report.");
+      setErrorMessage(translate("Pick a hazard type to report."));
       return;
     }
     if (location === null) {
-      setErrorMessage("Waiting for GPS — try again in a moment.");
+      setErrorMessage(translate("Waiting for GPS — try again in a moment."));
       return;
     }
     // Recompute staleness against the wall clock at submit time. The
@@ -267,7 +276,9 @@ export default function HazardReportScreen() {
     // captured boolean would lie. This second check is the
     // authoritative gate.
     if (Date.now() - location.timestamp > LOCATION_STALE_AFTER_MS) {
-      setErrorMessage("Location is stale — refresh GPS before submitting.");
+      setErrorMessage(
+        translate("Location is stale — refresh GPS before submitting."),
+      );
       return;
     }
     setSubmitting(true);
@@ -308,8 +319,10 @@ export default function HazardReportScreen() {
         // first so the modal animates out before the alert lands.
         navigation.goBack();
         Alert.alert(
-          "Report queued",
-          "You're offline — we'll send the report once you're back on a connection.",
+          translate("Report queued"),
+          translate(
+            "You're offline — we'll send the report once you're back on a connection.",
+          ),
         );
         return;
       }
@@ -339,7 +352,9 @@ export default function HazardReportScreen() {
 
   const locationLine = useMemo(() => {
     if (!location) {
-      return locationLoading ? "Acquiring GPS…" : "Waiting for GPS…";
+      return locationLoading
+        ? translate("Acquiring GPS…")
+        : translate("Waiting for GPS…");
     }
     const acc =
       Number.isFinite(location.accuracy) && location.accuracy > 0
@@ -365,11 +380,11 @@ export default function HazardReportScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Hazard type</Text>
+          <Text style={styles.sectionTitle}>{translate("Hazard type")}</Text>
           <View style={styles.typeGrid}>
             {HAZARD_TYPE_ORDER.map((type) => {
               const selected = hazardType === type;
-              const label = HAZARD_TYPE_LABELS[type];
+              const label = translate(HAZARD_TYPE_LABELS[type]);
               return (
                 <TouchableOpacity
                   key={type}
@@ -380,7 +395,9 @@ export default function HazardReportScreen() {
                   onPress={() => handleSelectType(type)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`Hazard type ${label}`}
+                  accessibilityLabel={translate("Hazard type {value0}", {
+                    value0: label,
+                  })}
                 >
                   <Icon
                     name={(hazardIcons[type] ?? "alert-circle") as IconName}
@@ -402,10 +419,11 @@ export default function HazardReportScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Severity</Text>
+          <Text style={styles.sectionTitle}>{translate("Severity")}</Text>
           <View style={styles.severityRow}>
             {SEVERITIES.map(({ value, label, color }) => {
               const selected = severity === value;
+              const translatedLabel = translate(label);
               return (
                 <TouchableOpacity
                   key={value}
@@ -418,7 +436,9 @@ export default function HazardReportScreen() {
                   onPress={() => handleSelectSeverity(value)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${label} severity`}
+                  accessibilityLabel={translate("{value0} severity", {
+                    value0: translatedLabel,
+                  })}
                 >
                   <Text
                     style={[
@@ -426,7 +446,7 @@ export default function HazardReportScreen() {
                       selected ? styles.severityLabelSelected : null,
                     ]}
                   >
-                    {label}
+                    {translatedLabel}
                   </Text>
                 </TouchableOpacity>
               );
@@ -435,7 +455,7 @@ export default function HazardReportScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location</Text>
+          <Text style={styles.sectionTitle}>{translate("Location")}</Text>
           <View style={styles.locationCard}>
             <Icon name="map-marker" size={20} color={locationIconColor} />
             <Text style={styles.locationText} numberOfLines={1}>
@@ -447,7 +467,7 @@ export default function HazardReportScreen() {
               <TouchableOpacity
                 onPress={() => void refreshLocation()}
                 accessibilityRole="button"
-                accessibilityLabel="Refresh location"
+                accessibilityLabel={translate("Refresh location")}
                 hitSlop={12}
               >
                 <Icon name="refresh" size={20} color={t.dim} />
@@ -456,40 +476,47 @@ export default function HazardReportScreen() {
           </View>
           {isLocationStale ? (
             <Text style={styles.locationStaleNotice}>
-              Last fix is more than 30s old — refresh to use your current
-              position.
+              {translate(
+                "Last fix is more than 30s old — refresh to use your current position.",
+              )}
             </Text>
           ) : null}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Note (optional)</Text>
+          <Text style={styles.sectionTitle}>
+            {translate("Note (optional)")}
+          </Text>
           <TextInput
             style={styles.noteInput}
-            placeholder="One short note — e.g. 'left lane after bridge'"
+            placeholder={translate(
+              "One short note — e.g. 'left lane after bridge'",
+            )}
             placeholderTextColor={t.mute}
             value={note}
             onChangeText={setNote}
             maxLength={NOTE_MAX_CHARS}
             multiline={false}
             returnKeyType="done"
-            accessibilityLabel="Note"
+            accessibilityLabel={translate("Note")}
           />
           <Text style={styles.noteCounter}>{noteCharsLeft}</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Photo (optional)</Text>
+          <Text style={styles.sectionTitle}>
+            {translate("Photo (optional)")}
+          </Text>
           {photo ? (
             <View style={styles.photoCard}>
               <Icon name="image-check" size={20} color={statusFg.success} />
               <Text style={styles.photoLabel} numberOfLines={1}>
-                {photo.fileName ?? "Photo attached"}
+                {photo.fileName ?? translate("Photo attached")}
               </Text>
               <TouchableOpacity
                 onPress={handleClearPhoto}
                 accessibilityRole="button"
-                accessibilityLabel="Remove attached photo"
+                accessibilityLabel={translate("Remove attached photo")}
                 hitSlop={12}
               >
                 <Icon name="close" size={20} color={t.dim} />
@@ -502,20 +529,24 @@ export default function HazardReportScreen() {
                 onPress={() => handleAddPhoto("camera")}
                 disabled={photoCapturing}
                 accessibilityRole="button"
-                accessibilityLabel="Take photo with camera"
+                accessibilityLabel={translate("Take photo with camera")}
               >
                 <Icon name="camera" size={20} color={t.fg} />
-                <Text style={styles.photoButtonLabel}>Camera</Text>
+                <Text style={styles.photoButtonLabel}>
+                  {translate("Camera")}
+                </Text>
               </Pressable>
               <Pressable
                 style={styles.photoButton}
                 onPress={() => handleAddPhoto("library")}
                 disabled={photoCapturing}
                 accessibilityRole="button"
-                accessibilityLabel="Pick photo from library"
+                accessibilityLabel={translate("Pick photo from library")}
               >
                 <Icon name="image" size={20} color={t.fg} />
-                <Text style={styles.photoButtonLabel}>Library</Text>
+                <Text style={styles.photoButtonLabel}>
+                  {translate("Library")}
+                </Text>
               </Pressable>
             </View>
           )}
@@ -537,9 +568,9 @@ export default function HazardReportScreen() {
             onPress={handleCancel}
             disabled={submitting}
             accessibilityRole="button"
-            accessibilityLabel="Cancel"
+            accessibilityLabel={translate("Cancel")}
           >
-            <Text style={styles.cancelLabel}>Cancel</Text>
+            <Text style={styles.cancelLabel}>{translate("Cancel")}</Text>
           </Pressable>
           <Pressable
             style={[
@@ -550,7 +581,7 @@ export default function HazardReportScreen() {
             onPress={() => void handleSubmit()}
             disabled={!canSubmit}
             accessibilityRole="button"
-            accessibilityLabel="Submit hazard report"
+            accessibilityLabel={translate("Submit hazard report")}
             accessibilityState={{ disabled: !canSubmit, busy: submitting }}
           >
             {submitting ? (
@@ -558,7 +589,7 @@ export default function HazardReportScreen() {
             ) : (
               <>
                 <Icon name="send" size={18} color={INK} />
-                <Text style={styles.submitLabel}>Submit</Text>
+                <Text style={styles.submitLabel}>{translate("Submit")}</Text>
               </>
             )}
           </Pressable>

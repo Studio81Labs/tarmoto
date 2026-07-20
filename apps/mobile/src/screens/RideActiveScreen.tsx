@@ -75,6 +75,7 @@ import {
   surfaceIcon,
   surfaceLabel,
 } from "./RideScreens.helpers";
+import { t as translate } from "@/i18n";
 
 type RideActiveRoute = RouteProp<RideStackParamList, "RideActive">;
 type RideActiveNav = NativeStackNavigationProp<
@@ -279,7 +280,9 @@ export default function RideActiveScreen() {
         })
         .catch((err) => {
           setStartError(
-            err instanceof Error ? err.message : "Couldn't sync ride to server",
+            err instanceof Error
+              ? err.message
+              : translate("Couldn't sync ride to server"),
           );
         })
         .finally(() => {
@@ -312,11 +315,13 @@ export default function RideActiveScreen() {
       const status = await requestWithRationale({
         androidPermission: PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         rationale: {
-          title: "Location for ride recording",
-          message:
+          title: translate("Location for ride recording"),
+          message: translate(
             "Tarmoto records GPS while you ride to track distance, surface quality, and hazards along the route.",
-          whyOpenSettings:
+          ),
+          whyOpenSettings: translate(
             "Location is currently blocked. Open Settings → Tarmoto and allow location to start recording rides.",
+          ),
         },
       });
       if (cancelled) return;
@@ -428,11 +433,13 @@ export default function RideActiveScreen() {
         // the cleanup path so the rider can try again.
         setIsStopping(false);
         const message =
-          err instanceof Error ? err.message : "Unable to reach the server.";
-        Alert.alert("Couldn't stop ride", message, [
-          { text: "Try again", onPress: () => void stopAndExit() },
+          err instanceof Error
+            ? err.message
+            : translate("Unable to reach the server.");
+        Alert.alert(translate("Couldn't stop ride"), message, [
+          { text: translate("Try again"), onPress: () => void stopAndExit() },
           {
-            text: "Discard locally",
+            text: translate("Discard locally"),
             style: "destructive",
             onPress: () => {
               // Even on the local-only escape hatch we must release
@@ -449,7 +456,7 @@ export default function RideActiveScreen() {
               navigation.goBack();
             },
           },
-          { text: "Keep riding", style: "cancel" },
+          { text: translate("Keep riding"), style: "cancel" },
         ]);
         return;
       }
@@ -491,12 +498,12 @@ export default function RideActiveScreen() {
 
   const confirmStop = useCallback(() => {
     Alert.alert(
-      "Stop ride?",
-      "We'll save your stats and stop recording.",
+      translate("Stop ride?"),
+      translate("We'll save your stats and stop recording."),
       [
-        { text: "Keep riding", style: "cancel" },
+        { text: translate("Keep riding"), style: "cancel" },
         {
-          text: "Stop ride",
+          text: translate("Stop ride"),
           style: "destructive",
           onPress: () => void stopAndExit(),
         },
@@ -534,7 +541,9 @@ export default function RideActiveScreen() {
   const speedLabel = formatSpeedKmh(currentSpeed);
   const distanceLabel = formatDistanceKm(distance);
   const hasQuality = currentQuality !== null;
-  const qLabel = hasQuality ? qualityLabel(qualityScore) : "Listening…";
+  const qLabel = hasQuality
+    ? qualityLabel(qualityScore)
+    : translate("Listening…");
   const qColor = hasQuality ? qualityBrandColor(qualityScore) : t.dim;
   const surface = currentQuality?.surface_type ?? null;
 
@@ -544,7 +553,7 @@ export default function RideActiveScreen() {
         styles.container,
         { paddingBottom: brandSpacing.s5 + insets.bottom },
       ]}
-      accessibilityLabel="Active ride HUD"
+      accessibilityLabel={translate("Active ride HUD")}
     >
       <StatusBar barStyle="light-content" backgroundColor={t.bg} translucent />
       <View style={styles.header}>
@@ -554,12 +563,12 @@ export default function RideActiveScreen() {
           color={RECORDING_RED}
           accessibilityElementsHidden
         />
-        <Text style={styles.headerLabel}>RECORDING</Text>
+        <Text style={styles.headerLabel}>{translate("RECORDING")}</Text>
         <View style={styles.headerSpacer} />
         <TouchableOpacity
           onPress={handleOpenGroupRide}
           accessibilityRole="button"
-          accessibilityLabel="Open group ride"
+          accessibilityLabel={translate("Open group ride")}
           style={styles.groupRideToggle}
         >
           <Icon name="account-group" size={20} color={ACCENT} />
@@ -577,7 +586,10 @@ export default function RideActiveScreen() {
       {activeBike ? (
         <View
           style={styles.bikeChip}
-          accessibilityLabel={`Active bike ${activeBike.make} ${activeBike.model}`}
+          accessibilityLabel={translate("Active bike {value0} {value1}", {
+            value0: activeBike.make,
+            value1: activeBike.model,
+          })}
         >
           <Icon name="motorbike" size={16} color={t.dim} />
           <Text style={styles.bikeChipText} numberOfLines={1}>
@@ -588,26 +600,28 @@ export default function RideActiveScreen() {
 
       <View
         style={styles.speedBlock}
-        accessibilityLabel={`Speed ${speedLabel}`}
+        accessibilityLabel={translate("Speed {value0}", { value0: speedLabel })}
       >
         <Text style={styles.speedValue}>{Math.round(currentSpeed)}</Text>
-        <Text style={styles.speedUnit}>km/h</Text>
+        <Text style={styles.speedUnit}>{translate("km/h")}</Text>
       </View>
 
       <View style={styles.statsRow}>
         <View style={styles.statBlock}>
-          <Text style={styles.statLabel}>Distance</Text>
+          <Text style={styles.statLabel}>{translate("Distance")}</Text>
           <Text style={styles.statValue}>{distanceLabel}</Text>
         </View>
         <View style={styles.statBlock}>
-          <Text style={styles.statLabel}>Duration</Text>
+          <Text style={styles.statLabel}>{translate("Duration")}</Text>
           <Text style={styles.statValue}>{durationLabel}</Text>
         </View>
       </View>
 
       <View
         style={[styles.qualityCard, { borderColor: qColor }]}
-        accessibilityLabel={`Road quality ${qLabel}`}
+        accessibilityLabel={translate("Road quality {value0}", {
+          value0: qLabel,
+        })}
       >
         <View
           style={[
@@ -627,7 +641,7 @@ export default function RideActiveScreen() {
             <Text style={styles.qualitySurface}>{surfaceLabel(surface)}</Text>
           ) : (
             <Text style={styles.qualitySurface}>
-              Waiting for the first reading…
+              {translate("Waiting for the first reading…")}
             </Text>
           )}
         </View>
@@ -635,31 +649,36 @@ export default function RideActiveScreen() {
 
       <View style={styles.leanRow}>
         <View style={styles.leanBlock}>
-          <Text style={styles.leanLabel}>MAX LEAN</Text>
+          <Text style={styles.leanLabel}>{translate("MAX LEAN")}</Text>
           <Text style={styles.leanValue}>
-            {leanCalibrating ? "—" : `${Math.round(maxLeanDeg)}°`}
+            {leanCalibrating
+              ? "—"
+              : translate("{value0}°", { value0: Math.round(maxLeanDeg) })}
           </Text>
           <Text style={styles.leanHint}>
             {leanCalibrating
-              ? "Calibrating — keep the bike upright"
-              : "Sit upright and tap to re-zero"}
+              ? translate("Calibrating — keep the bike upright")
+              : translate("Sit upright and tap to re-zero")}
           </Text>
         </View>
         <TouchableOpacity
           style={styles.calibrateBtn}
           onPress={handleRecalibrateLean}
           accessibilityRole="button"
-          accessibilityLabel="Recalibrate lean angle"
+          accessibilityLabel={translate("Recalibrate lean angle")}
         >
           <Icon name="crosshairs-gps" size={18} color={ACCENT} />
-          <Text style={styles.calibrateBtnLabel}>Calibrate</Text>
+          <Text style={styles.calibrateBtnLabel}>{translate("Calibrate")}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.segmentRow}>
         <Icon name="counter" size={18} color={t.mute} />
         <Text style={styles.segmentText}>
-          {segmentCount} segment{segmentCount === 1 ? "" : "s"} recorded
+          {translate(
+            "{count, plural, one {# segment recorded} other {# segments recorded}}",
+            { count: segmentCount },
+          )}
         </Text>
       </View>
 
@@ -669,12 +688,12 @@ export default function RideActiveScreen() {
         style={styles.stopBtn}
         onPress={confirmStop}
         accessibilityRole="button"
-        accessibilityLabel="Stop ride"
+        accessibilityLabel={translate("Stop ride")}
         disabled={isStopping}
       >
         <Icon name="stop-circle" size={22} color={t.fg} />
         <Text style={styles.stopLabel}>
-          {isStopping ? "Stopping…" : "Stop ride"}
+          {isStopping ? translate("Stopping…") : translate("Stop ride")}
         </Text>
       </TouchableOpacity>
 
@@ -707,7 +726,9 @@ function VoiceMuteToggle() {
       onPress={toggle}
       accessibilityRole="button"
       accessibilityLabel={
-        muted ? "Unmute voice guidance" : "Mute voice guidance"
+        muted
+          ? translate("Unmute voice guidance")
+          : translate("Mute voice guidance")
       }
       accessibilityState={{ selected: muted }}
       style={styles.voiceToggle}

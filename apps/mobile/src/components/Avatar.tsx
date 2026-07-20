@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { initialsFromName } from "@tarmoto/shared";
 import { brandColorsLight, brandFontWeight } from "@/theme/brand";
+import { t as translate } from "@/i18n";
 
 // Re-exported for the Avatar test file and any caller that prefers the
 // component-local import. The implementation lives in `@tarmoto/shared`
@@ -33,14 +34,14 @@ export default function Avatar({ uri, name, size = 64, style }: AvatarProps) {
       <Image
         source={{ uri }}
         style={[styles.image, dim, style as StyleProp<ViewStyle>] as never}
-        accessibilityLabel={`${name} avatar`}
+        accessibilityLabel={translate("{value0} avatar", { value0: name })}
       />
     );
   }
   return (
     <View
       style={[styles.fallback, dim, style]}
-      accessibilityLabel={`${name} avatar`}
+      accessibilityLabel={translate("{value0} avatar", { value0: name })}
     >
       <Text style={[styles.initials, { fontSize: size * 0.4 }]}>
         {initialsFromName(name)}
