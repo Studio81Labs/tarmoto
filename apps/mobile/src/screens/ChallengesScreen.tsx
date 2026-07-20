@@ -248,9 +248,12 @@ function ChallengeCard({
           />
           <MetaPill
             icon="account-multiple"
-            label={translate("{value0} riders", {
-              value0: challenge.participant_count,
-            })}
+            label={translate(
+              "{count, plural, one {# rider} other {# riders}}",
+              {
+                count: challenge.participant_count,
+              },
+            )}
           />
           <MetaPill
             icon="clock-outline"

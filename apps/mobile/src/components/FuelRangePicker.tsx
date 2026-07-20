@@ -90,9 +90,10 @@ export default function FuelRangePicker({
               style={[styles.pill, selected ? styles.pillSelected : null]}
               onPress={() => onChange(step)}
               accessibilityRole="button"
-              accessibilityLabel={translate("{value0} kilometres", {
-                value0: step,
-              })}
+              accessibilityLabel={translate(
+                "{count, plural, one {# kilometre} other {# kilometres}}",
+                { count: step },
+              )}
               accessibilityState={{ selected }}
             >
               <Text

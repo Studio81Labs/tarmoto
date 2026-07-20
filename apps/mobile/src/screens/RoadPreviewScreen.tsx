@@ -250,8 +250,8 @@ function HeaderCard({
       <View style={styles.metaRow}>
         <MetaPill
           icon="account-multiple"
-          label={translate("{value0} passes", {
-            value0: segment.reading_count,
+          label={translate("{count, plural, one {# pass} other {# passes}}", {
+            count: segment.reading_count,
           })}
         />
         <MetaPill

@@ -291,9 +291,12 @@ export default function ViewProfileScreen() {
               displayName: profile.display_name,
             })
           }
-          accessibilityLabel={translate("{value0} followers, open list", {
-            value0: profile.follower_count,
-          })}
+          accessibilityLabel={translate(
+            "{count, plural, one {# follower} other {# followers}}, open list",
+            {
+              count: profile.follower_count,
+            },
+          )}
         />
         <StatTile
           label={translate("Following")}
@@ -305,8 +308,8 @@ export default function ViewProfileScreen() {
             })
           }
           accessibilityLabel={translate(
-            "Following {value0} riders, open list",
-            { value0: profile.following_count },
+            "Following {count, plural, one {# rider} other {# riders}}, open list",
+            { count: profile.following_count },
           )}
         />
         <StatTile

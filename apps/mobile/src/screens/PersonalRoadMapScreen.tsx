@@ -250,7 +250,10 @@ function StatsCard({
         <View style={styles.statCell}>
           <Text style={styles.statValue}>{summary.riddenCount}</Text>
           <Text style={styles.statLabel}>
-            {translate("of {count} segments", { count: summary.totalCount })}
+            {translate(
+              "of {count, plural, one {# segment} other {# segments}}",
+              { count: summary.totalCount },
+            )}
           </Text>
         </View>
         <View style={styles.statCell}>
@@ -259,8 +262,10 @@ function StatsCard({
         </View>
       </View>
       <Text style={styles.periodNote}>
-        {riddenInPeriod}{" "}
-        {translate("segments highlighted for the selected period")}
+        {translate(
+          "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period",
+          { count: riddenInPeriod },
+        )}
       </Text>
     </View>
   );

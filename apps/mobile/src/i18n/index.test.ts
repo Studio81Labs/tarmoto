@@ -73,6 +73,32 @@ describe("mobile i18n", () => {
     expect(tDynamic("runtime server copy")).toBe("runtime server copy");
   });
 
+  it("pluralizes count-bearing labels", () => {
+    expect(
+      translate(
+        "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period",
+        { count: 1 },
+      ),
+    ).toBe("1 segment highlighted for the selected period");
+    expect(
+      translate("{count, plural, one {# rider} other {# riders}}", {
+        count: 1,
+      }),
+    ).toBe("1 rider");
+    expect(
+      translate(
+        "{count, plural, one {# follower} other {# followers}}, open list",
+        { count: 1 },
+      ),
+    ).toBe("1 follower, open list");
+    expect(
+      translate(
+        "Following {count, plural, one {# rider} other {# riders}}, open list",
+        { count: 2 },
+      ),
+    ).toBe("Following 2 riders, open list");
+  });
+
   it("re-exports the shared locale registry and resolver", () => {
     expect(SUPPORTED_LOCALES).toEqual(Object.keys(LOCALES));
     expect(resolveLocale("en-GB")).toBe("en");

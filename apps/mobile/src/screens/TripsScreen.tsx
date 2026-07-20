@@ -342,7 +342,9 @@ function TripCard({
               count: trip.num_days,
             }),
             trip.member_count > 1
-              ? translate("{count} riders", { count: trip.member_count })
+              ? translate("{count, plural, one {# rider} other {# riders}}", {
+                  count: trip.member_count,
+                })
               : null,
           ]
             .filter(Boolean)

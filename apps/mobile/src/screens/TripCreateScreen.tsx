@@ -365,7 +365,10 @@ export default function TripCreateScreen() {
                   onPress={() => setNumDays(d)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={translate("{value0} days", { value0: d })}
+                  accessibilityLabel={translate(
+                    "{count, plural, one {# day} other {# days}}",
+                    { count: d },
+                  )}
                 >
                   <Text
                     style={[

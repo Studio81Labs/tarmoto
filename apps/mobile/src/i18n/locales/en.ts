@@ -2,6 +2,8 @@
 export const en = {
   "{count, plural, one {# active challenge} other {# active challenges}}":
     "{count, plural, one {# active challenge} other {# active challenges}}",
+  "{count, plural, one {# badge earned} other {# badges earned}}, open achievements":
+    "{count, plural, one {# badge earned} other {# badges earned}}, open achievements",
   "{count, plural, one {# closed pass} other {# closed passes}} on this route":
     "{count, plural, one {# closed pass} other {# closed passes}} on this route",
   "{count, plural, one {# confirmation} other {# confirmations}} · {time}":
@@ -10,18 +12,24 @@ export const en = {
     "{count, plural, one {# day left} other {# days left}}",
   "{count, plural, one {# day} other {# days}}":
     "{count, plural, one {# day} other {# days}}",
+  "{count, plural, one {# follower} other {# followers}}, open list":
+    "{count, plural, one {# follower} other {# followers}}, open list",
   "{count, plural, one {# fun zone} other {# fun zones}} · tap to open":
     "{count, plural, one {# fun zone} other {# fun zones}} · tap to open",
   "{count, plural, one {# hazard report} other {# hazard reports}} waiting to upload. We'll retry automatically next time you submit a report.":
     "{count, plural, one {# hazard report} other {# hazard reports}} waiting to upload. We'll retry automatically next time you submit a report.",
   "{count, plural, one {# HAZARD} other {# HAZARDS}}":
     "{count, plural, one {# HAZARD} other {# HAZARDS}}",
+  "{count, plural, one {# kilometre} other {# kilometres}}":
+    "{count, plural, one {# kilometre} other {# kilometres}}",
   "{count, plural, one {# new hazard} other {# new hazards}}":
     "{count, plural, one {# new hazard} other {# new hazards}}",
   "{count, plural, one {# leg exceeds} other {# legs exceed}} your fuel range":
     "{count, plural, one {# leg exceeds} other {# legs exceed}} your fuel range",
   "{count, plural, one {# new hazard} other {# new hazards}} on your commute":
     "{count, plural, one {# new hazard} other {# new hazards}} on your commute",
+  "{count, plural, one {# pass} other {# passes}}":
+    "{count, plural, one {# pass} other {# passes}}",
   "{count, plural, one {# region} other {# regions}} downloading now.":
     "{count, plural, one {# region} other {# regions}} downloading now.",
   "{count, plural, one {# review photo} other {# review photos}}":
@@ -32,6 +40,8 @@ export const en = {
     "{count, plural, one {# ride} other {# rides}} waiting to upload. We'll retry automatically next time you finish a ride.",
   "{count, plural, one {# rider} other {# riders}}":
     "{count, plural, one {# rider} other {# riders}}",
+  "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period":
+    "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period",
   "{count, plural, one {# segment recorded} other {# segments recorded}}":
     "{count, plural, one {# segment recorded} other {# segments recorded}}",
   "{count, plural, one {# segment} other {# segments}}":
@@ -44,7 +54,6 @@ export const en = {
     "{count, plural, one {# waypoint} other {# waypoints}}",
   "{count} failed": "{count} failed",
   "{count} NEW": "{count} NEW",
-  "{count} riders": "{count} riders",
   "{count} still queued": "{count} still queued",
   "{count}d ago": "{count}d ago",
   "{count}h ago": "{count}h ago",
@@ -98,10 +107,6 @@ export const en = {
   "{value0} {value1}": "{value0} {value1}",
   "{value0} / {value1}": "{value0} / {value1}",
   "{value0} avatar": "{value0} avatar",
-  "{value0} badges earned, open achievements":
-    "{value0} badges earned, open achievements",
-  "{value0} days": "{value0} days",
-  "{value0} followers, open list": "{value0} followers, open list",
   "{value0} has no followers yet.": "{value0} has no followers yet.",
   "{value0} hasn't shared any rides yet.":
     "{value0} hasn't shared any rides yet.",
@@ -109,12 +114,9 @@ export const en = {
   "{value0} joined.": "{value0} joined.",
   "{value0} isn’t following anyone yet.":
     "{value0} isn’t following anyone yet.",
-  "{value0} kilometres": "{value0} kilometres",
   "{value0} km/h": "{value0} km/h",
   "{value0} or better": "{value0} or better",
   "{value0} out of 5": "{value0} out of 5",
-  "{value0} passes": "{value0} passes",
-  "{value0} riders": "{value0} riders",
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
     "{value0} will no longer be alerted in a crash.",
@@ -384,8 +386,8 @@ export const en = {
   "Follow rider": "Follow rider",
   Followers: "Followers",
   Following: "Following",
-  "Following {value0} riders, open list":
-    "Following {value0} riders, open list",
+  "Following {count, plural, one {# rider} other {# riders}}, open list":
+    "Following {count, plural, one {# rider} other {# riders}}, open list",
   "Follows you": "Follows you",
   Food: "Food",
   "Free ride": "Free ride",
@@ -568,7 +570,8 @@ export const en = {
   "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.":
     "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.",
   Now: "Now",
-  "of {count} segments": "of {count} segments",
+  "of {count, plural, one {# segment} other {# segments}}":
+    "of {count, plural, one {# segment} other {# segments}}",
   "Off route": "Off route",
   "Off route · {distance}": "Off route · {distance}",
   'Off speaks just the imperative ("Turn left now"); on adds the upcoming road name and stay-left/right hints on sharp turns.':
@@ -747,8 +750,6 @@ export const en = {
   "See ridden vs unridden roads": "See ridden vs unridden roads",
   "Segment quality": "Segment quality",
   Segments: "Segments",
-  "segments highlighted for the selected period":
-    "segments highlighted for the selected period",
   "Sending your location to your emergency contacts.":
     "Sending your location to your emergency contacts.",
   "Set rating to {count, plural, one {# star} other {# stars}}":

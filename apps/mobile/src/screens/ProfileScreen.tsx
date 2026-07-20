@@ -307,9 +307,12 @@ export default function ProfileScreen() {
               displayName,
             })
           }
-          accessibilityLabel={translate("{value0} followers, open list", {
-            value0: followerCount,
-          })}
+          accessibilityLabel={translate(
+            "{count, plural, one {# follower} other {# followers}}, open list",
+            {
+              count: followerCount,
+            },
+          )}
         />
         <StatTile
           label={translate("Following")}
@@ -321,8 +324,8 @@ export default function ProfileScreen() {
             })
           }
           accessibilityLabel={translate(
-            "Following {value0} riders, open list",
-            { value0: followingCount },
+            "Following {count, plural, one {# rider} other {# riders}}, open list",
+            { count: followingCount },
           )}
         />
         <StatTile
@@ -330,8 +333,8 @@ export default function ProfileScreen() {
           value={formatCount(earnedBadges.length)}
           onPress={() => navigation.navigate("Achievements")}
           accessibilityLabel={translate(
-            "{value0} badges earned, open achievements",
-            { value0: earnedBadges.length },
+            "{count, plural, one {# badge earned} other {# badges earned}}, open achievements",
+            { count: earnedBadges.length },
           )}
         />
       </View>
