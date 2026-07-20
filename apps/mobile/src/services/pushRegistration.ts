@@ -26,7 +26,11 @@
 
 import { PermissionsAndroid, Platform } from "react-native";
 import DeviceInfo from "react-native-device-info";
-import { requestNotifications, RESULTS } from "react-native-permissions";
+import {
+  checkNotifications,
+  requestNotifications,
+  RESULTS,
+} from "react-native-permissions";
 import { requestWithRationale } from "./permissions";
 
 type FirebaseMessagingModule =
@@ -69,27 +73,35 @@ function loadMessaging(): ReturnType<FirebaseMessagingModule> | null {
 }
 
 async function requestPermission(): Promise<boolean> {
-  // Show the in-app rationale first (issue #280) so the rider knows
-  // what they're saying yes (or no) to. On Android 13+ this runs
-  // ahead of the POST_NOTIFICATIONS prompt; on iOS the messaging
-  // prompt itself surfaces the system dialog right after.
-  const rationaleStatus = await requestWithRationale({
-    androidPermission: PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-    rationale: {
-      title: "Stay in the loop",
-      message:
-        "Tarmoto sends notifications for nearby hazards, ride reminders, and safety alerts. You can fine-tune which kinds you want in Settings.",
-      whyOpenSettings:
-        "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.",
-    },
-  });
-  if (rationaleStatus !== "granted") return false;
+  // Android only exposes POST_NOTIFICATIONS as a runtime permission from API
+  // 33 onward. Requesting it on older releases can report a denial and prevent
+  // token registration even though notifications are enabled by default there.
+  // iOS still uses this helper to show the in-app rationale before its native
+  // notification prompt.
+  const usesLegacyAndroidNotifications =
+    Platform.OS === "android" && Number(Platform.Version) < 33;
+
+  if (!usesLegacyAndroidNotifications) {
+    const rationaleStatus = await requestWithRationale({
+      androidPermission: PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      rationale: {
+        title: "Stay in the loop",
+        message:
+          "Tarmoto sends notifications for nearby hazards, ride reminders, and safety alerts. You can fine-tune which kinds you want in Settings.",
+        whyOpenSettings:
+          "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.",
+      },
+    });
+    if (rationaleStatus !== "granted") return false;
+  }
 
   // React Native Firebase 25 removes notification permission ownership from
-  // Messaging. Use the platform permission module for both iOS and Android;
-  // on Android 13+ the rationale path above has already requested the same
-  // permission, so this call simply returns the current status.
-  const { status } = await requestNotifications(["alert", "badge", "sound"]);
+  // Messaging. Inspect notification status directly on pre-13 Android, where
+  // there is no runtime permission. On Android 13+ the rationale path above
+  // has already requested the same permission, so the request is idempotent.
+  const { status } = usesLegacyAndroidNotifications
+    ? await checkNotifications()
+    : await requestNotifications(["alert", "badge", "sound"]);
   return status === RESULTS.GRANTED || status === RESULTS.LIMITED;
 }
 
