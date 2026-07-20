@@ -730,7 +730,10 @@ function SavedRoutesCard({
     (route: CommuteRoute) => {
       Alert.alert(
         translate("Use this as primary?"),
-        `Future commute checks will use ${route.name} as your primary route.`,
+        translate(
+          "Future commute checks will use {value0} as your primary route.",
+          { value0: route.name },
+        ),
         [
           { text: translate("Cancel"), style: "cancel" },
           {
@@ -949,15 +952,16 @@ function describeStatus(
   newHazardCount: number,
 ): { icon: IconName; color: string; message: { title: string; body: string } } {
   if (newHazardCount > 0) {
-    const plural = newHazardCount === 1 ? "hazard" : "hazards";
     return {
       icon: "alert",
       color: statusFg.danger,
       message: {
-        title: translate("{value0} new {value1}", {
-          value0: newHazardCount,
-          value1: plural,
-        }),
+        title: translate(
+          "{count, plural, one {# new hazard} other {# new hazards}}",
+          {
+            count: newHazardCount,
+          },
+        ),
         body: translate("Check the list before you head out."),
       },
     };

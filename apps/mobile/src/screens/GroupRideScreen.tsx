@@ -151,7 +151,10 @@ export default function GroupRideScreen() {
         .getGroupRide(groupRide.id)
         .then(setGroupRide)
         .catch(() => undefined);
-      Alert.alert(translate("Group ride"), `${event.display_name} joined.`);
+      Alert.alert(
+        translate("Group ride"),
+        translate("{value0} joined.", { value0: event.display_name }),
+      );
     };
 
     const handleLeft = (event: GroupLeftEvent): void => {

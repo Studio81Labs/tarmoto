@@ -152,7 +152,10 @@ export default function OfflineRegionsScreen() {
     (region: OfflineRegion) => {
       Alert.alert(
         translate("Delete offline region"),
-        `"${region.name}" will be removed from your device. You can re-save it later.`,
+        translate(
+          '"{value0}" will be removed from your device. You can re-save it later.',
+          { value0: region.name },
+        ),
         [
           { text: translate("Cancel"), style: "cancel" },
           {

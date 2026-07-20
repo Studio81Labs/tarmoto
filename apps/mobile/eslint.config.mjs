@@ -155,6 +155,12 @@ export default [
         },
         {
           selector:
+            "CallExpression[callee.object.name='Alert'][callee.property.name='alert'] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Replace Alert.alert title/body templates with one translate() ICU message and named values.",
+        },
+        {
+          selector:
             "CallExpression[callee.name=/^set.*(Error|Message|Notice|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing validation/status messages with translate().",

@@ -78,7 +78,9 @@ export default function EmergencyContactsScreen() {
   const handleDelete = useCallback((contact: EmergencyContact) => {
     Alert.alert(
       translate("Delete contact?"),
-      `${contact.name} will no longer be alerted in a crash.`,
+      translate("{value0} will no longer be alerted in a crash.", {
+        value0: contact.name,
+      }),
       [
         { text: translate("Cancel"), style: "cancel" },
         {

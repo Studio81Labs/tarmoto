@@ -21,6 +21,16 @@ describe("mobile i18n", () => {
     expect(
       translate("{count, plural, one {# day} other {# days}}", { count: 2 }),
     ).toBe("2 days");
+    expect(
+      translate("{count, plural, one {# new hazard} other {# new hazards}}", {
+        count: 1,
+      }),
+    ).toBe("1 new hazard");
+    expect(
+      translate("{count, plural, one {# new hazard} other {# new hazards}}", {
+        count: 2,
+      }),
+    ).toBe("2 new hazards");
   });
 
   it("keeps the deliberate dynamic-key fallback", () => {

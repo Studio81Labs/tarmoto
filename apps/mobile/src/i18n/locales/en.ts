@@ -14,6 +14,8 @@ export const en = {
     "{count, plural, one {# hazard report} other {# hazard reports}} waiting to upload. We'll retry automatically next time you submit a report.",
   "{count, plural, one {# HAZARD} other {# HAZARDS}}":
     "{count, plural, one {# HAZARD} other {# HAZARDS}}",
+  "{count, plural, one {# new hazard} other {# new hazards}}":
+    "{count, plural, one {# new hazard} other {# new hazards}}",
   "{count, plural, one {# leg exceeds} other {# legs exceed}} your fuel range":
     "{count, plural, one {# leg exceeds} other {# legs exceed}} your fuel range",
   "{count, plural, one {# new hazard} other {# new hazards}} on your commute":
@@ -81,6 +83,8 @@ export const en = {
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
   "{type} · {duration} stop": "{type} · {duration} stop",
+  '"{value0}" will be removed from your device. You can re-save it later.':
+    '"{value0}" will be removed from your device. You can re-save it later.',
   "{value0} · {value1}": "{value0} · {value1}",
   "{value0} · +{value1} more": "{value0} · +{value1} more",
   "{value0} {value1}": "{value0} {value1}",
@@ -94,16 +98,18 @@ export const en = {
   "{value0} hasn't shared any rides yet.":
     "{value0} hasn't shared any rides yet.",
   "{value0} in {value1}": "{value0} in {value1}",
+  "{value0} joined.": "{value0} joined.",
   "{value0} isn’t following anyone yet.":
     "{value0} isn’t following anyone yet.",
   "{value0} kilometres": "{value0} kilometres",
   "{value0} km/h": "{value0} km/h",
-  "{value0} new {value1}": "{value0} new {value1}",
   "{value0} or better": "{value0} or better",
   "{value0} out of 5": "{value0} out of 5",
   "{value0} passes": "{value0} passes",
   "{value0} riders": "{value0} riders",
   "{value0} severity": "{value0} severity",
+  "{value0} will no longer be alerted in a crash.":
+    "{value0} will no longer be alerted in a crash.",
   "{value0}, {value1} days, {value2}": "{value0}, {value1} days, {value2}",
   "{value0}, {value1} kilometres away": "{value0}, {value1} kilometres away",
   "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
@@ -375,6 +381,8 @@ export const en = {
   "Follows you": "Follows you",
   Food: "Food",
   "Free ride": "Free ride",
+  "Future commute checks will use {value0} as your primary route.":
+    "Future commute checks will use {value0} as your primary route.",
   "from start": "from start",
   "from the planned path — return when it's safe.":
     "from the planned path — return when it's safe.",
