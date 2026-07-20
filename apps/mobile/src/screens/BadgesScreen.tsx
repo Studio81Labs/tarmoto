@@ -35,6 +35,7 @@ import {
   nextMilestone,
   progressToNext,
   tierColor,
+  tierLabel,
   tierRank,
 } from "./AchievementsScreen.helpers";
 import { t as translate } from "@/i18n";
@@ -193,12 +194,12 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
         earned
           ? translate("{name}, {tier} tier earned", {
               name: badge.name,
-              tier: badge.tier ?? "",
+              tier: tierLabel(badge.tier ?? ""),
             })
           : translate("{name}, locked, {progress}% to {nextTier}", {
               name: badge.name,
               progress: Math.round(ratio * 100),
-              nextTier: next?.tier ?? "",
+              nextTier: tierLabel(next?.tier ?? ""),
             })
       }
     >
@@ -229,7 +230,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               ]}
             >
               <Text style={styles.tierLabel}>
-                {(badge.tier ?? "").toUpperCase()}
+                {tierLabel(badge.tier ?? "").toLocaleUpperCase()}
               </Text>
             </View>
           ) : null}
@@ -250,7 +251,9 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
             </View>
             <Text style={styles.progressLabel}>
               {Math.round(badge.progress.current)} / {Math.round(next.target)} →{" "}
-              <Text style={styles.progressTier}>{next.tier.toUpperCase()}</Text>
+              <Text style={styles.progressTier}>
+                {tierLabel(next.tier).toLocaleUpperCase()}
+              </Text>
             </Text>
           </>
         ) : (
