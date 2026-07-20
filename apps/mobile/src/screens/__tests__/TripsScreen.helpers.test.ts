@@ -65,6 +65,12 @@ describe("groupTripsByFolder", () => {
       "header-alps",
       "trip-a1",
     ]);
+    expect(rows[0]).toEqual({
+      kind: "folder-header",
+      key: "header-unfiled",
+      label: null,
+      count: 1,
+    });
   });
 
   it("collapses trips with a stale folder_id into Unfiled (folder deleted on another device)", () => {

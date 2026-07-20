@@ -1,5 +1,4 @@
 import type { TripFolder, TripSummary } from "@/types";
-import { t as translate } from "@/i18n";
 
 /**
  * Row variants the mobile trips list renders. The list is a flat
@@ -9,7 +8,13 @@ import { t as translate } from "@/i18n";
  * upfront keeps the renderer branch-free.
  */
 export type TripsListRow =
-  | { kind: "folder-header"; key: string; label: string; count: number }
+  | {
+      kind: "folder-header";
+      key: string;
+      /** Null identifies the locale-owned Unfiled pseudo-folder. */
+      label: string | null;
+      count: number;
+    }
   | { kind: "trip"; key: string; trip: TripSummary };
 
 /**
@@ -68,7 +73,7 @@ export function groupTripsByFolder(
     rows.push({
       kind: "folder-header",
       key: "header-unfiled",
-      label: translate("Unfiled"),
+      label: null,
       count: unfiled.length,
     });
     for (const trip of unfiled) {

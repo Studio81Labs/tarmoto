@@ -41,6 +41,7 @@ import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
 import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
 import { t as translate } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
@@ -236,22 +237,32 @@ export default function TripsScreen() {
   );
 }
 
-function FolderHeader({ label, count }: { label: string; count: number }) {
+function FolderHeader({
+  label,
+  count,
+}: {
+  label: string | null;
+  count: number;
+}) {
+  // Subscribe at the row boundary so the locale-owned pseudo-folder label
+  // updates even while the memoized grouping data keeps the same identity.
+  const translateHeader = useTranslation();
+  const displayLabel = label ?? translateHeader("Unfiled");
   return (
     <View
       style={styles.folderHeader}
       accessibilityRole="header"
-      accessibilityLabel={translate(
+      accessibilityLabel={translateHeader(
         "{label}, {count, plural, one {# trip} other {# trips}}",
         {
-          label,
+          label: displayLabel,
           count,
         },
       )}
     >
       <Icon name="folder-outline" size={14} color={t.dim} />
       <Text style={styles.folderHeaderLabel} numberOfLines={1}>
-        {label}
+        {displayLabel}
       </Text>
       <Text style={styles.folderHeaderCount}>{count}</Text>
     </View>
