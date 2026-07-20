@@ -39,6 +39,7 @@ import {
 } from "@/theme/brand";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
+import { HAZARD_TYPE_LABELS } from "@/constants/hazards";
 import type { RootTabParamList } from "@/navigation/RootNavigator";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import ReviewFormModal, {
@@ -50,13 +51,12 @@ import {
   computeCurveCount,
   computeElevationStats,
   curvinessLabel,
-  formatHazardType,
   formatLengthKm,
   formatRelativeTime,
-  formatSurface,
   isFlatElevationProfile,
   normalizeBreakdown,
 } from "./RoadPreviewScreen.helpers";
+import { surfaceLabel } from "./RideScreens.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 const ELEVATION_CHART_HEIGHT = 80;
@@ -295,8 +295,10 @@ function QualityCard({
               : "—"}
           </Text>
           <Text style={styles.qualitySubtitle}>
-            {qualityLabel(segment.quality_score)} ·{" "}
-            {formatSurface(segment.surface_type)}
+            {translate("{quality} · {surface}", {
+              quality: qualityLabel(segment.quality_score),
+              surface: surfaceLabel(segment.surface_type),
+            })}
           </Text>
           {qualityProvenanceLabel(
             segment.quality_source,
@@ -584,7 +586,7 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
       </View>
       <View style={styles.hazardBody}>
         <Text style={styles.hazardTitle}>
-          {formatHazardType(hazard.hazard_type)}
+          {translate(HAZARD_TYPE_LABELS[hazard.hazard_type])}
         </Text>
         {hazard.note ? (
           <Text style={styles.hazardNote} numberOfLines={2}>

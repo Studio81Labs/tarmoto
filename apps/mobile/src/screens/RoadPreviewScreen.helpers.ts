@@ -14,14 +14,6 @@ export function formatLengthKm(m: number): string {
   return rounded >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${rounded} m`;
 }
 
-export function formatSurface(surface: string): string {
-  return surface.charAt(0).toUpperCase() + surface.slice(1);
-}
-
-export function formatHazardType(type: string): string {
-  return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
