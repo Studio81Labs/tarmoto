@@ -54,7 +54,7 @@ export default function EditProfileModal() {
   const handleSave = useCallback(async () => {
     const trimmedName = displayName.trim();
     if (!trimmedName) {
-      setValidation("Display name is required.");
+      setValidation(translate("Display name is required."));
       return;
     }
     if (!user) return;

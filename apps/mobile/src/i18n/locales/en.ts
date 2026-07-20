@@ -327,6 +327,7 @@ export const en = {
   "Dismiss new hazard badges": "Dismiss new hazard badges",
   "Dismiss without alerting": "Dismiss without alerting",
   "Display name": "Display name",
+  "Display name is required.": "Display name is required.",
   Distance: "Distance",
   "Distance pending": "Distance pending",
   "Distance pending · Quality {quality}":

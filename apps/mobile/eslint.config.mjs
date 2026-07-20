@@ -172,13 +172,13 @@ export default [
         },
         {
           selector:
-            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
+            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing validation/status messages with translate().",
         },
         {
           selector:
-            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing conditional validation/status messages with translate().",
         },
