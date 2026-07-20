@@ -213,6 +213,7 @@ export class GraphHopperProvider implements RoutingProvider {
     const url = this.apiKey
       ? `${this.baseUrl}/route?key=${encodeURIComponent(this.apiKey)}`
       : `${this.baseUrl}/route`;
+    const startedAt = Date.now();
     let res: Response;
     try {
       res = await fetch(url, {
@@ -222,21 +223,31 @@ export class GraphHopperProvider implements RoutingProvider {
       });
     } catch (err: unknown) {
       this.logger.error(
-        `GraphHopper unreachable: ${err instanceof Error ? err.message : String(err)}`,
+        `GraphHopper unreachable after ${Date.now() - startedAt}ms: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
       );
       return null;
     }
     if (!res.ok) {
       this.logger.error(
-        `GraphHopper route failed: ${res.status} ${res.statusText}`,
+        `GraphHopper route failed after ${Date.now() - startedAt}ms: ` +
+          `${res.status} ${res.statusText}`,
       );
       return null;
     }
     try {
-      return (await res.json()) as GraphHopperResponse;
+      const data = (await res.json()) as GraphHopperResponse;
+      const durationMs = Date.now() - startedAt;
+      if (durationMs >= 1_000) {
+        // Never log the body: custom areas can contain user-selected map
+        // coordinates and hosted requests can carry an API key in the URL.
+        this.logger.warn(`GraphHopper route took ${durationMs}ms`);
+      }
+      return data;
     } catch (err: unknown) {
       this.logger.error(
-        `GraphHopper returned invalid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        `GraphHopper returned invalid JSON after ${Date.now() - startedAt}ms: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
       );
       return null;
     }
