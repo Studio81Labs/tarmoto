@@ -88,6 +88,7 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
     expect(formatWaypointType("via")).toBe("Waypoint");
     expect(formatWaypointType("fuel")).toBe("Fuel");
     expect(formatWaypointType("start")).toBe("Start");
+    expect(formatWaypointType("rest")).toBe("Rest");
   });
 });
 

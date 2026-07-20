@@ -446,6 +446,8 @@ export const en = {
   "Hide {label} overlay": "Hide {label} overlay",
   High: "High",
   "High wind ahead": "High wind ahead",
+  "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.":
+    "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.",
   "High wind near {location}. Brace for sudden crosswinds.":
     "High wind near {location}. Brace for sudden crosswinds.",
   Highlights: "Highlights",
@@ -717,6 +719,7 @@ export const en = {
   reports: "reports",
   "Reset to default": "Reset to default",
   Restaurant: "Restaurant",
+  Rest: "Rest",
   Retry: "Retry",
   RETRY: "RETRY",
   "Retry crash alert": "Retry crash alert",

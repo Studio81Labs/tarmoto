@@ -140,6 +140,7 @@ export class WeatherService {
           lat: result.point.lat,
           lng: result.point.lng,
           distance_km_from_start: distanceKm,
+          wind_kmh: result.data.wind_kmh,
           title: 'High wind ahead',
           message: stringMessage,
         });

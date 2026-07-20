@@ -57,6 +57,23 @@ describe("localizeWeatherAlert", () => {
     },
   );
 
+  it("preserves structured wind speed in localized copy", () => {
+    expect(
+      localizeWeatherAlert(
+        buildAlert({ kind: "wind", wind_kmh: 75 }),
+        translate,
+      ),
+    ).toEqual({
+      title: "translated:High wind ahead",
+      message:
+        "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.|49.12,16.75",
+    });
+    expect(translate).toHaveBeenCalledWith(
+      "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.",
+      { location: "49.12,16.75", speed: 75 },
+    );
+  });
+
   it("keeps server copy for an unknown future alert kind", () => {
     const alert = buildAlert({
       kind: "hail" as WeatherAlert["kind"],

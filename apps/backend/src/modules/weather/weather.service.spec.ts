@@ -98,7 +98,9 @@ describe('WeatherService', () => {
       // banner never has to dedupe inside a single response.
       expect(result.typed_alerts.some((a) => a.kind === 'wet')).toBe(true);
       expect(result.typed_alerts.some((a) => a.kind === 'storm')).toBe(true);
-      expect(result.typed_alerts.some((a) => a.kind === 'wind')).toBe(true);
+      expect(result.typed_alerts.find((a) => a.kind === 'wind')).toMatchObject({
+        wind_kmh: 75,
+      });
     });
 
     it('should generate icy road alert', async () => {

@@ -5,7 +5,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class WeatherQueryDto {
   @ApiProperty({ example: 49.1 })
@@ -118,6 +118,13 @@ export class WeatherAlertDto {
    */
   @ApiProperty()
   distance_km_from_start!: number;
+
+  /**
+   * Structured wind speed for `wind` alerts. Clients use this value when
+   * constructing localized copy instead of parsing the English `message`.
+   */
+  @ApiPropertyOptional({ example: 75 })
+  wind_kmh?: number;
 
   @ApiProperty({ example: 'Storm warning ahead' })
   title!: string;

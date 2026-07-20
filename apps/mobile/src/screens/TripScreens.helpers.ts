@@ -86,14 +86,17 @@ export function formatStatus(status: TripStatus): string {
   return translate(labels[status]);
 }
 
-export function formatWaypointType(t: WaypointType): string {
-  const labels: Record<WaypointType, EnglishMessageKey> = {
+type DisplayWaypointType = WaypointType | "rest";
+
+export function formatWaypointType(t: DisplayWaypointType): string {
+  const labels: Record<DisplayWaypointType, EnglishMessageKey> = {
     start: "Start",
     via: "Waypoint",
     fuel: "Fuel",
     food: "Food",
     coffee: "Coffee",
     hotel: "Hotel",
+    rest: "Rest",
     photo: "Photo",
     end: "End",
   };

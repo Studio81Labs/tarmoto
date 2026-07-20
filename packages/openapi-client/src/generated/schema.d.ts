@@ -4690,6 +4690,12 @@ export interface components {
              *     to drop alerts the rider has already passed.
              */
             distance_km_from_start: number;
+            /**
+             * @description Structured wind speed for `wind` alerts. Clients use this value when
+             *     constructing localized copy instead of parsing the English `message`.
+             * @example 75
+             */
+            wind_kmh?: number;
             /** @example Storm warning ahead */
             title: string;
             /** @example Severe storm at 49.12, 16.75 — pull over or reroute. */
