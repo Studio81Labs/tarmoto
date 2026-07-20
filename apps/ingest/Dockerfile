@@ -20,6 +20,8 @@ WORKDIR /workspace
 # ---------- deps ----------
 FROM base AS deps
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+# pnpm validates root patchedDependencies even when mobile is not installed.
+COPY patches patches
 COPY apps/ingest/package.json apps/ingest/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/ingest/package.json packages/ingest/package.json
@@ -70,6 +72,8 @@ RUN arch="$(dpkg --print-architecture)" \
 WORKDIR /app
 
 COPY --from=build /workspace/pnpm-workspace.yaml /workspace/package.json /workspace/pnpm-lock.yaml ./
+# The production-only install reads the same root patchedDependencies config.
+COPY --from=build /workspace/patches patches
 COPY --from=build /workspace/apps/ingest/package.json apps/ingest/package.json
 COPY --from=build /workspace/packages/shared/package.json packages/shared/package.json
 COPY --from=build /workspace/packages/ingest/package.json packages/ingest/package.json
