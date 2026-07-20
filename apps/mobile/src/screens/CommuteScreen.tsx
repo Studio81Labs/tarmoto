@@ -768,8 +768,7 @@ function SavedRoutesCard({
   return (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>
-        {translate("Saved routes (")}
-        {others.length})
+        {translate("Saved routes ({count})", { count: others.length })}
       </Text>
       <Text style={styles.altSubtitle}>
         {translate(

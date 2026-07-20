@@ -237,8 +237,9 @@ function HeaderCard({
         <View style={styles.thresholdBadge}>
           <Icon name="eye-off-outline" size={12} color={t.dim} />
           <Text style={styles.thresholdBadgeLabel}>
-            {translate("Below your minimum (")}
-            {qualityLabel(minQuality)})
+            {translate("Below your minimum ({quality})", {
+              quality: qualityLabel(minQuality),
+            })}
           </Text>
         </View>
       ) : null}

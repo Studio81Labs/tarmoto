@@ -32,6 +32,19 @@ describe("mobile i18n", () => {
       }),
     ).toBe("2 new hazards");
     expect(translate("Hazards ({count})", { count: 3 })).toBe("Hazards (3)");
+    expect(translate("Saved routes ({count})", { count: 2 })).toBe(
+      "Saved routes (2)",
+    );
+    expect(translate("Members ({count})", { count: 4 })).toBe("Members (4)");
+    expect(
+      translate("Save current area ({distance} km)", { distance: 25 }),
+    ).toBe("Save current area (25 km)");
+    expect(
+      translate("Below your minimum ({quality})", { quality: "Fair" }),
+    ).toBe("Below your minimum (Fair)");
+    expect(translate("{distance} from start", { distance: "12.0 km" })).toBe(
+      "12.0 km from start",
+    );
   });
 
   it("keeps the deliberate dynamic-key fallback", () => {

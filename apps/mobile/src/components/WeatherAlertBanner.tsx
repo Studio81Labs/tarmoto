@@ -160,8 +160,9 @@ export function WeatherAlertBanner({
                     <Text style={styles.sheetRowTitle}>{alert.title}</Text>
                     <Text style={styles.sheetRowMessage}>{alert.message}</Text>
                     <Text style={styles.sheetRowDistance}>
-                      {formatKm(alert.distance_km_from_start)}{" "}
-                      {translate("from start")}
+                      {translate("{distance} from start", {
+                        distance: formatKm(alert.distance_km_from_start),
+                      })}
                     </Text>
                   </View>
                 </View>

@@ -48,6 +48,7 @@ export const en = {
   "{count}m ago": "{count}m ago",
   "{count}mo ago": "{count}mo ago",
   "{count}y ago": "{count}y ago",
+  "{distance} from start": "{distance} from start",
   "{distance} from path": "{distance} from path",
   "{distance} km": "{distance} km",
   "{distance} km · {duration} min": "{distance} km · {duration} min",
@@ -169,7 +170,6 @@ export const en = {
   "Bear left": "Bear left",
   "Bear right": "Bear right",
   "Begin your saved route": "Begin your saved route",
-  "Below your minimum (": "Below your minimum (",
   "Below your minimum ({quality})": "Below your minimum ({quality})",
   "Beskydy, Czech Republic": "Beskydy, Czech Republic",
   "Best: {season}": "Best: {season}",
@@ -385,7 +385,6 @@ export const en = {
   "Free ride": "Free ride",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",
-  "from start": "from start",
   "from the planned path — return when it's safe.":
     "from the planned path — return when it's safe.",
   "from you": "from you",
@@ -454,7 +453,6 @@ export const en = {
   "Keep riding": "Keep riding",
   km: "km",
   "km / day": "km / day",
-  "km)": "km)",
   "km/h": "km/h",
   "Know the road before you ride it.": "Know the road before you ride it.",
   "Known hazards on your route — none new.":
@@ -500,7 +498,7 @@ export const en = {
   Med: "Med",
   Medium: "Medium",
   Members: "Members",
-  "Members (": "Members (",
+  "Members ({count})": "Members ({count})",
   Metric: "Metric",
   Min: "Min",
   "Min: {quality}": "Min: {quality}",
@@ -728,14 +726,14 @@ export const en = {
   "Save an area to your device so the road-quality overlay keeps working when you lose cell service. Tiles live in the app's storage — delete a region anytime to reclaim space.":
     "Save an area to your device so the road-quality overlay keeps working when you lose cell service. Tiles live in the app's storage — delete a region anytime to reclaim space.",
   "Save contact": "Save contact",
-  "Save current area (": "Save current area (",
+  "Save current area ({distance} km)": "Save current area ({distance} km)",
   "Save current map area for offline use":
     "Save current map area for offline use",
   "Save map areas so the road-quality overlay keeps working without cell service.":
     "Save map areas so the road-quality overlay keeps working without cell service.",
   "Save profile": "Save profile",
   "Save review changes": "Save review changes",
-  "Saved routes (": "Saved routes (",
+  "Saved routes ({count})": "Saved routes ({count})",
   "Say pothole, gravel, oil spill, roadworks, animals, police, flooding, or ice.":
     "Say pothole, gravel, oil spill, roadworks, animals, police, flooding, or ice.",
   "Say pothole, gravel, oil spill…": "Say pothole, gravel, oil spill…",

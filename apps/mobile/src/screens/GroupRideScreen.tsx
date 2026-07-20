@@ -605,8 +605,7 @@ export default function GroupRideScreen() {
 
       <View style={styles.memberList}>
         <Text style={styles.memberListTitle}>
-          {translate("Members (")}
-          {members.length})
+          {translate("Members ({count})", { count: members.length })}
         </Text>
         {members.map((m) => (
           <View key={m.user_id} style={styles.memberRow}>
