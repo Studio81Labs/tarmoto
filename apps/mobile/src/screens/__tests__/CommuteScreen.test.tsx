@@ -2,6 +2,7 @@ import React from "react";
 import { Alert } from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import CommuteScreen, { __test } from "../CommuteScreen";
+import type { CommuteHazardView } from "@/hooks/useCommute";
 import type {
   CommuteAlternativeRoute,
   CommuteAlternativesResponse,
@@ -63,6 +64,22 @@ const baseStatus: CommuteStatus = {
   estimated_time_min: 22,
   route_quality: 4.2,
   status: "clear",
+};
+
+const hazardWithPhoto: CommuteHazardView = {
+  id: "hazard-1",
+  lat: 49.18,
+  lng: 16.65,
+  hazard_type: "oil_spill",
+  severity: "medium",
+  note: null,
+  photo_url: "https://app.tarmoto.test/hazards/oil-spill.jpg",
+  confirmations: 1,
+  reporter: "rider-1",
+  road_name: "Main Street",
+  created_at: "2026-04-20T07:00:00.000Z",
+  expires_at: "2026-04-21T07:00:00.000Z",
+  isNew: false,
 };
 
 const baseAlternatives: CommuteAlternativesResponse = {
@@ -140,7 +157,7 @@ interface CommuteHookSnapshot {
   route: CommuteRoute | null;
   savedRoutes: CommuteRoute[];
   status: CommuteStatus | null;
-  hazards: never[];
+  hazards: CommuteHazardView[];
   newHazardCount: number;
   alternatives: CommuteAlternativesResponse | null;
   stats: CommuteStats | null;
@@ -166,6 +183,15 @@ describe("CommuteScreen", () => {
 
     expect(screen.getByText("14°C · Clear")).toBeTruthy();
     expect(screen.getByText("Road: Dry · Wind 8 km/h")).toBeTruthy();
+  });
+
+  it("uses the cataloged hazard label for photo accessibility", async () => {
+    mockUseCommuteResult = buildResult({ hazards: [hazardWithPhoto] });
+
+    await render(<CommuteScreen />);
+
+    expect(screen.getByText("Oil spill")).toBeTruthy();
+    expect(screen.getByLabelText("Photo of Oil spill")).toBeTruthy();
   });
 
   it("starts a commute ride from the primary route CTA", async () => {

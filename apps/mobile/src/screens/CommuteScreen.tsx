@@ -42,6 +42,7 @@ import {
   statusFg,
 } from "@/theme/brand";
 import { useCommute, type CommuteHazardView } from "@/hooks/useCommute";
+import { HAZARD_TYPE_LABELS } from "@/constants/hazards";
 import type {
   CommuteAlternativeRoute,
   CommuteAlternativesResponse,
@@ -54,10 +55,7 @@ import type {
   HomeStackParamList,
   RootTabParamList,
 } from "@/navigation/RootNavigator";
-import {
-  formatHazardType,
-  formatRelativeTime,
-} from "./RoadPreviewScreen.helpers";
+import { formatRelativeTime } from "./RoadPreviewScreen.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
@@ -472,7 +470,7 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
       <View style={styles.hazardBody}>
         <View style={styles.hazardTitleRow}>
           <Text style={styles.hazardTitle}>
-            {formatHazardType(hazard.hazard_type)}
+            {translate(HAZARD_TYPE_LABELS[hazard.hazard_type])}
           </Text>
           {hazard.isNew ? (
             <View style={styles.newBadge}>
@@ -525,7 +523,7 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
           source={{ uri: hazard.photo_url }}
           style={styles.hazardPhoto}
           accessibilityLabel={translate("Photo of {value0}", {
-            value0: formatHazardType(hazard.hazard_type),
+            value0: translate(HAZARD_TYPE_LABELS[hazard.hazard_type]),
           })}
         />
       ) : null}
