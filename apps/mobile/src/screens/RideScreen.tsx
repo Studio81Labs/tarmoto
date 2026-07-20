@@ -43,6 +43,7 @@ import {
   formatDurationMinutes,
   formatRideDate,
 } from "./RideScreens.helpers";
+import { t as translate } from "@/i18n";
 
 type RideNav = NativeStackNavigationProp<RideStackParamList, "RideStart">;
 
@@ -107,7 +108,9 @@ export default function RideScreen() {
         if (isInitial && !hadCache) {
           setPhase("error");
           setErrorMessage(
-            err instanceof Error ? err.message : "Unable to load rides",
+            err instanceof Error
+              ? err.message
+              : translate("Unable to load rides"),
           );
         }
       } finally {
@@ -206,15 +209,15 @@ export default function RideScreen() {
         ) : null}
         <View style={styles.centeredFlex}>
           <Icon name="wifi-off" size={40} color={t.dim} />
-          <Text style={styles.emptyTitle}>Can't load rides</Text>
+          <Text style={styles.emptyTitle}>{translate("Can't load rides")}</Text>
           <Text style={styles.emptyBody}>
-            {errorMessage ?? "Check your connection and try again."}
+            {errorMessage ?? translate("Check your connection and try again.")}
           </Text>
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => void loadFirstPage(true)}
           >
-            <Text style={styles.primaryBtnLabel}>Retry</Text>
+            <Text style={styles.primaryBtnLabel}>{translate("Retry")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -289,15 +292,17 @@ function ListHeader({
         style={styles.activeCard}
         onPress={onResume}
         accessibilityRole="button"
-        accessibilityLabel="Return to active ride"
+        accessibilityLabel={translate("Return to active ride")}
       >
         <View style={styles.activeIconWrap}>
           <Icon name="play-circle" size={26} color={t.invFg} />
         </View>
         <View style={styles.activeBody}>
-          <Text style={styles.activeTitle}>Ride in progress</Text>
+          <Text style={styles.activeTitle}>
+            {translate("Ride in progress")}
+          </Text>
           <Text style={styles.activeSubtitle}>
-            Tap to return to the live HUD.
+            {translate("Tap to return to the live HUD.")}
           </Text>
         </View>
         <Icon name="chevron-right" size={22} color={t.invFg} />
@@ -309,16 +314,16 @@ function ListHeader({
       style={styles.startCard}
       onPress={onStart}
       accessibilityRole="button"
-      accessibilityLabel="Start a free ride"
+      accessibilityLabel={translate("Start a free ride")}
     >
       <View style={styles.startIconWrap}>
         {/* Ink glyph on the accent disc (~6.7:1); cream would be ~2.5:1. */}
         <Icon name="play" size={24} color={t.fg} />
       </View>
       <View style={styles.startBody}>
-        <Text style={styles.startTitle}>Start a ride</Text>
+        <Text style={styles.startTitle}>{translate("Start a ride")}</Text>
         <Text style={styles.startSubtitle}>
-          Capture stats and road quality on the move.
+          {translate("Capture stats and road quality on the move.")}
         </Text>
       </View>
     </TouchableOpacity>
@@ -329,19 +334,22 @@ function EmptyState({ onStart }: { onStart: () => void }) {
   return (
     <View style={styles.emptyWrap}>
       <Icon name="motorbike" size={48} color={t.accent} />
-      <Text style={styles.emptyTitle}>No rides yet</Text>
+      <Text style={styles.emptyTitle}>{translate("No rides yet")}</Text>
       <Text style={styles.emptyBody}>
-        Start your first ride and Tarmoto will record distance, road quality,
-        and segment-by-segment stats.
+        {translate(
+          "Start your first ride and Tarmoto will record distance, road quality, and segment-by-segment stats.",
+        )}
       </Text>
       <TouchableOpacity
         style={styles.primaryBtn}
         onPress={onStart}
         accessibilityRole="button"
-        accessibilityLabel="Start your first ride"
+        accessibilityLabel={translate("Start your first ride")}
       >
         <Icon name="play" size={18} color={t.invFg} />
-        <Text style={styles.primaryBtnLabel}>Start your first ride</Text>
+        <Text style={styles.primaryBtnLabel}>
+          {translate("Start your first ride")}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -361,24 +369,25 @@ function RideCard({
       style={styles.card}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Ride ${formatRideDate(ride.started_at)}, ${formatDistanceKm(
-        ride.distance_km,
-      )}`}
+      accessibilityLabel={translate("Ride {value0}, {value1}", {
+        value0: formatRideDate(ride.started_at),
+        value1: formatDistanceKm(ride.distance_km),
+      })}
     >
       <View style={styles.cardBody}>
         <Text style={styles.cardDate}>{formatRideDate(ride.started_at)}</Text>
         <View style={styles.cardMetricsRow}>
           <RideMetric
-            label="Distance"
+            label={translate("Distance")}
             value={formatDistanceKm(ride.distance_km)}
           />
           <RideMetric
-            label="Duration"
+            label={translate("Duration")}
             value={formatDurationMinutes(ride.duration_min)}
           />
           {/* Quality value stays ink: the ramp fails AA as text on the card. */}
           <RideMetric
-            label="Quality"
+            label={translate("Quality")}
             value={qHas ? qualityLabel(qScore) : "—"}
           />
         </View>

@@ -41,6 +41,7 @@ import {
   brandRadii,
   brandSpacing,
 } from "@/theme/brand";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -57,7 +58,7 @@ const HAPTIC_OPTIONS = {
 
 const SURFACE_LABEL_DISPLAY: Record<
   SurfaceLabel,
-  { title: string; icon: IconName }
+  { title: EnglishMessageKey; icon: IconName }
 > = {
   smooth_asphalt: { title: "Smooth asphalt", icon: "road" },
   rough_asphalt: { title: "Rough asphalt", icon: "road-variant" },
@@ -101,8 +102,10 @@ export default function SurfaceTagFab({ onTag, style }: SurfaceTagFabProps) {
         style={[styles.fab, style]}
         onPress={open}
         accessibilityRole="button"
-        accessibilityLabel="Tag road surface"
-        accessibilityHint="Open the surface tagging menu to label the road you are on right now."
+        accessibilityLabel={translate("Tag road surface")}
+        accessibilityHint={translate(
+          "Open the surface tagging menu to label the road you are on right now.",
+        )}
       >
         <Icon name="road-variant" size={26} color={t.invBg} />
       </TouchableOpacity>
@@ -117,26 +120,31 @@ export default function SurfaceTagFab({ onTag, style }: SurfaceTagFabProps) {
           style={styles.menuBackdrop}
           onPress={close}
           accessibilityRole="button"
-          accessibilityLabel="Close surface tag picker"
+          accessibilityLabel={translate("Close surface tag picker")}
         >
           <Pressable style={styles.menuCard} onPress={() => undefined}>
-            <Text style={styles.menuTitle}>Tag surface</Text>
+            <Text style={styles.menuTitle}>{translate("Tag surface")}</Text>
             <Text style={styles.menuSubtitle}>
-              Tap the surface you&apos;re on now — applies until you tag again.
+              {translate(
+                "Tap the surface you're on now — applies until you tag again.",
+              )}
             </Text>
             <View style={styles.menuGrid}>
               {SURFACE_LABELS.map((label) => {
                 const display = SURFACE_LABEL_DISPLAY[label];
+                const title = translate(display.title);
                 return (
                   <TouchableOpacity
                     key={label}
                     style={styles.menuTile}
                     onPress={() => handleSelect(label)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Tag as ${display.title}`}
+                    accessibilityLabel={translate("Tag as {value0}", {
+                      value0: title,
+                    })}
                   >
                     <Icon name={display.icon} size={26} color={t.fg} />
-                    <Text style={styles.menuTileLabel}>{display.title}</Text>
+                    <Text style={styles.menuTileLabel}>{title}</Text>
                   </TouchableOpacity>
                 );
               })}

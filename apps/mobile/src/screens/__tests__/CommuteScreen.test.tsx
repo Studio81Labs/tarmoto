@@ -2,6 +2,7 @@ import React from "react";
 import { Alert } from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import CommuteScreen, { __test } from "../CommuteScreen";
+import type { CommuteHazardView } from "@/hooks/useCommute";
 import type {
   CommuteAlternativeRoute,
   CommuteAlternativesResponse,
@@ -63,6 +64,22 @@ const baseStatus: CommuteStatus = {
   estimated_time_min: 22,
   route_quality: 4.2,
   status: "clear",
+};
+
+const hazardWithPhoto: CommuteHazardView = {
+  id: "hazard-1",
+  lat: 49.18,
+  lng: 16.65,
+  hazard_type: "oil_spill",
+  severity: "medium",
+  note: null,
+  photo_url: "https://app.tarmoto.test/hazards/oil-spill.jpg",
+  confirmations: 1,
+  reporter: "rider-1",
+  road_name: "Main Street",
+  created_at: "2026-04-20T07:00:00.000Z",
+  expires_at: "2026-04-21T07:00:00.000Z",
+  isNew: false,
 };
 
 const baseAlternatives: CommuteAlternativesResponse = {
@@ -140,7 +157,7 @@ interface CommuteHookSnapshot {
   route: CommuteRoute | null;
   savedRoutes: CommuteRoute[];
   status: CommuteStatus | null;
-  hazards: never[];
+  hazards: CommuteHazardView[];
   newHazardCount: number;
   alternatives: CommuteAlternativesResponse | null;
   stats: CommuteStats | null;
@@ -159,6 +176,23 @@ describe("CommuteScreen", () => {
     mockAcknowledge.mockReset();
     mockSetPrimary = jest.fn().mockResolvedValue(undefined);
     mockUseCommuteResult = buildResult();
+  });
+
+  it("renders registered weather and road-condition labels", async () => {
+    await render(<CommuteScreen />);
+
+    expect(screen.getByText("14°C · Clear")).toBeTruthy();
+    expect(screen.getByText("Road: Dry · Wind 8 km/h")).toBeTruthy();
+    expect(screen.queryByText("Clear and mild")).toBeNull();
+  });
+
+  it("uses the cataloged hazard label for photo accessibility", async () => {
+    mockUseCommuteResult = buildResult({ hazards: [hazardWithPhoto] });
+
+    await render(<CommuteScreen />);
+
+    expect(screen.getByText("Oil spill")).toBeTruthy();
+    expect(screen.getByLabelText("Photo of Oil spill")).toBeTruthy();
   });
 
   it("starts a commute ride from the primary route CTA", async () => {
@@ -228,11 +262,38 @@ describe("CommuteScreen", () => {
     // (2 hazards). Asserting the rendered title order proves the
     // ranking flowed end-to-end.
     const rows = screen.getAllByText(/^\d+\.\d km · \d+ min$/);
-    expect(rows.map((r) => r.props.children.join(""))).toEqual([
-      "14.6 km · 28 min",
-      "13.4 km · 24 min",
-      "12.9 km · 20 min",
-    ]);
+    expect(
+      rows.map((r) =>
+        Array.isArray(r.props.children)
+          ? r.props.children.join("")
+          : r.props.children,
+      ),
+    ).toEqual(["14.6 km · 28 min", "13.4 km · 24 min", "12.9 km · 20 min"]);
+  });
+
+  it("uses the singular minute form in alternative accessibility copy", async () => {
+    mockUseCommuteResult = buildResult({
+      alternatives: {
+        ...baseAlternatives,
+        alternatives: [
+          {
+            distance_km: 1.2,
+            duration_min: 1,
+            avg_quality: 4.2,
+            hazard_count: 0,
+            geometry: [],
+          },
+        ],
+      },
+    });
+
+    await render(<CommuteScreen />);
+
+    expect(
+      screen.getByLabelText(
+        "Start commute on alternative route, 1.2 kilometres, 1 minute, 0 hazards",
+      ),
+    ).toBeTruthy();
   });
 
   it("starts a commute ride when a rider taps an alternative row", async () => {

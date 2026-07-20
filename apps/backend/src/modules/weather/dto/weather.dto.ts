@@ -5,7 +5,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class WeatherQueryDto {
   @ApiProperty({ example: 49.1 })
@@ -118,6 +118,22 @@ export class WeatherAlertDto {
    */
   @ApiProperty()
   distance_km_from_start!: number;
+
+  /**
+   * Structured temperature for wet/ice alerts. Together with `kind` and
+   * `wind_kmh`, this lets clients reconstruct the sampled conditions in the
+   * active locale instead of parsing the English compatibility `message`.
+   */
+  @ApiPropertyOptional({ example: -3 })
+  temperature_c?: number;
+
+  /**
+   * Structured wind speed for wind, wet, and ice alerts. Clients use this
+   * value when constructing localized copy instead of parsing the English
+   * compatibility `message`.
+   */
+  @ApiPropertyOptional({ example: 75 })
+  wind_kmh?: number;
 
   @ApiProperty({ example: 'Storm warning ahead' })
   title!: string;

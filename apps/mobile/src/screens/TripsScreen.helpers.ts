@@ -8,7 +8,13 @@ import type { TripFolder, TripSummary } from "@/types";
  * upfront keeps the renderer branch-free.
  */
 export type TripsListRow =
-  | { kind: "folder-header"; key: string; label: string; count: number }
+  | {
+      kind: "folder-header";
+      key: string;
+      /** Null identifies the locale-owned Unfiled pseudo-folder. */
+      label: string | null;
+      count: number;
+    }
   | { kind: "trip"; key: string; trip: TripSummary };
 
 /**
@@ -67,7 +73,7 @@ export function groupTripsByFolder(
     rows.push({
       kind: "folder-header",
       key: "header-unfiled",
-      label: "Unfiled",
+      label: null,
       count: unfiled.length,
     });
     for (const trip of unfiled) {

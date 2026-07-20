@@ -25,6 +25,7 @@ import {
   brandRadii,
   brandSpacing,
 } from "@/theme/brand";
+import { t as translate } from "@/i18n";
 
 interface Props {
   value: number;
@@ -64,7 +65,9 @@ export default function FuelRangePicker({
       {label ? (
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
-          <Text style={styles.value}>{active} km</Text>
+          <Text style={styles.value}>
+            {translate("{distance} km", { distance: active })}
+          </Text>
         </View>
       ) : null}
 
@@ -87,7 +90,10 @@ export default function FuelRangePicker({
               style={[styles.pill, selected ? styles.pillSelected : null]}
               onPress={() => onChange(step)}
               accessibilityRole="button"
-              accessibilityLabel={`${step} kilometres`}
+              accessibilityLabel={translate(
+                "{count, plural, one {# kilometre} other {# kilometres}}",
+                { count: step },
+              )}
               accessibilityState={{ selected }}
             >
               <Text

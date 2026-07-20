@@ -11,18 +11,19 @@
  */
 
 import type { IconName } from "@/components/Icon";
+import { translate } from "@/i18n";
 import type { QualitySource } from "@tarmoto/shared";
 
 /**
  * Map quality score to label
  */
 export function qualityLabel(score: number | null): string {
-  if (score == null) return "Unscored";
-  if (score >= 4.5) return "Excellent";
-  if (score >= 3.5) return "Good";
-  if (score >= 2.5) return "Fair";
-  if (score >= 1.5) return "Poor";
-  return "Very Poor";
+  if (score == null) return translate("Unscored");
+  if (score >= 4.5) return translate("Excellent");
+  if (score >= 3.5) return translate("Good");
+  if (score >= 2.5) return translate("Fair");
+  if (score >= 1.5) return translate("Poor");
+  return translate("Very Poor");
 }
 
 /**
@@ -38,11 +39,11 @@ export function qualityProvenanceLabel(
   if (readingCount > 0 || source === null) return null;
   switch (source) {
     case "osm_smoothness":
-      return "Estimated from surveyed smoothness";
+      return translate("Estimated from surveyed smoothness");
     case "osm_surface":
-      return "Estimated from road surface";
+      return translate("Estimated from road surface");
     case "osm_highway":
-      return "Estimated from road type";
+      return translate("Estimated from road type");
     default:
       return null;
   }

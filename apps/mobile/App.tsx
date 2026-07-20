@@ -15,6 +15,7 @@ import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore } from "@/stores";
+import { I18nProvider } from "@/i18n/I18nProvider";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -24,6 +25,9 @@ LogBox.ignoreLogs([
 export default function App() {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
+  const isAuthLoading = useAuthStore((state) => state.isLoading);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const locale = useAuthStore((state) => state.user?.language);
 
   useEffect(() => {
     void bootstrapAuth({
@@ -41,7 +45,10 @@ export default function App() {
   // keeps running across navigation — CommuteScreen's diff UI remains
   // the view-of-record; this hook just surfaces NEW hazards as a
   // pre-ride alert without forcing the rider to visit that tab first.
-  useEffect(() => startCommuteHazardMonitor(), []);
+  useEffect(() => {
+    if (isAuthLoading || !isAuthenticated) return;
+    return startCommuteHazardMonitor();
+  }, [isAuthLoading, isAuthenticated]);
 
   // #279 / #501 — keep the local privacy preferences cache in sync
   // with the server on every cold start and foreground transition.
@@ -77,12 +84,14 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar
-          barStyle="dark-content"
-          backgroundColor={brandColorsLight.bg}
-          translucent
-        />
-        <RootNavigator />
+        <I18nProvider locale={locale ?? null}>
+          <StatusBar
+            barStyle="dark-content"
+            backgroundColor={brandColorsLight.bg}
+            translucent
+          />
+          <RootNavigator />
+        </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

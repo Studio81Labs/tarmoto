@@ -39,6 +39,7 @@ import Avatar from "@/components/Avatar";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { FollowerListItem } from "@/types";
 import { formatFollowedSince } from "./riderProfile.helpers";
+import { t as translate } from "@/i18n";
 
 export type FollowListMode = "followers" | "following";
 
@@ -95,7 +96,9 @@ export default function FollowList({
         if (signal.cancelled) return;
         setPhase("error");
         setErrorMessage(
-          err instanceof Error ? err.message : "Could not load list.",
+          err instanceof Error
+            ? err.message
+            : translate("Could not load list."),
         );
       } finally {
         if (!signal.cancelled) setIsRefreshing(false);
@@ -127,9 +130,9 @@ export default function FollowList({
           style={styles.retryButton}
           onPress={() => void load(false)}
           accessibilityRole="button"
-          accessibilityLabel="Retry loading list"
+          accessibilityLabel={translate("Retry loading list")}
         >
-          <Text style={styles.retryLabel}>Retry</Text>
+          <Text style={styles.retryLabel}>{translate("Retry")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -140,8 +143,12 @@ export default function FollowList({
       <View style={styles.center}>
         <Text style={styles.emptyText}>
           {mode === "followers"
-            ? `${displayName} has no followers yet.`
-            : `${displayName} isn’t following anyone yet.`}
+            ? translate("{value0} has no followers yet.", {
+                value0: displayName,
+              })
+            : translate("{value0} isn’t following anyone yet.", {
+                value0: displayName,
+              })}
         </Text>
       </View>
     );
@@ -167,7 +174,9 @@ export default function FollowList({
             navigation.push("ViewProfile", { userId: item.user_id })
           }
           accessibilityRole="button"
-          accessibilityLabel={`Open ${item.display_name}'s profile`}
+          accessibilityLabel={translate("Open {value0}'s profile", {
+            value0: item.display_name,
+          })}
         >
           <Avatar name={item.display_name} size={44} />
           <View style={styles.rowBody}>

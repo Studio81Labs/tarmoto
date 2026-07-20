@@ -13,6 +13,7 @@ import {
   rankUnriddenSegments,
   summarizeExploration,
   tierColor,
+  tierLabel,
   tierRank,
 } from "../AchievementsScreen.helpers";
 import type {
@@ -43,6 +44,20 @@ describe("tierRank", () => {
   });
   it("treats unknown tiers as unearned (forward-compatible)", () => {
     expect(tierRank("platinum")).toBe(0);
+  });
+});
+
+describe("tierLabel", () => {
+  it.each([
+    ["bronze", "Bronze"],
+    ["silver", "Silver"],
+    ["gold", "Gold"],
+  ])("uses cataloged copy for %s", (tier, expected) => {
+    expect(tierLabel(tier)).toBe(expected);
+  });
+
+  it("preserves unknown future tiers until the catalog supports them", () => {
+    expect(tierLabel("platinum")).toBe("platinum");
   });
 });
 

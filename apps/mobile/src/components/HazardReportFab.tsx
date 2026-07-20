@@ -42,6 +42,7 @@ import {
   statusFg,
 } from "@/theme/brand";
 import type { HazardType } from "@/types";
+import { t as translate } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -118,8 +119,10 @@ export default function HazardReportFab({
         onLongPress={handleLongPress}
         delayLongPress={300}
         accessibilityRole="button"
-        accessibilityLabel="Report hazard"
-        accessibilityHint="Tap to report. Long-press for quick hazard types."
+        accessibilityLabel={translate("Report hazard")}
+        accessibilityHint={translate(
+          "Tap to report. Long-press for quick hazard types.",
+        )}
       >
         <Icon name="alert-octagon" size={26} color={t.invFg} />
       </TouchableOpacity>
@@ -134,15 +137,17 @@ export default function HazardReportFab({
           style={styles.menuBackdrop}
           onPress={closeMenu}
           accessibilityRole="button"
-          accessibilityLabel="Close hazard quick-pick"
+          accessibilityLabel={translate("Close hazard quick-pick")}
         >
           {/* Stop the press from closing when interacting with the
               menu itself. The inner Pressable's `onPress` is a no-op
               because tile presses are handled per-tile. */}
           <Pressable style={styles.menuCard} onPress={() => undefined}>
-            <Text style={styles.menuTitle}>Quick report</Text>
+            <Text style={styles.menuTitle}>{translate("Quick report")}</Text>
             <Text style={styles.menuSubtitle}>
-              Tap a hazard type — you can adjust severity on the next screen.
+              {translate(
+                "Tap a hazard type — you can adjust severity on the next screen.",
+              )}
             </Text>
             <View style={styles.menuGrid}>
               {HAZARD_TYPE_ORDER.map((type) => (
@@ -151,7 +156,9 @@ export default function HazardReportFab({
                   style={styles.menuTile}
                   onPress={() => handleSelect(type)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Report ${HAZARD_TYPE_LABELS[type]}`}
+                  accessibilityLabel={translate("Report {value0}", {
+                    value0: translate(HAZARD_TYPE_LABELS[type]),
+                  })}
                 >
                   <Icon
                     name={(hazardIcons[type] ?? "alert-circle") as IconName}
@@ -159,7 +166,7 @@ export default function HazardReportFab({
                     color={t.fg}
                   />
                   <Text style={styles.menuTileLabel}>
-                    {HAZARD_TYPE_LABELS[type]}
+                    {translate(HAZARD_TYPE_LABELS[type])}
                   </Text>
                 </TouchableOpacity>
               ))}

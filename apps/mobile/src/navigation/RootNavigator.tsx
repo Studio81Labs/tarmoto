@@ -53,6 +53,7 @@ import AchievementsScreen from "@/screens/AchievementsScreen";
 import BadgesScreen from "@/screens/BadgesScreen";
 import ChallengesScreen from "@/screens/ChallengesScreen";
 import PersonalRoadMapScreen from "@/screens/PersonalRoadMapScreen";
+import { t as translate } from "@/i18n";
 
 // ── Type definitions ──
 
@@ -266,7 +267,7 @@ function HomeNavigator() {
       <HomeStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
-        options={{ ...brandScreenOptions, title: "Ride Details" }}
+        options={{ ...brandScreenOptions, title: translate("Ride Details") }}
       />
     </HomeStack.Navigator>
   );
@@ -283,14 +284,14 @@ function MapNavigator() {
       <MapStack.Screen
         name="RoadPreview"
         component={RoadPreviewScreen}
-        options={{ ...brandScreenOptions, title: "Road Preview" }}
+        options={{ ...brandScreenOptions, title: translate("Road Preview") }}
       />
       <MapStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
         options={{
           ...brandScreenOptions,
-          title: "Report Hazard",
+          title: translate("Report Hazard"),
           presentation: "modal",
         }}
       />
@@ -314,21 +315,21 @@ function RideNavigator() {
       <RideStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
-        options={{ ...brandScreenOptions, title: "Ride Details" }}
+        options={{ ...brandScreenOptions, title: translate("Ride Details") }}
       />
       <RideStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
         options={{
           ...brandScreenOptions,
-          title: "Report Hazard",
+          title: translate("Report Hazard"),
           presentation: "modal",
         }}
       />
       <RideStack.Screen
         name="GroupRide"
         component={GroupRideScreen}
-        options={{ ...brandScreenOptions, title: "Group Ride" }}
+        options={{ ...brandScreenOptions, title: translate("Group Ride") }}
       />
     </RideStack.Navigator>
   );
@@ -340,27 +341,27 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="TripsList"
         component={TripsScreen}
-        options={{ ...brandScreenOptions, title: "Trips" }}
+        options={{ ...brandScreenOptions, title: translate("Trips") }}
       />
       <TripsStack.Screen
         name="TripCreate"
         component={TripCreateScreen}
-        options={{ ...brandScreenOptions, title: "Plan a Trip" }}
+        options={{ ...brandScreenOptions, title: translate("Plan a Trip") }}
       />
       <TripsStack.Screen
         name="TripJoin"
         component={JoinTripScreen}
-        options={{ ...brandScreenOptions, title: "Join a Trip" }}
+        options={{ ...brandScreenOptions, title: translate("Join a Trip") }}
       />
       <TripsStack.Screen
         name="TripDetail"
         component={TripDetailScreen}
-        options={{ ...brandScreenOptions, title: "Trip" }}
+        options={{ ...brandScreenOptions, title: translate("Trip") }}
       />
       <TripsStack.Screen
         name="TripDay"
         component={TripDayScreen}
-        options={{ ...brandScreenOptions, title: "Day Route" }}
+        options={{ ...brandScreenOptions, title: translate("Day Route") }}
       />
       <TripsStack.Screen
         name="Navigate"
@@ -370,7 +371,7 @@ function TripsNavigator() {
       <TripsStack.Screen
         name="RoadPreview"
         component={RoadPreviewScreen}
-        options={{ ...brandScreenOptions, title: "Road Preview" }}
+        options={{ ...brandScreenOptions, title: translate("Road Preview") }}
       />
     </TripsStack.Navigator>
   );
@@ -394,59 +395,65 @@ function ProfileNavigator() {
         component={EditProfileModal}
         options={{
           ...brandScreenOptions,
-          title: "Edit profile",
+          title: translate("Edit profile"),
           presentation: "modal",
         }}
       />
       <ProfileStack.Screen
         name="ViewProfile"
         component={ViewProfileScreen}
-        options={{ ...brandScreenOptions, title: "Rider" }}
+        options={{ ...brandScreenOptions, title: translate("Rider") }}
       />
       <ProfileStack.Screen
         name="Followers"
         component={FollowersScreen}
-        options={{ ...brandScreenOptions, title: "Followers" }}
+        options={{ ...brandScreenOptions, title: translate("Followers") }}
       />
       <ProfileStack.Screen
         name="Following"
         component={FollowingScreen}
-        options={{ ...brandScreenOptions, title: "Following" }}
+        options={{ ...brandScreenOptions, title: translate("Following") }}
       />
       <ProfileStack.Screen
         name="LinkAccount"
         component={LinkAccountScreen}
-        options={{ ...brandScreenOptions, title: "Link account" }}
+        options={{ ...brandScreenOptions, title: translate("Link account") }}
       />
       <ProfileStack.Screen
         name="OfflineRegions"
         component={OfflineRegionsScreen}
-        options={{ ...brandScreenOptions, title: "Offline maps" }}
+        options={{ ...brandScreenOptions, title: translate("Offline maps") }}
       />
       <ProfileStack.Screen
         name="EmergencyContacts"
         component={EmergencyContactsScreen}
-        options={{ ...brandScreenOptions, title: "Emergency contacts" }}
+        options={{
+          ...brandScreenOptions,
+          title: translate("Emergency contacts"),
+        }}
       />
       <ProfileStack.Screen
         name="Achievements"
         component={AchievementsScreen}
-        options={{ ...brandScreenOptions, title: "Achievements" }}
+        options={{ ...brandScreenOptions, title: translate("Achievements") }}
       />
       <ProfileStack.Screen
         name="Badges"
         component={BadgesScreen}
-        options={{ ...brandScreenOptions, title: "Badges" }}
+        options={{ ...brandScreenOptions, title: translate("Badges") }}
       />
       <ProfileStack.Screen
         name="Challenges"
         component={ChallengesScreen}
-        options={{ ...brandScreenOptions, title: "Challenges" }}
+        options={{ ...brandScreenOptions, title: translate("Challenges") }}
       />
       <ProfileStack.Screen
         name="PersonalRoadMap"
         component={PersonalRoadMapScreen}
-        options={{ ...brandScreenOptions, title: "Personal road map" }}
+        options={{
+          ...brandScreenOptions,
+          title: translate("Personal road map"),
+        }}
       />
     </ProfileStack.Navigator>
   );
@@ -514,27 +521,27 @@ export default function RootNavigator() {
           <Tab.Screen
             name="HomeTab"
             component={HomeNavigator}
-            options={{ tabBarLabel: "Home" }}
+            options={{ tabBarLabel: translate("Home") }}
           />
           <Tab.Screen
             name="MapTab"
             component={MapNavigator}
-            options={{ tabBarLabel: "Map" }}
+            options={{ tabBarLabel: translate("Map") }}
           />
           <Tab.Screen
             name="RideTab"
             component={RideNavigator}
-            options={{ tabBarLabel: "Ride" }}
+            options={{ tabBarLabel: translate("Ride") }}
           />
           <Tab.Screen
             name="TripsTab"
             component={TripsNavigator}
-            options={{ tabBarLabel: "Trips" }}
+            options={{ tabBarLabel: translate("Trips") }}
           />
           <Tab.Screen
             name="ProfileTab"
             component={ProfileNavigator}
-            options={{ tabBarLabel: "Profile" }}
+            options={{ tabBarLabel: translate("Profile") }}
           />
         </Tab.Navigator>
       </NavigationContainer>

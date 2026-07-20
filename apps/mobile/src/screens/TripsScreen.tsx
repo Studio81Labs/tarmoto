@@ -40,6 +40,8 @@ import type { TripFolder, TripSummary } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
 import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
+import { t as translate } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
@@ -103,7 +105,9 @@ export default function TripsScreen() {
         if (isInitial && !hadCache) {
           setPhase("error");
           setErrorMessage(
-            err instanceof Error ? err.message : "Unable to load trips",
+            err instanceof Error
+              ? err.message
+              : translate("Unable to load trips"),
           );
         }
       } finally {
@@ -154,15 +158,15 @@ export default function TripsScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="wifi-off" size={40} color={t.dim} />
-        <Text style={styles.emptyTitle}>Can't load trips</Text>
+        <Text style={styles.emptyTitle}>{translate("Can't load trips")}</Text>
         <Text style={styles.emptyBody}>
-          {errorMessage ?? "Check your connection and try again."}
+          {errorMessage ?? translate("Check your connection and try again.")}
         </Text>
         <TouchableOpacity
           style={styles.primaryBtn}
           onPress={() => void load(true)}
         >
-          <Text style={styles.primaryBtnLabel}>Retry</Text>
+          <Text style={styles.primaryBtnLabel}>{translate("Retry")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -223,26 +227,42 @@ export default function TripsScreen() {
           style={styles.fab}
           onPress={openCreate}
           accessibilityRole="button"
-          accessibilityLabel="Plan a new trip"
+          accessibilityLabel={translate("Plan a new trip")}
         >
           <Icon name="plus" size={24} color={t.fg} />
-          <Text style={styles.fabLabel}>Plan a trip</Text>
+          <Text style={styles.fabLabel}>{translate("Plan a trip")}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
   );
 }
 
-function FolderHeader({ label, count }: { label: string; count: number }) {
+function FolderHeader({
+  label,
+  count,
+}: {
+  label: string | null;
+  count: number;
+}) {
+  // Subscribe at the row boundary so the locale-owned pseudo-folder label
+  // updates even while the memoized grouping data keeps the same identity.
+  const translateHeader = useTranslation();
+  const displayLabel = label ?? translateHeader("Unfiled");
   return (
     <View
       style={styles.folderHeader}
       accessibilityRole="header"
-      accessibilityLabel={`${label}, ${count} ${count === 1 ? "trip" : "trips"}`}
+      accessibilityLabel={translateHeader(
+        "{label}, {count, plural, one {# trip} other {# trips}}",
+        {
+          label: displayLabel,
+          count,
+        },
+      )}
     >
       <Icon name="folder-outline" size={14} color={t.dim} />
       <Text style={styles.folderHeaderLabel} numberOfLines={1}>
-        {label}
+        {displayLabel}
       </Text>
       <Text style={styles.folderHeaderCount}>{count}</Text>
     </View>
@@ -255,15 +275,17 @@ function ListHeader({ onJoin }: { onJoin: () => void }) {
       style={styles.joinRow}
       onPress={onJoin}
       accessibilityRole="button"
-      accessibilityLabel="Join a trip with an invite code"
+      accessibilityLabel={translate("Join a trip with an invite code")}
     >
       <View style={styles.joinIconWrap}>
         <Icon name="account-multiple-plus" size={20} color={t.fg} />
       </View>
       <View style={styles.joinBody}>
-        <Text style={styles.joinTitle}>Join a trip</Text>
+        <Text style={styles.joinTitle}>{translate("Join a trip")}</Text>
         <Text style={styles.joinSubtitle}>
-          Got an invite code? Ride along with the rest of the group.
+          {translate(
+            "Got an invite code? Ride along with the rest of the group.",
+          )}
         </Text>
       </View>
       <Icon name="chevron-right" size={22} color={t.faint} />
@@ -281,18 +303,21 @@ function EmptyState({
   return (
     <View style={styles.emptyWrap}>
       <Icon name="calendar-blank-outline" size={48} color={t.accent} />
-      <Text style={styles.emptyTitle}>No trips yet</Text>
+      <Text style={styles.emptyTitle}>{translate("No trips yet")}</Text>
       <Text style={styles.emptyBody}>
-        Tarmoto finds the best roads for a multi-day ride. Pick a few parameters
-        and we'll auto-generate the route.
+        {translate(
+          "Tarmoto finds the best roads for a multi-day ride. Pick a few parameters and we'll auto-generate the route.",
+        )}
       </Text>
       <TouchableOpacity style={styles.primaryBtn} onPress={onCreate}>
         <Icon name="plus" size={18} color={t.invFg} />
-        <Text style={styles.primaryBtnLabel}>Plan a trip</Text>
+        <Text style={styles.primaryBtnLabel}>{translate("Plan a trip")}</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.secondaryBtn} onPress={onJoin}>
         <Icon name="account-multiple-plus" size={18} color={t.fg} />
-        <Text style={styles.secondaryBtnLabel}>Join with invite code</Text>
+        <Text style={styles.secondaryBtnLabel}>
+          {translate("Join with invite code")}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -311,7 +336,14 @@ function TripCard({
       style={styles.card}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${trip.title}, ${trip.num_days} days, ${trip.status}`}
+      accessibilityLabel={translate(
+        "{title}, {count, plural, one {# day} other {# days}}, {status}",
+        {
+          title: trip.title,
+          count: trip.num_days,
+          status: formatStatus(trip.status),
+        },
+      )}
     >
       <View style={styles.cardBody}>
         <Text style={styles.cardTitle} numberOfLines={1}>
@@ -320,8 +352,14 @@ function TripCard({
         <Text style={styles.cardMeta} numberOfLines={1}>
           {[
             trip.region,
-            `${trip.num_days} day${trip.num_days === 1 ? "" : "s"}`,
-            trip.member_count > 1 ? `${trip.member_count} riders` : null,
+            translate("{count, plural, one {# day} other {# days}}", {
+              count: trip.num_days,
+            }),
+            trip.member_count > 1
+              ? translate("{count, plural, one {# rider} other {# riders}}", {
+                  count: trip.member_count,
+                })
+              : null,
           ]
             .filter(Boolean)
             .join(" · ")}

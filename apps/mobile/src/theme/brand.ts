@@ -227,6 +227,20 @@ export function qualityBrandColor(score: number | null | undefined): string {
  * non-finite) returns `Unscored`, not the Q1 label.
  */
 export function qualityBrandLabel(score: number | null | undefined): string {
-  if (score == null || !Number.isFinite(score)) return UNSCORED_LABEL;
-  return QUALITY_LABELS[qualityIndex(score)] ?? UNSCORED_LABEL;
+  if (score == null || !Number.isFinite(score)) return translate("Unscored");
+  switch (qualityIndex(score)) {
+    case 0:
+      return translate("Avoid");
+    case 1:
+      return translate("Rough");
+    case 2:
+      return translate("Fair");
+    case 3:
+      return translate("Great");
+    case 4:
+      return translate("Hero");
+    default:
+      return translate("Unscored");
+  }
 }
+import { translate } from "@/i18n";

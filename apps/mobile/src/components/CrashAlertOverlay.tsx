@@ -39,6 +39,7 @@ import { useCrashStore } from "@/stores";
 import { api } from "@/services/api";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 /**
@@ -157,7 +158,9 @@ export default function CrashAlertOverlay({
     if (phase !== "countdown") return;
     haptics.trigger();
     ttsService.speak(
-      "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
+      translate(
+        "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
+      ),
       // Crash followup must preempt any in-flight nav prompt — a rider
       // mid-turn can't afford to hear "in 300 meters, turn left" over
       // the top of their crash countdown.
@@ -190,7 +193,10 @@ export default function CrashAlertOverlay({
         // Defensive: no snapshot means we have nothing to send. Surface as
         // a failure so the rider knows the alert didn't go out. Treat as
         // transient — a fresh incident would generate a new snapshot.
-        markFailed("No location captured for the alert.", "transient");
+        markFailed(
+          translate("No location captured for the alert."),
+          "transient",
+        );
         return;
       }
       // GPS may have had no fix when the spike landed (tunnel, indoor
@@ -199,7 +205,10 @@ export default function CrashAlertOverlay({
       // to emergency contacts during a real crash. Better to fail loudly
       // so the rider can fall back to a manual call. (Bugbot 5069fc01.)
       if (alert.lat === null || alert.lng === null) {
-        markFailed("No GPS fix at the moment of impact.", "transient");
+        markFailed(
+          translate("No GPS fix at the moment of impact."),
+          "transient",
+        );
         return;
       }
       // A new dispatch supersedes any pending in-flight-replay poll —
@@ -247,7 +256,9 @@ export default function CrashAlertOverlay({
             // a manual RETRY should keep the same alertId to replay
             // the eventual outcome (instead of dispatching twice).
             markFailed(
-              "Original alert is still being sent. Please wait a moment, then tap RETRY.",
+              translate(
+                "Original alert is still being sent. Please wait a moment, then tap RETRY.",
+              ),
               "transient",
             );
           }
@@ -262,22 +273,20 @@ export default function CrashAlertOverlay({
         if (result.contacts_notified === 0) {
           markFailed(
             result.contacts.length === 0
-              ? "No emergency contacts on file."
-              : "Couldn't reach any of your emergency contacts.",
+              ? translate("No emergency contacts on file.")
+              : translate("Couldn't reach any of your emergency contacts."),
             "completed",
           );
         } else {
           markDispatched();
         }
-      } catch (err) {
+      } catch {
         // Network / timeout / 5xx — request never reached completion
         // server-side, so the original `alertId` was never (or only
         // partially) recorded. Treat as transient so RETRY keeps the
         // same id; if the backend ends up with the row anyway, the
         // retry will replay it instead of double-notifying.
-        const message =
-          err instanceof Error ? err.message : "Couldn't reach the server.";
-        markFailed(message, "transient");
+        markFailed(translate("Couldn't reach the server."), "transient");
       } finally {
         inFlightRef.current = false;
       }
@@ -343,56 +352,66 @@ export default function CrashAlertOverlay({
       <View style={styles.container}>
         {phase === "countdown" ? (
           <>
-            <Text style={styles.headline}>CRASH DETECTED</Text>
+            <Text style={styles.headline}>{translate("CRASH DETECTED")}</Text>
             <Text style={styles.subhead}>
-              We'll alert your emergency contacts in
+              {translate("We'll alert your emergency contacts in")}
             </Text>
             <Text style={styles.countdown} accessibilityLiveRegion="assertive">
               {seconds}
             </Text>
-            <Text style={styles.subhead}>seconds</Text>
+            <Text style={styles.subhead}>
+              {translate("{seconds, plural, one {second} other {seconds}}", {
+                seconds,
+              })}
+            </Text>
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={cancel}
               accessibilityRole="button"
-              accessibilityLabel="I'm OK, cancel crash alert"
+              accessibilityLabel={translate("I'm OK, cancel crash alert")}
             >
-              <Text style={styles.cancelLabel}>I'M OK — CANCEL</Text>
+              <Text style={styles.cancelLabel}>
+                {translate("I'M OK — CANCEL")}
+              </Text>
             </TouchableOpacity>
           </>
         ) : null}
 
         {phase === "dispatching" ? (
           <>
-            <Text style={styles.headline}>ALERTING CONTACTS…</Text>
+            <Text style={styles.headline}>
+              {translate("ALERTING CONTACTS…")}
+            </Text>
             <Text style={styles.subhead}>
-              Sending your location to your emergency contacts.
+              {translate("Sending your location to your emergency contacts.")}
             </Text>
           </>
         ) : null}
 
         {phase === "dispatched" ? (
           <>
-            <Text style={styles.headline}>HELP IS ON THE WAY</Text>
+            <Text style={styles.headline}>
+              {translate("HELP IS ON THE WAY")}
+            </Text>
             <Text style={styles.subhead}>
-              Your emergency contacts have been notified.
+              {translate("Your emergency contacts have been notified.")}
             </Text>
             <TouchableOpacity
               style={styles.dismissBtn}
               onPress={resetAlert}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss crash alert"
+              accessibilityLabel={translate("Dismiss crash alert")}
             >
-              <Text style={styles.dismissLabel}>Dismiss</Text>
+              <Text style={styles.dismissLabel}>{translate("Dismiss")}</Text>
             </TouchableOpacity>
           </>
         ) : null}
 
         {phase === "failed" ? (
           <>
-            <Text style={styles.headline}>ALERT FAILED</Text>
+            <Text style={styles.headline}>{translate("ALERT FAILED")}</Text>
             <Text style={styles.subhead}>
-              {errorMessage ?? "Unable to reach the server."}
+              {errorMessage ?? translate("Unable to reach the server.")}
             </Text>
             <TouchableOpacity
               style={styles.cancelBtn}
@@ -417,17 +436,17 @@ export default function CrashAlertOverlay({
                 void dispatch();
               }}
               accessibilityRole="button"
-              accessibilityLabel="Retry crash alert"
+              accessibilityLabel={translate("Retry crash alert")}
             >
-              <Text style={styles.cancelLabel}>RETRY</Text>
+              <Text style={styles.cancelLabel}>{translate("RETRY")}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.dismissBtn}
               onPress={resetAlert}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss without alerting"
+              accessibilityLabel={translate("Dismiss without alerting")}
             >
-              <Text style={styles.dismissLabel}>Dismiss</Text>
+              <Text style={styles.dismissLabel}>{translate("Dismiss")}</Text>
             </TouchableOpacity>
           </>
         ) : null}

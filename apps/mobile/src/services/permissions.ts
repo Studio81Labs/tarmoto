@@ -30,6 +30,7 @@
  */
 
 import { Alert, Linking, PermissionsAndroid, Platform } from "react-native";
+import { t as translate } from "@/i18n";
 
 export type PermissionStatus = "granted" | "denied" | "blocked";
 
@@ -49,18 +50,22 @@ function showRationale(
 ): Promise<"allow" | "cancel"> {
   return new Promise((resolve) => {
     Alert.alert(rationale.title, rationale.message, [
-      { text: "Cancel", style: "cancel", onPress: () => resolve("cancel") },
-      { text: "Allow", onPress: () => resolve("allow") },
+      {
+        text: translate("Cancel"),
+        style: "cancel",
+        onPress: () => resolve("cancel"),
+      },
+      { text: translate("Allow"), onPress: () => resolve("allow") },
     ]);
   });
 }
 
 function showBlockedRecovery(rationale: PermissionRationale): Promise<void> {
   return new Promise((resolve) => {
-    Alert.alert("Permission needed", rationale.whyOpenSettings, [
-      { text: "Not now", style: "cancel", onPress: () => resolve() },
+    Alert.alert(translate("Permission needed"), rationale.whyOpenSettings, [
+      { text: translate("Not now"), style: "cancel", onPress: () => resolve() },
       {
-        text: "Open Settings",
+        text: translate("Open Settings"),
         onPress: () => {
           void Linking.openSettings();
           resolve();

@@ -112,6 +112,8 @@ export class WeatherService {
           lat: result.point.lat,
           lng: result.point.lng,
           distance_km_from_start: distanceKm,
+          temperature_c: result.data.temperature_c,
+          wind_kmh: result.data.wind_kmh,
           title: isIcy ? 'Icy roads ahead' : 'Wet roads ahead',
           message: stringMessage,
         });
@@ -140,6 +142,7 @@ export class WeatherService {
           lat: result.point.lat,
           lng: result.point.lng,
           distance_km_from_start: distanceKm,
+          wind_kmh: result.data.wind_kmh,
           title: 'High wind ahead',
           message: stringMessage,
         });

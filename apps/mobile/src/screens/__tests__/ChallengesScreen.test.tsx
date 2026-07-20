@@ -116,6 +116,15 @@ describe("ChallengesScreen", () => {
     expect(screen.getByText("12 riders")).toBeTruthy();
   });
 
+  it("uses the singular participant label for one rider", async () => {
+    mockedApi.listChallenges.mockResolvedValue([
+      { ...baseChallenge, participant_count: 1 },
+    ]);
+    await render(<ChallengesScreen />);
+
+    await waitFor(() => expect(screen.getByText("1 rider")).toBeTruthy());
+  });
+
   it("renders an empty state when no challenges are active", async () => {
     mockedApi.listChallenges.mockResolvedValue([]);
     await render(<ChallengesScreen />);

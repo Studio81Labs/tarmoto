@@ -6,6 +6,7 @@
  */
 
 import type { LatLng, RoadReview } from "@/types";
+import { translate } from "@/i18n";
 
 export function formatLengthKm(m: number): string {
   if (!Number.isFinite(m) || m <= 0) return "";
@@ -13,36 +14,29 @@ export function formatLengthKm(m: number): string {
   return rounded >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${rounded} m`;
 }
 
-export function formatSurface(surface: string): string {
-  return surface.charAt(0).toUpperCase() + surface.slice(1);
-}
-
-export function formatHazardType(type: string): string {
-  return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";
   const diffS = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffS < 60) return "just now";
+  if (diffS < 60) return translate("just now");
   const mins = Math.floor(diffS / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return translate("{count}m ago", { count: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return translate("{count}h ago", { count: hrs });
   const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return translate("{count}d ago", { count: days });
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
+  if (months < 12) return translate("{count}mo ago", { count: months });
+  return translate("{count}y ago", { count: Math.floor(months / 12) });
 }
 
 export function curvinessLabel(score: number): string {
-  if (score >= 4.5) return "Very twisty — a full-on playground.";
-  if (score >= 3.5) return "Plenty of curves to lean into.";
-  if (score >= 2.5) return "Mixed — sweepers with occasional straights.";
-  if (score >= 1.5) return "Mostly straight with a few bends.";
-  return "Straight, transit-style road.";
+  if (score >= 4.5) return translate("Very twisty — a full-on playground.");
+  if (score >= 3.5) return translate("Plenty of curves to lean into.");
+  if (score >= 2.5)
+    return translate("Mixed — sweepers with occasional straights.");
+  if (score >= 1.5) return translate("Mostly straight with a few bends.");
+  return translate("Straight, transit-style road.");
 }
 
 /**

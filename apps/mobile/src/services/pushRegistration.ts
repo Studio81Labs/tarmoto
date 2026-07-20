@@ -32,6 +32,7 @@ import {
   RESULTS,
 } from "react-native-permissions";
 import { requestWithRationale } from "./permissions";
+import { t as translate } from "@/i18n";
 
 type FirebaseMessagingModule =
   typeof import("@react-native-firebase/messaging").default;
@@ -85,11 +86,13 @@ async function requestPermission(): Promise<boolean> {
     const rationaleStatus = await requestWithRationale({
       androidPermission: PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
       rationale: {
-        title: "Stay in the loop",
-        message:
+        title: translate("Stay in the loop"),
+        message: translate(
           "Tarmoto sends notifications for nearby hazards, ride reminders, and safety alerts. You can fine-tune which kinds you want in Settings.",
-        whyOpenSettings:
+        ),
+        whyOpenSettings: translate(
           "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.",
+        ),
       },
     });
     if (rationaleStatus !== "granted") return false;

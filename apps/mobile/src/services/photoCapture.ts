@@ -23,6 +23,7 @@
 
 import { PermissionsAndroid, Platform } from "react-native";
 import { requestWithRationale } from "./permissions";
+import { t as translate } from "@/i18n";
 
 export type PhotoSource = "camera" | "library";
 
@@ -186,11 +187,13 @@ async function ensureCameraPermission(): Promise<boolean> {
   const status = await requestWithRationale({
     androidPermission: PermissionsAndroid.PERMISSIONS.CAMERA,
     rationale: {
-      title: "Camera access",
-      message:
+      title: translate("Camera access"),
+      message: translate(
         "Tarmoto uses the camera to attach photos to road reports and reviews.",
-      whyOpenSettings:
+      ),
+      whyOpenSettings: translate(
         "Camera access is currently blocked. Open Settings → Tarmoto and toggle Camera on to attach photos.",
+      ),
     },
   });
   return status === "granted";

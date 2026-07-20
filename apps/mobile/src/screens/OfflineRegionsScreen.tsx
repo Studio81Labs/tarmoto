@@ -42,6 +42,7 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
+import { t as translate, type EnglishMessageKey } from "@/i18n";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -56,7 +57,7 @@ const DEFAULT_MAX_ZOOM = 14;
 // rider taps "save current area". Roughly a day-ride's worth of context.
 const DEFAULT_SAVE_RADIUS_KM = 25;
 
-const STATUS_LABELS: Record<OfflineRegion["status"], string> = {
+const STATUS_LABELS: Record<OfflineRegion["status"], EnglishMessageKey> = {
   pending: "Waiting…",
   downloading: "Downloading…",
   complete: "Ready offline",
@@ -118,11 +119,18 @@ export default function OfflineRegionsScreen() {
     if (!outcome.ok) {
       const message =
         outcome.reason === "too-many-tiles"
-          ? `This area would need ${outcome.tileCount} tiles, which is over the offline cache limit. Zoom in before saving.`
+          ? translate(
+              "This area would need {count, plural, one {# tile} other {# tiles}}, which is over the offline cache limit. Zoom in before saving.",
+              { count: outcome.tileCount },
+            )
           : outcome.reason === "busy"
-            ? "Another region is still downloading. Wait for it to finish (or pause it) before saving a new one."
-            : "The map bounds looked invalid. Move the map and try again.";
-      Alert.alert("Couldn't save this area", message);
+            ? translate(
+                "Another region is still downloading. Wait for it to finish (or pause it) before saving a new one.",
+              )
+            : translate(
+                "The map bounds looked invalid. Move the map and try again.",
+              );
+      Alert.alert(translate("Couldn't save this area"), message);
     }
   }, [center, saveRegion]);
 
@@ -143,12 +151,15 @@ export default function OfflineRegionsScreen() {
   const onDelete = useCallback(
     (region: OfflineRegion) => {
       Alert.alert(
-        "Delete offline region",
-        `"${region.name}" will be removed from your device. You can re-save it later.`,
+        translate("Delete offline region"),
+        translate(
+          '"{value0}" will be removed from your device. You can re-save it later.',
+          { value0: region.name },
+        ),
         [
-          { text: "Cancel", style: "cancel" },
+          { text: translate("Cancel"), style: "cancel" },
           {
-            text: "Delete",
+            text: translate("Delete"),
             style: "destructive",
             onPress: () => {
               void deleteRegion(region.id);
@@ -168,21 +179,27 @@ export default function OfflineRegionsScreen() {
         keyExtractor={(r) => r.id}
         ListHeaderComponent={
           <View style={styles.headerCard}>
-            <Text style={styles.sectionTitle}>Offline map regions</Text>
+            <Text style={styles.sectionTitle}>
+              {translate("Offline map regions")}
+            </Text>
             <Text style={styles.sectionBody}>
-              Save an area to your device so the road-quality overlay keeps
-              working when you lose cell service. Tiles live in the app's
-              storage — delete a region anytime to reclaim space.
+              {translate(
+                "Save an area to your device so the road-quality overlay keeps working when you lose cell service. Tiles live in the app's storage — delete a region anytime to reclaim space.",
+              )}
             </Text>
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={onSaveCurrent}
               accessibilityRole="button"
-              accessibilityLabel="Save current map area for offline use"
+              accessibilityLabel={translate(
+                "Save current map area for offline use",
+              )}
             >
               <Icon name="map-marker-plus-outline" size={20} color={INK} />
               <Text style={styles.primaryBtnLabel}>
-                Save current area ({DEFAULT_SAVE_RADIUS_KM} km)
+                {translate("Save current area ({distance} km)", {
+                  distance: DEFAULT_SAVE_RADIUS_KM,
+                })}
               </Text>
             </TouchableOpacity>
           </View>
@@ -198,10 +215,13 @@ export default function OfflineRegionsScreen() {
         ListEmptyComponent={
           <View style={styles.emptyCard}>
             <Icon name="cloud-off-outline" size={28} color={t.dim} />
-            <Text style={styles.emptyTitle}>No offline regions yet</Text>
+            <Text style={styles.emptyTitle}>
+              {translate("No offline regions yet")}
+            </Text>
             <Text style={styles.emptyBody}>
-              Pan the map to the area you want to cache and tap "Save current
-              area" above.
+              {translate(
+                'Pan the map to the area you want to cache and tap "Save current area" above.',
+              )}
             </Text>
           </View>
         }
@@ -229,7 +249,7 @@ function RegionRowImpl({
   onCancel,
   onDelete,
 }: RegionRowProps) {
-  const statusLabel = STATUS_LABELS[region.status];
+  const statusLabel = translate(STATUS_LABELS[region.status]);
   const statusIcon = STATUS_ICONS[region.status];
   const statusTextColor = STATUS_TEXT[region.status];
   const statusFillColor = STATUS_FILL[region.status];
@@ -253,8 +273,12 @@ function RegionRowImpl({
       </View>
 
       <Text style={styles.cardDetails}>
-        {region.totalTiles} tiles · zoom {region.minZoom}–{region.maxZoom} ·{" "}
-        {formatBytes(region.bytesOnDisk)}
+        {translate("{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}", {
+          tiles: region.totalTiles,
+          minZoom: region.minZoom,
+          maxZoom: region.maxZoom,
+          size: formatBytes(region.bytesOnDisk),
+        })}
       </Text>
 
       <View style={styles.progressTrack}>
@@ -269,8 +293,16 @@ function RegionRowImpl({
         />
       </View>
       <Text style={styles.progressText}>
-        {region.downloadedTiles} / {region.totalTiles} downloaded
-        {region.failedTiles > 0 ? ` · ${region.failedTiles} failed` : ""}
+        {region.failedTiles > 0
+          ? translate("{downloaded} / {total} downloaded · {failed} failed", {
+              downloaded: region.downloadedTiles,
+              total: region.totalTiles,
+              failed: region.failedTiles,
+            })
+          : translate("{downloaded} / {total} downloaded", {
+              downloaded: region.downloadedTiles,
+              total: region.totalTiles,
+            })}
       </Text>
 
       {region.lastError ? (
@@ -285,10 +317,12 @@ function RegionRowImpl({
             style={styles.secondaryBtn}
             onPress={() => onCancel(region.id)}
             accessibilityRole="button"
-            accessibilityLabel={`Pause download of ${region.name}`}
+            accessibilityLabel={translate("Pause download of {value0}", {
+              value0: region.name,
+            })}
           >
             <Icon name="pause" size={18} color={t.fg} />
-            <Text style={styles.secondaryBtnLabel}>Pause</Text>
+            <Text style={styles.secondaryBtnLabel}>{translate("Pause")}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -297,10 +331,12 @@ function RegionRowImpl({
             style={styles.secondaryBtn}
             onPress={() => onRetry(region.id)}
             accessibilityRole="button"
-            accessibilityLabel={`Retry download of ${region.name}`}
+            accessibilityLabel={translate("Retry download of {value0}", {
+              value0: region.name,
+            })}
           >
             <Icon name="refresh" size={18} color={t.fg} />
-            <Text style={styles.secondaryBtnLabel}>Retry</Text>
+            <Text style={styles.secondaryBtnLabel}>{translate("Retry")}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -308,11 +344,13 @@ function RegionRowImpl({
           style={[styles.secondaryBtn, styles.dangerBtn]}
           onPress={() => onDelete(region)}
           accessibilityRole="button"
-          accessibilityLabel={`Delete ${region.name}`}
+          accessibilityLabel={translate("Delete {value0}", {
+            value0: region.name,
+          })}
         >
           <Icon name="trash-can-outline" size={18} color={statusFg.danger} />
           <Text style={[styles.secondaryBtnLabel, { color: statusFg.danger }]}>
-            Delete
+            {translate("Delete")}
           </Text>
         </TouchableOpacity>
       </View>

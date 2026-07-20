@@ -35,8 +35,10 @@ import {
   nextMilestone,
   progressToNext,
   tierColor,
+  tierLabel,
   tierRank,
 } from "./AchievementsScreen.helpers";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 
@@ -49,7 +51,7 @@ export default function BadgesScreen() {
   const load = useCallback(
     async (initial: boolean) => {
       if (!userId) {
-        setErrorMessage("Sign in to see your badges.");
+        setErrorMessage(translate("Sign in to see your badges."));
         return;
       }
       if (!initial) setIsRefreshing(true);
@@ -64,7 +66,9 @@ export default function BadgesScreen() {
         setErrorMessage(null);
       } catch (err: unknown) {
         const message =
-          err instanceof Error ? err.message : "Couldn't load badges.";
+          err instanceof Error
+            ? err.message
+            : translate("Couldn't load badges.");
         setErrorMessage(message);
       } finally {
         if (!initial) setIsRefreshing(false);
@@ -89,7 +93,7 @@ export default function BadgesScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="wifi-off" size={40} color={t.dim} />
-        <Text style={styles.emptyTitle}>Can't load badges</Text>
+        <Text style={styles.emptyTitle}>{translate("Can't load badges")}</Text>
         <Text style={styles.emptyBody}>{errorMessage}</Text>
       </View>
     );
@@ -122,7 +126,9 @@ export default function BadgesScreen() {
       ) : (
         <>
           {earned.length > 0 ? (
-            <Section title={`Earned (${earned.length})`}>
+            <Section
+              title={translate("Earned ({value0})", { value0: earned.length })}
+            >
               {earned
                 .slice()
                 .sort((a, b) => tierRank(b.tier) - tierRank(a.tier))
@@ -132,7 +138,11 @@ export default function BadgesScreen() {
             </Section>
           ) : null}
           {locked.length > 0 ? (
-            <Section title={`In progress (${locked.length})`}>
+            <Section
+              title={translate("In progress ({value0})", {
+                value0: locked.length,
+              })}
+            >
               {locked.map((b) => (
                 <BadgeRow key={b.key} badge={b} />
               ))}
@@ -150,9 +160,9 @@ function EmptyState() {
   return (
     <View style={styles.emptyCard}>
       <Icon name="trophy-outline" size={48} color={ACCENT_DARK} />
-      <Text style={styles.emptyTitle}>No badges yet</Text>
+      <Text style={styles.emptyTitle}>{translate("No badges yet")}</Text>
       <Text style={styles.emptyBody}>
-        Earn your first badge by completing a ride.
+        {translate("Earn your first badge by completing a ride.")}
       </Text>
     </View>
   );
@@ -182,8 +192,15 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
       style={styles.badgeCard}
       accessibilityLabel={
         earned
-          ? `${badge.name}, ${badge.tier} tier earned`
-          : `${badge.name}, locked, ${Math.round(ratio * 100)}% to ${next?.tier}`
+          ? translate("{name}, {tier} tier earned", {
+              name: badge.name,
+              tier: tierLabel(badge.tier ?? ""),
+            })
+          : translate("{name}, locked, {progress}% to {nextTier}", {
+              name: badge.name,
+              progress: Math.round(ratio * 100),
+              nextTier: tierLabel(next?.tier ?? ""),
+            })
       }
     >
       <View
@@ -213,7 +230,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               ]}
             >
               <Text style={styles.tierLabel}>
-                {(badge.tier ?? "").toUpperCase()}
+                {tierLabel(badge.tier ?? "").toLocaleUpperCase()}
               </Text>
             </View>
           ) : null}
@@ -234,11 +251,15 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
             </View>
             <Text style={styles.progressLabel}>
               {Math.round(badge.progress.current)} / {Math.round(next.target)} →{" "}
-              <Text style={styles.progressTier}>{next.tier.toUpperCase()}</Text>
+              <Text style={styles.progressTier}>
+                {tierLabel(next.tier).toLocaleUpperCase()}
+              </Text>
             </Text>
           </>
         ) : (
-          <Text style={styles.maxedLabel}>Maxed · gold tier reached</Text>
+          <Text style={styles.maxedLabel}>
+            {translate("Maxed · gold tier reached")}
+          </Text>
         )}
       </View>
     </View>

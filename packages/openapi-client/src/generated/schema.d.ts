@@ -4690,6 +4690,20 @@ export interface components {
              *     to drop alerts the rider has already passed.
              */
             distance_km_from_start: number;
+            /**
+             * @description Structured temperature for wet/ice alerts. Together with `kind` and
+             *     `wind_kmh`, this lets clients reconstruct the sampled conditions in the
+             *     active locale instead of parsing the English compatibility `message`.
+             * @example -3
+             */
+            temperature_c?: number;
+            /**
+             * @description Structured wind speed for wind, wet, and ice alerts. Clients use this
+             *     value when constructing localized copy instead of parsing the English
+             *     compatibility `message`.
+             * @example 75
+             */
+            wind_kmh?: number;
             /** @example Storm warning ahead */
             title: string;
             /** @example Severe storm at 49.12, 16.75 — pull over or reroute. */

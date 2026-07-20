@@ -93,6 +93,7 @@ import {
   funZoneFillStyle,
   funZoneLineStyle,
   funZonesToFeatureCollection,
+  formatFunZoneSeason,
   getQualityTileUrlTemplate,
   hazardsToFeatureCollection,
   hazardMarkerStyle,
@@ -102,6 +103,7 @@ import {
   passMarkerStyle,
 } from "./MapScreen.helpers";
 import { formatKm } from "./TripScreens.helpers";
+import { t as translate } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -585,25 +587,25 @@ export default function MapScreen() {
       <View style={styles.fabColumn}>
         <ToggleFab
           icon="road-variant"
-          label="Quality"
+          label={translate("Quality")}
           active={showQualityOverlay}
           onPress={toggleQuality}
         />
         <ToggleFab
           icon="alert-circle"
-          label="Hazards"
+          label={translate("Hazards")}
           active={showHazardOverlay}
           onPress={toggleHazards}
         />
         <ToggleFab
           icon="terrain"
-          label="Passes"
+          label={translate("Passes")}
           active={showPassesOverlay}
           onPress={togglePasses}
         />
         <ToggleFab
           icon="fire"
-          label="Fun zones"
+          label={translate("Fun zones")}
           active={showFunZonesOverlay}
           onPress={toggleFunZones}
         />
@@ -662,7 +664,11 @@ function ToggleFab({
       style={[styles.toggleFab, active ? styles.toggleFabActive : null]}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${active ? "Hide" : "Show"} ${label.toLowerCase()} overlay`}
+      accessibilityLabel={
+        active
+          ? translate("Hide {label} overlay", { label: label.toLowerCase() })
+          : translate("Show {label} overlay", { label: label.toLowerCase() })
+      }
       accessibilityState={{ selected: active }}
     >
       <Icon name={icon} size={20} color={active ? t.fg : ON_DARK} />
@@ -688,11 +694,11 @@ function QualityLegend({
   // values map 5 → 1. Buckets with a score below `minQuality` are dimmed
   // and swatched in gray to match the map's below-threshold rendering.
   const buckets: Array<{ score: number; color: string; label: string }> = [
-    { score: 5, color: QUALITY_COLORS[4], label: "Excellent" },
-    { score: 4, color: QUALITY_COLORS[3], label: "Good" },
-    { score: 3, color: QUALITY_COLORS[2], label: "Fair" },
-    { score: 2, color: QUALITY_COLORS[1], label: "Poor" },
-    { score: 1, color: QUALITY_COLORS[0], label: "Very poor" },
+    { score: 5, color: QUALITY_COLORS[4], label: translate("Excellent") },
+    { score: 4, color: QUALITY_COLORS[3], label: translate("Good") },
+    { score: 3, color: QUALITY_COLORS[2], label: translate("Fair") },
+    { score: 2, color: QUALITY_COLORS[1], label: translate("Poor") },
+    { score: 1, color: QUALITY_COLORS[0], label: translate("Very poor") },
   ];
   return (
     <View
@@ -702,10 +708,12 @@ function QualityLegend({
       }}
     >
       <View style={styles.legendHeader}>
-        <Text style={styles.legendTitle}>Road quality</Text>
+        <Text style={styles.legendTitle}>{translate("Road quality")}</Text>
         {minQuality > 1 ? (
           <Text style={styles.legendSubtitle}>
-            Min: {qualityLabel(minQuality)}
+            {translate("Min: {quality}", {
+              quality: qualityLabel(minQuality),
+            })}
           </Text>
         ) : null}
       </View>
@@ -723,7 +731,7 @@ function QualityLegend({
         <View style={styles.legendOfflineRow}>
           <Icon name="cloud-check-outline" size={12} color={ON_DARK_DIM} />
           <Text style={styles.legendOfflineText} numberOfLines={1}>
-            Offline tiles · {offlineRegionName}
+            {translate("Offline tiles · {name}", { name: offlineRegionName })}
           </Text>
         </View>
       ) : null}
@@ -764,19 +772,19 @@ function PassesLegend({
     : null;
   return (
     <View style={[styles.legend, stackedStyle]}>
-      <Text style={styles.legendTitle}>Mountain passes</Text>
+      <Text style={styles.legendTitle}>{translate("Mountain passes")}</Text>
       <View style={styles.legendRow}>
         <LegendDot
           color={PASS_STATUS_COLORS.open}
-          label={PASS_STATUS_LABELS.open}
+          label={translate(PASS_STATUS_LABELS.open)}
         />
         <LegendDot
           color={PASS_STATUS_COLORS.closed}
-          label={PASS_STATUS_LABELS.closed}
+          label={translate(PASS_STATUS_LABELS.closed)}
         />
         <LegendDot
           color={PASS_STATUS_COLORS.unknown}
-          label={PASS_STATUS_LABELS.unknown}
+          label={translate(PASS_STATUS_LABELS.unknown)}
         />
       </View>
     </View>
@@ -798,8 +806,11 @@ function FunZonesLegend({ zoneCount }: { zoneCount: number }) {
       <Icon name="fire" size={16} color={t.accent} />
       <Text style={styles.funZonesLegendTitle}>
         {zoneCount > 0
-          ? `${zoneCount} fun zone${zoneCount === 1 ? "" : "s"} · tap to open`
-          : "Pan the map to find fun zones"}
+          ? translate(
+              "{count, plural, one {# fun zone} other {# fun zones}} · tap to open",
+              { count: zoneCount },
+            )
+          : translate("Pan the map to find fun zones")}
       </Text>
       <View style={styles.funZonesLegendGradient}>
         <View
@@ -861,7 +872,7 @@ function FunZoneCard({
     (hasQualityLegend ? qualityLegendHeight + brandSpacing.s2 : 0) +
     (hasPassesLegend ? FUN_ZONE_CARD_PASSES_OFFSET : 0);
   const bottom = brandSpacing.s5 + stackOffset;
-  const title = zone.name?.trim() || "Fun zone";
+  const title = zone.name?.trim() || translate("Fun zone");
   const curveKm =
     zone.total_curve_km != null ? formatKm(zone.total_curve_km) : null;
   const avgQuality =
@@ -873,7 +884,7 @@ function FunZoneCard({
           <Text style={[styles.funZoneScoreChipValue, { color: accent }]}>
             {zone.composite_score.toFixed(1)}
           </Text>
-          <Text style={styles.funZoneScoreChipLabel}>score</Text>
+          <Text style={styles.funZoneScoreChipLabel}>{translate("score")}</Text>
         </View>
         <View style={styles.funZoneCardHeaderText}>
           <Text style={styles.funZoneCardTitle} numberOfLines={1}>
@@ -881,14 +892,16 @@ function FunZoneCard({
           </Text>
           {zone.best_season ? (
             <Text style={styles.funZoneCardSubtitle}>
-              Best: {formatSeason(zone.best_season)}
+              {translate("Best: {season}", {
+                season: formatFunZoneSeason(zone.best_season),
+              })}
             </Text>
           ) : null}
         </View>
         <TouchableOpacity
           onPress={onClose}
           accessibilityRole="button"
-          accessibilityLabel="Close fun zone details"
+          accessibilityLabel={translate("Close fun zone details")}
           hitSlop={10}
         >
           <Icon name="close" size={20} color={ON_DARK_DIM} />
@@ -896,11 +909,14 @@ function FunZoneCard({
       </View>
       <View style={styles.funZoneStatsRow}>
         <FunZoneStat
-          label="Roads"
+          label={translate("Roads")}
           value={zone.road_count > 0 ? zone.road_count.toString() : "—"}
         />
-        <FunZoneStat label="Curve km" value={curveKm ?? "—"} />
-        <FunZoneStat label="Avg quality" value={avgQuality ?? "—"} />
+        <FunZoneStat label={translate("Curve km")} value={curveKm ?? "—"} />
+        <FunZoneStat
+          label={translate("Avg quality")}
+          value={avgQuality ?? "—"}
+        />
       </View>
     </View>
   );
@@ -913,12 +929,6 @@ function FunZoneStat({ label, value }: { label: string; value: string }) {
       <Text style={styles.funZoneStatValue}>{value}</Text>
     </View>
   );
-}
-
-function formatSeason(season: string): string {
-  const cleaned = season.replace(/_/g, " ").trim();
-  if (!cleaned) return season;
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 const styles = StyleSheet.create({
