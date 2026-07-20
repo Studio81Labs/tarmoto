@@ -30,6 +30,18 @@ export class TilesController {
     @Query() query: TileQueryDto,
     @Res() res: express.Response,
   ): Promise<void> {
+    // Tiles are public and identical for every rider. Keep the browser TTL
+    // short enough for recent quality updates, while allowing the CDN to
+    // absorb cross-user viewport bursts and serve stale during revalidation.
+    // `CDN-Cache-Control` is intentionally separate so browser freshness does
+    // not have to match the edge cache policy.
+    res.set('Cache-Control', 'public, max-age=300');
+    res.set(
+      'CDN-Cache-Control',
+      'public, max-age=900, stale-while-revalidate=86400',
+    );
+    res.set('Access-Control-Allow-Origin', '*');
+
     const tile = await this.tilesService.getTile(
       params.z,
       params.x,
@@ -43,8 +55,6 @@ export class TilesController {
     }
 
     res.set('Content-Type', 'application/vnd.mapbox-vector-tile');
-    res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
-    res.set('Access-Control-Allow-Origin', '*');
     res.send(tile);
   }
 }

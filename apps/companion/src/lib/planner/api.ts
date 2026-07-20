@@ -87,6 +87,25 @@ const MAX_ROUTE_QUALITY_REQUEST_KM = 480;
 // limit, so chunk by vertex count too. Kept under the cap with margin.
 const MAX_ROUTE_QUALITY_REQUEST_POINTS = 20000;
 
+// A route-quality response describes public road data for an exact polyline.
+// Keep a small, session-local cache so preference changes or a save/refetch
+// that produces the identical GraphHopper geometry does not repeat thousands
+// of PostGIS nearest-segment lookups. Nothing is persisted, and the short TTL
+// matches the map tile browser freshness window.
+const ROUTE_QUALITY_CACHE_TTL_MS = 5 * 60_000;
+const MAX_ROUTE_QUALITY_CACHE_ENTRIES = 8;
+
+interface CachedRouteQuality {
+  expiresAt: number;
+  spans: RouteQualitySegment[];
+}
+
+function routeQualityCacheKey(
+  points: ReadonlyArray<{ lat: number; lng: number }>,
+): string {
+  return points.map((point) => `${point.lat},${point.lng}`).join(";");
+}
+
 interface RouteChunk {
   points: { lat: number; lng: number }[];
   /** Where this chunk starts on the whole route, as a fraction [0,1]. */
@@ -845,6 +864,8 @@ async function fetchSegmentImagery(segment: RouteSegment): Promise<{
 }
 
 export function createPlannerApi(): PlannerApi {
+  const routeQualityCache = new Map<string, CachedRouteQuality>();
+
   return {
     generateRoute(
       waypoints: ReadonlyArray<{ lat: number; lng: number }>,
@@ -859,6 +880,17 @@ export function createPlannerApi(): PlannerApi {
       dayNumber: number,
       init?: { signal?: AbortSignal },
     ): Promise<RouteSegment[]> {
+      init?.signal?.throwIfAborted();
+      const cacheKey = routeQualityCacheKey(points);
+      const cached = routeQualityCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        // Refresh insertion order so the cap behaves as a tiny LRU.
+        routeQualityCache.delete(cacheKey);
+        routeQualityCache.set(cacheKey, cached);
+        return mapRouteQualitySpans(points, cached.spans, dayNumber);
+      }
+      if (cached) routeQualityCache.delete(cacheKey);
+
       const requestInit =
         init?.signal !== undefined ? { signal: init.signal } : {};
       // The backend rejects a single request over its route-length limit; a
@@ -885,6 +917,17 @@ export function createPlannerApi(): PlannerApi {
               chunk.startFraction + span.end_fraction * chunk.fractionSpan,
           });
         }
+      }
+      routeQualityCache.set(cacheKey, {
+        expiresAt: Date.now() + ROUTE_QUALITY_CACHE_TTL_MS,
+        spans,
+      });
+      while (routeQualityCache.size > MAX_ROUTE_QUALITY_CACHE_ENTRIES) {
+        const oldestKey = routeQualityCache.keys().next().value as
+          | string
+          | undefined;
+        if (oldestKey === undefined) break;
+        routeQualityCache.delete(oldestKey);
       }
       return mapRouteQualitySpans(points, spans, dayNumber);
     },

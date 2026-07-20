@@ -31,8 +31,14 @@ import { QUALITY_CONFIG } from "@/lib/utils";
 const CURATE_ATTRIBUTION = isCuratableBaseMap(MAP_STYLE_URL);
 
 export const TARMOTO_ROADS_SOURCE = "tarmoto-roads";
+export const TARMOTO_SURFACE_SOURCE = "tarmoto-road-surfaces";
 export const TARMOTO_QUALITY_LAYER = "tarmoto-quality";
 export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
+// Individual road segments are not visually useful below neighbourhood scale,
+// and country-scale z6-z8 tiles can contain tens of megabytes of features.
+// Routed lines still render at every zoom; this only gates the all-roads
+// background overlays until the rider zooms in far enough to inspect them.
+const TARMOTO_ROADS_MIN_ZOOM = 10;
 // Accent glow + line painted over the selected road segment (the one whose
 // detail drawer is open), filtered on the segment's `id` property. Lives here
 // so every MapCanvas surface — /explore and the trip planner — highlights the
@@ -291,16 +297,28 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       applyTarmotoMapTheme(map, colorSchemeRef.current);
       appliedColorSchemeRef.current = colorSchemeRef.current;
 
+      const roadTileBase = `${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`;
       map.addSource(TARMOTO_ROADS_SOURCE, {
         type: "vector",
-        tiles: [`${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`],
-        minzoom: 6,
+        // The quality layer already carries surface + curviness properties.
+        // Do not download the separate surface layer when only quality is
+        // visible (the common planner/explore path from the performance HAR).
+        tiles: [`${roadTileBase}?layers=quality`],
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
         maxzoom: 18,
         // Hoist the segment UUID from properties to the feature `id` so
         // consumers (notably the personal road-map US-50) can drive
         // ridden/unridden styling via `feature-state` instead of a
         // 10k-entry `["match", ["get", "id"], …]` filter.
-        promoteId: { quality: "id", surface: "id" },
+        promoteId: { quality: "id" },
+      });
+
+      map.addSource(TARMOTO_SURFACE_SOURCE, {
+        type: "vector",
+        tiles: [`${roadTileBase}?layers=surface`],
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        maxzoom: 18,
+        promoteId: { surface: "id" },
       });
 
       // Each layer's initial visibility is read from the current props so the
@@ -311,6 +329,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         type: "line",
         source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -336,8 +355,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       map.addLayer({
         id: TARMOTO_SURFACE_LAYER,
         type: "line",
-        source: TARMOTO_ROADS_SOURCE,
+        source: TARMOTO_SURFACE_SOURCE,
         "source-layer": "surface",
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -385,7 +405,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
         filter: NO_SEGMENT_FILTER,
-        layout: { "line-cap": "round", "line-join": "round" },
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          // A filtered-but-visible layer still makes MapLibre fetch its source.
+          // Keep both selected-road layers hidden until a segment is selected.
+          visibility: selectedSegmentId ? "visible" : "none",
+        },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
           "line-width": [
@@ -409,7 +436,12 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
         filter: NO_SEGMENT_FILTER,
-        layout: { "line-cap": "round", "line-join": "round" },
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          visibility: selectedSegmentId ? "visible" : "none",
+        },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
           "line-width": [
@@ -485,7 +517,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       SEGMENT_SELECTED_GLOW_LAYER,
       SEGMENT_SELECTED_LINE_LAYER,
     ]) {
-      if (map.getLayer(layer)) map.setFilter(layer, filter);
+      if (!map.getLayer(layer)) continue;
+      map.setFilter(layer, filter);
+      setVisibility(map, layer, Boolean(selectedSegmentId));
     }
   }, [ready, selectedSegmentId]);
 

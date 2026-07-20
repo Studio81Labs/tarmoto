@@ -41,6 +41,10 @@ describe('TilesController', () => {
         'Cache-Control',
         'public, max-age=300',
       );
+      expect((res as { set: jest.Mock }).set).toHaveBeenCalledWith(
+        'CDN-Cache-Control',
+        'public, max-age=900, stale-while-revalidate=86400',
+      );
       expect((res as { send: jest.Mock }).send).toHaveBeenCalled();
     });
 
@@ -57,6 +61,10 @@ describe('TilesController', () => {
       await controller.getTile({ z: 10, x: 550, y: 335 }, {}, res);
 
       expect((res as { status: jest.Mock }).status).toHaveBeenCalledWith(204);
+      expect((res as { set: jest.Mock }).set).toHaveBeenCalledWith(
+        'CDN-Cache-Control',
+        'public, max-age=900, stale-while-revalidate=86400',
+      );
       expect((res as { end: jest.Mock }).end).toHaveBeenCalled();
     });
 

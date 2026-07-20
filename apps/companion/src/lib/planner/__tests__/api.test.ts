@@ -344,6 +344,47 @@ describe("plannerApi.getRouteQuality (#862)", () => {
     });
   });
 
+  it("reuses completed quality for an identical polyline in the same session", async () => {
+    routeQualityMock.mockResolvedValue({
+      data: {
+        segments: [
+          {
+            segment_id: "seg-1",
+            osm_way_id: "1",
+            segment_index: 0,
+            quality_score: 4.2,
+            curviness_score: 2,
+            surface_type: "asphalt",
+            reading_count: 12,
+            start_fraction: 0,
+            end_fraction: 1,
+          },
+        ],
+      },
+    });
+    const api = createPlannerApi();
+
+    const first = await api.getRouteQuality(points, 1);
+    const second = await api.getRouteQuality(
+      points.map((point) => ({ ...point })),
+      2,
+    );
+
+    expect(routeQualityMock).toHaveBeenCalledTimes(1);
+    expect(first[0]?.dayNumber).toBe(1);
+    expect(second[0]?.dayNumber).toBe(2);
+  });
+
+  it("does not reuse quality after any route vertex changes", async () => {
+    routeQualityMock.mockResolvedValue({ data: { segments: [] } });
+    const api = createPlannerApi();
+
+    await api.getRouteQuality(points, 1);
+    await api.getRouteQuality([points[0]!, { lat: 49.2, lng: 16.2 }], 1);
+
+    expect(routeQualityMock).toHaveBeenCalledTimes(2);
+  });
+
   it("threads an abort signal through to the client", async () => {
     routeQualityMock.mockResolvedValue({ data: { segments: [] } });
     const controller = new AbortController();
