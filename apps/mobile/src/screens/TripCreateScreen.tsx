@@ -52,6 +52,7 @@ import {
   type DailyKmPreset,
   type RoadPreferenceValue,
 } from "./TripScreens.helpers";
+import { t as translate } from "@/i18n";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripCreate">;
 
@@ -188,7 +189,7 @@ export default function TripCreateScreen() {
       if (!outcome.ok) {
         if (outcome.cancelled) return;
         setErrorMessage(outcome.error);
-        Alert.alert("Couldn't import file", outcome.error);
+        Alert.alert(translate("Couldn't import file"), outcome.error);
         return;
       }
       const requestTitle = trimmedTitle || outcome.route.name;
@@ -204,9 +205,11 @@ export default function TripCreateScreen() {
       navigation.replace("TripDetail", { tripId: trip.id });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Unable to import route";
+        err instanceof Error
+          ? err.message
+          : translate("Unable to import route");
       setErrorMessage(message);
-      Alert.alert("Import failed", message);
+      Alert.alert(translate("Import failed"), message);
     } finally {
       importingRef.current = false;
       setImporting(false);
@@ -262,10 +265,12 @@ export default function TripCreateScreen() {
       navigation.replace("TripDetail", { tripId });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Unable to generate trip";
+        err instanceof Error
+          ? err.message
+          : translate("Unable to generate trip");
       setErrorMessage(message);
       // Also pop an alert so the user can't miss it behind the keyboard.
-      Alert.alert("Generation failed", message);
+      Alert.alert(translate("Generation failed"), message);
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -293,10 +298,11 @@ export default function TripCreateScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>New trip</Text>
+        <Text style={styles.title}>{translate("New trip")}</Text>
         <Text style={styles.subtitle}>
-          We'll auto-generate a multi-day route that favours the roads you care
-          about.
+          {translate(
+            "We'll auto-generate a multi-day route that favours the roads you care about.",
+          )}
         </Text>
 
         <TouchableOpacity
@@ -307,7 +313,7 @@ export default function TripCreateScreen() {
           onPress={() => void handleImport()}
           disabled={importing || submitting}
           accessibilityRole="button"
-          accessibilityLabel="Import GPX or KML file"
+          accessibilityLabel={translate("Import GPX or KML file")}
           accessibilityState={{ busy: importing }}
         >
           {importing ? (
@@ -315,16 +321,18 @@ export default function TripCreateScreen() {
           ) : (
             <>
               <Icon name="file-upload-outline" size={20} color={t.fg} />
-              <Text style={styles.importLabel}>Import GPX/KML</Text>
+              <Text style={styles.importLabel}>
+                {translate("Import GPX/KML")}
+              </Text>
             </>
           )}
         </TouchableOpacity>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Title</Text>
+          <Text style={styles.sectionTitle}>{translate("Title")}</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. Beskydy weekend"
+            placeholder={translate("e.g. Beskydy weekend")}
             placeholderTextColor={t.mute}
             value={title}
             onChangeText={setTitle}
@@ -333,11 +341,11 @@ export default function TripCreateScreen() {
           />
 
           <Text style={[styles.sectionTitle, styles.sectionSpacing]}>
-            Region (optional)
+            {translate("Region (optional)")}
           </Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. Moravia"
+            placeholder={translate("e.g. Moravia")}
             placeholderTextColor={t.mute}
             value={region}
             onChangeText={setRegion}
@@ -347,9 +355,9 @@ export default function TripCreateScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Days</Text>
+          <Text style={styles.sectionTitle}>{translate("Days")}</Text>
           <Text style={styles.sectionBody}>
-            How many riding days in this trip?
+            {translate("How many riding days in this trip?")}
           </Text>
           <View style={styles.pillRow}>
             {DAY_OPTIONS.map((d) => {
@@ -361,7 +369,10 @@ export default function TripCreateScreen() {
                   onPress={() => setNumDays(d)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${d} days`}
+                  accessibilityLabel={translate(
+                    "{count, plural, one {# day} other {# days}}",
+                    { count: d },
+                  )}
                 >
                   <Text
                     style={[
@@ -378,13 +389,16 @@ export default function TripCreateScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Daily distance</Text>
+          <Text style={styles.sectionTitle}>{translate("Daily distance")}</Text>
           <Text style={styles.sectionBody}>
-            Target range per day. The generator balances days around this.
+            {translate(
+              "Target range per day. The generator balances days around this.",
+            )}
           </Text>
           <View style={styles.stackRow}>
             {DAILY_KM_PRESETS.map((preset) => {
               const selected = preset.label === dailyKm.label;
+              const presetLabel = translate(preset.label);
               return (
                 <TouchableOpacity
                   key={preset.label}
@@ -395,7 +409,14 @@ export default function TripCreateScreen() {
                   onPress={() => setDailyKm(preset)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${preset.label}, ${preset.min} to ${preset.max} km`}
+                  accessibilityLabel={translate(
+                    "{value0}, {value1} to {value2} km",
+                    {
+                      value0: presetLabel,
+                      value1: preset.min,
+                      value2: preset.max,
+                    },
+                  )}
                 >
                   <Text
                     style={[
@@ -403,7 +424,7 @@ export default function TripCreateScreen() {
                       selected && styles.pillTextSelected,
                     ]}
                   >
-                    {preset.label}
+                    {presetLabel}
                   </Text>
                   <Text
                     style={[
@@ -411,7 +432,10 @@ export default function TripCreateScreen() {
                       selected && styles.stackPillMetaSelected,
                     ]}
                   >
-                    {preset.min}–{preset.max} km / day
+                    {translate("{min}–{max} km / day", {
+                      min: preset.min,
+                      max: preset.max,
+                    })}
                   </Text>
                 </TouchableOpacity>
               );
@@ -420,13 +444,16 @@ export default function TripCreateScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Road preference</Text>
+          <Text style={styles.sectionTitle}>
+            {translate("Road preference")}
+          </Text>
           <Text style={styles.sectionBody}>
-            Shapes how the generator picks between speed and fun.
+            {translate("Shapes how the generator picks between speed and fun.")}
           </Text>
           <View style={styles.pillRow}>
             {ROAD_PREFERENCES.map((pref) => {
               const selected = pref.value === roadPref;
+              const preferenceLabel = translate(pref.label);
               return (
                 <TouchableOpacity
                   key={pref.value}
@@ -434,7 +461,7 @@ export default function TripCreateScreen() {
                   onPress={() => setRoadPref(pref.value)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={pref.label}
+                  accessibilityLabel={preferenceLabel}
                 >
                   <Text
                     style={[
@@ -442,7 +469,7 @@ export default function TripCreateScreen() {
                       selected && styles.pillTextSelected,
                     ]}
                   >
-                    {pref.label}
+                    {preferenceLabel}
                   </Text>
                 </TouchableOpacity>
               );
@@ -451,19 +478,26 @@ export default function TripCreateScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Road quality for this trip</Text>
+          <Text style={styles.sectionTitle}>
+            {translate("Road quality for this trip")}
+          </Text>
           <Text style={styles.sectionBody}>
-            The planner will prefer roads at or above this quality. Segments
-            below it show dimmed so you still see them as fallbacks.
+            {translate(
+              "The planner will prefer roads at or above this quality. Segments below it show dimmed so you still see them as fallbacks.",
+            )}
           </Text>
           <QualityThresholdSlider
             value={tripMinQuality}
             onChange={handleQualityChange}
-            label="Minimum quality"
+            label={translate("Minimum quality")}
             helpText={
               overridesDefault
-                ? `Overrides your default of ${qualityLabel(defaultMinQuality)}.`
-                : `Using your default (${qualityLabel(defaultMinQuality)}).`
+                ? translate("Overrides your default of {quality}.", {
+                    quality: qualityLabel(defaultMinQuality),
+                  })
+                : translate("Using your default ({quality}).", {
+                    quality: qualityLabel(defaultMinQuality),
+                  })
             }
           />
           {overridesDefault ? (
@@ -472,13 +506,15 @@ export default function TripCreateScreen() {
               style={styles.resetRow}
               accessibilityRole="button"
             >
-              <Text style={styles.resetLabel}>Reset to default</Text>
+              <Text style={styles.resetLabel}>
+                {translate("Reset to default")}
+              </Text>
             </TouchableOpacity>
           ) : null}
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Start location</Text>
+          <Text style={styles.sectionTitle}>{translate("Start location")}</Text>
           <View style={styles.startRow}>
             <Icon
               name={startIsLive ? "crosshairs-gps" : "map-marker-outline"}
@@ -486,8 +522,10 @@ export default function TripCreateScreen() {
               color={startIsLive ? ACCENT_DARK : t.dim}
             />
             <Text style={styles.startText}>
-              {startIsLive ? "Your current location" : "Last map location"} ·{" "}
-              {startLocation.lat.toFixed(3)}, {startLocation.lng.toFixed(3)}
+              {startIsLive
+                ? translate("Your current location")
+                : translate("Last map location")}{" "}
+              · {startLocation.lat.toFixed(3)}, {startLocation.lng.toFixed(3)}
             </Text>
           </View>
         </View>
@@ -505,14 +543,16 @@ export default function TripCreateScreen() {
           disabled={!canSubmit}
           accessibilityRole="button"
           accessibilityState={{ disabled: !canSubmit, busy: submitting }}
-          accessibilityLabel="Generate trip"
+          accessibilityLabel={translate("Generate trip")}
         >
           {submitting ? (
             <ActivityIndicator color={t.invFg} />
           ) : (
             <>
               <Icon name="auto-fix" size={20} color={t.invFg} />
-              <Text style={styles.generateLabel}>Generate trip</Text>
+              <Text style={styles.generateLabel}>
+                {translate("Generate trip")}
+              </Text>
             </>
           )}
         </TouchableOpacity>

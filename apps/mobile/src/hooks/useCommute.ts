@@ -23,6 +23,7 @@ import type {
 } from "@/types";
 import { api } from "@/services/api";
 import { diffNewHazards, useCommuteStore } from "@/stores";
+import { t as translate } from "@/i18n";
 
 export type CommutePhase =
   | "loading"
@@ -177,7 +178,9 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
         if (isInitial) {
           setPhase("error");
           setErrorMessage(
-            err instanceof Error ? err.message : "Unable to load commute",
+            err instanceof Error
+              ? err.message
+              : translate("Unable to load commute"),
           );
         }
       } finally {

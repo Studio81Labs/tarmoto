@@ -235,7 +235,7 @@ describe("ViewProfileScreen", () => {
     });
 
     await fireEvent.press(
-      screen.getByLabelText("Following 1 riders, open list"),
+      screen.getByLabelText("Following 1 rider, open list"),
     );
     expect(mockPush).toHaveBeenCalledWith("Following", {
       userId: "user-2",

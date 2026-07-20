@@ -79,6 +79,7 @@ import {
   segmentQualityHistogram,
   type LeanHistogramRow,
 } from "./RideScreens.helpers";
+import { t as translate } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -118,7 +119,7 @@ export default function RideDetailScreen() {
   const fetchRide = useCallback(async () => {
     if (!rideId) {
       setPhase("error");
-      setErrorMessage("Missing ride id");
+      setErrorMessage(translate("Missing ride id"));
       return;
     }
     if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
@@ -134,7 +135,7 @@ export default function RideDetailScreen() {
       if (signal.cancelled) return;
       setPhase("error");
       setErrorMessage(
-        err instanceof Error ? err.message : "Couldn't load ride",
+        err instanceof Error ? err.message : translate("Couldn't load ride"),
       );
     }
   }, [rideId]);
@@ -164,19 +165,19 @@ export default function RideDetailScreen() {
     return (
       <View style={styles.centered}>
         <Icon name="alert-circle-outline" size={48} color={statusFg.danger} />
-        <Text style={styles.errorTitle}>Couldn't load ride</Text>
+        <Text style={styles.errorTitle}>{translate("Couldn't load ride")}</Text>
         {errorMessage ? (
           <Text style={styles.errorBody}>{errorMessage}</Text>
         ) : null}
         <View style={styles.errorActions}>
           <TouchableOpacity style={styles.primaryBtn} onPress={retry}>
-            <Text style={styles.primaryBtnLabel}>Try again</Text>
+            <Text style={styles.primaryBtnLabel}>{translate("Try again")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryBtn}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.secondaryBtnLabel}>Back</Text>
+            <Text style={styles.secondaryBtnLabel}>{translate("Back")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -240,7 +241,9 @@ function RouteMap({
     return (
       <View style={styles.mapPlaceholder}>
         <Icon name="map-marker-off-outline" size={32} color={t.dim} />
-        <Text style={styles.mapPlaceholderText}>No route recorded</Text>
+        <Text style={styles.mapPlaceholderText}>
+          {translate("No route recorded")}
+        </Text>
       </View>
     );
   }
@@ -291,18 +294,18 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
       <Text style={styles.cardDate}>{formatRideDate(ride.started_at)}</Text>
       <View style={styles.summaryRow}>
         <RideMetric
-          label="Distance"
+          label={translate("Distance")}
           value={formatDistanceKm(ride.distance_km)}
           size="lg"
         />
         <RideMetric
-          label="Duration"
+          label={translate("Duration")}
           value={formatDurationMinutes(ride.duration_min)}
           size="lg"
         />
         <View style={styles.qualityMetric}>
           <RideMetric
-            label="Quality"
+            label={translate("Quality")}
             value={qHas ? qualityLabel(qScore) : "—"}
             size="lg"
           />
@@ -323,41 +326,41 @@ function SummaryCard({ ride }: { ride: RideDetail }) {
 function StatsGrid({ ride }: { ride: RideDetail }) {
   return (
     <View style={styles.statsCard}>
-      <Text style={styles.sectionTitle}>Stats</Text>
+      <Text style={styles.sectionTitle}>{translate("Stats")}</Text>
       <View style={styles.statsGrid}>
         <StatTile
           icon="speedometer"
-          label="Avg speed"
+          label={translate("Avg speed")}
           value={formatSpeedKmh(ride.avg_speed)}
         />
         <StatTile
           icon="speedometer-medium"
-          label="Top speed"
+          label={translate("Top speed")}
           value={formatSpeedKmh(ride.max_speed)}
         />
         <StatTile
           icon="arrow-up-bold"
-          label="Ascent"
+          label={translate("Ascent")}
           value={formatElevation(ride.elevation_gain, "+")}
         />
         <StatTile
           icon="arrow-down-bold"
-          label="Descent"
+          label={translate("Descent")}
           value={formatElevation(ride.elevation_loss, "-")}
         />
         <StatTile
           icon="reload"
-          label="Curves"
+          label={translate("Curves")}
           value={formatCurveCount(ride.curve_count)}
         />
         <StatTile
           icon="motorbike"
-          label="Max lean"
+          label={translate("Max lean")}
           value={formatLeanAngle(ride.max_lean_angle)}
         />
         <StatTile
           icon="gas-station"
-          label="Fuel"
+          label={translate("Fuel")}
           value={formatFuelLiters(ride.fuel_estimate_l)}
         />
       </View>
@@ -381,10 +384,11 @@ function LeanBreakdownCard({
   if (total === 0) {
     return (
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Lean breakdown</Text>
+        <Text style={styles.sectionTitle}>{translate("Lean breakdown")}</Text>
         <Text style={styles.emptyHint}>
-          We didn't capture lean data on this ride. Calibrate during your next
-          ride to see the breakdown.
+          {translate(
+            "We didn't capture lean data on this ride. Calibrate during your next ride to see the breakdown.",
+          )}
         </Text>
       </View>
     );
@@ -394,8 +398,10 @@ function LeanBreakdownCard({
   return (
     <View style={styles.card}>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Lean breakdown</Text>
-        <Text style={styles.sectionMeta}>Max {maxLeanLabel}</Text>
+        <Text style={styles.sectionTitle}>{translate("Lean breakdown")}</Text>
+        <Text style={styles.sectionMeta}>
+          {translate("Max {angle}", { angle: maxLeanLabel })}
+        </Text>
       </View>
       {rows.map((row) => (
         <LeanHistogramRowView
@@ -420,7 +426,10 @@ function LeanHistogramRowView({
   return (
     <View
       style={styles.histRow}
-      accessibilityLabel={`${row.bucket.label}: ${percentLabel}`}
+      accessibilityLabel={translate("{value0}: {value1}", {
+        value0: row.bucket.label,
+        value1: percentLabel,
+      })}
     >
       <Text style={styles.histLabel}>{row.bucket.label}</Text>
       <View style={styles.histBarTrack}>
@@ -452,9 +461,9 @@ function SegmentBreakdownCard({
   if (segments.length === 0) {
     return (
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Segments</Text>
+        <Text style={styles.sectionTitle}>{translate("Segments")}</Text>
         <Text style={styles.emptyHint}>
-          No road segments were snapped on this ride yet.
+          {translate("No road segments were snapped on this ride yet.")}
         </Text>
       </View>
     );
@@ -470,9 +479,11 @@ function SegmentBreakdownCard({
   return (
     <View style={styles.card}>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Segment quality</Text>
+        <Text style={styles.sectionTitle}>{translate("Segment quality")}</Text>
         <Text style={styles.sectionMeta}>
-          {counted} segment{counted === 1 ? "" : "s"}
+          {translate("{count, plural, one {# segment} other {# segments}}", {
+            count: counted,
+          })}
         </Text>
       </View>
       {histogram.map((row) => (
@@ -504,7 +515,13 @@ function HistogramRow({
   const color = qualityBrandColor(bucket);
   const label = qualityLabel(bucket);
   return (
-    <View style={styles.histRow} accessibilityLabel={`${label}: ${count}`}>
+    <View
+      style={styles.histRow}
+      accessibilityLabel={translate("{value0}: {value1}", {
+        value0: label,
+        value1: count,
+      })}
+    >
       <Text style={styles.histLabel}>{label}</Text>
       <View style={styles.histBarTrack}>
         <View
@@ -532,12 +549,14 @@ function ShareActions({ ride }: { ride: RideDetail }) {
     try {
       await Share.share({
         message: buildRideShareMessage(ride),
-        title: "Tarmoto ride",
+        title: translate("Tarmoto ride"),
       });
     } catch (err) {
       Alert.alert(
-        "Couldn't share",
-        err instanceof Error ? err.message : "Unable to open share sheet.",
+        translate("Couldn't share"),
+        err instanceof Error
+          ? err.message
+          : translate("Unable to open share sheet."),
       );
     } finally {
       setBusy(null);
@@ -564,15 +583,15 @@ function ShareActions({ ride }: { ride: RideDetail }) {
         url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
         type: "application/gpx+xml",
         filename,
-        title: "Export ride as GPX",
+        title: translate("Export ride as GPX"),
         // failOnCancel=false so the rider dismissing the sheet doesn't
         // bubble up as an error toast.
         failOnCancel: false,
       });
     } catch (err) {
       Alert.alert(
-        "Couldn't export",
-        err instanceof Error ? err.message : "Unable to export GPX.",
+        translate("Couldn't export"),
+        err instanceof Error ? err.message : translate("Unable to export GPX."),
       );
     } finally {
       // Don't delete the file here. `RNShare.open` resolves the moment
@@ -594,11 +613,11 @@ function ShareActions({ ride }: { ride: RideDetail }) {
         onPress={() => void handleShare()}
         disabled={busy !== null}
         accessibilityRole="button"
-        accessibilityLabel="Share ride"
+        accessibilityLabel={translate("Share ride")}
       >
         <Icon name="share-variant" size={18} color={t.invFg} />
         <Text style={styles.actionLabel}>
-          {busy === "share" ? "Sharing…" : "Share"}
+          {busy === "share" ? translate("Sharing…") : translate("Share")}
         </Text>
       </TouchableOpacity>
       <TouchableOpacity
@@ -606,11 +625,11 @@ function ShareActions({ ride }: { ride: RideDetail }) {
         onPress={() => void handleExportGpx()}
         disabled={busy !== null}
         accessibilityRole="button"
-        accessibilityLabel="Export ride as GPX"
+        accessibilityLabel={translate("Export ride as GPX")}
       >
         <Icon name="download-outline" size={18} color={t.invFg} />
         <Text style={styles.actionLabel}>
-          {busy === "gpx" ? "Exporting…" : "Export GPX"}
+          {busy === "gpx" ? translate("Exporting…") : translate("Export GPX")}
         </Text>
       </TouchableOpacity>
     </View>

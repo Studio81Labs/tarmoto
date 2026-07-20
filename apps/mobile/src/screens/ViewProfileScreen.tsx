@@ -40,6 +40,7 @@ import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
+import { t as translate } from "@/i18n";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
@@ -64,7 +65,7 @@ export default function ViewProfileScreen() {
   const fetchProfile = useCallback(async () => {
     if (!userId) {
       setPhase("error");
-      setErrorMessage("Missing rider id.");
+      setErrorMessage(translate("Missing rider id."));
       return;
     }
     if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
@@ -86,7 +87,9 @@ export default function ViewProfileScreen() {
       if (signal.cancelled) return;
       setPhase("error");
       setErrorMessage(
-        err instanceof Error ? err.message : "Could not load rider profile.",
+        err instanceof Error
+          ? err.message
+          : translate("Could not load rider profile."),
       );
     }
   }, [userId]);
@@ -157,7 +160,9 @@ export default function ViewProfileScreen() {
           : prev,
       );
       setFollowError(
-        err instanceof Error ? err.message : "Could not update follow.",
+        err instanceof Error
+          ? err.message
+          : translate("Could not update follow."),
       );
     } finally {
       setFollowPending(false);
@@ -175,7 +180,9 @@ export default function ViewProfileScreen() {
   if (phase === "error" && !profile) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.errorTitle}>Couldn&apos;t load rider</Text>
+        <Text style={styles.errorTitle}>
+          {translate("Couldn't load rider")}
+        </Text>
         {errorMessage ? (
           <Text style={styles.errorText}>{errorMessage}</Text>
         ) : null}
@@ -183,9 +190,9 @@ export default function ViewProfileScreen() {
           style={styles.retryButton}
           onPress={() => void fetchProfile()}
           accessibilityRole="button"
-          accessibilityLabel="Retry loading profile"
+          accessibilityLabel={translate("Retry loading profile")}
         >
-          <Text style={styles.retryLabel}>Retry</Text>
+          <Text style={styles.retryLabel}>{translate("Retry")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -206,7 +213,9 @@ export default function ViewProfileScreen() {
         <Text style={styles.displayName}>{profile.display_name}</Text>
         {profile.follows_you === true ? (
           <View style={styles.followsYouBadge}>
-            <Text style={styles.followsYouBadgeText}>Follows you</Text>
+            <Text style={styles.followsYouBadgeText}>
+              {translate("Follows you")}
+            </Text>
           </View>
         ) : null}
         <Text style={styles.metaLine}>
@@ -232,7 +241,9 @@ export default function ViewProfileScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: profile.is_following === true }}
             accessibilityLabel={
-              profile.is_following ? "Unfollow rider" : "Follow rider"
+              profile.is_following
+                ? translate("Unfollow rider")
+                : translate("Follow rider")
             }
           >
             {followPending ? (
@@ -257,7 +268,9 @@ export default function ViewProfileScreen() {
                     profile.is_following ? styles.followingLabel : null,
                   ]}
                 >
-                  {profile.is_following ? "Following" : "Follow"}
+                  {profile.is_following
+                    ? translate("Following")
+                    : translate("Follow")}
                 </Text>
               </>
             )}
@@ -270,7 +283,7 @@ export default function ViewProfileScreen() {
 
       <View style={styles.statsRow}>
         <StatTile
-          label="Followers"
+          label={translate("Followers")}
           value={formatCount(profile.follower_count)}
           onPress={() =>
             navigation.push("Followers", {
@@ -278,10 +291,15 @@ export default function ViewProfileScreen() {
               displayName: profile.display_name,
             })
           }
-          accessibilityLabel={`${profile.follower_count} followers, open list`}
+          accessibilityLabel={translate(
+            "{count, plural, one {# follower} other {# followers}}, open list",
+            {
+              count: profile.follower_count,
+            },
+          )}
         />
         <StatTile
-          label="Following"
+          label={translate("Following")}
           value={formatCount(profile.following_count)}
           onPress={() =>
             navigation.push("Following", {
@@ -289,9 +307,15 @@ export default function ViewProfileScreen() {
               displayName: profile.display_name,
             })
           }
-          accessibilityLabel={`Following ${profile.following_count} riders, open list`}
+          accessibilityLabel={translate(
+            "Following {count, plural, one {# rider} other {# riders}}, open list",
+            { count: profile.following_count },
+          )}
         />
-        <StatTile label="Badges" value={formatCount(earnedBadges.length)} />
+        <StatTile
+          label={translate("Badges")}
+          value={formatCount(earnedBadges.length)}
+        />
       </View>
 
       <SharedRidesSection
@@ -301,10 +325,12 @@ export default function ViewProfileScreen() {
       />
 
       <View style={styles.badgesCard}>
-        <Text style={styles.cardTitle}>Badges earned</Text>
+        <Text style={styles.cardTitle}>{translate("Badges earned")}</Text>
         {earnedBadges.length === 0 ? (
           <Text style={styles.emptyHint}>
-            {profile.display_name} hasn&apos;t earned any badges yet.
+            {translate("{name} hasn't earned any badges yet.", {
+              name: profile.display_name,
+            })}
           </Text>
         ) : (
           <View style={styles.badgeGrid}>

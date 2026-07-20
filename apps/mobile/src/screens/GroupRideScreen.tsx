@@ -55,6 +55,7 @@ import {
 import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { translateTerminalGroupRideError } from "./GroupRideScreen.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import type {
   GroupEndedEvent,
@@ -64,6 +65,7 @@ import type {
   GroupRideDetail,
   GroupRideMember,
 } from "@/types";
+import { t as translate } from "@/i18n";
 
 // Distinct map-pin colours so each member's dot is visually
 // distinguishable. Cycled by member position in the sorted list so
@@ -150,7 +152,10 @@ export default function GroupRideScreen() {
         .getGroupRide(groupRide.id)
         .then(setGroupRide)
         .catch(() => undefined);
-      Alert.alert("Group ride", `${event.display_name} joined.`);
+      Alert.alert(
+        translate("Group ride"),
+        translate("{value0} joined.", { value0: event.display_name }),
+      );
     };
 
     const handleLeft = (event: GroupLeftEvent): void => {
@@ -174,7 +179,10 @@ export default function GroupRideScreen() {
     };
 
     const handleEnded = (_: GroupEndedEvent): void => {
-      Alert.alert("Group ride ended", "The owner ended the ride.");
+      Alert.alert(
+        translate("Group ride ended"),
+        translate("The owner ended the ride."),
+      );
       teardownToIdle();
     };
 
@@ -186,14 +194,10 @@ export default function GroupRideScreen() {
     // Anything else (transient network blip, throttle complaint) is
     // surfaced as an inline error banner without ripping the screen
     // down.
-    const TERMINAL_ERROR_MESSAGES = new Set([
-      "Group ride has ended",
-      "Group ride not found or access denied",
-    ]);
-
     const handleError = (msg: string): void => {
-      if (TERMINAL_ERROR_MESSAGES.has(msg)) {
-        Alert.alert("Group ride", msg);
+      const terminalMessage = translateTerminalGroupRideError(msg);
+      if (terminalMessage !== null) {
+        Alert.alert(translate("Group ride"), terminalMessage);
         teardownToIdle();
         return;
       }
@@ -227,7 +231,7 @@ export default function GroupRideScreen() {
   const handleCreate = useCallback(async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setErrorMessage("Give the ride a name first.");
+      setErrorMessage(translate("Give the ride a name first."));
       return;
     }
     setSubmitting(true);
@@ -238,7 +242,9 @@ export default function GroupRideScreen() {
       setMode("active");
     } catch (err) {
       setErrorMessage(
-        err instanceof Error ? err.message : "Couldn't create the ride.",
+        err instanceof Error
+          ? err.message
+          : translate("Couldn't create the ride."),
       );
     } finally {
       setSubmitting(false);
@@ -248,7 +254,7 @@ export default function GroupRideScreen() {
   const handleJoin = useCallback(async () => {
     const trimmed = joinCode.trim().toUpperCase();
     if (trimmed.length !== 6) {
-      setErrorMessage("Codes are 6 characters.");
+      setErrorMessage(translate("Codes are 6 characters."));
       return;
     }
     setSubmitting(true);
@@ -259,7 +265,9 @@ export default function GroupRideScreen() {
       setMode("active");
     } catch (err) {
       setErrorMessage(
-        err instanceof Error ? err.message : "Couldn't join that ride.",
+        err instanceof Error
+          ? err.message
+          : translate("Couldn't join that ride."),
       );
     } finally {
       setSubmitting(false);
@@ -270,11 +278,19 @@ export default function GroupRideScreen() {
     if (!groupRide) return;
     const confirmed = await new Promise<boolean>((resolve) => {
       Alert.alert(
-        "Leave group ride?",
-        "Other riders will stop seeing your position immediately.",
+        translate("Leave group ride?"),
+        translate("Other riders will stop seeing your position immediately."),
         [
-          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-          { text: "Leave", style: "destructive", onPress: () => resolve(true) },
+          {
+            text: translate("Cancel"),
+            style: "cancel",
+            onPress: () => resolve(false),
+          },
+          {
+            text: translate("Leave"),
+            style: "destructive",
+            onPress: () => resolve(true),
+          },
         ],
       );
     });
@@ -307,11 +323,21 @@ export default function GroupRideScreen() {
     if (!groupRide) return;
     const confirmed = await new Promise<boolean>((resolve) => {
       Alert.alert(
-        "End group ride?",
-        "Everyone in the ride will be disconnected and the code will stop working.",
+        translate("End group ride?"),
+        translate(
+          "Everyone in the ride will be disconnected and the code will stop working.",
+        ),
         [
-          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-          { text: "End", style: "destructive", onPress: () => resolve(true) },
+          {
+            text: translate("Cancel"),
+            style: "cancel",
+            onPress: () => resolve(false),
+          },
+          {
+            text: translate("End"),
+            style: "destructive",
+            onPress: () => resolve(true),
+          },
         ],
       );
     });
@@ -411,19 +437,22 @@ export default function GroupRideScreen() {
             <View style={styles.heroIconWrap}>
               <Icon name="account-group" size={32} color={t.fg} />
             </View>
-            <Text style={styles.title}>Group ride</Text>
+            <Text style={styles.title}>{translate("Group ride")}</Text>
             <Text style={styles.subtitle}>
-              Share your live position with friends so you can regroup if you
-              get separated. Sharing is opt-in and you can leave at any time.
+              {translate(
+                "Share your live position with friends so you can regroup if you get separated. Sharing is opt-in and you can leave at any time.",
+              )}
             </Text>
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Create a new group ride</Text>
-            <Text style={styles.label}>Name</Text>
+            <Text style={styles.sectionTitle}>
+              {translate("Create a new group ride")}
+            </Text>
+            <Text style={styles.label}>{translate("Name")}</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Sunday Dolomites"
+              placeholder={translate("e.g. Sunday Dolomites")}
               placeholderTextColor={t.mute}
               value={name}
               onChangeText={setName}
@@ -439,18 +468,22 @@ export default function GroupRideScreen() {
               ) : (
                 <>
                   <Icon name="plus-circle" size={18} color={t.invFg} />
-                  <Text style={styles.primaryBtnLabel}>Create</Text>
+                  <Text style={styles.primaryBtnLabel}>
+                    {translate("Create")}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Join with a code</Text>
-            <Text style={styles.label}>6-character code</Text>
+            <Text style={styles.sectionTitle}>
+              {translate("Join with a code")}
+            </Text>
+            <Text style={styles.label}>{translate("6-character code")}</Text>
             <TextInput
               style={[styles.input, styles.codeInput]}
-              placeholder="ABCDEF"
+              placeholder={translate("ABCDEF")}
               placeholderTextColor={t.mute}
               value={joinCode}
               onChangeText={(v) => setJoinCode(v.toUpperCase())}
@@ -468,7 +501,9 @@ export default function GroupRideScreen() {
               ) : (
                 <>
                   <Icon name="account-multiple-plus" size={18} color={t.fg} />
-                  <Text style={styles.secondaryBtnLabel}>Join</Text>
+                  <Text style={styles.secondaryBtnLabel}>
+                    {translate("Join")}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -497,7 +532,9 @@ export default function GroupRideScreen() {
             <Text style={styles.activeName} numberOfLines={1}>
               {groupRide.name}
             </Text>
-            <Text style={styles.activeCode}>Code: {groupRide.code}</Text>
+            <Text style={styles.activeCode}>
+              {translate("Code: {code}", { code: groupRide.code })}
+            </Text>
           </View>
           {isOwner ? (
             <TouchableOpacity style={styles.leaveBtn} onPress={handleEnd}>
@@ -506,17 +543,17 @@ export default function GroupRideScreen() {
                 size={16}
                 color={statusFg.danger}
               />
-              <Text style={styles.leaveLabel}>End</Text>
+              <Text style={styles.leaveLabel}>{translate("End")}</Text>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity style={styles.leaveBtn} onPress={handleLeave}>
             <Icon name="exit-to-app" size={16} color={statusFg.danger} />
-            <Text style={styles.leaveLabel}>Leave</Text>
+            <Text style={styles.leaveLabel}>{translate("Leave")}</Text>
           </TouchableOpacity>
         </View>
         {!isRiding ? (
           <Text style={styles.activeHint}>
-            Start a ride to broadcast your position to the group.
+            {translate("Start a ride to broadcast your position to the group.")}
           </Text>
         ) : null}
       </View>
@@ -564,7 +601,9 @@ export default function GroupRideScreen() {
       </View>
 
       <View style={styles.memberList}>
-        <Text style={styles.memberListTitle}>Members ({members.length})</Text>
+        <Text style={styles.memberListTitle}>
+          {translate("Members ({count})", { count: members.length })}
+        </Text>
         {members.map((m) => (
           <View key={m.user_id} style={styles.memberRow}>
             <View
@@ -580,8 +619,10 @@ export default function GroupRideScreen() {
             </Text>
             <Text style={styles.memberMeta}>
               {m.last_speed != null
-                ? `${Math.round(m.last_speed)} km/h`
-                : "no signal"}
+                ? translate("{value0} km/h", {
+                    value0: Math.round(m.last_speed),
+                  })
+                : translate("no signal")}
             </Text>
           </View>
         ))}

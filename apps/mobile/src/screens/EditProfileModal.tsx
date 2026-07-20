@@ -29,6 +29,7 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
+import { t as translate } from "@/i18n";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "EditProfile">;
 
@@ -53,7 +54,7 @@ export default function EditProfileModal() {
   const handleSave = useCallback(async () => {
     const trimmedName = displayName.trim();
     if (!trimmedName) {
-      setValidation("Display name is required.");
+      setValidation(translate("Display name is required."));
       return;
     }
     if (!user) return;
@@ -75,7 +76,11 @@ export default function EditProfileModal() {
       setUser(updated);
       navigation.goBack();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save profile.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : translate("Could not save profile."),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -84,7 +89,9 @@ export default function EditProfileModal() {
   if (!user) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyText}>Sign in to edit your profile.</Text>
+        <Text style={styles.emptyText}>
+          {translate("Sign in to edit your profile.")}
+        </Text>
       </View>
     );
   }
@@ -96,23 +103,23 @@ export default function EditProfileModal() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.field}>
-        <Text style={styles.label}>Display name</Text>
+        <Text style={styles.label}>{translate("Display name")}</Text>
         <TextInput
           style={styles.input}
           value={displayName}
           onChangeText={setDisplayName}
           maxLength={DISPLAY_NAME_MAX}
           editable={!submitting}
-          accessibilityLabel="Display name"
+          accessibilityLabel={translate("Display name")}
           autoCapitalize="words"
           autoCorrect={false}
-          placeholder="Your rider name"
+          placeholder={translate("Your rider name")}
           placeholderTextColor={t.mute}
         />
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Bio</Text>
+        <Text style={styles.label}>{translate("Bio")}</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           value={bio}
@@ -120,23 +127,28 @@ export default function EditProfileModal() {
           maxLength={BIO_MAX}
           multiline
           editable={!submitting}
-          accessibilityLabel="Bio"
-          placeholder="A few words about your riding"
+          accessibilityLabel={translate("Bio")}
+          placeholder={translate("A few words about your riding")}
           placeholderTextColor={t.mute}
         />
-        <Text style={styles.hint}>{`${bio.length} / ${BIO_MAX}`}</Text>
+        <Text style={styles.hint}>
+          {translate("{value0} / {value1}", {
+            value0: bio.length,
+            value1: BIO_MAX,
+          })}
+        </Text>
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Home region</Text>
+        <Text style={styles.label}>{translate("Home region")}</Text>
         <TextInput
           style={styles.input}
           value={homeRegion}
           onChangeText={setHomeRegion}
           maxLength={HOME_REGION_MAX}
           editable={!submitting}
-          accessibilityLabel="Home region"
-          placeholder="Beskydy, Czech Republic"
+          accessibilityLabel={translate("Home region")}
+          placeholder={translate("Beskydy, Czech Republic")}
           placeholderTextColor={t.mute}
         />
       </View>
@@ -149,12 +161,12 @@ export default function EditProfileModal() {
         onPress={() => void handleSave()}
         disabled={submitting}
         accessibilityRole="button"
-        accessibilityLabel="Save profile"
+        accessibilityLabel={translate("Save profile")}
       >
         {submitting ? (
           <ActivityIndicator color={t.invFg} />
         ) : (
-          <Text style={styles.saveLabel}>Save</Text>
+          <Text style={styles.saveLabel}>{translate("Save")}</Text>
         )}
       </TouchableOpacity>
 
@@ -163,9 +175,9 @@ export default function EditProfileModal() {
         onPress={() => navigation.goBack()}
         disabled={submitting}
         accessibilityRole="button"
-        accessibilityLabel="Cancel edit"
+        accessibilityLabel={translate("Cancel edit")}
       >
-        <Text style={styles.cancelLabel}>Cancel</Text>
+        <Text style={styles.cancelLabel}>{translate("Cancel")}</Text>
       </TouchableOpacity>
     </ScrollView>
   );

@@ -1,5 +1,6 @@
 import type { LatLng, Trip, Waypoint } from "@/types";
 import type { NavigateParams } from "@/navigation/RootNavigator";
+import { t as translate } from "@/i18n";
 
 export interface ResolvedNavigationRoute {
   polyline: LatLng[];
@@ -25,7 +26,7 @@ export function resolveNavigationRoute(
       // Default the vehicle-display title to a neutral "Navigation" so
       // the CarPlay / Android Auto card has something readable when the
       // commute caller doesn't have a labelled route in hand.
-      title: params.title ?? "Navigation",
+      title: params.title ?? translate("Navigation"),
       waypoints: params.waypoints ?? [],
     };
   }
@@ -35,7 +36,8 @@ export function resolveNavigationRoute(
       : null;
   return {
     polyline: day?.route_geometry ?? [],
-    title: day?.title ?? `Day ${params.dayNumber}`,
+    title:
+      day?.title ?? translate("Day {value0}", { value0: params.dayNumber }),
     waypoints: day?.waypoints ?? [],
   };
 }

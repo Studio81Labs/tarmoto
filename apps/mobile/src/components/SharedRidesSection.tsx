@@ -41,6 +41,7 @@ import {
   formatDurationMinutes,
   formatRideDate,
 } from "@/screens/RideScreens.helpers";
+import { t as translate } from "@/i18n";
 
 interface SharedRidesSectionProps {
   userId: string;
@@ -101,7 +102,9 @@ export default function SharedRidesSection({
       }
       setPhase("error");
       setErrorMessage(
-        err instanceof Error ? err.message : "Could not load shared rides.",
+        err instanceof Error
+          ? err.message
+          : translate("Could not load shared rides."),
       );
     }
     // refreshKey is a refresh nudge — including it in deps makes
@@ -124,7 +127,7 @@ export default function SharedRidesSection({
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Shared rides</Text>
+      <Text style={styles.title}>{translate("Shared rides")}</Text>
 
       {phase === "loading" ? (
         <View style={styles.placeholder}>
@@ -135,8 +138,10 @@ export default function SharedRidesSection({
       ) : items.length === 0 ? (
         <Text style={styles.emptyHint}>
           {isSelf
-            ? "You haven't shared any rides yet."
-            : `${displayName} hasn't shared any rides yet.`}
+            ? translate("You haven't shared any rides yet.")
+            : translate("{value0} hasn't shared any rides yet.", {
+                value0: displayName,
+              })}
         </Text>
       ) : (
         <View style={styles.list}>
@@ -159,28 +164,30 @@ function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
   return (
     <View
       style={styles.row}
-      accessibilityLabel={`Shared ride on ${formatRideDate(ride.started_at)}`}
+      accessibilityLabel={translate("Shared ride on {value0}", {
+        value0: formatRideDate(ride.started_at),
+      })}
     >
       <View style={styles.rowHeader}>
         <Text style={styles.rowDate}>{formatRideDate(ride.started_at)}</Text>
         {showPrivatePill ? (
           <View style={styles.privatePill}>
             <Icon name="lock-outline" size={11} color={brandColorsLight.dim} />
-            <Text style={styles.privatePillLabel}>Private</Text>
+            <Text style={styles.privatePillLabel}>{translate("Private")}</Text>
           </View>
         ) : null}
       </View>
       <View style={styles.rowMetrics}>
         <RowMetric
-          label="Distance"
+          label={translate("Distance")}
           value={formatDistanceKm(ride.distance_km)}
         />
         <RowMetric
-          label="Duration"
+          label={translate("Duration")}
           value={formatDurationMinutes(ride.duration_min)}
         />
         <RowMetric
-          label="Views"
+          label={translate("Views")}
           value={`${Math.max(0, Math.round(ride.view_count))}`}
         />
       </View>

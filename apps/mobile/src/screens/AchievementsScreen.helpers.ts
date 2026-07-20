@@ -13,6 +13,7 @@ import type {
   UnriddenSegment,
 } from "@/types";
 import { UNSCORED_COLOR } from "@/theme/brand";
+import { translate, type EnglishMessageKey } from "@/i18n";
 
 // ── Badge tier helpers ──
 
@@ -21,6 +22,18 @@ export const TIER_ORDER: readonly BadgeTier[] = [
   "silver",
   "gold",
 ] as const;
+
+const TIER_LABELS: Record<BadgeTier, EnglishMessageKey> = {
+  bronze: "Bronze",
+  silver: "Silver",
+  gold: "Gold",
+};
+
+/** Cataloged badge-tier label with a forward-compatible raw fallback. */
+export function tierLabel(tier: string): string {
+  const key = TIER_LABELS[tier as BadgeTier];
+  return key ? translate(key) : tier;
+}
 
 /** Tier rank used to compare progression — higher is better, 0 = unearned. */
 export function tierRank(tier: string | null): number {
@@ -113,9 +126,10 @@ export function formatTimeRemaining(
   now: Date = new Date(),
 ): string {
   const days = daysRemaining(endsAt, now);
-  if (days === 0) return "Ends today";
-  if (days === 1) return "1 day left";
-  return `${days} days left`;
+  if (days === 0) return translate("Ends today");
+  return translate("{count, plural, one {# day left} other {# days left}}", {
+    count: days,
+  });
 }
 
 /**
@@ -135,7 +149,7 @@ export function challengePercent(progress: number, target: number): number {
  * if we don't have a translation for it (forward-compatibility with
  * future challenge metrics added on the backend).
  */
-const METRIC_UNITS: Record<string, string> = {
+const METRIC_UNITS: Record<string, EnglishMessageKey> = {
   total_km: "km",
   ride_count: "rides",
   unique_segments: "roads",
@@ -144,7 +158,8 @@ const METRIC_UNITS: Record<string, string> = {
 };
 
 export function metricUnit(metric: string): string {
-  return METRIC_UNITS[metric] ?? metric;
+  const unit = METRIC_UNITS[metric];
+  return unit ? translate(unit) : metric;
 }
 
 /**
@@ -260,5 +275,9 @@ export function formatChallengeProgress(
   const isWhole = Number.isInteger(progress) && Number.isInteger(target);
   const unit = metricUnit(metric);
   const fmt = (n: number): string => (isWhole ? String(n) : n.toFixed(1));
-  return `${fmt(progress)} / ${fmt(target)} ${unit}`;
+  return translate("{progress} / {target} {unit}", {
+    progress: fmt(progress),
+    target: fmt(target),
+    unit,
+  });
 }

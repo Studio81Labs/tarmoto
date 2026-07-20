@@ -54,6 +54,7 @@ import { Platform } from "react-native";
 import { haversineMeters } from "@tarmoto/shared";
 import { formatDurationSeconds, qualityLabel } from "@/theme";
 import type { Hazard, HazardType, LatLng } from "@/types";
+import { t as translate } from "@/i18n";
 
 // ── Public types ──
 
@@ -242,11 +243,11 @@ export function formatRideTypeTitle(
 ): string {
   switch (rideType) {
     case "commute":
-      return "Commute";
+      return translate("Commute");
     case "trip":
-      return "Trip";
+      return translate("Trip");
     default:
-      return "Free ride";
+      return translate("Free ride");
   }
 }
 
@@ -260,11 +261,13 @@ export function formatQualityDetail(
   score: number | null,
   confidence: number | null,
 ): string {
-  if (score == null) return "Reading surface…";
-  const label = Number.isFinite(score) ? qualityLabel(score) : "Unknown";
+  if (score == null) return translate("Reading surface…");
+  const label = Number.isFinite(score)
+    ? qualityLabel(score)
+    : translate("Unknown");
   if (confidence == null || !Number.isFinite(confidence)) return label;
   const pct = Math.round(Math.max(0, Math.min(1, confidence)) * 100);
-  return `${label} · ${pct}% conf`;
+  return translate("{label} · {percent}% conf", { label, percent: pct });
 }
 
 /**
@@ -283,23 +286,23 @@ export function distanceMetersBetween(a: LatLng, b: LatLng): number {
 export function hazardTypeLabel(type: HazardType): string {
   switch (type) {
     case "pothole":
-      return "Pothole";
+      return translate("Pothole");
     case "gravel":
-      return "Loose gravel";
+      return translate("Loose gravel");
     case "oil_spill":
-      return "Oil spill";
+      return translate("Oil spill");
     case "roadworks":
-      return "Roadworks";
+      return translate("Roadworks");
     case "animals":
-      return "Animals";
+      return translate("Animals");
     case "police":
-      return "Police";
+      return translate("Police");
     case "flooding":
-      return "Flooding";
+      return translate("Flooding");
     case "ice":
-      return "Ice";
+      return translate("Ice");
     default:
-      return "Hazard";
+      return translate("Hazard");
   }
 }
 
@@ -311,12 +314,16 @@ export function hazardTypeLabel(type: HazardType): string {
  * complete sentence on the bike display.
  */
 export function formatHazardDistance(meters: number): string {
-  if (!Number.isFinite(meters) || meters < 0) return "Nearby";
+  if (!Number.isFinite(meters) || meters < 0) return translate("Nearby");
   if (meters < 1000) {
     const rounded = Math.max(0, Math.round(meters / 50) * 50);
-    return rounded === 0 ? "Right here" : `${rounded} m ahead`;
+    return rounded === 0
+      ? translate("Right here")
+      : translate("{distance} m ahead", { distance: rounded });
   }
-  return `${(meters / 1000).toFixed(1)} km ahead`;
+  return translate("{distance} km ahead", {
+    distance: (meters / 1000).toFixed(1),
+  });
 }
 
 /**
@@ -390,8 +397,8 @@ export function buildQuickActionItems(state: {
   return [
     {
       id: "start-commute",
-      text: "Start commute",
-      detailText: "Begin your saved route",
+      text: translate("Start commute"),
+      detailText: translate("Begin your saved route"),
     },
   ];
 }
@@ -404,11 +411,17 @@ export function buildRideStatusItems(
   board: RideStatusBoard,
 ): StatusBoardItem[] {
   return [
-    { title: "Speed", detail: formatSpeedKmh(board.speedKmh) },
-    { title: "Distance", detail: formatDistanceKm(board.distanceKm) },
-    { title: "Duration", detail: formatDuration(board.durationSeconds) },
+    { title: translate("Speed"), detail: formatSpeedKmh(board.speedKmh) },
     {
-      title: "Surface",
+      title: translate("Distance"),
+      detail: formatDistanceKm(board.distanceKm),
+    },
+    {
+      title: translate("Duration"),
+      detail: formatDuration(board.durationSeconds),
+    },
+    {
+      title: translate("Surface"),
       detail: formatQualityDetail(board.qualityScore, board.qualityConfidence),
     },
   ];
@@ -433,12 +446,27 @@ export function formatHazardAlertText(snapshot: HazardAlertSnapshot): {
 } {
   const label = hazardTypeLabel(snapshot.hazard_type);
   const distance = formatHazardDistance(snapshot.distanceMeters);
-  const subtitleSegments = [distance];
-  if (snapshot.roadName) subtitleSegments.push(`on ${snapshot.roadName}`);
-  if (snapshot.note) subtitleSegments.push(snapshot.note);
+  let subtitle = distance;
+  if (snapshot.roadName && snapshot.note) {
+    subtitle = translate("{distance} · on {roadName} · {note}", {
+      distance,
+      roadName: snapshot.roadName,
+      note: snapshot.note,
+    });
+  } else if (snapshot.roadName) {
+    subtitle = translate("{distance} · on {roadName}", {
+      distance,
+      roadName: snapshot.roadName,
+    });
+  } else if (snapshot.note) {
+    subtitle = translate("{distance} · {note}", {
+      distance,
+      note: snapshot.note,
+    });
+  }
   return {
     title: label,
-    subtitle: subtitleSegments.join(" · "),
+    subtitle,
   };
 }
 
@@ -505,7 +533,7 @@ function createIosBridge(): VehicleStatusBridge {
           // ride board (last speed / distance frozen at ride end). The
           // next ride re-mounts the live board on top.
           const idle = new InformationTemplate({
-            title: "Tarmoto",
+            title: translate("Tarmoto"),
             items: [],
             actions: [],
             onActionButtonPressed: () => undefined,
@@ -565,8 +593,8 @@ function createIosBridge(): VehicleStatusBridge {
           // displays fall back to the hazard label alone.
           titleVariants: [`${title} — ${subtitle}`, title],
           actions: [
-            { id: "confirm", title: "Confirm", style: "default" },
-            { id: "dismiss", title: "Dismiss", style: "cancel" },
+            { id: "confirm", title: translate("Confirm"), style: "default" },
+            { id: "dismiss", title: translate("Dismiss"), style: "cancel" },
           ],
           onActionButtonPressed: ({ id }) => {
             if (id === "confirm") callbacks.onConfirm();
@@ -602,7 +630,7 @@ function createIosBridge(): VehicleStatusBridge {
         ];
         const fresh = new ListTemplate({
           id: QUICK_ACTIONS_TEMPLATE_ID,
-          title: "Tarmoto",
+          title: translate("Tarmoto"),
           sections,
           onItemSelect: async ({ index }) => {
             const picked = items[index];
@@ -775,7 +803,7 @@ function createAndroidBridge(): VehicleStatusBridge {
         // config, which the Android module forwards to the existing
         // screen via `screen.invalidate()` — no flicker, no re-mount.
         template.updateTemplate({
-          title: mountedTitle ?? "Tarmoto",
+          title: mountedTitle ?? translate("Tarmoto"),
           pane: buildPane(items),
         });
       },
@@ -783,7 +811,7 @@ function createAndroidBridge(): VehicleStatusBridge {
         if (!template) return;
         try {
           const idle = new PaneTemplate({
-            title: "Tarmoto",
+            title: translate("Tarmoto"),
             pane: { items: [] },
           });
           CarPlay.setRootTemplate(idle, false);
@@ -855,8 +883,8 @@ function createAndroidBridge(): VehicleStatusBridge {
             // ever fires in practice.
             duration: 30_000,
             actions: [
-              { id: "confirm", title: "Confirm" },
-              { id: "dismiss", title: "Dismiss" },
+              { id: "confirm", title: translate("Confirm") },
+              { id: "dismiss", title: translate("Dismiss") },
             ],
           });
           activeAndroidAlertId = id;
@@ -892,7 +920,7 @@ function createAndroidBridge(): VehicleStatusBridge {
         // beta.0/android/.../RCTTemplate.kt:170).
         const fresh = new ListTemplate({
           id: QUICK_ACTIONS_TEMPLATE_ID,
-          title: "Tarmoto",
+          title: translate("Tarmoto"),
           items: items.map((item) => ({
             id: item.id,
             text: item.text,

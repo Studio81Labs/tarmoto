@@ -71,6 +71,7 @@
     "babel-plugin-module-resolver": "^5.0.3",
     "eslint": "^10.7.0",
     "hermes-compiler": "250829098.0.14",
+    "intl-messageformat": "^10.7.18",
     "jest": "~30.3.0",
     "prettier": "^3.9.5",
     "react-native-dotenv": "^3.4.11",

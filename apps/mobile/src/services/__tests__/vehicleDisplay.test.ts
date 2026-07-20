@@ -163,6 +163,27 @@ describe("VehicleDisplayController", () => {
     );
   });
 
+  it("submits a localized hazard label", async () => {
+    const localizedController = new VehicleDisplayController({
+      bridge,
+      reportHazard: async (location, type) => {
+        reports.push({ location, type });
+      },
+      translate: (key) => (key === "Pothole" ? "Výtluk" : key),
+    });
+    localizedController.sync(makeSnapshot());
+
+    const ok = await localizedController.submitSearchQuery("výtluk");
+
+    expect(ok).toBe(true);
+    expect(reports).toEqual([
+      {
+        location: { lat: 49.55, lng: 18.15 },
+        type: "pothole",
+      },
+    ]);
+  });
+
   it("refuses to report when there is no live location fix", async () => {
     controller.sync(makeSnapshot({ currentLocation: null }));
 

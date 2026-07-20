@@ -6,6 +6,7 @@ import {
   QUALITY_COLORS,
   qualityIndex,
 } from "@/theme/brand";
+import { translate } from "@/i18n";
 
 interface QualityBarsProps {
   /**
@@ -68,7 +69,9 @@ export default function QualityBars({
   const filled = scored ? bucket + 1 : 0;
   const emptyColor =
     empty ?? (onDark ? brandColorsDark.qEmpty : brandColorsLight.qEmpty);
-  const defaultLabel = scored ? `Quality ${filled} of 5` : "Quality unscored";
+  const defaultLabel = scored
+    ? translate("Quality {score} of 5", { score: filled })
+    : translate("Quality unscored");
   return (
     <View
       style={[styles.row, { gap }, style]}

@@ -13,10 +13,8 @@ import {
   computeCurveCount,
   computeElevationStats,
   curvinessLabel,
-  formatHazardType,
   formatLengthKm,
   formatRelativeTime,
-  formatSurface,
   isFlatElevationProfile,
   normalizeBreakdown,
 } from "../RoadPreviewScreen.helpers";
@@ -100,20 +98,6 @@ describe("curvinessLabel", () => {
     expect(curvinessLabel(3.0)).toMatch(/mixed/i);
     expect(curvinessLabel(2.0)).toMatch(/straight/i);
     expect(curvinessLabel(0.5)).toMatch(/transit/i);
-  });
-});
-
-describe("formatSurface", () => {
-  it("capitalises the first letter", () => {
-    expect(formatSurface("asphalt")).toBe("Asphalt");
-    expect(formatSurface("gravel")).toBe("Gravel");
-  });
-});
-
-describe("formatHazardType", () => {
-  it("turns snake_case into title-cased words", () => {
-    expect(formatHazardType("oil_spill")).toBe("Oil Spill");
-    expect(formatHazardType("pothole")).toBe("Pothole");
   });
 });
 

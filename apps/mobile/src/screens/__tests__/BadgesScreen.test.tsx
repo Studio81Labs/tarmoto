@@ -95,8 +95,14 @@ describe("BadgesScreen", () => {
     expect(screen.getByText("In progress (1)")).toBeTruthy();
     // The earned badge shows its tier label.
     expect(screen.getByText("SILVER")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Road Warrior, Silver tier earned"),
+    ).toBeTruthy();
     // The unearned badge shows the next milestone (bronze).
     expect(screen.getByText(/25 \/ 50/)).toBeTruthy();
+    expect(
+      screen.getByLabelText("Iron Butt, locked, 50% to Bronze"),
+    ).toBeTruthy();
   });
 
   it("renders the brand-new-rider empty CTA when nothing has progressed", async () => {

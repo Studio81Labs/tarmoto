@@ -93,6 +93,9 @@ describe("PersonalRoadMapScreen", () => {
     await waitFor(() => expect(screen.getByText("12.5%")).toBeTruthy());
     expect(screen.getByText("of 800 segments")).toBeTruthy();
     expect(screen.getByText("1234.5 km")).toBeTruthy();
+    expect(
+      screen.getByText("1 segment highlighted for the selected period"),
+    ).toBeTruthy();
     expect(screen.getByText("Forest Road")).toBeTruthy();
     // Distance is rendered in metres for sub-1km values.
     expect(screen.getByText(/800 m from you/)).toBeTruthy();

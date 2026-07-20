@@ -55,6 +55,7 @@ import { ApiError, api } from "@/services/api";
 import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
 import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
+import { t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 
@@ -320,14 +321,19 @@ export default function ReviewFormModal({
       if (result.status === "permission-denied") {
         setPickerNotice(
           source === "camera"
-            ? "Camera access was denied. Enable it in Settings to attach photos."
-            : "Photo library access was denied. Enable it in Settings to attach photos.",
+            ? translate(
+                "Camera access was denied. Enable it in Settings to attach photos.",
+              )
+            : translate(
+                "Photo library access was denied. Enable it in Settings to attach photos.",
+              ),
         );
         return;
       }
       if (result.status === "unavailable" || !result.photo) {
         setPickerNotice(
-          result.reason ?? "Photo picker isn't available on this device.",
+          result.reason ??
+            translate("Photo picker isn't available on this device."),
         );
         return;
       }
@@ -385,7 +391,7 @@ export default function ReviewFormModal({
         if (!url) {
           updatePhoto(entry.id, {
             uploading: false,
-            error: "Upload failed — tap × to remove and try again.",
+            error: translate("Upload failed — tap × to remove and try again."),
           });
           return;
         }
@@ -399,7 +405,7 @@ export default function ReviewFormModal({
         }
         updatePhoto(entry.id, {
           uploading: false,
-          error: "Upload failed — tap × to remove and try again.",
+          error: translate("Upload failed — tap × to remove and try again."),
         });
       }
     },
@@ -431,7 +437,7 @@ export default function ReviewFormModal({
   const submit = useCallback(async () => {
     if (!canSubmit) return;
     if (photosUploading) {
-      setError("Wait for photos to finish uploading.");
+      setError(translate("Wait for photos to finish uploading."));
       return;
     }
     // Block submit when any photo entry has an upload error. The old
@@ -443,7 +449,9 @@ export default function ReviewFormModal({
     const failedPhotos = photos.filter((p) => p.error);
     if (failedPhotos.length > 0) {
       setError(
-        "Some photos failed to upload — retry or remove them before submitting.",
+        translate(
+          "Some photos failed to upload — retry or remove them before submitting.",
+        ),
       );
       return;
     }
@@ -452,7 +460,7 @@ export default function ReviewFormModal({
       // guard so a stale-token edge case doesn't fall through to the
       // queue without an owner — without `userId` the entry would
       // get treated as foreign-user at drain time and never flush.
-      setError("Sign in to submit your review.");
+      setError(translate("Sign in to submit your review."));
       return;
     }
     const photoUrls = photos
@@ -526,16 +534,20 @@ export default function ReviewFormModal({
         }
         if (reloadSucceeded) {
           setConflictNotice(
-            "You already reviewed this road — your existing review is loaded for editing.",
+            translate(
+              "You already reviewed this road — your existing review is loaded for editing.",
+            ),
           );
         } else {
           mergeStagedOnNextReseed.current = false;
           setError(
-            "You already reviewed this road, but loading the existing review failed. Close and reopen to retry.",
+            translate(
+              "You already reviewed this road, but loading the existing review failed. Close and reopen to retry.",
+            ),
           );
         }
       } else {
-        setError(apiErrorMessage(e) ?? "Couldn't save your review.");
+        setError(apiErrorMessage(e) ?? translate("Couldn't save your review."));
       }
     } finally {
       setSubmitting(false);
@@ -557,12 +569,14 @@ export default function ReviewFormModal({
   const confirmDelete = useCallback(() => {
     if (!isEditing || submitting) return;
     Alert.alert(
-      "Delete review?",
-      "This permanently removes your review and any attached photos.",
+      translate("Delete review?"),
+      translate(
+        "This permanently removes your review and any attached photos.",
+      ),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: translate("Cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: translate("Delete"),
           style: "destructive",
           onPress: async () => {
             setSubmitting(true);
@@ -573,7 +587,9 @@ export default function ReviewFormModal({
               // `submitting` true until the parent's refresh lands.
               await onDeleted?.();
             } catch (e: unknown) {
-              setError(apiErrorMessage(e) ?? "Couldn't delete your review.");
+              setError(
+                apiErrorMessage(e) ?? translate("Couldn't delete your review."),
+              );
             } finally {
               setSubmitting(false);
             }
@@ -597,14 +613,16 @@ export default function ReviewFormModal({
         <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Close review form"
+            accessibilityLabel={translate("Close review form")}
             onPress={onClose}
             style={styles.headerButton}
           >
             <Icon name="close" size={24} color={t.fg} />
           </Pressable>
           <Text style={styles.headerTitle}>
-            {isEditing ? "Edit your review" : "Write a review"}
+            {isEditing
+              ? translate("Edit your review")
+              : translate("Write a review")}
           </Text>
           <View style={styles.headerButton} />
         </View>
@@ -620,26 +638,30 @@ export default function ReviewFormModal({
             </View>
           ) : null}
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Rating</Text>
+            <Text style={styles.fieldLabel}>{translate("Rating")}</Text>
             <RatingSelector value={rating} onChange={setRating} />
             <Text style={styles.fieldHint}>
               {rating > 0
-                ? `${rating} out of 5`
-                : "Tap a star to rate this road"}
+                ? translate("{value0} out of 5", { value0: rating })
+                : translate("Tap a star to rate this road")}
             </Text>
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Notes (optional)</Text>
+            <Text style={styles.fieldLabel}>
+              {translate("Notes (optional)")}
+            </Text>
             <TextInput
-              accessibilityLabel="Review notes"
+              accessibilityLabel={translate("Review notes")}
               style={styles.commentInput}
               value={comment}
               onChangeText={setComment}
               maxLength={MAX_REVIEW_COMMENT_LENGTH}
               multiline
               numberOfLines={4}
-              placeholder="What's the surface like? Any switchbacks worth flagging?"
+              placeholder={translate(
+                "What's the surface like? Any switchbacks worth flagging?",
+              )}
               placeholderTextColor={t.mute}
               textAlignVertical="top"
             />
@@ -649,21 +671,25 @@ export default function ReviewFormModal({
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Bike model (optional)</Text>
+            <Text style={styles.fieldLabel}>
+              {translate("Bike model (optional)")}
+            </Text>
             <TextInput
-              accessibilityLabel="Bike model"
+              accessibilityLabel={translate("Bike model")}
               style={styles.bikeInput}
               value={bikeModel}
               onChangeText={setBikeModel}
               maxLength={MAX_REVIEW_BIKE_MODEL_LENGTH}
-              placeholder="e.g. BMW R1250GS"
+              placeholder={translate("e.g. BMW R1250GS")}
               placeholderTextColor={t.mute}
             />
           </View>
 
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>
-              Photos (optional, up to {MAX_REVIEW_PHOTOS})
+              {translate("Photos (optional, up to {count})", {
+                count: MAX_REVIEW_PHOTOS,
+              })}
             </Text>
             <PhotoStrip
               photos={photos}
@@ -673,13 +699,13 @@ export default function ReviewFormModal({
             <View style={styles.photoButtons}>
               <PhotoButton
                 icon="camera"
-                label="Camera"
+                label={translate("Camera")}
                 onPress={() => void handlePickPhoto("camera")}
                 disabled={photosFull || submitting}
               />
               <PhotoButton
                 icon="image-multiple"
-                label="Library"
+                label={translate("Library")}
                 onPress={() => void handlePickPhoto("library")}
                 disabled={photosFull || submitting}
               />
@@ -696,7 +722,7 @@ export default function ReviewFormModal({
           {isEditing ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Delete review"
+              accessibilityLabel={translate("Delete review")}
               style={styles.deleteButton}
               onPress={confirmDelete}
               disabled={submitting}
@@ -706,7 +732,7 @@ export default function ReviewFormModal({
                 size={20}
                 color={statusFg.danger}
               />
-              <Text style={styles.deleteLabel}>Delete</Text>
+              <Text style={styles.deleteLabel}>{translate("Delete")}</Text>
             </Pressable>
           ) : (
             <View style={styles.deleteButton} />
@@ -714,7 +740,9 @@ export default function ReviewFormModal({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              isEditing ? "Save review changes" : "Submit review"
+              isEditing
+                ? translate("Save review changes")
+                : translate("Submit review")
             }
             accessibilityState={{ disabled: !canSubmit }}
             style={[
@@ -728,7 +756,7 @@ export default function ReviewFormModal({
               <ActivityIndicator color={t.invFg} />
             ) : (
               <Text style={styles.submitLabel}>
-                {isEditing ? "Save" : "Submit"}
+                {isEditing ? translate("Save") : translate("Submit")}
               </Text>
             )}
           </Pressable>
@@ -753,9 +781,12 @@ function RatingSelector({
           <Pressable
             key={star}
             accessibilityRole="button"
-            accessibilityLabel={`Set rating to ${star} ${
-              star === 1 ? "star" : "stars"
-            }`}
+            accessibilityLabel={translate(
+              "Set rating to {count, plural, one {# star} other {# stars}}",
+              {
+                count: star,
+              },
+            )}
             accessibilityState={{ selected: filled }}
             onPress={() => onChange(star)}
             style={styles.ratingStar}
@@ -791,8 +822,10 @@ function PhotoStrip({
     return (
       <Text style={styles.photoEmpty}>
         {full
-          ? "Photo limit reached."
-          : "No photos yet — add up to five with the camera or your library."}
+          ? translate("Photo limit reached.")
+          : translate(
+              "No photos yet — add up to five with the camera or your library.",
+            )}
       </Text>
     );
   }
@@ -823,7 +856,9 @@ function PhotoStrip({
           ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Remove photo ${index + 1}`}
+            accessibilityLabel={translate("Remove photo {value0}", {
+              value0: index + 1,
+            })}
             onPress={() => onRemove(photo.id)}
             style={styles.photoRemove}
           >
@@ -851,7 +886,9 @@ function PhotoButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Add photo from ${label.toLowerCase()}`}
+      accessibilityLabel={translate("Add photo from {value0}", {
+        value0: label.toLowerCase(),
+      })}
       onPress={onPress}
       disabled={disabled}
       style={[styles.photoButton, disabled && styles.photoButtonDisabled]}

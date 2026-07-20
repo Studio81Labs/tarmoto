@@ -11,6 +11,7 @@ import {
   funZoneFillStyle,
   funZoneLineStyle,
   funZonesToFeatureCollection,
+  formatFunZoneSeason,
   HAZARD_SEVERITY_COLORS,
   hazardsToFeatureCollection,
   hazardMarkerStyle,
@@ -27,6 +28,7 @@ import {
   statusFg,
   UNSCORED_COLOR,
 } from "@/theme/brand";
+
 import type {
   FunZone,
   Hazard,
@@ -34,6 +36,19 @@ import type {
   LatLng,
   MountainPass,
 } from "@/types";
+
+describe("formatFunZoneSeason", () => {
+  it.each([
+    ["summer", "Summer"],
+    ["year_round", "Year-round"],
+  ])("uses cataloged copy for %s", (season, expected) => {
+    expect(formatFunZoneSeason(season)).toBe(expected);
+  });
+
+  it("preserves unknown future values until the catalog supports them", () => {
+    expect(formatFunZoneSeason("monsoon")).toBe("monsoon");
+  });
+});
 
 function makePass(overrides: Partial<MountainPass> = {}): MountainPass {
   return {

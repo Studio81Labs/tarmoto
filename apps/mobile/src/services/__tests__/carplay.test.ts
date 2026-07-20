@@ -559,6 +559,24 @@ describe("formatHazardAlertText", () => {
       subtitle: "100 m ahead",
     });
   });
+
+  it("uses complete subtitle messages for road-only and note-only alerts", () => {
+    const withRoad = buildHazardAlertSnapshot(
+      makeHazard({ road_name: "B500", note: null }),
+      320,
+    );
+    const withNote = buildHazardAlertSnapshot(
+      makeHazard({ road_name: null, note: "Deep edge" }),
+      320,
+    );
+
+    expect(formatHazardAlertText(withRoad).subtitle).toBe(
+      "300 m ahead · on B500",
+    );
+    expect(formatHazardAlertText(withNote).subtitle).toBe(
+      "300 m ahead · Deep edge",
+    );
+  });
 });
 
 // ── Hazard alert lifecycle ──

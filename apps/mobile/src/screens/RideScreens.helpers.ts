@@ -16,6 +16,7 @@ import {
 import type { LineLayerSpecification } from "@maplibre/maplibre-react-native";
 
 import type { IconName } from "@/components/Icon";
+import { translate, type EnglishMessageKey } from "@/i18n";
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
 import { QUALITY_COLORS, UNSCORED_COLOR } from "@/theme/brand";
@@ -138,9 +139,20 @@ export function surfaceIcon(surface: SurfaceType): IconName {
  * Display label for a surface type. Shared with the active HUD and the
  * past-ride detail screen so the two can't drift on capitalisation.
  */
-export function surfaceLabel(surface: SurfaceType | undefined | null): string {
-  if (!surface) return "Unknown";
-  return surface.charAt(0).toUpperCase() + surface.slice(1);
+export function surfaceLabel(
+  surface: SurfaceType | string | undefined | null,
+): string {
+  if (!surface) return translate("Unknown");
+  const labels: Record<SurfaceType, EnglishMessageKey> = {
+    asphalt: "Asphalt",
+    concrete: "Concrete",
+    cobblestone: "Cobblestone",
+    gravel: "Gravel",
+    dirt: "Dirt",
+    unknown: "Unknown",
+  };
+  const label = labels[surface as SurfaceType];
+  return label ? translate(label) : surface;
 }
 
 /**
