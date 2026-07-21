@@ -5921,8 +5921,6 @@ export interface components {
         RideBreakdownSliceDto: {
             /** @description Stable bucket key, e.g. "asphalt" or "twisty". */
             key: string;
-            /** @description Display label, e.g. "Asphalt" or "Twisty". */
-            label: string;
             /** @description Distance ridden in this bucket, in metres. */
             meters: number;
             /** @description Share of the total snapped distance, 0–100 (one decimal). */

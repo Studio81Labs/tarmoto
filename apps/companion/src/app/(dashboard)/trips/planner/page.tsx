@@ -775,6 +775,8 @@ export default function TripPlannerPage() {
         },
         towns,
         useTripStore.getState().pinnedBreakKms,
+        format,
+        t,
       );
       if (plans.length === 0) {
         toast.error(t("Could not split this route into days."));
@@ -784,7 +786,7 @@ export default function TripPlannerPage() {
     } finally {
       setSplitting(false);
     }
-  }, [applySplit, dailyKmTarget, forcedDays]);
+  }, [applySplit, dailyKmTarget, forcedDays, format]);
   // Changing the DAY CONTROLS while split means "recompute now" — route
   // and pref edits, by contrast, only mark the split stale (§5).
   const splitInputsRef = useRef({ dailyKmTarget, forcedDays });

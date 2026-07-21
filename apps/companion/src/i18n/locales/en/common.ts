@@ -397,6 +397,7 @@ export const common = {
   "Here's what's happening on your roads.":
     "Here's what's happening on your roads.",
   "Hide details": "Hide details",
+  High: "High",
   "Highest quality": "Highest quality",
   "Highlight day {day} on the map": "Highlight day {day} on the map",
   Home: "Home",
@@ -497,6 +498,7 @@ export const common = {
   "Log out ": "Log out ",
   Longest: "Longest",
   "Looking up the place\u2026 ": "Looking up the place\u2026 ",
+  Low: "Low",
   "Loop distance": "Loop distance",
   "MAPILLARY ": "MAPILLARY ",
   "MAPILLARY \u00b7 CAPTURED ": "MAPILLARY \u00b7 CAPTURED ",
@@ -520,6 +522,7 @@ export const common = {
   "Max lean": "Max lean",
   "Max lean ": "Max lean ",
   May: "May",
+  Medium: "Medium",
   "Measuring the corridor\u2026 ": "Measuring the corridor\u2026 ",
   Members: "Members",
   "Members ": "Members ",

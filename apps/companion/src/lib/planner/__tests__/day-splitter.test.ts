@@ -6,6 +6,7 @@ import {
   splitIntoDays,
 } from "../day-splitter";
 import type { PlannerPoi, RouteSegment } from "../types";
+import type { Translate } from "@/i18n";
 
 /** ~1 degree of latitude in km for the haversine radius used repo-wide. */
 const KM_PER_DEG_LAT = 111.194926;
@@ -70,6 +71,26 @@ describe("splitIntoDays", () => {
     expect(plans[0]!.segmentIds.length).toBeGreaterThan(0);
   });
 
+  it("translates generated endpoint labels", () => {
+    const translate = ((key: string) =>
+      key === "Start"
+        ? "Začátek"
+        : key === "Finish"
+          ? "Cíl"
+          : key) as Translate;
+    const plans = splitIntoDays(
+      makeSegments(80),
+      { dailyKmTarget: 250, forcedDays: null },
+      [],
+      [],
+      undefined,
+      translate,
+    );
+
+    expect(plans[0]!.startTown).toBe("Začátek");
+    expect(plans[0]!.endTown).toBe("Cíl");
+  });
+
   it("splits by daily km and snaps breaks to overnight towns in the window", () => {
     const towns = [town("t1", "Brno", 240), town("t2", "Zagreb", 505)];
     const plans = splitIntoDays(
@@ -100,7 +121,7 @@ describe("splitIntoDays", () => {
     expect(plans).toHaveLength(3);
     expect(plans[0]!.noTownNearby).toBe(true);
     expect(plans[0]!.endKm).toBeCloseTo(250, 0);
-    expect(plans[0]!.endTown).toMatch(/^km 250$/);
+    expect(plans[0]!.endTown).toBe("250 km");
     // The final day never carries the flag — it ends at the finish.
     expect(plans[2]!.noTownNearby).toBeUndefined();
   });

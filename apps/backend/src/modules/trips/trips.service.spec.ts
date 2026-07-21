@@ -492,6 +492,26 @@ describe('TripsService', () => {
       });
     });
 
+    it("uses the duplicating rider's stored locale for the persisted copy name", async () => {
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      userRepo.findOne.mockResolvedValueOnce({
+        id: OWNER_ID,
+        language: 'en',
+      } as User);
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.duplicate(OWNER_ID, TRIP_ID);
+
+      expect(userRepo.findOne).toHaveBeenCalledWith({
+        where: { id: OWNER_ID },
+        select: ['language'],
+      });
+      expect(manager.create).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({ title: 'Big Italian Loop (copy)' }),
+      );
+    });
+
     it('US-37: 404s when the supplied folder_id belongs to a different rider', async () => {
       folderRepo.findOne.mockResolvedValueOnce(null);
 

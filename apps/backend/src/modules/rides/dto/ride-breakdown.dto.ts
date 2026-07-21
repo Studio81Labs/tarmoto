@@ -2,17 +2,14 @@ import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * One slice of a distance-weighted breakdown (surface type or curviness band).
- * The backend owns the bucket keys, labels and ordering so the client can
- * render the bar/legend directly without re-deriving any thresholds.
+ * The backend owns stable bucket keys and ordering; clients own localized
+ * display labels for those keys.
  */
 export class RideBreakdownSliceDto {
   @ApiProperty({
     description: 'Stable bucket key, e.g. "asphalt" or "twisty".',
   })
   key!: string;
-
-  @ApiProperty({ description: 'Display label, e.g. "Asphalt" or "Twisty".' })
-  label!: string;
 
   @ApiProperty({ description: 'Distance ridden in this bucket, in metres.' })
   meters!: number;

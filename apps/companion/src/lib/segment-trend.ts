@@ -8,6 +8,8 @@
  * stays thin and everything is unit-testable without a DOM.
  */
 
+import type { EnglishMessageKey } from "@/i18n";
+
 export type TrendRange = "3m" | "6m" | "1y" | "all";
 
 export interface QualityPoint {
@@ -48,7 +50,7 @@ export interface TrendChartPoint {
 
 export const TREND_RANGES: readonly TrendRange[] = ["3m", "6m", "1y", "all"];
 
-export const TREND_RANGE_LABEL: Record<TrendRange, string> = {
+export const TREND_RANGE_LABEL: Record<TrendRange, EnglishMessageKey> = {
   "3m": "3 months",
   "6m": "6 months",
   "1y": "1 year",

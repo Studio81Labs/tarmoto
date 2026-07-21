@@ -1,4 +1,10 @@
-import { haversineKm } from "@tarmoto/shared";
+import {
+  createFormatters,
+  DEFAULT_FORMAT_LOCALE,
+  haversineKm,
+  type Formatters,
+} from "@tarmoto/shared";
+import { t as translate, type Translate } from "@/i18n";
 import { deriveFlaggedSections, surfaceMixToPercents } from "./api";
 import type {
   DayPlan,
@@ -42,6 +48,11 @@ interface TownOnRoute {
   alongKm: number;
   offRouteKm: number;
 }
+
+const DEFAULT_FORMATTERS = createFormatters({
+  locale: DEFAULT_FORMAT_LOCALE,
+  units: "metric",
+});
 
 /** Flatten segment geometries into one polyline with cumulative km. */
 export function routePointsWithKm(segments: RouteSegment[]): RoutePoint[] {
@@ -249,6 +260,8 @@ export function splitIntoDays(
   opts: SplitOptions,
   overnightTowns: PlannerPoi[] = [],
   pinnedBreakKms: number[] = [],
+  format: Formatters = DEFAULT_FORMATTERS,
+  t: Translate = translate,
 ): DayPlan[] {
   if (segments.length === 0) return [];
   const route = routePointsWithKm(segments);
@@ -366,8 +379,9 @@ export function splitIntoDays(
       timeMin:
         totalTimeMin > 0 ? Math.round((totalTimeMin * dayKm) / totalKm) : 0,
       quality: dayQuality(daySegments, dayKm, (totalTimeMin * dayKm) / totalKm),
-      startTown: d === 0 ? "Start" : boundaryLabel(boundaries[d]!),
-      endTown: d === boundaries.length - 2 ? "Finish" : boundaryLabel(to),
+      startTown: d === 0 ? t("Start") : boundaryLabel(boundaries[d]!, format),
+      endTown:
+        d === boundaries.length - 2 ? t("Finish") : boundaryLabel(to, format),
       suggestedStays: to.town
         ? [to.town.poi, ...stays.filter((poi) => poi.id !== to.town!.poi.id)]
         : stays,
@@ -380,10 +394,13 @@ export function splitIntoDays(
   return plans;
 }
 
-function boundaryLabel(boundary: {
-  km: number;
-  town: TownOnRoute | null;
-}): string {
+function boundaryLabel(
+  boundary: {
+    km: number;
+    town: TownOnRoute | null;
+  },
+  format: Formatters,
+): string {
   if (boundary.town) return boundary.town.poi.name;
-  return `km ${Math.round(boundary.km)}`;
+  return format.distanceKm(Math.round(boundary.km));
 }

@@ -13,7 +13,6 @@ import {
 } from "@/components/public-share";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { fetchSharedRide } from "@/lib/shared-rides";
-import { formatRideType } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -54,10 +53,13 @@ export default async function SharedRidePage({
             {t("Public route share")}
           </Stamp>
           <h1 className="font-sans text-[42px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
-            {t("{riderName}'s {rideType} ride", {
-              riderName: ride.rider_name,
-              rideType: formatRideType(ride.ride_type).toLowerCase(),
-            })}
+            {t(
+              "{rideType, select, free {{riderName}'s free ride} commute {{riderName}'s commute ride} trip {{riderName}'s trip ride} tracked {{riderName}'s tracked ride} other {{riderName}'s ride}}",
+              {
+                riderName: ride.rider_name,
+                rideType: ride.ride_type,
+              },
+            )}
           </h1>
           <p className="mt-3 max-w-[680px] text-[15px] leading-[1.55] text-fg-dim">
             {t(

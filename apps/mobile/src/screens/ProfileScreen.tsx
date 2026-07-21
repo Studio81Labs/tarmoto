@@ -45,9 +45,9 @@ import StatTile from "@/components/StatTile";
 import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { MeProfile, PublicProfile, UserBadge } from "@/types";
-import { formatDistance } from "@tarmoto/shared";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
 type Phase = "loading" | "ready" | "error";
@@ -242,10 +242,7 @@ export default function ProfileScreen() {
     summary?.joined_at ?? displayProfile?.created_at ?? user.created_at;
   const followerCount = displayProfile?.follower_count ?? 0;
   const followingCount = displayProfile?.following_count ?? 0;
-  const unitsPref = user.preferences?.units ?? "metric";
-  const ridingStatLabel = summary
-    ? buildRidingStatLabel(summary, unitsPref)
-    : null;
+  const ridingStatLabel = summary ? buildRidingStatLabel(summary) : null;
 
   return (
     <ScrollView
@@ -396,18 +393,15 @@ export default function ProfileScreen() {
  * but `Math.round(0.3) === 0`, so a pre-rounding check would still let
  * "0 km" / "0h" through and contradict the documented intent.
  */
-function buildRidingStatLabel(
-  summary: MeProfile,
-  units: "metric" | "imperial",
-): string | null {
+function buildRidingStatLabel(summary: MeProfile): string | null {
   const parts: string[] = [];
   const km = Math.round(summary.total_distance_km);
   if (km > 0) {
-    parts.push(formatDistance(km, units));
+    parts.push(getFormatters().distanceKm(km));
   }
   const hours = Math.round(summary.total_hours);
   if (hours > 0) {
-    parts.push(`${hours}h`);
+    parts.push(getFormatters().durationCompact(hours * 60));
   }
   if (summary.total_rides > 0) {
     parts.push(

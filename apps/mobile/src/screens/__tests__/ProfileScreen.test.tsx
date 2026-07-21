@@ -218,7 +218,7 @@ describe("ProfileScreen", () => {
     // Compact "X km · Yh · N rides" line. Distance is rounded to whole km
     // and `total_hours` is rounded to whole hours so the meta line stays
     // dense. Stat values come from the fixture in `beforeEach`.
-    expect(await screen.findByText("1235 km · 43h · 18 rides")).toBeTruthy();
+    expect(await screen.findByText("1,235 km · 43h · 18 rides")).toBeTruthy();
   });
 
   it("falls back gracefully when the me-profile call fails", async () => {

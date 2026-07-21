@@ -183,13 +183,10 @@ export function decideCommuteHazardNotification(
       "{count, plural, one {# new hazard} other {# new hazards}} on your commute",
       { count },
     ),
-    body:
-      count === 1
-        ? translate("Check {where} before you head out.", { where })
-        : translate(
-            "Check {where} and {count, plural, one {# other spot} other {# other spots}} before you head out.",
-            { where, count: count - 1 },
-          ),
+    body: translate(
+      "{count, plural, one {Check {where} before you head out.} other {Check {where} and {otherCount, plural, one {# other spot} other {# other spots}} before you head out.}}",
+      { count, otherCount: count - 1, where },
+    ),
     tag: `commute:${input.routeId}:${[...newIds].sort().join(",")}`,
     hazardIds: newIds,
   };

@@ -78,6 +78,7 @@ export const trips = {
   "Drafted \u2248{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.":
     "Drafted \u2248{distance} through {count, plural, one {# Fun Zone} other {# Fun Zones}}.",
   "Drafting\u2026": "Drafting\u2026",
+  "{name} (copy)": "{name} (copy)",
   "Drag a box on the map to scan it. ": "Drag a box on the map to scan it. ",
   "Draw region \u00b7 Fun Zones": "Draw region \u00b7 Fun Zones",
   "Drop to import GPX or KML": "Drop to import GPX or KML",

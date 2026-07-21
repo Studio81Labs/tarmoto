@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic } from "@/i18n";
+import { t } from "@/i18n";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -281,7 +281,7 @@ function RangeSelector({
             type="button"
             role="radio"
             aria-checked={active}
-            aria-label={tDynamic(TREND_RANGE_LABEL[option])}
+            aria-label={t(TREND_RANGE_LABEL[option])}
             onClick={() => onChange(option)}
             data-testid={`trend-range-${segmentId}-${option}`}
             className={`px-2 py-1 transition ${

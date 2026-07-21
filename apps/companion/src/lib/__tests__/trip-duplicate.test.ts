@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { duplicateTripPayload, nextCopyName } from "../trip-duplicate";
 import type { Trip } from "../types";
+import type { Translate } from "@/i18n";
 
 function makeTrip(overrides: Partial<Trip> = {}): Trip {
   return {
@@ -59,6 +60,17 @@ describe("nextCopyName", () => {
 
   it("falls back to 'Trip (copy)' when the original is blank", () => {
     expect(nextCopyName("   ")).toBe("Trip (copy)");
+  });
+
+  it("uses the active catalog for generated copy names", () => {
+    const translate = ((key: string, values?: Record<string, unknown>) => {
+      if (key === "Trip") return "Výlet";
+      if (key === "{name} (copy)") return `${String(values?.name)} (kopie)`;
+      return key;
+    }) as Translate;
+
+    expect(nextCopyName("Alps Loop", translate)).toBe("Alps Loop (kopie)");
+    expect(nextCopyName(" ", translate)).toBe("Výlet (kopie)");
   });
 });
 

@@ -1,6 +1,7 @@
 import type * as GeoJSON from "geojson";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 import type { RouteSegment } from "@/lib/planner/types";
+import type { Translate } from "@/i18n";
 import {
   buildPlannerQualityRouteCollection,
   buildPlannerRouteOverviewCollection,
@@ -776,6 +777,43 @@ describe("buildTripPlannerWaypointCollection", () => {
     );
 
     expect(collection.features[0]?.properties.label).toBe("Waypoint");
+  });
+
+  it("translates generated waypoint labels", () => {
+    const translate = ((key: string) =>
+      key === "Start"
+        ? "Začátek"
+        : key === "Waypoint"
+          ? "Bod"
+          : key) as Translate;
+    const localizedTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Day one",
+          distanceKm: 10,
+          durationMinutes: 20,
+          elevationGain: 50,
+          avgQuality: 4,
+          waypoints: [
+            {
+              id: "start-1",
+              location: { lng: 14.41, lat: 50.08 },
+              type: "start",
+            },
+          ],
+        },
+      ],
+    });
+
+    const collection = buildTripPlannerWaypointCollection(
+      localizedTrip,
+      undefined,
+      undefined,
+      translate,
+    );
+
+    expect(collection.features[0]?.properties.label).toBe("Začátek");
   });
 });
 

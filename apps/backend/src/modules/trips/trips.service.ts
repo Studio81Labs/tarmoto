@@ -16,6 +16,7 @@ import {
   isWithinLimit,
   latLngToPoint,
   pointToLatLng,
+  type SupportedLocale,
 } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
@@ -64,6 +65,23 @@ const DEFAULT_DAILY_KM_MIN = 150;
 const DEFAULT_DAILY_KM_MAX = 350;
 const DEFAULT_MIN_QUALITY = 3.0;
 const DEFAULT_ROAD_PREFERENCE = 'curvy';
+
+type TripCopyMessages = {
+  fallbackTitle: string;
+  copyLabel: string;
+  copyTemplate: string;
+};
+
+// Backend-generated trip names are persisted rider-facing copy, so they use
+// the duplicating rider's stored UI locale. Exhaustiveness is intentional:
+// registering a product locale must also define the backend copy marker.
+const TRIP_COPY_MESSAGES = {
+  en: {
+    fallbackTitle: 'Trip',
+    copyLabel: 'copy',
+    copyTemplate: '{name} (copy)',
+  },
+} satisfies Record<SupportedLocale, TripCopyMessages>;
 
 // ~50 m at mid-latitudes — bounds the invite-preview geometry payload while
 // keeping the overview polyline recognisable at typical zoom.
@@ -178,6 +196,12 @@ export class TripsService {
     // here — checked only after the 404 authorization above.
     await this.assertCanMintOpenTrip(userId);
 
+    const duplicator = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['language'],
+    });
+    const duplicateLocale = duplicator?.language ?? DEFAULT_LOCALE;
+
     // US-37 — only carry the source folder forward when the duplicating
     // user actually owns it. The companion's "Duplicate" action is
     // available to all members, but folders are private per-user, so
@@ -196,7 +220,7 @@ export class TripsService {
       const dup = await em.save(
         em.create(Trip, {
           owner_id: userId,
-          title: nextCopyName(source.title),
+          title: nextCopyName(source.title, duplicateLocale),
           region: source.region,
           num_days: source.num_days,
           daily_km_min: source.daily_km_min,
@@ -2075,9 +2099,17 @@ function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
   return [start, ...vias, end];
 }
 
-function nextCopyName(name: string): string {
-  const base = name.replace(/\s+\(copy(?:\s+\d+)?\)$/i, '').trim() || 'Trip';
-  const copy = `${base} (copy)`;
+function nextCopyName(name: string, locale: SupportedLocale): string {
+  const messages = TRIP_COPY_MESSAGES[locale] ?? TRIP_COPY_MESSAGES.en;
+  const knownCopyLabels = Object.values(TRIP_COPY_MESSAGES)
+    .map(({ copyLabel }) => copyLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const copySuffix = new RegExp(
+    `\\s+\\((?:${knownCopyLabels})(?:\\s+\\d+)?\\)$`,
+    'iu',
+  );
+  const base = name.replace(copySuffix, '').trim() || messages.fallbackTitle;
+  const copy = messages.copyTemplate.replace('{name}', base);
   // Truncate to 200 chars (trips.title is varchar(200)).
   return copy.length > 200 ? copy.slice(0, 197) + '...' : copy;
 }

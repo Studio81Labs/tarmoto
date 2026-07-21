@@ -6,7 +6,7 @@
  * - Vitest globals (describe/it/expect) available without imports
  */
 
-import { scoreToTier, confidenceLabel } from "../utils";
+import { confidenceLabel, rideTypeLabel, scoreToTier } from "../utils";
 
 describe("scoreToTier", () => {
   it.each([
@@ -35,5 +35,17 @@ describe("confidenceLabel", () => {
     [0.0, "Low"],
   ])('maps confidence %s to "%s"', (confidence, expected) => {
     expect(confidenceLabel(confidence)).toBe(expected);
+  });
+});
+
+describe("rideTypeLabel", () => {
+  it.each([
+    ["free", "Free"],
+    ["commute", "Commute"],
+    ["trip", "Trip"],
+    ["tracked", "Tracked"],
+    ["future_backend_value", "Ride"],
+  ])('maps ride type %s to the catalog key "%s"', (value, expected) => {
+    expect(rideTypeLabel(value)).toBe(expected);
   });
 });
