@@ -123,9 +123,29 @@ export default function App() {
           : null;
       },
       sync: async (userId, preferences) => {
-        const updated = await api.updateProfile({ preferences });
+        await api.updateProfile({ preferences });
         const auth = useAuthStore.getState();
-        if (auth.user?.id === userId) auth.setUser(updated);
+        const current = auth.user;
+        if (current?.id !== userId) return;
+
+        // This background PATCH can overlap an interactive Settings write.
+        // Merge only the fields owned by this monitor into the latest profile;
+        // publishing the whole response could revert unrelated preferences
+        // from an older server snapshot (for example, a just-changed unit).
+        const merged = {
+          ...current,
+          preferences: {
+            ...current.preferences,
+            ...(preferences.format_locale !== undefined
+              ? { format_locale: preferences.format_locale }
+              : {}),
+            ...(preferences.timezone !== undefined
+              ? { timezone: preferences.timezone }
+              : {}),
+          },
+        };
+        api.cacheProfile(merged);
+        auth.setUser(merged);
       },
     });
   }, [
