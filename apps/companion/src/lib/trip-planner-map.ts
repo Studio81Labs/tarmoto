@@ -12,6 +12,7 @@ import {
 } from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
+import { t as translate, type Translate } from "@/i18n";
 
 export type PlannerBbox = [number, number, number, number];
 
@@ -291,6 +292,7 @@ export function buildTripPlannerWaypointCollection(
   trip: Trip | null,
   selectedDayNumber?: number,
   focusSelectedDay?: boolean,
+  t: Translate = translate,
 ): FeatureCollection<Point, WaypointProperties> {
   if (!trip) return emptyPointCollection();
 
@@ -313,7 +315,7 @@ export function buildTripPlannerWaypointCollection(
           dayNumber: day.dayNumber,
           waypointId: waypoint.id,
           waypointType: waypoint.type,
-          label: waypoint.name ?? fallbackWaypointLabel(waypoint.type),
+          label: waypoint.name ?? fallbackWaypointLabel(waypoint.type, t),
           ...(waypoint.poiCategory
             ? { poiCategory: waypoint.poiCategory }
             : {}),
@@ -521,15 +523,12 @@ function getDayRouteCoordinates(day: Trip["days"][number]): [number, number][] {
   ]);
 }
 
-function fallbackWaypointLabel(type: string): string {
+function fallbackWaypointLabel(type: string, t: Translate): string {
   const normalizedType = type.trim();
 
-  if (normalizedType === "start") return "Start";
-  if (normalizedType === "end") return "Finish";
-  const firstChar = normalizedType[0];
-  if (!firstChar) return "Waypoint";
-
-  return firstChar.toUpperCase() + normalizedType.slice(1);
+  if (normalizedType === "start") return t("Start");
+  if (normalizedType === "end") return t("Finish");
+  return t("Waypoint");
 }
 
 function emptyQualityLineCollection(): FeatureCollection<

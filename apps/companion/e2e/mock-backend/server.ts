@@ -3462,26 +3462,25 @@ export function buildApp(): Express {
         res.json({ surface: [], curviness: [], total_meters: 0 });
         return;
       }
-      const slice = (key: string, label: string, pct: number) => ({
+      const slice = (key: string, pct: number) => ({
         key,
-        label,
         meters: pct * 1000,
         pct,
       });
       res.json({
         surface: [
-          slice("asphalt", "Asphalt", 78),
-          slice("concrete", "Concrete", 8),
-          slice("cobblestone", "Cobblestone", 5),
-          slice("gravel", "Gravel", 7),
-          slice("dirt", "Dirt", 2),
+          slice("asphalt", 78),
+          slice("concrete", 8),
+          slice("cobblestone", 5),
+          slice("gravel", 7),
+          slice("dirt", 2),
         ],
         curviness: [
-          slice("straight", "Straight", 12),
-          slice("flowing", "Flowing", 28),
-          slice("twisty", "Twisty", 36),
-          slice("tight", "Tight", 18),
-          slice("hairpin", "Hairpin", 6),
+          slice("straight", 12),
+          slice("flowing", 28),
+          slice("twisty", 36),
+          slice("tight", 18),
+          slice("hairpin", 6),
         ],
         total_meters: 100000,
       });

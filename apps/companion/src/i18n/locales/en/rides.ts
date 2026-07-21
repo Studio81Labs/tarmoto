@@ -220,7 +220,8 @@ export const rides = {
   "{label} has no GPS track.": "{label} has no GPS track.",
   "{label} route map": "{label} route map",
   "{label} surface": "{label} surface",
-  "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
+  "{rideType, select, free {{riderName}'s free ride} commute {{riderName}'s commute ride} trip {{riderName}'s trip ride} tracked {{riderName}'s tracked ride} other {{riderName}'s ride}}":
+    "{rideType, select, free {{riderName}'s free ride} commute {{riderName}'s commute ride} trip {{riderName}'s trip ride} tracked {{riderName}'s tracked ride} other {{riderName}'s ride}}",
   "{slot} selector": "{slot} selector",
   "{unit} / month": "{unit} / month",
   "\u2014 zoom out or pick a new centre.":

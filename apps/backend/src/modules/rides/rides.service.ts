@@ -34,17 +34,6 @@ import {
 import { CsvService } from './csv.service.js';
 import { normalizeLeanDistribution, SURFACE_TYPES } from '@tarmoto/shared';
 
-// Display labels for the surface-breakdown slices. Keyed by the canonical
-// `SURFACE_TYPES` so the breakdown stays in lock-step with the shared enum.
-const SURFACE_LABELS: Record<string, string> = {
-  asphalt: 'Asphalt',
-  concrete: 'Concrete',
-  cobblestone: 'Cobblestone',
-  gravel: 'Gravel',
-  dirt: 'Dirt',
-  unknown: 'Unknown',
-};
-
 // How many ride-route geometries the "My rides" map overlay returns at once.
 // Hard-capped at 500 to bound the geospatial query + payload; tunable downward
 // via `TARMOTO_RIDE_OVERLAY_LIMIT` (e.g. to keep the overlay calmer for very
@@ -58,12 +47,12 @@ const RIDE_OVERLAY_CAP = (() => {
 // Curviness bands over the canonical 0–5 `road_segments.curviness_score`
 // scale (the same scale the fun-zone clustering uses: `>= 3.0`, `/ 5.0`).
 // The SQL `CASE` in `breakdown()` mirrors these boundaries exactly.
-const CURVINESS_BANDS: ReadonlyArray<{ key: string; label: string }> = [
-  { key: 'straight', label: 'Straight' },
-  { key: 'flowing', label: 'Flowing' },
-  { key: 'twisty', label: 'Twisty' },
-  { key: 'tight', label: 'Tight' },
-  { key: 'hairpin', label: 'Hairpin' },
+const CURVINESS_BANDS: ReadonlyArray<{ key: string }> = [
+  { key: 'straight' },
+  { key: 'flowing' },
+  { key: 'twisty' },
+  { key: 'tight' },
+  { key: 'hairpin' },
 ];
 
 @Injectable()
@@ -424,13 +413,8 @@ export class RidesService {
       return { surface: [], curviness: [], total_meters: 0 };
     }
 
-    const toSlice = (
-      key: string,
-      label: string,
-      meters: number,
-    ): RideBreakdownSliceDto => ({
+    const toSlice = (key: string, meters: number): RideBreakdownSliceDto => ({
       key,
-      label,
       meters,
       // One-decimal percentage; the client renders the bar/legend verbatim.
       pct: Math.round((meters / totalMeters) * 1000) / 10,
@@ -439,15 +423,13 @@ export class RidesService {
     // Surface: canonical order, omit surfaces with no distance ridden.
     const surface = SURFACE_TYPES.flatMap((key) => {
       const meters = surfaceMeters.get(key) ?? 0;
-      return meters > 0
-        ? [toSlice(key, SURFACE_LABELS[key] ?? key, meters)]
-        : [];
+      return meters > 0 ? [toSlice(key, meters)] : [];
     });
 
     // Curviness: return the full straight→hairpin ladder so empty bands still
     // render their 0% rung.
     const curviness = CURVINESS_BANDS.map((band) =>
-      toSlice(band.key, band.label, curvinessMeters.get(band.key) ?? 0),
+      toSlice(band.key, curvinessMeters.get(band.key) ?? 0),
     );
 
     return { surface, curviness, total_meters: totalMeters };

@@ -52,6 +52,18 @@ describe("companion i18n barrel", () => {
     ).toBe(expected);
   });
 
+  it("renders whole-sentence ICU select variants for ride types", () => {
+    const key =
+      "{rideType, select, free {{riderName}'s free ride} commute {{riderName}'s commute ride} trip {{riderName}'s trip ride} tracked {{riderName}'s tracked ride} other {{riderName}'s ride}}";
+
+    expect(translate(key, { riderName: "Riku", rideType: "free" })).toBe(
+      "Riku's free ride",
+    );
+    expect(translate(key, { riderName: "Riku", rideType: "future" })).toBe(
+      "Riku's ride",
+    );
+  });
+
   it("can pseudo-expand every registered key", () => {
     const pseudo = Object.fromEntries(
       Object.keys(en).map((key) => [key, `[!! ${key} !!]`]),

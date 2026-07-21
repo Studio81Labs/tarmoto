@@ -238,6 +238,13 @@ describe("createFormatters — duration", () => {
   it("renders an em-dash for non-finite input instead of NaN math", () => {
     expect(en.duration(Number.NaN)).toBe("—");
   });
+
+  it("localizes duration numerals and unit tokens", () => {
+    const ar = createFormatters({ locale: "ar-EG", units: "metric" });
+    expect(ar.duration(132)).toContain("٢");
+    expect(ar.duration(132)).toContain("١٢");
+    expect(ar.duration(132)).not.toContain("2h");
+  });
 });
 
 describe("createFormatters — monthYearCompact", () => {
@@ -266,6 +273,12 @@ describe("createFormatters — durationCompact", () => {
 
   it("renders an em-dash for non-finite input instead of NaN math", () => {
     expect(en.durationCompact(Number.NaN)).toBe("—");
+  });
+
+  it("uses locale-aware narrow duration units", () => {
+    const ar = createFormatters({ locale: "ar-EG", units: "metric" });
+    expect(ar.durationCompact(52)).toContain("٥٢");
+    expect(ar.durationCompact(52)).not.toBe("52m");
   });
 });
 

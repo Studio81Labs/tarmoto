@@ -145,7 +145,7 @@ export interface Formatters {
   /** "now" / "5m ago" / "3h ago" / "2d ago", absolute `date()` beyond 7 days. */
   relativeTime(value: DateInput, now?: DateInput): string;
   /**
-   * "4h 12m" / "52 min" — deliberately locale-neutral in v1 (spec §8).
+   * Locale-aware compact duration, e.g. "4h 12m" / "52 min" in English.
    * Non-finite input (NaN/Infinity) renders "—" rather than NaN-tainted math.
    */
   duration(totalMinutes: number): string;
@@ -365,18 +365,32 @@ export function createFormatters(ctx: FormatContext): Formatters {
       const total = Math.max(0, Math.round(totalMinutes));
       const hours = Math.floor(total / 60);
       const minutes = total % 60;
-      if (hours === 0) return `${minutes} min`;
-      if (minutes === 0) return `${hours}h`;
-      return `${hours}h ${minutes}m`;
+      if (hours === 0) {
+        return unitNumber(minutes, "minute", { unitDisplay: "short" });
+      }
+      const formattedHours = unitNumber(hours, "hour", {
+        unitDisplay: "narrow",
+      });
+      if (minutes === 0) return formattedHours;
+      return `${formattedHours} ${unitNumber(minutes, "minute", {
+        unitDisplay: "narrow",
+      })}`;
     },
     durationCompact: (totalMinutes) => {
       if (!Number.isFinite(totalMinutes)) return "—";
       const total = Math.max(0, Math.round(totalMinutes));
       const hours = Math.floor(total / 60);
       const minutes = total % 60;
-      if (hours === 0) return `${minutes}m`;
-      if (minutes === 0) return `${hours}h`;
-      return `${hours}h ${minutes}m`;
+      if (hours === 0) {
+        return unitNumber(minutes, "minute", { unitDisplay: "narrow" });
+      }
+      const formattedHours = unitNumber(hours, "hour", {
+        unitDisplay: "narrow",
+      });
+      if (minutes === 0) return formattedHours;
+      return `${formattedHours} ${unitNumber(minutes, "minute", {
+        unitDisplay: "narrow",
+      })}`;
     },
     distanceKm: (km) =>
       units === "imperial"

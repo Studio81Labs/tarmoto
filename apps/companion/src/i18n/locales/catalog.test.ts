@@ -68,4 +68,20 @@ describe("companion catalog ICU validity", () => {
       .map(([key]) => key);
     expect(mismatches).toEqual([]);
   });
+
+  it("fully translates every registered production locale", () => {
+    const sourceKeys = Object.keys(en).sort();
+    const incomplete = Object.entries(companionCatalogs).flatMap(
+      ([locale, catalog]) => {
+        const translatedKeys = Object.keys(catalog).sort();
+        const missing = sourceKeys.filter((key) => !(key in catalog));
+        const extra = translatedKeys.filter((key) => !(key in en));
+        return missing.length > 0 || extra.length > 0
+          ? [{ locale, missing, extra }]
+          : [];
+      },
+    );
+
+    expect(incomplete).toEqual([]);
+  });
 });

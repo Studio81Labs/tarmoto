@@ -198,14 +198,24 @@ export function ridesWithinDays<T extends { started_at: string }>(
   });
 }
 
-export function formatRideType(value: string): string {
-  if (!value) return "Ride";
-  return value.charAt(0).toUpperCase() + value.slice(1);
+export function rideTypeLabel(value: string): EnglishMessageKey {
+  switch (value) {
+    case "free":
+      return "Free";
+    case "commute":
+      return "Commute";
+    case "trip":
+      return "Trip";
+    case "tracked":
+      return "Tracked";
+    default:
+      return "Ride";
+  }
 }
 
 // ── Confidence ──
 
-export function confidenceLabel(confidence: number): string {
+export function confidenceLabel(confidence: number): EnglishMessageKey {
   if (confidence >= 0.8) return "High";
   if (confidence >= 0.5) return "Medium";
   return "Low";

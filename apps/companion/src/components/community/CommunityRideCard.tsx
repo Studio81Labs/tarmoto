@@ -8,7 +8,7 @@ import { Button, QualityBars } from "@tarmoto/ui";
 import { communityApi, type CommunityRide } from "@/lib/api";
 import { UserAvatar } from "@/components/UserAvatar";
 import { buildRoutePreview } from "@/lib/ride-detail";
-import { formatRideType, scoreToQualityTier } from "@/lib/utils";
+import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 
 /**
@@ -123,7 +123,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
           <UserAvatar name={ride.rider_name} size={22} fontSize={11} />
           <span className="font-semibold text-ink">{ride.rider_name}</span>
           <span className="text-fg-mute">·</span>
-          <span>{formatRideType(ride.ride_type)}</span>
+          <span>{t(rideTypeLabel(ride.ride_type))}</span>
         </Link>
 
         {ride.description && (

@@ -7,11 +7,41 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { EnglishMessageKey } from "@/i18n";
+import type { SurfaceType } from "@tarmoto/shared";
 import { api } from "./api";
 import { windowStart, type RideFilters, type RideType } from "./ride-stats";
 
 export type RideBreakdown = components["schemas"]["RideBreakdownDto"];
 export type RideBreakdownSlice = components["schemas"]["RideBreakdownSliceDto"];
+
+type CurvinessBreakdownKey =
+  | "straight"
+  | "flowing"
+  | "twisty"
+  | "tight"
+  | "hairpin";
+type RideBreakdownKey = SurfaceType | CurvinessBreakdownKey;
+
+const BREAKDOWN_LABELS = {
+  asphalt: "Asphalt",
+  concrete: "Concrete",
+  cobblestone: "Cobblestone",
+  gravel: "Gravel",
+  dirt: "Dirt",
+  unknown: "Unknown",
+  straight: "Straight",
+  flowing: "Flowing",
+  twisty: "Twisty",
+  tight: "Tight",
+  hairpin: "Hairpin",
+} as const satisfies Record<RideBreakdownKey, EnglishMessageKey>;
+
+export function rideBreakdownLabel(key: string): EnglishMessageKey {
+  return key in BREAKDOWN_LABELS
+    ? BREAKDOWN_LABELS[key as keyof typeof BREAKDOWN_LABELS]
+    : "Unknown";
+}
 
 export async function fetchRideBreakdown(
   filters: RideFilters,

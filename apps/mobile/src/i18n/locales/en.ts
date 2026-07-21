@@ -23,6 +23,8 @@ export const en = {
     "{count, plural, one {# HAZARD} other {# HAZARDS}}",
   "{count, plural, one {# kilometre} other {# kilometres}}":
     "{count, plural, one {# kilometre} other {# kilometres}}",
+  "{count, plural, one {Check {where} before you head out.} other {Check {where} and {otherCount, plural, one {# other spot} other {# other spots}} before you head out.}}":
+    "{count, plural, one {Check {where} before you head out.} other {Check {where} and {otherCount, plural, one {# other spot} other {# other spots}} before you head out.}}",
   "{count, plural, one {# new hazard} other {# new hazards}}":
     "{count, plural, one {# new hazard} other {# new hazards}}",
   "{count, plural, one {# leg exceeds} other {# legs exceed}} your fuel range":
@@ -226,9 +228,6 @@ export const en = {
   Chalet: "Chalet",
   Challenges: "Challenges",
   "Change avatar": "Change avatar",
-  "Check {where} and {count, plural, one {# other spot} other {# other spots}} before you head out.":
-    "Check {where} and {count, plural, one {# other spot} other {# other spots}} before you head out.",
-  "Check {where} before you head out.": "Check {where} before you head out.",
   "Check back soon — new challenges launch regularly.":
     "Check back soon — new challenges launch regularly.",
   "Check the list before you head out.": "Check the list before you head out.",

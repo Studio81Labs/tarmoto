@@ -1,4 +1,5 @@
 import type { Trip } from "@/lib/types";
+import { t as translate, type Translate } from "@/i18n";
 
 /**
  * Payload sent to `tripsApi.create` when duplicating a trip. The backend
@@ -31,9 +32,10 @@ export interface DuplicateTripContext {
 export function duplicateTripPayload(
   trip: Trip,
   context: DuplicateTripContext = { isOwner: true },
+  t: Translate = translate,
 ): TripDuplicatePayload {
   const payload: TripDuplicatePayload = {
-    name: nextCopyName(trip.name),
+    name: nextCopyName(trip.name, t),
     days: trip.days.map((day) => ({
       // Construct each day explicitly rather than spreading, so overnight
       // bookings, cached route geometry, and segment previews don't leak
@@ -73,7 +75,7 @@ export function duplicateTripPayload(
  * Exposed for unit tests and so the UI can show the same name optimistically
  * before the backend round-trip.
  */
-export function nextCopyName(name: string): string {
-  const base = name.replace(/\s+\(copy(?:\s+\d+)?\)$/i, "").trim() || "Trip";
-  return `${base} (copy)`;
+export function nextCopyName(name: string, t: Translate = translate): string {
+  const base = name.replace(/\s+\(copy(?:\s+\d+)?\)$/i, "").trim() || t("Trip");
+  return t("{name} (copy)", { name: base });
 }

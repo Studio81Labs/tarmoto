@@ -1297,9 +1297,9 @@ describe('RidesService', () => {
       expect(res.total_meters).toBe(10000);
       // Surface: canonical order, zero-distance surfaces omitted.
       expect(res.surface).toEqual([
-        { key: 'asphalt', label: 'Asphalt', meters: 7000, pct: 70 },
-        { key: 'concrete', label: 'Concrete', meters: 2000, pct: 20 },
-        { key: 'gravel', label: 'Gravel', meters: 1000, pct: 10 },
+        { key: 'asphalt', meters: 7000, pct: 70 },
+        { key: 'concrete', meters: 2000, pct: 20 },
+        { key: 'gravel', meters: 1000, pct: 10 },
       ]);
       // Curviness: full straight→hairpin ladder, empty bands at 0%.
       expect(res.curviness.map((c) => c.key)).toEqual([
@@ -1311,13 +1311,11 @@ describe('RidesService', () => {
       ]);
       expect(res.curviness).toContainEqual({
         key: 'twisty',
-        label: 'Twisty',
         meters: 5000,
         pct: 50,
       });
       expect(res.curviness).toContainEqual({
         key: 'flowing',
-        label: 'Flowing',
         meters: 0,
         pct: 0,
       });
