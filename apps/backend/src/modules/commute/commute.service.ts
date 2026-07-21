@@ -346,7 +346,10 @@ export class CommuteService {
     const bbox = this.endpointBbox(originLng, originLat, destLng, destLat);
     const [primaryHazardCount, excludePolygons] = await Promise.all([
       this.countHazardsNearLine(route),
-      this.closuresService.exclusionPolygons(bbox),
+      this.closuresService.exclusionPolygons(bbox, [
+        { lat: originLat, lng: originLng },
+        { lat: destLat, lng: destLng },
+      ]),
     ]);
     const rawAlternatives = await this.routingProvider.getAlternatives(
       originLat,
@@ -590,8 +593,13 @@ export class CommuteService {
       // duration), not just alternatives. Asking for one route keeps
       // the upstream payload small. Route around active full closures (#744).
       const bbox = this.endpointBbox(originLng, originLat, destLng, destLat);
-      const excludePolygons =
-        await this.closuresService.exclusionPolygons(bbox);
+      const excludePolygons = await this.closuresService.exclusionPolygons(
+        bbox,
+        [
+          { lat: originLat, lng: originLng },
+          { lat: destLat, lng: destLng },
+        ],
+      );
       const candidates = await this.routingProvider.getAlternatives(
         originLat,
         originLng,

@@ -44,6 +44,11 @@ interface BboxCoords {
   maxLat: number;
 }
 
+interface RoutePoint {
+  lat: number;
+  lng: number;
+}
+
 interface RouteClosureCountRow {
   full_count?: string | number;
   partial_count?: string | number;
@@ -230,8 +235,12 @@ export class ClosuresService {
    */
   async exclusionPolygons(
     bbox: BboxCoords,
+    route: ReadonlyArray<RoutePoint>,
     activeOn: Date = new Date(),
   ): Promise<Array<Array<[number, number]>>> {
+    const routeWkt = `LINESTRING(${route
+      .map((point) => `${Number(point.lng)} ${Number(point.lat)}`)
+      .join(',')})`;
     const qb = this.repo
       .createQueryBuilder('c')
       .select(
@@ -247,9 +256,21 @@ export class ClosuresService {
         'ST_Intersects(c.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
         bbox,
       )
-      .orderBy('c.starts_at', 'DESC')
+      // The bbox is intentionally broad enough to allow detours, but the
+      // router payload is capped below. Rank closures by proximity to the
+      // requested waypoint chain so an older closure on a planned leg cannot
+      // be crowded out by newer, irrelevant closures elsewhere in the bbox.
+      .orderBy(
+        `ST_Distance(
+          c.geom::geography,
+          ST_GeomFromText(:routeWkt, 4326)::geography
+        )`,
+        'ASC',
+      )
+      .addOrderBy('c.starts_at', 'DESC')
       .limit(MAX_EXCLUSION_POLYGONS)
-      .setParameter('buffer', EXCLUSION_BUFFER_M);
+      .setParameter('buffer', EXCLUSION_BUFFER_M)
+      .setParameter('routeWkt', routeWkt);
 
     // Separate operator kill switch from sys_nap_conditions above: routing
     // avoidance can be disabled independently of closure display. Same

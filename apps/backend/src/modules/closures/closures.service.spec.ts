@@ -401,9 +401,13 @@ describe('ClosuresService', () => {
 
   describe('exclusionPolygons (#744)', () => {
     const bbox = { minLng: 16, minLat: 49, maxLng: 17, maxLat: 50 };
+    const route = [
+      { lat: 49.2, lng: 16.2 },
+      { lat: 49.8, lng: 16.8 },
+    ];
 
     it('queries only active full closures in the bbox, buffered', async () => {
-      await service.exclusionPolygons(bbox);
+      await service.exclusionPolygons(bbox, route);
 
       expect(mockQb.select).toHaveBeenCalledWith(
         expect.stringContaining('ST_Buffer(c.geom::geography'),
@@ -419,6 +423,16 @@ describe('ClosuresService', () => {
         bbox,
       );
       expect(mockQb.setParameter).toHaveBeenCalledWith('buffer', 25);
+      expect(mockQb.setParameter).toHaveBeenCalledWith(
+        'routeWkt',
+        'LINESTRING(16.2 49.2,16.8 49.8)',
+      );
+      expect(mockQb.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Distance'),
+        'ASC',
+      );
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
+      expect(mockQb.limit).toHaveBeenCalledWith(100);
     });
 
     it('returns the outer ring of each buffered Polygon', async () => {
@@ -431,7 +445,7 @@ describe('ClosuresService', () => {
       mockQb.getRawMany.mockResolvedValueOnce([
         { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
       ]);
-      const polygons = await service.exclusionPolygons(bbox);
+      const polygons = await service.exclusionPolygons(bbox, route);
       expect(polygons).toEqual([ring]);
     });
 
@@ -457,13 +471,13 @@ describe('ClosuresService', () => {
         },
         { geojson: null },
       ]);
-      const polygons = await service.exclusionPolygons(bbox);
+      const polygons = await service.exclusionPolygons(bbox, route);
       expect(polygons).toEqual([ringA, ringB]);
     });
 
     it('returns [] when there are no full closures in the area', async () => {
       mockQb.getRawMany.mockResolvedValueOnce([]);
-      expect(await service.exclusionPolygons(bbox)).toEqual([]);
+      expect(await service.exclusionPolygons(bbox, route)).toEqual([]);
     });
 
     it('still produces polygons for operator/osm full closures — hides only NAP (official) — when sys_nap_routing_avoidance is off', async () => {
@@ -477,7 +491,7 @@ describe('ClosuresService', () => {
       mockQb.getRawMany.mockResolvedValueOnce([
         { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
       ]);
-      const polygons = await service.exclusionPolygons(bbox);
+      const polygons = await service.exclusionPolygons(bbox, route);
       expect(polygons).toEqual([ring]);
       expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(

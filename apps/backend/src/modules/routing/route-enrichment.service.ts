@@ -84,11 +84,15 @@ export class RouteEnrichmentService {
     geometry: ReadonlyArray<{ lat: number; lng: number }>,
     signal?: AbortSignal,
   ): Promise<RouteMetrics> {
-    return this.limiter.run(() => this.aggregateUnbounded(geometry), signal);
+    return this.limiter.run(
+      () => this.aggregateUnbounded(geometry, signal),
+      signal,
+    );
   }
 
   private async aggregateUnbounded(
     geometry: ReadonlyArray<{ lat: number; lng: number }>,
+    signal?: AbortSignal,
   ): Promise<RouteMetrics> {
     // Guard against degenerate/malformed geometry (snap-collapsed identical
     // points, NaN/Inf coords, or fewer than 2 points): geometryToWkt would
@@ -129,17 +133,16 @@ export class RouteEnrichmentService {
     ): Promise<T> => {
       const startedAt = Date.now();
       try {
-        return await this.dataSource.query(sql, params);
+        return await this.query(sql, params, signal);
       } finally {
         queryDurations.set(label, Date.now() - startedAt);
       }
     };
 
     const aggregateStartedAt = Date.now();
-    const [roadRows, hazardRows, scenicRows] = await Promise.all([
-      timedQuery<RoadMetricRow[]>(
-        'roads',
-        `WITH route AS MATERIALIZED (
+    const roadQuery = timedQuery<RoadMetricRow[]>(
+      'roads',
+      `WITH route AS MATERIALIZED (
              SELECT
                ST_GeomFromText($1, 4326) AS line,
                ST_Length(ST_GeomFromText($1, 4326)::geography) AS length_m
@@ -249,11 +252,11 @@ export class RouteEnrichmentService {
            FROM metrics
            CROSS JOIN elevation
            CROSS JOIN surfaces`,
-        [wkt, ROAD_BUFFER_M, MAX_AGGREGATE_SAMPLES, AGGREGATE_SAMPLE_SPACING_M],
-      ),
-      timedQuery<HazardRow[]>(
-        'hazards',
-        `SELECT COUNT(*)::int AS count
+      [wkt, ROAD_BUFFER_M, MAX_AGGREGATE_SAMPLES, AGGREGATE_SAMPLE_SPACING_M],
+    );
+    const hazardQuery = timedQuery<HazardRow[]>(
+      'hazards',
+      `SELECT COUNT(*)::int AS count
            FROM hazard_reports h
            WHERE h.is_active = true AND h.expires_at > NOW()
              AND h.moderation_status = 'visible'
@@ -267,11 +270,11 @@ export class RouteEnrichmentService {
                ST_GeomFromText($1, 4326)::geography,
                $2
              )`,
-        [wkt, HAZARD_BUFFER_M],
-      ),
-      timedQuery<ScenicRow[]>(
-        'scenic',
-        `SELECT
+      [wkt, HAZARD_BUFFER_M],
+    );
+    const scenicQuery = timedQuery<ScenicRow[]>(
+      'scenic',
+      `SELECT
              AVG(fz.composite_score)::float AS avg_scenic,
              COUNT(*)::int AS zone_count
            FROM fun_zones fz
@@ -285,9 +288,23 @@ export class RouteEnrichmentService {
              ST_GeomFromText($1, 4326)::geography,
              $2
            )`,
-        [wkt, SCENIC_OVERLAP_BUFFER_KM * 1000],
-      ),
-    ]);
+      [wkt, SCENIC_OVERLAP_BUFFER_KM * 1000],
+    );
+    const queries = [roadQuery, hazardQuery, scenicQuery] as const;
+    let roadRows: RoadMetricRow[];
+    let hazardRows: HazardRow[];
+    let scenicRows: ScenicRow[];
+    try {
+      [roadRows, hazardRows, scenicRows] = await Promise.all(queries);
+    } catch (err: unknown) {
+      if (signal?.aborted) {
+        // Do not release the aggregate limiter slot after only the first
+        // cancellation response: all three runners must finish cancelling and
+        // return their connections before another aggregate can enter.
+        await Promise.allSettled(queries);
+      }
+      throw err;
+    }
 
     const q: RoadMetricRow | undefined = roadRows[0];
     const s: ScenicRow | undefined = scenicRows[0];
@@ -352,6 +369,66 @@ export class RouteEnrichmentService {
       hazardCount,
       surfaceMixMetres,
     };
+  }
+
+  /**
+   * TypeORM's PostgreSQL query API does not accept AbortSignal. When the
+   * request has one, pin the statement to a QueryRunner connection and cancel
+   * that backend from a spare pool connection on abort. This releases both
+   * Postgres CPU and the enrichment limiter slot instead of merely abandoning
+   * the HTTP response while the spatial statement keeps running.
+   */
+  private async query<T>(
+    sql: string,
+    params: unknown[],
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (!signal) return this.dataSource.query<T>(sql, params);
+
+    signal.throwIfAborted();
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+
+    let backendPid: number | undefined;
+    let settled = false;
+    let cancellation: Promise<void> | undefined;
+    const cancel = () => {
+      if (settled || backendPid === undefined) return;
+      cancellation ??= this.cancelBackend(backendPid);
+    };
+
+    try {
+      signal.throwIfAborted();
+      const pidRows = (await runner.query(
+        'SELECT pg_backend_pid()::int AS pid',
+      )) as Array<{ pid: number }>;
+      backendPid = pidRows[0]?.pid;
+      signal.addEventListener('abort', cancel, { once: true });
+      signal.throwIfAborted();
+      const result: unknown = await runner.query(sql, params);
+      return result as T;
+    } finally {
+      settled = true;
+      signal.removeEventListener('abort', cancel);
+      // Keep ownership of this backend PID until the cancellation request has
+      // completed. Releasing it earlier could let the pool reuse the same
+      // connection and a delayed pg_cancel_backend call could then terminate
+      // an unrelated query.
+      await cancellation;
+      await runner.release();
+    }
+  }
+
+  private async cancelBackend(backendPid: number): Promise<void> {
+    try {
+      await this.dataSource.query('SELECT pg_cancel_backend($1)', [backendPid]);
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Failed to cancel route enrichment query: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }
 

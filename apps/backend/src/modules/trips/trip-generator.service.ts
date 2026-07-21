@@ -217,12 +217,19 @@ export class TripGeneratorService {
     // gets the rider's intent.
     // Route every day's legs around active full closures in the trip area
     // (#744). Fetched once for the whole trip bbox and reused across days.
-    const excludePolygons = await this.closuresService.exclusionPolygons({
-      minLng: bbox[0],
-      minLat: bbox[1],
-      maxLng: bbox[2],
-      maxLat: bbox[3],
-    });
+    const exclusionRoute = [
+      chain[0]?.from ?? start,
+      ...chain.map((leg) => leg.to),
+    ];
+    const excludePolygons = await this.closuresService.exclusionPolygons(
+      {
+        minLng: bbox[0],
+        minLat: bbox[1],
+        maxLng: bbox[2],
+        maxLat: bbox[3],
+      },
+      exclusionRoute,
+    );
     const routingOptions: RoutingOptions = {
       avoidHighways: dto.avoid_highways,
       avoidTolls: dto.avoid_tolls,

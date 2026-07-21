@@ -134,4 +134,79 @@ describe('RouteEnrichmentService.aggregate', () => {
     }
     expect(query).not.toHaveBeenCalled();
   });
+
+  it('cancels active Postgres queries when the request is aborted', async () => {
+    const pending = new Map<number, (reason: Error) => void>();
+    let startedCount = 0;
+    let allStartedResolve: (() => void) | undefined;
+    const allStarted = new Promise<void>((resolve) => {
+      allStartedResolve = resolve;
+    });
+    const runners = [101, 102, 103].map((pid) => {
+      const runner = {
+        connect: jest.fn().mockResolvedValue(undefined),
+        query: jest.fn((sql: string) => {
+          if (sql.includes('pg_backend_pid')) {
+            return Promise.resolve([{ pid }]);
+          }
+          startedCount += 1;
+          if (startedCount === 3) allStartedResolve?.();
+          return new Promise<never>((_resolve, reject) => {
+            pending.set(pid, reject);
+          });
+        }),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+      return runner;
+    });
+    const cancelQuery = jest.fn(
+      (_sql: string, params: unknown[] | undefined) => {
+        const pid = params?.[0] as number;
+        pending.get(pid)?.(
+          new Error('canceling statement due to user request'),
+        );
+        return Promise.resolve([{ cancelled: true }]);
+      },
+    );
+    const createQueryRunner = jest
+      .fn()
+      .mockReturnValueOnce(runners[0])
+      .mockReturnValueOnce(runners[1])
+      .mockReturnValueOnce(runners[2]);
+    const ds = {
+      query: cancelQuery,
+      createQueryRunner,
+    } as unknown as DataSource;
+    const controller = new AbortController();
+
+    const aggregate = new RouteEnrichmentService(ds).aggregate(
+      [
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ],
+      controller.signal,
+    );
+    await allStarted;
+    controller.abort();
+
+    await expect(aggregate).rejects.toThrow(
+      'canceling statement due to user request',
+    );
+    expect(cancelQuery).toHaveBeenCalledTimes(3);
+    expect(cancelQuery).toHaveBeenCalledWith(
+      'SELECT pg_cancel_backend($1)',
+      [101],
+    );
+    expect(cancelQuery).toHaveBeenCalledWith(
+      'SELECT pg_cancel_backend($1)',
+      [102],
+    );
+    expect(cancelQuery).toHaveBeenCalledWith(
+      'SELECT pg_cancel_backend($1)',
+      [103],
+    );
+    expect(
+      runners.every((runner) => runner.release.mock.calls.length === 1),
+    ).toBe(true);
+  });
 });
