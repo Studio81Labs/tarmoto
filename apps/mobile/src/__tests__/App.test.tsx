@@ -119,4 +119,23 @@ describe("App auth locale hydration", () => {
       expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
     });
   });
+
+  it("defaults an authenticated unit-less profile to metric", async () => {
+    usePreferencesStore.getState().setDistanceUnit("imperial");
+    await render(<App />);
+    expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
+
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "unit-less-user",
+        language: "en",
+        preferences: {},
+      } as unknown as User);
+    });
+
+    await waitFor(() => {
+      expect(usePreferencesStore.getState().distanceUnit).toBe("metric");
+      expect(getFormatters().distanceKm(10)).toBe("10 km");
+    });
+  });
 });

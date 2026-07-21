@@ -41,11 +41,11 @@ export default function App() {
   // The account is the cross-device source of truth. Hydrate the synchronous
   // MMKV-backed store whenever auth resolves (or the profile changes), while
   // keeping the store subscribed above so a Settings toggle updates every
-  // formatter-backed surface immediately.
+  // formatter-backed surface immediately. Unit-less accounts explicitly use
+  // metric so they cannot inherit the previous device/account preference.
   useEffect(() => {
-    const profileUnits = user?.preferences?.units;
-    if (profileUnits) setDistanceUnit(profileUnits);
-  }, [user?.preferences?.units, setDistanceUnit]);
+    if (user) setDistanceUnit(user.preferences?.units ?? "metric");
+  }, [user, setDistanceUnit]);
 
   useEffect(() => {
     void bootstrapAuth({
