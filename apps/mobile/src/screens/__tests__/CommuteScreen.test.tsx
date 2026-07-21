@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import CommuteScreen, { __test } from "../CommuteScreen";
 import type { CommuteHazardView } from "@/hooks/useCommute";
+import { setActiveFormatContext } from "@/format";
 import type {
   CommuteAlternativeRoute,
   CommuteAlternativesResponse,
@@ -176,6 +177,7 @@ describe("CommuteScreen", () => {
     mockAcknowledge.mockReset();
     mockSetPrimary = jest.fn().mockResolvedValue(undefined);
     mockUseCommuteResult = buildResult();
+    setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
   });
 
   it("renders registered weather and road-condition labels", async () => {
@@ -291,7 +293,7 @@ describe("CommuteScreen", () => {
 
     expect(
       screen.getByLabelText(
-        "Start commute on alternative route, 1.2 kilometres, 1 minute, 0 hazards",
+        "Start commute on alternative route, 1.2 km, 1 minute, 0 hazards",
       ),
     ).toBeTruthy();
   });
@@ -335,7 +337,7 @@ describe("CommuteScreen", () => {
     await render(<CommuteScreen />);
 
     await fireEvent.press(
-      screen.getByLabelText("Navigate alternative route, 14.6 kilometres"),
+      screen.getByLabelText("Navigate alternative route, 14.6 km"),
     );
 
     expect(mockNavigate).toHaveBeenCalledWith("Navigate", {
@@ -353,7 +355,7 @@ describe("CommuteScreen", () => {
 
     // The base fixture has empty geometry on every alternative.
     await fireEvent.press(
-      screen.getByLabelText("Navigate alternative route, 14.6 kilometres"),
+      screen.getByLabelText("Navigate alternative route, 14.6 km"),
     );
 
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -491,7 +493,7 @@ describe("CommuteScreen", () => {
 
     // Three alternative rows × one Δ time chip that depended on the
     // primary number = three placeholders. Assert no `NaN min` sneaks
-    // through (Δ km still renders since distance is present).
+    // through (Δ distance still renders since distance is present).
     expect(screen.queryByText(/NaN min/)).toBeNull();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
   });
@@ -516,6 +518,59 @@ describe("CommuteScreen", () => {
     expect(
       screen.getByLabelText("Use Long way as primary commute"),
     ).toBeTruthy();
+  });
+
+  it("uses imperial units across alternative and saved-route labels", async () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+    const secondary: CommuteRoute = {
+      ...baseRoute,
+      id: "route-2",
+      name: "Long way",
+      is_primary: false,
+    };
+    const alternativeGeometry = [
+      { lat: 49.2, lng: 16.6 },
+      { lat: 49.21, lng: 16.61 },
+    ];
+    const imperialAlternative = {
+      ...baseAlternatives.alternatives[1]!,
+      geometry: alternativeGeometry,
+    };
+    mockUseCommuteResult = buildResult({
+      savedRoutes: [baseRoute, secondary],
+      alternatives: {
+        ...baseAlternatives,
+        alternatives: [imperialAlternative],
+      },
+    });
+
+    await render(<CommuteScreen />);
+
+    expect(screen.getByText("9.1 mi · 28 min")).toBeTruthy();
+    expect(screen.getByText("57.2°F · Clear")).toBeTruthy();
+    expect(screen.getByText("Road: Dry · Wind 5 mph")).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "Start commute on alternative route, 9.1 mi, 28 minutes, 0 hazards",
+      ),
+    ).toBeTruthy();
+    const navigateAlternative = screen.getByLabelText(
+      "Navigate alternative route, 9.1 mi",
+    );
+    await fireEvent.press(navigateAlternative);
+    expect(mockNavigate).toHaveBeenCalledWith("Navigate", {
+      source: "polyline",
+      polyline: alternativeGeometry,
+      title: "Alternative · 9.1 mi",
+    });
+    expect(screen.getByText("7.8 mi · Quality Good")).toBeTruthy();
+    expect(screen.getByText("+1.3 mi")).toBeTruthy();
+    expect(__test.formatSignedDistance(-2.1)).toBe("-1.3 mi");
+    expect(__test.formatSignedDistance(0)).toBe("±0 mi");
   });
 });
 

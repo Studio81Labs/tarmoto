@@ -72,6 +72,7 @@ import {
   formatDistanceKm,
   formatSpeedKmh,
   qualityScoreFromClass,
+  splitSpeedKmh,
   surfaceIcon,
   surfaceLabel,
 } from "./RideScreens.helpers";
@@ -539,6 +540,7 @@ export default function RideActiveScreen() {
   }, [navigation]);
 
   const speedLabel = formatSpeedKmh(currentSpeed);
+  const speedDisplay = splitSpeedKmh(currentSpeed);
   const distanceLabel = formatDistanceKm(distance);
   const hasQuality = currentQuality !== null;
   const qLabel = hasQuality
@@ -602,8 +604,8 @@ export default function RideActiveScreen() {
         style={styles.speedBlock}
         accessibilityLabel={translate("Speed {value0}", { value0: speedLabel })}
       >
-        <Text style={styles.speedValue}>{Math.round(currentSpeed)}</Text>
-        <Text style={styles.speedUnit}>{translate("km/h")}</Text>
+        <Text style={styles.speedValue}>{speedDisplay.value}</Text>
+        <Text style={styles.speedUnit}>{speedDisplay.unit}</Text>
       </View>
 
       <View style={styles.statsRow}>

@@ -1017,12 +1017,15 @@ function TripCard({
               </span>
             )}
             <span>
-              <span className="font-bold text-ink">{trip.num_days}</span> DAYS
+              {t("{count, plural, one {# DAY} other {# DAYS}}", {
+                count: trip.num_days,
+              })}
             </span>
             {trip.passes_count != null && trip.passes_count > 0 && (
               <span>
-                <span className="font-bold text-ink">{trip.passes_count}</span>{" "}
-                PASSES
+                {t("{count, plural, one {# PASS} other {# PASSES}}", {
+                  count: trip.passes_count,
+                })}
               </span>
             )}
             {typeof trip.warnings_count === "number" &&
@@ -1036,7 +1039,7 @@ function TripCard({
 
           <div className="mt-3 flex items-center justify-between border-t border-line pt-3 font-mono text-[11px] text-fg-mute">
             <span>
-              {trip.updatedAt ? "UPDATED " : "CREATED "}
+              {trip.updatedAt ? t("UPDATED") : t("CREATED")}{" "}
               {format.relativeTime(updatedIso).toUpperCase()}
             </span>
             {currentFolder && (
@@ -1251,7 +1254,7 @@ function FolderModal({
         className="w-full max-w-sm rounded-[14px] border border-line bg-cream p-5 shadow-xl"
       >
         <h2 className="text-sm font-semibold text-ink mb-3">
-          {mode === "create" ? "New folder" : "Rename folder"}
+          {mode === "create" ? t("New folder") : t("Rename folder")}
         </h2>
         <FieldLabel htmlFor="folder-name">{t("Name ")}</FieldLabel>
         <Input
@@ -1270,7 +1273,7 @@ function FolderModal({
             {t("Cancel ")}
           </Button>
           <Button type="submit" variant="accent" size="sm" uppercase>
-            {mode === "create" ? "Create" : "Save"}
+            {mode === "create" ? t("Create") : t("Save")}
           </Button>
         </div>
       </form>

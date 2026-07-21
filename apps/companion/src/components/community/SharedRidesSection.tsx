@@ -71,7 +71,9 @@ export function SharedRidesSection({
         if ((err as { name?: string })?.name === "AbortError") return;
         setPhase("error");
         setErrorMessage(
-          err instanceof Error ? err.message : "Could not load shared rides.",
+          err instanceof Error
+            ? err.message
+            : t("Could not load shared rides."),
         );
       });
     return () => {

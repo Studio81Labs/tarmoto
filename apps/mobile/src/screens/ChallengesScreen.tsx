@@ -46,9 +46,9 @@ import type {
 } from "@/types";
 import {
   challengePercent,
+  formatChallengeMetric,
   formatChallengeProgress,
   formatTimeRemaining,
-  metricUnit,
   rankChallenges,
 } from "./AchievementsScreen.helpers";
 import { t as translate } from "@/i18n";
@@ -215,8 +215,6 @@ function ChallengeCard({
   const percent = detail
     ? challengePercent(detail.my_progress ?? 0, challenge.target)
     : 0;
-  const unit = metricUnit(challenge.metric);
-
   return (
     <View style={styles.card}>
       <TouchableOpacity
@@ -243,10 +241,7 @@ function ChallengeCard({
         <View style={styles.metaRow}>
           <MetaPill
             icon="target"
-            label={translate("{value0} {value1}", {
-              value0: challenge.target,
-              value1: unit,
-            })}
+            label={formatChallengeMetric(challenge.target, challenge.metric)}
           />
           <MetaPill
             icon="account-multiple"
@@ -325,7 +320,7 @@ function ChallengeCard({
               <Leaderboard
                 entries={detail.leaderboard}
                 target={challenge.target}
-                unit={unit}
+                metric={challenge.metric}
                 myUserId={myUserId}
               />
             </>
@@ -348,12 +343,12 @@ function MetaPill({ icon, label }: { icon: IconName; label: string }) {
 function Leaderboard({
   entries,
   target,
-  unit,
+  metric,
   myUserId,
 }: {
   entries: ChallengeLeaderboardEntry[];
   target: number;
-  unit: string;
+  metric: string;
   myUserId: string | null;
 }) {
   if (entries.length === 0) {
@@ -384,7 +379,7 @@ function Leaderboard({
                 : e.display_name}
             </Text>
             <Text style={styles.lbProgress}>
-              {Math.round(e.progress)} {unit} · {percent}%
+              {formatChallengeMetric(e.progress, metric)} · {percent}%
               {e.completed ? " ✓" : ""}
             </Text>
           </View>

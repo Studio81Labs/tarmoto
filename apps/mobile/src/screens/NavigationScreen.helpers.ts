@@ -1,6 +1,7 @@
 import type { LatLng, Trip, Waypoint } from "@/types";
 import type { NavigateParams } from "@/navigation/RootNavigator";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 export interface ResolvedNavigationRoute {
   polyline: LatLng[];
@@ -40,4 +41,9 @@ export function resolveNavigationRoute(
       day?.title ?? translate("Day {value0}", { value0: params.dayNumber }),
     waypoints: day?.waypoints ?? [],
   };
+}
+
+/** Format a horizontal navigation distance supplied in meters. */
+export function formatNavigationDistanceM(meters: number): string {
+  return getFormatters().distanceM(Math.max(0, meters));
 }

@@ -3,6 +3,7 @@ import {
   daysRemaining,
   filterByPeriod,
   formatChallengeProgress,
+  formatChallengeMetric,
   formatDistanceFromHere,
   formatSegmentLength,
   formatTimeRemaining,
@@ -22,6 +23,11 @@ import type {
   RiddenSegment,
   UnriddenSegment,
 } from "@/types";
+import { setActiveFormatContext } from "@/format";
+
+beforeEach(() => {
+  setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
+});
 
 const baseBadge: UserBadge = {
   key: "total_distance",
@@ -291,7 +297,7 @@ describe("summarizeExploration", () => {
       total_distance_km: 1234.5,
     });
     expect(summary.percentLabel).toBe("12.5%");
-    expect(summary.distanceKmLabel).toBe("1234.5 km");
+    expect(summary.distanceKmLabel).toBe("1,234.5 km");
     expect(summary.riddenCount).toBe(100);
     expect(summary.totalCount).toBe(800);
   });
@@ -332,7 +338,7 @@ describe("formatDistanceFromHere", () => {
   });
   it("uses km with 1 decimal at and above 1 km", () => {
     expect(formatDistanceFromHere(1234)).toBe("1.2 km");
-    expect(formatDistanceFromHere(1000)).toBe("1.0 km");
+    expect(formatDistanceFromHere(1000)).toBe("1 km");
   });
   it("falls back to em dash on bad input", () => {
     expect(formatDistanceFromHere(Number.NaN)).toBe("—");
@@ -354,9 +360,21 @@ describe("formatChallengeProgress", () => {
   });
 
   it("keeps 1 decimal for floats", () => {
-    expect(formatChallengeProgress(12.4, 50, "total_km")).toBe(
-      "12.4 / 50.0 km",
+    expect(formatChallengeProgress(12.4, 50, "total_km")).toBe("12.4 / 50 km");
+  });
+
+  it("converts distance values and unit for imperial riders", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    expect(formatChallengeProgress(100, 200, "total_km")).toBe(
+      "62.1 / 124.3 mi",
     );
+    expect(metricUnit("total_km")).toBe("mi");
+    expect(formatChallengeMetric(200, "total_km")).toBe("124.3 mi");
   });
 
   it("uses the raw metric key as the unit for unknown metrics — matching metricUnit's fallback", () => {

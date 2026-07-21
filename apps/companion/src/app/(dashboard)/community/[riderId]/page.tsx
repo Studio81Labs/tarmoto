@@ -86,7 +86,7 @@ export default function RiderProfilePage() {
           setNotFound(true);
           return;
         }
-        setError("Could not load rider profile");
+        setError(t("Could not load rider profile"));
       })
       .finally(() => {
         if (cancelled) return;
@@ -149,7 +149,7 @@ export default function RiderProfilePage() {
           : prev,
       );
       const message =
-        err instanceof Error ? err.message : "Could not update follow";
+        err instanceof Error ? err.message : t("Could not update follow");
       setFollowError(message);
     } finally {
       if (activeRiderIdRef.current === targetId) {

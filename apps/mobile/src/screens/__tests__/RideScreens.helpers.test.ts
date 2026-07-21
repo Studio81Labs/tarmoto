@@ -9,6 +9,7 @@
 
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment } from "@/types";
+import { setActiveFormatContext } from "@/format";
 import {
   NO_QUALITY_READING,
   buildRideShareMessage,
@@ -25,18 +26,20 @@ import {
   rideRouteFeatureCollection,
   rideRouteLineColorExpression,
   segmentQualityHistogram,
+  splitSpeedKmh,
   surfaceIcon,
   surfaceLabel,
 } from "../RideScreens.helpers";
 import { qualityBrandColor, UNSCORED_COLOR } from "@/theme/brand";
 
+afterEach(() => {
+  setActiveFormatContext({ locale: "en-US", timeZone: "UTC", units: "metric" });
+});
+
 describe("formatRideDate", () => {
-  it("formats ISO timestamps with month, day, year, and HH:MM", () => {
-    // Pin TZ-independent year/month/day by using a long ISO with explicit
-    // local time; in this jest env Date stays local-time so the hour
-    // matches the input.
-    const stamp = "2026-04-17T14:32:11";
-    expect(formatRideDate(stamp)).toBe("Apr 17, 2026 · 14:32");
+  it("formats ISO timestamps through the active locale formatter", () => {
+    const stamp = "2026-04-17T14:32:11Z";
+    expect(formatRideDate(stamp)).toBe("Apr 17, 2026, 2:32 PM");
   });
 
   it("returns empty string for nullish or unparseable input", () => {
@@ -73,6 +76,17 @@ describe("formatSpeedKmh", () => {
   it("clamps invalid values to 0", () => {
     expect(formatSpeedKmh(-1)).toBe("0 km/h");
     expect(formatSpeedKmh(Number.NaN)).toBe("0 km/h");
+    expect(splitSpeedKmh(Number.NaN)).toEqual({ value: "0", unit: "km/h" });
+  });
+
+  it("splits an imperial HUD speed into its converted value and unit", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    expect(splitSpeedKmh(62.4)).toEqual({ value: "38.8", unit: "mph" });
   });
 });
 
@@ -421,8 +435,8 @@ describe("buildRideShareMessage", () => {
     id: "ride-1",
     ride_type: "free",
     status: "completed",
-    started_at: "2026-04-17T14:32:11",
-    ended_at: "2026-04-17T16:02:11",
+    started_at: "2026-04-17T14:32:11Z",
+    ended_at: "2026-04-17T16:02:11Z",
     distance_km: 42.5,
     duration_min: 90,
     avg_speed: 45,
@@ -449,7 +463,7 @@ describe("buildRideShareMessage", () => {
   it("includes date, distance, duration, and top speed", () => {
     const msg = buildRideShareMessage(ride);
     expect(msg).toContain("Tarmoto ride");
-    expect(msg).toContain("Apr 17, 2026 · 14:32");
+    expect(msg).toContain("Apr 17, 2026, 2:32 PM");
     expect(msg).toContain("Distance: 42.5 km");
     expect(msg).toContain("Duration: 1h 30m");
     expect(msg).toContain("Top speed: 95 km/h");

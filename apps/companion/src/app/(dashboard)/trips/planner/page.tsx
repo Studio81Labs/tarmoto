@@ -4227,7 +4227,7 @@ function WaypointEditor({
           />
           <div className="min-w-0 flex-1">
             <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              start
+              {t("start")}
             </span>
             <GeocodeSearchField
               placeholder={t("Type a place or click the map… ")}
@@ -4412,7 +4412,7 @@ function WaypointEditor({
           />
           <div className="min-w-0 flex-1">
             <span className="block font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              finish
+              {t("finish")}
             </span>
             <GeocodeSearchField
               placeholder={t("Type a place or click the map… ")}

@@ -31,6 +31,7 @@ import {
 } from "@tarmoto/ui";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
+import { useFormat } from "@/format/FormatProvider";
 const PAGE_SIZE = 9;
 const SORT_OPTIONS: Array<{
   value: CommunityRideSort;
@@ -50,6 +51,7 @@ const RIDE_TYPE_LABEL = {
   tracked: "Tracked",
 } satisfies Record<(typeof RIDE_TYPES)[number], EnglishMessageKey>;
 export default function CommunityFeedPage() {
+  const format = useFormat();
   const [sort, setSort] = useState<CommunityRideSort>("most_popular");
   const [rideType, setRideType] = useState<RideTypeFilter>("all");
   const [minQuality, setMinQuality] = useState("all");
@@ -112,7 +114,9 @@ export default function CommunityFeedPage() {
         if (cancelled) return;
         setItems([]);
         setTotal(0);
-        setError(err instanceof Error ? err.message : "Could not load rides.");
+        setError(
+          err instanceof Error ? err.message : t("Could not load rides."),
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -276,8 +280,8 @@ export default function CommunityFeedPage() {
 
       {location && (
         <p className="mb-6 text-sm text-fg-dim">
-          {t("Filtering within {distance} km of", {
-            distance: location.km,
+          {t("Filtering within {distance} of", {
+            distance: format.distanceKm(location.km),
           })}{" "}
           <span className="font-semibold text-ink">{location.label}</span>.
         </p>

@@ -57,6 +57,7 @@ import type {
 } from "@/navigation/RootNavigator";
 import { formatRelativeTime } from "./RoadPreviewScreen.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -127,8 +128,8 @@ export default function CommuteScreen() {
       navigation.navigate("Navigate", {
         source: "polyline",
         polyline: alt.geometry,
-        title: translate("Alternative · {value0} km", {
-          value0: alt.distance_km.toFixed(1),
+        title: translate("Alternative · {distance}", {
+          distance: getFormatters().distanceKm(alt.distance_km),
         }),
       });
     },
@@ -206,7 +207,7 @@ export default function CommuteScreen() {
             label={translate("Distance")}
             value={
               route.distance_km != null
-                ? `${route.distance_km.toFixed(1)} km`
+                ? getFormatters().distanceKm(route.distance_km)
                 : "—"
             }
           />
@@ -385,17 +386,17 @@ function WeatherCard({ weather }: { weather: Weather }) {
         <Icon name={weatherIcon(weather.condition)} size={32} color={t.fg} />
         <View style={styles.weatherText}>
           <Text style={styles.weatherTemp}>
-            {translate("{temperature}°C · {condition}", {
-              temperature: Math.round(weather.temperature_c),
+            {translate("{temperature} · {condition}", {
+              temperature: getFormatters().temperature(weather.temperature_c),
               condition: translate(WEATHER_CONDITION_LABELS[weather.condition]),
             })}
           </Text>
           <Text style={styles.weatherDetail}>
-            {translate("Road: {condition} · Wind {speed} km/h", {
+            {translate("Road: {condition} · Wind {speed}", {
               condition: translate(
                 ROAD_CONDITION_LABELS[weather.road_condition],
               ),
-              speed: Math.round(weather.wind_kmh),
+              speed: getFormatters().speed(weather.wind_kmh),
             })}
           </Text>
         </View>
@@ -549,7 +550,7 @@ function AlternativesCard({
   // Backend now caches `distance_km` and `avg_duration_min` on
   // `CommuteRouteResponseDto`, but both stay null until the routing
   // provider resolves the route (and on a provider outage). Guard the
-  // delta chips against null so they render "—" instead of "NaN km"/"NaN min".
+  // delta chips against null so they render "—" instead of invalid values.
   primaryDistanceKm: number | null;
   primaryDurationMin: number | null;
   onStart: () => void;
@@ -640,9 +641,9 @@ function AlternativeRow({
         onPress={onStart}
         accessibilityRole="button"
         accessibilityLabel={translate(
-          "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
+          "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
           {
-            distance: alt.distance_km.toFixed(1),
+            distance: getFormatters().distanceKm(alt.distance_km),
             duration: alt.duration_min,
             count: alt.hazard_count,
           },
@@ -650,8 +651,8 @@ function AlternativeRow({
       >
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
-            {translate("{distance} km · {duration} min", {
-              distance: alt.distance_km.toFixed(1),
+            {translate("{distance} · {duration} min", {
+              distance: getFormatters().distanceKm(alt.distance_km),
               duration: alt.duration_min,
             })}
           </Text>
@@ -676,7 +677,7 @@ function AlternativeRow({
         </View>
         <View style={styles.altDeltasRow}>
           <DeltaChip
-            label={translate("Δ km")}
+            label={translate("Δ distance")}
             value={
               distanceDelta != null ? formatSignedDistance(distanceDelta) : "—"
             }
@@ -704,8 +705,8 @@ function AlternativeRow({
         disabled={navDisabled}
         accessibilityRole="button"
         accessibilityLabel={translate(
-          "Navigate alternative route, {value0} kilometres",
-          { value0: alt.distance_km.toFixed(1) },
+          "Navigate alternative route, {distance}",
+          { distance: getFormatters().distanceKm(alt.distance_km) },
         )}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
@@ -814,14 +815,12 @@ function SavedRoutesCard({
               <Text style={styles.altTitle}>{r.name}</Text>
               <Text style={styles.altSubtitle}>
                 {r.distance_km != null && r.avg_quality != null
-                  ? translate("{distance} km · Quality {quality}", {
-                      distance: r.distance_km.toFixed(1),
+                  ? translate("{distance} · Quality {quality}", {
+                      distance: getFormatters().distanceKm(r.distance_km),
                       quality: qualityLabel(r.avg_quality),
                     })
                   : r.distance_km != null
-                    ? translate("{distance} km", {
-                        distance: r.distance_km.toFixed(1),
-                      })
+                    ? getFormatters().distanceKm(r.distance_km)
                     : r.avg_quality != null
                       ? translate("Distance pending · Quality {quality}", {
                           quality: qualityLabel(r.avg_quality),
@@ -898,7 +897,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Distance")}
-          value={`${stats.total_km.toFixed(1)} km`}
+          value={getFormatters().distanceKm(stats.total_km)}
           delta={stats.total_km - prev.total_km}
           deltaText={trendPercent(stats.total_km, prev.total_km)}
           positiveIsGood
@@ -912,7 +911,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Fuel est.")}
-          value={`${stats.fuel_estimate_l.toFixed(1)} L`}
+          value={`${getFormatters().decimal(stats.fuel_estimate_l, 1)} L`}
           delta={stats.fuel_estimate_l - prev.fuel_estimate_l}
           deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
           neutral
@@ -1095,8 +1094,9 @@ function rankAlternatives(
 }
 
 function formatSignedDistance(km: number): string {
-  if (Math.abs(km) < 0.05) return "±0 km";
-  return `${km > 0 ? "+" : ""}${km.toFixed(1)} km`;
+  const format = getFormatters();
+  if (Math.abs(km) < 0.05) return `±${format.distanceKm(0)}`;
+  return `${km > 0 ? "+" : "-"}${format.distanceKm(Math.abs(km))}`;
 }
 
 function formatSignedDuration(min: number): string {
@@ -1113,7 +1113,8 @@ function formatAbsDelta(
     const rounded = Math.round(delta);
     return rounded > 0 ? `+${rounded}` : String(rounded);
   }
-  return delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
+  const value = getFormatters().decimal(delta, 1);
+  return delta > 0 ? `+${value}` : value;
 }
 
 function trendPercent(current: number, previous: number): string {

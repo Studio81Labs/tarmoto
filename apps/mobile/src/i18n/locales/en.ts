@@ -68,10 +68,9 @@ export const en = {
   "{distance} · on {roadName} · {note}": "{distance} · on {roadName} · {note}",
   "{distance} · on {roadName}": "{distance} · on {roadName}",
   "{distance} km": "{distance} km",
-  "{distance} km · {duration} min": "{distance} km · {duration} min",
-  "{distance} km · Quality {quality}": "{distance} km · Quality {quality}",
-  "{distance} km ahead": "{distance} km ahead",
-  "{distance} m ahead": "{distance} m ahead",
+  "{distance} · {duration} min": "{distance} · {duration} min",
+  "{distance} · Quality {quality}": "{distance} · Quality {quality}",
+  "{distance} ahead": "{distance} ahead",
   "{downloaded} / {total} downloaded": "{downloaded} / {total} downloaded",
   "{downloaded} / {total} downloaded · {failed} failed":
     "{downloaded} / {total} downloaded · {failed} failed",
@@ -83,13 +82,16 @@ export const en = {
   "{failed} failed.": "{failed} failed.",
   "{kind} · {distance} km": "{kind} · {distance} km",
   "{kind} · {distance} km · {detail}": "{kind} · {distance} km · {detail}",
+  "{kind} · {distance}": "{kind} · {distance}",
+  "{kind} · {distance} · {detail}": "{kind} · {distance} · {detail}",
   "{label} · {percent}% conf": "{label} · {percent}% conf",
   "{label} {percent}%": "{label} {percent}%",
   "{label}, {count, plural, one {# trip} other {# trips}}":
     "{label}, {count, plural, one {# trip} other {# trips}}",
   "{length} · {distance} from you": "{length} · {distance} from you",
   "{min}–{max} km / day": "{min}–{max} km / day",
-  "{name} · {distance} km": "{name} · {distance} km",
+  "{relation} since {date}": "{relation} since {date}",
+  "{name} · {distance}": "{name} · {distance}",
   "{name} (you)": "{name} (you)",
   "{name} hasn't earned any badges yet.":
     "{name} hasn't earned any badges yet.",
@@ -108,7 +110,7 @@ export const en = {
   "{severity} · {time}": "{severity} · {time}",
   "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}":
     "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
-  "{temperature}°C · {condition}": "{temperature}°C · {condition}",
+  "{temperature} · {condition}": "{temperature} · {condition}",
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
   "{title}, {count, plural, one {# day} other {# days}}, {status}":
@@ -135,7 +137,7 @@ export const en = {
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
     "{value0} will no longer be alerted in a crash.",
-  "{value0}, {value1} kilometres away": "{value0}, {value1} kilometres away",
+  "{label}, {distance} away": "{label}, {distance} away",
   "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
   "{value0}: {value1}": "{value0}: {value1}",
   "{value0}% confidence": "{value0}% confidence",
@@ -166,7 +168,7 @@ export const en = {
   "All your sensor contributions are synced to the Tarmoto community.":
     "All your sensor contributions are synced to the Tarmoto community.",
   Allow: "Allow",
-  "Alternative · {value0} km": "Alternative · {value0} km",
+  "Alternative · {distance}": "Alternative · {distance}",
   "Alternative routes": "Alternative routes",
   "Alternative routes ({count})": "Alternative routes ({count})",
   Animals: "Animals",
@@ -264,6 +266,7 @@ export const en = {
   "Could not load shared rides.": "Could not load shared rides.",
   "Could not open file picker.": "Could not open file picker.",
   "Could not read the file.": "Could not read the file.",
+  "Could not save your language.": "Could not save your language.",
   "Could not save profile.": "Could not save profile.",
   "Could not update follow.": "Could not update follow.",
   "Could not upload avatar.": "Could not upload avatar.",
@@ -415,6 +418,7 @@ export const en = {
   Fog: "Fog",
   Follow: "Follow",
   "Follow rider": "Follow rider",
+  Follower: "Follower",
   Followers: "Followers",
   Following: "Following",
   "Following {count, plural, one {# rider} other {# riders}}, open list":
@@ -463,8 +467,8 @@ export const en = {
   "Hide {label} overlay": "Hide {label} overlay",
   High: "High",
   "High wind ahead": "High wind ahead",
-  "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.":
-    "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.",
+  "High wind ({speed}) near {location}. Brace for sudden crosswinds.":
+    "High wind ({speed}) near {location}. Brace for sudden crosswinds.",
   "High wind near {location}. Brace for sudden crosswinds.":
     "High wind near {location}. Brace for sudden crosswinds.",
   Highlights: "Highlights",
@@ -483,8 +487,8 @@ export const en = {
   "Icy roads ahead": "Icy roads ahead",
   "Icy roads near {location}. Reduce speed and avoid sudden inputs.":
     "Icy roads near {location}. Reduce speed and avoid sudden inputs.",
-  "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.":
-    "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
+  "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.":
+    "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.",
   Imperial: "Imperial",
   "Import failed": "Import failed",
   "Import GPX or KML file": "Import GPX or KML file",
@@ -511,6 +515,7 @@ export const en = {
   "Last fix is more than 30s old — refresh to use your current position.":
     "Last fix is more than 30s old — refresh to use your current position.",
   "Last map location": "Last map location",
+  Language: "Language",
   Leaderboard: "Leaderboard",
   "Lean breakdown": "Lean breakdown",
   "Learning your commute": "Learning your commute",
@@ -568,8 +573,8 @@ export const en = {
   "Mute voice guidance": "Mute voice guidance",
   Name: "Name",
   "Name is required.": "Name is required.",
-  "Navigate alternative route, {value0} kilometres":
-    "Navigate alternative route, {value0} kilometres",
+  "Navigate alternative route, {distance}":
+    "Navigate alternative route, {distance}",
   "Navigate primary commute route to {value0}":
     "Navigate primary commute route to {value0}",
   Navigation: "Navigation",
@@ -767,8 +772,7 @@ export const en = {
   "Road quality": "Road quality",
   "Road quality {value0}": "Road quality {value0}",
   "Road quality for this trip": "Road quality for this trip",
-  "Road: {condition} · Wind {speed} km/h":
-    "Road: {condition} · Wind {speed} km/h",
+  "Road: {condition} · Wind {speed}": "Road: {condition} · Wind {speed}",
   roads: "roads",
   Roads: "Roads",
   Roadworks: "Roadworks",
@@ -861,8 +865,8 @@ export const en = {
   "Start a ride to broadcast your position to the group.":
     "Start a ride to broadcast your position to the group.",
   "Start commute": "Start commute",
-  "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}":
-    "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
+  "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}":
+    "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
   "Start commute ride to {value0}": "Start commute ride to {value0}",
   "Start commute to {value0}": "Start commute to {value0}",
   "Start location": "Start location",
@@ -1047,14 +1051,14 @@ export const en = {
   "Wet roads ahead": "Wet roads ahead",
   "Wet roads near {location}. Allow extra braking distance.":
     "Wet roads near {location}. Allow extra braking distance.",
-  "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.":
-    "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
+  "Wet roads near {location}: {temperature} · Wind {wind}. Allow extra braking distance.":
+    "Wet roads near {location}: {temperature} · Wind {wind}. Allow extra braking distance.",
   "What's the surface like? Any switchbacks worth flagging?":
     "What's the surface like? Any switchbacks worth flagging?",
   "When off, this contact stays in your list but is not notified.":
     "When off, this contact stays in your list but is not notified.",
   "Will not be alerted": "Will not be alerted",
-  "within {distance} km": "within {distance} km",
+  "within {distance}": "within {distance}",
   "Write a review": "Write a review",
   "Write a review for this road": "Write a review for this road",
   "Year-round": "Year-round",
@@ -1079,7 +1083,7 @@ export const en = {
   "Your Tarmoto password": "Your Tarmoto password",
   "Your usual route looks like the best option right now.":
     "Your usual route looks like the best option right now.",
-  "Δ km": "Δ km",
+  "Δ distance": "Δ distance",
   "Δ time": "Δ time",
 } as const;
 

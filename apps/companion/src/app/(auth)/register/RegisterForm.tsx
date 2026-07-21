@@ -34,12 +34,12 @@ export function RegisterForm({
         redirect: false,
       });
       if (result?.error) {
-        setError("Account created but sign-in failed. Please log in.");
+        setError(t("Account created but sign-in failed. Please log in."));
       } else {
         window.location.href = callbackUrl;
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(err instanceof Error ? err.message : t("Registration failed"));
     } finally {
       setLoading(false);
     }

@@ -1,3 +1,4 @@
+import { makeTranslator } from "@tarmoto/shared";
 import {
   DEFAULT_LOCALE,
   LOCALES,
@@ -7,7 +8,7 @@ import {
   tDynamic,
   translate,
 } from ".";
-import { companionCatalogs } from "./locales";
+import { companionCatalogs, en, type EnglishMessageKey } from "./locales";
 
 describe("companion i18n barrel", () => {
   beforeEach(() => {
@@ -41,13 +42,25 @@ describe("companion i18n barrel", () => {
     );
   });
 
-  it("renders an ICU plural through the companion translator", () => {
+  it.each([
+    [1, "1 day"],
+    [2, "2 days"],
+    [5, "5 days"],
+  ])("renders ICU plural rules for count %i", (count, expected) => {
     expect(
-      translate("{count, plural, one {# day} other {# days}}", { count: 1 }),
-    ).toBe("1 day");
-    expect(
-      translate("{count, plural, one {# day} other {# days}}", { count: 3 }),
-    ).toBe("3 days");
+      translate("{count, plural, one {# day} other {# days}}", { count }),
+    ).toBe(expected);
+  });
+
+  it("can pseudo-expand every registered key", () => {
+    const pseudo = Object.fromEntries(
+      Object.keys(en).map((key) => [key, `[!! ${key} !!]`]),
+    ) as Record<EnglishMessageKey, string>;
+    const pseudoTranslate = makeTranslator<EnglishMessageKey>({ en: pseudo });
+
+    for (const key of Object.keys(en) as EnglishMessageKey[]) {
+      expect(pseudoTranslate(key)).toBe(`[!! ${key} !!]`);
+    }
   });
 });
 

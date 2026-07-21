@@ -92,7 +92,7 @@ describe("PersonalRoadMapScreen", () => {
 
     await waitFor(() => expect(screen.getByText("12.5%")).toBeTruthy());
     expect(screen.getByText("of 800 segments")).toBeTruthy();
-    expect(screen.getByText("1234.5 km")).toBeTruthy();
+    expect(screen.getByText("1,234.5 km")).toBeTruthy();
     expect(
       screen.getByText("1 segment highlighted for the selected period"),
     ).toBeTruthy();

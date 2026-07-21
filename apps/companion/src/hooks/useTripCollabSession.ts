@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "@/i18n";
 import { tripCollabApi, type TripSuggestion } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -295,7 +296,7 @@ export function useTripCollabSession(
       } catch (err) {
         if (cancelled) return;
         setSuggestionsError(
-          err instanceof Error ? err.message : "Failed to load suggestions",
+          err instanceof Error ? err.message : t("Failed to load suggestions"),
         );
       }
     })();

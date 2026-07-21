@@ -35,7 +35,14 @@ import {
 import { usePendingHazardReports, usePendingUploads } from "@/hooks";
 import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import {
+  LOCALES,
+  SUPPORTED_LOCALES,
+  t as translate,
+  type EnglishMessageKey,
+  type SupportedLocale,
+} from "@/i18n";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
@@ -63,6 +70,8 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{translate("Settings")}</Text>
+
+      <LocaleCard />
 
       <Card raised pad={brandSpacing.s4} style={styles.card}>
         {/* These stamps are the section headings — use the readable `dim`
@@ -134,6 +143,49 @@ export default function SettingsScreen() {
 
       <PendingHazardReportsCard />
     </ScrollView>
+  );
+}
+
+/** Hidden for the English-only MVP; activates automatically with locale #2. */
+function LocaleCard() {
+  const { locale, t: localize } = useI18n();
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (SUPPORTED_LOCALES.length <= 1) return null;
+
+  const handleChange = async (next: SupportedLocale) => {
+    if (pending || next === locale) return;
+    setError(null);
+    setPending(true);
+    try {
+      if (!user) return;
+      const updated = await api.updateProfile({ language: next });
+      setUser(updated);
+    } catch {
+      setError(localize("Could not save your language."));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
+      <Stamp color={t.dim}>{localize("Language")}</Stamp>
+      <SegmentedRow
+        options={SUPPORTED_LOCALES.map((value) => ({
+          value,
+          label: LOCALES[value].label,
+        }))}
+        value={locale}
+        onChange={(next) => void handleChange(next)}
+        ariaLabel={localize("Language")}
+      />
+      {pending ? <ActivityIndicator color={t.accent} size="small" /> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+    </Card>
   );
 }
 
@@ -253,9 +305,11 @@ function BulkExportCard() {
 // — a slider would need an extra native dep), and the verbose toggle
 // flips the rider-friendly "in 300 m, turn left onto Hlavní" against
 // the concise "turn left now" phrasing for riders who prefer minimal
-// chatter. The distance unit pref is a sibling because it shapes the
-// spoken phrasing too (meters vs yards).
+// chatter. Display units stay visible even when voice is disabled because
+// they also control every formatter-backed screen and vehicle surface.
 function VoiceNavigationCard() {
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const enabled = usePreferencesStore((s) => s.voiceNavEnabled);
   const setEnabled = usePreferencesStore((s) => s.setVoiceNavEnabled);
   const volume = usePreferencesStore((s) => s.voiceNavVolume);
@@ -266,6 +320,32 @@ function VoiceNavigationCard() {
   const setVerbose = usePreferencesStore((s) => s.setVoiceNavVerbose);
   const distanceUnit = usePreferencesStore((s) => s.distanceUnit);
   const setDistanceUnit = usePreferencesStore((s) => s.setDistanceUnit);
+  const [unitPending, setUnitPending] = useState(false);
+  const [unitError, setUnitError] = useState<string | null>(null);
+
+  const handleDistanceUnitChange = useCallback(
+    async (next: DistanceUnitPref) => {
+      if (unitPending || next === distanceUnit) return;
+      const previous = distanceUnit;
+      setDistanceUnit(next);
+      if (!user) return;
+
+      setUnitPending(true);
+      setUnitError(null);
+      try {
+        const updated = await api.updateProfile({
+          preferences: { units: next },
+        });
+        setUser(updated);
+      } catch {
+        setDistanceUnit(previous);
+        setUnitError(translate("Couldn't update preference."));
+      } finally {
+        setUnitPending(false);
+      }
+    },
+    [distanceUnit, setDistanceUnit, setUser, unitPending, user],
+  );
 
   return (
     <Card raised pad={brandSpacing.s4} style={styles.card}>
@@ -341,23 +421,25 @@ function VoiceNavigationCard() {
               ariaLabel={translate("Voice navigation language")}
             />
           </View>
-
-          <View style={styles.toggleBody}>
-            <Text style={styles.toggleLabel}>
-              {translate("Distance units")}
-            </Text>
-            <SegmentedRow
-              options={DISTANCE_UNIT_OPTIONS.map((option) => ({
-                ...option,
-                label: translate(option.label),
-              }))}
-              value={distanceUnit}
-              onChange={(v) => setDistanceUnit(v as DistanceUnitPref)}
-              ariaLabel={translate("Spoken distance units")}
-            />
-          </View>
         </>
       ) : null}
+
+      <View style={styles.toggleBody}>
+        <Text style={styles.toggleLabel}>{translate("Distance units")}</Text>
+        <SegmentedRow
+          options={DISTANCE_UNIT_OPTIONS.map((option) => ({
+            ...option,
+            label: translate(option.label),
+          }))}
+          value={distanceUnit}
+          onChange={(v) => void handleDistanceUnitChange(v)}
+          ariaLabel={translate("Distance units")}
+        />
+        {unitPending ? (
+          <ActivityIndicator color={t.accent} size="small" />
+        ) : null}
+        {unitError ? <Text style={styles.errorText}>{unitError}</Text> : null}
+      </View>
     </Card>
   );
 }
@@ -481,7 +563,7 @@ function SafetyCard() {
       setError(null);
       try {
         const updated = await api.updateProfile({
-          preferences: { ...user.preferences, crash_detection: next },
+          preferences: { crash_detection: next },
         });
         setUser(updated);
       } catch (err) {

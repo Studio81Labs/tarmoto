@@ -99,6 +99,119 @@ const restrictedSyntaxSelectors = [
     message:
       "Raw user-facing text in a conditional template branch (any nesting) on label/title/alt/placeholder/aria-label/ariaLabel — compose it through t()/tDynamic, or add a disable comment if deliberate.",
   },
+  // Match the mobile guard's wider bypass coverage. Raw JSX children are the
+  // largest remaining hole in the companion: typed t() cannot protect copy
+  // that never reaches the catalog.
+  {
+    selector: "JSXText[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap user-facing JSX text with t()/tDynamic. If deliberately not translatable (brand, unit, attribution), add a scoped disable comment explaining why.",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap user-facing string children with t()/tDynamic, or document a deliberate non-translatable value.",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace rider-facing JSX templates with one ICU catalog message and named values.",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap every rider-facing conditional JSX branch with t()/tDynamic.",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace conditional rider-facing JSX templates with ICU catalog messages.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap rider-facing prop copy with t()/tDynamic, or document a deliberate non-translatable value.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap rider-facing prop copy with t()/tDynamic, or document a deliberate non-translatable value.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace rider-facing prop templates with one ICU catalog message and named values.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap every rider-facing conditional prop branch with t()/tDynamic.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace conditional rider-facing prop templates with one ICU catalog message.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel|accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > BinaryExpression Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Replace concatenated rider-facing prop copy with one ICU catalog message and named values.",
+  },
+  {
+    selector:
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel|accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > BinaryExpression TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace concatenated rider-facing prop templates with one ICU catalog message.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
+    message: "Wrap rider-facing status messages with t()/tDynamic.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap every rider-facing conditional status message with t()/tDynamic.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] LogicalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message: "Wrap rider-facing logical fallback messages with t()/tDynamic.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/^(error|errorMessage|message|notice|validation|warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap rider-facing conditional status-copy variables with t()/tDynamic.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/^(error|errorMessage|message|notice|validation|warning)$/] > ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace conditional rider-facing status templates with one ICU catalog message.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/^(description|emptyText|headline|helpText|label|message|subtitle|title)$/] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message: "Wrap conditional rider-facing copy variables with t()/tDynamic.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/^(description|emptyText|headline|helpText|label|message|subtitle|title)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Replace conditional rider-facing copy templates with one ICU catalog message.",
+  },
 ];
 
 export default [
@@ -123,6 +236,11 @@ export default [
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx,js,jsx}"],
+    ignores: [
+      "**/__tests__/**/*.{ts,tsx,js,jsx}",
+      "**/*.test.{ts,tsx,js,jsx}",
+      "**/*.spec.{ts,tsx,js,jsx}",
+    ],
     plugins: {
       "@next/next": next,
       "react-hooks": reactHooks,
@@ -141,6 +259,24 @@ export default [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "no-restricted-syntax": ["error", ...restrictedSyntaxSelectors],
+    },
+  },
+  {
+    // Test fixtures intentionally render and assert English literals. Keep the
+    // production i18n bypass guard out of tests while retaining the repository
+    // unused-fixture convention.
+    files: [
+      "**/__tests__/**/*.{ts,tsx,js,jsx}",
+      "**/*.test.{ts,tsx,js,jsx}",
+      "**/*.spec.{ts,tsx,js,jsx}",
+    ],
+    linterOptions: { reportUnusedDisableDirectives: "off" },
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      "no-restricted-syntax": "off",
     },
   },
   {

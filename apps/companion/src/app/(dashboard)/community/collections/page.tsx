@@ -217,8 +217,8 @@ export default function RouteCollectionsPage() {
       ) : visible.length === 0 ? (
         <EmptyState
           title={t("No collections match your filters")}
-          body="Try clearing the search."
-          actionLabel="Clear search"
+          body={t("Try clearing the search.")}
+          actionLabel={t("Clear search")}
           onAction={() => setSearch("")}
         />
       ) : (
@@ -242,7 +242,7 @@ export default function RouteCollectionsPage() {
             <span className="text-xs text-fg-dim">
               · {visibleFollowed.length}
               {needle && visibleFollowed.length !== followed.length
-                ? ` of ${followed.length}`
+                ? ` ${t("of {total}", { total: followed.length })}`
                 : ""}
             </span>
           </div>
@@ -285,8 +285,10 @@ export default function RouteCollectionsPage() {
       {deleteTarget && (
         <ConfirmDialog
           title={t("Delete collection")}
-          message={`Delete "${deleteTarget.title}"? The routes inside won't be affected.`}
-          confirmLabel="Delete"
+          message={t('Delete "{title}"? The routes inside won’t be affected.', {
+            title: deleteTarget.title,
+          })}
+          confirmLabel={t("Delete")}
           onConfirm={() => void confirmDelete()}
           onCancel={() => setDeleteTarget(null)}
         />
@@ -295,8 +297,10 @@ export default function RouteCollectionsPage() {
       {unfollowTarget && (
         <ConfirmDialog
           title={t("Stop following")}
-          message={`Stop following "${unfollowTarget.title}"?`}
-          confirmLabel="Unfollow"
+          message={t('Stop following "{title}"?', {
+            title: unfollowTarget.title,
+          })}
+          confirmLabel={t("Unfollow")}
           onConfirm={() => void confirmUnfollow()}
           onCancel={() => setUnfollowTarget(null)}
         />
@@ -548,7 +552,7 @@ function CollectionModal({
       // Render the error inline inside the modal form so it's visible above
       // the modal overlay and stays put while the user fixes their input.
       setError(
-        err instanceof Error ? err.message : "Failed to save collection",
+        err instanceof Error ? err.message : t("Failed to save collection"),
       );
     } finally {
       setSubmitting(false);
@@ -571,7 +575,7 @@ function CollectionModal({
           id="collection-modal-title"
           className="text-sm font-semibold text-ink mb-4"
         >
-          {mode === "create" ? "New collection" : "Edit collection"}
+          {mode === "create" ? t("New collection") : t("Edit collection")}
         </h2>
 
         <div className="space-y-3">

@@ -216,8 +216,8 @@ export default function TripDetailPage() {
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 404
-          ? "You're no longer a member of this trip."
-          : "Couldn't leave the trip. Try again.";
+          ? t("You're no longer a member of this trip.")
+          : t("Couldn't leave the trip. Try again.");
       setLeaveError(message);
       setLeaving(false);
     }
@@ -298,7 +298,7 @@ export default function TripDetailPage() {
           setNotFound(true);
           return;
         }
-        setError("Couldn't load this trip. Check your connection.");
+        setError(t("Couldn't load this trip. Check your connection."));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -325,8 +325,8 @@ export default function TripDetailPage() {
       // enumeration, so 403 isn't a path the delete endpoint produces.
       const message =
         err instanceof ApiError && err.status === 404
-          ? "This trip no longer exists."
-          : "Couldn't delete the trip. Try again.";
+          ? t("This trip no longer exists.")
+          : t("Couldn't delete the trip. Try again.");
       setDeleteError(message);
       setDeleting(false);
     }

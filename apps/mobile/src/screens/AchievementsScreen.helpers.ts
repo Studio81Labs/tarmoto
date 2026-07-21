@@ -14,6 +14,7 @@ import type {
 } from "@/types";
 import { UNSCORED_COLOR } from "@/theme/brand";
 import { translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // ── Badge tier helpers ──
 
@@ -158,6 +159,9 @@ const METRIC_UNITS: Record<string, EnglishMessageKey> = {
 };
 
 export function metricUnit(metric: string): string {
+  if (metric === "total_km") {
+    return getFormatters().splitDistanceKm(0).unit;
+  }
   const unit = METRIC_UNITS[metric];
   return unit ? translate(unit) : metric;
 }
@@ -224,8 +228,8 @@ export function summarizeExploration(
   return {
     riddenCount: stats.ridden_segments,
     totalCount: stats.total_segments,
-    percentLabel: `${stats.percent_explored.toFixed(1)}%`,
-    distanceKmLabel: `${stats.total_distance_km.toFixed(1)} km`,
+    percentLabel: `${getFormatters().decimal(stats.percent_explored, 1)}%`,
+    distanceKmLabel: getFormatters().distanceKm(stats.total_distance_km),
   };
 }
 
@@ -248,14 +252,12 @@ export function rankUnriddenSegments(
 /** Format the distance shown next to a nearby unridden segment. */
 export function formatDistanceFromHere(distanceM: number): string {
   if (!Number.isFinite(distanceM) || distanceM < 0) return "—";
-  if (distanceM < 1000) return `${Math.round(distanceM)} m`;
-  return `${(distanceM / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(distanceM);
 }
 
 export function formatSegmentLength(lengthM: number): string {
   if (!Number.isFinite(lengthM) || lengthM <= 0) return "—";
-  if (lengthM < 1000) return `${Math.round(lengthM)} m`;
-  return `${(lengthM / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(lengthM);
 }
 
 /**
@@ -272,12 +274,41 @@ export function formatChallengeProgress(
   target: number,
   metric: string,
 ): string {
+  if (metric === "total_km") {
+    const format = getFormatters();
+    const currentDistance = format.splitDistanceKm(progress);
+    const targetDistance = format.splitDistanceKm(target);
+    return translate("{progress} / {target} {unit}", {
+      progress: currentDistance.value,
+      target: targetDistance.value,
+      unit: targetDistance.unit || currentDistance.unit,
+    });
+  }
   const isWhole = Number.isInteger(progress) && Number.isInteger(target);
   const unit = metricUnit(metric);
-  const fmt = (n: number): string => (isWhole ? String(n) : n.toFixed(1));
+  const fmt = (n: number): string =>
+    isWhole ? getFormatters().integer(n) : getFormatters().decimal(n, 1);
   return translate("{progress} / {target} {unit}", {
     progress: fmt(progress),
     target: fmt(target),
     unit,
+  });
+}
+
+/** Format one challenge metric value with its active display unit. */
+export function formatChallengeMetric(value: number, metric: string): string {
+  if (metric === "total_km") {
+    const distance = getFormatters().splitDistanceKm(value);
+    return translate("{value0} {value1}", {
+      value0: distance.value,
+      value1: distance.unit,
+    });
+  }
+  const formatted = Number.isInteger(value)
+    ? getFormatters().integer(value)
+    : getFormatters().decimal(value, 1);
+  return translate("{value0} {value1}", {
+    value0: formatted,
+    value1: metricUnit(metric),
   });
 }

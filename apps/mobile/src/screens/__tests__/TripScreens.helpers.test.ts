@@ -5,7 +5,9 @@ import {
   flattenTripRoute,
   formatDurationMin,
   formatKm,
+  formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
+  formatNearbyRadius,
   formatStatus,
   formatWaypointType,
   isLastDay,
@@ -21,6 +23,7 @@ import {
   withSuggestedOvernightStop,
 } from "../TripScreens.helpers";
 import type { Accommodation, LatLng, Trip, TripDay, Waypoint } from "@/types";
+import { setActiveFormatContext } from "@/format";
 
 const wp = (
   id: string,
@@ -56,11 +59,29 @@ const day = (distance_km: number, avg_quality: number): TripDay => ({
   waypoints: [],
 });
 
+afterEach(() => {
+  setActiveFormatContext({ locale: "en-US", timeZone: "UTC", units: "metric" });
+});
+
 describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () => {
   it("rounds km", () => {
     expect(formatKm(123.4)).toBe("123 km");
     expect(formatKm(0)).toBe("0 km");
     expect(formatKm(Number.NaN)).toBe("0 km");
+  });
+
+  it("converts the raw distance before rounding for imperial riders", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    expect(formatKm(0.4)).toBe("0.3 mi");
+    expect(formatNearbyPlaceAccessibilityLabel("Hotel", 0.4)).toBe(
+      "Hotel, 0.3 mi away",
+    );
+    expect(formatNearbyRadius(25)).toBe("within 15.5 mi");
   });
 
   it("formats durations", () => {
@@ -94,6 +115,10 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
 });
 
 describe("formatNearbyPlaceMeta", () => {
+  it("keeps the nearby radius unit-aware", () => {
+    expect(formatNearbyRadius(25)).toBe("within 25 km");
+  });
+
   it("uses one catalog message for kind and distance", () => {
     expect(formatNearbyPlaceMeta("Guest house", 1.24)).toBe(
       "Guest house · 1.2 km",

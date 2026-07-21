@@ -8,6 +8,7 @@ import { locationService } from "@/services/location";
 import { sensorService, type ClassificationResult } from "@/services/sensors";
 import { requestWithRationale } from "@/services/permissions";
 import type { RideResponse } from "@/types";
+import { setActiveFormatContext } from "@/format";
 
 const mockGoBack = jest.fn();
 const mockStartRideAction = jest.fn();
@@ -179,15 +180,39 @@ describe("RideActiveScreen", () => {
     };
   });
 
+  afterEach(() => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "metric",
+    });
+  });
+
   it("renders speed, distance, surface, and segment count from the ride store", async () => {
     await render(<RideActiveScreen />);
 
     await waitFor(() => expect(screen.getByText("62")).toBeTruthy());
+    expect(screen.getByText("km/h")).toBeTruthy();
     expect(screen.getByText("12.5 km")).toBeTruthy();
     expect(screen.getByText("Good")).toBeTruthy();
     expect(screen.getByText("Asphalt")).toBeTruthy();
     expect(screen.getByText(/4 segments recorded/i)).toBeTruthy();
     expect(screen.getByLabelText("Stop ride")).toBeTruthy();
+  });
+
+  it("uses the imperial formatter for the visible speed and accessible label", async () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    await render(<RideActiveScreen />);
+
+    await waitFor(() => expect(screen.getByText("38.8")).toBeTruthy());
+    expect(screen.getByText("mph")).toBeTruthy();
+    expect(screen.getByLabelText("Speed 38.8 mph")).toBeTruthy();
+    expect(screen.queryByText("62")).toBeNull();
   });
 
   it("does not POST a new ride when resuming with an existing activeRide id", async () => {

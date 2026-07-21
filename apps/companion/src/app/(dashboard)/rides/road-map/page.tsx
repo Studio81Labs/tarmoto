@@ -201,7 +201,7 @@ function RoadMapPageInner() {
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setLoadError(err.message || "Could not load exploration data");
+        setLoadError(err.message || t("Could not load exploration data"));
         setLoading(false);
       });
     return () => {
@@ -242,7 +242,7 @@ function RoadMapPageInner() {
       })
       .catch(() => {
         if (cancelled) return;
-        setNearbyError("Could not load nearby unridden roads");
+        setNearbyError(t("Could not load nearby unridden roads"));
         setNearby([]);
         setNearbyLoading(false);
       });

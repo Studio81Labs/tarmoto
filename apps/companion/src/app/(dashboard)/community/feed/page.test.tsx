@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import CommunityFeedPage from "./page";
 import { api, communityApi, type CommunityRidePage } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { FormatProvider } from "@/format/FormatProvider";
 
 vi.mock("next/navigation", async () => {
   const actual =
@@ -225,5 +226,42 @@ describe("CommunityFeedPage", () => {
       "aria-disabled",
       "true",
     );
+  });
+
+  it("uses the active unit in the selected-radius summary", async () => {
+    listMock.mockResolvedValue({ data: pageData() });
+    geocodeMock.mockResolvedValue({
+      data: {
+        results: [
+          { label: "Tatra Mountains, Slovakia", lat: 49.17, lng: 20.13 },
+        ],
+      },
+      error: undefined,
+    } as never);
+
+    render(
+      <FormatProvider formatLocale="en-US" timeZone="UTC" units="imperial">
+        <CommunityFeedPage />
+      </FormatProvider>,
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "tatra" },
+    });
+    await userEvent.click(
+      await screen.findByRole("option", {
+        name: "Tatra Mountains, Slovakia",
+      }),
+    );
+
+    expect(
+      screen.getByText((_content, element) =>
+        Boolean(
+          element?.tagName === "P" &&
+          element.textContent ===
+            "Filtering within 15.5 mi of Tatra Mountains, Slovakia.",
+        ),
+      ),
+    ).toBeInTheDocument();
   });
 });

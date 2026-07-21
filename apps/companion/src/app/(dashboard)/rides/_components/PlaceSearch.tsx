@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { MapPin } from "lucide-react";
 import { SearchCombobox, SegmentedControl } from "@tarmoto/ui";
 import { api } from "@/lib/api";
+import { useFormat } from "@/format/FormatProvider";
 
 // Lazy: maplibre-gl only loads when the radius popover actually opens —
 // keeps the filter bars light and keeps jsdom tests away from WebGL.
@@ -37,15 +38,7 @@ interface Match {
   lat: number;
   lng: number;
 }
-const RADIUS_CHOICES: Array<{
-  km: number;
-  label: string;
-}> = [
-  { km: 10, label: "10 km" },
-  { km: 25, label: "25 km" },
-  { km: 50, label: "50 km" },
-  { km: 100, label: "100 km" },
-];
+const RADIUS_CHOICES = [10, 25, 50, 100] as const;
 const DEFAULT_RADIUS_KM = 25;
 const GEOCODE_DEBOUNCE_MS = 350;
 const GEOCODE_MIN_CHARS = 2;
@@ -56,12 +49,10 @@ const GEOCODE_MIN_CHARS = 2;
 // staying stable across re-renders of the same result set.
 const matchKey = (m: Match, i: number) => `${m.lat},${m.lng}|${m.label}|${i}`;
 
-export function PlaceSearch({
-  value,
-  onChange,
-  label = "Passes near place",
-  placeholder = "Tatra Mountains…",
-}: Props) {
+export function PlaceSearch({ value, onChange, label, placeholder }: Props) {
+  const format = useFormat();
+  const resolvedLabel = label ?? t("Passes near place");
+  const resolvedPlaceholder = placeholder ?? t("Tatra Mountains…");
   const [draft, setDraft] = useState(value?.label ?? "");
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(false);
@@ -170,7 +161,7 @@ export function PlaceSearch({
   return (
     <div className="flex flex-col gap-1.5 flex-1 min-w-[220px]">
       <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim">
-        {label}
+        {resolvedLabel}
       </span>
       <div
         ref={containerRef}
@@ -189,7 +180,7 @@ export function PlaceSearch({
         }}
       >
         <SearchCombobox
-          ariaLabel={label}
+          ariaLabel={resolvedLabel}
           query={draft}
           onQueryChange={(next) => {
             setDraft(next);
@@ -205,7 +196,7 @@ export function PlaceSearch({
           }}
           loading={loading}
           minChars={GEOCODE_MIN_CHARS}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           loadingMessage={t("Searching…")}
           emptyMessage={t("No matches")}
           leadingIcon={<MapPin size={14} />}
@@ -219,10 +210,12 @@ export function PlaceSearch({
                 type="button"
                 onClick={() => setRadiusOpen((open) => !open)}
                 aria-expanded={radiusOpen}
-                aria-label={t("Search radius: {km} km", { km: value.km })}
+                aria-label={t("Search radius: {distance}", {
+                  distance: format.distanceKm(value.km),
+                })}
                 className="whitespace-nowrap rounded-md border border-line-strong bg-cream px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.4px] text-fg-dim transition hover:border-ink hover:text-ink"
               >
-                {value.km} km
+                {format.distanceKm(value.km)}
               </button>
             ) : undefined
           }
@@ -243,9 +236,9 @@ export function PlaceSearch({
                   km: Number(km),
                 })
               }
-              options={RADIUS_CHOICES.map((r) => ({
-                value: String(r.km),
-                label: r.label,
+              options={RADIUS_CHOICES.map((km) => ({
+                value: String(km),
+                label: format.distanceKm(km),
               }))}
             />
             <div className="mt-2.5">

@@ -1,6 +1,7 @@
 import type { EnglishMessageKey, TranslationValues } from "@/i18n";
 import type { WeatherAlert } from "@/types";
 import { localizeWeatherAlert } from "../weatherAlertCopy";
+import { setActiveFormatContext } from "@/format";
 
 const translate = jest.fn(
   (key: EnglishMessageKey, values?: TranslationValues) =>
@@ -24,7 +25,10 @@ function buildAlert(overrides: Partial<WeatherAlert>): WeatherAlert {
 }
 
 describe("localizeWeatherAlert", () => {
-  beforeEach(() => translate.mockClear());
+  beforeEach(() => {
+    translate.mockClear();
+    setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
+  });
 
   it.each([
     [
@@ -66,22 +70,22 @@ describe("localizeWeatherAlert", () => {
     ).toEqual({
       title: "translated:High wind ahead",
       message:
-        "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.|49.12,16.75",
+        "High wind ({speed}) near {location}. Brace for sudden crosswinds.|49.12,16.75",
     });
     expect(translate).toHaveBeenCalledWith(
-      "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.",
-      { location: "49.12,16.75", speed: 75 },
+      "High wind ({speed}) near {location}. Brace for sudden crosswinds.",
+      { location: "49.12,16.75", speed: "75 km/h" },
     );
   });
 
   it.each([
     [
       "ice",
-      "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
+      "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.",
     ],
     [
       "wet",
-      "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
+      "Wet roads near {location}: {temperature} · Wind {wind}. Allow extra braking distance.",
     ],
   ] as const)("preserves sampled conditions for %s alerts", (kind, key) => {
     localizeWeatherAlert(
@@ -91,9 +95,31 @@ describe("localizeWeatherAlert", () => {
 
     expect(translate).toHaveBeenCalledWith(key, {
       location: "49.12,16.75",
-      temperature: -2,
-      wind: 28,
+      temperature: "-2°C",
+      wind: "28 km/h",
     });
+  });
+
+  it("converts structured conditions for imperial riders", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    localizeWeatherAlert(
+      buildAlert({ kind: "ice", temperature_c: -2, wind_kmh: 28 }),
+      translate,
+    );
+
+    expect(translate).toHaveBeenCalledWith(
+      "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.",
+      {
+        location: "49.12,16.75",
+        temperature: "28.4°F",
+        wind: "17.4 mph",
+      },
+    );
   });
 
   it("keeps server copy for an unknown future alert kind", () => {

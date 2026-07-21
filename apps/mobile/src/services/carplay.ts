@@ -55,6 +55,7 @@ import { haversineMeters } from "@tarmoto/shared";
 import { formatDurationSeconds, qualityLabel } from "@/theme";
 import type { Hazard, HazardType, LatLng } from "@/types";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // ── Public types ──
 
@@ -211,7 +212,7 @@ export interface VehicleStatusBridge {
  */
 export function formatSpeedKmh(kmh: number): string {
   if (!Number.isFinite(kmh) || kmh < 1) return "—";
-  return `${Math.round(kmh)} km/h`;
+  return getFormatters().speed(kmh);
 }
 
 /**
@@ -221,8 +222,7 @@ export function formatSpeedKmh(kmh: number): string {
  * stuck for minutes at cruising speed).
  */
 export function formatDistanceKm(km: number): string {
-  if (!Number.isFinite(km) || km <= 0) return "0.0 km";
-  return `${km.toFixed(1)} km`;
+  return getFormatters().distanceKm(!Number.isFinite(km) || km <= 0 ? 0 : km);
 }
 
 /**
@@ -307,22 +307,19 @@ export function hazardTypeLabel(type: HazardType): string {
 }
 
 /**
- * Distance line for the hazard-alert subtitle. Below 1 km we round to
- * 50 m granularity (matches the haptic-grain the rider experiences
- * approaching the hazard); above we switch to single-decimal km. Off-
- * range / non-finite collapse to "Nearby" so the rider always gets a
- * complete sentence on the bike display.
+ * Distance line for the hazard-alert subtitle. We round to 50 m granularity
+ * below 1 km (matching the haptic grain the rider experiences approaching the
+ * hazard), then let the active formatter choose metric or imperial units.
+ * Off-range / non-finite values collapse to "Nearby" so the rider always gets
+ * a complete sentence on the bike display.
  */
 export function formatHazardDistance(meters: number): string {
   if (!Number.isFinite(meters) || meters < 0) return translate("Nearby");
-  if (meters < 1000) {
-    const rounded = Math.max(0, Math.round(meters / 50) * 50);
-    return rounded === 0
-      ? translate("Right here")
-      : translate("{distance} m ahead", { distance: rounded });
-  }
-  return translate("{distance} km ahead", {
-    distance: (meters / 1000).toFixed(1),
+  const displayMeters =
+    meters < 1000 ? Math.max(0, Math.round(meters / 50) * 50) : meters;
+  if (displayMeters === 0) return translate("Right here");
+  return translate("{distance} ahead", {
+    distance: getFormatters().distanceM(displayMeters),
   });
 }
 
