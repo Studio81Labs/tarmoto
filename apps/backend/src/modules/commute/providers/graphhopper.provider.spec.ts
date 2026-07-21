@@ -478,6 +478,46 @@ describe('GraphHopperProvider.route', () => {
     expect(upstreamSignal?.aborted).toBe(true);
   });
 
+  it('starts a fresh identical request while an aborted flight is settling', async () => {
+    let resolveAbortedFetch!: (response: Response) => void;
+    fetchMock
+      // Deliberately leave the first fetch pending after abort to exercise the
+      // short window before its promise reaches `finally` and leaves inFlight.
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveAbortedFetch = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          paths: [
+            path([
+              [14, 50],
+              [15, 51],
+            ]),
+          ],
+        }),
+      );
+    const provider = makeProvider();
+    const points = [
+      { lat: 50, lng: 14 },
+      { lat: 51, lng: 15 },
+    ];
+    const controller = new AbortController();
+    const aborted = provider.route(points, undefined, controller.signal);
+    await Promise.resolve();
+    controller.abort();
+    await expect(aborted).resolves.toBeNull();
+
+    const replacement = provider.route(points);
+    await expect(replacement).resolves.toMatchObject({ distance_km: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    resolveAbortedFetch(jsonResponse({ paths: [] }));
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+
   it('aborts an upstream call at the configured deadline', async () => {
     let upstreamSignal: AbortSignal | undefined;
     fetchMock.mockImplementationOnce(

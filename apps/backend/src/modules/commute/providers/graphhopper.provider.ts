@@ -265,6 +265,15 @@ export class GraphHopperProvider implements RoutingProvider {
     if (cached) return cached;
 
     let flight = this.inFlight.get(body);
+    // The final waiter aborts the shared controller immediately, while the
+    // fetch promise removes its map entry asynchronously in `finally`. Never
+    // attach a new caller to that already-doomed flight during this window.
+    // The identity guard in the old flight's `finally` prevents it from
+    // deleting the replacement created below.
+    if (flight?.controller.signal.aborted) {
+      if (this.inFlight.get(body) === flight) this.inFlight.delete(body);
+      flight = undefined;
+    }
     if (!flight) {
       const controller = new AbortController();
       flight = {
@@ -284,7 +293,9 @@ export class GraphHopperProvider implements RoutingProvider {
           return null;
         })
         .then((data) => {
-          if (data) this.responseCache.set(body, data);
+          if (data && !controller.signal.aborted) {
+            this.responseCache.set(body, data);
+          }
           return data;
         })
         .finally(() => {
