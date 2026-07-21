@@ -23,6 +23,7 @@ const mockTransactionManager = {
     avg_quality: null,
     route_geom: null,
     routing_engine_version: null,
+    routing_cache_updated_at: null,
     is_primary: true,
     ...(data as Record<string, unknown>),
   })),
@@ -68,6 +69,7 @@ describe('CommuteService', () => {
     // fixture represents a fresh cache. Tests exercising stale-cache
     // / engine-swap paths override this to trigger re-fill (#361).
     routing_engine_version: 'osrm-v1',
+    routing_cache_updated_at: new Date(),
     is_primary: true,
     created_at: new Date('2026-04-14T10:00:00Z'),
   } as unknown as CommuteRoute;
@@ -334,6 +336,55 @@ describe('CommuteService', () => {
         expect.stringContaining('UPDATE commute_routes'),
         expect.anything(),
       );
+    });
+
+    it('re-resolves closure-aware geometry when the routing cache expires', async () => {
+      const expired = {
+        ...mockRoute,
+        routing_cache_updated_at: new Date(Date.now() - 5 * 60 * 1000 - 1),
+      };
+      routeRepo.find!.mockResolvedValueOnce([expired] as never);
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledWith(
+        49.2,
+        16.6,
+        49.1,
+        16.75,
+        1,
+        { includePrimary: true, excludePolygons: [] },
+      );
+      expect(routeRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('routing_cache_updated_at = NOW()'),
+        expect.anything(),
+      );
+      expect(expired.routing_cache_updated_at.getTime()).toBeGreaterThan(
+        Date.now() - 1000,
+      );
+    });
+
+    it('treats a populated legacy cache without a refresh timestamp as stale', async () => {
+      const legacy = {
+        ...mockRoute,
+        routing_cache_updated_at: null,
+      };
+      routeRepo.find!.mockResolvedValueOnce([legacy] as never);
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
+      expect(legacy.routing_cache_updated_at).toBeInstanceOf(Date);
     });
 
     it('treats a populated cache with a null engine version as stale (#361)', async () => {

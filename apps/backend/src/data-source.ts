@@ -134,6 +134,7 @@ import { AddRoadQualitySeed1811000000000 } from './migrations/1811000000000-AddR
 import { DropSharedRideEmbedClickCount1812000000000 } from './migrations/1812000000000-DropSharedRideEmbedClickCount.js';
 import { AddLimitEntitlements1813000000000 } from './migrations/1813000000000-AddLimitEntitlements.js';
 import { AlignFeatureFlagCatalog1814000000000 } from './migrations/1814000000000-AlignFeatureFlagCatalog.js';
+import { AddCommuteRoutingCacheUpdatedAt1815000000000 } from './migrations/1815000000000-AddCommuteRoutingCacheUpdatedAt.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -286,6 +287,7 @@ export const AppDataSource = new DataSource({
     DropSharedRideEmbedClickCount1812000000000,
     AddLimitEntitlements1813000000000,
     AlignFeatureFlagCatalog1814000000000,
+    AddCommuteRoutingCacheUpdatedAt1815000000000,
   ],
   synchronize: false,
 });

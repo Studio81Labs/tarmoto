@@ -24,6 +24,11 @@ import {
 } from './dto/commute.dto.js';
 
 const FUEL_L_PER_KM = 0.05; // ~5L/100km average motorcycle
+// Full closures are part of the routing request and can become active or
+// expire based only on wall-clock time. Keep the persistent route fast on the
+// hot path, but periodically rebuild it so closure changes cannot leave a
+// primary commute geometry stale indefinitely.
+const ROUTING_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class CommuteService {
@@ -556,9 +561,10 @@ export class CommuteService {
    * etc.) — OR because the cached geometry was produced by a routing
    * engine version that no longer matches the active provider (#361
    * — engine swap or material algorithm bump should invalidate the
-   * cache lazily on next read). The geometry is the canonical signal
-   * for the null case: distance/duration without geometry would mean
-   * a partial fill, which we never write.
+   * cache lazily on next read), OR because the cache is old enough that
+   * the active full-closure set may have changed. The geometry is the
+   * canonical signal for the null case: distance/duration without geometry
+   * would mean a partial fill, which we never write.
    *
    * `routing_engine_version` is nullable on legacy rows that were
    * resolved before the column existed; treat null-but-geometry-set
@@ -572,7 +578,14 @@ export class CommuteService {
    */
   private needsCacheFill(route: CommuteRoute): boolean {
     if (route.route_geom == null) return true;
-    return route.routing_engine_version !== this.routingProvider.version;
+    if (route.routing_engine_version !== this.routingProvider.version) {
+      return true;
+    }
+    if (route.routing_cache_updated_at == null) return true;
+    return (
+      Date.now() - route.routing_cache_updated_at.getTime() >=
+      ROUTING_CACHE_MAX_AGE_MS
+    );
   }
 
   /**
@@ -649,7 +662,8 @@ export class CommuteService {
          SET route_geom = ST_GeomFromText($1, 4326),
              distance_km = $2,
              avg_duration = make_interval(mins => $3),
-             routing_engine_version = $4
+             routing_engine_version = $4,
+             routing_cache_updated_at = NOW()
          WHERE id = $5`,
         [wkt, resolved.distance_km, durationMin, engineVersion, route.id],
       );
@@ -670,6 +684,7 @@ export class CommuteService {
     };
     route.distance_km = resolved.distance_km;
     route.routing_engine_version = engineVersion;
+    route.routing_cache_updated_at = new Date();
     // Canonical HH:MM:SS form so the parser produces the same number
     // we just persisted when this entity is reloaded later.
     const hh = Math.floor(durationMin / 60);
