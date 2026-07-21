@@ -58,12 +58,43 @@ describe('RouteEnrichmentService.aggregate', () => {
     // cheap geometry-index prefilter and exact geography-distance predicate.
     const hazardSql = String((query.mock.calls[1] as unknown[])[0]);
     expect(hazardSql).toContain("moderation_status = 'visible'");
-    expect(hazardSql).toContain('h.location,');
+    expect(hazardSql).toContain('h.location && ST_Expand');
     expect(hazardSql).toContain('h.location::geography');
 
     const scenicSql = String((query.mock.calls[2] as unknown[])[0]);
-    expect(scenicSql).toContain('fz.boundary,');
+    expect(scenicSql).toContain('fz.boundary && ST_Expand');
     expect(scenicSql).toContain('fz.boundary::geography');
+  });
+
+  it('uses latitude-safe envelopes for every enrichment prefilter', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          avg_quality: null,
+          avg_curviness: null,
+          elevation_span: null,
+          total_length_m: null,
+          surface_mix: {},
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 0 }])
+      .mockResolvedValueOnce([{ avg_scenic: null, zone_count: 0 }]);
+    const ds = { query } as unknown as DataSource;
+
+    await new RouteEnrichmentService(ds).aggregate([
+      { lat: 70, lng: 20 },
+      { lat: 70.1, lng: 20.1 },
+    ]);
+
+    const calls = query.mock.calls as [string, unknown[]][];
+    expect(calls).toHaveLength(3);
+    expect(calls[0]?.[0]).toContain('rs.geom && ST_Expand');
+    expect(calls[1]?.[0]).toContain('h.location && ST_Expand');
+    expect(calls[2]?.[0]).toContain('fz.boundary && ST_Expand');
+    expect(calls[0]?.[1][4] as number).toBeGreaterThan(0.0025);
+    expect(calls[1]?.[1][2] as number).toBeGreaterThan(0.0125);
+    expect(calls[2]?.[1][2] as number).toBeGreaterThan(0.0125);
   });
 
   it('bounds long-route work with capped point-local GiST lookups', async () => {
@@ -95,14 +126,19 @@ describe('RouteEnrichmentService.aggregate', () => {
     expect(roadSql).toContain('generate_series(');
     expect(roadSql).toContain('sampling.sample_count - 1');
     expect(roadSql).toContain('LEFT JOIN LATERAL');
-    expect(roadSql).toContain(
-      'ST_DWithin(\n                   rs.geom,\n                   samples.point',
-    );
+    expect(roadSql).toContain('rs.geom && ST_Expand');
     expect(roadSql).toContain('rs.geom::geography');
     expect(roadSql).toContain("COALESCE(surface_type, 'unknown')");
     // The cap and minimum spacing are bound parameters, so route length cannot
     // grow the number of nearest-segment index lookups without bound.
-    expect(roadParams).toEqual([expect.any(String), 100, 2500, 40]);
+    expect(roadParams).toEqual([
+      expect.any(String),
+      100,
+      2500,
+      40,
+      expect.any(Number),
+      expect.any(Number),
+    ]);
     expect(query).toHaveBeenCalledTimes(3);
   });
 

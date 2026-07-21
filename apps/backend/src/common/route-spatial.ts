@@ -9,7 +9,38 @@ export interface RouteSpatialSql {
   params: Record<string, number>;
 }
 
+export interface RouteEnvelopeDegrees {
+  bufferLngDeg: number;
+  bufferLatDeg: number;
+}
+
 const CONSERVATIVE_METERS_PER_DEGREE = 110_000;
+
+export function routeEnvelopeDegrees(
+  routes: ReadonlyArray<ReadonlyArray<SpatialRoutePoint>>,
+  bufferM: number,
+): RouteEnvelopeDegrees {
+  let maxAbsLat = 0;
+  for (const route of routes) {
+    for (const point of route) {
+      maxAbsLat = Math.max(maxAbsLat, Math.abs(point.lat));
+    }
+  }
+
+  const bufferLatDeg = bufferM / CONSERVATIVE_METERS_PER_DEGREE;
+  const expandedAbsLat = Math.min(90, maxAbsLat + bufferLatDeg);
+  const bufferLngDeg =
+    expandedAbsLat >= 90
+      ? 180
+      : Math.min(
+          180,
+          bufferM /
+            (CONSERVATIVE_METERS_PER_DEGREE *
+              Math.cos((expandedAbsLat * Math.PI) / 180)),
+        );
+
+  return { bufferLngDeg, bufferLatDeg };
+}
 
 /**
  * Builds a parameterized LineString/MultiLineString and an index-friendly
@@ -42,20 +73,7 @@ export function buildRouteSpatialSql(
     lines.length === 1 ? lines[0] : `ST_Collect(ARRAY[${lines.join(',')}])`;
   const geometrySql = `ST_SetSRID(${collected}, 4326)`;
 
-  const maxAbsLat = Math.max(
-    ...routes.flatMap((route) => route.map((point) => Math.abs(point.lat))),
-  );
-  const bufferLatDeg = bufferM / CONSERVATIVE_METERS_PER_DEGREE;
-  const expandedAbsLat = Math.min(90, maxAbsLat + bufferLatDeg);
-  const bufferLngDeg =
-    expandedAbsLat >= 90
-      ? 180
-      : Math.min(
-          180,
-          bufferM /
-            (CONSERVATIVE_METERS_PER_DEGREE *
-              Math.cos((expandedAbsLat * Math.PI) / 180)),
-        );
+  const { bufferLngDeg, bufferLatDeg } = routeEnvelopeDegrees(routes, bufferM);
 
   params.bufferLatDeg = bufferLatDeg;
   params.bufferLngDeg = bufferLngDeg;

@@ -5,6 +5,7 @@ import {
   ConcurrencyLimiter,
   positiveInteger,
 } from '../../common/concurrency-limiter.js';
+import { routeEnvelopeDegrees } from '../../common/route-spatial.js';
 
 export interface RouteMetrics {
   avgQuality: number | null;
@@ -114,6 +115,10 @@ export class RouteEnrichmentService {
       };
     }
     const wkt = geometryToWkt(finite);
+    const roadEnvelope = routeEnvelopeDegrees([finite], ROAD_BUFFER_M);
+    const hazardEnvelope = routeEnvelopeDegrees([finite], HAZARD_BUFFER_M);
+    const scenicBufferM = SCENIC_OVERLAP_BUFFER_KM * 1000;
+    const scenicEnvelope = routeEnvelopeDegrees([finite], scenicBufferM);
 
     type RoadMetricRow = {
       avg_quality: number | null;
@@ -191,10 +196,10 @@ export class RouteEnrichmentService {
                  -- Every lookup is a small point-local GiST search. Unlike a
                  -- whole-route predicate, its bounding box does not grow from
                  -- a few km to half a continent as route length increases.
-                 AND ST_DWithin(
-                   rs.geom,
-                   samples.point,
-                   ($2 / 111320.0 * 2)
+                 AND rs.geom && ST_Expand(
+                   samples.point::box2d,
+                   $5::float,
+                   $6::float
                  )
                  AND ST_DWithin(
                    rs.geom::geography,
@@ -252,7 +257,14 @@ export class RouteEnrichmentService {
            FROM metrics
            CROSS JOIN elevation
            CROSS JOIN surfaces`,
-      [wkt, ROAD_BUFFER_M, MAX_AGGREGATE_SAMPLES, AGGREGATE_SAMPLE_SPACING_M],
+      [
+        wkt,
+        ROAD_BUFFER_M,
+        MAX_AGGREGATE_SAMPLES,
+        AGGREGATE_SAMPLE_SPACING_M,
+        roadEnvelope.bufferLngDeg,
+        roadEnvelope.bufferLatDeg,
+      ],
     );
     const hazardQuery = timedQuery<HazardRow[]>(
       'hazards',
@@ -260,17 +272,22 @@ export class RouteEnrichmentService {
            FROM hazard_reports h
            WHERE h.is_active = true AND h.expires_at > NOW()
              AND h.moderation_status = 'visible'
-             AND ST_DWithin(
-               h.location,
-               ST_GeomFromText($1, 4326),
-               ($2 / 111320.0 * 2)
+             AND h.location && ST_Expand(
+               ST_GeomFromText($1, 4326)::box2d,
+               $3::float,
+               $4::float
              )
              AND ST_DWithin(
                h.location::geography,
                ST_GeomFromText($1, 4326)::geography,
                $2
              )`,
-      [wkt, HAZARD_BUFFER_M],
+      [
+        wkt,
+        HAZARD_BUFFER_M,
+        hazardEnvelope.bufferLngDeg,
+        hazardEnvelope.bufferLatDeg,
+      ],
     );
     const scenicQuery = timedQuery<ScenicRow[]>(
       'scenic',
@@ -278,17 +295,22 @@ export class RouteEnrichmentService {
              AVG(fz.composite_score)::float AS avg_scenic,
              COUNT(*)::int AS zone_count
            FROM fun_zones fz
-           WHERE ST_DWithin(
-             fz.boundary,
-             ST_GeomFromText($1, 4326),
-             ($2 / 111320.0 * 2)
+           WHERE fz.boundary && ST_Expand(
+             ST_GeomFromText($1, 4326)::box2d,
+             $3::float,
+             $4::float
            )
              AND ST_DWithin(
              fz.boundary::geography,
              ST_GeomFromText($1, 4326)::geography,
              $2
            )`,
-      [wkt, SCENIC_OVERLAP_BUFFER_KM * 1000],
+      [
+        wkt,
+        scenicBufferM,
+        scenicEnvelope.bufferLngDeg,
+        scenicEnvelope.bufferLatDeg,
+      ],
     );
     const queries = [roadQuery, hazardQuery, scenicQuery] as const;
     let roadRows: RoadMetricRow[];

@@ -15,7 +15,9 @@ import { getFormatters } from "@/format";
 import type {
   Accommodation,
   AccommodationKind,
+  CheckRouteForPassesResponse,
   LatLng,
+  MountainPass,
   Trip,
   TripDay,
   TripStatus,
@@ -354,6 +356,26 @@ export function routeGeometrySignature(days: TripDay[]): string {
   const route = flattenTripRoute(days);
   if (route.length === 0) return "";
   return route.map((point) => `${point.lat},${point.lng}`).join("|");
+}
+
+export interface ClosedPassWarningData {
+  passes: MountainPass[];
+  count: number;
+}
+
+/**
+ * Keep the warning headline exact even when the backend caps the returned pass
+ * rows. The rows remain useful for names/details; `closed_count` represents the
+ * complete pre-cap match set.
+ */
+export function buildClosedPassWarning(
+  response: CheckRouteForPassesResponse,
+): ClosedPassWarningData {
+  const passes = response.passes.filter((pass) => pass.status === "closed");
+  return {
+    passes,
+    count: Math.max(response.closed_count, passes.length),
+  };
 }
 
 /**

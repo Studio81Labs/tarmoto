@@ -1,6 +1,7 @@
 import {
   averageQuality,
   bboxAroundPoint,
+  buildClosedPassWarning,
   computeFuelRangeLegs,
   flattenTripRoute,
   formatDurationMin,
@@ -22,7 +23,15 @@ import {
   sumDistance,
   withSuggestedOvernightStop,
 } from "../TripScreens.helpers";
-import type { Accommodation, LatLng, Trip, TripDay, Waypoint } from "@/types";
+import type {
+  Accommodation,
+  CheckRouteForPassesResponse,
+  LatLng,
+  MountainPass,
+  Trip,
+  TripDay,
+  Waypoint,
+} from "@/types";
 import { setActiveFormatContext } from "@/format";
 
 const wp = (
@@ -329,6 +338,37 @@ describe("routeGeometrySignature", () => {
     expect(routeGeometrySignature(base.days)).toBe(
       routeGeometrySignature(withSuggestedStay.days),
     );
+  });
+});
+
+describe("buildClosedPassWarning", () => {
+  const pass = (id: string, status: MountainPass["status"]): MountainPass => ({
+    id,
+    name: `Pass ${id}`,
+    country_code: "NO",
+    region: null,
+    lat: 70,
+    lng: 20,
+    elevation_m: 1_500,
+    typical_open_month: 6,
+    typical_close_month: 9,
+    status,
+    status_overridden: false,
+    notes: null,
+    last_updated: "2026-07-21T00:00:00.000Z",
+  });
+
+  it("uses the exact backend count when returned rows are capped", () => {
+    const response: CheckRouteForPassesResponse = {
+      passes: [pass("closed", "closed"), pass("open", "open")],
+      closed_count: 237,
+      unknown_count: 0,
+    };
+
+    expect(buildClosedPassWarning(response)).toEqual({
+      passes: [response.passes[0]],
+      count: 237,
+    });
   });
 });
 
