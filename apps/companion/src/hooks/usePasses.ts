@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { api, passesApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
-  countByStatus,
   dedupePasses,
   partitionByStatus,
   type MountainPass,
@@ -12,6 +11,7 @@ import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
 const EMPTY_PASSES: MountainPass[] = [];
+const PASS_PAGE_SIZE = 500;
 
 export interface PassesQueryResult {
   passes: MountainPass[];
@@ -41,8 +41,8 @@ interface UsePassesOptions {
 }
 
 /**
- * Fetches `/passes` for the current month/bbox and (optionally) runs
- * a per-route check across `routes`. Driven by `@tanstack/react-query`
+ * Fetches `/passes` for the current month/bbox and (optionally) checks all
+ * `routes` in one unique spatial query. Driven by `@tanstack/react-query`
  * — cancellation, dedup, and reconnect retry come for free.
  *
  * The list query is keyed by `[forMonth, bbox]`, the route query by
@@ -62,21 +62,23 @@ export function usePasses(
     queryKey: ["passes", "list", forMonth ?? null, bbox, reconnectRevision],
     enabled,
     queryFn: async ({ signal }) => {
-      const query =
-        forMonth != null || bbox
-          ? ({
-              ...(bbox ? { bbox } : {}),
-              ...(forMonth != null ? { for_month: forMonth } : {}),
-            } as never)
-          : undefined;
-      const { data, error } = await api.GET("/api/v1/passes", {
-        params: {
-          ...(query !== undefined ? { query } : {}),
-        },
-        signal,
-      });
-      if (error || !data) throw new Error("Failed to load passes");
-      return data as MountainPass[];
+      const passes: MountainPass[] = [];
+      for (let offset = 0; ; offset += PASS_PAGE_SIZE) {
+        const query = {
+          ...(bbox ? { bbox } : {}),
+          ...(forMonth != null ? { for_month: forMonth } : {}),
+          limit: PASS_PAGE_SIZE,
+          offset,
+        };
+        const { data, error } = await api.GET("/api/v1/passes", {
+          params: { query },
+          signal,
+        });
+        if (error || !data) throw new Error("Failed to load passes");
+        const page = data as MountainPass[];
+        passes.push(...page);
+        if (page.length < PASS_PAGE_SIZE) return passes;
+      }
     },
   });
 
@@ -101,39 +103,29 @@ export function usePasses(
     ],
     enabled: routes.length > 0,
     queryFn: async ({ signal }) => {
-      const results = await Promise.allSettled(
-        routeRequestKey.map(({ points }) =>
-          passesApi.checkRoute(
-            {
-              route: points,
-              ...(forMonth !== undefined ? { for_month: forMonth } : {}),
-            },
-            { signal },
-          ),
-        ),
+      const [firstRoute, ...additionalRoutes] = routeRequestKey;
+      if (!firstRoute) throw new Error("No route to check");
+      const { data } = await passesApi.checkRoute(
+        {
+          route: firstRoute.points,
+          ...(additionalRoutes.length > 0
+            ? {
+                additional_routes: additionalRoutes.map(({ points }) => ({
+                  points,
+                })),
+              }
+            : {}),
+          ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+        },
+        { signal },
       );
-      const fulfilled = results.filter(
-        (
-          result,
-        ): result is PromiseFulfilledResult<
-          Awaited<ReturnType<typeof passesApi.checkRoute>>
-        > => result.status === "fulfilled",
-      );
-      const rejectedCount = results.length - fulfilled.length;
-      if (fulfilled.length === 0 && rejectedCount > 0) {
-        throw new Error("Failed to check route passes");
-      }
-      const routePasses = dedupePasses(
-        fulfilled.flatMap(({ value }) => value.data.passes),
-      );
+      const routePasses = dedupePasses(data.passes);
       const grouped = partitionByStatus(routePasses);
       const ordered = [...grouped.closed, ...grouped.unknown, ...grouped.open];
-      const counts = countByStatus(routePasses);
       return {
         passes: ordered,
-        closedCount: counts.closed,
-        unknownCount: counts.unknown,
-        partial: rejectedCount > 0,
+        closedCount: data.closed_count,
+        unknownCount: data.unknown_count,
       };
     },
   });
@@ -163,8 +155,6 @@ export function usePasses(
         : routeQuery.isError
           ? (routeQuery.error as Error)?.message ||
             "Failed to check route passes"
-          : routeQuery.data?.partial
-            ? "Some route segments could not be checked."
-            : null,
+          : null,
   };
 }

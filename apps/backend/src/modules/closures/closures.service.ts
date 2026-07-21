@@ -6,11 +6,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { buildRouteSpatialSql } from '../../common/route-spatial.js';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   CheckRouteClosuresDto,
   CheckRouteClosuresResponseDto,
+  MAX_CHECK_ROUTE_CLOSURE_POINTS,
   ClosurePointDto,
   CreateClosureDto,
   ListClosuresQueryDto,
@@ -33,12 +35,26 @@ const SEVERITY_RANK: Record<RoadClosureSeverity, number> = {
  * parallel open roads.
  */
 const EXCLUSION_BUFFER_M = 25;
+const MAX_CLOSURE_LIST_RESULTS = 500;
+const MAX_ROUTE_CLOSURE_RESULTS = 200;
+const MAX_EXCLUSION_POLYGONS = 100;
 
 interface BboxCoords {
   minLng: number;
   minLat: number;
   maxLng: number;
   maxLat: number;
+}
+
+interface RoutePoint {
+  lat: number;
+  lng: number;
+}
+
+interface RouteClosureCountRow {
+  full_count?: string | number;
+  partial_count?: string | number;
+  advisory_count?: string | number;
 }
 
 @Injectable()
@@ -50,7 +66,16 @@ export class ClosuresService {
   ) {}
 
   async list(query: ListClosuresQueryDto): Promise<RoadClosureDto[]> {
-    const qb = this.repo.createQueryBuilder('c').orderBy('c.starts_at', 'DESC');
+    const qb = this.repo
+      .createQueryBuilder('c')
+      // The public list is capped below, so rank safety-critical rows before
+      // recency. Otherwise a dense historical/viewport query could fill the
+      // budget with newer advisories and omit an older full closure.
+      .orderBy(
+        "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END",
+        'ASC',
+      )
+      .addOrderBy('c.starts_at', 'DESC');
 
     // Undecoded Alert-C/OpenLR feed rows (#743) have no geometry — never
     // surface them: they can't be rendered and `toDto` would crash on a
@@ -100,36 +125,43 @@ export class ClosuresService {
       qb.andWhere('c.reason = :reason', { reason: query.reason });
     }
 
-    const rows = await qb.getMany();
+    const rows = await qb.limit(MAX_CLOSURE_LIST_RESULTS).getMany();
     return rows.map((r) => this.toDto(r));
   }
 
   async checkRoute(
     dto: CheckRouteClosuresDto,
   ): Promise<CheckRouteClosuresResponseDto> {
-    if (dto.route.length < 2) {
-      throw new BadRequestException('Route must have at least 2 points');
+    const routes = [
+      dto.route,
+      ...(dto.additional_routes ?? []).map((route) => route.points),
+    ];
+    if (routes.some((route) => route.length < 2)) {
+      throw new BadRequestException('Every route must have at least 2 points');
+    }
+    if (
+      routes.reduce((total, route) => total + route.length, 0) >
+      MAX_CHECK_ROUTE_CLOSURE_POINTS
+    ) {
+      throw new BadRequestException(
+        `Routes must have at most ${MAX_CHECK_ROUTE_CLOSURE_POINTS} points in total`,
+      );
     }
     const bufferM = dto.buffer_m ?? 100;
     const activeOn = dto.active_on ? new Date(dto.active_on) : new Date();
 
-    // Build the LineString via TypeORM's named-parameter binding so each
-    // coordinate is passed as a real SQL parameter (no string
-    // interpolation of user input). Going through `createQueryBuilder`
+    // Build one LineString/MultiLineString via TypeORM's named-parameter
+    // binding so each coordinate is passed as a real SQL parameter (no
+    // string interpolation of user input). Going through `createQueryBuilder`
     // rather than `repo.query` also makes TypeORM hydrate the `geom`
     // column back into a GeoJSON LineString — with raw `.query()` we'd
     // get a WKB hex string and `toDto` would crash on `r.geom.coordinates`.
+    const spatial = buildRouteSpatialSql(routes, bufferM, 'c.geom');
     const params: Record<string, number | Date> = {
+      ...spatial.params,
       buffer: bufferM,
       activeOn,
     };
-    const pointsSql = dto.route
-      .map((p, i) => {
-        params[`lng${i}`] = p.lng;
-        params[`lat${i}`] = p.lat;
-        return `ST_MakePoint(:lng${i}, :lat${i})`;
-      })
-      .join(',');
 
     const qb = this.repo
       .createQueryBuilder('c')
@@ -137,17 +169,40 @@ export class ClosuresService {
       // deactivated by the reconcile pass (#743).
       .andWhere('c.geom IS NOT NULL')
       .andWhere('c.is_active = true')
+      .andWhere(spatial.prefilterSql, params)
       .andWhere(
         `ST_DWithin(
           c.geom::geography,
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          ${spatial.geometrySql}::geography,
           :buffer
         )`,
         params,
       )
       .andWhere('c.starts_at <= :activeOn', { activeOn })
       .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', { activeOn })
-      .orderBy('c.starts_at', 'DESC');
+      // Apply the cap only after prioritising the safety-critical severities.
+      // The response is sorted the same way below, but doing it in SQL ensures
+      // a dense corridor cannot crowd full closures out with advisories.
+      // Window counts are evaluated before LIMIT, keeping the response totals
+      // exact without repeating the expensive spatial predicate in a second
+      // aggregate query.
+      .addSelect(
+        "COUNT(*) FILTER (WHERE c.severity = 'full') OVER ()",
+        'full_count',
+      )
+      .addSelect(
+        "COUNT(*) FILTER (WHERE c.severity = 'partial') OVER ()",
+        'partial_count',
+      )
+      .addSelect(
+        "COUNT(*) FILTER (WHERE c.severity = 'advisory') OVER ()",
+        'advisory_count',
+      )
+      .orderBy(
+        "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END",
+        'ASC',
+      )
+      .addOrderBy('c.starts_at', 'DESC');
 
     // Same operator kill switch as `list`: `road_closures` is a
     // MIXED-SOURCE table, so a disable hides only NAP-sourced ('official')
@@ -159,20 +214,21 @@ export class ClosuresService {
       qb.andWhere("c.source != 'official'");
     }
 
-    const rows = await qb.getMany();
+    const result = await qb
+      .limit(MAX_ROUTE_CLOSURE_RESULTS)
+      .getRawAndEntities<RouteClosureCountRow>();
+    const rows = result.entities;
+    const counts = result.raw[0];
 
     const closures = rows
       .map((r) => this.toDto(r))
       .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 
-    const countBy = (s: RoadClosureSeverity): number =>
-      closures.reduce((n, c) => n + (c.severity === s ? 1 : 0), 0);
-
     return {
       closures,
-      full_count: countBy('full'),
-      partial_count: countBy('partial'),
-      advisory_count: countBy('advisory'),
+      full_count: Number(counts?.full_count ?? 0),
+      partial_count: Number(counts?.partial_count ?? 0),
+      advisory_count: Number(counts?.advisory_count ?? 0),
     };
   }
 
@@ -186,8 +242,12 @@ export class ClosuresService {
    */
   async exclusionPolygons(
     bbox: BboxCoords,
+    route: ReadonlyArray<RoutePoint>,
     activeOn: Date = new Date(),
   ): Promise<Array<Array<[number, number]>>> {
+    const routeWkt = `LINESTRING(${route
+      .map((point) => `${Number(point.lng)} ${Number(point.lat)}`)
+      .join(',')})`;
     const qb = this.repo
       .createQueryBuilder('c')
       .select(
@@ -203,7 +263,21 @@ export class ClosuresService {
         'ST_Intersects(c.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
         bbox,
       )
-      .setParameter('buffer', EXCLUSION_BUFFER_M);
+      // The bbox is intentionally broad enough to allow detours, but the
+      // router payload is capped below. Rank closures by proximity to the
+      // requested waypoint chain so an older closure on a planned leg cannot
+      // be crowded out by newer, irrelevant closures elsewhere in the bbox.
+      .orderBy(
+        `ST_Distance(
+          c.geom::geography,
+          ST_GeomFromText(:routeWkt, 4326)::geography
+        )`,
+        'ASC',
+      )
+      .addOrderBy('c.starts_at', 'DESC')
+      .limit(MAX_EXCLUSION_POLYGONS)
+      .setParameter('buffer', EXCLUSION_BUFFER_M)
+      .setParameter('routeWkt', routeWkt);
 
     // Separate operator kill switch from sys_nap_conditions above: routing
     // avoidance can be disabled independently of closure display. Same

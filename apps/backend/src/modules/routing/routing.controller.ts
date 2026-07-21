@@ -1,4 +1,5 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -8,6 +9,7 @@ import {
 import { AuthGuard } from '../auth/auth.guard.js';
 import { RoutingService } from './routing.service.js';
 import { RouteRequestDto, RouteResponseDto } from './dto/route.dto.js';
+import { requestAbortSignal } from '../../common/request-abort.js';
 
 @ApiTags('routing')
 @Controller('routing')
@@ -25,7 +27,15 @@ export class RoutingController {
     status: 502,
     description: 'Routing engine could not route these points',
   })
-  async route(@Body() dto: RouteRequestDto): Promise<RouteResponseDto> {
-    return this.routingService.route(dto);
+  async route(
+    @Body() dto: RouteRequestDto,
+    @Req() req: Request,
+  ): Promise<RouteResponseDto> {
+    const requestAbort = requestAbortSignal(req);
+    try {
+      return await this.routingService.route(dto, requestAbort.signal);
+    } finally {
+      requestAbort.cleanup();
+    }
   }
 }

@@ -99,6 +99,22 @@ describe('ValhallaProvider.route', () => {
     expect(result!.geometry.at(-1)!.lng).toBeCloseTo(14.5, 5);
   });
 
+  it('forwards the caller abort signal to the route request', async () => {
+    const controller = new AbortController();
+
+    await makeProvider().route(
+      [
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ],
+      undefined,
+      controller.signal,
+    );
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    expect(calls[0][1].signal).toBe(controller.signal);
+  });
+
   it('sets use_highways=0 when avoidHighways is set', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -419,6 +435,23 @@ describe('ValhallaProvider.getAlternatives', () => {
     const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
     const body = JSON.parse(calls[0][1].body as string) as ValhallaRequestBody;
     expect(body.alternates).toBe(2); // maxAlternatives - 1 extras
+  });
+
+  it('forwards the caller abort signal to the alternatives request', async () => {
+    const controller = new AbortController();
+
+    await makeProvider().getAlternatives(
+      0,
+      0,
+      1,
+      1,
+      3,
+      undefined,
+      controller.signal,
+    );
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    expect(calls[0][1].signal).toBe(controller.signal);
   });
 
   it('returns only alternates (not primary) when includePrimary=false', async () => {

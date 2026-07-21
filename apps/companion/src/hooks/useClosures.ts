@@ -92,11 +92,8 @@ export function useClosures(
     [routes],
   );
 
-  // Per-route check is fanned out as Promise.allSettled so a single
-  // failing segment doesn't black-hole the whole banner. The query
-  // resolves to `{ closures, partial }` where `partial=true` means
-  // at least one segment failed but others succeeded — surfaced to
-  // the UI as a softer warning instead of a hard error.
+  // Send every route chunk in one spatial request so the backend can count
+  // each matching closure once, including matches beyond its returned-row cap.
   const routeQuery = useQuery({
     queryKey: [
       "closures",
@@ -107,29 +104,30 @@ export function useClosures(
     ],
     enabled: routes.length > 0,
     queryFn: async ({ signal }) => {
-      const results = await Promise.allSettled(
-        routeRequestKey.map(({ points }) =>
-          closuresApi.checkRoute(
-            { route: points, active_on: previewIso },
-            { signal },
-          ),
-        ),
+      const [firstRoute, ...additionalRoutes] = routeRequestKey;
+      if (!firstRoute) throw new Error("No route to check");
+      const { data } = await closuresApi.checkRoute(
+        {
+          route: firstRoute.points,
+          ...(additionalRoutes.length > 0
+            ? {
+                additional_routes: additionalRoutes.map(({ points }) => ({
+                  points,
+                })),
+              }
+            : {}),
+          active_on: previewIso,
+        },
+        { signal },
       );
-      const fulfilled = results.filter(
-        (
-          result,
-        ): result is PromiseFulfilledResult<
-          Awaited<ReturnType<typeof closuresApi.checkRoute>>
-        > => result.status === "fulfilled",
-      );
-      const rejectedCount = results.length - fulfilled.length;
-      if (fulfilled.length === 0 && rejectedCount > 0) {
-        throw new Error("Failed to check route closures");
-      }
-      const closures = sortClosures(
-        dedupeClosures(fulfilled.flatMap(({ value }) => value.data.closures)),
-      );
-      return { closures, partial: rejectedCount > 0 };
+      const closures = sortClosures(dedupeClosures(data.closures));
+      const counts: ClosureSeverityCounts = {
+        full: data.full_count,
+        partial: data.partial_count,
+        advisory: data.advisory_count,
+        total: data.full_count + data.partial_count + data.advisory_count,
+      };
+      return { closures, counts };
     },
   });
 
@@ -147,7 +145,7 @@ export function useClosures(
   const routeCounts = useMemo(
     () =>
       routes.length > 0 && routeQuery.data
-        ? countClosuresBySeverity(routeQuery.data.closures)
+        ? routeQuery.data.counts
         : EMPTY_COUNTS,
     [routes.length, routeQuery.data],
   );
@@ -169,9 +167,7 @@ export function useClosures(
         : routeQuery.isError
           ? (routeQuery.error as Error)?.message ||
             "Failed to check route closures"
-          : routeQuery.data?.partial
-            ? "Some route segments could not be checked."
-            : null,
+          : null,
     previewDate,
   };
 }

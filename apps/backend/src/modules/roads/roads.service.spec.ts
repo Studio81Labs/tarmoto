@@ -793,8 +793,38 @@ describe('RoadsService', () => {
 
       expect(funZoneRepo.query).toHaveBeenCalledWith(
         expect.stringContaining('ST_MakeEnvelope'),
-        [18.1, 49.4, 18.6, 49.7],
+        [18.1, 49.4, 18.6, 49.7, 50],
       );
+      expect(funZoneRepo.query.mock.calls[0]?.[0]).toContain('LIMIT $5');
+    });
+
+    it('honours a bounded caller limit', async () => {
+      await service.findFunZones({
+        bbox: '18.1,49.4,18.6,49.7',
+        limit: 12,
+      });
+      expect(funZoneRepo.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [18.1, 49.4, 18.6, 49.7, 12],
+      );
+    });
+
+    it.each(['bad', '18.1,49.4,NaN,49.7', '18.6,49.4,18.1,49.7'])(
+      'rejects an invalid bbox: %s',
+      async (bbox) => {
+        await expect(service.findFunZones({ bbox })).rejects.toThrow();
+        expect(funZoneRepo.query).not.toHaveBeenCalled();
+      },
+    );
+
+    it('caps a normal zoomed-out viewport instead of rejecting it', async () => {
+      await service.findFunZones({ bbox: '-10,35,40,70' });
+
+      expect(funZoneRepo.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [-10, 35, 40, 70, 50],
+      );
+      expect(funZoneRepo.query.mock.calls[0]?.[0]).toContain('LIMIT $5');
     });
 
     it('should map boundary polygon to lat/lng array', async () => {

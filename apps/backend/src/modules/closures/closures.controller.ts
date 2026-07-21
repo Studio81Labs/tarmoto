@@ -54,7 +54,7 @@ export class ClosuresController {
   @ApiOperation({
     summary: 'Check which road closures a planned route crosses',
     description:
-      'Given a route polyline returns the active closures within ' +
+      'Given one or more route polylines returns the unique active closures within ' +
       '`buffer_m` (default 100 m) of the line plus counts broken out ' +
       'by severity. "Active" is evaluated at `active_on` or the ' +
       'current instant when omitted — the planner calls this as the ' +

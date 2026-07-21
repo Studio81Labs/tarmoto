@@ -148,7 +148,12 @@ describe('TripsController', () => {
       option: 'scenic' as const,
     };
     const result = await controller.generate(mockReq, 'trip-1', dto);
-    expect(generator.generate).toHaveBeenCalledWith('user-1', 'trip-1', dto);
+    expect(generator.generate).toHaveBeenCalledWith(
+      'user-1',
+      'trip-1',
+      dto,
+      expect.any(AbortSignal),
+    );
     // Asserts the controller actually plumbed the DTO's `option`
     // through to the generator — the mock echoes whatever option the
     // caller passed, so a regression that drops the field would flip

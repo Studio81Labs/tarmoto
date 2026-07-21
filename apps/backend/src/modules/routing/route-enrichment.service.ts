@@ -1,5 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import {
+  ConcurrencyLimiter,
+  positiveInteger,
+} from '../../common/concurrency-limiter.js';
+import { routeEnvelopeDegrees } from '../../common/route-spatial.js';
 
 export interface RouteMetrics {
   avgQuality: number | null;
@@ -56,11 +63,38 @@ function geometryToWkt(
 @Injectable()
 export class RouteEnrichmentService {
   private readonly logger = new Logger(RouteEnrichmentService.name);
+  private readonly limiter: ConcurrencyLimiter;
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    @Optional() config?: ConfigService,
+  ) {
+    // Each aggregate runs three SQL statements concurrently. Three aggregates
+    // therefore occupy at most nine connections, staying within the pg
+    // driver's usual ten-connection pool while leaving one slot for ordinary
+    // API work. Operators with a deliberately larger pool can tune this.
+    this.limiter = new ConcurrencyLimiter(
+      positiveInteger(
+        config?.get<string>('TARMOTO_ROUTE_ENRICHMENT_MAX_CONCURRENCY'),
+        3,
+        16,
+      ),
+    );
+  }
 
   async aggregate(
     geometry: ReadonlyArray<{ lat: number; lng: number }>,
+    signal?: AbortSignal,
+  ): Promise<RouteMetrics> {
+    return this.limiter.run(
+      () => this.aggregateUnbounded(geometry, signal),
+      signal,
+    );
+  }
+
+  private async aggregateUnbounded(
+    geometry: ReadonlyArray<{ lat: number; lng: number }>,
+    signal?: AbortSignal,
   ): Promise<RouteMetrics> {
     // Guard against degenerate/malformed geometry (snap-collapsed identical
     // points, NaN/Inf coords, or fewer than 2 points): geometryToWkt would
@@ -82,6 +116,10 @@ export class RouteEnrichmentService {
       };
     }
     const wkt = geometryToWkt(finite);
+    const roadEnvelope = routeEnvelopeDegrees([finite], ROAD_BUFFER_M);
+    const hazardEnvelope = routeEnvelopeDegrees([finite], HAZARD_BUFFER_M);
+    const scenicBufferM = SCENIC_OVERLAP_BUFFER_KM * 1000;
+    const scenicEnvelope = routeEnvelopeDegrees([finite], scenicBufferM);
 
     type RoadMetricRow = {
       avg_quality: number | null;
@@ -101,17 +139,16 @@ export class RouteEnrichmentService {
     ): Promise<T> => {
       const startedAt = Date.now();
       try {
-        return await this.dataSource.query(sql, params);
+        return await this.query(sql, params, signal);
       } finally {
         queryDurations.set(label, Date.now() - startedAt);
       }
     };
 
     const aggregateStartedAt = Date.now();
-    const [roadRows, hazardRows, scenicRows] = await Promise.all([
-      timedQuery<RoadMetricRow[]>(
-        'roads',
-        `WITH route AS MATERIALIZED (
+    const roadQuery = timedQuery<RoadMetricRow[]>(
+      'roads',
+      `WITH route AS MATERIALIZED (
              SELECT
                ST_GeomFromText($1, 4326) AS line,
                ST_Length(ST_GeomFromText($1, 4326)::geography) AS length_m
@@ -160,10 +197,10 @@ export class RouteEnrichmentService {
                  -- Every lookup is a small point-local GiST search. Unlike a
                  -- whole-route predicate, its bounding box does not grow from
                  -- a few km to half a continent as route length increases.
-                 AND ST_DWithin(
-                   rs.geom,
-                   samples.point,
-                   ($2 / 111320.0 * 2)
+                 AND rs.geom && ST_Expand(
+                   samples.point::box2d,
+                   $5::float,
+                   $6::float
                  )
                  AND ST_DWithin(
                    rs.geom::geography,
@@ -221,35 +258,76 @@ export class RouteEnrichmentService {
            FROM metrics
            CROSS JOIN elevation
            CROSS JOIN surfaces`,
-        [wkt, ROAD_BUFFER_M, MAX_AGGREGATE_SAMPLES, AGGREGATE_SAMPLE_SPACING_M],
-      ),
-      timedQuery<HazardRow[]>(
-        'hazards',
-        `SELECT COUNT(*)::int AS count
+      [
+        wkt,
+        ROAD_BUFFER_M,
+        MAX_AGGREGATE_SAMPLES,
+        AGGREGATE_SAMPLE_SPACING_M,
+        roadEnvelope.bufferLngDeg,
+        roadEnvelope.bufferLatDeg,
+      ],
+    );
+    const hazardQuery = timedQuery<HazardRow[]>(
+      'hazards',
+      `SELECT COUNT(*)::int AS count
            FROM hazard_reports h
            WHERE h.is_active = true AND h.expires_at > NOW()
              AND h.moderation_status = 'visible'
+             AND h.location && ST_Expand(
+               ST_GeomFromText($1, 4326)::box2d,
+               $3::float,
+               $4::float
+             )
              AND ST_DWithin(
                h.location::geography,
                ST_GeomFromText($1, 4326)::geography,
                $2
              )`,
-        [wkt, HAZARD_BUFFER_M],
-      ),
-      timedQuery<ScenicRow[]>(
-        'scenic',
-        `SELECT
+      [
+        wkt,
+        HAZARD_BUFFER_M,
+        hazardEnvelope.bufferLngDeg,
+        hazardEnvelope.bufferLatDeg,
+      ],
+    );
+    const scenicQuery = timedQuery<ScenicRow[]>(
+      'scenic',
+      `SELECT
              AVG(fz.composite_score)::float AS avg_scenic,
              COUNT(*)::int AS zone_count
            FROM fun_zones fz
-           WHERE ST_DWithin(
+           WHERE fz.boundary && ST_Expand(
+             ST_GeomFromText($1, 4326)::box2d,
+             $3::float,
+             $4::float
+           )
+             AND ST_DWithin(
              fz.boundary::geography,
              ST_GeomFromText($1, 4326)::geography,
              $2
            )`,
-        [wkt, SCENIC_OVERLAP_BUFFER_KM * 1000],
-      ),
-    ]);
+      [
+        wkt,
+        scenicBufferM,
+        scenicEnvelope.bufferLngDeg,
+        scenicEnvelope.bufferLatDeg,
+      ],
+    );
+    const queries = [roadQuery, hazardQuery, scenicQuery] as const;
+    let roadRows: RoadMetricRow[];
+    let hazardRows: HazardRow[];
+    let scenicRows: ScenicRow[];
+    try {
+      [roadRows, hazardRows, scenicRows] = await Promise.all(queries);
+    } catch (err: unknown) {
+      if (signal?.aborted) {
+        // Do not release the aggregate limiter slot after only the first
+        // cancellation response: all three runners must finish cancelling and
+        // return their connections before another aggregate can enter.
+        await Promise.allSettled(queries);
+      }
+      throw err;
+    }
 
     const q: RoadMetricRow | undefined = roadRows[0];
     const s: ScenicRow | undefined = scenicRows[0];
@@ -314,6 +392,94 @@ export class RouteEnrichmentService {
       hazardCount,
       surfaceMixMetres,
     };
+  }
+
+  /**
+   * TypeORM's PostgreSQL query API does not accept AbortSignal. When the
+   * request has one, pin the statement to a QueryRunner connection and cancel
+   * that backend from another pool connection on abort. A per-statement
+   * application-name token makes a delayed cancellation safe: if the original
+   * statement has already returned, the runner clears the token and releases
+   * immediately instead of waiting for a cancel query queued behind it.
+   */
+  private async query<T>(
+    sql: string,
+    params: unknown[],
+    signal?: AbortSignal,
+  ): Promise<T> {
+    if (!signal) return this.dataSource.query<T>(sql, params);
+
+    signal.throwIfAborted();
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+
+    let backendPid: number | undefined;
+    let originalApplicationName = '';
+    const cancellationToken = `tarmoto-route-enrichment:${randomUUID()}`;
+    let settled = false;
+    let cancellation: Promise<void> | undefined;
+    const cancel = () => {
+      if (settled || backendPid === undefined) return;
+      cancellation ??= this.cancelBackend(backendPid, cancellationToken);
+    };
+
+    try {
+      signal.throwIfAborted();
+      const pidRows = (await runner.query(
+        `SELECT
+           pg_backend_pid()::int AS pid,
+           current_setting('application_name') AS application_name`,
+      )) as Array<{ pid: number; application_name: string }>;
+      backendPid = pidRows[0]?.pid;
+      originalApplicationName = pidRows[0]?.application_name ?? '';
+      await runner.query(`SELECT set_config('application_name', $1, false)`, [
+        cancellationToken,
+      ]);
+      signal.addEventListener('abort', cancel, { once: true });
+      signal.throwIfAborted();
+      const result: unknown = await runner.query(sql, params);
+      return result as T;
+    } finally {
+      settled = true;
+      signal.removeEventListener('abort', cancel);
+      try {
+        // Clear the identity before returning this connection to the pool. A
+        // cancel that was queued while the pool was full will then become a
+        // harmless no-op rather than targeting a later query on this PID.
+        await runner.query(`SELECT set_config('application_name', $1, false)`, [
+          originalApplicationName,
+        ]);
+      } finally {
+        await runner.release();
+      }
+    }
+  }
+
+  private async cancelBackend(
+    backendPid: number,
+    cancellationToken: string,
+  ): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `SELECT COALESCE(
+           (
+             SELECT pg_cancel_backend(pid)
+             FROM pg_stat_activity
+             WHERE pid = $1
+               AND application_name = $2
+               AND state = 'active'
+           ),
+           false
+         ) AS cancelled`,
+        [backendPid, cancellationToken],
+      );
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Failed to cancel route enrichment query: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }
 

@@ -93,6 +93,7 @@ export interface RoutingProvider {
   route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteResult | null>;
 
   /**
@@ -110,6 +111,7 @@ export interface RoutingProvider {
     destLng: number,
     maxAlternatives: number,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteAlternative[]>;
 }
 

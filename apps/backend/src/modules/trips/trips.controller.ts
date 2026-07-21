@@ -43,6 +43,7 @@ import {
 } from './dto/trip-response.dto.js';
 import { GenerateTripDto } from './dto/generate-trip.dto.js';
 import { GenerateTripResponseDto } from './dto/generate-trip-response.dto.js';
+import { requestAbortSignal } from '../../common/request-abort.js';
 
 @ApiTags('trips')
 @Controller('trips')
@@ -113,7 +114,17 @@ export class TripsController {
     @Param('tripId', ParseUUIDPipe) tripId: string,
     @Body() dto: SaveRouteDto,
   ): Promise<TripDetailDto> {
-    return this.tripsService.saveManualRoute(req.user!.userId, tripId, dto);
+    const requestAbort = requestAbortSignal(req);
+    try {
+      return await this.tripsService.saveManualRoute(
+        req.user!.userId,
+        tripId,
+        dto,
+        requestAbort.signal,
+      );
+    } finally {
+      requestAbort.cleanup();
+    }
   }
 
   @Put(':tripId/import')
@@ -207,7 +218,17 @@ export class TripsController {
     @Param('tripId', ParseUUIDPipe) tripId: string,
     @Body() dto: GenerateTripDto,
   ): Promise<GenerateTripResponseDto> {
-    return this.tripGenerator.generate(req.user!.userId, tripId, dto);
+    const requestAbort = requestAbortSignal(req);
+    try {
+      return await this.tripGenerator.generate(
+        req.user!.userId,
+        tripId,
+        dto,
+        requestAbort.signal,
+      );
+    } finally {
+      requestAbort.cleanup();
+    }
   }
 
   @Post(':tripId/duplicate')

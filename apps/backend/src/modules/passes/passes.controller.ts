@@ -33,11 +33,17 @@ export class PassesController {
     description:
       'Returns each known pass with its open/closed/unknown status for ' +
       'the requested `for_month` (or the current UTC month when omitted) ' +
-      'derived from the typical seasonal window or any operator override.',
+      'derived from the typical seasonal window or any operator override. ' +
+      'Use `limit` and `offset` to page through large result sets.',
   })
   @ApiResponse({ status: 200, type: [MountainPassDto] })
   async list(@Query() query: ListPassesQueryDto): Promise<MountainPassDto[]> {
-    return this.passesService.list(query.bbox, query.for_month);
+    return this.passesService.list(
+      query.bbox,
+      query.for_month,
+      query.limit,
+      query.offset,
+    );
   }
 
   // `check-route` accepts arbitrary coordinates and runs an expensive
@@ -51,7 +57,7 @@ export class PassesController {
   @ApiOperation({
     summary: 'Check which mountain passes a planned route crosses',
     description:
-      'Given a route polyline returns the passes within `buffer_m` ' +
+      'Given one or more route polylines returns the unique passes within `buffer_m` ' +
       '(default 1500 m) of the line plus a count of closed/unknown ones. ' +
       'Status is evaluated for the requested `for_month` or the current ' +
       'UTC month when omitted.',

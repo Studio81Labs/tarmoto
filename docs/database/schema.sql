@@ -399,6 +399,7 @@ CREATE TABLE commute_routes (
     avg_duration            INTERVAL,
     avg_quality             FLOAT,
     routing_engine_version  VARCHAR(64),
+    routing_cache_updated_at TIMESTAMPTZ,
     is_primary              BOOLEAN DEFAULT TRUE,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
