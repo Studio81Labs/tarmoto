@@ -1,5 +1,5 @@
 import type { SurfaceType, TripParameters } from "@/lib/types";
-import type { EnglishMessageKey } from "@/i18n";
+import { t, type EnglishMessageKey, type Translate } from "@/i18n";
 
 /** All rider-selectable surfaces (companion vocabulary — no "unknown"). */
 export const SURFACE_VALUES: readonly SurfaceType[] = [
@@ -137,7 +137,7 @@ export type MinQualityLevel =
   | "good_or_better"
   | "excellent_only";
 
-export const MIN_QUALITY_LABELS: Record<MinQualityLevel, string> = {
+export const MIN_QUALITY_LABELS: Record<MinQualityLevel, EnglishMessageKey> = {
   any: "Any quality",
   fair_or_better: "Fair or better",
   good_or_better: "Good or better",
@@ -186,41 +186,55 @@ export const FALLBACK_USER_ROUTE_PREFS: UserRoutePrefs = {
   minQuality: "good_or_better",
 };
 
-const SURFACE_SUMMARY_LABELS: Partial<Record<SurfaceType, string>> = {
-  asphalt: "asphalt",
-  concrete: "concrete",
-  cobblestone: "cobbles",
-  gravel: "gravel",
-  dirt: "dirt",
-};
+const SURFACE_SUMMARY_LABELS: Partial<Record<SurfaceType, EnglishMessageKey>> =
+  {
+    asphalt: "asphalt",
+    concrete: "concrete",
+    cobblestone: "cobbles",
+    gravel: "gravel",
+    dirt: "dirt",
+  };
 
 /**
  * Pure derivation of the §02 collapsed summary row, e.g.
  * "Maximum twisty · asphalt · Excellent only · avoid motorways +2".
  */
-export function buildPrefsSummary(prefs: UserRoutePrefs): string {
-  const parts: string[] = [ROAD_PREFERENCE_LABELS[prefs.roadPreference]];
+export function buildPrefsSummary(
+  prefs: UserRoutePrefs,
+  translate: Translate = t,
+): string {
+  const parts: string[] = [
+    translate(ROAD_PREFERENCE_LABELS[prefs.roadPreference]),
+  ];
 
   if (prefs.surfaces.length === 0) {
-    parts.push("any surface");
+    parts.push(translate("any surface"));
   } else {
-    const first =
-      SURFACE_SUMMARY_LABELS[prefs.surfaces[0]!] ?? prefs.surfaces[0]!;
+    const first = SURFACE_SUMMARY_LABELS[prefs.surfaces[0]!] ?? "other surface";
     parts.push(
       prefs.surfaces.length === 1
-        ? first
-        : `${first} +${prefs.surfaces.length - 1}`,
+        ? translate(first)
+        : translate("{label} +{count}", {
+            label: translate(first),
+            count: prefs.surfaces.length - 1,
+          }),
     );
   }
 
-  parts.push(MIN_QUALITY_LABELS[prefs.minQuality]);
+  parts.push(translate(MIN_QUALITY_LABELS[prefs.minQuality]));
 
   const avoids: string[] = [];
-  if (prefs.avoidHighways) avoids.push("avoid motorways");
-  if (prefs.avoidTolls) avoids.push("avoid tolls");
-  if (prefs.avoidUnpaved) avoids.push("avoid unpaved");
+  if (prefs.avoidHighways) avoids.push(translate("avoid motorways"));
+  if (prefs.avoidTolls) avoids.push(translate("avoid tolls"));
+  if (prefs.avoidUnpaved) avoids.push(translate("avoid unpaved"));
   if (avoids.length === 1) parts.push(avoids[0]!);
-  else if (avoids.length > 1) parts.push(`${avoids[0]!} +${avoids.length - 1}`);
+  else if (avoids.length > 1)
+    parts.push(
+      translate("{label} +{count}", {
+        label: avoids[0]!,
+        count: avoids.length - 1,
+      }),
+    );
 
   return parts.join(" · ");
 }

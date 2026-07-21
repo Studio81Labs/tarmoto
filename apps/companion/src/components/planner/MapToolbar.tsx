@@ -38,11 +38,15 @@ export const POI_CATEGORY_META: ReadonlyArray<{
   { category: "twisty_highlight", label: "Twisty highlights", icon: Route },
 ];
 
-export function poiCategoryMeta(category: PoiCategory) {
+export function poiCategoryMeta(category: PoiCategory): {
+  category: PoiCategory;
+  label: EnglishMessageKey;
+  icon: LucideIcon;
+} {
   return (
     POI_CATEGORY_META.find((entry) => entry.category === category) ?? {
       category,
-      label: category,
+      label: "Other",
       icon: Mountain,
     }
   );

@@ -25,7 +25,7 @@ import {
   brandRadii,
   brandSpacing,
 } from "@/theme/brand";
-import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 interface Props {
   value: number;
@@ -59,15 +59,14 @@ export default function FuelRangePicker({
   // Share the exact clamp/snap rules with the preferences store so the
   // highlighted pill always matches whatever the store decided to keep.
   const active = clampFuelRangeKm(value);
+  const format = getFormatters();
 
   return (
     <View style={styles.container}>
       {label ? (
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
-          <Text style={styles.value}>
-            {translate("{distance} km", { distance: active })}
-          </Text>
+          <Text style={styles.value}>{format.distanceKm(active)}</Text>
         </View>
       ) : null}
 
@@ -80,6 +79,7 @@ export default function FuelRangePicker({
           min: FUEL_RANGE_BOUNDS.min,
           max: FUEL_RANGE_BOUNDS.max,
           now: active,
+          text: format.distanceKm(active),
         }}
       >
         {STEPS.map((step) => {
@@ -90,10 +90,7 @@ export default function FuelRangePicker({
               style={[styles.pill, selected ? styles.pillSelected : null]}
               onPress={() => onChange(step)}
               accessibilityRole="button"
-              accessibilityLabel={translate(
-                "{count, plural, one {# kilometre} other {# kilometres}}",
-                { count: step },
-              )}
+              accessibilityLabel={format.distanceKm(step)}
               accessibilityState={{ selected }}
             >
               <Text
@@ -102,7 +99,7 @@ export default function FuelRangePicker({
                   selected ? styles.pillTextSelected : null,
                 ]}
               >
-                {step}
+                {format.distanceKm(step)}
               </Text>
             </TouchableOpacity>
           );

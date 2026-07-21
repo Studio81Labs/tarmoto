@@ -27,6 +27,7 @@ export const map = {
   "Curviness ": "Curviness ",
   "Day {dayNumber}": "Day {dayNumber}",
   "Day {dayNumber} \u00b7 {title}": "Day {dayNumber} \u00b7 {title}",
+  "Day {day} section · {distance}": "Day {day} section · {distance}",
   "Drag on the map to draw a region": "Drag on the map to draw a region",
   "Draw region": "Draw region",
   "Elevation profile from {min} to {max}":
@@ -96,5 +97,6 @@ export const map = {
   "{count} in {scope}": "{count} in {scope}",
   "{count} roads": "{count} roads",
   "{date} onward": "{date} onward",
+  "{distance} · no rider passes yet": "{distance} · no rider passes yet",
   "Couldn't load zone details.": "Couldn't load zone details.",
 } as const;

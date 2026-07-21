@@ -433,6 +433,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
 }
 
 function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
+  const format = getFormatters();
   const { elevation_min, elevation_max, elevation_profile } = segment;
   // Show "—" instead of "0 m" when the segment has no elevation data so the
   // card doesn't claim a sea-level reading we never actually measured.
@@ -462,7 +463,7 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
         title={translate("Elevation")}
         rightLabel={
           stats && (stats.ascent > 0 || stats.descent > 0)
-            ? `↑${Math.round(stats.ascent)} m  ↓${Math.round(stats.descent)} m`
+            ? `↑${format.elevation(stats.ascent)}  ↓${format.elevation(stats.descent)}`
             : undefined
         }
       />
@@ -475,15 +476,15 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
       <View style={styles.elevationRow}>
         <ElevationStat
           label={translate("Min")}
-          value={hasMin ? `${Math.round(elevation_min!)} m` : "—"}
+          value={hasMin ? format.elevation(elevation_min!) : "—"}
         />
         <ElevationStat
           label={translate("Max")}
-          value={hasMax ? `${Math.round(elevation_max!)} m` : "—"}
+          value={hasMax ? format.elevation(elevation_max!) : "—"}
         />
         <ElevationStat
           label={translate("Range")}
-          value={range !== null ? `${Math.round(range)} m` : "—"}
+          value={range !== null ? format.elevation(range) : "—"}
         />
       </View>
     </View>

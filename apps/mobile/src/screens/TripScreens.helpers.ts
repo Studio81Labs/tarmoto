@@ -63,6 +63,22 @@ export function formatKm(km: number): string {
   );
 }
 
+export function formatElevationM(meters: number, sign: "+" | "" = ""): string {
+  const finiteMeters = Number.isFinite(meters) ? Math.max(0, meters) : 0;
+  return `${sign}${getFormatters().elevation(finiteMeters)}`;
+}
+
+export function formatDailyDistanceRange(
+  minKm: number,
+  maxKm: number,
+  t: Translate = translate,
+): string {
+  return t("{min}–{max} per day", {
+    min: getFormatters().distanceKm(minKm),
+    max: getFormatters().distanceKm(maxKm),
+  });
+}
+
 /** Complete catalog message for stay/POI metadata; no UI-side joining. */
 export function formatNearbyPlaceMeta(
   kind: string,

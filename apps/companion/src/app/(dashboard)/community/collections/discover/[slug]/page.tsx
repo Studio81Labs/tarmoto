@@ -270,6 +270,7 @@ export default function DiscoverCollectionPage() {
               route={route}
               index={idx + 1}
               author={author}
+              format={format}
               linkable
             />
           ))}

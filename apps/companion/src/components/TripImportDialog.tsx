@@ -1,6 +1,6 @@
 "use client";
 import { t } from "@/i18n";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Loader2, MapPin, X } from "lucide-react";
 import { Button } from "@tarmoto/ui";
 import {
@@ -28,6 +28,7 @@ export function TripImportDialog({
   initialFile,
   onClose,
 }: TripImportDialogProps) {
+  const format = useFormat();
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Monotonic token that lets `handleFile` detect when its in-flight parse has
@@ -40,6 +41,38 @@ export function TripImportDialog({
   const [route, setRoute] = useState<ImportedRoute | null>(null);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const handleFile = useCallback(
+    async (file: File) => {
+      const token = ++parseTokenRef.current;
+      setStatus("parsing");
+      setError(null);
+      setRoute(null);
+      setTrip(null);
+      try {
+        const text = await file.text();
+        if (parseTokenRef.current !== token) return;
+        const result = parseImportedRoute(text, file.name);
+        if (parseTokenRef.current !== token) return;
+        if (!result.ok) {
+          setError(result.error);
+          setStatus("error");
+          return;
+        }
+        const nextTrip = importedRouteToTrip(result.route, format, t);
+        if (parseTokenRef.current !== token) return;
+        setRoute(result.route);
+        setTrip(nextTrip);
+        setStatus("ready");
+      } catch {
+        if (parseTokenRef.current !== token) return;
+        setError(
+          t("Could not read the file. Try again or pick a different file."),
+        );
+        setStatus("error");
+      }
+    },
+    [format],
+  );
   useEffect(() => {
     if (!open) {
       parseTokenRef.current++;
@@ -51,7 +84,7 @@ export function TripImportDialog({
   }, [open]);
   useEffect(() => {
     if (open && initialFile) void handleFile(initialFile);
-  }, [open, initialFile]);
+  }, [handleFile, open, initialFile]);
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -61,35 +94,6 @@ export function TripImportDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   const segments = useMemo(() => flattenSegments(trip), [trip]);
-  async function handleFile(file: File) {
-    const token = ++parseTokenRef.current;
-    setStatus("parsing");
-    setError(null);
-    setRoute(null);
-    setTrip(null);
-    try {
-      const text = await file.text();
-      if (parseTokenRef.current !== token) return;
-      const result = parseImportedRoute(text, file.name);
-      if (parseTokenRef.current !== token) return;
-      if (!result.ok) {
-        setError(result.error);
-        setStatus("error");
-        return;
-      }
-      const nextTrip = importedRouteToTrip(result.route);
-      if (parseTokenRef.current !== token) return;
-      setRoute(result.route);
-      setTrip(nextTrip);
-      setStatus("ready");
-    } catch {
-      if (parseTokenRef.current !== token) return;
-      setError(
-        t("Could not read the file. Try again or pick a different file."),
-      );
-      setStatus("error");
-    }
-  }
   function handleAdopt() {
     if (!trip) return;
     setActiveTrip(trip);

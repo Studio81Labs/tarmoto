@@ -215,7 +215,7 @@ export default function CommuteScreen() {
             label={translate("Avg time")}
             value={
               route.avg_duration_min != null
-                ? `${route.avg_duration_min} min`
+                ? getFormatters().duration(route.avg_duration_min)
                 : "—"
             }
           />
@@ -904,7 +904,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Time")}
-          value={`${stats.total_time_min} min`}
+          value={getFormatters().duration(stats.total_time_min)}
           delta={stats.total_time_min - prev.total_time_min}
           deltaText={trendPercent(stats.total_time_min, prev.total_time_min)}
           positiveIsGood={false}
@@ -1100,8 +1100,9 @@ function formatSignedDistance(km: number): string {
 }
 
 function formatSignedDuration(min: number): string {
-  if (min === 0) return "±0 min";
-  return `${min > 0 ? "+" : ""}${min} min`;
+  const formatted = getFormatters().duration(Math.abs(min));
+  if (min === 0) return `±${formatted}`;
+  return `${min > 0 ? "+" : "-"}${formatted}`;
 }
 
 function formatAbsDelta(

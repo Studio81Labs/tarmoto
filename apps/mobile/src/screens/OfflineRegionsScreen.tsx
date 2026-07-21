@@ -360,7 +360,11 @@ function RegionRowImpl({
 }
 
 function defaultRegionName(lat: number, lng: number): string {
-  return `Area near ${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+  const format = getFormatters();
+  return translate("Area near {lat}, {lng}", {
+    lat: format.decimal(lat, 2),
+    lng: format.decimal(lng, 2),
+  });
 }
 
 /**

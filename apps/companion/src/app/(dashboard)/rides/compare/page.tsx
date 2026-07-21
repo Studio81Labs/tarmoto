@@ -412,7 +412,11 @@ function ComparisonView({
             rows={statRows}
             format={format}
           />
-          <ElevationCompareSection rideA={rideA} rideB={rideB} />
+          <ElevationCompareSection
+            rideA={rideA}
+            rideB={rideB}
+            format={format}
+          />
           <QualityDiffSection
             rideA={rideA}
             rideB={rideB}
@@ -565,9 +569,11 @@ function MetricTable({
 function ElevationCompareSection({
   rideA,
   rideB,
+  format,
 }: {
   rideA: FetchedRide;
   rideB: FetchedRide;
+  format: Formatters;
 }) {
   const max = Math.max(
     rideA.elevation_gain ?? 0,
@@ -595,6 +601,7 @@ function ElevationCompareSection({
           gain={rideA.elevation_gain}
           loss={rideA.elevation_loss}
           max={max}
+          format={format}
         />
         <ElevationBars
           label={t("Ride B")}
@@ -602,6 +609,7 @@ function ElevationCompareSection({
           gain={rideB.elevation_gain}
           loss={rideB.elevation_loss}
           max={max}
+          format={format}
         />
       </div>
     </Card>
@@ -613,12 +621,14 @@ function ElevationBars({
   gain,
   loss,
   max,
+  format,
 }: {
   label: string;
   color: string;
   gain: number | null;
   loss: number | null;
   max: number;
+  format: Formatters;
 }) {
   return (
     <div>
@@ -630,8 +640,20 @@ function ElevationBars({
           {label}
         </span>
       </div>
-      <ElevationBar value={gain} max={max} color={color} kind="gain" />
-      <ElevationBar value={loss} max={max} color={color} kind="loss" />
+      <ElevationBar
+        value={gain}
+        max={max}
+        color={color}
+        kind="gain"
+        format={format}
+      />
+      <ElevationBar
+        value={loss}
+        max={max}
+        color={color}
+        kind="loss"
+        format={format}
+      />
     </div>
   );
 }
@@ -640,11 +662,13 @@ function ElevationBar({
   max,
   color,
   kind,
+  format,
 }: {
   value: number | null;
   max: number;
   color: string;
   kind: "gain" | "loss";
+  format: Formatters;
 }) {
   const pct = value != null ? Math.round((value / max) * 100) : 0;
   const label = kind === "gain" ? t("Gain") : t("Loss");
@@ -660,7 +684,7 @@ function ElevationBar({
           {label}
         </span>
         <span className="tabular-nums text-ink">
-          {value == null ? "—" : `${Math.round(value)} m`}
+          {value == null ? "—" : format.elevation(value)}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-paper" aria-hidden>

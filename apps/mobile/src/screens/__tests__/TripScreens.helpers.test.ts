@@ -5,6 +5,8 @@ import {
   computeFuelRangeLegs,
   flattenTripRoute,
   formatDurationMin,
+  formatDailyDistanceRange,
+  formatElevationM,
   formatKm,
   formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
@@ -92,6 +94,23 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
       "Hotel, 0.3 mi away",
     );
     expect(formatNearbyRadius(25)).toBe("within 15.5 mi");
+    expect(formatElevationM(412, "+")).toBe("+1,352 ft");
+  });
+
+  it("formats a daily distance range with the active units", () => {
+    expect(formatDailyDistanceRange(150, 300)).toBe("150 km–300 km per day");
+
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+    expect(formatDailyDistanceRange(150, 300)).toBe("93.2 mi–186.4 mi per day");
+  });
+
+  it("formats elevation in metric units by default", () => {
+    expect(formatElevationM(412.4, "+")).toBe("+412 m");
+    expect(formatElevationM(Number.NaN)).toBe("0 m");
   });
 
   it("formats durations", () => {

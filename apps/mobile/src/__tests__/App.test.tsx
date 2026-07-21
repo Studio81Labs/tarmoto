@@ -2,6 +2,8 @@ import React from "react";
 import { act, render, waitFor } from "@testing-library/react-native";
 import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
+import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
+import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
 import type { User } from "@/types";
@@ -46,6 +48,7 @@ jest.mock("@/services/api", () => ({
     isAuthenticated: jest.fn(),
     refreshPrivacyPreferences: jest.fn(),
     syncDeviceTimezone: jest.fn(),
+    updateProfile: jest.fn(),
   },
 }));
 
@@ -64,9 +67,16 @@ jest.mock("@/services/timezoneSyncMonitor", () => ({
   startTimezoneSyncMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/services/displayPreferencesSyncMonitor", () => ({
+  startDisplayPreferencesSyncMonitor: jest.fn(() => jest.fn()),
+}));
+
 describe("App auth locale hydration", () => {
   beforeEach(() => {
     jest.mocked(startCommuteHazardMonitor).mockClear();
+    jest.mocked(startDisplayPreferencesSyncMonitor).mockClear();
+    jest.mocked(api.updateProfile).mockReset();
+    jest.mocked(api.cacheProfile).mockReset();
     mockMonitorLocales.length = 0;
     mockProviderLocale = undefined;
     useAuthStore.setState({
@@ -137,5 +147,109 @@ describe("App auth locale hydration", () => {
       expect(usePreferencesStore.getState().distanceUnit).toBe("metric");
       expect(getFormatters().distanceKm(10)).toBe("10 km");
     });
+  });
+
+  it("restarts display preference sync when profile hydration replaces cached preferences", async () => {
+    await render(<App />);
+
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "warm-user",
+        language: "en",
+        preferences: {
+          format_locale: "en-US",
+          timezone: "UTC",
+        },
+      } as unknown as User);
+    });
+    expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalledTimes(1);
+
+    // The first monitor write publishes the device-derived values.
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "warm-user",
+        language: "en",
+        preferences: {
+          format_locale: "cs-CZ",
+          timezone: "Europe/Prague",
+        },
+      } as unknown as User);
+    });
+    expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalledTimes(2);
+
+    // A slower bootstrap GET can still publish its stale snapshot. Changing
+    // either device-derived profile field must restart the monitor immediately
+    // so it reconciles again instead of waiting for another foreground event.
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "warm-user",
+        language: "en",
+        preferences: {
+          format_locale: "en-US",
+          timezone: "UTC",
+        },
+      } as unknown as User);
+    });
+    expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalledTimes(3);
+  });
+
+  it("merges a background display sync into the latest interactive preferences", async () => {
+    const cached = {
+      id: "race-user",
+      language: "en",
+      preferences: {
+        units: "metric",
+        format_locale: "en-US",
+        timezone: "UTC",
+      },
+    } as unknown as User;
+    const staleResponse = {
+      ...cached,
+      preferences: {
+        ...cached.preferences,
+        format_locale: "cs-CZ",
+        timezone: "Europe/Prague",
+      },
+    } as unknown as User;
+    let resolveUpdate!: (user: User) => void;
+    jest.mocked(api.updateProfile).mockImplementation(
+      () =>
+        new Promise<User>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    await render(<App />);
+    await act(() => {
+      useAuthStore.getState().setUser(cached);
+    });
+    const sync = jest.mocked(startDisplayPreferencesSyncMonitor).mock
+      .calls[0]?.[0].sync;
+    expect(sync).toBeDefined();
+    const syncPromise = sync?.("race-user", {
+      format_locale: "cs-CZ",
+      timezone: "Europe/Prague",
+    });
+
+    // The rider changes units while the background PATCH is in flight. Its
+    // response still contains the older metric snapshot.
+    await act(() => {
+      useAuthStore.getState().setUser({
+        ...cached,
+        preferences: { ...cached.preferences, units: "imperial" },
+      } as unknown as User);
+    });
+    await act(async () => {
+      resolveUpdate(staleResponse);
+      await syncPromise;
+    });
+
+    const merged = useAuthStore.getState().user;
+    expect(merged?.preferences).toEqual({
+      units: "imperial",
+      format_locale: "cs-CZ",
+      timezone: "Europe/Prague",
+    });
+    expect(api.cacheProfile).toHaveBeenCalledWith(merged);
   });
 });

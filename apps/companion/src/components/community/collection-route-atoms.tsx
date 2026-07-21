@@ -4,6 +4,7 @@ import { Route as RouteIcon } from "lucide-react";
 import { Mono, QualityBars } from "@tarmoto/ui";
 import { t } from "@/i18n";
 import type { RouteCollectionPreviewItem } from "@/lib/api";
+import type { Formatters } from "@tarmoto/shared";
 
 /**
  * Pure, hook-free presentational atoms for a collection route row. Shared by
@@ -119,11 +120,13 @@ export function CollectionRouteRow({
   route,
   index,
   author,
+  format,
   linkable = false,
 }: {
   route: RouteCollectionPreviewItem;
   index: number;
   author: string;
+  format: Formatters;
   linkable?: boolean | undefined;
 }) {
   // A ride is a single recorded day.
@@ -159,12 +162,9 @@ export function CollectionRouteRow({
       </div>
       <div className="text-right max-sm:hidden">
         {route.distance_km != null && (
-          <>
-            <Mono className="text-[14px] font-bold text-ink">
-              {Math.round(route.distance_km)}
-            </Mono>
-            <Mono className="block text-[10px] text-fg-mute">{t("KM")}</Mono>
-          </>
+          <Mono className="text-[14px] font-bold text-ink">
+            {format.distanceKm(route.distance_km)}
+          </Mono>
         )}
       </div>
       <div className="justify-self-start max-sm:hidden">

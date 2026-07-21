@@ -59,7 +59,9 @@ import {
   averageQuality,
   buildClosedPassWarning,
   flattenTripRoute,
+  formatDailyDistanceRange,
   formatDurationMin,
+  formatElevationM,
   formatKm,
   formatStatus,
   routeGeometrySignature,
@@ -335,7 +337,7 @@ function HeaderCard({
         <Metric
           label={translate("Days")}
           value={`${trip.num_days}`}
-          sub={`${trip.daily_km_min}–${trip.daily_km_max} km/day`}
+          sub={formatDailyDistanceRange(trip.daily_km_min, trip.daily_km_max)}
         />
         <Metric
           label={translate("Quality")}
@@ -384,8 +386,8 @@ function DayCard({
           </Text>
           <Text style={styles.dayMeta}>
             {formatKm(day.distance_km)} ·{" "}
-            {formatDurationMin(day.estimated_time_min)} · +
-            {Math.round(day.elevation_gain)} m
+            {formatDurationMin(day.estimated_time_min)} ·{" "}
+            {formatElevationM(day.elevation_gain, "+")}
           </Text>
         </View>
         <Icon name="chevron-right" size={22} color={t.faint} />

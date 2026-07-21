@@ -52,6 +52,7 @@ import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
   WAYPOINT_ICONS,
   formatDurationMin,
+  formatElevationM,
   formatKm,
   formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
@@ -212,7 +213,7 @@ export default function TripDayScreen() {
           />
           <Metric
             label={translate("Elevation")}
-            value={`+${Math.round(day.elevation_gain)} m`}
+            value={formatElevationM(day.elevation_gain, "+")}
           />
           <Metric
             label={translate("Quality")}

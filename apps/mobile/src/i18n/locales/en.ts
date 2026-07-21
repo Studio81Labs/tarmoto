@@ -1,5 +1,6 @@
 /** English source catalog for the mobile app. Keep key === value. */
 export const en = {
+  "Area near {lat}, {lng}": "Area near {lat}, {lng}",
   "{count, plural, one {# active challenge} other {# active challenges}}":
     "{count, plural, one {# active challenge} other {# active challenges}}",
   "{count, plural, one {# badge earned} other {# badges earned}}, open achievements":
@@ -69,6 +70,7 @@ export const en = {
   "{distance} · on {roadName}": "{distance} · on {roadName}",
   "{distance} km": "{distance} km",
   "{distance} · {duration} min": "{distance} · {duration} min",
+  "{min}–{max} per day": "{min}–{max} per day",
   "{distance} · Quality {quality}": "{distance} · Quality {quality}",
   "{distance} ahead": "{distance} ahead",
   "{downloaded} / {total} downloaded": "{downloaded} / {total} downloaded",
@@ -349,6 +351,7 @@ export const en = {
   "Display name": "Display name",
   "Display name is required.": "Display name is required.",
   Distance: "Distance",
+  "Distance: {distance}": "Distance: {distance}",
   "Distance pending": "Distance pending",
   "Distance pending · Quality {quality}":
     "Distance pending · Quality {quality}",
@@ -359,6 +362,7 @@ export const en = {
   Draft: "Draft",
   Dry: "Dry",
   Duration: "Duration",
+  "Duration: {duration}": "Duration: {duration}",
   "e.g. 8f3d0c1e-...": "e.g. 8f3d0c1e-...",
   "e.g. Beskydy weekend": "e.g. Beskydy weekend",
   "e.g. BMW R1250GS": "e.g. BMW R1250GS",
@@ -956,6 +960,7 @@ export const en = {
   "Toggle verbose voice navigation phrasing":
     "Toggle verbose voice navigation phrasing",
   "Top speed": "Top speed",
+  "Top speed: {speed}": "Top speed: {speed}",
   "Top unridden roads near you, ranked by quality.":
     "Top unridden roads near you, ranked by quality.",
   Total: "Total",

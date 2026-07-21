@@ -166,7 +166,7 @@ export function RoadPreviewCard({
             <p className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wider text-fg-mute">
               <span>{t("Elevation ")}</span>
               <span className="tabular-nums normal-case">
-                {formatElevationRange(segment.elevationProfile)}
+                {formatElevationRange(segment.elevationProfile, format)}
               </span>
             </p>
             <svg

@@ -1,6 +1,13 @@
 import { t } from "@/i18n";
 import { SURFACE_LABELS } from "@/lib/utils";
-import { haversineKm, SURFACE_TYPES, type SurfaceType } from "@tarmoto/shared";
+import {
+  createFormatters,
+  DEFAULT_FORMAT_LOCALE,
+  haversineKm,
+  SURFACE_TYPES,
+  type Formatters,
+  type SurfaceType,
+} from "@tarmoto/shared";
 import {
   api,
   passesApi,
@@ -230,6 +237,10 @@ export function surfaceMixToPercents(
 
 export function deriveFlaggedSections(
   segments: readonly RouteSegment[],
+  format: Pick<Formatters, "distanceKm"> = createFormatters({
+    locale: DEFAULT_FORMAT_LOCALE,
+    units: "metric",
+  }),
 ): FlaggedSection[] {
   const flagged: FlaggedSection[] = [];
   // Coalesce adjacent same-band runs so a long rough/uncovered stretch is one
@@ -241,14 +252,21 @@ export function deriveFlaggedSections(
         segmentId: run.id,
         kind: "rough",
         lengthKm,
-        label: `${t(QUALITY_BAND_LABELS_SHORT.rough)} · ${t(SURFACE_LABELS[run.surface])}, ${lengthKm} km`,
+        label: t("{quality} · {surface}, {distance}", {
+          quality: t(QUALITY_BAND_LABELS_SHORT.rough),
+          surface: t(SURFACE_LABELS[run.surface]),
+          distance: format.distanceKm(lengthKm),
+        }),
       });
     } else if (run.band === "no_data") {
       flagged.push({
         segmentId: run.id,
         kind: "no_data",
         lengthKm,
-        label: `${t("No data yet")} · ${lengthKm} km`,
+        label: t("{quality} · {distance}", {
+          quality: t("No data yet"),
+          distance: format.distanceKm(lengthKm),
+        }),
       });
     }
   }

@@ -73,6 +73,7 @@ import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import type { HazardType, Severity } from "@/types";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -360,7 +361,7 @@ export default function HazardReportScreen() {
     }
     const acc =
       Number.isFinite(location.accuracy) && location.accuracy > 0
-        ? ` · ±${Math.round(location.accuracy)}m`
+        ? ` · ±${getFormatters().distanceM(location.accuracy)}`
         : "";
     return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${acc}`;
   }, [location, locationLoading]);

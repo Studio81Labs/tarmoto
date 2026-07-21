@@ -101,6 +101,7 @@ export const trips = {
   "Good or better": "Good or better",
   "Hide days": "Hide days",
   "Import GPX": "Import GPX",
+  "Imported from {format} · {distance}": "Imported from {format} · {distance}",
   "Imported routes need at least two route points before saving.":
     "Imported routes need at least two route points before saving.",
   Inspect: "Inspect",
@@ -335,4 +336,16 @@ export const trips = {
   "Couldn't delete the trip. Try again.":
     "Couldn't delete the trip. Try again.",
   "Failed to load suggestions": "Failed to load suggestions",
+  "Any quality": "Any quality",
+  asphalt: "asphalt",
+  cobbles: "cobbles",
+  concrete: "concrete",
+  dirt: "dirt",
+  gravel: "gravel",
+  "any surface": "any surface",
+  "avoid motorways": "avoid motorways",
+  "avoid tolls": "avoid tolls",
+  "avoid unpaved": "avoid unpaved",
+  "other surface": "other surface",
+  "{label} +{count}": "{label} +{count}",
 } as const;
