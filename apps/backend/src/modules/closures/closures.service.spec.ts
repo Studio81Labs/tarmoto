@@ -82,6 +82,7 @@ describe('ClosuresService', () => {
 
   const mockQb = {
     select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
@@ -89,11 +90,40 @@ describe('ClosuresService', () => {
     limit: jest.fn().mockReturnThis(),
     setParameter: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([SAMPLE_CLOSURE]),
+    getRawAndEntities: jest.fn().mockResolvedValue({
+      entities: [SAMPLE_CLOSURE],
+      raw: [{ full_count: '1', partial_count: '0', advisory_count: '0' }],
+    }),
     getRawMany: jest.fn().mockResolvedValue([]),
+  };
+
+  const mockRouteResult = (
+    entities: RoadClosure[],
+    counts?: { full: number; partial: number; advisory: number },
+  ) => {
+    const totals = counts ?? {
+      full: entities.filter((row) => row.severity === 'full').length,
+      partial: entities.filter((row) => row.severity === 'partial').length,
+      advisory: entities.filter((row) => row.severity === 'advisory').length,
+    };
+    mockQb.getRawAndEntities.mockResolvedValueOnce({
+      entities,
+      raw:
+        entities.length > 0
+          ? [
+              {
+                full_count: String(totals.full),
+                partial_count: String(totals.partial),
+                advisory_count: String(totals.advisory),
+              },
+            ]
+          : [],
+    });
   };
 
   beforeEach(async () => {
     mockQb.select.mockClear();
+    mockQb.addSelect.mockClear();
     mockQb.where.mockClear();
     mockQb.andWhere.mockClear();
     mockQb.orderBy.mockClear();
@@ -101,6 +131,10 @@ describe('ClosuresService', () => {
     mockQb.limit.mockClear();
     mockQb.setParameter.mockClear();
     mockQb.getMany.mockReset().mockResolvedValue([SAMPLE_CLOSURE]);
+    mockQb.getRawAndEntities.mockReset().mockResolvedValue({
+      entities: [SAMPLE_CLOSURE],
+      raw: [{ full_count: '1', partial_count: '0', advisory_count: '0' }],
+    });
     mockQb.getRawMany.mockReset().mockResolvedValue([]);
 
     repo = {
@@ -331,7 +365,7 @@ describe('ClosuresService', () => {
 
     it('still counts operator/osm closures — hides only NAP (official) rows — when sys_nap_conditions is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
-      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]); // source: 'operator'
+      mockRouteResult([SAMPLE_CLOSURE]); // source: 'operator'
       const result = await service.checkRoute({
         route: [
           { lat: 50.0, lng: 17.0 },
@@ -737,7 +771,7 @@ describe('ClosuresService', () => {
     });
 
     it('passes each coordinate as its own named parameter', async () => {
-      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]);
+      mockRouteResult([SAMPLE_CLOSURE]);
 
       await service.checkRoute({
         route: [
@@ -765,6 +799,10 @@ describe('ClosuresService', () => {
       });
       expect(typeof spatial![1].bufferDeg).toBe('number');
       expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.addSelect).toHaveBeenCalledWith(
+        expect.stringContaining("c.severity = 'full'"),
+        'full_count',
+      );
       expect(mockQb.orderBy).toHaveBeenCalledWith(
         expect.stringContaining("WHEN 'full' THEN 0"),
         'ASC',
@@ -773,7 +811,7 @@ describe('ClosuresService', () => {
     });
 
     it('defaults the buffer to 100 m', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       await service.checkRoute({
         route: [
           { lat: 50, lng: 17 },
@@ -789,7 +827,7 @@ describe('ClosuresService', () => {
     });
 
     it('applies the active-on window by default (now)', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       const before = Date.now();
       await service.checkRoute({
         route: [
@@ -816,7 +854,7 @@ describe('ClosuresService', () => {
     });
 
     it('uses the supplied active_on timestamp instead of now', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       const when = '2026-12-24T12:00:00Z';
       await service.checkRoute({
         route: [
@@ -836,7 +874,7 @@ describe('ClosuresService', () => {
     });
 
     it('aggregates counts per severity', async () => {
-      mockQb.getMany.mockResolvedValueOnce([
+      mockRouteResult([
         SAMPLE_CLOSURE, // full
         ADVISORY_CLOSURE, // advisory
         PARTIAL_CLOSURE, // partial
@@ -858,11 +896,7 @@ describe('ClosuresService', () => {
 
     it('orders closures by severity (full > partial > advisory)', async () => {
       // Intentionally out of order in the DB result.
-      mockQb.getMany.mockResolvedValueOnce([
-        ADVISORY_CLOSURE,
-        SAMPLE_CLOSURE,
-        PARTIAL_CLOSURE,
-      ]);
+      mockRouteResult([ADVISORY_CLOSURE, SAMPLE_CLOSURE, PARTIAL_CLOSURE]);
 
       const result = await service.checkRoute({
         route: [
@@ -879,7 +913,7 @@ describe('ClosuresService', () => {
     });
 
     it('returns zero counts when no closures match the route', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       const result = await service.checkRoute({
         route: [
           { lat: 50, lng: 17 },
@@ -890,6 +924,26 @@ describe('ClosuresService', () => {
       expect(result.full_count).toBe(0);
       expect(result.partial_count).toBe(0);
       expect(result.advisory_count).toBe(0);
+    });
+
+    it('reports severity totals from before the closure list cap', async () => {
+      mockRouteResult([SAMPLE_CLOSURE, PARTIAL_CLOSURE], {
+        full: 205,
+        partial: 17,
+        advisory: 3,
+      });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+
+      expect(result.closures).toHaveLength(2);
+      expect(result.full_count).toBe(205);
+      expect(result.partial_count).toBe(17);
+      expect(result.advisory_count).toBe(3);
     });
   });
 });

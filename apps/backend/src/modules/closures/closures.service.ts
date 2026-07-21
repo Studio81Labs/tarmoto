@@ -44,6 +44,12 @@ interface BboxCoords {
   maxLat: number;
 }
 
+interface RouteClosureCountRow {
+  full_count?: string | number;
+  partial_count?: string | number;
+  advisory_count?: string | number;
+}
+
 @Injectable()
 export class ClosuresService {
   constructor(
@@ -156,6 +162,21 @@ export class ClosuresService {
       // Apply the cap only after prioritising the safety-critical severities.
       // The response is sorted the same way below, but doing it in SQL ensures
       // a dense corridor cannot crowd full closures out with advisories.
+      // Window counts are evaluated before LIMIT, keeping the response totals
+      // exact without repeating the expensive spatial predicate in a second
+      // aggregate query.
+      .addSelect(
+        "COUNT(*) FILTER (WHERE c.severity = 'full') OVER ()",
+        'full_count',
+      )
+      .addSelect(
+        "COUNT(*) FILTER (WHERE c.severity = 'partial') OVER ()",
+        'partial_count',
+      )
+      .addSelect(
+        "COUNT(*) FILTER (WHERE c.severity = 'advisory') OVER ()",
+        'advisory_count',
+      )
       .orderBy(
         "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END",
         'ASC',
@@ -172,20 +193,21 @@ export class ClosuresService {
       qb.andWhere("c.source != 'official'");
     }
 
-    const rows = await qb.limit(MAX_ROUTE_CLOSURE_RESULTS).getMany();
+    const result = await qb
+      .limit(MAX_ROUTE_CLOSURE_RESULTS)
+      .getRawAndEntities<RouteClosureCountRow>();
+    const rows = result.entities;
+    const counts = result.raw[0];
 
     const closures = rows
       .map((r) => this.toDto(r))
       .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 
-    const countBy = (s: RoadClosureSeverity): number =>
-      closures.reduce((n, c) => n + (c.severity === s ? 1 : 0), 0);
-
     return {
       closures,
-      full_count: countBy('full'),
-      partial_count: countBy('partial'),
-      advisory_count: countBy('advisory'),
+      full_count: Number(counts?.full_count ?? 0),
+      partial_count: Number(counts?.partial_count ?? 0),
+      advisory_count: Number(counts?.advisory_count ?? 0),
     };
   }
 
