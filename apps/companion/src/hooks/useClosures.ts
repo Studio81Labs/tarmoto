@@ -129,7 +129,20 @@ export function useClosures(
       const closures = sortClosures(
         dedupeClosures(fulfilled.flatMap(({ value }) => value.data.closures)),
       );
-      return { closures, partial: rejectedCount > 0 };
+      const counts = fulfilled.reduce<ClosureSeverityCounts>(
+        (total, result) => {
+          total.full += result.value.data.full_count;
+          total.partial += result.value.data.partial_count;
+          total.advisory += result.value.data.advisory_count;
+          total.total +=
+            result.value.data.full_count +
+            result.value.data.partial_count +
+            result.value.data.advisory_count;
+          return total;
+        },
+        { ...EMPTY_COUNTS },
+      );
+      return { closures, counts, partial: rejectedCount > 0 };
     },
   });
 
@@ -147,7 +160,7 @@ export function useClosures(
   const routeCounts = useMemo(
     () =>
       routes.length > 0 && routeQuery.data
-        ? countClosuresBySeverity(routeQuery.data.closures)
+        ? routeQuery.data.counts
         : EMPTY_COUNTS,
     [routes.length, routeQuery.data],
   );
