@@ -59,7 +59,16 @@ export class ClosuresService {
   ) {}
 
   async list(query: ListClosuresQueryDto): Promise<RoadClosureDto[]> {
-    const qb = this.repo.createQueryBuilder('c').orderBy('c.starts_at', 'DESC');
+    const qb = this.repo
+      .createQueryBuilder('c')
+      // The public list is capped below, so rank safety-critical rows before
+      // recency. Otherwise a dense historical/viewport query could fill the
+      // budget with newer advisories and omit an older full closure.
+      .orderBy(
+        "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END",
+        'ASC',
+      )
+      .addOrderBy('c.starts_at', 'DESC');
 
     // Undecoded Alert-C/OpenLR feed rows (#743) have no geometry — never
     // surface them: they can't be rendered and `toDto` would crash on a

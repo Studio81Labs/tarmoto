@@ -195,6 +195,17 @@ describe('ClosuresService', () => {
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.geom IS NOT NULL');
     });
 
+    it('prioritises full closures before applying the deterministic list cap', async () => {
+      await service.list({ include_past: true });
+
+      expect(mockQb.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining("WHEN 'full' THEN 0"),
+        'ASC',
+      );
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
+      expect(mockQb.limit).toHaveBeenCalledWith(500);
+    });
+
     it('excludes deactivated feed rows on the default (live) path', async () => {
       await service.list({});
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.is_active = true');
