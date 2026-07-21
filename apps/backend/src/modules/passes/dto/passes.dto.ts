@@ -17,6 +17,7 @@ import {
 } from 'class-validator';
 
 export type PassStatus = 'open' | 'closed' | 'unknown';
+export const MAX_LIST_PASSES_LIMIT = 500;
 
 export class MountainPassDto {
   @ApiProperty()
@@ -101,6 +102,32 @@ export class ListPassesQueryDto {
   @Min(1)
   @Max(12)
   for_month?: number;
+
+  @ApiPropertyOptional({
+    default: MAX_LIST_PASSES_LIMIT,
+    minimum: 1,
+    maximum: MAX_LIST_PASSES_LIMIT,
+    description: 'Maximum number of passes returned in this page.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_LIST_PASSES_LIMIT)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    minimum: 0,
+    maximum: 100_000,
+    description: 'Number of alphabetically ordered passes to skip.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  offset?: number;
 }
 
 class RoutePointDto {

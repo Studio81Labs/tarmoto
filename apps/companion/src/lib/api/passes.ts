@@ -8,6 +8,7 @@ export type MountainPass = components["schemas"]["MountainPassDto"];
 
 export type CheckRoutePassesResponse =
   components["schemas"]["CheckRouteResponseDto"];
+const PASS_PAGE_SIZE = 500;
 
 // `buffer_m` is `@ApiPropertyOptional` (server default) in the backend, but
 // openapi-typescript emits defaulted fields as required. Keep it optional at
@@ -23,22 +24,30 @@ export const passesApi = {
    * maxLat]). `forMonth` (1–12) sets the seasonal open/closed status; omit for
    * the current month. Backs the planner map's `mountain_pass` category (#865).
    */
-  list: (
+  list: async (
     bbox: [number, number, number, number],
     forMonth?: number,
     init?: RequestInit,
-  ) =>
-    openApiData<MountainPass[]>(
-      api.GET("/api/v1/passes", {
-        params: {
-          query: {
-            bbox: bbox.join(","),
-            ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+  ) => {
+    const passes: MountainPass[] = [];
+    for (let offset = 0; ; offset += PASS_PAGE_SIZE) {
+      const page = await openApiData<MountainPass[]>(
+        api.GET("/api/v1/passes", {
+          params: {
+            query: {
+              bbox: bbox.join(","),
+              ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+              limit: PASS_PAGE_SIZE,
+              offset,
+            },
           },
-        },
-        ...reqSignal(init),
-      }),
-    ),
+          ...reqSignal(init),
+        }),
+      );
+      passes.push(...page.data);
+      if (page.data.length < PASS_PAGE_SIZE) return { data: passes };
+    }
+  },
 
   checkRoute: (data: CheckRoutePassesInput, init?: RequestInit) =>
     openApiData<CheckRoutePassesResponse>(

@@ -2856,7 +2856,7 @@ export interface paths {
         };
         /**
          * List mountain passes (optionally filtered by bbox)
-         * @description Returns each known pass with its open/closed/unknown status for the requested `for_month` (or the current UTC month when omitted) derived from the typical seasonal window or any operator override.
+         * @description Returns each known pass with its open/closed/unknown status for the requested `for_month` (or the current UTC month when omitted) derived from the typical seasonal window or any operator override. Use `limit` and `offset` to page through large result sets.
          */
         get: operations["PassesController_list"];
         put?: never;
@@ -12435,6 +12435,10 @@ export interface operations {
                 bbox?: string;
                 /** @description Month (1=January .. 12=December) to evaluate pass status for. Defaults to the current UTC month. */
                 for_month?: number;
+                /** @description Maximum number of passes returned in this page. */
+                limit?: number;
+                /** @description Number of alphabetically ordered passes to skip. */
+                offset?: number;
             };
             header?: never;
             path?: never;

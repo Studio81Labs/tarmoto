@@ -35,7 +35,9 @@ describe('PassesService', () => {
     andWhere: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([STELVIO]),
     getRawAndEntities: jest.fn().mockResolvedValue({
       entities: [STELVIO],
@@ -179,6 +181,15 @@ describe('PassesService', () => {
         expect.stringContaining('ST_Intersects'),
         { minLng: 5, minLat: 45, maxLng: 17, maxLat: 49 },
       );
+    });
+
+    it('applies bounded pagination after deterministic name ordering', async () => {
+      await service.list(undefined, undefined, 200, 400);
+
+      expect(mockQb.orderBy).toHaveBeenCalledWith('p.name', 'ASC');
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('p.id', 'ASC');
+      expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.offset).toHaveBeenCalledWith(400);
     });
 
     it('evaluates status for the supplied for_month instead of today', async () => {

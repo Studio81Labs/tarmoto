@@ -6,6 +6,7 @@ import {
   CheckRouteDto,
   CheckRouteResponseDto,
   MountainPassDto,
+  MAX_LIST_PASSES_LIMIT,
   PassStatus,
 } from './dto/passes.dto.js';
 
@@ -21,7 +22,6 @@ interface RoutePassCountRow {
   unknown_count?: string | number;
 }
 
-const MAX_PASS_LIST_RESULTS = 500;
 const MAX_ROUTE_PASS_RESULTS = 200;
 
 @Injectable()
@@ -69,8 +69,16 @@ export class PassesService {
       : 'closed';
   }
 
-  async list(bbox?: string, forMonth?: number): Promise<MountainPassDto[]> {
-    const qb = this.passRepo.createQueryBuilder('p').orderBy('p.name', 'ASC');
+  async list(
+    bbox?: string,
+    forMonth?: number,
+    limit = MAX_LIST_PASSES_LIMIT,
+    offset = 0,
+  ): Promise<MountainPassDto[]> {
+    const qb = this.passRepo
+      .createQueryBuilder('p')
+      .orderBy('p.name', 'ASC')
+      .addOrderBy('p.id', 'ASC');
 
     if (bbox) {
       const parsed = this.parseBbox(bbox);
@@ -80,7 +88,7 @@ export class PassesService {
       );
     }
 
-    const rows = await qb.limit(MAX_PASS_LIST_RESULTS).getMany();
+    const rows = await qb.limit(limit).offset(offset).getMany();
     const month = this.resolveMonth(forMonth);
     return rows.map((p) => this.toDto(p, month));
   }

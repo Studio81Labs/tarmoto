@@ -214,11 +214,10 @@ export default function MapScreen() {
     [minQuality],
   );
 
-  // US-11: load mountain passes once per mount. The seeded dataset is
-  // small (≈ a dozen rows), so a single global fetch is far cheaper than
-  // refetching on every camera move and lets us toggle the overlay
-  // without flicker. If the catalog grows past hundreds we'll switch to
-  // bbox-scoped fetching driven by `handleRegionDidChange`.
+  // US-11: load mountain passes once per mount. `getPasses` follows the
+  // backend's bounded pages, so a growing catalog remains complete without
+  // one unbounded query or camera-move refetches, and toggling the overlay
+  // stays flicker-free.
   const [passes, setPasses] = useState<MountainPass[]>([]);
   useEffect(() => {
     let cancelled = false;

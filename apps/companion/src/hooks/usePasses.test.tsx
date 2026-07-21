@@ -31,6 +31,8 @@ function TestHarness({
     <div>
       <span>{result.loading ? "loading" : "loaded"}</span>
       <span>{result.routeLoading ? "route-loading" : "route-idle"}</span>
+      <span>closed={result.routeClosedCount}</span>
+      <span>unknown={result.routeUnknownCount}</span>
     </div>
   );
 }
@@ -81,11 +83,41 @@ describe("usePasses", () => {
             query: {
               bbox: "17.557,49.644,18.963,49.996",
               for_month: 7,
+              limit: 500,
+              offset: 0,
             },
           },
         }),
       );
     });
+  });
+
+  it("loads every page instead of treating the server cap as a complete list", async () => {
+    vi.mocked(api.GET)
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 500 }, (_, id) => ({ id })),
+        error: undefined,
+      } as never)
+      .mockResolvedValueOnce({
+        data: [{ id: 500 }],
+        error: undefined,
+      } as never);
+
+    render(<TestHarness bbox="5,45,17,49" />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(api.GET).toHaveBeenCalledTimes(2);
+    });
+    expect(api.GET).toHaveBeenLastCalledWith(
+      "/api/v1/passes",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({ limit: 500, offset: 500 }),
+        },
+      }),
+    );
   });
 
   it("does not fetch the list while disabled", async () => {
@@ -173,5 +205,24 @@ describe("usePasses", () => {
     });
 
     expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses exact route counts returned by the backend after its pass cap", async () => {
+    vi.mocked(passesApi.checkRoute).mockResolvedValue({
+      data: {
+        closed_count: 237,
+        unknown_count: 14,
+        passes: [],
+      },
+    } as Awaited<ReturnType<typeof passesApi.checkRoute>>);
+
+    render(<TestHarness routes={[route]} />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("closed=237")).toBeInTheDocument();
+      expect(screen.getByText("unknown=14")).toBeInTheDocument();
+    });
   });
 });

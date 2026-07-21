@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { api, passesApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
-  countByStatus,
   dedupePasses,
   partitionByStatus,
   type MountainPass,
@@ -12,6 +11,7 @@ import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
 const EMPTY_PASSES: MountainPass[] = [];
+const PASS_PAGE_SIZE = 500;
 
 export interface PassesQueryResult {
   passes: MountainPass[];
@@ -62,21 +62,23 @@ export function usePasses(
     queryKey: ["passes", "list", forMonth ?? null, bbox, reconnectRevision],
     enabled,
     queryFn: async ({ signal }) => {
-      const query =
-        forMonth != null || bbox
-          ? ({
-              ...(bbox ? { bbox } : {}),
-              ...(forMonth != null ? { for_month: forMonth } : {}),
-            } as never)
-          : undefined;
-      const { data, error } = await api.GET("/api/v1/passes", {
-        params: {
-          ...(query !== undefined ? { query } : {}),
-        },
-        signal,
-      });
-      if (error || !data) throw new Error("Failed to load passes");
-      return data as MountainPass[];
+      const passes: MountainPass[] = [];
+      for (let offset = 0; ; offset += PASS_PAGE_SIZE) {
+        const query = {
+          ...(bbox ? { bbox } : {}),
+          ...(forMonth != null ? { for_month: forMonth } : {}),
+          limit: PASS_PAGE_SIZE,
+          offset,
+        };
+        const { data, error } = await api.GET("/api/v1/passes", {
+          params: { query },
+          signal,
+        });
+        if (error || !data) throw new Error("Failed to load passes");
+        const page = data as MountainPass[];
+        passes.push(...page);
+        if (page.length < PASS_PAGE_SIZE) return passes;
+      }
     },
   });
 
@@ -128,11 +130,16 @@ export function usePasses(
       );
       const grouped = partitionByStatus(routePasses);
       const ordered = [...grouped.closed, ...grouped.unknown, ...grouped.open];
-      const counts = countByStatus(routePasses);
       return {
         passes: ordered,
-        closedCount: counts.closed,
-        unknownCount: counts.unknown,
+        closedCount: fulfilled.reduce(
+          (count, result) => count + result.value.data.closed_count,
+          0,
+        ),
+        unknownCount: fulfilled.reduce(
+          (count, result) => count + result.value.data.unknown_count,
+          0,
+        ),
         partial: rejectedCount > 0,
       };
     },
