@@ -1,5 +1,5 @@
 import { NativeModules, Platform } from "react-native";
-import { detectDeviceLocale } from "../deviceLocale";
+import { detectDeviceFormatLocale, detectDeviceLocale } from "../deviceLocale";
 
 const originalOS = Platform.OS;
 const nativeModules = NativeModules as Record<string, unknown>;
@@ -32,6 +32,19 @@ describe("detectDeviceLocale", () => {
     expect(detectDeviceLocale()).toBe("cs-CZ");
   });
 
+  it("keeps the preferred language separate from the regional format locale", () => {
+    setPlatform("ios");
+    nativeModules.SettingsManager = {
+      settings: {
+        AppleLanguages: ["cs_CZ", "en-US"],
+        AppleLocale: "en_US",
+      },
+    };
+
+    expect(detectDeviceLocale()).toBe("cs-CZ");
+    expect(detectDeviceFormatLocale()).toBe("en-US");
+  });
+
   it("normalizes the iOS locale separator", () => {
     setPlatform("ios");
     nativeModules.SettingsManager = {
@@ -39,6 +52,7 @@ describe("detectDeviceLocale", () => {
     };
 
     expect(detectDeviceLocale()).toBe("cs-CZ");
+    expect(detectDeviceFormatLocale()).toBe("cs-CZ");
   });
 
   it("normalizes the Android locale separator", () => {
@@ -46,5 +60,6 @@ describe("detectDeviceLocale", () => {
     nativeModules.I18nManager = { localeIdentifier: "cs_CZ" };
 
     expect(detectDeviceLocale()).toBe("cs-CZ");
+    expect(detectDeviceFormatLocale()).toBe("cs-CZ");
   });
 });

@@ -67,8 +67,9 @@ export default async function SharedCollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const format = await getServerFormatters();
-  const [detail, preview] = await Promise.all([
+  const [locale, format, detail, preview] = await Promise.all([
+    readLocale(),
+    getServerFormatters(),
     fetchSharedCollection(slug),
     fetchSharedCollectionPreview(slug),
   ]);
@@ -131,7 +132,16 @@ export default async function SharedCollectionPage({
         <section className="mb-[26px] rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="mb-2.5 flex items-center gap-3">
             <Stamp>{t("Route collection")}</Stamp>
-            <RouteCollectionVisibilityPill visibility={detail.visibility} />
+            <RouteCollectionVisibilityPill
+              visibility={detail.visibility}
+              label={
+                detail.visibility === "public"
+                  ? t("Public", undefined, locale)
+                  : detail.visibility === "unlisted"
+                    ? t("Unlisted", undefined, locale)
+                    : t("Private", undefined, locale)
+              }
+            />
           </div>
           <h1 className="font-sans text-[42px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
             {detail.title}

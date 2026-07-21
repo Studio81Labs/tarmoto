@@ -11,16 +11,20 @@ import type { RouteCollectionVisibility } from "@/lib/api";
 export function RouteCollectionVisibilityPill({
   visibility,
   className,
+  label: labelOverride,
 }: {
   visibility: RouteCollectionVisibility;
   className?: string;
+  /** Request-scoped server callers pass a translated label explicitly. */
+  label?: string;
 }) {
   const label =
-    visibility === "public"
+    labelOverride ??
+    (visibility === "public"
       ? t("Public")
       : visibility === "unlisted"
         ? t("Unlisted")
-        : t("Private");
+        : t("Private"));
   const Icon =
     visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
   const tone =

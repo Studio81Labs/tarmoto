@@ -6,6 +6,22 @@ function normalizeLocaleIdentifier(locale: unknown): string | null {
   return normalized || null;
 }
 
+function readIosLocales(): {
+  preferredLanguage: unknown;
+  formatLocale: unknown;
+} {
+  const settings = (
+    NativeModules.SettingsManager as
+      | { settings?: Record<string, unknown> }
+      | undefined
+  )?.settings;
+  const languages = settings?.AppleLanguages;
+  return {
+    preferredLanguage: Array.isArray(languages) ? languages[0] : undefined,
+    formatLocale: settings?.AppleLocale,
+  };
+}
+
 /**
  * Returns the device's preferred BCP-47 locale without adding another native
  * dependency. Both shapes are provided by React Native itself. An unavailable
@@ -15,15 +31,11 @@ function normalizeLocaleIdentifier(locale: unknown): string | null {
 export function detectDeviceLocale(): string | null {
   try {
     if (Platform.OS === "ios") {
-      const settings = (
-        NativeModules.SettingsManager as
-          | { settings?: Record<string, unknown> }
-          | undefined
-      )?.settings;
-      const locale =
-        (settings?.AppleLocale as string | undefined) ??
-        (settings?.AppleLanguages as string[] | undefined)?.[0];
-      return normalizeLocaleIdentifier(locale);
+      const { preferredLanguage, formatLocale } = readIosLocales();
+      return (
+        normalizeLocaleIdentifier(preferredLanguage) ??
+        normalizeLocaleIdentifier(formatLocale)
+      );
     }
 
     if (Platform.OS === "android") {
@@ -34,6 +46,33 @@ export function detectDeviceLocale(): string | null {
     }
   } catch {
     // Native locale detection is best-effort; resolveLocale owns fallback.
+  }
+  return null;
+}
+
+/**
+ * Returns the device locale used for dates and numbers. On iOS this is the
+ * regional AppleLocale setting, which can intentionally differ from the
+ * preferred UI language returned by detectDeviceLocale().
+ */
+export function detectDeviceFormatLocale(): string | null {
+  try {
+    if (Platform.OS === "ios") {
+      const { preferredLanguage, formatLocale } = readIosLocales();
+      return (
+        normalizeLocaleIdentifier(formatLocale) ??
+        normalizeLocaleIdentifier(preferredLanguage)
+      );
+    }
+
+    if (Platform.OS === "android") {
+      const locale = (
+        NativeModules.I18nManager as { localeIdentifier?: string } | undefined
+      )?.localeIdentifier;
+      return normalizeLocaleIdentifier(locale);
+    }
+  } catch {
+    // Native locale detection is best-effort; formatters own fallback.
   }
   return null;
 }

@@ -16,7 +16,11 @@ import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
-import { detectDeviceLocale, detectDeviceTimeZone } from "@/i18n/deviceLocale";
+import {
+  detectDeviceFormatLocale,
+  detectDeviceLocale,
+  detectDeviceTimeZone,
+} from "@/i18n/deviceLocale";
 import { FormatProvider } from "@/format/FormatProvider";
 
 // Suppress specific warnings in dev
@@ -33,9 +37,11 @@ export default function App() {
   const units = usePreferencesStore((state) => state.distanceUnit);
   const setDistanceUnit = usePreferencesStore((state) => state.setDistanceUnit);
   const deviceLocale = useMemo(detectDeviceLocale, []);
+  const deviceFormatLocale = useMemo(detectDeviceFormatLocale, []);
   const deviceTimeZone = useMemo(detectDeviceTimeZone, []);
   const locale = user?.language ?? deviceLocale;
-  const formatLocale = user?.preferences?.format_locale ?? deviceLocale;
+  const formatLocale =
+    user?.preferences?.format_locale ?? deviceFormatLocale ?? deviceLocale;
   const timeZone = user?.preferences?.timezone ?? deviceTimeZone;
 
   // The account is the cross-device source of truth. Hydrate the synchronous
