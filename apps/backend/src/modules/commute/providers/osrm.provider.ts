@@ -53,6 +53,7 @@ export class OsrmProvider implements RoutingProvider {
     destLng: number,
     maxAlternatives: number,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteAlternative[]> {
     const coords = `${originLng},${originLat};${destLng},${destLat}`;
     // `exclude=` support depends on how the OSRM graph was compiled — the
@@ -95,6 +96,7 @@ export class OsrmProvider implements RoutingProvider {
         ),
       exclude.length > 0,
       'request',
+      signal,
     );
     if (!data) return [];
     if (data.code !== 'Ok' || !data.routes?.length) {
@@ -130,6 +132,7 @@ export class OsrmProvider implements RoutingProvider {
   async route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteResult | null> {
     if (waypoints.length < 2) return null;
     const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
@@ -143,6 +146,7 @@ export class OsrmProvider implements RoutingProvider {
         ),
       exclude.length > 0,
       'route',
+      signal,
     );
     if (!data) return null;
     if (data.code !== 'Ok' || !data.routes?.length) return null;
@@ -184,13 +188,17 @@ export class OsrmProvider implements RoutingProvider {
     buildUrl: (withExclude: boolean) => string,
     hasExclude: boolean,
     context: string,
+    signal?: AbortSignal,
   ): Promise<OsrmResponse | null> {
-    let response = await fetch(buildUrl(true));
+    const requestInit: RequestInit | undefined = signal
+      ? { signal }
+      : undefined;
+    let response = await fetch(buildUrl(true), requestInit);
     if (response.status === 400 && hasExclude) {
       this.logger.warn(
         `OSRM ${context} rejected exclude= (400) — retrying WITHOUT avoidances; this OSRM graph has no exclude classes, so avoid-highways/tolls are ignored`,
       );
-      response = await fetch(buildUrl(false));
+      response = await fetch(buildUrl(false), requestInit);
     }
     if (!response.ok) {
       this.logger.error(

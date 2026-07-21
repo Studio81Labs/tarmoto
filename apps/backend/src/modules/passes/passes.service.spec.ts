@@ -33,9 +33,53 @@ describe('PassesService', () => {
   const mockQb = {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([STELVIO]),
+    getRawAndEntities: jest.fn().mockResolvedValue({
+      entities: [STELVIO],
+      raw: [{ closed_count: '0', unknown_count: '0' }],
+    }),
+  };
+
+  const mockRouteResult = (
+    entities: MountainPass[],
+    counts?: { closed: number; unknown: number },
+  ) => {
+    const month = 1;
+    const totals = counts ?? {
+      closed: entities.filter(
+        (row) =>
+          (row.override_status ??
+            PassesService.statusFromSchedule(
+              row.typical_open_month,
+              row.typical_close_month,
+              month,
+            )) === 'closed',
+      ).length,
+      unknown: entities.filter(
+        (row) =>
+          (row.override_status ??
+            PassesService.statusFromSchedule(
+              row.typical_open_month,
+              row.typical_close_month,
+              month,
+            )) === 'unknown',
+      ).length,
+    };
+    mockQb.getRawAndEntities.mockResolvedValueOnce({
+      entities,
+      raw:
+        entities.length > 0
+          ? [
+              {
+                closed_count: String(totals.closed),
+                unknown_count: String(totals.unknown),
+              },
+            ]
+          : [],
+    });
   };
 
   beforeEach(async () => {
@@ -51,6 +95,10 @@ describe('PassesService', () => {
     service = module.get<PassesService>(PassesService);
     jest.clearAllMocks();
     mockQb.getMany.mockResolvedValue([STELVIO]);
+    mockQb.getRawAndEntities.mockResolvedValue({
+      entities: [STELVIO],
+      raw: [{ closed_count: '0', unknown_count: '0' }],
+    });
   });
 
   describe('statusFromSchedule', () => {
@@ -164,7 +212,10 @@ describe('PassesService', () => {
     });
 
     it('runs the spatial query and aggregates closed/unknown counts', async () => {
-      mockQb.getMany.mockResolvedValueOnce([STELVIO, FORCED_CLOSED]);
+      mockRouteResult([STELVIO, FORCED_CLOSED], {
+        closed: 2,
+        unknown: 0,
+      });
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(0); // January
 
       const result = await service.checkRoute({
@@ -201,10 +252,15 @@ describe('PassesService', () => {
       );
       expect(mockQb.orderBy).toHaveBeenCalledWith('p.elevation_m', 'DESC');
       expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.addSelect).toHaveBeenCalledTimes(2);
+      expect(mockQb.addSelect).toHaveBeenCalledWith(
+        expect.stringContaining(':statusMonth'),
+        'closed_count',
+      );
     });
 
     it('defaults the buffer to 1500 m', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       await service.checkRoute({
         route: [
           { lat: 46.5, lng: 10.4 },
@@ -218,7 +274,7 @@ describe('PassesService', () => {
     });
 
     it('evaluates status for the supplied for_month', async () => {
-      mockQb.getMany.mockResolvedValueOnce([STELVIO]);
+      mockRouteResult([STELVIO], { closed: 1, unknown: 0 });
       // Today = August (open) but the caller is planning a March trip —
       // Stelvio must come back closed for the response.
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7);
@@ -231,6 +287,40 @@ describe('PassesService', () => {
       });
       expect(result.passes[0].status).toBe('closed');
       expect(result.closed_count).toBe(1);
+    });
+
+    it('reports status totals from before the pass list cap', async () => {
+      mockRouteResult([STELVIO, FORCED_CLOSED], {
+        closed: 237,
+        unknown: 14,
+      });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+        for_month: 1,
+      });
+
+      expect(result.passes).toHaveLength(2);
+      expect(result.closed_count).toBe(237);
+      expect(result.unknown_count).toBe(14);
+    });
+
+    it('returns zero counts when no passes match the route', async () => {
+      mockRouteResult([]);
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+      });
+
+      expect(result.passes).toEqual([]);
+      expect(result.closed_count).toBe(0);
+      expect(result.unknown_count).toBe(0);
     });
   });
 });

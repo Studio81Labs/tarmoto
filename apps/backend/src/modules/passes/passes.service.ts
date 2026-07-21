@@ -16,6 +16,11 @@ interface BboxCoords {
   maxLat: number;
 }
 
+interface RoutePassCountRow {
+  closed_count?: string | number;
+  unknown_count?: string | number;
+}
+
 const MAX_PASS_LIST_RESULTS = 500;
 const MAX_ROUTE_PASS_RESULTS = 200;
 
@@ -85,6 +90,7 @@ export class PassesService {
       throw new BadRequestException('Route must have at least 2 points');
     }
     const bufferM = dto.buffer_m ?? 1500;
+    const month = this.resolveMonth(dto.for_month);
 
     // Build the LineString via TypeORM's named-parameter binding so each
     // coordinate is passed as a real SQL parameter (no string
@@ -92,7 +98,10 @@ export class PassesService {
     // rather than `repo.query` also makes TypeORM hydrate the `location`
     // column back into a GeoJSON Point — with raw `.query()` we'd get
     // a WKB hex string and `toDto` would crash on `p.location.coordinates`.
-    const params: Record<string, number> = { buffer: bufferM };
+    const params: Record<string, number> = {
+      buffer: bufferM,
+      statusMonth: month,
+    };
     const pointsSql = dto.route
       .map((p, i) => {
         params[`lng${i}`] = p.lng;
@@ -103,7 +112,29 @@ export class PassesService {
     const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)`;
     params['bufferDeg'] = (bufferM / 111320) * 2;
 
-    const rows = await this.passRepo
+    // Keep aggregate status counts exact even when the response list is
+    // capped below. The window expressions run over every spatial match
+    // before LIMIT, avoiding a second traversal of the expensive route
+    // predicate. This CASE deliberately mirrors `toDto`: an operator
+    // override wins, otherwise the inclusive schedule (including windows
+    // that wrap over New Year) determines the status.
+    const statusSql = `CASE
+      WHEN p.override_status IS NOT NULL THEN p.override_status
+      WHEN p.typical_open_month NOT BETWEEN 1 AND 12
+        OR p.typical_close_month NOT BETWEEN 1 AND 12 THEN 'unknown'
+      WHEN (
+        p.typical_open_month <= p.typical_close_month
+        AND :statusMonth BETWEEN p.typical_open_month AND p.typical_close_month
+      ) OR (
+        p.typical_open_month > p.typical_close_month
+        AND (
+          :statusMonth >= p.typical_open_month
+          OR :statusMonth <= p.typical_close_month
+        )
+      ) THEN 'open'
+      ELSE 'closed'
+    END`;
+    const result = await this.passRepo
       .createQueryBuilder('p')
       .where(`ST_DWithin(p.location, ${line}, :bufferDeg)`, params)
       .andWhere(
@@ -114,17 +145,27 @@ export class PassesService {
         )`,
         params,
       )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE (${statusSql}) = 'closed') OVER ()`,
+        'closed_count',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE (${statusSql}) = 'unknown') OVER ()`,
+        'unknown_count',
+      )
       .orderBy('p.elevation_m', 'DESC')
       .limit(MAX_ROUTE_PASS_RESULTS)
-      .getMany();
+      .getRawAndEntities<RoutePassCountRow>();
 
-    const month = this.resolveMonth(dto.for_month);
-    const passes: MountainPassDto[] = rows.map((p) => this.toDto(p, month));
+    const passes: MountainPassDto[] = result.entities.map((p) =>
+      this.toDto(p, month),
+    );
+    const counts = result.raw[0];
 
     return {
       passes,
-      closed_count: passes.filter((p) => p.status === 'closed').length,
-      unknown_count: passes.filter((p) => p.status === 'unknown').length,
+      closed_count: Number(counts?.closed_count ?? 0),
+      unknown_count: Number(counts?.unknown_count ?? 0),
     };
   }
 
