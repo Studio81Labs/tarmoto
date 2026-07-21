@@ -32,7 +32,9 @@ describe('PassesService', () => {
 
   const mockQb = {
     where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([STELVIO]),
   };
 
@@ -181,15 +183,24 @@ describe('PassesService', () => {
       // bind them safely — no string interpolation of user input.
       expect(mockQb.where).toHaveBeenCalledWith(
         expect.stringContaining('ST_DWithin'),
-        {
+        expect.objectContaining({
           buffer: 2000,
           lng0: 10.4,
           lat0: 46.5,
           lng1: 10.5,
           lat1: 46.6,
-        },
+        }),
+      );
+      const whereParams = (mockQb.where.mock.calls as unknown[][])[0]?.[1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(typeof whereParams?.bufferDeg).toBe('number');
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('p.location::geography'),
+        expect.any(Object),
       );
       expect(mockQb.orderBy).toHaveBeenCalledWith('p.elevation_m', 'DESC');
+      expect(mockQb.limit).toHaveBeenCalledWith(200);
     });
 
     it('defaults the buffer to 1500 m', async () => {

@@ -33,6 +33,9 @@ const SEVERITY_RANK: Record<RoadClosureSeverity, number> = {
  * parallel open roads.
  */
 const EXCLUSION_BUFFER_M = 25;
+const MAX_CLOSURE_LIST_RESULTS = 500;
+const MAX_ROUTE_CLOSURE_RESULTS = 200;
+const MAX_EXCLUSION_POLYGONS = 100;
 
 interface BboxCoords {
   minLng: number;
@@ -100,7 +103,7 @@ export class ClosuresService {
       qb.andWhere('c.reason = :reason', { reason: query.reason });
     }
 
-    const rows = await qb.getMany();
+    const rows = await qb.limit(MAX_CLOSURE_LIST_RESULTS).getMany();
     return rows.map((r) => this.toDto(r));
   }
 
@@ -130,6 +133,8 @@ export class ClosuresService {
         return `ST_MakePoint(:lng${i}, :lat${i})`;
       })
       .join(',');
+    const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)`;
+    params['bufferDeg'] = (bufferM / 111320) * 2;
 
     const qb = this.repo
       .createQueryBuilder('c')
@@ -137,17 +142,23 @@ export class ClosuresService {
       // deactivated by the reconcile pass (#743).
       .andWhere('c.geom IS NOT NULL')
       .andWhere('c.is_active = true')
+      .andWhere(`ST_DWithin(c.geom, ${line}, :bufferDeg)`, params)
       .andWhere(
         `ST_DWithin(
           c.geom::geography,
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          ${line}::geography,
           :buffer
         )`,
         params,
       )
       .andWhere('c.starts_at <= :activeOn', { activeOn })
       .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', { activeOn })
-      .orderBy('c.starts_at', 'DESC');
+      // Apply the cap only after prioritising the safety-critical severities.
+      // The response is sorted the same way below, but doing it in SQL ensures
+      // a dense corridor cannot crowd full closures out with advisories.
+      .orderBy(
+        "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END, c.starts_at DESC",
+      );
 
     // Same operator kill switch as `list`: `road_closures` is a
     // MIXED-SOURCE table, so a disable hides only NAP-sourced ('official')
@@ -159,7 +170,7 @@ export class ClosuresService {
       qb.andWhere("c.source != 'official'");
     }
 
-    const rows = await qb.getMany();
+    const rows = await qb.limit(MAX_ROUTE_CLOSURE_RESULTS).getMany();
 
     const closures = rows
       .map((r) => this.toDto(r))
@@ -203,6 +214,8 @@ export class ClosuresService {
         'ST_Intersects(c.geom, ST_MakeEnvelope(:minLng, :minLat, :maxLng, :maxLat, 4326))',
         bbox,
       )
+      .orderBy('c.starts_at', 'DESC')
+      .limit(MAX_EXCLUSION_POLYGONS)
       .setParameter('buffer', EXCLUSION_BUFFER_M);
 
     // Separate operator kill switch from sys_nap_conditions above: routing

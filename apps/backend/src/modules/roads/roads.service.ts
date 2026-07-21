@@ -28,7 +28,11 @@ import {
   RoadSegmentDto,
   RoadSegmentDetailDto,
 } from './dto/road-segment.dto.js';
-import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
+import {
+  DEFAULT_FUN_ZONE_BBOX_RESULTS,
+  MAX_FUN_ZONE_BBOX_AREA_DEG2,
+  QueryFunZonesDto,
+} from './dto/query-fun-zones.dto.js';
 import {
   CorridorFunZonesDto,
   DEFAULT_FUN_ZONE_CORRIDOR_KM,
@@ -110,6 +114,7 @@ export class RoadsService {
   async getRouteQuality(
     dto: RouteQualityRequestDto,
   ): Promise<RouteQualityResponseDto> {
+    const startedAt = Date.now();
     const bufferM = dto.buffer_m ?? 25;
 
     // Reject routes too long to represent at segment scale (see the constants).
@@ -258,6 +263,14 @@ export class RoadsService {
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const rows = await this.segmentRepo.query(sql, params);
+      const durationMs = Date.now() - startedAt;
+      if (durationMs >= 1_000) {
+        this.logger.warn(
+          `Planner route-quality took ${durationMs}ms ` +
+            `(route_km=${(routeLengthM / 1000).toFixed(1)}, ` +
+            `points=${dto.geometry.length}, spans=${(rows as unknown[]).length})`,
+        );
+      }
 
       return {
         segments: (
@@ -768,7 +781,8 @@ export class RoadsService {
   }
 
   async findFunZones(query: QueryFunZonesDto): Promise<FunZoneDto[]> {
-    const [west, south, east, north] = query.bbox.split(',').map(Number);
+    const [west, south, east, north] = parseFunZoneBbox(query.bbox);
+    const limit = query.limit ?? DEFAULT_FUN_ZONE_BBOX_RESULTS;
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.funZoneRepo.query(
@@ -778,8 +792,9 @@ export class RoadsService {
         fz.boundary,
         ST_MakeEnvelope($1, $2, $3, $4, 4326)
       )
-      ORDER BY fz.composite_score DESC`,
-      [west, south, east, north],
+      ORDER BY fz.composite_score DESC
+      LIMIT $5`,
+      [west, south, east, north, limit],
     );
 
     return (rows as Record<string, unknown>[]).map(funZoneRowToDto);
@@ -1017,6 +1032,34 @@ export class RoadsService {
       })),
     };
   }
+}
+
+function parseFunZoneBbox(
+  value: string,
+): [west: number, south: number, east: number, north: number] {
+  const parts = value.split(',').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) {
+    throw new BadRequestException(
+      'bbox must be four finite numbers: west,south,east,north',
+    );
+  }
+  const [west, south, east, north] = parts as [number, number, number, number];
+  if (
+    west < -180 ||
+    east > 180 ||
+    south < -90 ||
+    north > 90 ||
+    west >= east ||
+    south >= north
+  ) {
+    throw new BadRequestException('bbox coordinates or ordering are invalid');
+  }
+  if ((east - west) * (north - south) > MAX_FUN_ZONE_BBOX_AREA_DEG2) {
+    throw new BadRequestException(
+      `bbox area exceeds ${MAX_FUN_ZONE_BBOX_AREA_DEG2} square degrees`,
+    );
+  }
+  return [west, south, east, north];
 }
 
 function mapHazardRows(rows: unknown): HazardResponseDto[] {

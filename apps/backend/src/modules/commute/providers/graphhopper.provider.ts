@@ -6,6 +6,11 @@ import type {
   RoutingOptions,
   RoutingProvider,
 } from '../routing-provider.interface.js';
+import {
+  ConcurrencyLimiter,
+  positiveInteger,
+} from '../../../common/concurrency-limiter.js';
+import { TtlCache } from '../../geocode/ttl-cache.js';
 
 interface GraphHopperPath {
   distance: number; // metres
@@ -18,6 +23,20 @@ interface GraphHopperResponse {
   paths?: GraphHopperPath[];
   message?: string;
 }
+
+interface GraphHopperFlight {
+  controller: AbortController;
+  promise: Promise<GraphHopperResponse | null>;
+  waiters: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_MAX_CONCURRENCY = 2;
+const DEFAULT_CACHE_TTL_MS = 120_000;
+// Route responses can contain large cross-country GeoJSON polylines. Keep the
+// default deliberately small so the cache remains useful on an 8 GB staging
+// host without becoming a material part of the backend's memory footprint.
+const DEFAULT_CACHE_ENTRIES = 64;
 
 /**
  * GraphHopper implementation of `RoutingProvider`.
@@ -67,6 +86,10 @@ export class GraphHopperProvider implements RoutingProvider {
   // conflation job has injected it; when off, preferQuality is a silent
   // no-op (same contract as toll) rather than a no-route failure.
   private readonly qualitySupported: boolean;
+  private readonly timeoutMs: number;
+  private readonly limiter: ConcurrencyLimiter;
+  private readonly responseCache: TtlCache<GraphHopperResponse>;
+  private readonly inFlight = new Map<string, GraphHopperFlight>();
 
   // Bump when the request shape / weighting changes enough that previously
   // cached polylines (#361) should be re-resolved.
@@ -120,6 +143,30 @@ export class GraphHopperProvider implements RoutingProvider {
     this.qualitySupported =
       config.get<string>('TARMOTO_GRAPHHOPPER_QUALITY_ENABLED')?.trim() ===
       'true';
+    this.timeoutMs = positiveInteger(
+      config.get<string>('TARMOTO_GRAPHHOPPER_TIMEOUT_MS'),
+      DEFAULT_TIMEOUT_MS,
+      120_000,
+    );
+    this.limiter = new ConcurrencyLimiter(
+      positiveInteger(
+        config.get<string>('TARMOTO_GRAPHHOPPER_MAX_CONCURRENCY'),
+        DEFAULT_MAX_CONCURRENCY,
+        16,
+      ),
+    );
+    this.responseCache = new TtlCache<GraphHopperResponse>(
+      positiveInteger(
+        config.get<string>('TARMOTO_GRAPHHOPPER_CACHE_MAX_ENTRIES'),
+        DEFAULT_CACHE_ENTRIES,
+        512,
+      ),
+      positiveInteger(
+        config.get<string>('TARMOTO_GRAPHHOPPER_CACHE_TTL_MS'),
+        DEFAULT_CACHE_TTL_MS,
+        600_000,
+      ),
+    );
   }
 
   /** Build the `custom_model` (+ areas) for the avoidance options, or null. */
@@ -209,23 +256,112 @@ export class GraphHopperProvider implements RoutingProvider {
     });
   }
 
-  private async post(body: string): Promise<GraphHopperResponse | null> {
+  private async post(
+    body: string,
+    signal?: AbortSignal,
+  ): Promise<GraphHopperResponse | null> {
+    if (signal?.aborted) return null;
+    const cached = this.responseCache.get(body);
+    if (cached) return cached;
+
+    let flight = this.inFlight.get(body);
+    if (!flight) {
+      const controller = new AbortController();
+      flight = {
+        controller,
+        waiters: 0,
+        promise: Promise.resolve(null),
+      };
+      const createdFlight = flight;
+      createdFlight.promise = this.limiter
+        .run(() => this.fetchRoute(body, controller.signal), controller.signal)
+        .catch((err: unknown) => {
+          if (!controller.signal.aborted) {
+            this.logger.error(
+              `GraphHopper scheduling failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+          return null;
+        })
+        .then((data) => {
+          if (data) this.responseCache.set(body, data);
+          return data;
+        })
+        .finally(() => {
+          if (this.inFlight.get(body) === createdFlight) {
+            this.inFlight.delete(body);
+          }
+        });
+      this.inFlight.set(body, createdFlight);
+    }
+
+    return this.waitForFlight(flight, signal);
+  }
+
+  /**
+   * Share identical work, but track each HTTP caller independently: one
+   * disconnected browser must not cancel a route another caller still needs.
+   * When the final waiter leaves, queued/running GraphHopper work is aborted.
+   */
+  private waitForFlight(
+    flight: GraphHopperFlight,
+    signal?: AbortSignal,
+  ): Promise<GraphHopperResponse | null> {
+    flight.waiters += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      flight.waiters -= 1;
+      if (flight.waiters === 0) flight.controller.abort();
+    };
+
+    if (!signal) return flight.promise.finally(release);
+    return new Promise<GraphHopperResponse | null>((resolve) => {
+      let settled = false;
+      const finish = (value: GraphHopperResponse | null) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', aborted);
+        release();
+        resolve(value);
+      };
+      const aborted = () => finish(null);
+      signal.addEventListener('abort', aborted, { once: true });
+      if (signal.aborted) aborted();
+      else void flight.promise.then(finish);
+    });
+  }
+
+  private async fetchRoute(
+    body: string,
+    callerSignal: AbortSignal,
+  ): Promise<GraphHopperResponse | null> {
     const url = this.apiKey
       ? `${this.baseUrl}/route?key=${encodeURIComponent(this.apiKey)}`
       : `${this.baseUrl}/route`;
     const startedAt = Date.now();
+    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
+    const signal = AbortSignal.any([callerSignal, timeoutSignal]);
     let res: Response;
     try {
       res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
+        signal,
       });
     } catch (err: unknown) {
-      this.logger.error(
-        `GraphHopper unreachable after ${Date.now() - startedAt}ms: ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-      );
+      if (timeoutSignal.aborted) {
+        this.logger.warn(
+          `GraphHopper route timed out after ${Date.now() - startedAt}ms`,
+        );
+      } else if (!callerSignal.aborted) {
+        this.logger.error(
+          `GraphHopper unreachable after ${Date.now() - startedAt}ms: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       return null;
     }
     if (!res.ok) {
@@ -280,9 +416,10 @@ export class GraphHopperProvider implements RoutingProvider {
   async route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteResult | null> {
     if (waypoints.length < 2) return null;
-    const data = await this.post(this.body(waypoints, options));
+    const data = await this.post(this.body(waypoints, options), signal);
     const path = data?.paths?.[0];
     if (!path) return null;
     return this.pathToResult(path);
@@ -295,6 +432,7 @@ export class GraphHopperProvider implements RoutingProvider {
     destLng: number,
     maxAlternatives: number,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteAlternative[]> {
     const includePrimary = options?.includePrimary === true;
     // GraphHopper returns the primary as paths[0]; ask for one extra when
@@ -309,6 +447,7 @@ export class GraphHopperProvider implements RoutingProvider {
         options,
         requestPaths,
       ),
+      signal,
     );
     const paths = data?.paths ?? [];
     const chosen = includePrimary

@@ -85,6 +85,7 @@ describe('ClosuresService', () => {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     setParameter: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([SAMPLE_CLOSURE]),
     getRawMany: jest.fn().mockResolvedValue([]),
@@ -95,6 +96,7 @@ describe('ClosuresService', () => {
     mockQb.where.mockClear();
     mockQb.andWhere.mockClear();
     mockQb.orderBy.mockClear();
+    mockQb.limit.mockClear();
     mockQb.setParameter.mockClear();
     mockQb.getMany.mockReset().mockResolvedValue([SAMPLE_CLOSURE]);
     mockQb.getRawMany.mockReset().mockResolvedValue([]);
@@ -759,6 +761,11 @@ describe('ClosuresService', () => {
         lng2: 17.3,
         lat2: 50.3,
       });
+      expect(typeof spatial![1].bufferDeg).toBe('number');
+      expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining("WHEN 'full' THEN 0"),
+      );
     });
 
     it('defaults the buffer to 100 m', async () => {

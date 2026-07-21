@@ -377,6 +377,132 @@ describe('GraphHopperProvider.route', () => {
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe('https://graphhopper.com/api/1/route?key=k');
   });
+
+  it('caches an identical route briefly so Save can reuse its preview', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        paths: [
+          path([
+            [14, 50],
+            [15, 51],
+          ]),
+        ],
+      }),
+    );
+    const provider = makeProvider();
+    const points = [
+      { lat: 50, lng: 14 },
+      { lat: 51, lng: 15 },
+    ];
+    await provider.route(points, { preferQuality: true });
+    await provider.route(points, { preferQuality: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces concurrent identical requests into one upstream call', async () => {
+    let resolveFetch!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
+    );
+    const provider = makeProvider();
+    const points = [
+      { lat: 50, lng: 14 },
+      { lat: 51, lng: 15 },
+    ];
+    const first = provider.route(points);
+    const second = provider.route(points);
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch(
+      jsonResponse({
+        paths: [
+          path([
+            [14, 50],
+            [15, 51],
+          ]),
+        ],
+      }),
+    );
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
+
+  it('bounds distinct upstream calls and releases the queue in FIFO order', async () => {
+    const releases: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      () => new Promise<Response>((resolve) => releases.push(resolve)),
+    );
+    const provider = makeProvider({
+      TARMOTO_GRAPHHOPPER_BASE_URL: 'http://gh.test',
+      TARMOTO_GRAPHHOPPER_MAX_CONCURRENCY: '2',
+    });
+    const calls = [0, 1, 2].map((n) =>
+      provider.route([
+        { lat: 50, lng: 14 + n },
+        { lat: 51, lng: 15 + n },
+      ]),
+    );
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    releases.shift()!(jsonResponse({ paths: [] }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const release of releases) release(jsonResponse({ paths: [] }));
+    await expect(Promise.all(calls)).resolves.toEqual([null, null, null]);
+  });
+
+  it('aborts the upstream call when its final waiter disconnects', async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          upstreamSignal = init.signal as AbortSignal;
+          upstreamSignal.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          );
+        }),
+    );
+    const controller = new AbortController();
+    const result = makeProvider().route(
+      [
+        { lat: 50, lng: 14 },
+        { lat: 51, lng: 15 },
+      ],
+      undefined,
+      controller.signal,
+    );
+    await Promise.resolve();
+    controller.abort();
+    await expect(result).resolves.toBeNull();
+    expect(upstreamSignal?.aborted).toBe(true);
+  });
+
+  it('aborts an upstream call at the configured deadline', async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          upstreamSignal = init.signal as AbortSignal;
+          upstreamSignal.addEventListener(
+            'abort',
+            () => reject(new DOMException('Timed out', 'TimeoutError')),
+            { once: true },
+          );
+        }),
+    );
+
+    const result = makeProvider({
+      TARMOTO_GRAPHHOPPER_BASE_URL: 'http://gh.test',
+      TARMOTO_GRAPHHOPPER_TIMEOUT_MS: '1',
+    }).route([
+      { lat: 50, lng: 14 },
+      { lat: 51, lng: 15 },
+    ]);
+
+    await expect(result).resolves.toBeNull();
+    expect(upstreamSignal?.aborted).toBe(true);
+  });
 });
 
 describe('GraphHopperProvider.getAlternatives', () => {

@@ -54,9 +54,16 @@ describe('RouteEnrichmentService.aggregate', () => {
       { lat: 50.1, lng: 14.5 },
     ]);
 
-    // Second query issued is the hazard count — check it carries the moderation filter.
+    // Second query issued is the hazard count — check it carries both the
+    // cheap geometry-index prefilter and exact geography-distance predicate.
     const hazardSql = String((query.mock.calls[1] as unknown[])[0]);
     expect(hazardSql).toContain("moderation_status = 'visible'");
+    expect(hazardSql).toContain('h.location,');
+    expect(hazardSql).toContain('h.location::geography');
+
+    const scenicSql = String((query.mock.calls[2] as unknown[])[0]);
+    expect(scenicSql).toContain('fz.boundary,');
+    expect(scenicSql).toContain('fz.boundary::geography');
   });
 
   it('bounds long-route work with capped point-local GiST lookups', async () => {

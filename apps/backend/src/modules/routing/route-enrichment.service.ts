@@ -1,5 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import {
+  ConcurrencyLimiter,
+  positiveInteger,
+} from '../../common/concurrency-limiter.js';
 
 export interface RouteMetrics {
   avgQuality: number | null;
@@ -56,10 +61,33 @@ function geometryToWkt(
 @Injectable()
 export class RouteEnrichmentService {
   private readonly logger = new Logger(RouteEnrichmentService.name);
+  private readonly limiter: ConcurrencyLimiter;
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    @Optional() config?: ConfigService,
+  ) {
+    // Each aggregate runs three SQL statements concurrently. Three aggregates
+    // therefore occupy at most nine connections, staying within the pg
+    // driver's usual ten-connection pool while leaving one slot for ordinary
+    // API work. Operators with a deliberately larger pool can tune this.
+    this.limiter = new ConcurrencyLimiter(
+      positiveInteger(
+        config?.get<string>('TARMOTO_ROUTE_ENRICHMENT_MAX_CONCURRENCY'),
+        3,
+        16,
+      ),
+    );
+  }
 
   async aggregate(
+    geometry: ReadonlyArray<{ lat: number; lng: number }>,
+    signal?: AbortSignal,
+  ): Promise<RouteMetrics> {
+    return this.limiter.run(() => this.aggregateUnbounded(geometry), signal);
+  }
+
+  private async aggregateUnbounded(
     geometry: ReadonlyArray<{ lat: number; lng: number }>,
   ): Promise<RouteMetrics> {
     // Guard against degenerate/malformed geometry (snap-collapsed identical
@@ -230,6 +258,11 @@ export class RouteEnrichmentService {
            WHERE h.is_active = true AND h.expires_at > NOW()
              AND h.moderation_status = 'visible'
              AND ST_DWithin(
+               h.location,
+               ST_GeomFromText($1, 4326),
+               ($2 / 111320.0 * 2)
+             )
+             AND ST_DWithin(
                h.location::geography,
                ST_GeomFromText($1, 4326)::geography,
                $2
@@ -243,6 +276,11 @@ export class RouteEnrichmentService {
              COUNT(*)::int AS zone_count
            FROM fun_zones fz
            WHERE ST_DWithin(
+             fz.boundary,
+             ST_GeomFromText($1, 4326),
+             ($2 / 111320.0 * 2)
+           )
+             AND ST_DWithin(
              fz.boundary::geography,
              ST_GeomFromText($1, 4326)::geography,
              $2

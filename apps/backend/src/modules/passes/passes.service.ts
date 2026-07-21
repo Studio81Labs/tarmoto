@@ -16,6 +16,9 @@ interface BboxCoords {
   maxLat: number;
 }
 
+const MAX_PASS_LIST_RESULTS = 500;
+const MAX_ROUTE_PASS_RESULTS = 200;
+
 @Injectable()
 export class PassesService {
   constructor(
@@ -72,7 +75,7 @@ export class PassesService {
       );
     }
 
-    const rows = await qb.getMany();
+    const rows = await qb.limit(MAX_PASS_LIST_RESULTS).getMany();
     const month = this.resolveMonth(forMonth);
     return rows.map((p) => this.toDto(p, month));
   }
@@ -97,18 +100,22 @@ export class PassesService {
         return `ST_MakePoint(:lng${i}, :lat${i})`;
       })
       .join(',');
+    const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)`;
+    params['bufferDeg'] = (bufferM / 111320) * 2;
 
     const rows = await this.passRepo
       .createQueryBuilder('p')
-      .where(
+      .where(`ST_DWithin(p.location, ${line}, :bufferDeg)`, params)
+      .andWhere(
         `ST_DWithin(
           p.location::geography,
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          ${line}::geography,
           :buffer
         )`,
         params,
       )
       .orderBy('p.elevation_m', 'DESC')
+      .limit(MAX_ROUTE_PASS_RESULTS)
       .getMany();
 
     const month = this.resolveMonth(dto.for_month);

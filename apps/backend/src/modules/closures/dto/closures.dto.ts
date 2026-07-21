@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -48,6 +49,8 @@ export class ClosurePointDto {
   @Type(() => Number)
   lng!: number;
 }
+
+export const MAX_CHECK_ROUTE_CLOSURE_POINTS = 25_000;
 
 export class RoadClosureDto {
   @ApiProperty()
@@ -317,10 +320,12 @@ export class CheckRouteClosuresDto {
   @ApiProperty({
     type: [ClosurePointDto],
     minItems: 2,
+    maxItems: MAX_CHECK_ROUTE_CLOSURE_POINTS,
     description: 'Planned route polyline (2+ points, WGS84 lat/lng).',
   })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_CHECK_ROUTE_CLOSURE_POINTS)
   @ValidateNested({ each: true })
   @Type(() => ClosurePointDto)
   route!: ClosurePointDto[];

@@ -975,6 +975,7 @@ export class TripsService {
   private async buildDayRoute(
     day: SaveRouteDayDto,
     options: SaveRouteDto['options'],
+    signal?: AbortSignal,
   ): Promise<{
     distance_km: number;
     estimated_time: string;
@@ -1024,6 +1025,13 @@ export class TripsService {
       duration_min: number;
       geometry: { lat: number; lng: number }[];
     };
+    const routeLeg = (
+      points: ReadonlyArray<{ lat: number; lng: number }>,
+      routeOptions: typeof baseOptions,
+    ) =>
+      signal
+        ? this.routingProvider.route(points, routeOptions, signal)
+        : this.routingProvider.route(points, routeOptions);
     if (legPreferences && legPreferences.length > 0) {
       // Per-leg road characters (revision 3 §C): re-route the day with
       // the SAME leg requests the live preview used, or a custom leg
@@ -1031,7 +1039,7 @@ export class TripsService {
       // a different line than the rider approved.
       const legs = await Promise.all(
         legPreferences.map((preference, i) =>
-          this.routingProvider.route(
+          routeLeg(
             [
               { lat: routing[i]!.lat, lng: routing[i]!.lng },
               { lat: routing[i + 1]!.lat, lng: routing[i + 1]!.lng },
@@ -1060,7 +1068,7 @@ export class TripsService {
         },
       );
     } else {
-      const whole = await this.routingProvider.route(
+      const whole = await routeLeg(
         routing.map((w) => ({ lat: w.lat, lng: w.lng })),
         baseOptions,
       );
@@ -1069,7 +1077,10 @@ export class TripsService {
       }
       route = whole;
     }
-    const m = await this.enrichment.aggregate(route.geometry);
+    signal?.throwIfAborted();
+    const m = signal
+      ? await this.enrichment.aggregate(route.geometry, signal)
+      : await this.enrichment.aggregate(route.geometry);
     return {
       distance_km: Number(route.distance_km.toFixed(2)),
       estimated_time: `${Math.round(route.duration_min)} minutes`,
@@ -1105,7 +1116,9 @@ export class TripsService {
     userId: string,
     tripId: string,
     dto: SaveRouteDto,
+    signal?: AbortSignal,
   ): Promise<TripDetailDto> {
+    const startedAt = Date.now();
     // 1. Membership gate: fold "no such trip" and "not a member" into
     //    the same 404 so the endpoint can't enumerate trip ids. Viewers
     //    are read-and-comment only — route writes need editor access.
@@ -1124,11 +1137,15 @@ export class TripsService {
 
     // 2. Route + enrich each day up front so a routing failure (502) aborts
     //    the whole save before the transaction starts — no partial writes.
+    const routingStartedAt = Date.now();
     const built = await Promise.all(
-      days.map((d) => this.buildDayRoute(d, dto.options)),
+      days.map((d) => this.buildDayRoute(d, dto.options, signal)),
     );
+    const routingMs = Date.now() - routingStartedAt;
+    signal?.throwIfAborted();
 
     // 3. Replace ALL days + their waypoints in a single transaction.
+    const persistenceStartedAt = Date.now();
     await this.tripRepo.manager.transaction(async (manager) => {
       // Take a pessimistic row lock first so concurrent saves to the same
       // trip serialize (last-writer-wins) — mirrors replaceWithImportedRoute.
@@ -1235,18 +1252,40 @@ export class TripsService {
         { status: 'planned', num_days: days.length, updated_at: new Date() },
       );
     });
+    const persistenceMs = Date.now() - persistenceStartedAt;
 
     // Fetch the persisted detail once and reuse it for both the broadcast
     // and the return value — mirrors replaceWithImportedRoute and update so
     // collaborators watching via WebSocket see the same state the caller
     // receives in the HTTP response.
+    const detailStartedAt = Date.now();
     const detail = await this.getDetail(userId, tripId);
+    const detailMs = Date.now() - detailStartedAt;
     this.events.emitToTrip(tripId, 'trip:updated', detail);
     // Audit trail — mirrors update/import/generate so the Activity tab shows
     // who changed the route on a collaborative trip.
     await this.activity.recordSafe(tripId, userId, 'trip_updated', {
       fields: ['manual_route'],
     });
+    const totalMs = Date.now() - startedAt;
+    if (totalMs >= 1_000) {
+      const legCount = days.reduce(
+        (sum, day) =>
+          sum +
+          Math.max(
+            1,
+            day.waypoints.filter((w) =>
+              ['start', 'via', 'end'].includes(w.type),
+            ).length - 1,
+          ),
+        0,
+      );
+      this.logger.warn(
+        `Planner route save took ${totalMs}ms ` +
+          `(routing=${routingMs}ms, persistence=${persistenceMs}ms, ` +
+          `detail=${detailMs}ms, days=${days.length}, legs=${legCount})`,
+      );
+    }
     return detail;
   }
 

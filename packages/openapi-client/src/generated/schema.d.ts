@@ -8270,6 +8270,7 @@ export interface operations {
             query: {
                 /** @description Bounding box: west,south,east,north */
                 bbox: string;
+                limit?: number;
             };
             header?: never;
             path?: never;
