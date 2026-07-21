@@ -337,7 +337,7 @@ export function averageQuality(days: TripDay[]): number {
  * route cap and its JSON body limit. The 1.5 km pass corridor does not need
  * the full rendering density of a saved/imported route.
  */
-export const MAX_PASS_CHECK_ROUTE_POINTS = 500;
+export const MAX_PASS_CHECK_ROUTE_POINTS = 20_000;
 
 /**
  * Flatten every day's `route_geometry` into one polyline for the pass-check

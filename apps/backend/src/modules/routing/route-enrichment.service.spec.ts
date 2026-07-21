@@ -183,7 +183,10 @@ describe('RouteEnrichmentService.aggregate', () => {
         connect: jest.fn().mockResolvedValue(undefined),
         query: jest.fn((sql: string) => {
           if (sql.includes('pg_backend_pid')) {
-            return Promise.resolve([{ pid }]);
+            return Promise.resolve([{ pid, application_name: 'tarmoto' }]);
+          }
+          if (sql.includes('set_config')) {
+            return Promise.resolve([{ set_config: 'tarmoto' }]);
           }
           startedCount += 1;
           if (startedCount === 3) allStartedResolve?.();
@@ -229,20 +232,65 @@ describe('RouteEnrichmentService.aggregate', () => {
       'canceling statement due to user request',
     );
     expect(cancelQuery).toHaveBeenCalledTimes(3);
-    expect(cancelQuery).toHaveBeenCalledWith(
-      'SELECT pg_cancel_backend($1)',
-      [101],
-    );
-    expect(cancelQuery).toHaveBeenCalledWith(
-      'SELECT pg_cancel_backend($1)',
-      [102],
-    );
-    expect(cancelQuery).toHaveBeenCalledWith(
-      'SELECT pg_cancel_backend($1)',
-      [103],
-    );
+    for (const pid of [101, 102, 103]) {
+      expect(cancelQuery).toHaveBeenCalledWith(
+        expect.stringContaining('pg_cancel_backend'),
+        [pid, expect.stringMatching(/^tarmoto-route-enrichment:/)],
+      );
+    }
     expect(
       runners.every((runner) => runner.release.mock.calls.length === 1),
     ).toBe(true);
+  });
+
+  it('releases a completed runner without waiting for a pool-backed cancel', async () => {
+    let resolveStatement: ((value: unknown[]) => void) | undefined;
+    let statementStartedResolve: (() => void) | undefined;
+    const statementStarted = new Promise<void>((resolve) => {
+      statementStartedResolve = resolve;
+    });
+    const runner = {
+      connect: jest.fn().mockResolvedValue(undefined),
+      query: jest.fn((sql: string) => {
+        if (sql.includes('pg_backend_pid')) {
+          return Promise.resolve([{ pid: 101, application_name: 'tarmoto' }]);
+        }
+        if (sql.includes('set_config')) {
+          return Promise.resolve([{ set_config: 'tarmoto' }]);
+        }
+        statementStartedResolve?.();
+        return new Promise<unknown[]>((resolve) => {
+          resolveStatement = resolve;
+        });
+      }),
+      release: jest.fn().mockResolvedValue(undefined),
+    };
+    const queuedCancel = new Promise<never>(() => undefined);
+    const ds = {
+      query: jest.fn().mockReturnValue(queuedCancel),
+      createQueryRunner: jest.fn().mockReturnValue(runner),
+    } as unknown as DataSource;
+    const controller = new AbortController();
+    const service = new RouteEnrichmentService(ds);
+    const query = (
+      service as unknown as {
+        query<T>(
+          sql: string,
+          params: unknown[],
+          signal?: AbortSignal,
+        ): Promise<T>;
+      }
+    ).query<unknown[]>('SELECT 1', [], controller.signal);
+
+    await statementStarted;
+    controller.abort();
+    resolveStatement?.([]);
+
+    await expect(query).resolves.toEqual([]);
+    expect(runner.release).toHaveBeenCalledTimes(1);
+    expect(runner.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('set_config'),
+      ['tarmoto'],
+    );
   });
 });

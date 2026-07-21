@@ -326,6 +326,19 @@ describe("flattenTripRoute", () => {
     expect(result[0]).toEqual(denseRoute[0]);
     expect(result.at(-1)).toEqual(denseRoute.at(-1));
     expect(result.length).toBeLessThan(25_000);
+    expect(
+      Math.max(
+        ...result.slice(1).map((point, index) => {
+          const previous = result[index]!;
+          const previousSourceIndex = Math.round((previous.lat - 46) / 0.00001);
+          const sourceIndex = Math.round((point.lat - 46) / 0.00001);
+          return sourceIndex - previousSourceIndex;
+        }),
+      ),
+    ).toBeLessThanOrEqual(3);
+    expect(Buffer.byteLength(JSON.stringify({ route: result }))).toBeLessThan(
+      1_048_576,
+    );
   });
 });
 

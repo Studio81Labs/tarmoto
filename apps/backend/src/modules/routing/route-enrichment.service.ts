@@ -1,5 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import {
   ConcurrencyLimiter,
@@ -396,9 +397,10 @@ export class RouteEnrichmentService {
   /**
    * TypeORM's PostgreSQL query API does not accept AbortSignal. When the
    * request has one, pin the statement to a QueryRunner connection and cancel
-   * that backend from a spare pool connection on abort. This releases both
-   * Postgres CPU and the enrichment limiter slot instead of merely abandoning
-   * the HTTP response while the spatial statement keeps running.
+   * that backend from another pool connection on abort. A per-statement
+   * application-name token makes a delayed cancellation safe: if the original
+   * statement has already returned, the runner clears the token and releases
+   * immediately instead of waiting for a cancel query queued behind it.
    */
   private async query<T>(
     sql: string,
@@ -412,19 +414,27 @@ export class RouteEnrichmentService {
     await runner.connect();
 
     let backendPid: number | undefined;
+    let originalApplicationName = '';
+    const cancellationToken = `tarmoto-route-enrichment:${randomUUID()}`;
     let settled = false;
     let cancellation: Promise<void> | undefined;
     const cancel = () => {
       if (settled || backendPid === undefined) return;
-      cancellation ??= this.cancelBackend(backendPid);
+      cancellation ??= this.cancelBackend(backendPid, cancellationToken);
     };
 
     try {
       signal.throwIfAborted();
       const pidRows = (await runner.query(
-        'SELECT pg_backend_pid()::int AS pid',
-      )) as Array<{ pid: number }>;
+        `SELECT
+           pg_backend_pid()::int AS pid,
+           current_setting('application_name') AS application_name`,
+      )) as Array<{ pid: number; application_name: string }>;
       backendPid = pidRows[0]?.pid;
+      originalApplicationName = pidRows[0]?.application_name ?? '';
+      await runner.query(`SELECT set_config('application_name', $1, false)`, [
+        cancellationToken,
+      ]);
       signal.addEventListener('abort', cancel, { once: true });
       signal.throwIfAborted();
       const result: unknown = await runner.query(sql, params);
@@ -432,18 +442,37 @@ export class RouteEnrichmentService {
     } finally {
       settled = true;
       signal.removeEventListener('abort', cancel);
-      // Keep ownership of this backend PID until the cancellation request has
-      // completed. Releasing it earlier could let the pool reuse the same
-      // connection and a delayed pg_cancel_backend call could then terminate
-      // an unrelated query.
-      await cancellation;
-      await runner.release();
+      try {
+        // Clear the identity before returning this connection to the pool. A
+        // cancel that was queued while the pool was full will then become a
+        // harmless no-op rather than targeting a later query on this PID.
+        await runner.query(`SELECT set_config('application_name', $1, false)`, [
+          originalApplicationName,
+        ]);
+      } finally {
+        await runner.release();
+      }
     }
   }
 
-  private async cancelBackend(backendPid: number): Promise<void> {
+  private async cancelBackend(
+    backendPid: number,
+    cancellationToken: string,
+  ): Promise<void> {
     try {
-      await this.dataSource.query('SELECT pg_cancel_backend($1)', [backendPid]);
+      await this.dataSource.query(
+        `SELECT COALESCE(
+           (
+             SELECT pg_cancel_backend(pid)
+             FROM pg_stat_activity
+             WHERE pid = $1
+               AND application_name = $2
+               AND state = 'active'
+           ),
+           false
+         ) AS cancelled`,
+        [backendPid, cancellationToken],
+      );
     } catch (err: unknown) {
       this.logger.warn(
         `Failed to cancel route enrichment query: ${
