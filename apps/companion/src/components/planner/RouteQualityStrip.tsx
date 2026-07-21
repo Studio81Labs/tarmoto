@@ -8,6 +8,7 @@ import {
 } from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import type { EnglishMessageKey } from "@/i18n";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Road-quality-along-route strip: the day's quality segments laid out
@@ -27,6 +28,7 @@ export function RouteQualityStrip({
   endLabel,
   onSegmentClick,
 }: RouteQualityStripProps) {
+  const format = useFormat();
   if (segments.length === 0) return null;
   const totalKm = segments.reduce((sum, s) => sum + s.lengthKm, 0);
   // Coalesce adjacent same-band segments so a long covered route (thousands of
@@ -39,9 +41,9 @@ export function RouteQualityStrip({
           <button
             key={segment.id}
             type="button"
-            aria-label={t("Preview {label} section, {km} km", {
+            aria-label={t("Preview {label} section, {distance}", {
               label: t(QUALITY_BAND_LABELS[segment.band]),
-              km: Math.round(segment.lengthKm * 10) / 10,
+              distance: format.distanceKm(segment.lengthKm),
             })}
             title={t(QUALITY_BAND_LABELS[segment.band])}
             onClick={() => onSegmentClick?.(segment.id)}
@@ -57,10 +59,11 @@ export function RouteQualityStrip({
       </div>
       <div className="mt-1.5 flex justify-between">
         <Mono className="text-[9.5px] text-fg-mute">
-          {(startLabel ?? "START").toUpperCase()} · 0 KM
+          {(startLabel ?? t("START")).toUpperCase()} · {format.distanceKm(0)}
         </Mono>
         <Mono className="text-[9.5px] text-fg-mute">
-          {(endLabel ?? "FINISH").toUpperCase()} · {Math.round(totalKm)} KM
+          {(endLabel ?? t("FINISH")).toUpperCase()} ·{" "}
+          {format.distanceKm(totalKm)}
         </Mono>
       </div>
       <div className="mt-3 flex flex-wrap gap-3">

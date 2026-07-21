@@ -99,13 +99,13 @@ export default function RideDetailPage() {
           return;
         }
         if (apiError || !data) {
-          setError("Could not load ride");
+          setError(t("Could not load ride"));
           return;
         }
         setRide(data);
       })
       .catch(() => {
-        if (!cancelled) setError("Could not load ride");
+        if (!cancelled) setError(t("Could not load ride"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -169,7 +169,7 @@ export default function RideDetailPage() {
       setRide((r) => (r ? { ...r, name: nextName } : r));
       setRenaming(false);
     } catch {
-      setRenameError("Couldn't rename this ride. Try again.");
+      setRenameError(t("Couldn't rename this ride. Try again."));
     } finally {
       setRenameSaving(false);
     }

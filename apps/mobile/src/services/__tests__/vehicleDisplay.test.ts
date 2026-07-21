@@ -232,17 +232,17 @@ describe("formatNavDistanceMeters", () => {
   });
 
   it("renders one-decimal kilometres at and above 1 km", () => {
-    expect(formatNavDistanceMeters(1000)).toBe("1.0 km");
+    expect(formatNavDistanceMeters(1000)).toBe("1 km");
     expect(formatNavDistanceMeters(1500)).toBe("1.5 km");
-    expect(formatNavDistanceMeters(12345)).toBe("12.3 km");
+    expect(formatNavDistanceMeters(12345)).toBe("12.4 km");
   });
 
   it("never produces '1000 m' on the boundary (995–999 m → 1.0 km)", () => {
     // Without the post-round threshold check, Math.round(995/10)*10
     // would render "1000 m", then snap back to "990 m" on the next
     // tick — a backwards-looking flicker at a glance from the bike.
-    expect(formatNavDistanceMeters(995)).toBe("1.0 km");
-    expect(formatNavDistanceMeters(999)).toBe("1.0 km");
+    expect(formatNavDistanceMeters(995)).toBe("1 km");
+    expect(formatNavDistanceMeters(999)).toBe("1 km");
   });
 
   it("collapses non-finite / negative inputs to '0 m'", () => {
@@ -325,7 +325,7 @@ describe("buildNavigationPaneItems", () => {
     );
     expect(items.find((item) => item.title === "Speed")?.detail).toBe("—");
     expect(items.find((item) => item.title === "Distance")?.detail).toBe(
-      "0.0 km",
+      "0 km",
     );
     expect(items.find((item) => item.title === "Duration")?.detail).toBe(
       "0:00",

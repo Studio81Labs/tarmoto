@@ -54,4 +54,8 @@ export const achievements = {
   "{pct} complete": "{pct} complete",
   "{weeks}w {days}d left": "{weeks}w {days}d left",
   "{xp} XP to go": "{xp} XP to go",
+  "Badges, challenges, and leaderboards appear once you're signed in.":
+    "Badges, challenges, and leaderboards appear once you're signed in.",
+  "EARNED {date}": "EARNED {date}",
+  "Could not join challenge.": "Could not join challenge.",
 } as const;

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { PlaceSearch } from "./PlaceSearch";
 import { api } from "@/lib/api";
+import { FormatProvider } from "@/format/FormatProvider";
 
 vi.mock("@/lib/api", () => ({
   api: { GET: vi.fn() },
@@ -90,6 +91,19 @@ describe("PlaceSearch", () => {
     // Popover: segmented radius options + the map preview stub.
     fireEvent.click(screen.getByRole("radio", { name: "50 km" }));
     expect(onChange).toHaveBeenCalledWith({ ...PLACE, km: 50 });
+  });
+
+  it("uses the displayed imperial distance in the radius accessible name", () => {
+    render(
+      <FormatProvider formatLocale="en-US" timeZone="UTC" units="imperial">
+        <PlaceSearch value={{ ...PLACE, km: 25 }} onChange={vi.fn()} />
+      </FormatProvider>,
+    );
+
+    const chip = screen.getByRole("button", {
+      name: "Search radius: 15.5 mi",
+    });
+    expect(chip).toHaveTextContent("15.5 mi");
   });
 
   it("clearing the field drops the filter and the chip", () => {

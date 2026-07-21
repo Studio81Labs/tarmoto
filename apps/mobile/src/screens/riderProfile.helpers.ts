@@ -10,6 +10,8 @@
  */
 
 export { formatCount, formatJoinedLabel } from "@tarmoto/shared";
+import { getFormatters } from "@/format";
+import { translate } from "@/i18n";
 
 /**
  * "Follower since 5 May 2026" / "Following since 5 May 2026" — used on the
@@ -17,19 +19,18 @@ export { formatCount, formatJoinedLabel } from "@tarmoto/shared";
  * Followers list reads correctly ("Follower since X" — the row user is a
  * follower of the profile being viewed) instead of always-"Following since
  * X", which incorrectly implied the viewer was following each row. Uses
- * British formatting (DD Mon YYYY) for compactness; matches the rest of
- * the mobile app's date rendering.
+ * Date formatting follows the active rider/device locale and timezone.
  */
 export function formatFollowedSince(
   followedAt: string,
   mode: "followers" | "following",
 ): string {
   const date = new Date(followedAt);
-  const verb = mode === "followers" ? "Follower" : "Following";
+  const verb =
+    mode === "followers" ? translate("Follower") : translate("Following");
   if (Number.isNaN(date.getTime())) return verb;
-  return `${verb} since ${date.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  })}`;
+  return translate("{relation} since {date}", {
+    relation: verb,
+    date: getFormatters().date(date),
+  });
 }

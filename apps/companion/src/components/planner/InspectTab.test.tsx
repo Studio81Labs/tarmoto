@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { InspectTab, daySurfaceMix } from "./InspectTab";
+import { RouteQualityStrip } from "./RouteQualityStrip";
+import { FormatProvider } from "@/format/FormatProvider";
 import { deriveDayQualitySegments } from "@/lib/trip-planner-map";
 import { deriveFlaggedSections } from "@/lib/planner/api";
 import { coalesceQualityRuns } from "@/lib/planner/quality-bands";
@@ -68,6 +70,20 @@ function routedDay(overrides?: Partial<TripDay>): TripDay {
 }
 
 describe("InspectTab", () => {
+  it("uses the active distance unit in quality-strip accessible names", () => {
+    render(
+      <FormatProvider formatLocale="en-US" timeZone="UTC" units="imperial">
+        <RouteQualityStrip segments={[qualitySeg({ lengthKm: 15 })]} />
+      </FormatProvider>,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Preview Good or better section, 9.3 mi",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("shows the empty state when no route exists yet", () => {
     render(
       <InspectTab

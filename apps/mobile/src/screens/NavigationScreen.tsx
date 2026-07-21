@@ -76,9 +76,13 @@ import {
   type ManeuverType,
 } from "@/services/navigation";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
-import { resolveNavigationRoute } from "./NavigationScreen.helpers";
+import {
+  formatNavigationDistanceM,
+  resolveNavigationRoute,
+} from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // `Navigate` is registered on both TripsStack (the planned-trip flow)
 // and HomeStack (commute), with identical params. Either RouteProp is a
@@ -339,11 +343,11 @@ export default function NavigationScreen() {
         <View style={styles.statsRow}>
           <Stat
             label={translate("Remaining")}
-            value={formatDistanceM(tick?.remainingM ?? 0)}
+            value={formatNavigationDistanceM(tick?.remainingM ?? 0)}
           />
           <Stat
             label={translate("Off-axis")}
-            value={formatMeters(tick?.offRouteDistanceM ?? 0)}
+            value={formatNavigationDistanceM(tick?.offRouteDistanceM ?? 0)}
           />
           <Stat
             label={translate("Maneuvers")}
@@ -445,7 +449,7 @@ function OffRouteBanner({ distanceM }: { distanceM: number }) {
         <Text style={styles.offRouteBodyText}>
           {translate(
             "{distance} from the planned path — return when it's safe.",
-            { distance: formatMeters(distanceM) },
+            { distance: formatNavigationDistanceM(distanceM) },
           )}
         </Text>
       </View>
@@ -495,25 +499,7 @@ function buildRoadNameLookup(
 
 function formatManeuverDistance(m: number): string {
   if (m <= 15) return translate("Now");
-  if (m < 1000) return `${Math.round(m / 10) * 10} m`;
-  return `${(m / 1000).toFixed(1)} km`;
-}
-
-/**
- * Format a distance in METERS for the stats panel, switching to km with
- * one decimal above 1 km. Deliberately named distinct from
- * `formatKm` in `TripScreens.helpers.ts` (which takes kilometres) so a
- * future refactor can't silently introduce a 1000× unit drift.
- */
-function formatDistanceM(m: number): string {
-  if (m <= 0) return "0 km";
-  if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(1)} km`;
-}
-
-function formatMeters(m: number): string {
-  if (m < 1) return "0 m";
-  return `${Math.round(m)} m`;
+  return getFormatters().distanceM(m);
 }
 
 const styles = StyleSheet.create({

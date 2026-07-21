@@ -94,7 +94,7 @@ export default function DataPage() {
       else setExportState({ kind: "polling", id: view.id });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Could not start export";
+        err instanceof Error ? err.message : t("Could not start export");
       setExportState({ kind: "error", message });
     }
   }
@@ -313,7 +313,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
       await signOut({ callbackUrl: "/login?deleted=1" });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Could not delete account";
+        err instanceof Error ? err.message : t("Could not delete account");
       setState({ kind: "error", message });
     }
   }

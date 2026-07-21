@@ -45,12 +45,12 @@ export function LoginForm({
         redirect: false,
       });
       if (result?.error) {
-        setError("Invalid email or password");
+        setError(t("Invalid email or password"));
       } else {
         window.location.href = callbackUrl;
       }
     } catch {
-      setError("An unexpected error occurred");
+      setError(t("An unexpected error occurred"));
     } finally {
       setLoading(false);
     }

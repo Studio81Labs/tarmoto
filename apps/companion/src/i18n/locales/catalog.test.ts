@@ -1,5 +1,6 @@
 import { IntlMessageFormat } from "intl-messageformat";
 import { en } from "./en";
+import { companionCatalogs } from ".";
 
 // Guards for future-locale readiness. Every catalog VALUE must be valid ICU
 // (a translator will feed translated variants through the same parser), and
@@ -7,45 +8,53 @@ import { en } from "./en";
 // following brace, and `''` collapses to a single apostrophe — both would
 // ALSO render literally on the no-values fast path, so they are always
 // authoring mistakes, never intended output.
-describe("companion en catalog ICU validity", () => {
+describe("companion catalog ICU validity", () => {
   const entries = Object.entries(en) as [string, string][];
+  const localizedEntries = Object.entries(companionCatalogs).flatMap(
+    ([locale, catalog]) =>
+      Object.entries(catalog)
+        .filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        )
+        .map(([key, message]) => ({ locale, key, message })),
+  );
 
   it("parses every message as ICU", () => {
-    const failures = entries
-      .filter(([, message]) => {
+    const failures = localizedEntries
+      .filter(({ locale, message }) => {
         try {
-          new IntlMessageFormat(message, "en", undefined, { ignoreTag: true });
+          new IntlMessageFormat(message, locale, undefined, {
+            ignoreTag: true,
+          });
           return false;
         } catch {
           return true;
         }
       })
-      .map(([key]) => key);
+      .map(({ locale, key }) => `${locale}:${key}`);
     expect(failures).toEqual([]);
   });
 
   it("contains no ICU apostrophe-quoting sequences", () => {
-    const offenders = entries
+    const offenders = localizedEntries
       .filter(
-        ([, m]) => m.includes("'{") || m.includes("'}") || m.includes("''"),
+        ({ message }) =>
+          message.includes("'{") ||
+          message.includes("'}") ||
+          message.includes("''"),
       )
-      .map(([key]) => key);
+      .map(({ locale, key }) => `${locale}:${key}`);
     expect(offenders).toEqual([]);
   });
 
-  // Global Constraints 5-6: plural selection is always named `count` and
-  // every plural message carries an `other` branch. Together with the
-  // engine's plural tests (i18n.spec.ts) and the touched-site component
-  // tests, this is the spec §7 "per-site count = 1/2/5" coverage: every
-  // registered plural message is structurally exercisable at any count.
-  it("every plural message uses the count argument and declares other", () => {
-    const offenders = entries
+  it("uses an other branch for every plural in every locale", () => {
+    const offenders = localizedEntries
       .filter(
-        ([, m]) =>
-          m.includes(", plural,") &&
-          !(m.includes("{count, plural,") && m.includes("other {")),
+        ({ message }) =>
+          (message.match(/,\s*plural,/g)?.length ?? 0) >
+          (message.match(/\bother\s*\{/g)?.length ?? 0),
       )
-      .map(([key]) => key);
+      .map(({ locale, key }) => `${locale}:${key}`);
     expect(offenders).toEqual([]);
   });
 

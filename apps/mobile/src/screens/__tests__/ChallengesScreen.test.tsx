@@ -13,6 +13,7 @@ import {
 import ChallengesScreen from "../ChallengesScreen";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
+import { setActiveFormatContext } from "@/format";
 import type { Challenge, ChallengeDetail } from "@/types";
 
 jest.mock("@/components/Icon", () => {
@@ -104,6 +105,7 @@ const baseDetail: ChallengeDetail = {
 describe("ChallengesScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
   });
 
   it("renders the active challenge list with metadata pills", async () => {
@@ -123,6 +125,30 @@ describe("ChallengesScreen", () => {
     await render(<ChallengesScreen />);
 
     await waitFor(() => expect(screen.getByText("1 rider")).toBeTruthy());
+  });
+
+  it("converts distance challenge targets and leaderboard progress for imperial riders", async () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+    mockedApi.listChallenges.mockResolvedValue([baseChallenge]);
+    mockedApi.getChallenge.mockResolvedValue(baseDetail);
+
+    await render(<ChallengesScreen />);
+    await waitFor(() => expect(screen.getByText("124.3 mi")).toBeTruthy());
+
+    await act(async () => {
+      await fireEvent.press(
+        screen.getByLabelText("Expand May Distance details"),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/111\.9 mi/)).toBeTruthy();
+    expect(screen.getByText(/55\.9 mi/)).toBeTruthy();
   });
 
   it("renders an empty state when no challenges are active", async () => {

@@ -28,6 +28,7 @@ import {
 import type { WeatherAlert, WeatherAlertSeverity } from "@/types";
 import { t as translate } from "@/i18n";
 import { localizeWeatherAlert } from "@/services/weatherAlertCopy";
+import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -181,8 +182,7 @@ export function WeatherAlertBanner({
 }
 
 function formatKm(km: number): string {
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
+  return getFormatters().distanceM(Math.max(0, km) * 1000);
 }
 
 const styles = StyleSheet.create({

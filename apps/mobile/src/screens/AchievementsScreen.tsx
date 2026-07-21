@@ -39,6 +39,7 @@ import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { tierLabel, tierRank } from "./AchievementsScreen.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
 
@@ -207,7 +208,10 @@ export default function AchievementsScreen() {
             ? translate(
                 "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
                 {
-                  percent: snapshot.exploration.percent_explored.toFixed(1),
+                  percent: getFormatters().decimal(
+                    snapshot.exploration.percent_explored,
+                    1,
+                  ),
                   ridden: snapshot.exploration.ridden_segments,
                   total: snapshot.exploration.total_segments,
                 },

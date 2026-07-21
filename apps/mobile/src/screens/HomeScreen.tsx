@@ -27,6 +27,7 @@ import type {
   RootTabParamList,
 } from "@/navigation/RootNavigator";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // Composite type covers the in-stack `Commute` push AND the cross-tab
 // jump into RideTab → RideActive that the US-21 "Start commute" CTA
@@ -99,9 +100,9 @@ export default function HomeScreen() {
               </Text>
               <Text style={styles.startBody}>
                 {route.distance_km != null
-                  ? translate("{name} · {distance} km", {
+                  ? translate("{name} · {distance}", {
                       name: route.name,
-                      distance: route.distance_km.toFixed(1),
+                      distance: getFormatters().distanceKm(route.distance_km),
                     })
                   : route.name}
               </Text>

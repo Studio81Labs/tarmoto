@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import HomeScreen from "../HomeScreen";
 import type { CommuteRoute } from "@/types";
+import { setActiveFormatContext } from "@/format";
 
 const mockNavigate = jest.fn();
 let mockUseCommuteResult: {
@@ -44,6 +45,7 @@ const baseRoute: CommuteRoute = {
 describe("HomeScreen", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
   });
 
   it("hides the Start commute CTA in the learning state", async () => {
@@ -82,6 +84,23 @@ describe("HomeScreen", () => {
       screen: "RideActive",
       params: { rideType: "commute" },
     });
+  });
+
+  it("formats the commute card distance in the rider's active unit", async () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+    mockUseCommuteResult = {
+      phase: "ready",
+      route: baseRoute,
+      newHazardCount: 0,
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText("Home → Work · 7.8 mi")).toBeTruthy();
   });
 
   it("surfaces the new-hazard count badge on the hazard-check card", async () => {

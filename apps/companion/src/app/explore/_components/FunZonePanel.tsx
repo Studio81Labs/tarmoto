@@ -59,7 +59,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
         setDetail(d);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
-        setError("Couldn't load zone details.");
+        setError(t("Couldn't load zone details."));
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }

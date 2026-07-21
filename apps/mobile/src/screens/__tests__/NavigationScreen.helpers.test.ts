@@ -1,5 +1,9 @@
 import type { LatLng, Trip, Waypoint } from "@/types";
-import { resolveNavigationRoute } from "../NavigationScreen.helpers";
+import {
+  formatNavigationDistanceM,
+  resolveNavigationRoute,
+} from "../NavigationScreen.helpers";
+import { setActiveFormatContext } from "@/format";
 
 const sampleGeometry: LatLng[] = [
   { lat: 49.2, lng: 16.6 },
@@ -139,5 +143,23 @@ describe("resolveNavigationRoute", () => {
     );
     expect(result.polyline).toEqual([]);
     expect(result.title).toBe("Day 99");
+  });
+});
+
+describe("formatNavigationDistanceM", () => {
+  beforeEach(() => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+  });
+
+  afterEach(() => {
+    setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
+  });
+
+  it("uses miles for a long off-route horizontal distance", () => {
+    expect(formatNavigationDistanceM(5_000)).toBe("3.1 mi");
   });
 });

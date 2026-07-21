@@ -21,7 +21,7 @@ import {
 
 describe("formatLengthKm", () => {
   it("shows km with one decimal at or above 1km", () => {
-    expect(formatLengthKm(1000)).toBe("1.0 km");
+    expect(formatLengthKm(1000)).toBe("1 km");
     expect(formatLengthKm(2450)).toBe("2.5 km");
   });
 
@@ -32,7 +32,7 @@ describe("formatLengthKm", () => {
   // Round the meters before the unit pick so 999.7m doesn't render
   // as "1000 m" when the rounded value would flip to km.
   it("promotes to km when meters round up to 1000", () => {
-    expect(formatLengthKm(999.7)).toBe("1.0 km");
+    expect(formatLengthKm(999.7)).toBe("1 km");
     expect(formatLengthKm(999.4)).toBe("999 m");
   });
 

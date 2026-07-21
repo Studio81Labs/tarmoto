@@ -71,13 +71,13 @@ function CompareRidesPageInner() {
       .then(({ data, error }) => {
         if (cancelled) return;
         if (error) {
-          setOptionsError("Could not load ride list");
+          setOptionsError(t("Could not load ride list"));
           return;
         }
         setOptions(data?.rides ?? []);
       })
       .catch(() => {
-        if (!cancelled) setOptionsError("Could not load ride list");
+        if (!cancelled) setOptionsError(t("Could not load ride list"));
       })
       .finally(() => {
         if (!cancelled) setOptionsLoading(false);
@@ -345,14 +345,14 @@ function ComparisonView({
       .then(([a, b]) => {
         if (cancelled) return;
         if (!a || !b) {
-          setError("Could not load one or both rides");
+          setError(t("Could not load one or both rides"));
           return;
         }
         setRideA(a);
         setRideB(b);
       })
       .catch(() => {
-        if (!cancelled) setError("Could not load rides");
+        if (!cancelled) setError(t("Could not load rides"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -647,7 +647,7 @@ function ElevationBar({
   kind: "gain" | "loss";
 }) {
   const pct = value != null ? Math.round((value / max) * 100) : 0;
-  const label = kind === "gain" ? "Gain" : "Loss";
+  const label = kind === "gain" ? t("Gain") : t("Loss");
   return (
     <div className="mb-3 last:mb-0">
       <div className="mb-1 flex items-center justify-between text-xs text-fg-dim">

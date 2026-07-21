@@ -25,8 +25,8 @@
  *     gets a tactile cue even with the helmet audio muted.
  */
 import { useEffect, useRef, useState } from "react";
-import { NativeModules, Platform } from "react-native";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
+import { detectDeviceLocale } from "@/i18n/deviceLocale";
 import { locationService, type LocationUpdate } from "@/services/location";
 import {
   NavSession,
@@ -73,39 +73,6 @@ const HAPTIC_CONFIG = {
   enableVibrateFallback: true,
   ignoreAndroidSystemSettings: false,
 };
-
-/**
- * Resolve the device locale through React Native's `NativeModules`. The
- * iOS shape is `SettingsManager.settings.AppleLocale` (with `AppleLanguages[0]`
- * as a fallback for newer iOS versions that retired the singular key);
- * Android exposes `I18nManager.localeIdentifier`. We swallow any access
- * errors so a misconfigured platform falls through to English instead
- * of crashing the screen — silent English is still navigable.
- */
-function detectDeviceLocale(): string {
-  try {
-    if (Platform.OS === "ios") {
-      const settings =
-        (
-          NativeModules.SettingsManager as
-            | { settings?: Record<string, unknown> }
-            | undefined
-        )?.settings ?? {};
-      const apple =
-        (settings.AppleLocale as string | undefined) ??
-        (settings.AppleLanguages as string[] | undefined)?.[0];
-      if (typeof apple === "string") return apple;
-    } else if (Platform.OS === "android") {
-      const id = (
-        NativeModules.I18nManager as { localeIdentifier?: string } | undefined
-      )?.localeIdentifier;
-      if (typeof id === "string") return id;
-    }
-  } catch {
-    // Fall through.
-  }
-  return "en";
-}
 
 export function useNavigationSession(
   options: UseNavigationSessionOptions,
@@ -156,7 +123,9 @@ export function useNavigationSession(
   // for the phrase builder and for pushing the BCP-47 tag to the TTS
   // engine so the voice pack matches.
   const resolvedLocale: VoiceLocale =
-    language === "auto" ? resolveVoiceLocale(detectDeviceLocale()) : language;
+    language === "auto"
+      ? resolveVoiceLocale(detectDeviceLocale() ?? undefined)
+      : language;
 
   // Sync voice state during render, not in an effect. Location callbacks
   // can fire between commit and effect flush, so an effect-based update

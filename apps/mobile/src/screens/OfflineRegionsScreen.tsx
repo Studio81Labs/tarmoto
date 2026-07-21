@@ -43,6 +43,7 @@ import {
   statusFg,
 } from "@/theme/brand";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -370,9 +371,9 @@ function defaultRegionName(lat: number, lng: number): string {
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "—";
   const mb = bytes / (1024 * 1024);
-  if (mb >= 1) return `${mb.toFixed(1)} MB`;
+  if (mb >= 1) return `${getFormatters().decimal(mb, 1)} MB`;
   const kb = bytes / 1024;
-  return `${Math.round(kb)} KB`;
+  return `${getFormatters().integer(kb)} KB`;
 }
 
 const styles = StyleSheet.create({

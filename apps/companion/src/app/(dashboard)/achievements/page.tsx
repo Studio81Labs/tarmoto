@@ -220,7 +220,7 @@ export default function AchievementsPage() {
         // confusing (the new user never tried to join anything).
         if (useAuthStore.getState().user?.id === userId) {
           setJoinError(
-            err instanceof Error ? err.message : "Could not join challenge.",
+            err instanceof Error ? err.message : t("Could not join challenge."),
           );
           setJoiningIds((prev) => {
             const next = new Set(prev);
@@ -280,7 +280,9 @@ export default function AchievementsPage() {
         <EmptyCard
           icon={<Lock size={32} className="text-fg-mute" />}
           title={t("Sign in to see your achievements")}
-          body="Badges, challenges, and leaderboards appear once you're signed in."
+          body={t(
+            "Badges, challenges, and leaderboards appear once you're signed in.",
+          )}
         />
       </div>
     );
@@ -730,7 +732,7 @@ function BadgeCard({
       </p>
       {earnedLabel && (
         <Mono className="text-[9px] tracking-[0.4px] text-fg-mute">
-          EARNED {earnedLabel}
+          {t("EARNED {date}", { date: earnedLabel })}
         </Mono>
       )}
     </div>

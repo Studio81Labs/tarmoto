@@ -1,6 +1,7 @@
 import { readLocale, t } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
+
 import { notFound } from "next/navigation";
 import {
   ArrowUpRight,
@@ -19,6 +20,9 @@ import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta"
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { getServerFormatters } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
+
+/** Product wordmark; names are intentionally locale-independent. */
+const WORDMARK = "TARMOTO";
 
 export const dynamic = "force-dynamic";
 
@@ -63,8 +67,9 @@ export default async function SharedCollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const format = await getServerFormatters();
-  const [detail, preview] = await Promise.all([
+  const [locale, format, detail, preview] = await Promise.all([
+    readLocale(),
+    getServerFormatters(),
     fetchSharedCollection(slug),
     fetchSharedCollectionPreview(slug),
   ]);
@@ -104,7 +109,7 @@ export default async function SharedCollectionPage({
             </span>
             <span className="flex min-w-0 items-center gap-2">
               <span className="text-[14px] font-extrabold tracking-[-0.2px]">
-                TARMOTO
+                {WORDMARK}
               </span>
               <span className="text-fg-mute">/</span>
               <Mono className="truncate text-[11px] text-fg-dim">
@@ -127,7 +132,16 @@ export default async function SharedCollectionPage({
         <section className="mb-[26px] rounded-[14px] border border-line bg-cream p-[30px]">
           <div className="mb-2.5 flex items-center gap-3">
             <Stamp>{t("Route collection")}</Stamp>
-            <RouteCollectionVisibilityPill visibility={detail.visibility} />
+            <RouteCollectionVisibilityPill
+              visibility={detail.visibility}
+              label={
+                detail.visibility === "public"
+                  ? t("Public", undefined, locale)
+                  : detail.visibility === "unlisted"
+                    ? t("Unlisted", undefined, locale)
+                    : t("Private", undefined, locale)
+              }
+            />
           </div>
           <h1 className="font-sans text-[42px] font-extrabold leading-[1.04] tracking-[-0.5px] text-ink">
             {detail.title}

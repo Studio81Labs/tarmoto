@@ -20,6 +20,7 @@ import { createTarmotoClient } from "@tarmoto/openapi-client";
 import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
 import { clearCachedPreferences } from "./privacyCache";
+import { detectDeviceLocale } from "@/i18n/deviceLocale";
 
 type AuthResponse = Schemas["AuthResponseDto"];
 type CachedUser = Schemas["UserResponseDto"];
@@ -366,21 +367,31 @@ const requestTimeouts = new Map<string, TimeoutHandle>();
 
 baseClient.use({
   async onRequest({ request, id }) {
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    const locale = detectDeviceLocale();
+    const headers = new Headers(request.headers);
+    if (locale && !headers.has("Accept-Language")) {
+      headers.set("Accept-Language", locale);
+    }
+    const localizedRequest = new Request(request, { headers });
+
+    if (
+      localizedRequest.method !== "GET" &&
+      localizedRequest.method !== "HEAD"
+    ) {
       // Clone first — `arrayBuffer()` on the clone consumes the
       // clone's body stream while leaving the original request body
       // intact for the imminent fetch. The original then ships its
       // body normally.
-      const buf = await request.clone().arrayBuffer();
+      const buf = await localizedRequest.clone().arrayBuffer();
       if (buf.byteLength > 0) requestBodies.set(id, buf);
     }
     // Apply the 15 s deadline by replacing the request with one that
     // carries our combined signal. A caller-supplied signal (e.g.
     // `uploadReviewPhotos` cancellation) is preserved because
     // `withTimeout` propagates its abort.
-    const handle = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
+    const handle = withTimeout(localizedRequest.signal, REQUEST_TIMEOUT_MS);
     requestTimeouts.set(id, handle);
-    return new Request(request, { signal: handle.signal });
+    return new Request(localizedRequest, { signal: handle.signal });
   },
   async onResponse({ response, request, schemaPath, id }) {
     try {

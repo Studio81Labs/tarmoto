@@ -49,13 +49,13 @@ describe("formatFollowedSince", () => {
   // viewer following them, which is wrong. Mode flips the leading verb.
   it("renders 'Follower since' on the followers list", () => {
     expect(formatFollowedSince("2026-01-15T10:00:00Z", "followers")).toBe(
-      "Follower since 15 Jan 2026",
+      "Follower since Jan 15, 2026",
     );
   });
 
   it("renders 'Following since' on the following list", () => {
     expect(formatFollowedSince("2026-01-15T10:00:00Z", "following")).toBe(
-      "Following since 15 Jan 2026",
+      "Following since Jan 15, 2026",
     );
   });
 

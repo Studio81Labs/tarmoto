@@ -104,6 +104,7 @@ import {
 } from "./MapScreen.helpers";
 import { formatKm } from "./TripScreens.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -882,7 +883,7 @@ function FunZoneCard({
       <View style={styles.funZoneCardHeader}>
         <View style={[styles.funZoneScoreChip, { borderColor: accent }]}>
           <Text style={[styles.funZoneScoreChipValue, { color: accent }]}>
-            {zone.composite_score.toFixed(1)}
+            {getFormatters().decimal(zone.composite_score, 1)}
           </Text>
           <Text style={styles.funZoneScoreChipLabel}>{translate("score")}</Text>
         </View>

@@ -30,4 +30,9 @@ export const auth = {
   "We couldn't complete social sign-in. Try again or use your password.":
     "We couldn't complete social sign-in. Try again or use your password.",
   "rider@example.com": "rider@example.com",
+  "Account created but sign-in failed. Please log in.":
+    "Account created but sign-in failed. Please log in.",
+  "An unexpected error occurred": "An unexpected error occurred",
+  "Invalid email or password": "Invalid email or password",
+  "Registration failed": "Registration failed",
 } as const;

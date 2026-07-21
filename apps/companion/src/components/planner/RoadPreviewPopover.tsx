@@ -15,6 +15,10 @@ import type { Formatters } from "@tarmoto/shared";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
 import { useFormat } from "@/format/FormatProvider";
 
+/** Source identifier and tag syntax are technical metadata, not UI copy. */
+const OSM_SOURCE = "OSM";
+const OSM_SURFACE_PREFIX = "surface = ";
+
 /**
  * Road Preview Card — opens when the rider taps ANY section of the
  * quality-colored route line (map) or a flagged-section card (panel).
@@ -423,10 +427,11 @@ export function RoadPreviewPopover({
               {preview.osmSurfaceTag ? (
                 <div className="mt-3 flex items-center gap-2 rounded-[10px] border border-line bg-paper px-3 py-2.5">
                   <Mono className="text-[9px] tracking-[0.6px] text-fg-mute">
-                    OSM
+                    {OSM_SOURCE}
                   </Mono>
                   <Mono className="text-[11px] text-ink">
-                    surface = {preview.osmSurfaceTag}
+                    {OSM_SURFACE_PREFIX}
+                    {preview.osmSurfaceTag}
                   </Mono>
                   <Mono className="text-[10px] text-fg-mute">
                     {t("· unverified ")}

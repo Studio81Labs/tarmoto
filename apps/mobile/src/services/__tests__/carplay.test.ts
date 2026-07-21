@@ -20,6 +20,7 @@
  */
 
 import type { Hazard, HazardType } from "@/types";
+import { setActiveFormatContext } from "@/format";
 import {
   __resetCarPlayStateForTest,
   __setCarPlayBridgeForTest,
@@ -163,6 +164,7 @@ function makeBoard(overrides: Partial<RideStatusBoard> = {}): RideStatusBoard {
 
 afterEach(() => {
   __setCarPlayBridgeForTest(null);
+  setActiveFormatContext({ locale: "en-US", timeZone: "UTC", units: "metric" });
 });
 
 describe("formatSpeedKmh", () => {
@@ -190,10 +192,10 @@ describe("formatDistanceKm", () => {
     expect(formatDistanceKm(12.456)).toBe("12.5 km");
   });
 
-  it("clamps zero / negative / non-finite to 0.0", () => {
-    expect(formatDistanceKm(0)).toBe("0.0 km");
-    expect(formatDistanceKm(-2)).toBe("0.0 km");
-    expect(formatDistanceKm(NaN)).toBe("0.0 km");
+  it("clamps zero / negative / non-finite to localized zero", () => {
+    expect(formatDistanceKm(0)).toBe("0 km");
+    expect(formatDistanceKm(-2)).toBe("0 km");
+    expect(formatDistanceKm(NaN)).toBe("0 km");
   });
 });
 
@@ -472,9 +474,20 @@ describe("formatHazardDistance", () => {
     expect(formatHazardDistance(950)).toBe("950 m ahead");
   });
 
-  it("renders one-decimal kilometres at and above 1 km", () => {
-    expect(formatHazardDistance(1000)).toBe("1.0 km ahead");
+  it("renders locale-aware kilometres at and above 1 km", () => {
+    expect(formatHazardDistance(1000)).toBe("1 km ahead");
     expect(formatHazardDistance(1500)).toBe("1.5 km ahead");
+  });
+
+  it("honors imperial units for short and long hazard distances", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    expect(formatHazardDistance(123)).toBe("328 ft ahead");
+    expect(formatHazardDistance(1500)).toBe("0.9 mi ahead");
   });
 
   it("collapses very close hazards to a single readable word", () => {

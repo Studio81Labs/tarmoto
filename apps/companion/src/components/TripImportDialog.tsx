@@ -84,7 +84,9 @@ export function TripImportDialog({
       setStatus("ready");
     } catch {
       if (parseTokenRef.current !== token) return;
-      setError("Could not read the file. Try again or pick a different file.");
+      setError(
+        t("Could not read the file. Try again or pick a different file."),
+      );
       setStatus("error");
     }
   }

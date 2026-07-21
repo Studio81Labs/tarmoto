@@ -205,7 +205,39 @@ export default [
           message:
             "Wrap every rider-facing conditional failure message with translate().",
         },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleString']",
+          message:
+            "Use getFormatters()/useFormat() instead of toLocaleString so mobile locale preferences are applied.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleDateString']",
+          message:
+            "Use getFormatters()/useFormat() instead of toLocaleDateString.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toLocaleTimeString']",
+          message:
+            "Use getFormatters()/useFormat() instead of toLocaleTimeString.",
+        },
+        {
+          selector: "NewExpression[callee.object.name='Intl']",
+          message: "Construct Intl display formatters only inside src/format.",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='Intl'][callee.property.name='NumberFormat']",
+          message: "Construct number formatters only inside src/format.",
+        },
       ],
+    },
+  },
+  {
+    // The formatter implementation is the sole sanctioned Intl construction
+    // site. It contains no rider-facing JSX or backend calls.
+    files: ["src/format/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
   {

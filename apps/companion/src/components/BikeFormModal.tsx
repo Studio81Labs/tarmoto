@@ -72,12 +72,12 @@ export function BikeFormModal({
       onClose();
     } catch (err) {
       setSubmitError(
-        err instanceof Error ? err.message : "Could not save bike",
+        err instanceof Error ? err.message : t("Could not save bike"),
       );
       setSubmitting(false);
     }
   }
-  const title = mode === "add" ? "Add a bike" : "Edit bike";
+  const title = mode === "add" ? t("Add a bike") : t("Edit bike");
   return (
     <div
       role="dialog"

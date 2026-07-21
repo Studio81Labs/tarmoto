@@ -34,8 +34,9 @@ export function SharedTripJoinCta({
     return (
       <section className="mb-6 rounded-2xl border border-line bg-paper p-6">
         <p className="text-sm text-fg-dim">
-          This public preview is read-only. Ask the trip owner for a fresh group
-          collaboration link if you need to suggest route changes.
+          {t(
+            "This public preview is read-only. Ask the trip owner for a fresh group collaboration link if you need to suggest route changes.",
+          )}
         </p>
       </section>
     );
@@ -45,11 +46,13 @@ export function SharedTripJoinCta({
     return (
       <section className="mb-6 rounded-2xl border border-accent/30 bg-accent/[0.06] p-6">
         <h2 className="text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-          Join the planning
+          {t("Join the planning")}
         </h2>
         <p className="mt-1.5 text-[13.5px] text-fg-dim">
-          Sign in or create an account to join "{title}" and open it in your
-          trips.
+          {t(
+            'Sign in or create an account to join "{title}" and open it in your trips.',
+            { title },
+          )}
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Button
@@ -64,7 +67,7 @@ export function SharedTripJoinCta({
               </Link>
             )}
           >
-            Sign in to collaborate
+            {t("Sign in to collaborate")}
           </Button>
           <Button
             variant="secondary"
@@ -77,7 +80,7 @@ export function SharedTripJoinCta({
               </Link>
             )}
           >
-            Create an account
+            {t("Create an account")}
           </Button>
         </div>
       </section>
@@ -113,11 +116,12 @@ export function SharedTripJoinCta({
   return (
     <section className="mb-6 rounded-2xl border border-accent/30 bg-accent/[0.06] p-6">
       <h2 className="text-[20px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink">
-        Join the planning
+        {t("Join the planning")}
       </h2>
       <p className="mt-1.5 text-[13.5px] text-fg-dim">
-        Accept this shared trip to open its preview, submit suggestions, and
-        vote with the group.
+        {t(
+          "Accept this shared trip to open its preview, submit suggestions, and vote with the group.",
+        )}
       </p>
       <Button
         variant="accent"
@@ -127,7 +131,7 @@ export function SharedTripJoinCta({
         loading={joining}
         leftIcon={<Route size={16} />}
       >
-        Join trip
+        {t("Join trip")}
       </Button>
     </section>
   );

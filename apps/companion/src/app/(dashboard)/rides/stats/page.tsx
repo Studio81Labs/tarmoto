@@ -101,7 +101,7 @@ export default function StatsPage() {
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setLoadError(err.message || "Could not load ride history");
+        setLoadError(err.message || t("Could not load ride history"));
         setLoading(false);
       });
     return () => {
@@ -124,7 +124,7 @@ export default function StatsPage() {
       })
       .catch((err: Error) => {
         if (!cancelled) {
-          setBreakdownError(err.message || "Could not load the breakdown");
+          setBreakdownError(err.message || t("Could not load the breakdown"));
         }
       });
     return () => {

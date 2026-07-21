@@ -606,8 +606,11 @@ function CancelPlanCard({
       </div>
       <p className="text-[14px] text-ink">
         {currentTier === "free"
-          ? "You're currently on Free, so there is nothing to cancel."
-          : `${renewalLabel}. If you need to scale back, we will show a lower-friction option before you leave.`}
+          ? t("You’re currently on Free, so there is nothing to cancel.")
+          : t(
+              "{renewal}. If you need to scale back, we will show a lower-friction option before you leave.",
+              { renewal: renewalLabel },
+            )}
       </p>
       <Button
         variant="danger"
@@ -668,7 +671,7 @@ function RetentionDialog({
 
         <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <Button variant="secondary" size="sm" uppercase onClick={onClose}>
-            {`Keep ${planName}`}
+            {t("Keep {plan}", { plan: planName })}
           </Button>
 
           {canManage ? (
