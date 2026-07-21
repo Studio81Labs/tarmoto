@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { closuresApi } from "@/lib/api";
+import type { PlannerClosureRoute } from "@/lib/closures-summary";
 import { useClosures } from "./useClosures";
 import { withQueryClient } from "./test-utils";
 
@@ -10,14 +11,48 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-function TestHarness({ bbox, enabled }: { bbox?: string; enabled?: boolean }) {
-  const result = useClosures(7, [], {
+function TestHarness({
+  bbox,
+  routes = [],
+  enabled,
+}: {
+  bbox?: string;
+  routes?: PlannerClosureRoute[];
+  enabled?: boolean;
+}) {
+  const result = useClosures(7, routes, {
     bbox,
     ...(enabled !== undefined ? { enabled } : {}),
   });
 
-  return <div>{result.loading ? "loading" : "loaded"}</div>;
+  return (
+    <div>
+      <span>{result.loading ? "loading" : "loaded"}</span>
+      <span>full={result.routeCounts.full}</span>
+      <span>partial={result.routeCounts.partial}</span>
+      <span>advisory={result.routeCounts.advisory}</span>
+      <span>total={result.routeCounts.total}</span>
+    </div>
+  );
 }
+
+const route: PlannerClosureRoute = {
+  id: "day-1",
+  label: "Day 1",
+  points: [
+    { lat: 49.2, lng: 16.6 },
+    { lat: 49.7, lng: 18.3 },
+  ],
+};
+
+const secondRoute: PlannerClosureRoute = {
+  id: "day-2",
+  label: "Day 2",
+  points: [
+    { lat: 49.7, lng: 18.3 },
+    { lat: 50.1, lng: 19.2 },
+  ],
+};
 
 describe("useClosures", () => {
   beforeEach(() => {
@@ -56,5 +91,35 @@ describe("useClosures", () => {
     });
 
     expect(closuresApi.list).not.toHaveBeenCalled();
+  });
+
+  it("uses one backend query for unique exact counts across route chunks", async () => {
+    vi.mocked(closuresApi.checkRoute).mockResolvedValue({
+      data: {
+        closures: [],
+        full_count: 103,
+        partial_count: 17,
+        advisory_count: 4,
+      },
+    } as Awaited<ReturnType<typeof closuresApi.checkRoute>>);
+
+    render(<TestHarness routes={[route, secondRoute]} />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("full=103")).toBeInTheDocument();
+      expect(screen.getByText("partial=17")).toBeInTheDocument();
+      expect(screen.getByText("advisory=4")).toBeInTheDocument();
+      expect(screen.getByText("total=124")).toBeInTheDocument();
+    });
+    expect(closuresApi.checkRoute).toHaveBeenCalledTimes(1);
+    expect(closuresApi.checkRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: route.points,
+        additional_routes: [{ points: secondRoute.points }],
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

@@ -32,8 +32,56 @@ describe('PassesService', () => {
 
   const mockQb = {
     where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([STELVIO]),
+    getRawAndEntities: jest.fn().mockResolvedValue({
+      entities: [STELVIO],
+      raw: [{ closed_count: '0', unknown_count: '0' }],
+    }),
+  };
+
+  const mockRouteResult = (
+    entities: MountainPass[],
+    counts?: { closed: number; unknown: number },
+  ) => {
+    const month = 1;
+    const totals = counts ?? {
+      closed: entities.filter(
+        (row) =>
+          (row.override_status ??
+            PassesService.statusFromSchedule(
+              row.typical_open_month,
+              row.typical_close_month,
+              month,
+            )) === 'closed',
+      ).length,
+      unknown: entities.filter(
+        (row) =>
+          (row.override_status ??
+            PassesService.statusFromSchedule(
+              row.typical_open_month,
+              row.typical_close_month,
+              month,
+            )) === 'unknown',
+      ).length,
+    };
+    mockQb.getRawAndEntities.mockResolvedValueOnce({
+      entities,
+      raw:
+        entities.length > 0
+          ? [
+              {
+                closed_count: String(totals.closed),
+                unknown_count: String(totals.unknown),
+              },
+            ]
+          : [],
+    });
   };
 
   beforeEach(async () => {
@@ -49,6 +97,10 @@ describe('PassesService', () => {
     service = module.get<PassesService>(PassesService);
     jest.clearAllMocks();
     mockQb.getMany.mockResolvedValue([STELVIO]);
+    mockQb.getRawAndEntities.mockResolvedValue({
+      entities: [STELVIO],
+      raw: [{ closed_count: '0', unknown_count: '0' }],
+    });
   });
 
   describe('statusFromSchedule', () => {
@@ -131,6 +183,15 @@ describe('PassesService', () => {
       );
     });
 
+    it('applies bounded pagination after deterministic name ordering', async () => {
+      await service.list(undefined, undefined, 200, 400);
+
+      expect(mockQb.orderBy).toHaveBeenCalledWith('p.name', 'ASC');
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('p.id', 'ASC');
+      expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.offset).toHaveBeenCalledWith(400);
+    });
+
     it('evaluates status for the supplied for_month instead of today', async () => {
       // Stelvio: open Jun..Oct. Ask for January explicitly — must be
       // closed even though "today" (mocked to August) would be open.
@@ -162,7 +223,10 @@ describe('PassesService', () => {
     });
 
     it('runs the spatial query and aggregates closed/unknown counts', async () => {
-      mockQb.getMany.mockResolvedValueOnce([STELVIO, FORCED_CLOSED]);
+      mockRouteResult([STELVIO, FORCED_CLOSED], {
+        closed: 2,
+        unknown: 0,
+      });
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(0); // January
 
       const result = await service.checkRoute({
@@ -180,20 +244,88 @@ describe('PassesService', () => {
       // Each coordinate is passed as its own named parameter so TypeORM can
       // bind them safely — no string interpolation of user input.
       expect(mockQb.where).toHaveBeenCalledWith(
-        expect.stringContaining('ST_DWithin'),
-        {
+        expect.stringContaining('ST_Expand'),
+        expect.objectContaining({
           buffer: 2000,
-          lng0: 10.4,
-          lat0: 46.5,
-          lng1: 10.5,
-          lat1: 46.6,
-        },
+          routeLng0_0: 10.4,
+          routeLat0_0: 46.5,
+          routeLng0_1: 10.5,
+          routeLat0_1: 46.6,
+        }),
+      );
+      const whereParams = (mockQb.where.mock.calls as unknown[][])[0]?.[1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(typeof whereParams?.bufferLngDeg).toBe('number');
+      expect(typeof whereParams?.bufferLatDeg).toBe('number');
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('p.location::geography'),
+        expect.any(Object),
       );
       expect(mockQb.orderBy).toHaveBeenCalledWith('p.elevation_m', 'DESC');
+      expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.addSelect).toHaveBeenCalledTimes(2);
+      expect(mockQb.addSelect).toHaveBeenCalledWith(
+        expect.stringContaining(':statusMonth'),
+        'closed_count',
+      );
+    });
+
+    it('checks disconnected route chunks in one unique spatial query', async () => {
+      mockRouteResult([STELVIO], { closed: 1, unknown: 0 });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+        additional_routes: [
+          {
+            points: [
+              { lat: 46.6, lng: 10.5 },
+              { lat: 46.7, lng: 10.6 },
+            ],
+          },
+        ],
+        for_month: 1,
+      });
+
+      expect(result.closed_count).toBe(1);
+      expect(mockQb.where).toHaveBeenCalledTimes(1);
+      expect(mockQb.where).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Collect'),
+        expect.objectContaining({
+          routeLng0_0: 10.4,
+          routeLng1_1: 10.6,
+        }),
+      );
+    });
+
+    it('keeps the geometry prefilter conservative at high latitudes', async () => {
+      mockRouteResult([]);
+      await service.checkRoute({
+        route: [
+          { lat: 70, lng: 20 },
+          { lat: 70.1, lng: 20.1 },
+        ],
+        buffer_m: 100,
+      });
+
+      expect(mockQb.where).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Expand'),
+        expect.any(Object),
+      );
+      const calls = mockQb.where.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const bufferLngDeg = calls[0]?.[1].bufferLngDeg;
+      expect(typeof bufferLngDeg).toBe('number');
+      expect(bufferLngDeg as number).toBeGreaterThan(0.0025);
     });
 
     it('defaults the buffer to 1500 m', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       await service.checkRoute({
         route: [
           { lat: 46.5, lng: 10.4 },
@@ -207,7 +339,7 @@ describe('PassesService', () => {
     });
 
     it('evaluates status for the supplied for_month', async () => {
-      mockQb.getMany.mockResolvedValueOnce([STELVIO]);
+      mockRouteResult([STELVIO], { closed: 1, unknown: 0 });
       // Today = August (open) but the caller is planning a March trip —
       // Stelvio must come back closed for the response.
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7);
@@ -220,6 +352,40 @@ describe('PassesService', () => {
       });
       expect(result.passes[0].status).toBe('closed');
       expect(result.closed_count).toBe(1);
+    });
+
+    it('reports status totals from before the pass list cap', async () => {
+      mockRouteResult([STELVIO, FORCED_CLOSED], {
+        closed: 237,
+        unknown: 14,
+      });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+        for_month: 1,
+      });
+
+      expect(result.passes).toHaveLength(2);
+      expect(result.closed_count).toBe(237);
+      expect(result.unknown_count).toBe(14);
+    });
+
+    it('returns zero counts when no passes match the route', async () => {
+      mockRouteResult([]);
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+      });
+
+      expect(result.passes).toEqual([]);
+      expect(result.closed_count).toBe(0);
+      expect(result.unknown_count).toBe(0);
     });
   });
 });

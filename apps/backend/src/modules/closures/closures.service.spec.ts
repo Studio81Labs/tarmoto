@@ -82,21 +82,59 @@ describe('ClosuresService', () => {
 
   const mockQb = {
     select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     setParameter: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([SAMPLE_CLOSURE]),
+    getRawAndEntities: jest.fn().mockResolvedValue({
+      entities: [SAMPLE_CLOSURE],
+      raw: [{ full_count: '1', partial_count: '0', advisory_count: '0' }],
+    }),
     getRawMany: jest.fn().mockResolvedValue([]),
+  };
+
+  const mockRouteResult = (
+    entities: RoadClosure[],
+    counts?: { full: number; partial: number; advisory: number },
+  ) => {
+    const totals = counts ?? {
+      full: entities.filter((row) => row.severity === 'full').length,
+      partial: entities.filter((row) => row.severity === 'partial').length,
+      advisory: entities.filter((row) => row.severity === 'advisory').length,
+    };
+    mockQb.getRawAndEntities.mockResolvedValueOnce({
+      entities,
+      raw:
+        entities.length > 0
+          ? [
+              {
+                full_count: String(totals.full),
+                partial_count: String(totals.partial),
+                advisory_count: String(totals.advisory),
+              },
+            ]
+          : [],
+    });
   };
 
   beforeEach(async () => {
     mockQb.select.mockClear();
+    mockQb.addSelect.mockClear();
     mockQb.where.mockClear();
     mockQb.andWhere.mockClear();
     mockQb.orderBy.mockClear();
+    mockQb.addOrderBy.mockClear();
+    mockQb.limit.mockClear();
     mockQb.setParameter.mockClear();
     mockQb.getMany.mockReset().mockResolvedValue([SAMPLE_CLOSURE]);
+    mockQb.getRawAndEntities.mockReset().mockResolvedValue({
+      entities: [SAMPLE_CLOSURE],
+      raw: [{ full_count: '1', partial_count: '0', advisory_count: '0' }],
+    });
     mockQb.getRawMany.mockReset().mockResolvedValue([]);
 
     repo = {
@@ -155,6 +193,17 @@ describe('ClosuresService', () => {
     it('always excludes undecoded (null-geometry) feed rows', async () => {
       await service.list({ include_past: true });
       expect(mockQb.andWhere).toHaveBeenCalledWith('c.geom IS NOT NULL');
+    });
+
+    it('prioritises full closures before applying the deterministic list cap', async () => {
+      await service.list({ include_past: true });
+
+      expect(mockQb.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining("WHEN 'full' THEN 0"),
+        'ASC',
+      );
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
+      expect(mockQb.limit).toHaveBeenCalledWith(500);
     });
 
     it('excludes deactivated feed rows on the default (live) path', async () => {
@@ -327,7 +376,7 @@ describe('ClosuresService', () => {
 
     it('still counts operator/osm closures — hides only NAP (official) rows — when sys_nap_conditions is off', async () => {
       featureResolver.isSystemSwitchEnabled.mockResolvedValue(false);
-      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]); // source: 'operator'
+      mockRouteResult([SAMPLE_CLOSURE]); // source: 'operator'
       const result = await service.checkRoute({
         route: [
           { lat: 50.0, lng: 17.0 },
@@ -352,9 +401,13 @@ describe('ClosuresService', () => {
 
   describe('exclusionPolygons (#744)', () => {
     const bbox = { minLng: 16, minLat: 49, maxLng: 17, maxLat: 50 };
+    const route = [
+      { lat: 49.2, lng: 16.2 },
+      { lat: 49.8, lng: 16.8 },
+    ];
 
     it('queries only active full closures in the bbox, buffered', async () => {
-      await service.exclusionPolygons(bbox);
+      await service.exclusionPolygons(bbox, route);
 
       expect(mockQb.select).toHaveBeenCalledWith(
         expect.stringContaining('ST_Buffer(c.geom::geography'),
@@ -370,6 +423,16 @@ describe('ClosuresService', () => {
         bbox,
       );
       expect(mockQb.setParameter).toHaveBeenCalledWith('buffer', 25);
+      expect(mockQb.setParameter).toHaveBeenCalledWith(
+        'routeWkt',
+        'LINESTRING(16.2 49.2,16.8 49.8)',
+      );
+      expect(mockQb.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Distance'),
+        'ASC',
+      );
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
+      expect(mockQb.limit).toHaveBeenCalledWith(100);
     });
 
     it('returns the outer ring of each buffered Polygon', async () => {
@@ -382,7 +445,7 @@ describe('ClosuresService', () => {
       mockQb.getRawMany.mockResolvedValueOnce([
         { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
       ]);
-      const polygons = await service.exclusionPolygons(bbox);
+      const polygons = await service.exclusionPolygons(bbox, route);
       expect(polygons).toEqual([ring]);
     });
 
@@ -408,13 +471,13 @@ describe('ClosuresService', () => {
         },
         { geojson: null },
       ]);
-      const polygons = await service.exclusionPolygons(bbox);
+      const polygons = await service.exclusionPolygons(bbox, route);
       expect(polygons).toEqual([ringA, ringB]);
     });
 
     it('returns [] when there are no full closures in the area', async () => {
       mockQb.getRawMany.mockResolvedValueOnce([]);
-      expect(await service.exclusionPolygons(bbox)).toEqual([]);
+      expect(await service.exclusionPolygons(bbox, route)).toEqual([]);
     });
 
     it('still produces polygons for operator/osm full closures — hides only NAP (official) — when sys_nap_routing_avoidance is off', async () => {
@@ -428,7 +491,7 @@ describe('ClosuresService', () => {
       mockQb.getRawMany.mockResolvedValueOnce([
         { geojson: JSON.stringify({ type: 'Polygon', coordinates: [ring] }) },
       ]);
-      const polygons = await service.exclusionPolygons(bbox);
+      const polygons = await service.exclusionPolygons(bbox, route);
       expect(polygons).toEqual([ring]);
       expect(mockQb.andWhere).toHaveBeenCalledWith("c.source != 'official'");
       expect(featureResolver.isSystemSwitchEnabled).toHaveBeenCalledWith(
@@ -733,7 +796,7 @@ describe('ClosuresService', () => {
     });
 
     it('passes each coordinate as its own named parameter', async () => {
-      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]);
+      mockRouteResult([SAMPLE_CLOSURE]);
 
       await service.checkRoute({
         route: [
@@ -752,17 +815,88 @@ describe('ClosuresService', () => {
       expect(spatial).toBeDefined();
       expect(spatial![1]).toMatchObject({
         buffer: 250,
-        lng0: 17.1,
-        lat0: 50.1,
-        lng1: 17.2,
-        lat1: 50.2,
-        lng2: 17.3,
-        lat2: 50.3,
+        routeLng0_0: 17.1,
+        routeLat0_0: 50.1,
+        routeLng0_1: 17.2,
+        routeLat0_1: 50.2,
+        routeLng0_2: 17.3,
+        routeLat0_2: 50.3,
+      });
+      expect(typeof spatial![1].bufferLngDeg).toBe('number');
+      expect(typeof spatial![1].bufferLatDeg).toBe('number');
+      expect(mockQb.limit).toHaveBeenCalledWith(200);
+      expect(mockQb.addSelect).toHaveBeenCalledWith(
+        expect.stringContaining("c.severity = 'full'"),
+        'full_count',
+      );
+      expect(mockQb.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining("WHEN 'full' THEN 0"),
+        'ASC',
+      );
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
+    });
+
+    it('checks disconnected route chunks in one unique spatial query', async () => {
+      mockRouteResult([SAMPLE_CLOSURE], {
+        full: 1,
+        partial: 0,
+        advisory: 0,
+      });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50.1, lng: 17.1 },
+          { lat: 50.2, lng: 17.2 },
+        ],
+        additional_routes: [
+          {
+            points: [
+              { lat: 50.2, lng: 17.2 },
+              { lat: 50.3, lng: 17.3 },
+            ],
+          },
+        ],
+      });
+
+      expect(result.full_count).toBe(1);
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const prefilter = calls.find((call) =>
+        String(call[0]).includes('ST_Expand'),
+      );
+      expect(prefilter?.[0]).toContain('ST_Collect');
+      expect(prefilter?.[1]).toMatchObject({
+        routeLng0_0: 17.1,
+        routeLng1_1: 17.3,
       });
     });
 
+    it('keeps the geometry prefilter conservative at high latitudes', async () => {
+      mockRouteResult([]);
+      await service.checkRoute({
+        route: [
+          { lat: 70, lng: 20 },
+          { lat: 70.1, lng: 20.1 },
+        ],
+        buffer_m: 100,
+      });
+
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const prefilter = calls.find((call) =>
+        String(call[0]).includes('ST_Expand'),
+      );
+      const bufferLngDeg = prefilter?.[1].bufferLngDeg;
+      expect(typeof bufferLngDeg).toBe('number');
+      expect(bufferLngDeg as number).toBeGreaterThan(0.0025);
+    });
+
     it('defaults the buffer to 100 m', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       await service.checkRoute({
         route: [
           { lat: 50, lng: 17 },
@@ -778,7 +912,7 @@ describe('ClosuresService', () => {
     });
 
     it('applies the active-on window by default (now)', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       const before = Date.now();
       await service.checkRoute({
         route: [
@@ -805,7 +939,7 @@ describe('ClosuresService', () => {
     });
 
     it('uses the supplied active_on timestamp instead of now', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       const when = '2026-12-24T12:00:00Z';
       await service.checkRoute({
         route: [
@@ -825,7 +959,7 @@ describe('ClosuresService', () => {
     });
 
     it('aggregates counts per severity', async () => {
-      mockQb.getMany.mockResolvedValueOnce([
+      mockRouteResult([
         SAMPLE_CLOSURE, // full
         ADVISORY_CLOSURE, // advisory
         PARTIAL_CLOSURE, // partial
@@ -847,11 +981,7 @@ describe('ClosuresService', () => {
 
     it('orders closures by severity (full > partial > advisory)', async () => {
       // Intentionally out of order in the DB result.
-      mockQb.getMany.mockResolvedValueOnce([
-        ADVISORY_CLOSURE,
-        SAMPLE_CLOSURE,
-        PARTIAL_CLOSURE,
-      ]);
+      mockRouteResult([ADVISORY_CLOSURE, SAMPLE_CLOSURE, PARTIAL_CLOSURE]);
 
       const result = await service.checkRoute({
         route: [
@@ -868,7 +998,7 @@ describe('ClosuresService', () => {
     });
 
     it('returns zero counts when no closures match the route', async () => {
-      mockQb.getMany.mockResolvedValueOnce([]);
+      mockRouteResult([]);
       const result = await service.checkRoute({
         route: [
           { lat: 50, lng: 17 },
@@ -879,6 +1009,26 @@ describe('ClosuresService', () => {
       expect(result.full_count).toBe(0);
       expect(result.partial_count).toBe(0);
       expect(result.advisory_count).toBe(0);
+    });
+
+    it('reports severity totals from before the closure list cap', async () => {
+      mockRouteResult([SAMPLE_CLOSURE, PARTIAL_CLOSURE], {
+        full: 205,
+        partial: 17,
+        advisory: 3,
+      });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+
+      expect(result.closures).toHaveLength(2);
+      expect(result.full_count).toBe(205);
+      expect(result.partial_count).toBe(17);
+      expect(result.advisory_count).toBe(3);
     });
   });
 });

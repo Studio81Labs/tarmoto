@@ -57,6 +57,7 @@ import type {
 } from "@/navigation/RootNavigator";
 import {
   averageQuality,
+  buildClosedPassWarning,
   flattenTripRoute,
   formatDailyDistanceRange,
   formatDurationMin,
@@ -89,6 +90,7 @@ export default function TripDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [closedPasses, setClosedPasses] = useState<MountainPass[]>([]);
+  const [closedPassCount, setClosedPassCount] = useState(0);
   const [passCheckVersion, setPassCheckVersion] = useState(0);
 
   useEffect(() => {
@@ -162,10 +164,12 @@ export default function TripDetailScreen() {
   useEffect(() => {
     if (!trip || passRouteSignature.length === 0) {
       setClosedPasses([]);
+      setClosedPassCount(0);
       return;
     }
     if (passRoute.length < 2) {
       setClosedPasses([]);
+      setClosedPassCount(0);
       return;
     }
     let cancelled = false;
@@ -173,10 +177,15 @@ export default function TripDetailScreen() {
       .checkRouteForPasses(passRoute)
       .then((res) => {
         if (cancelled) return;
-        setClosedPasses(res.passes.filter((p) => p.status === "closed"));
+        const warning = buildClosedPassWarning(res);
+        setClosedPasses(warning.passes);
+        setClosedPassCount(warning.count);
       })
       .catch(() => {
-        if (!cancelled) setClosedPasses([]);
+        if (!cancelled) {
+          setClosedPasses([]);
+          setClosedPassCount(0);
+        }
       });
     return () => {
       cancelled = true;
@@ -258,8 +267,8 @@ export default function TripDetailScreen() {
     >
       <HeaderCard trip={trip} totalKm={totalKm} avgQ={avgQ} />
 
-      {closedPasses.length > 0 ? (
-        <ClosedPassesWarning passes={closedPasses} />
+      {closedPassCount > 0 ? (
+        <ClosedPassesWarning passes={closedPasses} count={closedPassCount} />
       ) : null}
 
       <ExportGpxAction trip={trip} />
@@ -597,13 +606,19 @@ function statusBadgeColor(status: Trip["status"]): string {
   }
 }
 
-function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {
+function ClosedPassesWarning({
+  passes,
+  count,
+}: {
+  passes: MountainPass[];
+  count: number;
+}) {
   // Sort by elevation descending so the most consequential closure
   // (typically also the one most likely to be still snowed-in) leads.
   const sorted = [...passes].sort((a, b) => b.elevation_m - a.elevation_m);
   const headline = translate(
     "{count, plural, one {# closed pass} other {# closed passes}} on this route",
-    { count: sorted.length },
+    { count },
   );
   return (
     <View

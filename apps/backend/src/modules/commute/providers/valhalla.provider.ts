@@ -100,18 +100,24 @@ export class ValhallaProvider implements RoutingProvider {
     });
   }
 
-  private async post(body: string): Promise<ValhallaResponse | null> {
+  private async post(
+    body: string,
+    signal?: AbortSignal,
+  ): Promise<ValhallaResponse | null> {
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}/route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
+        ...(signal ? { signal } : {}),
       });
     } catch (err: unknown) {
-      this.logger.error(
-        `Valhalla unreachable: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      if (!signal?.aborted) {
+        this.logger.error(
+          `Valhalla unreachable: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
       return null;
     }
     if (!res.ok) {
@@ -170,9 +176,10 @@ export class ValhallaProvider implements RoutingProvider {
   async route(
     waypoints: ReadonlyArray<{ lat: number; lng: number }>,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteResult | null> {
     if (waypoints.length < 2) return null;
-    const data = await this.post(this.body(waypoints, options));
+    const data = await this.post(this.body(waypoints, options), signal);
     if (!data?.trip?.legs?.length) return null;
     return this.tripToResult(data.trip);
   }
@@ -184,6 +191,7 @@ export class ValhallaProvider implements RoutingProvider {
     destLng: number,
     maxAlternatives: number,
     options?: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<RouteAlternative[]> {
     const includePrimary = options?.includePrimary === true;
     const extras = includePrimary
@@ -198,6 +206,7 @@ export class ValhallaProvider implements RoutingProvider {
         options,
         extras,
       ),
+      signal,
     );
     if (!data?.trip) return [];
     const trips: ValhallaTrip[] = [

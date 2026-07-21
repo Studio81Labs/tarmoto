@@ -24,7 +24,10 @@ import {
 } from './config/global-prefix.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { guardClientSocketErrors } from './config/socket-error-guard.js';
-import { IMPORT_TRIP_BODY_LIMIT_PATHS } from './config/body-limits.js';
+import {
+  IMPORT_TRIP_BODY_LIMIT_PATHS,
+  ROUTE_GEOMETRY_BODY_LIMIT_PATHS,
+} from './config/body-limits.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
 import { MAX_MAP_SNAPSHOT_BYTES } from './modules/map-shares/dto/map-share.dto.js';
 import { IMPORT_TRIP_BODY_LIMIT_BYTES } from './modules/trips/dto/import-trip.dto.js';
@@ -130,16 +133,12 @@ async function bootstrap() {
     }),
   );
   // The STOPS-tab corridor endpoints carry the same routed day/leg polyline as
-  // route-quality — the OSM store (#859), the passes check, and the fun-zones
-  // corridor (#865). A dense route runs to a few thousand vertices, over the
-  // 100 kb default, so scope them up too or body-parser 413s before the
-  // controller runs (toggling any STOPS category would then fail).
+  // route-quality — the OSM store (#859), pass and closure checks, and the
+  // fun-zones corridor (#865). A dense route runs to a few thousand vertices,
+  // over the 100 kb default, so scope them up too or body-parser 413s before
+  // validation and the bounded spatial queries run.
   app.use(
-    [
-      '/api/v1/poi/in-corridor',
-      '/api/v1/passes/check-route',
-      '/api/v1/roads/fun-zones/in-corridor',
-    ],
+    ROUTE_GEOMETRY_BODY_LIMIT_PATHS,
     expressJson({
       limit: ROUTE_QUALITY_BODY_LIMIT_BYTES,
       verify: captureRawBody,

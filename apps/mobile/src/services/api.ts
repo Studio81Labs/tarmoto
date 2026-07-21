@@ -1301,10 +1301,22 @@ class ApiService {
   // ── Mountain Passes (US-11) ──
 
   async getPasses(bbox?: string): Promise<MountainPass[]> {
-    const result = await client.GET("/api/v1/passes", {
-      params: { query: bbox ? { bbox } : {} },
-    });
-    return unwrap(result, "Failed to load passes");
+    const pageSize = 500;
+    const passes: MountainPass[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const result = await client.GET("/api/v1/passes", {
+        params: {
+          query: {
+            ...(bbox ? { bbox } : {}),
+            limit: pageSize,
+            offset,
+          },
+        },
+      });
+      const page = unwrap(result, "Failed to load passes");
+      passes.push(...page);
+      if (page.length < pageSize) return passes;
+    }
   }
 
   async checkRouteForPasses(

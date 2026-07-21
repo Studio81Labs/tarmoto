@@ -1,17 +1,22 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CheckRouteDto, MAX_CHECK_ROUTE_POINTS } from './passes.dto.js';
+import {
+  CheckRouteClosuresDto,
+  MAX_CHECK_ROUTE_CLOSURE_POINTS,
+} from './closures.dto.js';
 
-describe('CheckRouteDto route validation', () => {
+describe('CheckRouteClosuresDto route validation', () => {
   const point = { lat: 49.1, lng: 16.7 };
 
   it('accepts a minimal 2-point route', async () => {
-    const dto = plainToInstance(CheckRouteDto, { route: [point, point] });
+    const dto = plainToInstance(CheckRouteClosuresDto, {
+      route: [point, point],
+    });
     expect(await validate(dto)).toHaveLength(0);
   });
 
   it('accepts validated additional disconnected route polylines', async () => {
-    const dto = plainToInstance(CheckRouteDto, {
+    const dto = plainToInstance(CheckRouteClosuresDto, {
       route: [point, point],
       additional_routes: [{ points: [point, point] }],
     });
@@ -19,7 +24,7 @@ describe('CheckRouteDto route validation', () => {
   });
 
   it('rejects an additional route with fewer than 2 points', async () => {
-    const dto = plainToInstance(CheckRouteDto, {
+    const dto = plainToInstance(CheckRouteClosuresDto, {
       route: [point, point],
       additional_routes: [{ points: [point] }],
     });
@@ -29,12 +34,16 @@ describe('CheckRouteDto route validation', () => {
     ).toBeDefined();
   });
 
-  it('rejects a route over the vertex cap (400) before any query is built', async () => {
-    const dto = plainToInstance(CheckRouteDto, {
-      route: Array.from({ length: MAX_CHECK_ROUTE_POINTS + 1 }, () => point),
+  it('rejects a route over the vertex cap before building spatial SQL', async () => {
+    const dto = plainToInstance(CheckRouteClosuresDto, {
+      route: Array.from(
+        { length: MAX_CHECK_ROUTE_CLOSURE_POINTS + 1 },
+        () => point,
+      ),
     });
+
     const errors = await validate(dto);
-    const routeError = errors.find((e) => e.property === 'route');
+    const routeError = errors.find((error) => error.property === 'route');
     expect(routeError?.constraints?.arrayMaxSize).toBeDefined();
   });
 });

@@ -48,6 +48,9 @@ export class CommuteRoute {
   @Column({ type: 'varchar', length: 64, nullable: true })
   routing_engine_version!: string | null;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  routing_cache_updated_at!: Date | null;
+
   @Column({ type: 'boolean', default: true })
   is_primary!: boolean;
 

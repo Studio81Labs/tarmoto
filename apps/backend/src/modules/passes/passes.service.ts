@@ -1,11 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { buildRouteSpatialSql } from '../../common/route-spatial.js';
 import { MountainPass } from '../../entities/mountain-pass.entity.js';
 import {
   CheckRouteDto,
   CheckRouteResponseDto,
+  MAX_CHECK_ROUTE_POINTS,
   MountainPassDto,
+  MAX_LIST_PASSES_LIMIT,
   PassStatus,
 } from './dto/passes.dto.js';
 
@@ -15,6 +18,13 @@ interface BboxCoords {
   maxLng: number;
   maxLat: number;
 }
+
+interface RoutePassCountRow {
+  closed_count?: string | number;
+  unknown_count?: string | number;
+}
+
+const MAX_ROUTE_PASS_RESULTS = 200;
 
 @Injectable()
 export class PassesService {
@@ -61,8 +71,16 @@ export class PassesService {
       : 'closed';
   }
 
-  async list(bbox?: string, forMonth?: number): Promise<MountainPassDto[]> {
-    const qb = this.passRepo.createQueryBuilder('p').orderBy('p.name', 'ASC');
+  async list(
+    bbox?: string,
+    forMonth?: number,
+    limit = MAX_LIST_PASSES_LIMIT,
+    offset = 0,
+  ): Promise<MountainPassDto[]> {
+    const qb = this.passRepo
+      .createQueryBuilder('p')
+      .orderBy('p.name', 'ASC')
+      .addOrderBy('p.id', 'ASC');
 
     if (bbox) {
       const parsed = this.parseBbox(bbox);
@@ -72,52 +90,97 @@ export class PassesService {
       );
     }
 
-    const rows = await qb.getMany();
+    const rows = await qb.limit(limit).offset(offset).getMany();
     const month = this.resolveMonth(forMonth);
     return rows.map((p) => this.toDto(p, month));
   }
 
   async checkRoute(dto: CheckRouteDto): Promise<CheckRouteResponseDto> {
-    if (dto.route.length < 2) {
-      throw new BadRequestException('Route must have at least 2 points');
+    const routes = [
+      dto.route,
+      ...(dto.additional_routes ?? []).map((route) => route.points),
+    ];
+    if (routes.some((route) => route.length < 2)) {
+      throw new BadRequestException('Every route must have at least 2 points');
+    }
+    if (
+      routes.reduce((total, route) => total + route.length, 0) >
+      MAX_CHECK_ROUTE_POINTS
+    ) {
+      throw new BadRequestException(
+        `Routes must have at most ${MAX_CHECK_ROUTE_POINTS} points in total`,
+      );
     }
     const bufferM = dto.buffer_m ?? 1500;
+    const month = this.resolveMonth(dto.for_month);
 
-    // Build the LineString via TypeORM's named-parameter binding so each
-    // coordinate is passed as a real SQL parameter (no string
-    // interpolation of user input). Going through `createQueryBuilder`
+    // Build one LineString/MultiLineString via TypeORM's named-parameter
+    // binding so each coordinate is passed as a real SQL parameter (no
+    // string interpolation of user input). Going through `createQueryBuilder`
     // rather than `repo.query` also makes TypeORM hydrate the `location`
     // column back into a GeoJSON Point — with raw `.query()` we'd get
     // a WKB hex string and `toDto` would crash on `p.location.coordinates`.
-    const params: Record<string, number> = { buffer: bufferM };
-    const pointsSql = dto.route
-      .map((p, i) => {
-        params[`lng${i}`] = p.lng;
-        params[`lat${i}`] = p.lat;
-        return `ST_MakePoint(:lng${i}, :lat${i})`;
-      })
-      .join(',');
+    const spatial = buildRouteSpatialSql(routes, bufferM, 'p.location');
+    const params: Record<string, number> = {
+      ...spatial.params,
+      buffer: bufferM,
+      statusMonth: month,
+    };
 
-    const rows = await this.passRepo
+    // Keep aggregate status counts exact even when the response list is
+    // capped below. The window expressions run over every spatial match
+    // before LIMIT, avoiding a second traversal of the expensive route
+    // predicate. This CASE deliberately mirrors `toDto`: an operator
+    // override wins, otherwise the inclusive schedule (including windows
+    // that wrap over New Year) determines the status.
+    const statusSql = `CASE
+      WHEN p.override_status IS NOT NULL THEN p.override_status
+      WHEN p.typical_open_month NOT BETWEEN 1 AND 12
+        OR p.typical_close_month NOT BETWEEN 1 AND 12 THEN 'unknown'
+      WHEN (
+        p.typical_open_month <= p.typical_close_month
+        AND :statusMonth BETWEEN p.typical_open_month AND p.typical_close_month
+      ) OR (
+        p.typical_open_month > p.typical_close_month
+        AND (
+          :statusMonth >= p.typical_open_month
+          OR :statusMonth <= p.typical_close_month
+        )
+      ) THEN 'open'
+      ELSE 'closed'
+    END`;
+    const result = await this.passRepo
       .createQueryBuilder('p')
-      .where(
+      .where(spatial.prefilterSql, params)
+      .andWhere(
         `ST_DWithin(
           p.location::geography,
-          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          ${spatial.geometrySql}::geography,
           :buffer
         )`,
         params,
       )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE (${statusSql}) = 'closed') OVER ()`,
+        'closed_count',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE (${statusSql}) = 'unknown') OVER ()`,
+        'unknown_count',
+      )
       .orderBy('p.elevation_m', 'DESC')
-      .getMany();
+      .limit(MAX_ROUTE_PASS_RESULTS)
+      .getRawAndEntities<RoutePassCountRow>();
 
-    const month = this.resolveMonth(dto.for_month);
-    const passes: MountainPassDto[] = rows.map((p) => this.toDto(p, month));
+    const passes: MountainPassDto[] = result.entities.map((p) =>
+      this.toDto(p, month),
+    );
+    const counts = result.raw[0];
 
     return {
       passes,
-      closed_count: passes.filter((p) => p.status === 'closed').length,
-      unknown_count: passes.filter((p) => p.status === 'unknown').length,
+      closed_count: Number(counts?.closed_count ?? 0),
+      unknown_count: Number(counts?.unknown_count ?? 0),
     };
   }
 

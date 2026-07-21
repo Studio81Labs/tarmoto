@@ -15,7 +15,9 @@ import { getFormatters } from "@/format";
 import type {
   Accommodation,
   AccommodationKind,
+  CheckRouteForPassesResponse,
   LatLng,
+  MountainPass,
   Trip,
   TripDay,
   TripStatus,
@@ -347,13 +349,19 @@ export function averageQuality(days: TripDay[]): number {
 }
 
 /**
- * Flatten every day's `route_geometry` into one polyline for the
- * pass-check API. Days are concatenated in `day_number` order so the
- * resulting line follows the actual trip sequence; days with fewer
- * than two points are skipped because PostGIS' `ST_MakeLine` would
- * collapse them into degenerate geometry. Returns an empty array when
- * no usable geometry exists, letting callers short-circuit the network
- * round-trip entirely.
+ * Keep pass-check requests comfortably below both the backend's 25,000-point
+ * route cap and its JSON body limit. The 1.5 km pass corridor does not need
+ * the full rendering density of a saved/imported route.
+ */
+export const MAX_PASS_CHECK_ROUTE_POINTS = 20_000;
+
+/**
+ * Flatten every day's `route_geometry` into one polyline for the pass-check
+ * API. Days are concatenated in `day_number` order and the complete line is
+ * evenly sampled, preserving its first/last points. Days with fewer than two
+ * points are skipped because PostGIS' `ST_MakeLine` would collapse them into
+ * degenerate geometry. Returns an empty array when no usable geometry exists,
+ * letting callers short-circuit the network round-trip entirely.
  */
 export function flattenTripRoute(days: TripDay[]): LatLng[] {
   const ordered = [...days].sort((a, b) => a.day_number - b.day_number);
@@ -363,13 +371,42 @@ export function flattenTripRoute(days: TripDay[]): LatLng[] {
     if (!Array.isArray(geom) || geom.length < 2) continue;
     out.push(...geom);
   }
-  return out;
+  if (out.length <= MAX_PASS_CHECK_ROUTE_POINTS) return out;
+
+  const sampled: LatLng[] = [];
+  const lastIndex = out.length - 1;
+  const stride = lastIndex / (MAX_PASS_CHECK_ROUTE_POINTS - 1);
+  for (let index = 0; index < MAX_PASS_CHECK_ROUTE_POINTS; index += 1) {
+    const point = out[Math.round(index * stride)];
+    if (point) sampled.push(point);
+  }
+  return sampled;
 }
 
 export function routeGeometrySignature(days: TripDay[]): string {
   const route = flattenTripRoute(days);
   if (route.length === 0) return "";
   return route.map((point) => `${point.lat},${point.lng}`).join("|");
+}
+
+export interface ClosedPassWarningData {
+  passes: MountainPass[];
+  count: number;
+}
+
+/**
+ * Keep the warning headline exact even when the backend caps the returned pass
+ * rows. The rows remain useful for names/details; `closed_count` represents the
+ * complete pre-cap match set.
+ */
+export function buildClosedPassWarning(
+  response: CheckRouteForPassesResponse,
+): ClosedPassWarningData {
+  const passes = response.passes.filter((pass) => pass.status === "closed");
+  return {
+    passes,
+    count: Math.max(response.closed_count, passes.length),
+  };
 }
 
 /**

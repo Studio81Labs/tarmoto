@@ -1,5 +1,9 @@
-import { IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+
+export const DEFAULT_FUN_ZONE_BBOX_RESULTS = 50;
+export const MAX_FUN_ZONE_BBOX_RESULTS = 100;
 
 export class QueryFunZonesDto {
   @ApiProperty({
@@ -8,4 +12,16 @@ export class QueryFunZonesDto {
   })
   @IsString()
   bbox!: string;
+
+  @ApiPropertyOptional({
+    default: DEFAULT_FUN_ZONE_BBOX_RESULTS,
+    minimum: 1,
+    maximum: MAX_FUN_ZONE_BBOX_RESULTS,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_FUN_ZONE_BBOX_RESULTS)
+  limit?: number;
 }

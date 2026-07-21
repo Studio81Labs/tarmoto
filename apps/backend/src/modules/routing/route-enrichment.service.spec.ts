@@ -54,9 +54,47 @@ describe('RouteEnrichmentService.aggregate', () => {
       { lat: 50.1, lng: 14.5 },
     ]);
 
-    // Second query issued is the hazard count — check it carries the moderation filter.
+    // Second query issued is the hazard count — check it carries both the
+    // cheap geometry-index prefilter and exact geography-distance predicate.
     const hazardSql = String((query.mock.calls[1] as unknown[])[0]);
     expect(hazardSql).toContain("moderation_status = 'visible'");
+    expect(hazardSql).toContain('h.location && ST_Expand');
+    expect(hazardSql).toContain('h.location::geography');
+
+    const scenicSql = String((query.mock.calls[2] as unknown[])[0]);
+    expect(scenicSql).toContain('fz.boundary && ST_Expand');
+    expect(scenicSql).toContain('fz.boundary::geography');
+  });
+
+  it('uses latitude-safe envelopes for every enrichment prefilter', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          avg_quality: null,
+          avg_curviness: null,
+          elevation_span: null,
+          total_length_m: null,
+          surface_mix: {},
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 0 }])
+      .mockResolvedValueOnce([{ avg_scenic: null, zone_count: 0 }]);
+    const ds = { query } as unknown as DataSource;
+
+    await new RouteEnrichmentService(ds).aggregate([
+      { lat: 70, lng: 20 },
+      { lat: 70.1, lng: 20.1 },
+    ]);
+
+    const calls = query.mock.calls as [string, unknown[]][];
+    expect(calls).toHaveLength(3);
+    expect(calls[0]?.[0]).toContain('rs.geom && ST_Expand');
+    expect(calls[1]?.[0]).toContain('h.location && ST_Expand');
+    expect(calls[2]?.[0]).toContain('fz.boundary && ST_Expand');
+    expect(calls[0]?.[1][4] as number).toBeGreaterThan(0.0025);
+    expect(calls[1]?.[1][2] as number).toBeGreaterThan(0.0125);
+    expect(calls[2]?.[1][2] as number).toBeGreaterThan(0.0125);
   });
 
   it('bounds long-route work with capped point-local GiST lookups', async () => {
@@ -88,14 +126,19 @@ describe('RouteEnrichmentService.aggregate', () => {
     expect(roadSql).toContain('generate_series(');
     expect(roadSql).toContain('sampling.sample_count - 1');
     expect(roadSql).toContain('LEFT JOIN LATERAL');
-    expect(roadSql).toContain(
-      'ST_DWithin(\n                   rs.geom,\n                   samples.point',
-    );
+    expect(roadSql).toContain('rs.geom && ST_Expand');
     expect(roadSql).toContain('rs.geom::geography');
     expect(roadSql).toContain("COALESCE(surface_type, 'unknown')");
     // The cap and minimum spacing are bound parameters, so route length cannot
     // grow the number of nearest-segment index lookups without bound.
-    expect(roadParams).toEqual([expect.any(String), 100, 2500, 40]);
+    expect(roadParams).toEqual([
+      expect.any(String),
+      100,
+      2500,
+      40,
+      expect.any(Number),
+      expect.any(Number),
+    ]);
     expect(query).toHaveBeenCalledTimes(3);
   });
 
@@ -126,5 +169,128 @@ describe('RouteEnrichmentService.aggregate', () => {
       });
     }
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it('cancels active Postgres queries when the request is aborted', async () => {
+    const pending = new Map<number, (reason: Error) => void>();
+    let startedCount = 0;
+    let allStartedResolve: (() => void) | undefined;
+    const allStarted = new Promise<void>((resolve) => {
+      allStartedResolve = resolve;
+    });
+    const runners = [101, 102, 103].map((pid) => {
+      const runner = {
+        connect: jest.fn().mockResolvedValue(undefined),
+        query: jest.fn((sql: string) => {
+          if (sql.includes('pg_backend_pid')) {
+            return Promise.resolve([{ pid, application_name: 'tarmoto' }]);
+          }
+          if (sql.includes('set_config')) {
+            return Promise.resolve([{ set_config: 'tarmoto' }]);
+          }
+          startedCount += 1;
+          if (startedCount === 3) allStartedResolve?.();
+          return new Promise<never>((_resolve, reject) => {
+            pending.set(pid, reject);
+          });
+        }),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+      return runner;
+    });
+    const cancelQuery = jest.fn(
+      (_sql: string, params: unknown[] | undefined) => {
+        const pid = params?.[0] as number;
+        pending.get(pid)?.(
+          new Error('canceling statement due to user request'),
+        );
+        return Promise.resolve([{ cancelled: true }]);
+      },
+    );
+    const createQueryRunner = jest
+      .fn()
+      .mockReturnValueOnce(runners[0])
+      .mockReturnValueOnce(runners[1])
+      .mockReturnValueOnce(runners[2]);
+    const ds = {
+      query: cancelQuery,
+      createQueryRunner,
+    } as unknown as DataSource;
+    const controller = new AbortController();
+
+    const aggregate = new RouteEnrichmentService(ds).aggregate(
+      [
+        { lat: 50.08, lng: 14.42 },
+        { lat: 50.1, lng: 14.5 },
+      ],
+      controller.signal,
+    );
+    await allStarted;
+    controller.abort();
+
+    await expect(aggregate).rejects.toThrow(
+      'canceling statement due to user request',
+    );
+    expect(cancelQuery).toHaveBeenCalledTimes(3);
+    for (const pid of [101, 102, 103]) {
+      expect(cancelQuery).toHaveBeenCalledWith(
+        expect.stringContaining('pg_cancel_backend'),
+        [pid, expect.stringMatching(/^tarmoto-route-enrichment:/)],
+      );
+    }
+    expect(
+      runners.every((runner) => runner.release.mock.calls.length === 1),
+    ).toBe(true);
+  });
+
+  it('releases a completed runner without waiting for a pool-backed cancel', async () => {
+    let resolveStatement: ((value: unknown[]) => void) | undefined;
+    let statementStartedResolve: (() => void) | undefined;
+    const statementStarted = new Promise<void>((resolve) => {
+      statementStartedResolve = resolve;
+    });
+    const runner = {
+      connect: jest.fn().mockResolvedValue(undefined),
+      query: jest.fn((sql: string) => {
+        if (sql.includes('pg_backend_pid')) {
+          return Promise.resolve([{ pid: 101, application_name: 'tarmoto' }]);
+        }
+        if (sql.includes('set_config')) {
+          return Promise.resolve([{ set_config: 'tarmoto' }]);
+        }
+        statementStartedResolve?.();
+        return new Promise<unknown[]>((resolve) => {
+          resolveStatement = resolve;
+        });
+      }),
+      release: jest.fn().mockResolvedValue(undefined),
+    };
+    const queuedCancel = new Promise<never>(() => undefined);
+    const ds = {
+      query: jest.fn().mockReturnValue(queuedCancel),
+      createQueryRunner: jest.fn().mockReturnValue(runner),
+    } as unknown as DataSource;
+    const controller = new AbortController();
+    const service = new RouteEnrichmentService(ds);
+    const query = (
+      service as unknown as {
+        query<T>(
+          sql: string,
+          params: unknown[],
+          signal?: AbortSignal,
+        ): Promise<T>;
+      }
+    ).query<unknown[]>('SELECT 1', [], controller.signal);
+
+    await statementStarted;
+    controller.abort();
+    resolveStatement?.([]);
+
+    await expect(query).resolves.toEqual([]);
+    expect(runner.release).toHaveBeenCalledTimes(1);
+    expect(runner.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('set_config'),
+      ['tarmoto'],
+    );
   });
 });

@@ -703,6 +703,11 @@ entrypoint/command override or `--entrypoint` docker option needed.
 ```bash
 TARMOTO_GRAPHHOPPER_BASE_URL=http://tarmoto-graphhopper:8989   # route via staging GH
 TARMOTO_GRAPHHOPPER_TOLL_ENABLED=true                          # self-hosted defaults toll OFF; keep avoidTolls working
+TARMOTO_GRAPHHOPPER_TIMEOUT_MS=45000                           # hard deadline per upstream route
+TARMOTO_GRAPHHOPPER_MAX_CONCURRENCY=2                         # protect a small shared routing VPS
+TARMOTO_GRAPHHOPPER_CACHE_TTL_MS=120000                       # lets Save reuse the approved preview
+TARMOTO_GRAPHHOPPER_CACHE_MAX_ENTRIES=64                      # bounded process-local cache; long polylines are large
+TARMOTO_ROUTE_ENRICHMENT_MAX_CONCURRENCY=3                    # 3 aggregates × 3 SQL queries ≈ 9 pool slots
 TARMOTO_QUALITY_CONFLATION_ENABLED=true
 TARMOTO_QUALITY_CONFLATION_INPUT_FILE=/data/routing/cz.osm
 TARMOTO_QUALITY_CONFLATION_OUTPUT_FILE=/data/routing/cz.quality.osm

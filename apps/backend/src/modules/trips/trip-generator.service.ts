@@ -142,7 +142,9 @@ export class TripGeneratorService {
     userId: string,
     tripId: string,
     dto: GenerateTripDto,
+    signal?: AbortSignal,
   ): Promise<GenerateTripResponseDto> {
+    const startedAt = Date.now();
     // Folds "no such trip" and "you're not a member" into one 404 so
     // the endpoint can't be used to enumerate trip ids.
     const membership = await this.memberRepo.findOne({
@@ -215,12 +217,19 @@ export class TripGeneratorService {
     // gets the rider's intent.
     // Route every day's legs around active full closures in the trip area
     // (#744). Fetched once for the whole trip bbox and reused across days.
-    const excludePolygons = await this.closuresService.exclusionPolygons({
-      minLng: bbox[0],
-      minLat: bbox[1],
-      maxLng: bbox[2],
-      maxLat: bbox[3],
-    });
+    const exclusionRoute = [
+      chain[0]?.from ?? start,
+      ...chain.map((leg) => leg.to),
+    ];
+    const excludePolygons = await this.closuresService.exclusionPolygons(
+      {
+        minLng: bbox[0],
+        minLat: bbox[1],
+        maxLng: bbox[2],
+        maxLat: bbox[3],
+      },
+      exclusionRoute,
+    );
     const routingOptions: RoutingOptions = {
       avoidHighways: dto.avoid_highways,
       avoidTolls: dto.avoid_tolls,
@@ -231,6 +240,7 @@ export class TripGeneratorService {
       // candidate set and a synthetic 0 km fallback day.
       includePrimary: true,
     };
+    const routingStartedAt = Date.now();
     let candidatesByDay: Candidate[][];
     if (numDays === 1) {
       // Single-day trips are ROUNDTRIPS: out to the day's anchor and back
@@ -248,6 +258,7 @@ export class TripGeneratorService {
           surfaceFilter,
           trip.min_quality,
           routingOptions,
+          signal,
         ),
         this.candidatesForLeg(
           leg.to,
@@ -255,6 +266,7 @@ export class TripGeneratorService {
           surfaceFilter,
           trip.min_quality,
           routingOptions,
+          signal,
         ),
       ]);
       const out =
@@ -275,6 +287,7 @@ export class TripGeneratorService {
             surfaceFilter,
             trip.min_quality,
             routingOptions,
+            signal,
           );
           if (candidates.length === 0) {
             // Defensive: if even the primary OSRM route can't be enriched,
@@ -302,14 +315,20 @@ export class TripGeneratorService {
     // Explicit `dto.option` always wins.
     const selectedId: TripGenerationOptionId =
       dto.option ?? defaultOptionForPreference(trip.road_preference);
+    const routingMs = Date.now() - routingStartedAt;
     // `OPTION_PRESETS` is derived from a `Record<TripGenerationOptionId, …>`
-    // so every option id has a preset by construction; the find here is
-    // a total lookup, no defensive 404 needed.
+    // so every option id has a preset by construction; the find here is a
+    // total lookup, no defensive 404 needed.
     const selected = builtOptions.find((o) => o.preset.id === selectedId)!;
 
+    signal?.throwIfAborted();
+    const persistenceStartedAt = Date.now();
     await this.persistSelected(tripId, selected);
+    const persistenceMs = Date.now() - persistenceStartedAt;
 
+    const detailStartedAt = Date.now();
     const detail = await this.tripsService.getDetail(userId, tripId);
+    const detailMs = Date.now() - detailStartedAt;
     // Emit both events: `trip:updated` carries the full refreshed
     // detail so any collaborator already listening on the socket room
     // (the same channel `TripsService.update` writes to) refreshes
@@ -329,6 +348,16 @@ export class TripGeneratorService {
       num_days: numDays,
     });
 
+    const totalMs = Date.now() - startedAt;
+    if (totalMs >= 1_000) {
+      this.logger.warn(
+        `Planner generation took ${totalMs}ms ` +
+          `(routing=${routingMs}ms, persistence=${persistenceMs}ms, ` +
+          `detail=${detailMs}ms, ` +
+          `days=${numDays})`,
+      );
+    }
+
     return {
       trip: detail,
       selected_option: selectedId,
@@ -346,17 +375,28 @@ export class TripGeneratorService {
     surfaceFilter: AllowedSurface[] | null,
     minQuality: number,
     routingOptions: RoutingOptions,
+    signal?: AbortSignal,
   ): Promise<Candidate[]> {
     let alts: RouteAlternative[];
     try {
-      alts = await this.routingProvider.getAlternatives(
-        from.lat,
-        from.lng,
-        to.lat,
-        to.lng,
-        3,
-        routingOptions,
-      );
+      alts = signal
+        ? await this.routingProvider.getAlternatives(
+            from.lat,
+            from.lng,
+            to.lat,
+            to.lng,
+            3,
+            routingOptions,
+            signal,
+          )
+        : await this.routingProvider.getAlternatives(
+            from.lat,
+            from.lng,
+            to.lat,
+            to.lng,
+            3,
+            routingOptions,
+          );
     } catch (err) {
       this.logger.warn(
         `OSRM call failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -377,8 +417,8 @@ export class TripGeneratorService {
       ];
     }
 
-    // Enrich every alternative in parallel — each `aggregateRouteMetrics`
-    // call already runs four PostGIS queries concurrently, but the
+    // Enrich every alternative in parallel — each aggregate call runs three
+    // PostGIS queries concurrently, but the
     // alternatives themselves used to be awaited sequentially, which
     // multiplied the per-day latency by `alts.length`. The endpoint's
     // <10s budget can't afford that on a multi-day trip with 3 alts
@@ -386,7 +426,11 @@ export class TripGeneratorService {
     // path below can reuse it.
     const enrichable = alts.filter((alt) => alt.geometry.length >= 2);
     const enrichedList = await Promise.all(
-      enrichable.map((alt) => this.enrichment.aggregate(alt.geometry)),
+      enrichable.map((alt) =>
+        signal
+          ? this.enrichment.aggregate(alt.geometry, signal)
+          : this.enrichment.aggregate(alt.geometry),
+      ),
     );
     const enriched = new Map<RouteAlternative, RouteMetrics>();
     enrichable.forEach((alt, i) => {
@@ -425,7 +469,10 @@ export class TripGeneratorService {
       // per fallback day.
       const cached = enriched.get(primary);
       const metrics =
-        cached ?? (await this.enrichment.aggregate(primary.geometry));
+        cached ??
+        (signal
+          ? await this.enrichment.aggregate(primary.geometry, signal)
+          : await this.enrichment.aggregate(primary.geometry));
       candidates.push({ alt: primary, metrics });
     }
     return candidates;

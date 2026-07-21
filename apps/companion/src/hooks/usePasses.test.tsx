@@ -31,6 +31,8 @@ function TestHarness({
     <div>
       <span>{result.loading ? "loading" : "loaded"}</span>
       <span>{result.routeLoading ? "route-loading" : "route-idle"}</span>
+      <span>closed={result.routeClosedCount}</span>
+      <span>unknown={result.routeUnknownCount}</span>
     </div>
   );
 }
@@ -41,6 +43,15 @@ const route: PlannerClosureRoute = {
   points: [
     { lat: 46.5, lng: 10.4 },
     { lat: 46.6, lng: 10.5 },
+  ],
+};
+
+const secondRoute: PlannerClosureRoute = {
+  id: "day-2",
+  label: "Day 2",
+  points: [
+    { lat: 46.6, lng: 10.5 },
+    { lat: 46.7, lng: 10.6 },
   ],
 };
 
@@ -81,11 +92,41 @@ describe("usePasses", () => {
             query: {
               bbox: "17.557,49.644,18.963,49.996",
               for_month: 7,
+              limit: 500,
+              offset: 0,
             },
           },
         }),
       );
     });
+  });
+
+  it("loads every page instead of treating the server cap as a complete list", async () => {
+    vi.mocked(api.GET)
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 500 }, (_, id) => ({ id })),
+        error: undefined,
+      } as never)
+      .mockResolvedValueOnce({
+        data: [{ id: 500 }],
+        error: undefined,
+      } as never);
+
+    render(<TestHarness bbox="5,45,17,49" />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(api.GET).toHaveBeenCalledTimes(2);
+    });
+    expect(api.GET).toHaveBeenLastCalledWith(
+      "/api/v1/passes",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({ limit: 500, offset: 500 }),
+        },
+      }),
+    );
   });
 
   it("does not fetch the list while disabled", async () => {
@@ -173,5 +214,32 @@ describe("usePasses", () => {
     });
 
     expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses one backend query for unique exact counts across route chunks", async () => {
+    vi.mocked(passesApi.checkRoute).mockResolvedValue({
+      data: {
+        closed_count: 237,
+        unknown_count: 14,
+        passes: [],
+      },
+    } as Awaited<ReturnType<typeof passesApi.checkRoute>>);
+
+    render(<TestHarness routes={[route, secondRoute]} />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("closed=237")).toBeInTheDocument();
+      expect(screen.getByText("unknown=14")).toBeInTheDocument();
+    });
+    expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
+    expect(passesApi.checkRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: route.points,
+        additional_routes: [{ points: secondRoute.points }],
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

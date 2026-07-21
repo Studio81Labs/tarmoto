@@ -1,6 +1,7 @@
 import {
   averageQuality,
   bboxAroundPoint,
+  buildClosedPassWarning,
   computeFuelRangeLegs,
   flattenTripRoute,
   formatDurationMin,
@@ -14,6 +15,7 @@ import {
   formatWaypointType,
   isLastDay,
   isSuggestedOvernightWaypoint,
+  MAX_PASS_CHECK_ROUTE_POINTS,
   navigationWaypointsForRoadNames,
   pickDayEndAnchor,
   pickSuggestedAccommodation,
@@ -24,7 +26,15 @@ import {
   sumDistance,
   withSuggestedOvernightStop,
 } from "../TripScreens.helpers";
-import type { Accommodation, LatLng, Trip, TripDay, Waypoint } from "@/types";
+import type {
+  Accommodation,
+  CheckRouteForPassesResponse,
+  LatLng,
+  MountainPass,
+  Trip,
+  TripDay,
+  Waypoint,
+} from "@/types";
 import { setActiveFormatContext } from "@/format";
 
 const wp = (
@@ -322,6 +332,33 @@ describe("flattenTripRoute", () => {
   it("returns an empty array when no day has usable geometry", () => {
     expect(flattenTripRoute([dayWith(1, []), dayWith(2, [])])).toEqual([]);
   });
+
+  it("samples a dense imported route below the backend pass-check cap", () => {
+    const denseRoute = Array.from({ length: 50_000 }, (_, index) => ({
+      lat: 46 + index * 0.00001,
+      lng: 10 + index * 0.00001,
+    }));
+
+    const result = flattenTripRoute([dayWith(1, denseRoute)]);
+
+    expect(result).toHaveLength(MAX_PASS_CHECK_ROUTE_POINTS);
+    expect(result[0]).toEqual(denseRoute[0]);
+    expect(result.at(-1)).toEqual(denseRoute.at(-1));
+    expect(result.length).toBeLessThan(25_000);
+    expect(
+      Math.max(
+        ...result.slice(1).map((point, index) => {
+          const previous = result[index]!;
+          const previousSourceIndex = Math.round((previous.lat - 46) / 0.00001);
+          const sourceIndex = Math.round((point.lat - 46) / 0.00001);
+          return sourceIndex - previousSourceIndex;
+        }),
+      ),
+    ).toBeLessThanOrEqual(3);
+    expect(Buffer.byteLength(JSON.stringify({ route: result }))).toBeLessThan(
+      1_048_576,
+    );
+  });
 });
 
 describe("routeGeometrySignature", () => {
@@ -348,6 +385,37 @@ describe("routeGeometrySignature", () => {
     expect(routeGeometrySignature(base.days)).toBe(
       routeGeometrySignature(withSuggestedStay.days),
     );
+  });
+});
+
+describe("buildClosedPassWarning", () => {
+  const pass = (id: string, status: MountainPass["status"]): MountainPass => ({
+    id,
+    name: `Pass ${id}`,
+    country_code: "NO",
+    region: null,
+    lat: 70,
+    lng: 20,
+    elevation_m: 1_500,
+    typical_open_month: 6,
+    typical_close_month: 9,
+    status,
+    status_overridden: false,
+    notes: null,
+    last_updated: "2026-07-21T00:00:00.000Z",
+  });
+
+  it("uses the exact backend count when returned rows are capped", () => {
+    const response: CheckRouteForPassesResponse = {
+      passes: [pass("closed", "closed"), pass("open", "open")],
+      closed_count: 237,
+      unknown_count: 0,
+    };
+
+    expect(buildClosedPassWarning(response)).toEqual({
+      passes: [response.passes[0]],
+      count: 237,
+    });
   });
 });
 

@@ -56,6 +56,23 @@ describe('OsrmProvider', () => {
     expect(requestedUrl).toContain('geometries=geojson');
   });
 
+  it('forwards the caller abort signal when requesting alternatives', async () => {
+    const controller = new AbortController();
+
+    await provider.getAlternatives(
+      47.0,
+      11.5,
+      47.2,
+      11.7,
+      3,
+      undefined,
+      controller.signal,
+    );
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
+    expect(calls[0][1].signal).toBe(controller.signal);
+  });
+
   it('emits exclude=motorway when only highways are avoided', async () => {
     await provider.getAlternatives(47.0, 11.5, 47.2, 11.7, 3, {
       avoidHighways: true,
@@ -227,12 +244,19 @@ describe('OsrmProvider exclude fallback (public demo has no exclude classes)', (
       .mockResolvedValueOnce(json(excludeRejected, 400))
       .mockResolvedValueOnce(json(okBody));
 
-    const result = await provider.route(waypoints, { avoidHighways: true });
+    const controller = new AbortController();
+    const result = await provider.route(
+      waypoints,
+      { avoidHighways: true },
+      controller.signal,
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const calls = fetchMock.mock.calls as Array<[string]>;
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>;
     expect(calls[0][0]).toContain('exclude=motorway');
     expect(calls[1][0]).not.toContain('exclude=');
+    expect(calls[0][1].signal).toBe(controller.signal);
+    expect(calls[1][1].signal).toBe(controller.signal);
     // The rider still gets a routed line (without the avoidance).
     expect(result).not.toBeNull();
     expect(result?.geometry).toHaveLength(3);
