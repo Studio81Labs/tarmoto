@@ -1,4 +1,6 @@
 export const common = {
+  "An account with that email already exists":
+    "An account with that email already exists",
   mo: "mo",
   yr: "yr",
   "{hours} vs last month": "{hours} vs last month",

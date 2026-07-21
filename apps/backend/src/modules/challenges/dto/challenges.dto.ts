@@ -1,9 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  BADGE_KEYS,
   CHALLENGE_CONTENT_KEYS,
-  type BadgeKey,
+  CHALLENGE_REWARD_KEYS,
   type ChallengeContentKey,
+  type ChallengeRewardKey,
 } from '@tarmoto/shared';
 
 export class ChallengeDto {
@@ -28,8 +28,8 @@ export class ChallengeDto {
   @ApiProperty()
   ends_at!: string;
 
-  @ApiProperty({ enum: BADGE_KEYS, nullable: true })
-  reward_badge_key!: BadgeKey | null;
+  @ApiProperty({ enum: CHALLENGE_REWARD_KEYS, nullable: true })
+  reward_badge_key!: ChallengeRewardKey | null;
 
   @ApiProperty()
   participant_count!: number;

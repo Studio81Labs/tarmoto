@@ -86,7 +86,15 @@ function ChallengeCard({
     challenge.target > 0
       ? Math.min(100, Math.round((challenge.current / challenge.target) * 100))
       : 0;
-  const copy = challengeCopyForKey(challenge.contentKey, t);
+  const copy = challengeCopyForKey(
+    {
+      contentKey: challenge.contentKey,
+      metric: challenge.metric,
+      target: challenge.target,
+    },
+    format,
+    t,
+  );
   const distanceMetric =
     challenge.metric === "total_distance" || challenge.metric === "single_ride";
   const progressMessage = CHALLENGE_PROGRESS_MESSAGES[challenge.metric];

@@ -3,6 +3,7 @@ export const achievements = {
   Active: "Active",
   "Active challenges": "Active challenges",
   "Badge details unavailable.": "Badge details unavailable.",
+  "Complete a {distance} ride": "Complete a {distance} ride",
   "Badges, challenges, leaderboards, and milestones for your riding region.":
     "Badges, challenges, leaderboards, and milestones for your riding region.",
   "Could not load achievements": "Could not load achievements",
@@ -34,6 +35,7 @@ export const achievements = {
   Ongoing: "Ongoing",
   "Reach this goal before the challenge ends.":
     "Reach this goal before the challenge ends.",
+  "Ride {distance}": "Ride {distance}",
   "Regular Rider": "Regular Rider",
   Rank: "Rank",
   "Region scope": "Region scope",
@@ -54,6 +56,7 @@ export const achievements = {
   "Sign in to see your achievements": "Sign in to see your achievements",
   "Single-ride challenge": "Single-ride challenge",
   "Social Rider": "Social Rider",
+  "Spring Explorer": "Spring Explorer",
   "Top riders in {region}, ranked by {dimension}.":
     "Top riders in {region}, ranked by {dimension}.",
   "Top riders worldwide, ranked by {dimension}.":
@@ -65,6 +68,16 @@ export const achievements = {
   "View your profile": "View your profile",
   "Unique road segments ridden": "Unique road segments ridden",
   "Unknown badge": "Unknown badge",
+  "{count, plural, one {Complete # ride} other {Complete # rides}}":
+    "{count, plural, one {Complete # ride} other {Complete # rides}}",
+  "{count, plural, one {Discover # road} other {Discover # roads}}":
+    "{count, plural, one {Discover # road} other {Discover # roads}}",
+  "{count, plural, one {Report # hazard} other {Report # hazards}}":
+    "{count, plural, one {Report # hazard} other {Report # hazards}}",
+  "{count, plural, one {Share # ride} other {Share # rides}}":
+    "{count, plural, one {Share # ride} other {Share # rides}}",
+  "{count, plural, one {Write # road review} other {Write # road reviews}}":
+    "{count, plural, one {Write # road review} other {Write # road reviews}}",
   "What you're working toward right now.":
     "What you're working toward right now.",
   "{count, plural, one {# day} other {# days}} left":

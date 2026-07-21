@@ -114,6 +114,7 @@ describe("CommunitySidebar", () => {
     render(<CommunitySidebar />);
 
     expect(await screen.findByText("1 day left")).toBeInTheDocument();
+    expect(screen.getByText("Discover 1 road")).toBeInTheDocument();
     expect(screen.queryByText("1 days left")).not.toBeInTheDocument();
     expect(screen.getByText("1 / 1 road")).toBeInTheDocument();
   });

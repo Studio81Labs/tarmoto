@@ -384,13 +384,13 @@ describe("unitForChallengeMetric", () => {
 
 describe("mapChallengeDto", () => {
   it("treats null my_progress as not-yet-joined (current = 0)", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), null, t);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), null, format, t);
     expect(c.current).toBe(0);
     expect(c.target).toBe(10);
   });
 
   it("uses my_progress when the rider has joined", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), 4, t);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), 4, format, t);
     expect(c.current).toBe(4);
   });
 
@@ -401,29 +401,30 @@ describe("mapChallengeDto", () => {
         ends_at: "2026-05-01T00:00:00Z",
       }),
       undefined,
+      format,
       t,
     );
-    expect(c.name).toBe("Road discovery challenge");
+    expect(c.name).toBe("Discover 10 roads");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
   });
 
-  it("does not expose an unknown reward identifier as rider-facing copy", () => {
+  it("maps a seasonal reward identifier through cataloged copy", () => {
     const c = mapChallengeDto(
       challengeDto({
-        // Runtime resilience for a stale or malformed server despite the
-        // generated contract constraining valid reward keys.
-        reward_badge_key: "spring_explorer" as ChallengeDto["reward_badge_key"],
+        reward_badge_key: "spring_explorer",
       }),
       undefined,
+      format,
       t,
     );
-    expect(c.reward).toBeUndefined();
+    expect(c.reward).toBe("Spring Explorer");
   });
 
   it("leaves reward undefined when no badge key is set", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: null }),
       undefined,
+      format,
       t,
     );
     expect(c.reward).toBeUndefined();
@@ -435,7 +436,12 @@ describe("mapChallengeDto", () => {
     // "km" — the achievements page branches on `challenge.unit === "km"` to
     // apply imperial distance conversion, and translation happens only at
     // the display boundary via `t(challenge.unit)`.
-    const c = mapChallengeDto(challengeDto({ metric: "total_distance" }), 1, t);
+    const c = mapChallengeDto(
+      challengeDto({ metric: "total_distance" }),
+      1,
+      format,
+      t,
+    );
     expect(c.unit).toBe("km");
   });
 });
@@ -645,7 +651,11 @@ describe("gamification translator wiring", () => {
   });
 
   it("buildLiveSnapshot routes milestone name/description through the translator", () => {
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [] },
+      format,
+      t,
+    );
     expect(snap.milestones[0]?.name).toBe("XX-DistanceTraveller");
     expect(snap.milestones[0]?.description).toBe("XX-CumulativeKm");
   });
@@ -653,7 +663,11 @@ describe("gamification translator wiring", () => {
 
 describe("buildLiveSnapshot", () => {
   it("produces an empty snapshot when no data is available", () => {
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [] },
+      format,
+      t,
+    );
     expect(snap.badges).toEqual([]);
     expect(snap.challenges).toEqual([]);
     expect(snap.seasonal).toBeNull();
@@ -668,6 +682,7 @@ describe("buildLiveSnapshot", () => {
     });
     const snap = buildLiveSnapshot(
       { badges: [], challengeDetails: [detail] },
+      format,
       t,
     );
     expect(snap.challengeMeta["ch-1"]).toEqual({
@@ -685,6 +700,7 @@ describe("buildLiveSnapshot", () => {
     });
     const snap = buildLiveSnapshot(
       { badges: [], challengeDetails: [detail] },
+      format,
       t,
     );
     expect(snap.challengeMeta["ch-1"]?.joined).toBe(false);
@@ -707,6 +723,7 @@ describe("buildLiveSnapshot", () => {
         ],
         challengeDetails: [],
       },
+      format,
       t,
     );
     expect(snap.stats.totalKm).toBe(8_000);
@@ -740,6 +757,7 @@ describe("buildLiveSnapshot", () => {
           badges_earned: 3,
         },
       },
+      format,
       t,
     );
 

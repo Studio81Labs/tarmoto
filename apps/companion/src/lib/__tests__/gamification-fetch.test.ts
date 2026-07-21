@@ -8,6 +8,9 @@ import {
   joinChallenge,
 } from "../gamification-fetch";
 import { api } from "@/lib/api";
+import { createFormatters } from "@tarmoto/shared";
+
+const format = createFormatters({ locale: "en", units: "metric" });
 
 const ME_PROFILE_RESPONSE = {
   joined_at: "2024-04-13T10:00:00.000Z",
@@ -232,7 +235,7 @@ describe("fetchGamificationSnapshot", () => {
   it("composes badges + challenges + details + me-profile into a snapshot", async () => {
     setupHappyPath();
 
-    const snap = await fetchGamificationSnapshot("user-1");
+    const snap = await fetchGamificationSnapshot("user-1", { format });
 
     expect(snap.badges).toHaveLength(1);
     expect(snap.badges[0]?.id).toBe("total_distance");
@@ -256,9 +259,9 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(ok([]));
     });
 
-    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Could not load badges",
-    );
+    await expect(
+      fetchGamificationSnapshot("user-1", { format }),
+    ).rejects.toThrow("Could not load badges");
   });
 
   it("propagates errors from the challenges list call", async () => {
@@ -275,9 +278,9 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(ok([]));
     });
 
-    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Could not load challenges",
-    );
+    await expect(
+      fetchGamificationSnapshot("user-1", { format }),
+    ).rejects.toThrow("Could not load challenges");
   });
 
   it("propagates errors from the me-profile call", async () => {
@@ -288,9 +291,9 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(ok([]));
     });
 
-    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Could not load your profile summary",
-    );
+    await expect(
+      fetchGamificationSnapshot("user-1", { format }),
+    ).rejects.toThrow("Could not load your profile summary");
   });
 
   it("returns an empty-but-valid snapshot when there are no challenges", async () => {
@@ -303,7 +306,7 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(fail(404));
     });
 
-    const snap = await fetchGamificationSnapshot("user-1");
+    const snap = await fetchGamificationSnapshot("user-1", { format });
     expect(snap.challenges).toEqual([]);
     expect(snap.milestones.length).toBeGreaterThan(0);
   });
@@ -312,7 +315,10 @@ describe("fetchGamificationSnapshot", () => {
     setupHappyPath();
     const controller = new AbortController();
 
-    await fetchGamificationSnapshot("user-1", { signal: controller.signal });
+    await fetchGamificationSnapshot("user-1", {
+      format,
+      signal: controller.signal,
+    });
 
     // Every api.GET invocation should have received the same signal so
     // that aborting the controller cancels the whole fan-out.

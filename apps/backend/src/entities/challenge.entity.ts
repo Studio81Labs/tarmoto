@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
-import type { BadgeKey, ChallengeContentKey } from '@tarmoto/shared';
+import type { ChallengeContentKey, ChallengeRewardKey } from '@tarmoto/shared';
 import { ChallengeEntry } from './challenge-entry.entity.js';
 
 @Entity('challenges')
@@ -29,7 +29,7 @@ export class Challenge {
   ends_at!: Date;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  reward_badge_key!: BadgeKey | null;
+  reward_badge_key!: ChallengeRewardKey | null;
 
   @Column({ type: 'boolean', default: true })
   is_active!: boolean;

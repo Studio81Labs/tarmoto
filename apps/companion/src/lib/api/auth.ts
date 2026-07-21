@@ -1,4 +1,5 @@
-import { api, openApiData } from "./client";
+import { t } from "@/i18n";
+import { api, ApiError, openApiData } from "./client";
 
 // ── Auth helpers ──
 
@@ -14,10 +15,21 @@ export async function registerUser(
   password: string,
   displayName: string,
 ) {
-  const { data } = await openApiData(
-    api.POST("/api/v1/auth/register", {
-      body: { email, password, display_name: displayName },
-    }),
-  );
-  return data;
+  try {
+    const { data } = await openApiData(
+      api.POST("/api/v1/auth/register", {
+        body: { email, password, display_name: displayName },
+      }),
+    );
+    return data;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      throw new ApiError(
+        t("An account with that email already exists"),
+        error.status,
+        error.body,
+      );
+    }
+    throw error;
+  }
 }

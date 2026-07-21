@@ -163,6 +163,7 @@ export default function AchievementsPage() {
       if (!silent) setState({ status: "loading", userId: uid });
       try {
         const snapshot = await fetchGamificationSnapshot(uid, {
+          format,
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
@@ -176,11 +177,11 @@ export default function AchievementsPage() {
           message:
             err instanceof Error
               ? err.message
-              : "Could not load achievements right now.",
+              : t("Could not load achievements"),
         });
       }
     },
-    [],
+    [format],
   );
   useEffect(() => {
     // The user changed (sign-in, sign-out, or account switch). Clear any

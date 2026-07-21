@@ -6170,7 +6170,7 @@ export interface components {
             starts_at: string;
             ends_at: string;
             /** @enum {string|null} */
-            reward_badge_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | null;
+            reward_badge_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | "spring_explorer" | null;
             participant_count: number;
         };
         LeaderboardEntryDto: {
@@ -6192,7 +6192,7 @@ export interface components {
             starts_at: string;
             ends_at: string;
             /** @enum {string|null} */
-            reward_badge_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | null;
+            reward_badge_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | "spring_explorer" | null;
             participant_count: number;
             my_progress: number | null;
             my_completed: boolean | null;
