@@ -2,6 +2,7 @@ import React from "react";
 import { act, render, waitFor } from "@testing-library/react-native";
 import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
+import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
 import type { User } from "@/types";
@@ -71,6 +72,7 @@ jest.mock("@/services/displayPreferencesSyncMonitor", () => ({
 describe("App auth locale hydration", () => {
   beforeEach(() => {
     jest.mocked(startCommuteHazardMonitor).mockClear();
+    jest.mocked(startDisplayPreferencesSyncMonitor).mockClear();
     mockMonitorLocales.length = 0;
     mockProviderLocale = undefined;
     useAuthStore.setState({
@@ -141,5 +143,49 @@ describe("App auth locale hydration", () => {
       expect(usePreferencesStore.getState().distanceUnit).toBe("metric");
       expect(getFormatters().distanceKm(10)).toBe("10 km");
     });
+  });
+
+  it("restarts display preference sync when profile hydration replaces cached preferences", async () => {
+    await render(<App />);
+
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "warm-user",
+        language: "en",
+        preferences: {
+          format_locale: "en-US",
+          timezone: "UTC",
+        },
+      } as unknown as User);
+    });
+    expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalledTimes(1);
+
+    // The first monitor write publishes the device-derived values.
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "warm-user",
+        language: "en",
+        preferences: {
+          format_locale: "cs-CZ",
+          timezone: "Europe/Prague",
+        },
+      } as unknown as User);
+    });
+    expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalledTimes(2);
+
+    // A slower bootstrap GET can still publish its stale snapshot. Changing
+    // either device-derived profile field must restart the monitor immediately
+    // so it reconciles again instead of waiting for another foreground event.
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "warm-user",
+        language: "en",
+        preferences: {
+          format_locale: "en-US",
+          timezone: "UTC",
+        },
+      } as unknown as User);
+    });
+    expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalledTimes(3);
   });
 });

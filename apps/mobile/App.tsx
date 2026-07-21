@@ -128,7 +128,13 @@ export default function App() {
         if (auth.user?.id === userId) auth.setUser(updated);
       },
     });
-  }, [isAuthLoading, isAuthenticated]);
+  }, [
+    isAuthLoading,
+    isAuthenticated,
+    user?.id,
+    user?.preferences?.format_locale,
+    user?.preferences?.timezone,
+  ]);
 
   // #866 — persist the rider's device timezone so the weekly digest sends at
   // their local Sunday 08:00 instead of the server UTC default. Mirrors the
