@@ -212,6 +212,7 @@ export default async function SharedCollectionPage({
                 route={route}
                 index={idx + 1}
                 author={ownerName}
+                format={format}
               />
             ))}
           </ul>

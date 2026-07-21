@@ -1,13 +1,17 @@
 import type * as GeoJSON from "geojson";
 import {
+  createFormatters,
+  DEFAULT_FORMAT_LOCALE,
   parseImportedRoute as sharedParseImportedRoute,
   pointsDistanceKm as sharedPointsDistanceKm,
   type ImportedRoute,
   type ImportedWaypoint,
   type ImportResult,
+  type Formatters,
 } from "@tarmoto/shared";
 import type { RoutePreviewSegment, Trip, Waypoint } from "@/lib/types";
 import { scoreToTier } from "@/lib/utils";
+import { t as translate, type Translate } from "@/i18n";
 
 /**
  * GPX/KML import (US-38 / US-20). Parses files exported from Garmin,
@@ -64,7 +68,14 @@ function toRad(deg: number): number {
  * zero-length days — segments shorter than `MIN_SEGMENT_KM` are merged into
  * their neighbour so the Road Preview Cards stay readable.
  */
-export function importedRouteToTrip(route: ImportedRoute): Trip {
+export function importedRouteToTrip(
+  route: ImportedRoute,
+  format: Formatters = createFormatters({
+    locale: DEFAULT_FORMAT_LOCALE,
+    units: "metric",
+  }),
+  t: Translate = translate,
+): Trip {
   const segments = buildPreviewSegments(route);
   const totalDistanceKm = segments.reduce((s, seg) => s + seg.distanceKm, 0);
   const avgQuality =
@@ -83,7 +94,10 @@ export function importedRouteToTrip(route: ImportedRoute): Trip {
   return {
     id: `imported-${Date.now()}`,
     name: route.name,
-    description: `Imported from ${route.sourceFormat.toUpperCase()} · ${totalDistanceKm.toFixed(1)} km`,
+    description: t("Imported from {format} · {distance}", {
+      format: route.sourceFormat.toUpperCase(),
+      distance: format.distanceKm(totalDistanceKm),
+    }),
     importSourceFormat: route.sourceFormat,
     status: "draft",
     num_days: 1,

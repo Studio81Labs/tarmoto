@@ -7,6 +7,10 @@ import {
   segmentHazardSeverity,
 } from "@/lib/segment-preview";
 import type { Hazard } from "@/lib/types";
+import { createFormatters } from "@tarmoto/shared";
+
+const metric = createFormatters({ locale: "en-US", units: "metric" });
+const imperial = createFormatters({ locale: "en-US", units: "imperial" });
 
 function hazard(severity: Hazard["severity"]): Hazard {
   return {
@@ -70,11 +74,19 @@ describe("curvinessLabel", () => {
 
 describe("formatElevationRange", () => {
   it("returns em dash for empty profile", () => {
-    expect(formatElevationRange([])).toBe("—");
+    expect(formatElevationRange([], metric)).toBe("—");
   });
 
   it("rounds and formats min–max", () => {
-    expect(formatElevationRange([412.3, 550.7, 488.1])).toBe("412 – 551 m");
+    expect(formatElevationRange([412.3, 550.7, 488.1], metric)).toBe(
+      "412 – 551 m",
+    );
+  });
+
+  it("converts the elevation range for imperial riders", () => {
+    expect(formatElevationRange([412.3, 550.7, 488.1], imperial)).toBe(
+      "1,353 – 1,807 ft",
+    );
   });
 });
 

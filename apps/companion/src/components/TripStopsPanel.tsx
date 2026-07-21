@@ -14,6 +14,7 @@ import { plannerApi } from "@/lib/planner/api";
 import type { RouteStop } from "@/lib/planner/types";
 import type { Trip } from "@/lib/types";
 import { useTripStore } from "@/stores/trip";
+import { useFormat } from "@/format/FormatProvider";
 
 const CORRIDOR_OPTIONS = [5, 10, 20] as const;
 /** Route-change re-queries are debounced; filter changes apply fast. */
@@ -62,6 +63,7 @@ export function TripStopsPanel({
   onFocusStop,
   month,
 }: TripStopsPanelProps) {
+  const format = useFormat();
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
   const [corridorKm, setCorridorKm] = useState<number>(5);
@@ -170,7 +172,9 @@ export function TripStopsPanel({
   }, [routeLines, categories, corridorKm, minStayRating, month]);
 
   const activeLabels = categories
-    .map((category) => poiCategoryMeta(category).label.toLowerCase())
+    .map((category) =>
+      t(poiCategoryMeta(category).label).toLocaleLowerCase(format.locale),
+    )
     .join(", ");
 
   return (
@@ -282,7 +286,9 @@ export function TripStopsPanel({
             {t("Corridor from route")}
           </span>
           <span className="font-mono text-[10px] text-fg-mute">
-            {t("WITHIN {km} KM", { km: corridorKm })}
+            {t("WITHIN {distance}", {
+              distance: format.distanceKm(corridorKm),
+            })}
           </span>
         </div>
         <div className="flex gap-1.5">
@@ -298,7 +304,7 @@ export function TripStopsPanel({
                   : "border-line bg-cream text-fg-dim hover:border-line-strong"
               }`}
             >
-              {t("{km} km", { km })}
+              {format.distanceKm(km)}
             </button>
           ))}
         </div>
@@ -374,8 +380,11 @@ export function TripStopsPanel({
           <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
             <p className="text-[12px] leading-relaxed text-fg-dim">
               {t(
-                "No {filters} stops within {km} km of your route — try a wider corridor. ",
-                { filters: activeLabels, km: corridorKm },
+                "No {filters} stops within {distance} of your route — try a wider corridor. ",
+                {
+                  filters: activeLabels,
+                  distance: format.distanceKm(corridorKm),
+                },
               )}
             </p>
           </div>
@@ -407,11 +416,20 @@ export function TripStopsPanel({
                       {stop.name}
                     </span>
                     <span className="font-mono text-[9.5px] uppercase tracking-[0.4px] text-fg-mute">
-                      {`${meta.label} · ${
-                        stop.distanceFromRouteKm < 0.1
-                          ? t("on route")
-                          : t("{km} km off", { km: stop.distanceFromRouteKm })
-                      } · ${t("km {at}", { at: stop.kmAlongRoute })}`}
+                      {t("{category} · {offset} · {along}", {
+                        category: t(meta.label),
+                        offset:
+                          stop.distanceFromRouteKm < 0.1
+                            ? t("on route")
+                            : t("{distance} off", {
+                                distance: format.distanceKm(
+                                  stop.distanceFromRouteKm,
+                                ),
+                              }),
+                        along: t("at {distance}", {
+                          distance: format.distanceKm(stop.kmAlongRoute),
+                        }),
+                      })}
                     </span>
                     {(() => {
                       const d = readPoiDetails(stop);

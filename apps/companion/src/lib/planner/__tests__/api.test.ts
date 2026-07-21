@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { haversineKm } from "@tarmoto/shared";
+import { createFormatters, haversineKm } from "@tarmoto/shared";
 import {
   api,
   passesApi,
@@ -184,6 +184,16 @@ describe("deriveFlaggedSections", () => {
 
   it("returns nothing for a clean route", () => {
     expect(deriveFlaggedSections([segment({})])).toEqual([]);
+  });
+
+  it("uses the viewer's unit system in flagged labels", () => {
+    const imperial = createFormatters({ locale: "en-US", units: "imperial" });
+    expect(
+      deriveFlaggedSections(
+        [segment({ band: "rough", surface: "gravel", lengthKm: 10 })],
+        imperial,
+      )[0]?.label,
+    ).toBe("Rough · Gravel, 6.2 mi");
   });
 });
 

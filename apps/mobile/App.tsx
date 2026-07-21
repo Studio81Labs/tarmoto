@@ -12,6 +12,7 @@ import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
+import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -22,6 +23,7 @@ import {
   detectDeviceTimeZone,
 } from "@/i18n/deviceLocale";
 import { FormatProvider } from "@/format/FormatProvider";
+import { canonicalizeFormatLocale, isValidTimeZone } from "@tarmoto/shared";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -90,6 +92,43 @@ export default function App() {
       }),
     [],
   );
+
+  // Regional formatting follows the current device rather than whichever
+  // browser/phone last wrote the shared profile. Reconcile after auth resolves
+  // and on every foreground so account-backed formatting remains correct when
+  // the rider changes region or travels across timezones.
+  useEffect(() => {
+    if (isAuthLoading) return;
+    return startDisplayPreferencesSyncMonitor({
+      isAuthenticated: () => api.isAuthenticated(),
+      currentDevicePreferences: () => {
+        const detectedLocale = canonicalizeFormatLocale(
+          detectDeviceFormatLocale(),
+        );
+        const detectedZone = detectDeviceTimeZone();
+        return {
+          formatLocale: detectedLocale,
+          timeZone:
+            detectedZone && isValidTimeZone(detectedZone) ? detectedZone : null,
+        };
+      },
+      currentAccountPreferences: () => {
+        const current = useAuthStore.getState().user;
+        return current
+          ? {
+              userId: current.id,
+              formatLocale: current.preferences?.format_locale ?? null,
+              timeZone: current.preferences?.timezone ?? null,
+            }
+          : null;
+      },
+      sync: async (userId, preferences) => {
+        const updated = await api.updateProfile({ preferences });
+        const auth = useAuthStore.getState();
+        if (auth.user?.id === userId) auth.setUser(updated);
+      },
+    });
+  }, [isAuthLoading, isAuthenticated]);
 
   // #866 — persist the rider's device timezone so the weekly digest sends at
   // their local Sunday 08:00 instead of the server UTC default. Mirrors the

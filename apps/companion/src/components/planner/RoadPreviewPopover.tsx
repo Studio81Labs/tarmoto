@@ -75,9 +75,12 @@ function formatCapturedMonth(isoMonth: string | undefined): string | null {
 function segmentTitle(segment: RouteSegment, format: Formatters): string {
   const length = format.distanceKm(segment.lengthKm);
   if (segment.band === "no_data") {
-    return `${length} · no rider passes yet`;
+    return t("{distance} · no rider passes yet", { distance: length });
   }
-  return `Day ${segment.dayNumber} section · ${length}`;
+  return t("Day {day} section · {distance}", {
+    day: segment.dayNumber,
+    distance: length,
+  });
 }
 
 function StreetViewLink({ segment }: { segment: RouteSegment }) {

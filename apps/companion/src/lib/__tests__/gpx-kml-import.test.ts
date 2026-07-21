@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   importedRouteToTrip,
   parseImportedRoute,
   pointsDistanceKm,
 } from "../gpx-kml-import";
+import { createFormatters } from "@tarmoto/shared";
 
 const GPX_TRACK = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Garmin BaseCamp" xmlns="http://www.topografix.com/GPX/1/1">
@@ -323,6 +324,23 @@ describe("importedRouteToTrip", () => {
       expect(seg.surfaceType).toBe("asphalt");
       expect(seg.dayNumber).toBe(1);
     }
+  });
+
+  it("catalogs and converts the generated import description", () => {
+    const parsed = parseImportedRoute(GPX_TRACK, "stelvio.gpx");
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const format = createFormatters({ locale: "en-US", units: "imperial" });
+    const t = vi.fn(
+      (key: string, values?: Record<string, string | number>) =>
+        `XX ${String(values?.format)} / ${String(values?.distance)} [${key}]`,
+    );
+
+    const trip = importedRouteToTrip(parsed.route, format, t);
+
+    expect(trip.description).toMatch(
+      /^XX GPX \/ \d+(?:\.\d)? mi \[Imported from \{format\} · \{distance\}\]$/,
+    );
   });
 
   it("produces the same segment quality scores for the same input", () => {

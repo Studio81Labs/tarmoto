@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { CollectionRouteRow } from "./collection-route-atoms";
 import type { RouteCollectionPreviewItem } from "@/lib/api";
+import { createFormatters, type UnitSystem } from "@tarmoto/shared";
 
 function item(
   overrides: Partial<RouteCollectionPreviewItem> = {},
@@ -25,14 +26,19 @@ function item(
 
 function renderRow(
   route: RouteCollectionPreviewItem,
-  props: { linkable?: boolean } = {},
+  props: { linkable?: boolean; units?: UnitSystem } = {},
 ) {
+  const format = createFormatters({
+    locale: "en-US",
+    units: props.units ?? "metric",
+  });
   return render(
     <ul>
       <CollectionRouteRow
         route={route}
         index={1}
         author="Jane Rider"
+        format={format}
         linkable={props.linkable}
       />
     </ul>,
@@ -51,6 +57,13 @@ describe("CollectionRouteRow", () => {
     renderRow(item());
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("Three Passes Sunday")).toBeInTheDocument();
+    expect(screen.getByText("242 km")).toBeInTheDocument();
+  });
+
+  it("formats collection distance in the rider's unit system", () => {
+    renderRow(item({ distance_km: 25 }), { units: "imperial" });
+    expect(screen.getByText("15.5 mi")).toBeInTheDocument();
+    expect(screen.queryByText("25 km")).not.toBeInTheDocument();
   });
 
   it("stays non-interactive when the underlying entity was deleted (null target)", () => {

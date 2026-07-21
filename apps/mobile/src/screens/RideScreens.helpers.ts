@@ -17,7 +17,7 @@ import {
 import type { LineLayerSpecification } from "@maplibre/maplibre-react-native";
 
 import type { IconName } from "@/components/Icon";
-import { translate, type EnglishMessageKey } from "@/i18n";
+import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 import { getFormatters } from "@/format";
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
@@ -450,17 +450,30 @@ export type { LeanBucket, LeanBucketId };
  * Build the share-message body for a past ride. Pure so tests can
  * exercise the copy without touching the system Share API.
  */
-export function buildRideShareMessage(ride: RideDetail): string {
+export function buildRideShareMessage(
+  ride: RideDetail,
+  t: Translate = translate,
+): string {
   const lines: string[] = [];
-  lines.push("Tarmoto ride");
+  lines.push(t("Tarmoto ride"));
   if (ride.started_at) {
     const date = formatRideDate(ride.started_at);
     if (date) lines.push(date);
   }
-  lines.push(`Distance: ${formatDistanceKm(ride.distance_km)}`);
-  lines.push(`Duration: ${formatDurationMinutes(ride.duration_min)}`);
+  lines.push(
+    t("Distance: {distance}", {
+      distance: formatDistanceKm(ride.distance_km),
+    }),
+  );
+  lines.push(
+    t("Duration: {duration}", {
+      duration: formatDurationMinutes(ride.duration_min),
+    }),
+  );
   if (ride.max_speed != null && ride.max_speed > 0) {
-    lines.push(`Top speed: ${formatSpeedKmh(ride.max_speed)}`);
+    lines.push(
+      t("Top speed: {speed}", { speed: formatSpeedKmh(ride.max_speed) }),
+    );
   }
   return lines.join("\n");
 }

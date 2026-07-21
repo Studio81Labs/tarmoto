@@ -56,6 +56,7 @@ import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { translateTerminalGroupRideError } from "./GroupRideScreen.helpers";
+import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import type {
   GroupEndedEvent,
@@ -619,9 +620,7 @@ export default function GroupRideScreen() {
             </Text>
             <Text style={styles.memberMeta}>
               {m.last_speed != null
-                ? translate("{value0} km/h", {
-                    value0: Math.round(m.last_speed),
-                  })
+                ? formatSpeedKmh(m.last_speed)
                 : translate("no signal")}
             </Text>
           </View>

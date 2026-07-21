@@ -26,6 +26,7 @@ import {
   brandSpacing,
 } from "@/theme/brand";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 interface Props {
   value: number;
@@ -65,9 +66,7 @@ export default function FuelRangePicker({
       {label ? (
         <View style={styles.labelRow}>
           <Text style={styles.label}>{label}</Text>
-          <Text style={styles.value}>
-            {translate("{distance} km", { distance: active })}
-          </Text>
+          <Text style={styles.value}>{getFormatters().distanceKm(active)}</Text>
         </View>
       ) : null}
 

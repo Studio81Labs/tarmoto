@@ -64,6 +64,10 @@ jest.mock("@/services/timezoneSyncMonitor", () => ({
   startTimezoneSyncMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/services/displayPreferencesSyncMonitor", () => ({
+  startDisplayPreferencesSyncMonitor: jest.fn(() => jest.fn()),
+}));
+
 describe("App auth locale hydration", () => {
   beforeEach(() => {
     jest.mocked(startCommuteHazardMonitor).mockClear();

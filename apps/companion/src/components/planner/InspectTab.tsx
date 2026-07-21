@@ -99,7 +99,10 @@ export function InspectTab({
         : allSegments,
     [allSegments, plan],
   );
-  const flagged = useMemo(() => deriveFlaggedSections(segments), [segments]);
+  const flagged = useMemo(
+    () => deriveFlaggedSections(segments, format),
+    [format, segments],
+  );
   const surfaceMix = useMemo(
     () =>
       plan
