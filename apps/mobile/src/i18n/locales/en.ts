@@ -137,7 +137,7 @@ export const en = {
   "{value0} severity": "{value0} severity",
   "{value0} will no longer be alerted in a crash.":
     "{value0} will no longer be alerted in a crash.",
-  "{value0}, {value1} kilometres away": "{value0}, {value1} kilometres away",
+  "{label}, {distance} away": "{label}, {distance} away",
   "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
   "{value0}: {value1}": "{value0}: {value1}",
   "{value0}% confidence": "{value0}% confidence",

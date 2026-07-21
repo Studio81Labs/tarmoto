@@ -210,7 +210,9 @@ export function PlaceSearch({ value, onChange, label, placeholder }: Props) {
                 type="button"
                 onClick={() => setRadiusOpen((open) => !open)}
                 aria-expanded={radiusOpen}
-                aria-label={t("Search radius: {km} km", { km: value.km })}
+                aria-label={t("Search radius: {distance}", {
+                  distance: format.distanceKm(value.km),
+                })}
                 className="whitespace-nowrap rounded-md border border-line-strong bg-cream px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.4px] text-fg-dim transition hover:border-ink hover:text-ink"
               >
                 {format.distanceKm(value.km)}

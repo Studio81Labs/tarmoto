@@ -53,6 +53,7 @@ import {
   WAYPOINT_ICONS,
   formatDurationMin,
   formatKm,
+  formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
   formatWaypointType,
   isLastDay,
@@ -65,7 +66,6 @@ import {
   type FuelStationAnchor,
 } from "./TripScreens.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
-import { getFormatters } from "@/format";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
@@ -620,10 +620,10 @@ function AccommodationRow({ item }: { item: Accommodation }) {
         void openPoiFallback(item);
       }}
       accessibilityRole="button"
-      accessibilityLabel={translate("{value0}, {value1} kilometres away", {
-        value0: label,
-        value1: getFormatters().decimal(item.distance_km, 1),
-      })}
+      accessibilityLabel={formatNearbyPlaceAccessibilityLabel(
+        label,
+        item.distance_km,
+      )}
     >
       <View style={styles.accommodationIconWrap}>
         <Icon name={icon} size={18} color={t.dim} />
@@ -753,10 +753,10 @@ function PoiRow({ item }: { item: Poi }) {
         void openPoiFallback(item);
       }}
       accessibilityRole="button"
-      accessibilityLabel={translate("{value0}, {value1} kilometres away", {
-        value0: label,
-        value1: getFormatters().decimal(item.distance_km, 1),
-      })}
+      accessibilityLabel={formatNearbyPlaceAccessibilityLabel(
+        label,
+        item.distance_km,
+      )}
     >
       <View style={styles.accommodationIconWrap}>
         <Icon name={icon} size={18} color={t.dim} />

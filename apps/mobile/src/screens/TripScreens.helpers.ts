@@ -54,7 +54,11 @@ const ACCOMMODATION_KIND_PRIORITY: Record<AccommodationKind, number> = {
 };
 
 export function formatKm(km: number): string {
-  return getFormatters().distanceKm(Number.isFinite(km) ? Math.round(km) : 0);
+  const format = getFormatters();
+  const finiteKm = Number.isFinite(km) ? km : 0;
+  return format.distanceKm(
+    format.units === "metric" ? Math.round(finiteKm) : finiteKm,
+  );
 }
 
 /** Complete catalog message for stay/POI metadata; no UI-side joining. */
@@ -72,6 +76,18 @@ export function formatNearbyPlaceMeta(
   return detail
     ? t("{kind} · {distance} · {detail}", values)
     : t("{kind} · {distance}", values);
+}
+
+/** Unit-aware accessible name shared by accommodation and POI rows. */
+export function formatNearbyPlaceAccessibilityLabel(
+  label: string,
+  distanceKm: number,
+  t: Translate = translate,
+): string {
+  return t("{label}, {distance} away", {
+    label,
+    distance: getFormatters().distanceKm(distanceKm),
+  });
 }
 
 /** "2h 30m" / "45m" — keep short for metric rows. */

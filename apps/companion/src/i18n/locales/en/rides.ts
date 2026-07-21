@@ -151,7 +151,7 @@ export const rides = {
   "Save to my Tarmoto": "Save to my Tarmoto",
   "Search name": "Search name",
   "Search radius": "Search radius",
-  "Search radius: {km} km": "Search radius: {km} km",
+  "Search radius: {distance}": "Search radius: {distance}",
   "Searching\u2026": "Searching\u2026",
   "Segments ridden": "Segments ridden",
   "Select a ride": "Select a ride",
