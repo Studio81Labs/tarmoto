@@ -84,7 +84,7 @@ export default function SubscriptionPage() {
         if (cancelled) return;
         setState({
           kind: "loaded",
-          snapshot: normalizeSubscriptionSnapshot(data, t),
+          snapshot: normalizeSubscriptionSnapshot(data, t, format.locale),
         });
       })
       .catch((error) => {
@@ -92,7 +92,7 @@ export default function SubscriptionPage() {
         if (shouldUseSubscriptionPreview(error)) {
           setState({
             kind: "loaded",
-            snapshot: buildFallbackSubscriptionSnapshot(t),
+            snapshot: buildFallbackSubscriptionSnapshot(t, format.locale),
           });
           return;
         }
@@ -107,7 +107,7 @@ export default function SubscriptionPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [authReady, format.locale]);
   const snapshot = state.kind === "loaded" ? state.snapshot : null;
   const renewalLabel = useMemo(
     () => (snapshot ? describeRenewal(snapshot.currentPlan, format, t) : ""),

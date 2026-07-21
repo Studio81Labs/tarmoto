@@ -1,6 +1,37 @@
 /** English source catalog for the mobile app. Keep key === value. */
 export const en = {
+  "{count, plural, one {Complete # ride} other {Complete # rides}}":
+    "{count, plural, one {Complete # ride} other {Complete # rides}}",
+  "{count, plural, one {Discover # road} other {Discover # roads}}":
+    "{count, plural, one {Discover # road} other {Discover # roads}}",
+  "{count, plural, one {Report # hazard} other {Report # hazards}}":
+    "{count, plural, one {Report # hazard} other {Report # hazards}}",
+  "{count, plural, one {Share # ride} other {Share # rides}}":
+    "{count, plural, one {Share # ride} other {Share # rides}}",
+  "{count, plural, one {Write # road review} other {Write # road reviews}}":
+    "{count, plural, one {Write # road review} other {Write # road reviews}}",
   "Area near {lat}, {lng}": "Area near {lat}, {lng}",
+  "Active challenge": "Active challenge",
+  "Badge details unavailable.": "Badge details unavailable.",
+  "Complete a {distance} ride": "Complete a {distance} ride",
+  Explorer: "Explorer",
+  "Hazards reported to the community": "Hazards reported to the community",
+  "Iron Butt": "Iron Butt",
+  "Longest single ride distance": "Longest single ride distance",
+  "Reach this goal before the challenge ends.":
+    "Reach this goal before the challenge ends.",
+  "Regular Rider": "Regular Rider",
+  "Ride {distance}": "Ride {distance}",
+  "Rides shared with the community": "Rides shared with the community",
+  "Road Critic": "Road Critic",
+  "Road reviews written": "Road reviews written",
+  "Road Warrior": "Road Warrior",
+  "Safety Scout": "Safety Scout",
+  "Social Rider": "Social Rider",
+  "Total distance ridden": "Total distance ridden",
+  "Total number of completed rides": "Total number of completed rides",
+  "Unique road segments ridden": "Unique road segments ridden",
+  "Unknown badge": "Unknown badge",
   "{count, plural, one {# active challenge} other {# active challenges}}":
     "{count, plural, one {# active challenge} other {# active challenges}}",
   "{count, plural, one {# badge earned} other {# badges earned}}, open achievements":
@@ -233,6 +264,18 @@ export const en = {
   "Check the list before you head out.": "Check the list before you head out.",
   "Check your connection and try again.":
     "Check your connection and try again.",
+  "Some information is invalid. Check it and try again.":
+    "Some information is invalid. Check it and try again.",
+  "That change conflicts with the current state. Refresh and try again.":
+    "That change conflicts with the current state. Refresh and try again.",
+  "The requested item could not be found.":
+    "The requested item could not be found.",
+  "The server is temporarily unavailable. Try again shortly.":
+    "The server is temporarily unavailable. Try again shortly.",
+  "You don't have permission to do that.":
+    "You don't have permission to do that.",
+  "Your session has expired. Sign in again.":
+    "Your session has expired. Sign in again.",
   CLEAR: "CLEAR",
   Clear: "Clear",
   "Close fun zone details": "Close fun zone details",

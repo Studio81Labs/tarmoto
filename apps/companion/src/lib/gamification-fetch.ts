@@ -15,7 +15,7 @@
 
 import type { components } from "@tarmoto/openapi-client";
 import { api } from "@/lib/api";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import {
   buildLiveSnapshot,
   mapRegionalLeaderboards,
@@ -38,12 +38,9 @@ export class GamificationFetchError extends Error {
   }
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const m = (error as { message?: unknown }).message;
-    if (typeof m === "string" && m.length > 0) return m;
-  }
-  return fallback;
+function errorMessage(error: unknown, fallback: EnglishMessageKey): string {
+  void error;
+  return t(fallback);
 }
 
 export interface FetchOptions {

@@ -27,6 +27,7 @@ import {
 } from "@/lib/rider-profile";
 import { UserAvatar } from "@/components/UserAvatar";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
+import { badgeCopyForKey } from "@/lib/gamification";
 
 // Medal colours for earned-badge tiers. Keyed by the lowercase tier the
 // gamification service emits (`bronze` / `silver` / `gold`); the card border,
@@ -394,6 +395,7 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
 }
 function BadgeCard({ badge }: { badge: UserBadge }) {
   const color = tierColor(badge.tier);
+  const copy = badgeCopyForKey(badge.key, t);
   return (
     <div
       className="flex flex-col items-center gap-2.5 rounded-[14px] border bg-cream p-[18px] text-center"
@@ -409,9 +411,9 @@ function BadgeCard({ badge }: { badge: UserBadge }) {
       >
         <Trophy size={22} />
       </div>
-      <div className="text-sm font-extrabold text-ink">{badge.name}</div>
+      <div className="text-sm font-extrabold text-ink">{copy.name}</div>
       <p className="min-h-[30px] text-[11px] leading-tight text-fg-dim">
-        {badge.description}
+        {copy.description}
       </p>
       {badge.tier && (
         <span

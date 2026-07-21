@@ -26,4 +26,5 @@ export * from "./regions";
 export * from "./feature-flags";
 export * from "./i18n";
 export * from "./format";
+export * from "./gamification";
 export * from "./email-blocks";

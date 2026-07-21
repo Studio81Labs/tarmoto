@@ -15,7 +15,13 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
-import type { Formatters } from "@tarmoto/shared";
+import {
+  isBadgeKey,
+  isChallengeContentKey,
+  type BadgeKey,
+  type ChallengeContentKey,
+  type Formatters,
+} from "@tarmoto/shared";
 import type { EnglishMessageKey, Translate } from "@/i18n";
 import type { Badge, RiderStats } from "@/lib/types";
 
@@ -39,7 +45,7 @@ export interface Challenge {
   current: number;
   target: number;
   /** Unit label surfaced next to the progress bar ("km", "roads", etc.). */
-  unit: string;
+  unit: EnglishMessageKey;
   /** ISO string. Challenges past their end date are filtered out. */
   endsAt: string;
   /** Optional reward copy shown on completion. */
@@ -456,7 +462,7 @@ export function buildDemoSnapshot(
       category: "social",
       current: 0,
       target: 1,
-      unit: "ride",
+      unit: "rides",
       endsAt: isoDaysFromNow(21, now),
     },
   ];
@@ -510,16 +516,87 @@ export function iconForBadgeKey(key: string): string {
   return BADGE_ICON_BY_KEY[key] ?? "medal";
 }
 
+const BADGE_COPY: Record<
+  BadgeKey,
+  { name: EnglishMessageKey; description: EnglishMessageKey }
+> = {
+  total_distance: {
+    name: "Road Warrior",
+    description: "Total distance ridden",
+  },
+  single_ride: {
+    name: "Iron Butt",
+    description: "Longest single ride distance",
+  },
+  ride_count: {
+    name: "Regular Rider",
+    description: "Total number of completed rides",
+  },
+  roads_discovered: {
+    name: "Explorer",
+    description: "Unique road segments ridden",
+  },
+  reviews_written: {
+    name: "Road Critic",
+    description: "Road reviews written",
+  },
+  hazards_reported: {
+    name: "Safety Scout",
+    description: "Hazards reported to the community",
+  },
+  rides_shared: {
+    name: "Social Rider",
+    description: "Rides shared with the community",
+  },
+};
+
+export function badgeCopyForKey(
+  key: string,
+  t: Translate,
+): { name: string; description: string } {
+  if (!isBadgeKey(key)) {
+    return {
+      name: t("Unknown badge"),
+      description: t("Badge details unavailable."),
+    };
+  }
+  const copy = BADGE_COPY[key];
+  return { name: t(copy.name), description: t(copy.description) };
+}
+
+const CHALLENGE_TITLES: Record<ChallengeContentKey, EnglishMessageKey> = {
+  total_distance: "Distance challenge",
+  single_ride: "Single-ride challenge",
+  ride_count: "Ride challenge",
+  roads_discovered: "Road discovery challenge",
+  reviews_written: "Road review challenge",
+  hazards_reported: "Safety challenge",
+  rides_shared: "Community challenge",
+  generic: "Active challenge",
+};
+
+export function challengeCopyForKey(
+  key: string,
+  t: Translate,
+): { title: string; description: string } {
+  const contentKey = isChallengeContentKey(key) ? key : "generic";
+  return {
+    title: t(CHALLENGE_TITLES[contentKey]),
+    description: t("Reach this goal before the challenge ends."),
+  };
+}
+
 /**
  * Maps the backend `BadgeDto` to the companion's `Badge` UI shape. The badge
  * is treated as earned only when `earned_at` is set — `tier === null` is the
  * locked state regardless of whether progress has begun.
  */
-export function mapBadgeDto(dto: BadgeDto): Badge {
+export function mapBadgeDto(dto: BadgeDto, t: Translate): Badge {
+  const copy = badgeCopyForKey(dto.key, t);
   return {
     id: dto.key,
-    name: dto.name,
-    description: dto.description,
+    name: copy.name,
+    description: copy.description,
     icon: iconForBadgeKey(dto.key),
     earnedAt: dto.earned_at ?? undefined,
   };
@@ -541,7 +618,7 @@ export function categoryForChallengeMetric(metric: string): ChallengeCategory {
 }
 
 /** Mapping from backend metric key → unit label rendered next to progress. */
-const UNIT_BY_METRIC: Record<string, string> = {
+const UNIT_BY_METRIC: Record<string, EnglishMessageKey> = {
   total_distance: "km",
   single_ride: "km",
   ride_count: "rides",
@@ -559,24 +636,8 @@ const UNIT_BY_METRIC: Record<string, string> = {
  * break that check once a locale ships a non-English "km". Translation
  * happens at the display boundary via `t(challenge.unit)`.
  */
-export function unitForChallengeMetric(metric: string): string {
+export function unitForChallengeMetric(metric: string): EnglishMessageKey {
   return UNIT_BY_METRIC[metric] ?? "units";
-}
-
-/**
- * Turns a backend `reward_badge_key` (e.g. `"spring_explorer"`) into a
- * human-readable label (`"Spring explorer"`). Until the backend exposes a
- * proper localised reward title alongside the key, this is the safest way
- * to avoid leaking snake_case identifiers into the UI.
- */
-export function humanizeRewardBadgeKey(key: string): string {
-  const trimmed = key.trim();
-  if (trimmed.length === 0) return "";
-  const words = trimmed.replace(/[_-]+/g, " ").split(/\s+/);
-  const first = words[0]!;
-  const head = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
-  const tail = words.slice(1).map((w) => w.toLowerCase());
-  return [head, ...tail].join(" ");
 }
 
 /**
@@ -588,19 +649,22 @@ export function humanizeRewardBadgeKey(key: string): string {
 export function mapChallengeDto(
   dto: ChallengeDto,
   myProgress: number | null | undefined,
+  t: Translate,
 ): Challenge {
+  const copy = challengeCopyForKey(dto.content_key, t);
   return {
     id: dto.id,
-    name: dto.title,
-    description: dto.description,
+    name: copy.title,
+    description: copy.description,
     category: categoryForChallengeMetric(dto.metric),
     current: typeof myProgress === "number" ? myProgress : 0,
     target: dto.target,
     unit: unitForChallengeMetric(dto.metric),
     endsAt: dto.ends_at,
-    reward: dto.reward_badge_key
-      ? humanizeRewardBadgeKey(dto.reward_badge_key)
-      : undefined,
+    reward:
+      dto.reward_badge_key && isBadgeKey(dto.reward_badge_key)
+        ? badgeCopyForKey(dto.reward_badge_key, t).name
+        : undefined,
   };
 }
 
@@ -668,9 +732,9 @@ export function buildLiveSnapshot(
   },
   t: Translate,
 ): GamificationSnapshot {
-  const badges = input.badges.map(mapBadgeDto);
+  const badges = input.badges.map((badge) => mapBadgeDto(badge, t));
   const challenges = input.challengeDetails.map((d) =>
-    mapChallengeDto(d, d.my_progress),
+    mapChallengeDto(d, d.my_progress, t),
   );
   const challengeMeta: Record<string, ChallengeMeta> = {};
   for (const d of input.challengeDetails) {

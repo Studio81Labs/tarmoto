@@ -70,8 +70,6 @@ describe("BadgesScreen", () => {
     mockedApi.listUserBadges.mockResolvedValue([
       {
         key: "total_distance",
-        name: "Road Warrior",
-        description: "Total km ridden",
         category: "distance",
         tier: "silver",
         earned_at: "2026-04-01T00:00:00Z",
@@ -79,8 +77,6 @@ describe("BadgesScreen", () => {
       },
       {
         key: "single_ride",
-        name: "Iron Butt",
-        description: "Longest single ride",
         category: "distance",
         tier: null,
         earned_at: null,
@@ -109,8 +105,6 @@ describe("BadgesScreen", () => {
     mockedApi.listUserBadges.mockResolvedValue([
       {
         key: "total_distance",
-        name: "Road Warrior",
-        description: "Total km ridden",
         category: "distance",
         tier: null,
         earned_at: null,

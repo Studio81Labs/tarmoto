@@ -31,8 +31,6 @@ beforeEach(() => {
 
 const baseBadge: UserBadge = {
   key: "total_distance",
-  name: "Road Warrior",
-  description: "Total km",
   category: "distance",
   tier: null,
   earned_at: null,
@@ -169,7 +167,7 @@ describe("challengePercent", () => {
 
 describe("metricUnit", () => {
   it("translates known metrics", () => {
-    expect(metricUnit("total_km")).toBe("km");
+    expect(metricUnit("total_distance")).toBe("km");
     expect(metricUnit("ride_count")).toBe("rides");
   });
   it("falls back to the raw metric for unknowns", () => {
@@ -180,9 +178,8 @@ describe("metricUnit", () => {
 describe("rankChallenges", () => {
   const make = (over: Partial<Challenge>): Challenge => ({
     id: over.id ?? "c",
-    title: "",
-    description: "",
-    metric: "total_km",
+    content_key: "total_distance",
+    metric: "total_distance",
     target: 100,
     starts_at: "2026-05-01T00:00:00Z",
     ends_at: "2026-05-31T00:00:00Z",
@@ -360,7 +357,9 @@ describe("formatChallengeProgress", () => {
   });
 
   it("keeps 1 decimal for floats", () => {
-    expect(formatChallengeProgress(12.4, 50, "total_km")).toBe("12.4 / 50 km");
+    expect(formatChallengeProgress(12.4, 50, "total_distance")).toBe(
+      "12.4 / 50 km",
+    );
   });
 
   it("converts distance values and unit for imperial riders", () => {
@@ -370,11 +369,11 @@ describe("formatChallengeProgress", () => {
       units: "imperial",
     });
 
-    expect(formatChallengeProgress(100, 200, "total_km")).toBe(
+    expect(formatChallengeProgress(100, 200, "total_distance")).toBe(
       "62.1 / 124.3 mi",
     );
-    expect(metricUnit("total_km")).toBe("mi");
-    expect(formatChallengeMetric(200, "total_km")).toBe("124.3 mi");
+    expect(metricUnit("total_distance")).toBe("mi");
+    expect(formatChallengeMetric(200, "total_distance")).toBe("124.3 mi");
   });
 
   it("uses the raw metric key as the unit for unknown metrics — matching metricUnit's fallback", () => {

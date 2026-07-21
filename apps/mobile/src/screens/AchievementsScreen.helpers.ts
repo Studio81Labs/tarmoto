@@ -15,6 +15,12 @@ import type {
 import { UNSCORED_COLOR } from "@/theme/brand";
 import { translate, type EnglishMessageKey } from "@/i18n";
 import { getFormatters } from "@/format";
+import {
+  isBadgeKey,
+  isChallengeContentKey,
+  type BadgeKey,
+  type ChallengeContentKey,
+} from "@tarmoto/shared";
 
 // ── Badge tier helpers ──
 
@@ -34,6 +40,54 @@ const TIER_LABELS: Record<BadgeTier, EnglishMessageKey> = {
 export function tierLabel(tier: string): string {
   const key = TIER_LABELS[tier as BadgeTier];
   return key ? translate(key) : tier;
+}
+
+const BADGE_COPY: Record<
+  BadgeKey,
+  { name: EnglishMessageKey; description: EnglishMessageKey }
+> = {
+  total_distance: {
+    name: "Road Warrior",
+    description: "Total distance ridden",
+  },
+  single_ride: {
+    name: "Iron Butt",
+    description: "Longest single ride distance",
+  },
+  ride_count: {
+    name: "Regular Rider",
+    description: "Total number of completed rides",
+  },
+  roads_discovered: {
+    name: "Explorer",
+    description: "Unique road segments ridden",
+  },
+  reviews_written: {
+    name: "Road Critic",
+    description: "Road reviews written",
+  },
+  hazards_reported: {
+    name: "Safety Scout",
+    description: "Hazards reported to the community",
+  },
+  rides_shared: {
+    name: "Social Rider",
+    description: "Rides shared with the community",
+  },
+};
+
+export function badgeCopy(key: string): { name: string; description: string } {
+  if (!isBadgeKey(key)) {
+    return {
+      name: translate("Unknown badge"),
+      description: translate("Badge details unavailable."),
+    };
+  }
+  const copy = BADGE_COPY[key];
+  return {
+    name: translate(copy.name),
+    description: translate(copy.description),
+  };
 }
 
 /** Tier rank used to compare progression — higher is better, 0 = unearned. */
@@ -151,19 +205,75 @@ export function challengePercent(progress: number, target: number): number {
  * future challenge metrics added on the backend).
  */
 const METRIC_UNITS: Record<string, EnglishMessageKey> = {
-  total_km: "km",
   ride_count: "rides",
-  unique_segments: "roads",
+  roads_discovered: "roads",
   reviews_written: "reviews",
   hazards_reported: "reports",
+  rides_shared: "rides",
 };
 
 export function metricUnit(metric: string): string {
-  if (metric === "total_km") {
+  if (metric === "total_distance" || metric === "single_ride") {
     return getFormatters().splitDistanceKm(0).unit;
   }
   const unit = METRIC_UNITS[metric];
   return unit ? translate(unit) : metric;
+}
+
+export function challengeCopy(challenge: {
+  content_key: string;
+  target: number;
+  metric: string;
+}): { title: string; description: string } {
+  const key: ChallengeContentKey = isChallengeContentKey(challenge.content_key)
+    ? challenge.content_key
+    : "generic";
+  const distance = getFormatters().distanceKm(challenge.target);
+  let title: string;
+  switch (key) {
+    case "total_distance":
+      title = translate("Ride {distance}", { distance });
+      break;
+    case "single_ride":
+      title = translate("Complete a {distance} ride", { distance });
+      break;
+    case "ride_count":
+      title = translate(
+        "{count, plural, one {Complete # ride} other {Complete # rides}}",
+        { count: challenge.target },
+      );
+      break;
+    case "roads_discovered":
+      title = translate(
+        "{count, plural, one {Discover # road} other {Discover # roads}}",
+        { count: challenge.target },
+      );
+      break;
+    case "reviews_written":
+      title = translate(
+        "{count, plural, one {Write # road review} other {Write # road reviews}}",
+        { count: challenge.target },
+      );
+      break;
+    case "hazards_reported":
+      title = translate(
+        "{count, plural, one {Report # hazard} other {Report # hazards}}",
+        { count: challenge.target },
+      );
+      break;
+    case "rides_shared":
+      title = translate(
+        "{count, plural, one {Share # ride} other {Share # rides}}",
+        { count: challenge.target },
+      );
+      break;
+    default:
+      title = translate("Active challenge");
+  }
+  return {
+    title,
+    description: translate("Reach this goal before the challenge ends."),
+  };
 }
 
 /**
@@ -274,7 +384,7 @@ export function formatChallengeProgress(
   target: number,
   metric: string,
 ): string {
-  if (metric === "total_km") {
+  if (metric === "total_distance" || metric === "single_ride") {
     const format = getFormatters();
     const currentDistance = format.splitDistanceKm(progress);
     const targetDistance = format.splitDistanceKm(target);
@@ -297,7 +407,7 @@ export function formatChallengeProgress(
 
 /** Format one challenge metric value with its active display unit. */
 export function formatChallengeMetric(value: number, metric: string): string {
-  if (metric === "total_km") {
+  if (metric === "total_distance" || metric === "single_ride") {
     const distance = getFormatters().splitDistanceKm(value);
     return translate("{value0} {value1}", {
       value0: distance.value,

@@ -11,7 +11,6 @@ import {
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
-  humanizeRewardBadgeKey,
   iconForBadgeKey,
   labelForDimension,
   mapBadgeDto,
@@ -296,8 +295,6 @@ type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
 function badgeDto(overrides: Partial<BadgeDto> = {}): BadgeDto {
   return {
     key: "total_distance",
-    name: "Road Warrior",
-    description: "Total distance ridden",
     category: "distance",
     tier: null,
     earned_at: null,
@@ -309,8 +306,7 @@ function badgeDto(overrides: Partial<BadgeDto> = {}): BadgeDto {
 function challengeDto(overrides: Partial<ChallengeDto> = {}): ChallengeDto {
   return {
     id: "ch-1",
-    title: "Spring Explorer",
-    description: "Ride 10 new roads this month",
+    content_key: "roads_discovered",
     metric: "roads_discovered",
     target: 10,
     starts_at: "2026-04-01T00:00:00Z",
@@ -349,15 +345,16 @@ describe("mapBadgeDto", () => {
   it("uses earned_at when set and leaves it undefined when null", () => {
     const earned = mapBadgeDto(
       badgeDto({ tier: "bronze", earned_at: "2026-04-01T00:00:00Z" }),
+      t,
     );
     expect(earned.earnedAt).toBe("2026-04-01T00:00:00Z");
 
-    const locked = mapBadgeDto(badgeDto());
+    const locked = mapBadgeDto(badgeDto(), t);
     expect(locked.earnedAt).toBeUndefined();
   });
 
   it("derives id from the backend key and picks an icon", () => {
-    const mapped = mapBadgeDto(badgeDto({ key: "roads_discovered" }));
+    const mapped = mapBadgeDto(badgeDto({ key: "roads_discovered" }), t);
     expect(mapped.id).toBe("roads_discovered");
     expect(mapped.icon).toBe("compass");
   });
@@ -387,37 +384,47 @@ describe("unitForChallengeMetric", () => {
 
 describe("mapChallengeDto", () => {
   it("treats null my_progress as not-yet-joined (current = 0)", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), null);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), null, t);
     expect(c.current).toBe(0);
     expect(c.target).toBe(10);
   });
 
   it("uses my_progress when the rider has joined", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), 4);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), 4, t);
     expect(c.current).toBe(4);
   });
 
-  it("renames title → name and forwards endsAt", () => {
+  it("maps the stable content key and forwards endsAt", () => {
     const c = mapChallengeDto(
-      challengeDto({ title: "Spring", ends_at: "2026-05-01T00:00:00Z" }),
+      challengeDto({
+        content_key: "roads_discovered",
+        ends_at: "2026-05-01T00:00:00Z",
+      }),
       undefined,
+      t,
     );
-    expect(c.name).toBe("Spring");
+    expect(c.name).toBe("Road discovery challenge");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
   });
 
-  it("humanises a reward badge key into user-facing copy", () => {
+  it("does not expose an unknown reward identifier as rider-facing copy", () => {
     const c = mapChallengeDto(
-      challengeDto({ reward_badge_key: "spring_explorer" }),
+      challengeDto({
+        // Runtime resilience for a stale or malformed server despite the
+        // generated contract constraining valid reward keys.
+        reward_badge_key: "spring_explorer" as ChallengeDto["reward_badge_key"],
+      }),
       undefined,
+      t,
     );
-    expect(c.reward).toBe("Spring explorer");
+    expect(c.reward).toBeUndefined();
   });
 
   it("leaves reward undefined when no badge key is set", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: null }),
       undefined,
+      t,
     );
     expect(c.reward).toBeUndefined();
   });
@@ -428,26 +435,8 @@ describe("mapChallengeDto", () => {
     // "km" — the achievements page branches on `challenge.unit === "km"` to
     // apply imperial distance conversion, and translation happens only at
     // the display boundary via `t(challenge.unit)`.
-    const c = mapChallengeDto(challengeDto({ metric: "total_distance" }), 1);
+    const c = mapChallengeDto(challengeDto({ metric: "total_distance" }), 1, t);
     expect(c.unit).toBe("km");
-  });
-});
-
-describe("humanizeRewardBadgeKey", () => {
-  it("converts snake_case to Sentence case", () => {
-    expect(humanizeRewardBadgeKey("spring_explorer")).toBe("Spring explorer");
-    expect(humanizeRewardBadgeKey("road_warrior_2026")).toBe(
-      "Road warrior 2026",
-    );
-  });
-
-  it("treats hyphens like underscores", () => {
-    expect(humanizeRewardBadgeKey("safety-scout")).toBe("Safety scout");
-  });
-
-  it("returns an empty string for blank input", () => {
-    expect(humanizeRewardBadgeKey("")).toBe("");
-    expect(humanizeRewardBadgeKey("   ")).toBe("");
   });
 });
 

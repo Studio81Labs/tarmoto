@@ -19,6 +19,34 @@ import tseslint from "typescript-eslint";
 // locale-formatting additions) rather than relying on the broad block. A
 // single shared array keeps the two copies from drifting out of sync.
 const restrictedSyntaxSelectors = [
+  // Display helpers are another translation boundary: returning prose from a
+  // function and later interpolating the result bypasses every JSX-literal
+  // selector below. Semantic enum/token helpers should use names that do not
+  // end in Label/Message/Copy/Text/Title/Description/Unit/Short.
+  {
+    selector:
+      "FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/]:not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Display helpers must return t()-cataloged copy, not raw prose. Return an EnglishMessageKey for translation at the caller, or document a non-display token.",
+  },
+  {
+    selector:
+      "FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/]:not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Display helpers must compose rider-facing templates through one ICU catalog message.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) > Literal[value=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Display helpers must return t()-cataloged copy, not raw prose. Return an EnglishMessageKey for translation at the caller, or document a non-display token.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Display helpers must compose rider-facing templates through one ICU catalog message.",
+  },
   // Guard the #861 migration: the companion talks to the backend only
   // through the generated OpenAPI client. Flag any raw `fetch()` whose URL
   // is built from an API base/host so a new raw helper can't creep back in.

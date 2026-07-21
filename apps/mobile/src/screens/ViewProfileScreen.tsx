@@ -40,6 +40,7 @@ import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
+import { badgeCopy } from "./AchievementsScreen.helpers";
 import { t as translate } from "@/i18n";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
@@ -334,15 +335,18 @@ export default function ViewProfileScreen() {
           </Text>
         ) : (
           <View style={styles.badgeGrid}>
-            {earnedBadges.map((badge) => (
-              <View key={badge.key} style={styles.badgePill}>
-                <Icon name="trophy-outline" size={14} color={t.accent} />
-                <Text style={styles.badgeName}>{badge.name}</Text>
-                {badge.tier ? (
-                  <Text style={styles.badgeTier}>{badge.tier}</Text>
-                ) : null}
-              </View>
-            ))}
+            {earnedBadges.map((badge) => {
+              const copy = badgeCopy(badge.key);
+              return (
+                <View key={badge.key} style={styles.badgePill}>
+                  <Icon name="trophy-outline" size={14} color={t.accent} />
+                  <Text style={styles.badgeName}>{copy.name}</Text>
+                  {badge.tier ? (
+                    <Text style={styles.badgeTier}>{badge.tier}</Text>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         )}
       </View>

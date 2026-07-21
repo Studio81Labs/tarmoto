@@ -907,19 +907,11 @@ function PhotoButton({
 }
 
 /**
- * Pluck a server-supplied error message off an `ApiError` thrown by
- * the typed-client facade. The body shape is whatever the backend
- * sent (NestJS-style `{ message: string }` is the common case);
- * defensively narrow before reading.
+ * Return the facade's cataloged display message. Raw backend prose stays in
+ * `ApiError.body` for diagnostics and must never cross into rider-facing UI.
  */
 function apiErrorMessage(error: unknown): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  const body = error.body;
-  if (typeof body === "object" && body !== null && "message" in body) {
-    const msg = (body as { message?: unknown }).message;
-    if (typeof msg === "string") return msg;
-  }
-  return undefined;
+  return error instanceof ApiError ? error.message : undefined;
 }
 
 function isConflictError(error: unknown): boolean {

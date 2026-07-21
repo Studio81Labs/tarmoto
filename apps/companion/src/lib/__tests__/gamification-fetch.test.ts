@@ -76,7 +76,7 @@ describe("joinChallenge", () => {
     );
   });
 
-  it("includes the backend message and status on the thrown error", async () => {
+  it("uses cataloged rider copy while preserving the response status", async () => {
     mockPost.mockResolvedValueOnce(fail(500, { message: "Server died" }));
 
     try {
@@ -85,7 +85,7 @@ describe("joinChallenge", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(GamificationFetchError);
       const ge = err as GamificationFetchError;
-      expect(ge.message).toBe("Server died");
+      expect(ge.message).toBe("Could not join challenge");
       expect(ge.status).toBe(500);
     }
   });
@@ -113,7 +113,7 @@ describe("fetchMeProfile", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(GamificationFetchError);
       const ge = err as GamificationFetchError;
-      expect(ge.message).toBe("boom");
+      expect(ge.message).toBe("Could not load your profile summary");
       expect(ge.status).toBe(500);
     }
   });
@@ -170,8 +170,6 @@ describe("fetchGamificationSnapshot", () => {
           ok([
             {
               key: "total_distance",
-              name: "Road Warrior",
-              description: "Total distance ridden",
               category: "distance",
               tier: "bronze",
               earned_at: "2026-04-01T00:00:00Z",
@@ -190,8 +188,7 @@ describe("fetchGamificationSnapshot", () => {
           ok([
             {
               id: "ch-1",
-              title: "Spring Explorer",
-              description: "Ride 10 new roads",
+              content_key: "roads_discovered",
               metric: "roads_discovered",
               target: 10,
               starts_at: "2026-04-01T00:00:00Z",
@@ -207,8 +204,7 @@ describe("fetchGamificationSnapshot", () => {
         return Promise.resolve(
           ok({
             id,
-            title: "Spring Explorer",
-            description: "Ride 10 new roads",
+            content_key: "roads_discovered",
             metric: "roads_discovered",
             target: 10,
             starts_at: "2026-04-01T00:00:00Z",
@@ -261,7 +257,7 @@ describe("fetchGamificationSnapshot", () => {
     });
 
     await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "DB down",
+      "Could not load badges",
     );
   });
 
@@ -280,7 +276,7 @@ describe("fetchGamificationSnapshot", () => {
     });
 
     await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Unavailable",
+      "Could not load challenges",
     );
   });
 
@@ -293,7 +289,7 @@ describe("fetchGamificationSnapshot", () => {
     });
 
     await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Profile lookup failed",
+      "Could not load your profile summary",
     );
   });
 

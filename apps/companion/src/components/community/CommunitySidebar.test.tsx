@@ -3,7 +3,10 @@ import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { CommunitySidebar } from "./CommunitySidebar";
 import { useAuthStore } from "@/stores/auth";
-import { fetchSuggestedRiders } from "@/lib/community-sidebar";
+import {
+  fetchActiveChallengeCard,
+  fetchSuggestedRiders,
+} from "@/lib/community-sidebar";
 import { fetchRegionalLeaderboards } from "@/lib/gamification-fetch";
 
 vi.mock("@/lib/community-sidebar", () => ({
@@ -18,6 +21,7 @@ vi.mock("@/lib/rider-profile", () => ({
 }));
 
 const fetchSuggestedRidersMock = vi.mocked(fetchSuggestedRiders);
+const fetchActiveChallengeCardMock = vi.mocked(fetchActiveChallengeCard);
 const fetchRegionalLeaderboardsMock = vi.mocked(fetchRegionalLeaderboards);
 
 const entry = (over: Record<string, unknown>) => ({
@@ -46,6 +50,7 @@ describe("CommunitySidebar", () => {
         ride_count: 12,
       },
     ]);
+    fetchActiveChallengeCardMock.mockResolvedValue(null);
     fetchRegionalLeaderboardsMock.mockResolvedValue({
       region: "Global",
       generatedAt: "2026-04-23T09:00:00Z",
@@ -94,5 +99,22 @@ describe("CommunitySidebar", () => {
     // The signed-in rider's own row stays plain text.
     expect(screen.getByText("You")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "You" })).not.toBeInTheDocument();
+  });
+
+  it("uses ICU singular copy and cataloged challenge units", async () => {
+    fetchActiveChallengeCardMock.mockResolvedValue({
+      id: "challenge-1",
+      contentKey: "roads_discovered",
+      metric: "roads_discovered",
+      current: 1,
+      target: 1,
+      daysLeft: 1,
+    });
+
+    render(<CommunitySidebar />);
+
+    expect(await screen.findByText("1 day left")).toBeInTheDocument();
+    expect(screen.queryByText("1 days left")).not.toBeInTheDocument();
+    expect(screen.getByText("1 / 1 road")).toBeInTheDocument();
   });
 });

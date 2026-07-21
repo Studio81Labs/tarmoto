@@ -83,6 +83,7 @@ import { DropSharedRideEmbedClickCount1812000000000 } from '../../migrations/181
 import { AddLimitEntitlements1813000000000 } from '../../migrations/1813000000000-AddLimitEntitlements.js';
 import { AlignFeatureFlagCatalog1814000000000 } from '../../migrations/1814000000000-AlignFeatureFlagCatalog.js';
 import { AddCommuteRoutingCacheUpdatedAt1815000000000 } from '../../migrations/1815000000000-AddCommuteRoutingCacheUpdatedAt.js';
+import { AddChallengeContentKey1816000000000 } from '../../migrations/1816000000000-AddChallengeContentKey.js';
 import {
   User,
   UserContact,
@@ -321,6 +322,7 @@ const entities = [
             AddLimitEntitlements1813000000000,
             AlignFeatureFlagCatalog1814000000000,
             AddCommuteRoutingCacheUpdatedAt1815000000000,
+            AddChallengeContentKey1816000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

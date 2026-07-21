@@ -5,6 +5,8 @@ import {
   isValidFormatLocale,
   isValidTimeZone,
   resolveFormatLocaleFromAcceptLanguage,
+  formatCurrencyAmount,
+  formatCurrencyMinorAmount,
 } from "./format";
 
 describe("canonicalizeFormatLocale", () => {
@@ -88,6 +90,22 @@ describe("resolveFormatLocaleFromAcceptLanguage", () => {
  * and ordering — the locale-correctness that matters — not ICU trivia.
  */
 const norm = (s: string) => s.replace(/[\u00A0\u202F ]/g, " ");
+
+describe("formatCurrencyAmount", () => {
+  it("applies locale decimal separators and currency placement", () => {
+    expect(norm(formatCurrencyAmount(29.99, "EUR", "en-US"))).toBe("€29.99");
+    expect(norm(formatCurrencyAmount(29.99, "EUR", "cs-CZ"))).toBe("29,99 €");
+  });
+
+  it("honors each currency's minor-unit exponent", () => {
+    expect(norm(formatCurrencyMinorAmount(2999, "EUR", "en-US"))).toBe(
+      "€29.99",
+    );
+    expect(norm(formatCurrencyMinorAmount(3000, "JPY", "en-US"))).toBe(
+      "¥3,000",
+    );
+  });
+});
 
 // 22:30 UTC on 18 Apr 2025 — a day-boundary case: Prague (UTC+2) is
 // already 19 Apr, New York (UTC-4) still 18 Apr.

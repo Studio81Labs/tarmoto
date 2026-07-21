@@ -45,6 +45,7 @@ import type {
   ChallengeLeaderboardEntry,
 } from "@/types";
 import {
+  challengeCopy,
   challengePercent,
   formatChallengeMetric,
   formatChallengeProgress,
@@ -211,6 +212,7 @@ function ChallengeCard({
   isJoining: boolean;
   myUserId: string | null;
 }) {
+  const copy = challengeCopy(challenge);
   const joined = detail ? detail.my_progress !== null : false;
   const percent = detail
     ? challengePercent(detail.my_progress ?? 0, challenge.target)
@@ -223,21 +225,21 @@ function ChallengeCard({
         accessibilityLabel={
           expanded
             ? translate("Collapse {value0} details", {
-                value0: challenge.title,
+                value0: copy.title,
               })
-            : translate("Expand {value0} details", { value0: challenge.title })
+            : translate("Expand {value0} details", { value0: copy.title })
         }
         style={styles.cardHeader}
       >
         <View style={styles.cardTitleRow}>
-          <Text style={styles.cardTitle}>{challenge.title}</Text>
+          <Text style={styles.cardTitle}>{copy.title}</Text>
           <Icon
             name={expanded ? "chevron-up" : "chevron-down"}
             size={22}
             color={t.faint}
           />
         </View>
-        <Text style={styles.cardBody}>{challenge.description}</Text>
+        <Text style={styles.cardBody}>{copy.description}</Text>
         <View style={styles.metaRow}>
           <MetaPill
             icon="target"
@@ -301,7 +303,7 @@ function ChallengeCard({
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel={translate("Join challenge {value0}", {
-                    value0: challenge.title,
+                    value0: copy.title,
                   })}
                 >
                   {isJoining ? (
