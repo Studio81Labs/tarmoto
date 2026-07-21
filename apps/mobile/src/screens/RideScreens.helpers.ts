@@ -12,6 +12,7 @@ import {
   type LeanBucket,
   type LeanBucketId,
   type LeanDistribution,
+  type SplitValueUnit,
 } from "@tarmoto/shared";
 import type { LineLayerSpecification } from "@maplibre/maplibre-react-native";
 
@@ -53,11 +54,18 @@ export function formatDistanceKm(km: number | null | undefined): string {
   return getFormatters().distanceKm(value >= 100 ? Math.round(value) : value);
 }
 
-/** Speed in km/h, integer-rounded. Backend already serves metric. */
+function validSpeedKmh(kmh: number | null | undefined): number {
+  return kmh == null || !Number.isFinite(kmh) || kmh < 0 ? 0 : kmh;
+}
+
+/** Speed formatted in the rider's unit system. Backend already serves km/h. */
 export function formatSpeedKmh(kmh: number | null | undefined): string {
-  return getFormatters().speed(
-    kmh == null || !Number.isFinite(kmh) || kmh < 0 ? 0 : kmh,
-  );
+  return getFormatters().speed(validSpeedKmh(kmh));
+}
+
+/** Split speed value/unit for HUD layouts that style each part separately. */
+export function splitSpeedKmh(kmh: number | null | undefined): SplitValueUnit {
+  return getFormatters().splitSpeed(validSpeedKmh(kmh));
 }
 
 /**

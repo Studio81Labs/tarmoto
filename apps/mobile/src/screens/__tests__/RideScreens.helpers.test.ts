@@ -9,6 +9,7 @@
 
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment } from "@/types";
+import { setActiveFormatContext } from "@/format";
 import {
   NO_QUALITY_READING,
   buildRideShareMessage,
@@ -25,10 +26,15 @@ import {
   rideRouteFeatureCollection,
   rideRouteLineColorExpression,
   segmentQualityHistogram,
+  splitSpeedKmh,
   surfaceIcon,
   surfaceLabel,
 } from "../RideScreens.helpers";
 import { qualityBrandColor, UNSCORED_COLOR } from "@/theme/brand";
+
+afterEach(() => {
+  setActiveFormatContext({ locale: "en-US", timeZone: "UTC", units: "metric" });
+});
 
 describe("formatRideDate", () => {
   it("formats ISO timestamps through the active locale formatter", () => {
@@ -70,6 +76,17 @@ describe("formatSpeedKmh", () => {
   it("clamps invalid values to 0", () => {
     expect(formatSpeedKmh(-1)).toBe("0 km/h");
     expect(formatSpeedKmh(Number.NaN)).toBe("0 km/h");
+    expect(splitSpeedKmh(Number.NaN)).toEqual({ value: "0", unit: "km/h" });
+  });
+
+  it("splits an imperial HUD speed into its converted value and unit", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    expect(splitSpeedKmh(62.4)).toEqual({ value: "38.8", unit: "mph" });
   });
 });
 
