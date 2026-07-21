@@ -307,22 +307,19 @@ export function hazardTypeLabel(type: HazardType): string {
 }
 
 /**
- * Distance line for the hazard-alert subtitle. Below 1 km we round to
- * 50 m granularity (matches the haptic-grain the rider experiences
- * approaching the hazard); above we switch to single-decimal km. Off-
- * range / non-finite collapse to "Nearby" so the rider always gets a
- * complete sentence on the bike display.
+ * Distance line for the hazard-alert subtitle. We round to 50 m granularity
+ * below 1 km (matching the haptic grain the rider experiences approaching the
+ * hazard), then let the active formatter choose metric or imperial units.
+ * Off-range / non-finite values collapse to "Nearby" so the rider always gets
+ * a complete sentence on the bike display.
  */
 export function formatHazardDistance(meters: number): string {
   if (!Number.isFinite(meters) || meters < 0) return translate("Nearby");
-  if (meters < 1000) {
-    const rounded = Math.max(0, Math.round(meters / 50) * 50);
-    return rounded === 0
-      ? translate("Right here")
-      : translate("{distance} m ahead", { distance: rounded });
-  }
-  return translate("{distance} km ahead", {
-    distance: getFormatters().decimal(meters / 1000, 1),
+  const displayMeters =
+    meters < 1000 ? Math.max(0, Math.round(meters / 50) * 50) : meters;
+  if (displayMeters === 0) return translate("Right here");
+  return translate("{distance} ahead", {
+    distance: getFormatters().distanceM(displayMeters),
   });
 }
 

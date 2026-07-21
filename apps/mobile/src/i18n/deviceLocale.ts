@@ -1,5 +1,11 @@
 import { NativeModules, Platform } from "react-native";
 
+function normalizeLocaleIdentifier(locale: unknown): string | null {
+  if (typeof locale !== "string") return null;
+  const normalized = locale.trim().replace(/_/g, "-");
+  return normalized || null;
+}
+
 /**
  * Returns the device's preferred BCP-47 locale without adding another native
  * dependency. Both shapes are provided by React Native itself. An unavailable
@@ -17,16 +23,14 @@ export function detectDeviceLocale(): string | null {
       const locale =
         (settings?.AppleLocale as string | undefined) ??
         (settings?.AppleLanguages as string[] | undefined)?.[0];
-      return typeof locale === "string" && locale.trim() ? locale : null;
+      return normalizeLocaleIdentifier(locale);
     }
 
     if (Platform.OS === "android") {
       const locale = (
         NativeModules.I18nManager as { localeIdentifier?: string } | undefined
       )?.localeIdentifier;
-      return typeof locale === "string" && locale.trim()
-        ? locale.replace(/_/g, "-")
-        : null;
+      return normalizeLocaleIdentifier(locale);
     }
   } catch {
     // Native locale detection is best-effort; resolveLocale owns fallback.

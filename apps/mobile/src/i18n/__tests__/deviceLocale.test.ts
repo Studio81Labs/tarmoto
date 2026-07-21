@@ -32,6 +32,15 @@ describe("detectDeviceLocale", () => {
     expect(detectDeviceLocale()).toBe("cs-CZ");
   });
 
+  it("normalizes the iOS locale separator", () => {
+    setPlatform("ios");
+    nativeModules.SettingsManager = {
+      settings: { AppleLocale: "cs_CZ" },
+    };
+
+    expect(detectDeviceLocale()).toBe("cs-CZ");
+  });
+
   it("normalizes the Android locale separator", () => {
     setPlatform("android");
     nativeModules.I18nManager = { localeIdentifier: "cs_CZ" };

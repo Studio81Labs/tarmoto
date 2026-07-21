@@ -70,8 +70,7 @@ export const en = {
   "{distance} km": "{distance} km",
   "{distance} km · {duration} min": "{distance} km · {duration} min",
   "{distance} km · Quality {quality}": "{distance} km · Quality {quality}",
-  "{distance} km ahead": "{distance} km ahead",
-  "{distance} m ahead": "{distance} m ahead",
+  "{distance} ahead": "{distance} ahead",
   "{downloaded} / {total} downloaded": "{downloaded} / {total} downloaded",
   "{downloaded} / {total} downloaded · {failed} failed":
     "{downloaded} / {total} downloaded · {failed} failed",
