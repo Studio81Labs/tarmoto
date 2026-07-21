@@ -6,11 +6,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { buildRouteSpatialSql } from '../../common/route-spatial.js';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import {
   CheckRouteClosuresDto,
   CheckRouteClosuresResponseDto,
+  MAX_CHECK_ROUTE_CLOSURE_POINTS,
   ClosurePointDto,
   CreateClosureDto,
   ListClosuresQueryDto,
@@ -130,31 +132,36 @@ export class ClosuresService {
   async checkRoute(
     dto: CheckRouteClosuresDto,
   ): Promise<CheckRouteClosuresResponseDto> {
-    if (dto.route.length < 2) {
-      throw new BadRequestException('Route must have at least 2 points');
+    const routes = [
+      dto.route,
+      ...(dto.additional_routes ?? []).map((route) => route.points),
+    ];
+    if (routes.some((route) => route.length < 2)) {
+      throw new BadRequestException('Every route must have at least 2 points');
+    }
+    if (
+      routes.reduce((total, route) => total + route.length, 0) >
+      MAX_CHECK_ROUTE_CLOSURE_POINTS
+    ) {
+      throw new BadRequestException(
+        `Routes must have at most ${MAX_CHECK_ROUTE_CLOSURE_POINTS} points in total`,
+      );
     }
     const bufferM = dto.buffer_m ?? 100;
     const activeOn = dto.active_on ? new Date(dto.active_on) : new Date();
 
-    // Build the LineString via TypeORM's named-parameter binding so each
-    // coordinate is passed as a real SQL parameter (no string
-    // interpolation of user input). Going through `createQueryBuilder`
+    // Build one LineString/MultiLineString via TypeORM's named-parameter
+    // binding so each coordinate is passed as a real SQL parameter (no
+    // string interpolation of user input). Going through `createQueryBuilder`
     // rather than `repo.query` also makes TypeORM hydrate the `geom`
     // column back into a GeoJSON LineString — with raw `.query()` we'd
     // get a WKB hex string and `toDto` would crash on `r.geom.coordinates`.
+    const spatial = buildRouteSpatialSql(routes, bufferM, 'c.geom');
     const params: Record<string, number | Date> = {
+      ...spatial.params,
       buffer: bufferM,
       activeOn,
     };
-    const pointsSql = dto.route
-      .map((p, i) => {
-        params[`lng${i}`] = p.lng;
-        params[`lat${i}`] = p.lat;
-        return `ST_MakePoint(:lng${i}, :lat${i})`;
-      })
-      .join(',');
-    const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)`;
-    params['bufferDeg'] = (bufferM / 111320) * 2;
 
     const qb = this.repo
       .createQueryBuilder('c')
@@ -162,11 +169,11 @@ export class ClosuresService {
       // deactivated by the reconcile pass (#743).
       .andWhere('c.geom IS NOT NULL')
       .andWhere('c.is_active = true')
-      .andWhere(`ST_DWithin(c.geom, ${line}, :bufferDeg)`, params)
+      .andWhere(spatial.prefilterSql, params)
       .andWhere(
         `ST_DWithin(
           c.geom::geography,
-          ${line}::geography,
+          ${spatial.geometrySql}::geography,
           :buffer
         )`,
         params,

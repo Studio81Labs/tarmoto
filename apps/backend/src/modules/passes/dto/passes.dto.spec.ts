@@ -10,6 +10,25 @@ describe('CheckRouteDto route validation', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
+  it('accepts validated additional disconnected route polylines', async () => {
+    const dto = plainToInstance(CheckRouteDto, {
+      route: [point, point],
+      additional_routes: [{ points: [point, point] }],
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it('rejects an additional route with fewer than 2 points', async () => {
+    const dto = plainToInstance(CheckRouteDto, {
+      route: [point, point],
+      additional_routes: [{ points: [point] }],
+    });
+    const errors = await validate(dto);
+    expect(
+      errors.find((error) => error.property === 'additional_routes'),
+    ).toBeDefined();
+  });
+
   it('rejects a route over the vertex cap (400) before any query is built', async () => {
     const dto = plainToInstance(CheckRouteDto, {
       route: Array.from({ length: MAX_CHECK_ROUTE_POINTS + 1 }, () => point),

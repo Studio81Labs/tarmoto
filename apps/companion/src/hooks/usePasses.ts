@@ -41,8 +41,8 @@ interface UsePassesOptions {
 }
 
 /**
- * Fetches `/passes` for the current month/bbox and (optionally) runs
- * a per-route check across `routes`. Driven by `@tanstack/react-query`
+ * Fetches `/passes` for the current month/bbox and (optionally) checks all
+ * `routes` in one unique spatial query. Driven by `@tanstack/react-query`
  * — cancellation, dedup, and reconnect retry come for free.
  *
  * The list query is keyed by `[forMonth, bbox]`, the route query by
@@ -103,44 +103,29 @@ export function usePasses(
     ],
     enabled: routes.length > 0,
     queryFn: async ({ signal }) => {
-      const results = await Promise.allSettled(
-        routeRequestKey.map(({ points }) =>
-          passesApi.checkRoute(
-            {
-              route: points,
-              ...(forMonth !== undefined ? { for_month: forMonth } : {}),
-            },
-            { signal },
-          ),
-        ),
+      const [firstRoute, ...additionalRoutes] = routeRequestKey;
+      if (!firstRoute) throw new Error("No route to check");
+      const { data } = await passesApi.checkRoute(
+        {
+          route: firstRoute.points,
+          ...(additionalRoutes.length > 0
+            ? {
+                additional_routes: additionalRoutes.map(({ points }) => ({
+                  points,
+                })),
+              }
+            : {}),
+          ...(forMonth !== undefined ? { for_month: forMonth } : {}),
+        },
+        { signal },
       );
-      const fulfilled = results.filter(
-        (
-          result,
-        ): result is PromiseFulfilledResult<
-          Awaited<ReturnType<typeof passesApi.checkRoute>>
-        > => result.status === "fulfilled",
-      );
-      const rejectedCount = results.length - fulfilled.length;
-      if (fulfilled.length === 0 && rejectedCount > 0) {
-        throw new Error("Failed to check route passes");
-      }
-      const routePasses = dedupePasses(
-        fulfilled.flatMap(({ value }) => value.data.passes),
-      );
+      const routePasses = dedupePasses(data.passes);
       const grouped = partitionByStatus(routePasses);
       const ordered = [...grouped.closed, ...grouped.unknown, ...grouped.open];
       return {
         passes: ordered,
-        closedCount: fulfilled.reduce(
-          (count, result) => count + result.value.data.closed_count,
-          0,
-        ),
-        unknownCount: fulfilled.reduce(
-          (count, result) => count + result.value.data.unknown_count,
-          0,
-        ),
-        partial: rejectedCount > 0,
+        closedCount: data.closed_count,
+        unknownCount: data.unknown_count,
       };
     },
   });
@@ -170,8 +155,6 @@ export function usePasses(
         : routeQuery.isError
           ? (routeQuery.error as Error)?.message ||
             "Failed to check route passes"
-          : routeQuery.data?.partial
-            ? "Some route segments could not be checked."
-            : null,
+          : null,
   };
 }

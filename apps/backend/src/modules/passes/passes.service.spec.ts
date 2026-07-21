@@ -244,19 +244,20 @@ describe('PassesService', () => {
       // Each coordinate is passed as its own named parameter so TypeORM can
       // bind them safely — no string interpolation of user input.
       expect(mockQb.where).toHaveBeenCalledWith(
-        expect.stringContaining('ST_DWithin'),
+        expect.stringContaining('ST_Expand'),
         expect.objectContaining({
           buffer: 2000,
-          lng0: 10.4,
-          lat0: 46.5,
-          lng1: 10.5,
-          lat1: 46.6,
+          routeLng0_0: 10.4,
+          routeLat0_0: 46.5,
+          routeLng0_1: 10.5,
+          routeLat0_1: 46.6,
         }),
       );
       const whereParams = (mockQb.where.mock.calls as unknown[][])[0]?.[1] as
         | Record<string, unknown>
         | undefined;
-      expect(typeof whereParams?.bufferDeg).toBe('number');
+      expect(typeof whereParams?.bufferLngDeg).toBe('number');
+      expect(typeof whereParams?.bufferLatDeg).toBe('number');
       expect(mockQb.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('p.location::geography'),
         expect.any(Object),
@@ -268,6 +269,59 @@ describe('PassesService', () => {
         expect.stringContaining(':statusMonth'),
         'closed_count',
       );
+    });
+
+    it('checks disconnected route chunks in one unique spatial query', async () => {
+      mockRouteResult([STELVIO], { closed: 1, unknown: 0 });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+        additional_routes: [
+          {
+            points: [
+              { lat: 46.6, lng: 10.5 },
+              { lat: 46.7, lng: 10.6 },
+            ],
+          },
+        ],
+        for_month: 1,
+      });
+
+      expect(result.closed_count).toBe(1);
+      expect(mockQb.where).toHaveBeenCalledTimes(1);
+      expect(mockQb.where).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Collect'),
+        expect.objectContaining({
+          routeLng0_0: 10.4,
+          routeLng1_1: 10.6,
+        }),
+      );
+    });
+
+    it('keeps the geometry prefilter conservative at high latitudes', async () => {
+      mockRouteResult([]);
+      await service.checkRoute({
+        route: [
+          { lat: 70, lng: 20 },
+          { lat: 70.1, lng: 20.1 },
+        ],
+        buffer_m: 100,
+      });
+
+      expect(mockQb.where).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Expand'),
+        expect.any(Object),
+      );
+      const calls = mockQb.where.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const bufferLngDeg = calls[0]?.[1].bufferLngDeg;
+      expect(typeof bufferLngDeg).toBe('number');
+      expect(bufferLngDeg as number).toBeGreaterThan(0.0025);
     });
 
     it('defaults the buffer to 1500 m', async () => {

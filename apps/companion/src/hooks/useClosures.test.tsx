@@ -45,6 +45,15 @@ const route: PlannerClosureRoute = {
   ],
 };
 
+const secondRoute: PlannerClosureRoute = {
+  id: "day-2",
+  label: "Day 2",
+  points: [
+    { lat: 49.7, lng: 18.3 },
+    { lat: 50.1, lng: 19.2 },
+  ],
+};
+
 describe("useClosures", () => {
   beforeEach(() => {
     vi.mocked(closuresApi.list).mockReset();
@@ -84,7 +93,7 @@ describe("useClosures", () => {
     expect(closuresApi.list).not.toHaveBeenCalled();
   });
 
-  it("uses exact route counts returned by the backend after its closure cap", async () => {
+  it("uses one backend query for unique exact counts across route chunks", async () => {
     vi.mocked(closuresApi.checkRoute).mockResolvedValue({
       data: {
         closures: [],
@@ -94,7 +103,7 @@ describe("useClosures", () => {
       },
     } as Awaited<ReturnType<typeof closuresApi.checkRoute>>);
 
-    render(<TestHarness routes={[route]} />, {
+    render(<TestHarness routes={[route, secondRoute]} />, {
       wrapper: withQueryClient(),
     });
 
@@ -104,5 +113,13 @@ describe("useClosures", () => {
       expect(screen.getByText("advisory=4")).toBeInTheDocument();
       expect(screen.getByText("total=124")).toBeInTheDocument();
     });
+    expect(closuresApi.checkRoute).toHaveBeenCalledTimes(1);
+    expect(closuresApi.checkRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: route.points,
+        additional_routes: [{ points: secondRoute.points }],
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

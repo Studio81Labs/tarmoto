@@ -815,14 +815,15 @@ describe('ClosuresService', () => {
       expect(spatial).toBeDefined();
       expect(spatial![1]).toMatchObject({
         buffer: 250,
-        lng0: 17.1,
-        lat0: 50.1,
-        lng1: 17.2,
-        lat1: 50.2,
-        lng2: 17.3,
-        lat2: 50.3,
+        routeLng0_0: 17.1,
+        routeLat0_0: 50.1,
+        routeLng0_1: 17.2,
+        routeLat0_1: 50.2,
+        routeLng0_2: 17.3,
+        routeLat0_2: 50.3,
       });
-      expect(typeof spatial![1].bufferDeg).toBe('number');
+      expect(typeof spatial![1].bufferLngDeg).toBe('number');
+      expect(typeof spatial![1].bufferLatDeg).toBe('number');
       expect(mockQb.limit).toHaveBeenCalledWith(200);
       expect(mockQb.addSelect).toHaveBeenCalledWith(
         expect.stringContaining("c.severity = 'full'"),
@@ -833,6 +834,65 @@ describe('ClosuresService', () => {
         'ASC',
       );
       expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
+    });
+
+    it('checks disconnected route chunks in one unique spatial query', async () => {
+      mockRouteResult([SAMPLE_CLOSURE], {
+        full: 1,
+        partial: 0,
+        advisory: 0,
+      });
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50.1, lng: 17.1 },
+          { lat: 50.2, lng: 17.2 },
+        ],
+        additional_routes: [
+          {
+            points: [
+              { lat: 50.2, lng: 17.2 },
+              { lat: 50.3, lng: 17.3 },
+            ],
+          },
+        ],
+      });
+
+      expect(result.full_count).toBe(1);
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const prefilter = calls.find((call) =>
+        String(call[0]).includes('ST_Expand'),
+      );
+      expect(prefilter?.[0]).toContain('ST_Collect');
+      expect(prefilter?.[1]).toMatchObject({
+        routeLng0_0: 17.1,
+        routeLng1_1: 17.3,
+      });
+    });
+
+    it('keeps the geometry prefilter conservative at high latitudes', async () => {
+      mockRouteResult([]);
+      await service.checkRoute({
+        route: [
+          { lat: 70, lng: 20 },
+          { lat: 70.1, lng: 20.1 },
+        ],
+        buffer_m: 100,
+      });
+
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const prefilter = calls.find((call) =>
+        String(call[0]).includes('ST_Expand'),
+      );
+      const bufferLngDeg = prefilter?.[1].bufferLngDeg;
+      expect(typeof bufferLngDeg).toBe('number');
+      expect(bufferLngDeg as number).toBeGreaterThan(0.0025);
     });
 
     it('defaults the buffer to 100 m', async () => {

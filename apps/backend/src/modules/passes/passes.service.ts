@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { buildRouteSpatialSql } from '../../common/route-spatial.js';
 import { MountainPass } from '../../entities/mountain-pass.entity.js';
 import {
   CheckRouteDto,
   CheckRouteResponseDto,
+  MAX_CHECK_ROUTE_POINTS,
   MountainPassDto,
   MAX_LIST_PASSES_LIMIT,
   PassStatus,
@@ -94,31 +96,36 @@ export class PassesService {
   }
 
   async checkRoute(dto: CheckRouteDto): Promise<CheckRouteResponseDto> {
-    if (dto.route.length < 2) {
-      throw new BadRequestException('Route must have at least 2 points');
+    const routes = [
+      dto.route,
+      ...(dto.additional_routes ?? []).map((route) => route.points),
+    ];
+    if (routes.some((route) => route.length < 2)) {
+      throw new BadRequestException('Every route must have at least 2 points');
+    }
+    if (
+      routes.reduce((total, route) => total + route.length, 0) >
+      MAX_CHECK_ROUTE_POINTS
+    ) {
+      throw new BadRequestException(
+        `Routes must have at most ${MAX_CHECK_ROUTE_POINTS} points in total`,
+      );
     }
     const bufferM = dto.buffer_m ?? 1500;
     const month = this.resolveMonth(dto.for_month);
 
-    // Build the LineString via TypeORM's named-parameter binding so each
-    // coordinate is passed as a real SQL parameter (no string
-    // interpolation of user input). Going through `createQueryBuilder`
+    // Build one LineString/MultiLineString via TypeORM's named-parameter
+    // binding so each coordinate is passed as a real SQL parameter (no
+    // string interpolation of user input). Going through `createQueryBuilder`
     // rather than `repo.query` also makes TypeORM hydrate the `location`
     // column back into a GeoJSON Point — with raw `.query()` we'd get
     // a WKB hex string and `toDto` would crash on `p.location.coordinates`.
+    const spatial = buildRouteSpatialSql(routes, bufferM, 'p.location');
     const params: Record<string, number> = {
+      ...spatial.params,
       buffer: bufferM,
       statusMonth: month,
     };
-    const pointsSql = dto.route
-      .map((p, i) => {
-        params[`lng${i}`] = p.lng;
-        params[`lat${i}`] = p.lat;
-        return `ST_MakePoint(:lng${i}, :lat${i})`;
-      })
-      .join(',');
-    const line = `ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)`;
-    params['bufferDeg'] = (bufferM / 111320) * 2;
 
     // Keep aggregate status counts exact even when the response list is
     // capped below. The window expressions run over every spatial match
@@ -144,11 +151,11 @@ export class PassesService {
     END`;
     const result = await this.passRepo
       .createQueryBuilder('p')
-      .where(`ST_DWithin(p.location, ${line}, :bufferDeg)`, params)
+      .where(spatial.prefilterSql, params)
       .andWhere(
         `ST_DWithin(
           p.location::geography,
-          ${line}::geography,
+          ${spatial.geometrySql}::geography,
           :buffer
         )`,
         params,

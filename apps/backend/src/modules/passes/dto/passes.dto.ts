@@ -148,6 +148,21 @@ class RoutePointDto {
  * `MAX_ROUTE_QUALITY_POINTS`). A dense multi-day polyline stays well under this.
  */
 export const MAX_CHECK_ROUTE_POINTS = 25000;
+export const MAX_CHECK_ROUTE_SEGMENTS = 100;
+
+export class PassRoutePolylineDto {
+  @ApiProperty({
+    type: [RoutePointDto],
+    minItems: 2,
+    maxItems: MAX_CHECK_ROUTE_POINTS,
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_CHECK_ROUTE_POINTS)
+  @ValidateNested({ each: true })
+  @Type(() => RoutePointDto)
+  points!: RoutePointDto[];
+}
 
 export class CheckRouteDto {
   @ApiProperty({
@@ -161,6 +176,21 @@ export class CheckRouteDto {
   @ValidateNested({ each: true })
   @Type(() => RoutePointDto)
   route!: RoutePointDto[];
+
+  @ApiPropertyOptional({
+    type: [PassRoutePolylineDto],
+    maxItems: MAX_CHECK_ROUTE_SEGMENTS,
+    description:
+      'Additional disconnected route polylines to check in the same spatial ' +
+      'query. Results and counts are unique across all supplied polylines. ' +
+      `The combined vertex count, including route, must not exceed ${MAX_CHECK_ROUTE_POINTS}.`,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_CHECK_ROUTE_SEGMENTS)
+  @ValidateNested({ each: true })
+  @Type(() => PassRoutePolylineDto)
+  additional_routes?: PassRoutePolylineDto[];
 
   @ApiPropertyOptional({
     default: 1500,

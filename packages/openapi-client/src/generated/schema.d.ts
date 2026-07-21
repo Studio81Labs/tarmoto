@@ -1823,7 +1823,7 @@ export interface paths {
         put?: never;
         /**
          * Check which road closures a planned route crosses
-         * @description Given a route polyline returns the active closures within `buffer_m` (default 100 m) of the line plus counts broken out by severity. "Active" is evaluated at `active_on` or the current instant when omitted — the planner calls this as the rider draws a route so they can see up front whether their plan crosses a closed stretch.
+         * @description Given one or more route polylines returns the unique active closures within `buffer_m` (default 100 m) of the line plus counts broken out by severity. "Active" is evaluated at `active_on` or the current instant when omitted — the planner calls this as the rider draws a route so they can see up front whether their plan crosses a closed stretch.
          */
         post: operations["ClosuresController_checkRoute"];
         delete?: never;
@@ -2878,7 +2878,7 @@ export interface paths {
         put?: never;
         /**
          * Check which mountain passes a planned route crosses
-         * @description Given a route polyline returns the passes within `buffer_m` (default 1500 m) of the line plus a count of closed/unknown ones. Status is evaluated for the requested `for_month` or the current UTC month when omitted.
+         * @description Given one or more route polylines returns the unique passes within `buffer_m` (default 1500 m) of the line plus a count of closed/unknown ones. Status is evaluated for the requested `for_month` or the current UTC month when omitted.
          */
         post: operations["PassesController_checkRoute"];
         delete?: never;
@@ -5524,9 +5524,14 @@ export interface components {
             created_at: string;
             updated_at: string;
         };
+        ClosureRoutePolylineDto: {
+            points: components["schemas"]["ClosurePointDto"][];
+        };
         CheckRouteClosuresDto: {
             /** @description Planned route polyline (2+ points, WGS84 lat/lng). */
             route: components["schemas"]["ClosurePointDto"][];
+            /** @description Additional disconnected route polylines to check in the same spatial query. Results and severity counts are unique across all supplied polylines. The combined vertex count, including route, must not exceed 25000. */
+            additional_routes?: components["schemas"]["ClosureRoutePolylineDto"][];
             /**
              * @description Buffer in meters around the route to treat a closure as "on it". Smaller than the passes default (1500 m) because closures are linestrings that already trace the affected road stretch.
              * @default 100
@@ -6275,8 +6280,13 @@ export interface components {
             lat: number;
             lng: number;
         };
+        PassRoutePolylineDto: {
+            points: components["schemas"]["RoutePointDto"][];
+        };
         CheckRouteDto: {
             route: components["schemas"]["RoutePointDto"][];
+            /** @description Additional disconnected route polylines to check in the same spatial query. Results and counts are unique across all supplied polylines. The combined vertex count, including route, must not exceed 25000. */
+            additional_routes?: components["schemas"]["PassRoutePolylineDto"][];
             /**
              * @description Buffer in meters around the route to consider a pass "on it".
              * @default 1500
@@ -7079,6 +7089,7 @@ export type SchemaCommuteStatsPeriodDto = components['schemas']['CommuteStatsPer
 export type SchemaCommuteStatsResponseDto = components['schemas']['CommuteStatsResponseDto'];
 export type SchemaClosurePointDto = components['schemas']['ClosurePointDto'];
 export type SchemaRoadClosureDto = components['schemas']['RoadClosureDto'];
+export type SchemaClosureRoutePolylineDto = components['schemas']['ClosureRoutePolylineDto'];
 export type SchemaCheckRouteClosuresDto = components['schemas']['CheckRouteClosuresDto'];
 export type SchemaCheckRouteClosuresResponseDto = components['schemas']['CheckRouteClosuresResponseDto'];
 export type SchemaCreateClosureDto = components['schemas']['CreateClosureDto'];
@@ -7156,6 +7167,7 @@ export type SchemaRiddenSegmentDto = components['schemas']['RiddenSegmentDto'];
 export type SchemaRiddenSegmentsListDto = components['schemas']['RiddenSegmentsListDto'];
 export type SchemaMountainPassDto = components['schemas']['MountainPassDto'];
 export type SchemaRoutePointDto = components['schemas']['RoutePointDto'];
+export type SchemaPassRoutePolylineDto = components['schemas']['PassRoutePolylineDto'];
 export type SchemaCheckRouteDto = components['schemas']['CheckRouteDto'];
 export type SchemaCheckRouteResponseDto = components['schemas']['CheckRouteResponseDto'];
 export type SchemaAccommodationDto = components['schemas']['AccommodationDto'];

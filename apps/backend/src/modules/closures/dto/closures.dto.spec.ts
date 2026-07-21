@@ -15,6 +15,25 @@ describe('CheckRouteClosuresDto route validation', () => {
     expect(await validate(dto)).toHaveLength(0);
   });
 
+  it('accepts validated additional disconnected route polylines', async () => {
+    const dto = plainToInstance(CheckRouteClosuresDto, {
+      route: [point, point],
+      additional_routes: [{ points: [point, point] }],
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+
+  it('rejects an additional route with fewer than 2 points', async () => {
+    const dto = plainToInstance(CheckRouteClosuresDto, {
+      route: [point, point],
+      additional_routes: [{ points: [point] }],
+    });
+    const errors = await validate(dto);
+    expect(
+      errors.find((error) => error.property === 'additional_routes'),
+    ).toBeDefined();
+  });
+
   it('rejects a route over the vertex cap before building spatial SQL', async () => {
     const dto = plainToInstance(CheckRouteClosuresDto, {
       route: Array.from(

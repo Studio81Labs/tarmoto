@@ -46,6 +46,15 @@ const route: PlannerClosureRoute = {
   ],
 };
 
+const secondRoute: PlannerClosureRoute = {
+  id: "day-2",
+  label: "Day 2",
+  points: [
+    { lat: 46.6, lng: 10.5 },
+    { lat: 46.7, lng: 10.6 },
+  ],
+};
+
 describe("usePasses", () => {
   beforeEach(() => {
     vi.mocked(api.GET).mockReset();
@@ -207,7 +216,7 @@ describe("usePasses", () => {
     expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
   });
 
-  it("uses exact route counts returned by the backend after its pass cap", async () => {
+  it("uses one backend query for unique exact counts across route chunks", async () => {
     vi.mocked(passesApi.checkRoute).mockResolvedValue({
       data: {
         closed_count: 237,
@@ -216,7 +225,7 @@ describe("usePasses", () => {
       },
     } as Awaited<ReturnType<typeof passesApi.checkRoute>>);
 
-    render(<TestHarness routes={[route]} />, {
+    render(<TestHarness routes={[route, secondRoute]} />, {
       wrapper: withQueryClient(),
     });
 
@@ -224,5 +233,13 @@ describe("usePasses", () => {
       expect(screen.getByText("closed=237")).toBeInTheDocument();
       expect(screen.getByText("unknown=14")).toBeInTheDocument();
     });
+    expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
+    expect(passesApi.checkRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: route.points,
+        additional_routes: [{ points: secondRoute.points }],
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

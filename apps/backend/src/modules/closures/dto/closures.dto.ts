@@ -51,6 +51,7 @@ export class ClosurePointDto {
 }
 
 export const MAX_CHECK_ROUTE_CLOSURE_POINTS = 25_000;
+export const MAX_CHECK_ROUTE_CLOSURE_SEGMENTS = 100;
 
 export class RoadClosureDto {
   @ApiProperty()
@@ -316,6 +317,20 @@ export class UpdateClosureDto {
   notes?: string | null;
 }
 
+export class ClosureRoutePolylineDto {
+  @ApiProperty({
+    type: [ClosurePointDto],
+    minItems: 2,
+    maxItems: MAX_CHECK_ROUTE_CLOSURE_POINTS,
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(MAX_CHECK_ROUTE_CLOSURE_POINTS)
+  @ValidateNested({ each: true })
+  @Type(() => ClosurePointDto)
+  points!: ClosurePointDto[];
+}
+
 export class CheckRouteClosuresDto {
   @ApiProperty({
     type: [ClosurePointDto],
@@ -329,6 +344,21 @@ export class CheckRouteClosuresDto {
   @ValidateNested({ each: true })
   @Type(() => ClosurePointDto)
   route!: ClosurePointDto[];
+
+  @ApiPropertyOptional({
+    type: [ClosureRoutePolylineDto],
+    maxItems: MAX_CHECK_ROUTE_CLOSURE_SEGMENTS,
+    description:
+      'Additional disconnected route polylines to check in the same spatial ' +
+      'query. Results and severity counts are unique across all supplied ' +
+      `polylines. The combined vertex count, including route, must not exceed ${MAX_CHECK_ROUTE_CLOSURE_POINTS}.`,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_CHECK_ROUTE_CLOSURE_SEGMENTS)
+  @ValidateNested({ each: true })
+  @Type(() => ClosureRoutePolylineDto)
+  additional_routes?: ClosureRoutePolylineDto[];
 
   @ApiPropertyOptional({
     default: 100,
