@@ -85,6 +85,7 @@ describe('ClosuresService', () => {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     setParameter: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue([SAMPLE_CLOSURE]),
@@ -96,6 +97,7 @@ describe('ClosuresService', () => {
     mockQb.where.mockClear();
     mockQb.andWhere.mockClear();
     mockQb.orderBy.mockClear();
+    mockQb.addOrderBy.mockClear();
     mockQb.limit.mockClear();
     mockQb.setParameter.mockClear();
     mockQb.getMany.mockReset().mockResolvedValue([SAMPLE_CLOSURE]);
@@ -765,7 +767,9 @@ describe('ClosuresService', () => {
       expect(mockQb.limit).toHaveBeenCalledWith(200);
       expect(mockQb.orderBy).toHaveBeenCalledWith(
         expect.stringContaining("WHEN 'full' THEN 0"),
+        'ASC',
       );
+      expect(mockQb.addOrderBy).toHaveBeenCalledWith('c.starts_at', 'DESC');
     });
 
     it('defaults the buffer to 100 m', async () => {

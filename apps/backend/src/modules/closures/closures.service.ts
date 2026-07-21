@@ -157,8 +157,10 @@ export class ClosuresService {
       // The response is sorted the same way below, but doing it in SQL ensures
       // a dense corridor cannot crowd full closures out with advisories.
       .orderBy(
-        "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END, c.starts_at DESC",
-      );
+        "CASE c.severity WHEN 'full' THEN 0 WHEN 'partial' THEN 1 ELSE 2 END",
+        'ASC',
+      )
+      .addOrderBy('c.starts_at', 'DESC');
 
     // Same operator kill switch as `list`: `road_closures` is a
     // MIXED-SOURCE table, so a disable hides only NAP-sourced ('official')
