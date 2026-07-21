@@ -30,7 +30,6 @@ import {
 } from './dto/road-segment.dto.js';
 import {
   DEFAULT_FUN_ZONE_BBOX_RESULTS,
-  MAX_FUN_ZONE_BBOX_AREA_DEG2,
   QueryFunZonesDto,
 } from './dto/query-fun-zones.dto.js';
 import {
@@ -1053,11 +1052,6 @@ function parseFunZoneBbox(
     south >= north
   ) {
     throw new BadRequestException('bbox coordinates or ordering are invalid');
-  }
-  if ((east - west) * (north - south) > MAX_FUN_ZONE_BBOX_AREA_DEG2) {
-    throw new BadRequestException(
-      `bbox area exceeds ${MAX_FUN_ZONE_BBOX_AREA_DEG2} square degrees`,
-    );
   }
   return [west, south, east, north];
 }

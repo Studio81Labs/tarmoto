@@ -809,14 +809,22 @@ describe('RoadsService', () => {
       );
     });
 
-    it.each([
-      'bad',
-      '18.1,49.4,NaN,49.7',
-      '18.6,49.4,18.1,49.7',
-      '-180,-90,180,90',
-    ])('rejects an invalid or excessively broad bbox: %s', async (bbox) => {
-      await expect(service.findFunZones({ bbox })).rejects.toThrow();
-      expect(funZoneRepo.query).not.toHaveBeenCalled();
+    it.each(['bad', '18.1,49.4,NaN,49.7', '18.6,49.4,18.1,49.7'])(
+      'rejects an invalid bbox: %s',
+      async (bbox) => {
+        await expect(service.findFunZones({ bbox })).rejects.toThrow();
+        expect(funZoneRepo.query).not.toHaveBeenCalled();
+      },
+    );
+
+    it('caps a normal zoomed-out viewport instead of rejecting it', async () => {
+      await service.findFunZones({ bbox: '-10,35,40,70' });
+
+      expect(funZoneRepo.query).toHaveBeenCalledWith(
+        expect.any(String),
+        [-10, 35, 40, 70, 50],
+      );
+      expect(funZoneRepo.query.mock.calls[0]?.[0]).toContain('LIMIT $5');
     });
 
     it('should map boundary polygon to lat/lng array', async () => {

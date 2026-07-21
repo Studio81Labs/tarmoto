@@ -4,7 +4,6 @@ import { Type } from 'class-transformer';
 
 export const DEFAULT_FUN_ZONE_BBOX_RESULTS = 50;
 export const MAX_FUN_ZONE_BBOX_RESULTS = 100;
-export const MAX_FUN_ZONE_BBOX_AREA_DEG2 = 400;
 
 export class QueryFunZonesDto {
   @ApiProperty({
