@@ -76,7 +76,10 @@ import {
   type ManeuverType,
 } from "@/services/navigation";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
-import { resolveNavigationRoute } from "./NavigationScreen.helpers";
+import {
+  formatNavigationDistanceM,
+  resolveNavigationRoute,
+} from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 import { t as translate } from "@/i18n";
 import { getFormatters } from "@/format";
@@ -340,11 +343,11 @@ export default function NavigationScreen() {
         <View style={styles.statsRow}>
           <Stat
             label={translate("Remaining")}
-            value={formatDistanceM(tick?.remainingM ?? 0)}
+            value={formatNavigationDistanceM(tick?.remainingM ?? 0)}
           />
           <Stat
             label={translate("Off-axis")}
-            value={formatMeters(tick?.offRouteDistanceM ?? 0)}
+            value={formatNavigationDistanceM(tick?.offRouteDistanceM ?? 0)}
           />
           <Stat
             label={translate("Maneuvers")}
@@ -446,7 +449,7 @@ function OffRouteBanner({ distanceM }: { distanceM: number }) {
         <Text style={styles.offRouteBodyText}>
           {translate(
             "{distance} from the planned path — return when it's safe.",
-            { distance: formatMeters(distanceM) },
+            { distance: formatNavigationDistanceM(distanceM) },
           )}
         </Text>
       </View>
@@ -497,20 +500,6 @@ function buildRoadNameLookup(
 function formatManeuverDistance(m: number): string {
   if (m <= 15) return translate("Now");
   return getFormatters().distanceM(m);
-}
-
-/**
- * Format a distance in METERS for the stats panel, switching to km with
- * one decimal above 1 km. Deliberately named distinct from
- * `formatKm` in `TripScreens.helpers.ts` (which takes kilometres) so a
- * future refactor can't silently introduce a 1000× unit drift.
- */
-function formatDistanceM(m: number): string {
-  return getFormatters().distanceM(Math.max(0, m));
-}
-
-function formatMeters(m: number): string {
-  return getFormatters().elevation(Math.max(0, m));
 }
 
 const styles = StyleSheet.create({

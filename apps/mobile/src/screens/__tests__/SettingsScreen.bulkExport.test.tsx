@@ -18,6 +18,9 @@ import {
 import RNFS from "react-native-fs";
 import RNShare from "react-native-share";
 
+const mockSetUser = jest.fn();
+const mockSetDistanceUnit = jest.fn();
+
 jest.mock(
   "react-native/Libraries/Components/Touchable/TouchableOpacity",
   () => {
@@ -100,7 +103,7 @@ jest.mock("@/stores", () => ({
           crash_detection: false,
         },
       },
-      setUser: jest.fn(),
+      setUser: mockSetUser,
     }),
   useOfflineStore: (selector: (s: unknown) => unknown) =>
     selector({ regions: [] }),
@@ -110,6 +113,18 @@ jest.mock("@/stores", () => ({
       setMinQuality: jest.fn(),
       fuelRangeKm: 250,
       setFuelRangeKm: jest.fn(),
+      weatherAlertsEnabled: true,
+      setWeatherAlertsEnabled: jest.fn(),
+      voiceNavEnabled: true,
+      setVoiceNavEnabled: jest.fn(),
+      voiceNavVolume: 1,
+      setVoiceNavVolume: jest.fn(),
+      voiceNavLanguage: "auto",
+      setVoiceNavLanguage: jest.fn(),
+      voiceNavVerbose: true,
+      setVoiceNavVerbose: jest.fn(),
+      distanceUnit: "metric",
+      setDistanceUnit: mockSetDistanceUnit,
     }),
 }));
 
@@ -121,6 +136,37 @@ beforeEach(() => {
 });
 
 describe("SettingsScreen bulk export", () => {
+  it("persists a distance-unit change to the authenticated profile", async () => {
+    const updatedUser = { id: "u1", preferences: { units: "imperial" } };
+    jest.mocked(api.updateProfile).mockResolvedValueOnce(updatedUser as never);
+
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Imperial"));
+
+    expect(mockSetDistanceUnit).toHaveBeenCalledWith("imperial");
+    await waitFor(() => {
+      expect(api.updateProfile).toHaveBeenCalledWith({
+        preferences: expect.objectContaining({ units: "imperial" }),
+      });
+      expect(mockSetUser).toHaveBeenCalledWith(updatedUser);
+    });
+  });
+
+  it("rolls back an optimistic distance-unit change when persistence fails", async () => {
+    jest
+      .mocked(api.updateProfile)
+      .mockRejectedValueOnce(new Error("Network unavailable"));
+
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Imperial"));
+
+    await waitFor(() => {
+      expect(mockSetDistanceUnit).toHaveBeenNthCalledWith(1, "imperial");
+      expect(mockSetDistanceUnit).toHaveBeenNthCalledWith(2, "metric");
+      expect(screen.getByText("Couldn't update preference.")).toBeTruthy();
+    });
+  });
+
   it("downloads the GPX bundle and opens the share sheet", async () => {
     await render(<SettingsScreen />);
     await fireEvent.press(screen.getByLabelText("Export all rides as GPX"));

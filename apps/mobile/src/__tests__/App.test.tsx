@@ -1,5 +1,5 @@
 import React from "react";
-import { act, render } from "@testing-library/react-native";
+import { act, render, waitFor } from "@testing-library/react-native";
 import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -102,5 +102,21 @@ describe("App auth locale hydration", () => {
     });
 
     expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
+  });
+
+  it("hydrates formatter units from the authenticated profile", async () => {
+    await render(<App />);
+
+    await act(() => {
+      useAuthStore.getState().setUser({
+        language: "en",
+        preferences: { units: "imperial" },
+      } as unknown as User);
+    });
+
+    await waitFor(() => {
+      expect(usePreferencesStore.getState().distanceUnit).toBe("imperial");
+      expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
+    });
   });
 });

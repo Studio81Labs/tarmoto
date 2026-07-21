@@ -31,11 +31,21 @@ export default function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
   const units = usePreferencesStore((state) => state.distanceUnit);
+  const setDistanceUnit = usePreferencesStore((state) => state.setDistanceUnit);
   const deviceLocale = useMemo(detectDeviceLocale, []);
   const deviceTimeZone = useMemo(detectDeviceTimeZone, []);
   const locale = user?.language ?? deviceLocale;
   const formatLocale = user?.preferences?.format_locale ?? deviceLocale;
   const timeZone = user?.preferences?.timezone ?? deviceTimeZone;
+
+  // The account is the cross-device source of truth. Hydrate the synchronous
+  // MMKV-backed store whenever auth resolves (or the profile changes), while
+  // keeping the store subscribed above so a Settings toggle updates every
+  // formatter-backed surface immediately.
+  useEffect(() => {
+    const profileUnits = user?.preferences?.units;
+    if (profileUnits) setDistanceUnit(profileUnits);
+  }, [user?.preferences?.units, setDistanceUnit]);
 
   useEffect(() => {
     void bootstrapAuth({

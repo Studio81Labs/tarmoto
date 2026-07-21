@@ -308,6 +308,8 @@ function BulkExportCard() {
 // chatter. The distance unit pref is a sibling because it shapes the
 // spoken phrasing too (meters vs yards).
 function VoiceNavigationCard() {
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const enabled = usePreferencesStore((s) => s.voiceNavEnabled);
   const setEnabled = usePreferencesStore((s) => s.setVoiceNavEnabled);
   const volume = usePreferencesStore((s) => s.voiceNavVolume);
@@ -318,6 +320,32 @@ function VoiceNavigationCard() {
   const setVerbose = usePreferencesStore((s) => s.setVoiceNavVerbose);
   const distanceUnit = usePreferencesStore((s) => s.distanceUnit);
   const setDistanceUnit = usePreferencesStore((s) => s.setDistanceUnit);
+  const [unitPending, setUnitPending] = useState(false);
+  const [unitError, setUnitError] = useState<string | null>(null);
+
+  const handleDistanceUnitChange = useCallback(
+    async (next: DistanceUnitPref) => {
+      if (unitPending || next === distanceUnit) return;
+      const previous = distanceUnit;
+      setDistanceUnit(next);
+      if (!user) return;
+
+      setUnitPending(true);
+      setUnitError(null);
+      try {
+        const updated = await api.updateProfile({
+          preferences: { ...user.preferences, units: next },
+        });
+        setUser(updated);
+      } catch {
+        setDistanceUnit(previous);
+        setUnitError(translate("Couldn't update preference."));
+      } finally {
+        setUnitPending(false);
+      }
+    },
+    [distanceUnit, setDistanceUnit, setUser, unitPending, user],
+  );
 
   return (
     <Card raised pad={brandSpacing.s4} style={styles.card}>
@@ -404,9 +432,15 @@ function VoiceNavigationCard() {
                 label: translate(option.label),
               }))}
               value={distanceUnit}
-              onChange={(v) => setDistanceUnit(v as DistanceUnitPref)}
-              ariaLabel={translate("Spoken distance units")}
+              onChange={(v) => void handleDistanceUnitChange(v)}
+              ariaLabel={translate("Distance units")}
             />
+            {unitPending ? (
+              <ActivityIndicator color={t.accent} size="small" />
+            ) : null}
+            {unitError ? (
+              <Text style={styles.errorText}>{unitError}</Text>
+            ) : null}
           </View>
         </>
       ) : null}
