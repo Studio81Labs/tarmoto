@@ -13,6 +13,7 @@ import {
   formatWaypointType,
   isLastDay,
   isSuggestedOvernightWaypoint,
+  MAX_PASS_CHECK_ROUTE_POINTS,
   navigationWaypointsForRoadNames,
   pickDayEndAnchor,
   pickSuggestedAccommodation,
@@ -311,6 +312,20 @@ describe("flattenTripRoute", () => {
 
   it("returns an empty array when no day has usable geometry", () => {
     expect(flattenTripRoute([dayWith(1, []), dayWith(2, [])])).toEqual([]);
+  });
+
+  it("samples a dense imported route below the backend pass-check cap", () => {
+    const denseRoute = Array.from({ length: 50_000 }, (_, index) => ({
+      lat: 46 + index * 0.00001,
+      lng: 10 + index * 0.00001,
+    }));
+
+    const result = flattenTripRoute([dayWith(1, denseRoute)]);
+
+    expect(result).toHaveLength(MAX_PASS_CHECK_ROUTE_POINTS);
+    expect(result[0]).toEqual(denseRoute[0]);
+    expect(result.at(-1)).toEqual(denseRoute.at(-1));
+    expect(result.length).toBeLessThan(25_000);
   });
 });
 
