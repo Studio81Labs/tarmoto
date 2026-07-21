@@ -185,6 +185,13 @@ class ApiService {
     const result = await client.POST("/api/v1/auth/register", {
       body: { email, password, display_name },
     });
+    if (result.error !== undefined && result.response.status === 409) {
+      throw new ApiError(
+        t("An account with that email already exists"),
+        result.response.status,
+        result.error,
+      );
+    }
     const data = unwrap(result, "Registration failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
@@ -203,6 +210,13 @@ class ApiService {
     const result = await client.POST("/api/v1/auth/login", {
       body: { email, password },
     });
+    if (result.error !== undefined && result.response.status === 401) {
+      throw new ApiError(
+        t("Invalid email or password"),
+        result.response.status,
+        result.error,
+      );
+    }
     const data = unwrap(result, "Login failed");
     storeTokens(data);
     void registerForPush(this.pushApi());

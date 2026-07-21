@@ -264,6 +264,9 @@ export const en = {
   "Check the list before you head out.": "Check the list before you head out.",
   "Check your connection and try again.":
     "Check your connection and try again.",
+  "An account with that email already exists":
+    "An account with that email already exists",
+  "Invalid email or password": "Invalid email or password",
   "Some information is invalid. Check it and try again.":
     "Some information is invalid. Check it and try again.",
   "That change conflicts with the current state. Refresh and try again.":
