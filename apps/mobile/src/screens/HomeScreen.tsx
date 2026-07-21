@@ -100,9 +100,9 @@ export default function HomeScreen() {
               </Text>
               <Text style={styles.startBody}>
                 {route.distance_km != null
-                  ? translate("{name} · {distance} km", {
+                  ? translate("{name} · {distance}", {
                       name: route.name,
-                      distance: getFormatters().decimal(route.distance_km, 1),
+                      distance: getFormatters().distanceKm(route.distance_km),
                     })
                   : route.name}
               </Text>

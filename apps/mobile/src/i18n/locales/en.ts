@@ -68,8 +68,8 @@ export const en = {
   "{distance} · on {roadName} · {note}": "{distance} · on {roadName} · {note}",
   "{distance} · on {roadName}": "{distance} · on {roadName}",
   "{distance} km": "{distance} km",
-  "{distance} km · {duration} min": "{distance} km · {duration} min",
-  "{distance} km · Quality {quality}": "{distance} km · Quality {quality}",
+  "{distance} · {duration} min": "{distance} · {duration} min",
+  "{distance} · Quality {quality}": "{distance} · Quality {quality}",
   "{distance} ahead": "{distance} ahead",
   "{downloaded} / {total} downloaded": "{downloaded} / {total} downloaded",
   "{downloaded} / {total} downloaded · {failed} failed":
@@ -91,7 +91,7 @@ export const en = {
   "{length} · {distance} from you": "{length} · {distance} from you",
   "{min}–{max} km / day": "{min}–{max} km / day",
   "{relation} since {date}": "{relation} since {date}",
-  "{name} · {distance} km": "{name} · {distance} km",
+  "{name} · {distance}": "{name} · {distance}",
   "{name} (you)": "{name} (you)",
   "{name} hasn't earned any badges yet.":
     "{name} hasn't earned any badges yet.",
@@ -168,7 +168,7 @@ export const en = {
   "All your sensor contributions are synced to the Tarmoto community.":
     "All your sensor contributions are synced to the Tarmoto community.",
   Allow: "Allow",
-  "Alternative · {value0} km": "Alternative · {value0} km",
+  "Alternative · {distance}": "Alternative · {distance}",
   "Alternative routes": "Alternative routes",
   "Alternative routes ({count})": "Alternative routes ({count})",
   Animals: "Animals",
@@ -573,8 +573,8 @@ export const en = {
   "Mute voice guidance": "Mute voice guidance",
   Name: "Name",
   "Name is required.": "Name is required.",
-  "Navigate alternative route, {value0} kilometres":
-    "Navigate alternative route, {value0} kilometres",
+  "Navigate alternative route, {distance}":
+    "Navigate alternative route, {distance}",
   "Navigate primary commute route to {value0}":
     "Navigate primary commute route to {value0}",
   Navigation: "Navigation",
@@ -772,8 +772,7 @@ export const en = {
   "Road quality": "Road quality",
   "Road quality {value0}": "Road quality {value0}",
   "Road quality for this trip": "Road quality for this trip",
-  "Road: {condition} · Wind {speed} km/h":
-    "Road: {condition} · Wind {speed} km/h",
+  "Road: {condition} · Wind {speed}": "Road: {condition} · Wind {speed}",
   roads: "roads",
   Roads: "Roads",
   Roadworks: "Roadworks",
@@ -866,8 +865,8 @@ export const en = {
   "Start a ride to broadcast your position to the group.":
     "Start a ride to broadcast your position to the group.",
   "Start commute": "Start commute",
-  "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}":
-    "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
+  "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}":
+    "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
   "Start commute ride to {value0}": "Start commute ride to {value0}",
   "Start commute to {value0}": "Start commute to {value0}",
   "Start location": "Start location",
@@ -1084,7 +1083,7 @@ export const en = {
   "Your Tarmoto password": "Your Tarmoto password",
   "Your usual route looks like the best option right now.":
     "Your usual route looks like the best option right now.",
-  "Δ km": "Δ km",
+  "Δ distance": "Δ distance",
   "Δ time": "Δ time",
 } as const;
 

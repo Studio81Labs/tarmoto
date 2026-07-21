@@ -700,7 +700,7 @@ export const common = {
   "Preview date ": "Preview date ",
   "Preview flagged section: {label}": "Preview flagged section: {label}",
   "Preview unavailable ": "Preview unavailable ",
-  "Preview {label} section, {km} km": "Preview {label} section, {km} km",
+  "Preview {label} section, {distance}": "Preview {label} section, {distance}",
   "Previewing ": "Previewing ",
   "Previewing {month} conditions on {previewDay}.":
     "Previewing {month} conditions on {previewDay}.",

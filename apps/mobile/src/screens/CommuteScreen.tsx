@@ -128,8 +128,8 @@ export default function CommuteScreen() {
       navigation.navigate("Navigate", {
         source: "polyline",
         polyline: alt.geometry,
-        title: translate("Alternative · {value0} km", {
-          value0: getFormatters().decimal(alt.distance_km, 1),
+        title: translate("Alternative · {distance}", {
+          distance: getFormatters().distanceKm(alt.distance_km),
         }),
       });
     },
@@ -392,11 +392,11 @@ function WeatherCard({ weather }: { weather: Weather }) {
             })}
           </Text>
           <Text style={styles.weatherDetail}>
-            {translate("Road: {condition} · Wind {speed} km/h", {
+            {translate("Road: {condition} · Wind {speed}", {
               condition: translate(
                 ROAD_CONDITION_LABELS[weather.road_condition],
               ),
-              speed: Math.round(weather.wind_kmh),
+              speed: getFormatters().speed(weather.wind_kmh),
             })}
           </Text>
         </View>
@@ -550,7 +550,7 @@ function AlternativesCard({
   // Backend now caches `distance_km` and `avg_duration_min` on
   // `CommuteRouteResponseDto`, but both stay null until the routing
   // provider resolves the route (and on a provider outage). Guard the
-  // delta chips against null so they render "—" instead of "NaN km"/"NaN min".
+  // delta chips against null so they render "—" instead of invalid values.
   primaryDistanceKm: number | null;
   primaryDurationMin: number | null;
   onStart: () => void;
@@ -641,9 +641,9 @@ function AlternativeRow({
         onPress={onStart}
         accessibilityRole="button"
         accessibilityLabel={translate(
-          "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
+          "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
           {
-            distance: getFormatters().decimal(alt.distance_km, 1),
+            distance: getFormatters().distanceKm(alt.distance_km),
             duration: alt.duration_min,
             count: alt.hazard_count,
           },
@@ -651,8 +651,8 @@ function AlternativeRow({
       >
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
-            {translate("{distance} km · {duration} min", {
-              distance: getFormatters().decimal(alt.distance_km, 1),
+            {translate("{distance} · {duration} min", {
+              distance: getFormatters().distanceKm(alt.distance_km),
               duration: alt.duration_min,
             })}
           </Text>
@@ -677,7 +677,7 @@ function AlternativeRow({
         </View>
         <View style={styles.altDeltasRow}>
           <DeltaChip
-            label={translate("Δ km")}
+            label={translate("Δ distance")}
             value={
               distanceDelta != null ? formatSignedDistance(distanceDelta) : "—"
             }
@@ -705,8 +705,8 @@ function AlternativeRow({
         disabled={navDisabled}
         accessibilityRole="button"
         accessibilityLabel={translate(
-          "Navigate alternative route, {value0} kilometres",
-          { value0: getFormatters().decimal(alt.distance_km, 1) },
+          "Navigate alternative route, {distance}",
+          { distance: getFormatters().distanceKm(alt.distance_km) },
         )}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
@@ -815,14 +815,12 @@ function SavedRoutesCard({
               <Text style={styles.altTitle}>{r.name}</Text>
               <Text style={styles.altSubtitle}>
                 {r.distance_km != null && r.avg_quality != null
-                  ? translate("{distance} km · Quality {quality}", {
-                      distance: getFormatters().decimal(r.distance_km, 1),
+                  ? translate("{distance} · Quality {quality}", {
+                      distance: getFormatters().distanceKm(r.distance_km),
                       quality: qualityLabel(r.avg_quality),
                     })
                   : r.distance_km != null
-                    ? translate("{distance} km", {
-                        distance: getFormatters().decimal(r.distance_km, 1),
-                      })
+                    ? getFormatters().distanceKm(r.distance_km)
                     : r.avg_quality != null
                       ? translate("Distance pending · Quality {quality}", {
                           quality: qualityLabel(r.avg_quality),
@@ -1096,9 +1094,9 @@ function rankAlternatives(
 }
 
 function formatSignedDistance(km: number): string {
-  if (Math.abs(km) < 0.05) return "±0 km";
-  const value = getFormatters().decimal(km, 1);
-  return `${km > 0 ? "+" : ""}${value} km`;
+  const format = getFormatters();
+  if (Math.abs(km) < 0.05) return `±${format.distanceKm(0)}`;
+  return `${km > 0 ? "+" : "-"}${format.distanceKm(Math.abs(km))}`;
 }
 
 function formatSignedDuration(min: number): string {
