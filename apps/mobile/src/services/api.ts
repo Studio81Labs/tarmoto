@@ -369,10 +369,10 @@ class ApiService {
     return unwrap(result, "Failed to load profile summary");
   }
 
-  async updateProfile(updates: Partial<User>): Promise<User> {
+  async updateProfile(updates: Schemas["UpdateProfileDto"]): Promise<User> {
     const sessionAtStart = this.getAuthSessionSnapshot();
     const result = await client.PATCH("/api/v1/users/me", {
-      body: updates as Schemas["UpdateProfileDto"],
+      body: updates,
     });
     const user = unwrap(result, "Failed to update profile");
     if (

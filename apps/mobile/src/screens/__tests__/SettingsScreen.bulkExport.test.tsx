@@ -158,7 +158,7 @@ describe("SettingsScreen bulk export", () => {
     expect(mockSetDistanceUnit).toHaveBeenCalledWith("imperial");
     await waitFor(() => {
       expect(api.updateProfile).toHaveBeenCalledWith({
-        preferences: expect.objectContaining({ units: "imperial" }),
+        preferences: { units: "imperial" },
       });
       expect(mockSetUser).toHaveBeenCalledWith(updatedUser);
     });

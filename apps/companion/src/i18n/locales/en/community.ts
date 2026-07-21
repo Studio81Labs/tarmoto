@@ -57,7 +57,7 @@ export const community = {
   "Failed to delete collection": "Failed to delete collection",
   "Failed to unfollow collection": "Failed to unfollow collection",
   Feed: "Feed",
-  "Filtering within {distance} km of": "Filtering within {distance} km of",
+  "Filtering within {distance} of": "Filtering within {distance} of",
   "Followed collections": "Followed collections",
   Followers: "Followers",
   "Follows you": "Follows you",

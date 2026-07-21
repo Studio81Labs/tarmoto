@@ -334,7 +334,7 @@ function VoiceNavigationCard() {
       setUnitError(null);
       try {
         const updated = await api.updateProfile({
-          preferences: { ...user.preferences, units: next },
+          preferences: { units: next },
         });
         setUser(updated);
       } catch {
@@ -563,7 +563,7 @@ function SafetyCard() {
       setError(null);
       try {
         const updated = await api.updateProfile({
-          preferences: { ...user.preferences, crash_detection: next },
+          preferences: { crash_detection: next },
         });
         setUser(updated);
       } catch (err) {
