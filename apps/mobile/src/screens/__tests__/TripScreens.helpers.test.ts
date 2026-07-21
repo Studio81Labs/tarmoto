@@ -7,6 +7,7 @@ import {
   formatKm,
   formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
+  formatNearbyRadius,
   formatStatus,
   formatWaypointType,
   isLastDay,
@@ -80,6 +81,7 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
     expect(formatNearbyPlaceAccessibilityLabel("Hotel", 0.4)).toBe(
       "Hotel, 0.3 mi away",
     );
+    expect(formatNearbyRadius(25)).toBe("within 15.5 mi");
   });
 
   it("formats durations", () => {
@@ -113,6 +115,10 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
 });
 
 describe("formatNearbyPlaceMeta", () => {
+  it("keeps the nearby radius unit-aware", () => {
+    expect(formatNearbyRadius(25)).toBe("within 25 km");
+  });
+
   it("uses one catalog message for kind and distance", () => {
     expect(formatNearbyPlaceMeta("Guest house", 1.24)).toBe(
       "Guest house · 1.2 km",

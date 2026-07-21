@@ -55,6 +55,7 @@ import {
   formatKm,
   formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
+  formatNearbyRadius,
   formatWaypointType,
   isLastDay,
   pickDayEndAnchor,
@@ -577,9 +578,7 @@ function AccommodationsCard({
         </Text>
         {radiusKm !== null && items && items.length > 0 ? (
           <Text style={styles.accommodationsRadius}>
-            {translate("within {distance} km", {
-              distance: Math.round(radiusKm),
-            })}
+            {formatNearbyRadius(radiusKm)}
           </Text>
         ) : null}
       </View>
@@ -710,9 +709,7 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
         </Text>
         {radiusKm !== null && items && items.length > 0 ? (
           <Text style={styles.accommodationsRadius}>
-            {translate("within {distance} km", {
-              distance: Math.round(radiusKm),
-            })}
+            {formatNearbyRadius(radiusKm)}
           </Text>
         ) : null}
       </View>

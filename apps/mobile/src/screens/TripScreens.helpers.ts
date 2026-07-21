@@ -90,6 +90,16 @@ export function formatNearbyPlaceAccessibilityLabel(
   });
 }
 
+/** Unit-aware radius summary shared by the nearby stay and POI sections. */
+export function formatNearbyRadius(
+  radiusKm: number,
+  t: Translate = translate,
+): string {
+  return t("within {distance}", {
+    distance: getFormatters().distanceKm(radiusKm),
+  });
+}
+
 /** "2h 30m" / "45m" — keep short for metric rows. */
 export function formatDurationMin(minutes: number): string {
   return getFormatters().durationCompact(
