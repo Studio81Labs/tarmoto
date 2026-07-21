@@ -3,6 +3,7 @@ import {
   daysRemaining,
   filterByPeriod,
   formatChallengeProgress,
+  formatChallengeMetric,
   formatDistanceFromHere,
   formatSegmentLength,
   formatTimeRemaining,
@@ -22,6 +23,11 @@ import type {
   RiddenSegment,
   UnriddenSegment,
 } from "@/types";
+import { setActiveFormatContext } from "@/format";
+
+beforeEach(() => {
+  setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
+});
 
 const baseBadge: UserBadge = {
   key: "total_distance",
@@ -354,9 +360,21 @@ describe("formatChallengeProgress", () => {
   });
 
   it("keeps 1 decimal for floats", () => {
-    expect(formatChallengeProgress(12.4, 50, "total_km")).toBe(
-      "12.4 / 50.0 km",
+    expect(formatChallengeProgress(12.4, 50, "total_km")).toBe("12.4 / 50 km");
+  });
+
+  it("converts distance values and unit for imperial riders", () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+
+    expect(formatChallengeProgress(100, 200, "total_km")).toBe(
+      "62.1 / 124.3 mi",
     );
+    expect(metricUnit("total_km")).toBe("mi");
+    expect(formatChallengeMetric(200, "total_km")).toBe("124.3 mi");
   });
 
   it("uses the raw metric key as the unit for unknown metrics — matching metricUnit's fallback", () => {
