@@ -14,7 +14,7 @@ import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
-import { useAuthStore } from "@/stores";
+import { useAuthStore, usePreferencesStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { detectDeviceLocale, detectDeviceTimeZone } from "@/i18n/deviceLocale";
 import { FormatProvider } from "@/format/FormatProvider";
@@ -30,12 +30,12 @@ export default function App() {
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
+  const units = usePreferencesStore((state) => state.distanceUnit);
   const deviceLocale = useMemo(detectDeviceLocale, []);
   const deviceTimeZone = useMemo(detectDeviceTimeZone, []);
   const locale = user?.language ?? deviceLocale;
   const formatLocale = user?.preferences?.format_locale ?? deviceLocale;
   const timeZone = user?.preferences?.timezone ?? deviceTimeZone;
-  const units = user?.preferences?.units ?? "metric";
 
   useEffect(() => {
     void bootstrapAuth({

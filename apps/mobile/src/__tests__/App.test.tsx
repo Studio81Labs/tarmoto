@@ -2,7 +2,8 @@ import React from "react";
 import { act, render } from "@testing-library/react-native";
 import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
-import { useAuthStore } from "@/stores";
+import { useAuthStore, usePreferencesStore } from "@/stores";
+import { getFormatters } from "@/format";
 import type { User } from "@/types";
 
 let mockProviderLocale: string | null | undefined;
@@ -73,6 +74,7 @@ describe("App auth locale hydration", () => {
       isAuthenticated: false,
       isLoading: true,
     });
+    usePreferencesStore.getState().setDistanceUnit("metric");
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {
@@ -88,5 +90,17 @@ describe("App auth locale hydration", () => {
 
     expect(startCommuteHazardMonitor).toHaveBeenCalledTimes(1);
     expect(mockMonitorLocales).toEqual(["cs"]);
+  });
+
+  it("updates formatter-backed UI when the local distance setting changes", async () => {
+    await render(<App />);
+
+    expect(getFormatters().distanceKm(10)).toBe("10 km");
+
+    await act(() => {
+      usePreferencesStore.getState().setDistanceUnit("imperial");
+    });
+
+    expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
   });
 });
