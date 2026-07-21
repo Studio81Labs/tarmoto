@@ -10,6 +10,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { WeatherAlertBanner } from "../WeatherAlertBanner";
 import type { WeatherAlert } from "@/types";
+import { setActiveFormatContext } from "@/format";
 
 jest.mock("@/components/Icon", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -36,6 +37,10 @@ function buildAlert(overrides: Partial<WeatherAlert>): WeatherAlert {
 }
 
 describe("WeatherAlertBanner", () => {
+  beforeEach(() => {
+    setActiveFormatContext({ locale: "en", timeZone: "UTC", units: "metric" });
+  });
+
   it("renders nothing when there are no alerts", async () => {
     const { queryByRole } = await render(
       <WeatherAlertBanner
@@ -132,5 +137,36 @@ describe("WeatherAlertBanner", () => {
     ).toBeTruthy();
     // Distance is formatted in km when >= 1.
     expect(screen.getByText(/12 km from start/)).toBeTruthy();
+  });
+
+  it("uses imperial units consistently in alert copy and distance", async () => {
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "imperial",
+    });
+    const wind = buildAlert({
+      id: "wind-imperial",
+      kind: "wind",
+      severity: "warning",
+      wind_kmh: 75,
+      distance_km_from_start: 1,
+    });
+
+    await render(
+      <WeatherAlertBanner
+        alerts={[wind]}
+        detailOpen
+        onOpenDetail={jest.fn()}
+        onCloseDetail={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getAllByText(
+        "High wind (46.6 mph) near 0.00,0.00. Brace for sudden crosswinds.",
+      ),
+    ).toHaveLength(2);
+    expect(screen.getByText("0.6 mi from start")).toBeTruthy();
   });
 });

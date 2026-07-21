@@ -20,6 +20,7 @@ import RNShare from "react-native-share";
 
 const mockSetUser = jest.fn();
 const mockSetDistanceUnit = jest.fn();
+let mockVoiceNavEnabled = true;
 
 jest.mock(
   "react-native/Libraries/Components/Touchable/TouchableOpacity",
@@ -115,7 +116,7 @@ jest.mock("@/stores", () => ({
       setFuelRangeKm: jest.fn(),
       weatherAlertsEnabled: true,
       setWeatherAlertsEnabled: jest.fn(),
-      voiceNavEnabled: true,
+      voiceNavEnabled: mockVoiceNavEnabled,
       setVoiceNavEnabled: jest.fn(),
       voiceNavVolume: 1,
       setVoiceNavVolume: jest.fn(),
@@ -133,9 +134,20 @@ import { api } from "@/services/api";
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockVoiceNavEnabled = true;
 });
 
 describe("SettingsScreen bulk export", () => {
+  it("keeps display-unit controls visible when voice navigation is disabled", async () => {
+    mockVoiceNavEnabled = false;
+
+    await render(<SettingsScreen />);
+
+    expect(screen.getByText("Distance units")).toBeTruthy();
+    expect(screen.getByLabelText("Imperial")).toBeTruthy();
+    expect(screen.queryByText("Spoken language")).toBeNull();
+  });
+
   it("persists a distance-unit change to the authenticated profile", async () => {
     const updatedUser = { id: "u1", preferences: { units: "imperial" } };
     jest.mocked(api.updateProfile).mockResolvedValueOnce(updatedUser as never);

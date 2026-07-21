@@ -551,6 +551,7 @@ describe("CommuteScreen", () => {
     await render(<CommuteScreen />);
 
     expect(screen.getByText("9.1 mi · 28 min")).toBeTruthy();
+    expect(screen.getByText("57.2°F · Clear")).toBeTruthy();
     expect(screen.getByText("Road: Dry · Wind 5 mph")).toBeTruthy();
     expect(
       screen.getByLabelText(

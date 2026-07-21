@@ -386,8 +386,8 @@ function WeatherCard({ weather }: { weather: Weather }) {
         <Icon name={weatherIcon(weather.condition)} size={32} color={t.fg} />
         <View style={styles.weatherText}>
           <Text style={styles.weatherTemp}>
-            {translate("{temperature}°C · {condition}", {
-              temperature: Math.round(weather.temperature_c),
+            {translate("{temperature} · {condition}", {
+              temperature: getFormatters().temperature(weather.temperature_c),
               condition: translate(WEATHER_CONDITION_LABELS[weather.condition]),
             })}
           </Text>

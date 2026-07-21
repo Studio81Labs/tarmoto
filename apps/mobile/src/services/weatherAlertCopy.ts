@@ -1,5 +1,6 @@
 import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 import type { WeatherAlert, WeatherAlertKind } from "@/types";
+import { getFormatters } from "@/format";
 
 export interface WeatherAlertCopy {
   title: string;
@@ -21,11 +22,11 @@ const MESSAGE_KEYS = {
 } as const satisfies Record<WeatherAlertKind, EnglishMessageKey>;
 
 const WIND_SPEED_MESSAGE_KEY =
-  "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds." satisfies EnglishMessageKey;
+  "High wind ({speed}) near {location}. Brace for sudden crosswinds." satisfies EnglishMessageKey;
 
 const SURFACE_CONDITIONS_MESSAGE_KEYS = {
-  ice: "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
-  wet: "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
+  ice: "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.",
+  wet: "Wet roads near {location}: {temperature} · Wind {wind}. Allow extra braking distance.",
 } as const satisfies Record<"ice" | "wet", EnglishMessageKey>;
 
 function isWeatherAlertKind(kind: string): kind is WeatherAlertKind {
@@ -51,16 +52,20 @@ export function localizeWeatherAlert(
     (kind === "ice" || kind === "wet") &&
     Number.isFinite(alert.temperature_c) &&
     Number.isFinite(alert.wind_kmh);
+  const format = getFormatters();
   return {
     title: t(TITLE_KEYS[kind]),
     message: hasSurfaceConditions
       ? t(SURFACE_CONDITIONS_MESSAGE_KEYS[kind], {
           location,
-          temperature: alert.temperature_c ?? 0,
-          wind: alert.wind_kmh ?? 0,
+          temperature: format.temperature(alert.temperature_c ?? 0),
+          wind: format.speed(alert.wind_kmh ?? 0),
         })
       : kind === "wind" && Number.isFinite(alert.wind_kmh)
-        ? t(WIND_SPEED_MESSAGE_KEY, { location, speed: alert.wind_kmh ?? 0 })
+        ? t(WIND_SPEED_MESSAGE_KEY, {
+            location,
+            speed: format.speed(alert.wind_kmh ?? 0),
+          })
         : t(MESSAGE_KEYS[kind], { location }),
   };
 }

@@ -110,7 +110,7 @@ export const en = {
   "{severity} · {time}": "{severity} · {time}",
   "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}":
     "{severity} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
-  "{temperature}°C · {condition}": "{temperature}°C · {condition}",
+  "{temperature} · {condition}": "{temperature} · {condition}",
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
   "{title}, {count, plural, one {# day} other {# days}}, {status}":
@@ -467,8 +467,8 @@ export const en = {
   "Hide {label} overlay": "Hide {label} overlay",
   High: "High",
   "High wind ahead": "High wind ahead",
-  "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.":
-    "High wind ({speed} km/h) near {location}. Brace for sudden crosswinds.",
+  "High wind ({speed}) near {location}. Brace for sudden crosswinds.":
+    "High wind ({speed}) near {location}. Brace for sudden crosswinds.",
   "High wind near {location}. Brace for sudden crosswinds.":
     "High wind near {location}. Brace for sudden crosswinds.",
   Highlights: "Highlights",
@@ -487,8 +487,8 @@ export const en = {
   "Icy roads ahead": "Icy roads ahead",
   "Icy roads near {location}. Reduce speed and avoid sudden inputs.":
     "Icy roads near {location}. Reduce speed and avoid sudden inputs.",
-  "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.":
-    "Icy roads near {location}: {temperature}°C · Wind {wind} km/h. Reduce speed and avoid sudden inputs.",
+  "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.":
+    "Icy roads near {location}: {temperature} · Wind {wind}. Reduce speed and avoid sudden inputs.",
   Imperial: "Imperial",
   "Import failed": "Import failed",
   "Import GPX or KML file": "Import GPX or KML file",
@@ -1051,8 +1051,8 @@ export const en = {
   "Wet roads ahead": "Wet roads ahead",
   "Wet roads near {location}. Allow extra braking distance.":
     "Wet roads near {location}. Allow extra braking distance.",
-  "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.":
-    "Wet roads near {location}: {temperature}°C · Wind {wind} km/h. Allow extra braking distance.",
+  "Wet roads near {location}: {temperature} · Wind {wind}. Allow extra braking distance.":
+    "Wet roads near {location}: {temperature} · Wind {wind}. Allow extra braking distance.",
   "What's the surface like? Any switchbacks worth flagging?":
     "What's the surface like? Any switchbacks worth flagging?",
   "When off, this contact stays in your list but is not notified.":

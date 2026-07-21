@@ -305,8 +305,8 @@ function BulkExportCard() {
 // — a slider would need an extra native dep), and the verbose toggle
 // flips the rider-friendly "in 300 m, turn left onto Hlavní" against
 // the concise "turn left now" phrasing for riders who prefer minimal
-// chatter. The distance unit pref is a sibling because it shapes the
-// spoken phrasing too (meters vs yards).
+// chatter. Display units stay visible even when voice is disabled because
+// they also control every formatter-backed screen and vehicle surface.
 function VoiceNavigationCard() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -421,29 +421,25 @@ function VoiceNavigationCard() {
               ariaLabel={translate("Voice navigation language")}
             />
           </View>
-
-          <View style={styles.toggleBody}>
-            <Text style={styles.toggleLabel}>
-              {translate("Distance units")}
-            </Text>
-            <SegmentedRow
-              options={DISTANCE_UNIT_OPTIONS.map((option) => ({
-                ...option,
-                label: translate(option.label),
-              }))}
-              value={distanceUnit}
-              onChange={(v) => void handleDistanceUnitChange(v)}
-              ariaLabel={translate("Distance units")}
-            />
-            {unitPending ? (
-              <ActivityIndicator color={t.accent} size="small" />
-            ) : null}
-            {unitError ? (
-              <Text style={styles.errorText}>{unitError}</Text>
-            ) : null}
-          </View>
         </>
       ) : null}
+
+      <View style={styles.toggleBody}>
+        <Text style={styles.toggleLabel}>{translate("Distance units")}</Text>
+        <SegmentedRow
+          options={DISTANCE_UNIT_OPTIONS.map((option) => ({
+            ...option,
+            label: translate(option.label),
+          }))}
+          value={distanceUnit}
+          onChange={(v) => void handleDistanceUnitChange(v)}
+          ariaLabel={translate("Distance units")}
+        />
+        {unitPending ? (
+          <ActivityIndicator color={t.accent} size="small" />
+        ) : null}
+        {unitError ? <Text style={styles.errorText}>{unitError}</Text> : null}
+      </View>
     </Card>
   );
 }
