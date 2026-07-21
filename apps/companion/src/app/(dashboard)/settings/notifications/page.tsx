@@ -173,7 +173,7 @@ export default function NotificationsPage() {
       setSaveState({ kind: "saved" });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Could not save preferences";
+        err instanceof Error ? err.message : t("Could not save preferences");
       setSaveState({ kind: "error", message });
     }
   }

@@ -219,4 +219,16 @@ export const settings = {
   "{label} email": "{label} email",
   "{label} push": "{label} push",
   "{name}'s profile photo": "{name}'s profile photo",
+  "Keep {plan}": "Keep {plan}",
+  "You’re currently on Free, so there is nothing to cancel.":
+    "You’re currently on Free, so there is nothing to cancel.",
+  "{renewal}. If you need to scale back, we will show a lower-friction option before you leave.":
+    "{renewal}. If you need to scale back, we will show a lower-friction option before you leave.",
+  "Add a bike": "Add a bike",
+  "Edit bike": "Edit bike",
+  "Could not save bike": "Could not save bike",
+  "Could not start export": "Could not start export",
+  "Could not delete account": "Could not delete account",
+  "Could not save preferences": "Could not save preferences",
+  "Could not save settings": "Could not save settings",
 } as const;

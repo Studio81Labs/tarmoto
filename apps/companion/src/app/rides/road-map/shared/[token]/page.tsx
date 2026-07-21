@@ -2,6 +2,7 @@ import type { SupportedLocale } from "@/i18n";
 import { getServerLocale, readLocale, t } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
+
 import { notFound } from "next/navigation";
 import { ArrowUpRight, Eye, MapPin, Route as RouteIcon } from "lucide-react";
 import { MetricTile, Mono, Stamp } from "@tarmoto/ui";
@@ -15,6 +16,9 @@ import {
 } from "@/lib/road-map-layer";
 import { TIME_PERIOD_LABELS } from "@/lib/exploration";
 import { SharedMap } from "./SharedMap.client";
+
+/** Product wordmark; names are intentionally locale-independent. */
+const WORDMARK = "TARMOTO";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +71,7 @@ export default async function SharedRoadMapPage({
             </span>
             <span className="flex min-w-0 items-center gap-2">
               <span className="text-[14px] font-extrabold tracking-[-0.2px]">
-                TARMOTO
+                {WORDMARK}
               </span>
               <span className="text-fg-mute">/</span>
               <Mono className="truncate text-[11px] text-fg-dim">

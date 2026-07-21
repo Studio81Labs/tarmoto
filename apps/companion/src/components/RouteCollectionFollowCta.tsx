@@ -174,13 +174,13 @@ export function RouteCollectionFollowCta({
       const message =
         err instanceof ApiError
           ? err.status === 404
-            ? "This collection is no longer available."
+            ? t("This collection is no longer available.")
             : err.status === 400
-              ? "You can't follow your own collection."
+              ? t("You can't follow your own collection.")
               : err.message
           : err instanceof Error
             ? err.message
-            : "Something went wrong.";
+            : t("Something went wrong.");
       setError(message);
     } finally {
       setPending(false);
@@ -193,8 +193,12 @@ export function RouteCollectionFollowCta({
       </h2>
       <p className="text-sm text-fg-dim mb-4">
         {isFollowing
-          ? "This collection appears under Followed in your dashboard. Unfollow any time to remove it."
-          : "Follow to add this collection to your library and revisit it from your dashboard."}
+          ? t(
+              "This collection appears under Followed in your dashboard. Unfollow any time to remove it.",
+            )
+          : t(
+              "Follow to add this collection to your library and revisit it from your dashboard.",
+            )}
       </p>
       <Button
         variant={isFollowing ? "secondary" : "accent"}

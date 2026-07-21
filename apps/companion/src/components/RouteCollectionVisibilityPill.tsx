@@ -1,4 +1,5 @@
 import { Globe, Link2, Lock } from "lucide-react";
+import { t } from "@/i18n";
 import type { RouteCollectionVisibility } from "@/lib/api";
 
 /**
@@ -16,10 +17,10 @@ export function RouteCollectionVisibilityPill({
 }) {
   const label =
     visibility === "public"
-      ? "Public"
+      ? t("Public")
       : visibility === "unlisted"
-        ? "Unlisted"
-        : "Private";
+        ? t("Unlisted")
+        : t("Private");
   const Icon =
     visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
   const tone =

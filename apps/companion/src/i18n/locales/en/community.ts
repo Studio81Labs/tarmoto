@@ -138,4 +138,33 @@ export const community = {
   "{count} of {total}": "{count} of {total}",
   "{count} selected": "{count} selected",
   "{title} \u2014 Tarmoto collection": "{title} \u2014 Tarmoto collection",
+  "Could not load rider profile": "Could not load rider profile",
+  "Clear search": "Clear search",
+  'Delete "{title}"? The routes inside won’t be affected.':
+    'Delete "{title}"? The routes inside won’t be affected.',
+  "Edit collection": "Edit collection",
+  'Stop following "{title}"?': 'Stop following "{title}"?',
+  "Try clearing the search.": "Try clearing the search.",
+  Unfollow: "Unfollow",
+  "of {total}": "of {total}",
+  "Follow to add this collection to your library and revisit it from your dashboard.":
+    "Follow to add this collection to your library and revisit it from your dashboard.",
+  "This collection appears under Followed in your dashboard. Unfollow any time to remove it.":
+    "This collection appears under Followed in your dashboard. Unfollow any time to remove it.",
+  "Could not update follow": "Could not update follow",
+  "Failed to add routes": "Failed to add routes",
+  "Failed to reorder routes": "Failed to reorder routes",
+  "Failed to remove route": "Failed to remove route",
+  "Failed to update visibility": "Failed to update visibility",
+  "Failed to save collection": "Failed to save collection",
+  "Could not load rides.": "Could not load rides.",
+  "Could not load reviews.": "Could not load reviews.",
+  "Could not save your review.": "Could not save your review.",
+  "Could not delete your review.": "Could not delete your review.",
+  "Could not load shared rides.": "Could not load shared rides.",
+  "This collection is no longer available.":
+    "This collection is no longer available.",
+  "You can't follow your own collection.":
+    "You can't follow your own collection.",
+  "Something went wrong.": "Something went wrong.",
 } as const;

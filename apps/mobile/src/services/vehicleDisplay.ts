@@ -17,6 +17,7 @@ import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
 import { t as translate, type EnglishMessageKey, type Translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 export type VehicleNavigationSnapshot = VehicleDisplaySnapshot;
 
@@ -205,12 +206,13 @@ export interface NavigationPaneItem {
  * discontinuity is jarring at a glance from the bike.
  */
 export function formatNavDistanceMeters(meters: number): string {
-  if (!Number.isFinite(meters) || meters <= 0) return "0 m";
-  if (meters < 1000) {
-    const rounded = Math.round(meters / 10) * 10;
-    if (rounded < 1000) return `${rounded} m`;
+  if (!Number.isFinite(meters) || meters <= 0) {
+    return getFormatters().distanceM(0);
   }
-  return `${(meters / 1000).toFixed(1)} km`;
+  const rounded = Math.round(meters / 10) * 10;
+  return rounded >= 1000
+    ? getFormatters().distanceKm(rounded / 1000)
+    : getFormatters().distanceM(rounded);
 }
 
 /**

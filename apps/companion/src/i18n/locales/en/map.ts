@@ -96,4 +96,5 @@ export const map = {
   "{count} in {scope}": "{count} in {scope}",
   "{count} roads": "{count} roads",
   "{date} onward": "{date} onward",
+  "Couldn't load zone details.": "Couldn't load zone details.",
 } as const;

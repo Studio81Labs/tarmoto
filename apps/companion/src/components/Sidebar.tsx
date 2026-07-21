@@ -20,6 +20,7 @@ import {
   Users,
   WifiOff,
 } from "lucide-react";
+
 import { useEffect, useState, type ReactNode } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
 import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
@@ -31,6 +32,9 @@ import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
 import { t, type EnglishMessageKey } from "@/i18n";
+
+/** Product wordmark; names are intentionally locale-independent. */
+const WORDMARK = "TARMOTO";
 
 /**
  * Tarmoto sidebar — single source of navigation chrome. Mirrors the
@@ -205,7 +209,7 @@ export function Sidebar() {
           </span>
           {!collapsed && (
             <span className="text-[15px] font-extrabold tracking-tight text-cream">
-              TARMOTO
+              {WORDMARK}
             </span>
           )}
         </Link>

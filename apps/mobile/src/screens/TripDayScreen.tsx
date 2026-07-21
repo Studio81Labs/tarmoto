@@ -65,6 +65,7 @@ import {
   type FuelStationAnchor,
 } from "./TripScreens.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
@@ -621,7 +622,7 @@ function AccommodationRow({ item }: { item: Accommodation }) {
       accessibilityRole="button"
       accessibilityLabel={translate("{value0}, {value1} kilometres away", {
         value0: label,
-        value1: item.distance_km.toFixed(1),
+        value1: getFormatters().decimal(item.distance_km, 1),
       })}
     >
       <View style={styles.accommodationIconWrap}>
@@ -754,7 +755,7 @@ function PoiRow({ item }: { item: Poi }) {
       accessibilityRole="button"
       accessibilityLabel={translate("{value0}, {value1} kilometres away", {
         value0: label,
-        value1: item.distance_km.toFixed(1),
+        value1: getFormatters().decimal(item.distance_km, 1),
       })}
     >
       <View style={styles.accommodationIconWrap}>

@@ -1,6 +1,7 @@
 import { readLocale, t } from "@/i18n/server";
 import Link from "next/link";
 import type { Metadata } from "next";
+
 import { notFound } from "next/navigation";
 import {
   ArrowUpRight,
@@ -19,6 +20,9 @@ import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta"
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { getServerFormatters } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
+
+/** Product wordmark; names are intentionally locale-independent. */
+const WORDMARK = "TARMOTO";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +108,7 @@ export default async function SharedCollectionPage({
             </span>
             <span className="flex min-w-0 items-center gap-2">
               <span className="text-[14px] font-extrabold tracking-[-0.2px]">
-                TARMOTO
+                {WORDMARK}
               </span>
               <span className="text-fg-mute">/</span>
               <Mono className="truncate text-[11px] text-fg-dim">

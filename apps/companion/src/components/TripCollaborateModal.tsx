@@ -218,7 +218,7 @@ export function TripCollaborateModal({
       await navigator.clipboard.writeText(url);
       setCopied(true);
     } catch {
-      setError("Copy failed — select the URL manually.");
+      setError(t("Copy failed — select the URL manually."));
     }
   }, [share]);
   // "Revoke & regenerate": invalidate the current group link and mint a
@@ -603,8 +603,10 @@ function PeopleTab({
       <PromoteTripCTA
         trip={trip}
         onPromoted={onPromoted}
-        headline="Inviting people needs a saved trip"
-        body="Save this trip to the server to invite riders by email and manage who can edit or view."
+        headline={t("Inviting people needs a saved trip")}
+        body={t(
+          "Save this trip to the server to invite riders by email and manage who can edit or view.",
+        )}
       />
     );
   }
@@ -1019,14 +1021,16 @@ function SuggestionsTab({
       <PromoteTripCTA
         trip={trip}
         onPromoted={onPromoted}
-        headline="Collaborative suggestions need a saved trip"
-        body="Save this trip to the server to invite riders in your group to suggest alternative segments and vote on them."
+        headline={t("Collaborative suggestions need a saved trip")}
+        body={t(
+          "Save this trip to the server to invite riders in your group to suggest alternative segments and vote on them.",
+        )}
       />
     );
   }
   const handleCreate = async () => {
     if (!title.trim()) {
-      setError("Give your suggestion a short title.");
+      setError(t("Give your suggestion a short title."));
       return;
     }
     // A text suggestion carries no map location — it lives in the modal list
@@ -1516,8 +1520,10 @@ function ActivityTab({
       <PromoteTripCTA
         trip={trip}
         onPromoted={onPromoted}
-        headline="Activity log needs a saved trip"
-        body="Save this trip to the server to record who joined, voted, and resolved suggestions."
+        headline={t("Activity log needs a saved trip")}
+        body={t(
+          "Save this trip to the server to record who joined, voted, and resolved suggestions.",
+        )}
       />
     );
   }
@@ -1544,11 +1550,11 @@ function ActivityTab({
         ({ bucket, rows }) => (
           <section key={bucket} className="mt-3.5 first:mt-0">
             <div className="mb-1 font-mono text-[9.5px] uppercase tracking-[0.8px] text-fg-mute">
-              {DAY_BUCKET_LABELS[bucket]}
+              {t(DAY_BUCKET_LABELS[bucket])}
             </div>
             <ol>
               {rows.map((entry) => {
-                const actor = entry.actor_name ?? "System";
+                const actor = entry.actor_name ?? t("System");
                 return (
                   <li
                     key={entry.id}
@@ -1708,59 +1714,72 @@ function ErrorAlert({
 function describeActivityAction(entry: TripActivityEntry): string {
   switch (entry.action) {
     case "member_joined":
-      return "joined the trip";
+      return t("joined the trip");
     case "member_left":
-      return "left the trip";
+      return t("left the trip");
     case "member_invited":
       return entry.payload.already_member
-        ? "invited a rider who is already a member"
-        : "invited a rider by email";
+        ? t("invited a rider who is already a member")
+        : t("invited a rider by email");
     case "trip_updated":
-      return "updated trip details";
-    case "trip_generated": {
-      const option = entry.payload.option;
-      const label =
-        option === "scenic"
-          ? "Scenic sweep"
-          : option === "fastest"
-            ? "Fastest line"
-            : "Best fit";
-      return `generated a ${label} itinerary`;
-    }
+      return t("updated trip details");
+    case "trip_generated":
+      return entry.payload.option === "scenic"
+        ? t("generated the Scenic sweep itinerary")
+        : entry.payload.option === "fastest"
+          ? t("generated the Fastest line itinerary")
+          : t("generated the Best fit itinerary");
     case "suggestion_created":
-      return `proposed "${String(entry.payload.title ?? "a suggestion")}"`;
+      return entry.payload.title
+        ? t('proposed "{title}"', { title: String(entry.payload.title) })
+        : t("proposed a suggestion");
     case "suggestion_deleted":
-      return `removed "${String(entry.payload.title ?? "a suggestion")}"`;
+      return entry.payload.title
+        ? t('removed "{title}"', { title: String(entry.payload.title) })
+        : t("removed a suggestion");
     case "suggestion_voted":
       // Older rows predate the title in the vote payload — fall back to
       // the bare direction for those.
       return entry.payload.title
-        ? `voted on "${String(entry.payload.title)}"`
-        : `voted ${entry.payload.vote === "up" ? "up" : "down"}`;
+        ? t('voted on "{title}"', { title: String(entry.payload.title) })
+        : entry.payload.vote === "up"
+          ? t("voted up")
+          : t("voted down");
     case "suggestion_vote_removed":
       return entry.payload.title
-        ? `removed their vote on "${String(entry.payload.title)}"`
-        : "removed their vote";
+        ? t('removed their vote on "{title}"', {
+            title: String(entry.payload.title),
+          })
+        : t("removed their vote");
     case "suggestion_accepted":
-      return `accepted "${String(entry.payload.title ?? "a suggestion")}"`;
+      return entry.payload.title
+        ? t('accepted "{title}"', { title: String(entry.payload.title) })
+        : t("accepted a suggestion");
     case "suggestion_rejected":
-      return `rejected "${String(entry.payload.title ?? "a suggestion")}"`;
+      return entry.payload.title
+        ? t('rejected "{title}"', { title: String(entry.payload.title) })
+        : t("rejected a suggestion");
     case "suggestion_reopened":
-      return `reopened "${String(entry.payload.title ?? "a suggestion")}"`;
+      return entry.payload.title
+        ? t('reopened "{title}"', { title: String(entry.payload.title) })
+        : t("reopened a suggestion");
     case "member_removed":
-      return "removed a rider from the trip";
+      return t("removed a rider from the trip");
     case "member_role_changed":
-      return `changed a rider's role to ${String(entry.payload.role ?? "viewer")}`;
+      return entry.payload.role === "editor"
+        ? t("changed a rider's role to editor")
+        : t("changed a rider's role to viewer");
     default:
       // A backend release can introduce a new action before the
-      // companion rolls out; fall back to a readable transliteration
-      // of the action key instead of letting the timeline render
-      // undefined/empty for the row.
-      return String(entry.action).replace(/_/g, " ");
+      // companion rolls out; keep the sentence structure translatable while
+      // preserving a readable form of the unknown action for the rider.
+      return t("performed {action}", {
+        action: String(entry.action).replace(/_/g, " "),
+      });
   }
 }
 type DayBucket = "today" | "yesterday" | "earlier";
-const DAY_BUCKET_LABELS: Record<DayBucket, string> = {
+const DAY_BUCKET_LABELS: Record<DayBucket, EnglishMessageKey> = {
   today: "Today",
   yesterday: "Yesterday",
   earlier: "Earlier",
@@ -1794,7 +1813,7 @@ function groupActivityByDay(
 function describeError(err: unknown): string {
   if (err instanceof ApiError) return err.message ?? `Failed (${err.status})`;
   if (err instanceof Error) return err.message;
-  return "Unknown error";
+  return t("Unknown error");
 }
 function buildInviteUrl(token: string): string {
   if (typeof window === "undefined") return `/trips/shared/${token}`;

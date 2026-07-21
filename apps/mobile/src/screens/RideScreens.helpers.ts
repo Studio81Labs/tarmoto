@@ -17,6 +17,7 @@ import type { LineLayerSpecification } from "@maplibre/maplibre-react-native";
 
 import type { IconName } from "@/components/Icon";
 import { translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
 import { QUALITY_COLORS, UNSCORED_COLOR } from "@/theme/brand";
@@ -27,7 +28,7 @@ type LineColorExpression = Extract<
 >;
 
 /**
- * Format an ISO timestamp as "Apr 17, 2026 · 14:32" for ride-history rows.
+ * Format an ISO timestamp using the rider/device locale and timezone.
  *
  * Returns an empty string for unparseable input so callers don't render
  * "Invalid Date" — the row simply collapses the date line. A rider sees
@@ -38,13 +39,7 @@ export function formatRideDate(iso: string | undefined | null): string {
   if (!iso) return "";
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return "";
-  const date = new Date(parsed);
-  const month = date.toLocaleString("en-US", { month: "short" });
-  const day = date.getDate();
-  const year = date.getFullYear();
-  const hh = date.getHours().toString().padStart(2, "0");
-  const mm = date.getMinutes().toString().padStart(2, "0");
-  return `${month} ${day}, ${year} · ${hh}:${mm}`;
+  return getFormatters().dateTime(parsed);
 }
 
 /**
@@ -54,15 +49,15 @@ export function formatRideDate(iso: string | undefined | null): string {
  * to "0 km" so we never render NaN.
  */
 export function formatDistanceKm(km: number | null | undefined): string {
-  if (km == null || !Number.isFinite(km) || km <= 0) return "0 km";
-  if (km < 100) return `${km.toFixed(1)} km`;
-  return `${Math.round(km)} km`;
+  const value = km == null || !Number.isFinite(km) || km <= 0 ? 0 : km;
+  return getFormatters().distanceKm(value >= 100 ? Math.round(value) : value);
 }
 
 /** Speed in km/h, integer-rounded. Backend already serves metric. */
 export function formatSpeedKmh(kmh: number | null | undefined): string {
-  if (kmh == null || !Number.isFinite(kmh) || kmh < 0) return "0 km/h";
-  return `${Math.round(kmh)} km/h`;
+  return getFormatters().speed(
+    kmh == null || !Number.isFinite(kmh) || kmh < 0 ? 0 : kmh,
+  );
 }
 
 /**
@@ -73,13 +68,9 @@ export function formatSpeedKmh(kmh: number | null | undefined): string {
 export function formatDurationMinutes(
   minutes: number | null | undefined,
 ): string {
-  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return "0m";
-  const total = Math.round(minutes);
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
+  return getFormatters().durationCompact(
+    minutes == null || !Number.isFinite(minutes) || minutes <= 0 ? 0 : minutes,
+  );
 }
 
 /** Elevation gain/loss in meters, prefixed with sign so the row reads "+125 m". */
@@ -87,28 +78,31 @@ export function formatElevation(
   meters: number | null | undefined,
   sign: "+" | "-",
 ): string {
-  if (meters == null || !Number.isFinite(meters) || meters <= 0) {
-    return `${sign}0 m`;
-  }
-  return `${sign}${Math.round(meters)} m`;
+  const value =
+    meters == null || !Number.isFinite(meters) || meters <= 0 ? 0 : meters;
+  return `${sign}${getFormatters().elevation(value)}`;
 }
 
 /** Lean angle in whole degrees. */
 export function formatLeanAngle(deg: number | null | undefined): string {
-  if (deg == null || !Number.isFinite(deg) || deg <= 0) return "0°";
-  return `${Math.round(deg)}°`;
+  const value = deg == null || !Number.isFinite(deg) || deg <= 0 ? 0 : deg;
+  return `${getFormatters().integer(value)}°`;
 }
 
 /** Fuel estimate. Liters with one decimal — fuel pumps round to 0.01 L. */
 export function formatFuelLiters(liters: number | null | undefined): string {
-  if (liters == null || !Number.isFinite(liters) || liters <= 0) return "0 L";
-  return `${liters.toFixed(1)} L`;
+  const value =
+    liters == null || !Number.isFinite(liters) || liters <= 0 ? 0 : liters;
+  return value === 0
+    ? `${getFormatters().integer(0)} L`
+    : `${getFormatters().decimal(value, 1)} L`;
 }
 
 /** Curve count is integer. */
 export function formatCurveCount(count: number | null | undefined): string {
-  if (count == null || !Number.isFinite(count) || count <= 0) return "0";
-  return `${Math.round(count)}`;
+  return getFormatters().integer(
+    count == null || !Number.isFinite(count) || count <= 0 ? 0 : count,
+  );
 }
 
 /**

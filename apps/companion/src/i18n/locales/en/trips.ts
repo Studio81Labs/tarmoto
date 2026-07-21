@@ -261,4 +261,78 @@ export const trips = {
     "\u2248{distance} \u2014 already a full day's ride, left as routed.",
   "\u2248{distance} \u2014 limited fun roads nearby.":
     "\u2248{distance} \u2014 limited fun roads nearby.",
+  "Accept this shared trip to open its preview, submit suggestions, and vote with the group.":
+    "Accept this shared trip to open its preview, submit suggestions, and vote with the group.",
+  "Create an account": "Create an account",
+  "Join the planning": "Join the planning",
+  "Join trip": "Join trip",
+  'Sign in or create an account to join "{title}" and open it in your trips.':
+    'Sign in or create an account to join "{title}" and open it in your trips.',
+  "Sign in to collaborate": "Sign in to collaborate",
+  "This public preview is read-only. Ask the trip owner for a fresh group collaboration link if you need to suggest route changes.":
+    "This public preview is read-only. Ask the trip owner for a fresh group collaboration link if you need to suggest route changes.",
+  "Activity log needs a saved trip": "Activity log needs a saved trip",
+  "Collaborative suggestions need a saved trip":
+    "Collaborative suggestions need a saved trip",
+  "Copy failed — select the URL manually.":
+    "Copy failed — select the URL manually.",
+  Earlier: "Earlier",
+  "Give your suggestion a short title.": "Give your suggestion a short title.",
+  "Inviting people needs a saved trip": "Inviting people needs a saved trip",
+  "Save this trip to the server to invite riders by email and manage who can edit or view.":
+    "Save this trip to the server to invite riders by email and manage who can edit or view.",
+  "Save this trip to the server to invite riders in your group to suggest alternative segments and vote on them.":
+    "Save this trip to the server to invite riders in your group to suggest alternative segments and vote on them.",
+  "Save this trip to the server to record who joined, voted, and resolved suggestions.":
+    "Save this trip to the server to record who joined, voted, and resolved suggestions.",
+  System: "System",
+  Today: "Today",
+  "Unknown error": "Unknown error",
+  Yesterday: "Yesterday",
+  "accepted a suggestion": "accepted a suggestion",
+  'accepted "{title}"': 'accepted "{title}"',
+  "changed a rider's role to editor": "changed a rider's role to editor",
+  "changed a rider's role to viewer": "changed a rider's role to viewer",
+  "generated the Best fit itinerary": "generated the Best fit itinerary",
+  "generated the Fastest line itinerary":
+    "generated the Fastest line itinerary",
+  "generated the Scenic sweep itinerary":
+    "generated the Scenic sweep itinerary",
+  "invited a rider by email": "invited a rider by email",
+  "invited a rider who is already a member":
+    "invited a rider who is already a member",
+  "joined the trip": "joined the trip",
+  "left the trip": "left the trip",
+  "performed {action}": "performed {action}",
+  "proposed a suggestion": "proposed a suggestion",
+  'proposed "{title}"': 'proposed "{title}"',
+  "rejected a suggestion": "rejected a suggestion",
+  'rejected "{title}"': 'rejected "{title}"',
+  "removed a suggestion": "removed a suggestion",
+  'removed "{title}"': 'removed "{title}"',
+  "removed a rider from the trip": "removed a rider from the trip",
+  "removed their vote": "removed their vote",
+  'removed their vote on "{title}"': 'removed their vote on "{title}"',
+  "reopened a suggestion": "reopened a suggestion",
+  'reopened "{title}"': 'reopened "{title}"',
+  "updated trip details": "updated trip details",
+  "voted down": "voted down",
+  "voted up": "voted up",
+  'voted on "{title}"': 'voted on "{title}"',
+  "Could not read the file. Try again or pick a different file.":
+    "Could not read the file. Try again or pick a different file.",
+  "Couldn't load this trip. Check your connection.":
+    "Couldn't load this trip. Check your connection.",
+  CREATED: "CREATED",
+  "Rename folder": "Rename folder",
+  UPDATED: "UPDATED",
+  "{count, plural, one {# DAY} other {# DAYS}}":
+    "{count, plural, one {# DAY} other {# DAYS}}",
+  "You're no longer a member of this trip.":
+    "You're no longer a member of this trip.",
+  "Couldn't leave the trip. Try again.": "Couldn't leave the trip. Try again.",
+  "This trip no longer exists.": "This trip no longer exists.",
+  "Couldn't delete the trip. Try again.":
+    "Couldn't delete the trip. Try again.",
+  "Failed to load suggestions": "Failed to load suggestions",
 } as const;

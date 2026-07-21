@@ -1,5 +1,8 @@
 import { t } from "@/i18n";
 import Link from "next/link";
+
+/** Product wordmark; names are intentionally locale-independent. */
+const WORDMARK = "TARMOTO";
 import { TarmotoMark } from "@tarmoto/ui";
 
 export function AppLogo({ inverted = false }: { inverted?: boolean }) {
@@ -17,7 +20,7 @@ export function AppLogo({ inverted = false }: { inverted?: boolean }) {
           inverted ? "text-cream" : "text-ink"
         }`}
       >
-        TARMOTO
+        {WORDMARK}
       </span>
     </Link>
   );

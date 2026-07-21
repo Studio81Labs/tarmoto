@@ -190,10 +190,10 @@ describe("formatDistanceKm", () => {
     expect(formatDistanceKm(12.456)).toBe("12.5 km");
   });
 
-  it("clamps zero / negative / non-finite to 0.0", () => {
-    expect(formatDistanceKm(0)).toBe("0.0 km");
-    expect(formatDistanceKm(-2)).toBe("0.0 km");
-    expect(formatDistanceKm(NaN)).toBe("0.0 km");
+  it("clamps zero / negative / non-finite to localized zero", () => {
+    expect(formatDistanceKm(0)).toBe("0 km");
+    expect(formatDistanceKm(-2)).toBe("0 km");
+    expect(formatDistanceKm(NaN)).toBe("0 km");
   });
 });
 

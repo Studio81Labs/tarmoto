@@ -83,12 +83,15 @@ export const en = {
   "{failed} failed.": "{failed} failed.",
   "{kind} · {distance} km": "{kind} · {distance} km",
   "{kind} · {distance} km · {detail}": "{kind} · {distance} km · {detail}",
+  "{kind} · {distance}": "{kind} · {distance}",
+  "{kind} · {distance} · {detail}": "{kind} · {distance} · {detail}",
   "{label} · {percent}% conf": "{label} · {percent}% conf",
   "{label} {percent}%": "{label} {percent}%",
   "{label}, {count, plural, one {# trip} other {# trips}}":
     "{label}, {count, plural, one {# trip} other {# trips}}",
   "{length} · {distance} from you": "{length} · {distance} from you",
   "{min}–{max} km / day": "{min}–{max} km / day",
+  "{relation} since {date}": "{relation} since {date}",
   "{name} · {distance} km": "{name} · {distance} km",
   "{name} (you)": "{name} (you)",
   "{name} hasn't earned any badges yet.":
@@ -264,6 +267,7 @@ export const en = {
   "Could not load shared rides.": "Could not load shared rides.",
   "Could not open file picker.": "Could not open file picker.",
   "Could not read the file.": "Could not read the file.",
+  "Could not save your language.": "Could not save your language.",
   "Could not save profile.": "Could not save profile.",
   "Could not update follow.": "Could not update follow.",
   "Could not upload avatar.": "Could not upload avatar.",
@@ -415,6 +419,7 @@ export const en = {
   Fog: "Fog",
   Follow: "Follow",
   "Follow rider": "Follow rider",
+  Follower: "Follower",
   Followers: "Followers",
   Following: "Following",
   "Following {count, plural, one {# rider} other {# riders}}, open list":
@@ -511,6 +516,7 @@ export const en = {
   "Last fix is more than 30s old — refresh to use your current position.":
     "Last fix is more than 30s old — refresh to use your current position.",
   "Last map location": "Last map location",
+  Language: "Language",
   Leaderboard: "Leaderboard",
   "Lean breakdown": "Lean breakdown",
   "Learning your commute": "Learning your commute",

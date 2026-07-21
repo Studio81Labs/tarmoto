@@ -3,7 +3,7 @@
  * React Native App Entry Point
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { StatusBar, LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -16,6 +16,8 @@ import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
+import { detectDeviceLocale, detectDeviceTimeZone } from "@/i18n/deviceLocale";
+import { FormatProvider } from "@/format/FormatProvider";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -27,7 +29,13 @@ export default function App() {
   const setLoading = useAuthStore((state) => state.setLoading);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const locale = useAuthStore((state) => state.user?.language);
+  const user = useAuthStore((state) => state.user);
+  const deviceLocale = useMemo(detectDeviceLocale, []);
+  const deviceTimeZone = useMemo(detectDeviceTimeZone, []);
+  const locale = user?.language ?? deviceLocale;
+  const formatLocale = user?.preferences?.format_locale ?? deviceLocale;
+  const timeZone = user?.preferences?.timezone ?? deviceTimeZone;
+  const units = user?.preferences?.units ?? "metric";
 
   useEffect(() => {
     void bootstrapAuth({
@@ -85,12 +93,18 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <I18nProvider locale={locale ?? null}>
-          <StatusBar
-            barStyle="dark-content"
-            backgroundColor={brandColorsLight.bg}
-            translucent
-          />
-          <RootNavigator />
+          <FormatProvider
+            locale={formatLocale}
+            timeZone={timeZone ?? null}
+            units={units}
+          >
+            <StatusBar
+              barStyle="dark-content"
+              backgroundColor={brandColorsLight.bg}
+              translucent
+            />
+            <RootNavigator />
+          </FormatProvider>
         </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

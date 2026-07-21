@@ -184,7 +184,7 @@ export default function CollectionDetailPage() {
       setShowPicker(false);
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to add routes",
+        err instanceof Error ? err.message : t("Failed to add routes"),
       );
     } finally {
       setBusy(false);
@@ -229,7 +229,7 @@ export default function CollectionDetailPage() {
       // back to its original position so they know the change didn't take.
       setLoad({ phase: "ready", collection });
       setActionError(
-        err instanceof Error ? err.message : "Failed to reorder routes",
+        err instanceof Error ? err.message : t("Failed to reorder routes"),
       );
     } finally {
       setBusy(false);
@@ -244,7 +244,7 @@ export default function CollectionDetailPage() {
       await reload(collection.id);
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to remove route",
+        err instanceof Error ? err.message : t("Failed to remove route"),
       );
     } finally {
       setBusy(false);
@@ -265,7 +265,7 @@ export default function CollectionDetailPage() {
       setLoad({ phase: "ready", collection: mapDetailToView(data) });
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to update visibility",
+        err instanceof Error ? err.message : t("Failed to update visibility"),
       );
     } finally {
       setBusy(false);

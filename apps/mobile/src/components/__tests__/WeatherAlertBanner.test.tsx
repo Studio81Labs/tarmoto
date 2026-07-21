@@ -131,6 +131,6 @@ describe("WeatherAlertBanner", () => {
       ),
     ).toBeTruthy();
     // Distance is formatted in km when >= 1.
-    expect(screen.getByText(/12.0 km from start/)).toBeTruthy();
+    expect(screen.getByText(/12 km from start/)).toBeTruthy();
   });
 });

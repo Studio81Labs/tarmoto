@@ -12,6 +12,7 @@ import { useVehicleDisplayStore } from "@/stores/vehicleDisplay";
 import type { LatLng } from "@/types";
 import { MANEUVER_LABELS } from "@/services/navigation";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // Always-dark in-vehicle (CarPlay / Android Auto) nav card → night palette.
 const t = brandColorsDark;
@@ -82,19 +83,20 @@ export function projectRouteToCanvas(
 }
 
 function formatDistanceMeters(meters: number): string {
-  if (!Number.isFinite(meters) || meters <= 0) return "0 m";
-  if (meters < 1000) return `${Math.round(meters / 10) * 10} m`;
-  return `${(meters / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(
+    !Number.isFinite(meters) || meters <= 0 ? 0 : meters,
+  );
 }
 
 function formatSpeed(speedKmh: number): string {
   if (!Number.isFinite(speedKmh) || speedKmh < 1) return "—";
-  return `${Math.round(speedKmh)} km/h`;
+  return getFormatters().speed(speedKmh);
 }
 
 function formatRideDistance(distanceKm: number): string {
-  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return "0.0 km";
-  return `${distanceKm.toFixed(1)} km`;
+  return getFormatters().distanceKm(
+    !Number.isFinite(distanceKm) || distanceKm <= 0 ? 0 : distanceKm,
+  );
 }
 
 function formatDuration(seconds: number): string {

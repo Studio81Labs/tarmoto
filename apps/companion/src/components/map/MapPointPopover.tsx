@@ -20,6 +20,10 @@ import type { Poi } from "@/lib/planner/types";
 import type { HazardType } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
 
+/** Legally required provider attributions are proper names, not UI copy. */
+const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
+const FOURSQUARE_ATTRIBUTION = "© Foursquare";
+
 /** Hazard fields the popover renders (a subset of the hazard DTO). */
 export interface HazardPoint {
   hazard_type: HazardType;
@@ -188,7 +192,7 @@ function PoiBody({
             rel="noopener noreferrer"
             className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
           >
-            © OpenStreetMap contributors
+            {OSM_ATTRIBUTION}
           </a>
         ) : poi.source === "fsq" ? (
           <a
@@ -197,7 +201,7 @@ function PoiBody({
             rel="noopener noreferrer"
             className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
           >
-            © Foursquare
+            {FOURSQUARE_ATTRIBUTION}
           </a>
         ) : null}
       </PopoverHeader>
@@ -315,7 +319,7 @@ function PlaceBody({
           rel="noopener noreferrer"
           className="mt-0.5 block font-mono text-[8px] uppercase tracking-[1px] text-fg-mute transition hover:text-ink"
         >
-          © OpenStreetMap contributors
+          {OSM_ATTRIBUTION}
         </a>
       </PopoverHeader>
       <PlacementActions actions={actions} />

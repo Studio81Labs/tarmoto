@@ -225,4 +225,20 @@ export const rides = {
   "{unit} / month": "{unit} / month",
   "\u2014 zoom out or pick a new centre.":
     "\u2014 zoom out or pick a new centre.",
+  "Couldn't load ride stats.": "Couldn't load ride stats.",
+  "Could not load nearby unridden roads":
+    "Could not load nearby unridden roads",
+  "Could not load one or both rides": "Could not load one or both rides",
+  "Could not load ride": "Could not load ride",
+  "Could not load ride list": "Could not load ride list",
+  "Could not load rides": "Could not load rides",
+  "Couldn't rename this ride. Try again.":
+    "Couldn't rename this ride. Try again.",
+  "Passes near place": "Passes near place",
+  "Tatra Mountains…": "Tatra Mountains…",
+  Gain: "Gain",
+  Loss: "Loss",
+  "Could not load exploration data": "Could not load exploration data",
+  "Could not load ride history": "Could not load ride history",
+  "Could not load the breakdown": "Could not load the breakdown",
 } as const;

@@ -105,13 +105,13 @@ export default function DiscoverCollectionPage() {
       const message =
         err instanceof ApiError
           ? err.status === 404
-            ? "This collection is no longer available."
+            ? t("This collection is no longer available.")
             : err.status === 400
-              ? "You can't follow your own collection."
+              ? t("You can't follow your own collection.")
               : err.message
           : err instanceof Error
             ? err.message
-            : "Something went wrong.";
+            : t("Something went wrong.");
       setFollowError(message);
     } finally {
       setFollowPending(false);

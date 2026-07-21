@@ -58,6 +58,7 @@ import {
 } from "./RoadPreviewScreen.helpers";
 import { surfaceLabel } from "./RideScreens.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
@@ -291,7 +292,7 @@ function QualityCard({
               below + the label text. */}
           <Text style={styles.qualityScore}>
             {segment.quality_score != null
-              ? segment.quality_score.toFixed(1)
+              ? getFormatters().decimal(segment.quality_score, 1)
               : "—"}
           </Text>
           <Text style={styles.qualitySubtitle}>
@@ -410,7 +411,9 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
         }
       />
       <View style={styles.curvinessRow}>
-        <Text style={styles.curvinessScore}>{curviness_score.toFixed(1)}</Text>
+        <Text style={styles.curvinessScore}>
+          {getFormatters().decimal(curviness_score, 1)}
+        </Text>
         <View style={styles.curvinessPips}>
           {[0, 1, 2, 3, 4].map((i) => (
             <Icon
@@ -814,7 +817,9 @@ function ReviewsCard({
       <SectionTitle
         icon="star-outline"
         title={translate("Recent reviews")}
-        rightLabel={showAvg ? `${avgRating!.toFixed(1)} ★` : undefined}
+        rightLabel={
+          showAvg ? `${getFormatters().decimal(avgRating!, 1)} ★` : undefined
+        }
       />
       <TouchableOpacity
         accessibilityRole="button"

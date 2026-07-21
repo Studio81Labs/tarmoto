@@ -291,7 +291,7 @@ describe("summarizeExploration", () => {
       total_distance_km: 1234.5,
     });
     expect(summary.percentLabel).toBe("12.5%");
-    expect(summary.distanceKmLabel).toBe("1234.5 km");
+    expect(summary.distanceKmLabel).toBe("1,234.5 km");
     expect(summary.riddenCount).toBe(100);
     expect(summary.totalCount).toBe(800);
   });
@@ -332,7 +332,7 @@ describe("formatDistanceFromHere", () => {
   });
   it("uses km with 1 decimal at and above 1 km", () => {
     expect(formatDistanceFromHere(1234)).toBe("1.2 km");
-    expect(formatDistanceFromHere(1000)).toBe("1.0 km");
+    expect(formatDistanceFromHere(1000)).toBe("1 km");
   });
   it("falls back to em dash on bad input", () => {
     expect(formatDistanceFromHere(Number.NaN)).toBe("—");

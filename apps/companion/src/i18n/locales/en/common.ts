@@ -1286,4 +1286,8 @@ export const common = {
   "\u0394 (B \u2212 A)": "\u0394 (B \u2212 A)",
   "\u2014 tap through for ranked roads, quality scores and a map preview. ":
     "\u2014 tap through for ranked roads, quality scores and a map preview. ",
+  FINISH: "FINISH",
+  START: "START",
+  "Submit review": "Submit review",
+  "Write a review": "Write a review",
 } as const;

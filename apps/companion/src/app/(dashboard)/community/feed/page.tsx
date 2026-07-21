@@ -112,7 +112,9 @@ export default function CommunityFeedPage() {
         if (cancelled) return;
         setItems([]);
         setTotal(0);
-        setError(err instanceof Error ? err.message : "Could not load rides.");
+        setError(
+          err instanceof Error ? err.message : t("Could not load rides."),
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

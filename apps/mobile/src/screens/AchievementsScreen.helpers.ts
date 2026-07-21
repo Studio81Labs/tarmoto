@@ -14,6 +14,7 @@ import type {
 } from "@/types";
 import { UNSCORED_COLOR } from "@/theme/brand";
 import { translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // ── Badge tier helpers ──
 
@@ -224,8 +225,8 @@ export function summarizeExploration(
   return {
     riddenCount: stats.ridden_segments,
     totalCount: stats.total_segments,
-    percentLabel: `${stats.percent_explored.toFixed(1)}%`,
-    distanceKmLabel: `${stats.total_distance_km.toFixed(1)} km`,
+    percentLabel: `${getFormatters().decimal(stats.percent_explored, 1)}%`,
+    distanceKmLabel: getFormatters().distanceKm(stats.total_distance_km),
   };
 }
 
@@ -248,14 +249,12 @@ export function rankUnriddenSegments(
 /** Format the distance shown next to a nearby unridden segment. */
 export function formatDistanceFromHere(distanceM: number): string {
   if (!Number.isFinite(distanceM) || distanceM < 0) return "—";
-  if (distanceM < 1000) return `${Math.round(distanceM)} m`;
-  return `${(distanceM / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(distanceM);
 }
 
 export function formatSegmentLength(lengthM: number): string {
   if (!Number.isFinite(lengthM) || lengthM <= 0) return "—";
-  if (lengthM < 1000) return `${Math.round(lengthM)} m`;
-  return `${(lengthM / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(lengthM);
 }
 
 /**
@@ -274,7 +273,8 @@ export function formatChallengeProgress(
 ): string {
   const isWhole = Number.isInteger(progress) && Number.isInteger(target);
   const unit = metricUnit(metric);
-  const fmt = (n: number): string => (isWhole ? String(n) : n.toFixed(1));
+  const fmt = (n: number): string =>
+    isWhole ? getFormatters().integer(n) : getFormatters().decimal(n, 1);
   return translate("{progress} / {target} {unit}", {
     progress: fmt(progress),
     target: fmt(target),

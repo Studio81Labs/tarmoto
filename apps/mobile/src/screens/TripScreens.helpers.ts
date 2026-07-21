@@ -11,6 +11,7 @@ import {
 } from "@tarmoto/shared";
 import type { IconName } from "@/components/Icon";
 import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
+import { getFormatters } from "@/format";
 import type {
   Accommodation,
   AccommodationKind,
@@ -53,8 +54,7 @@ const ACCOMMODATION_KIND_PRIORITY: Record<AccommodationKind, number> = {
 };
 
 export function formatKm(km: number): string {
-  if (!Number.isFinite(km)) return "0 km";
-  return `${Math.round(km)} km`;
+  return getFormatters().distanceKm(Number.isFinite(km) ? Math.round(km) : 0);
 }
 
 /** Complete catalog message for stay/POI metadata; no UI-side joining. */
@@ -66,26 +66,19 @@ export function formatNearbyPlaceMeta(
 ): string {
   const values = {
     kind,
-    distance: distanceKm.toFixed(1),
+    distance: getFormatters().distanceKm(distanceKm),
     ...(detail ? { detail } : {}),
   };
   return detail
-    ? t("{kind} · {distance} km · {detail}", values)
-    : t("{kind} · {distance} km", values);
+    ? t("{kind} · {distance} · {detail}", values)
+    : t("{kind} · {distance}", values);
 }
 
 /** "2h 30m" / "45m" — keep short for metric rows. */
 export function formatDurationMin(minutes: number): string {
-  if (!Number.isFinite(minutes) || minutes <= 0) return "0m";
-  // Round to whole minutes *first*, then split into h/m. Rounding the
-  // modulo remainder independently can yield 60 (e.g. 59.5 → 60),
-  // producing invalid strings like "60m" or "1h 60m".
-  const total = Math.round(minutes);
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
+  return getFormatters().durationCompact(
+    !Number.isFinite(minutes) || minutes <= 0 ? 0 : minutes,
+  );
 }
 
 export function capitalize(s: string): string {

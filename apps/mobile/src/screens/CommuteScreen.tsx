@@ -57,6 +57,7 @@ import type {
 } from "@/navigation/RootNavigator";
 import { formatRelativeTime } from "./RoadPreviewScreen.helpers";
 import { t as translate, type EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -128,7 +129,7 @@ export default function CommuteScreen() {
         source: "polyline",
         polyline: alt.geometry,
         title: translate("Alternative · {value0} km", {
-          value0: alt.distance_km.toFixed(1),
+          value0: getFormatters().decimal(alt.distance_km, 1),
         }),
       });
     },
@@ -206,7 +207,7 @@ export default function CommuteScreen() {
             label={translate("Distance")}
             value={
               route.distance_km != null
-                ? `${route.distance_km.toFixed(1)} km`
+                ? getFormatters().distanceKm(route.distance_km)
                 : "—"
             }
           />
@@ -642,7 +643,7 @@ function AlternativeRow({
         accessibilityLabel={translate(
           "Start commute on alternative route, {distance} kilometres, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
           {
-            distance: alt.distance_km.toFixed(1),
+            distance: getFormatters().decimal(alt.distance_km, 1),
             duration: alt.duration_min,
             count: alt.hazard_count,
           },
@@ -651,7 +652,7 @@ function AlternativeRow({
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
             {translate("{distance} km · {duration} min", {
-              distance: alt.distance_km.toFixed(1),
+              distance: getFormatters().decimal(alt.distance_km, 1),
               duration: alt.duration_min,
             })}
           </Text>
@@ -705,7 +706,7 @@ function AlternativeRow({
         accessibilityRole="button"
         accessibilityLabel={translate(
           "Navigate alternative route, {value0} kilometres",
-          { value0: alt.distance_km.toFixed(1) },
+          { value0: getFormatters().decimal(alt.distance_km, 1) },
         )}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
@@ -815,12 +816,12 @@ function SavedRoutesCard({
               <Text style={styles.altSubtitle}>
                 {r.distance_km != null && r.avg_quality != null
                   ? translate("{distance} km · Quality {quality}", {
-                      distance: r.distance_km.toFixed(1),
+                      distance: getFormatters().decimal(r.distance_km, 1),
                       quality: qualityLabel(r.avg_quality),
                     })
                   : r.distance_km != null
                     ? translate("{distance} km", {
-                        distance: r.distance_km.toFixed(1),
+                        distance: getFormatters().decimal(r.distance_km, 1),
                       })
                     : r.avg_quality != null
                       ? translate("Distance pending · Quality {quality}", {
@@ -898,7 +899,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Distance")}
-          value={`${stats.total_km.toFixed(1)} km`}
+          value={getFormatters().distanceKm(stats.total_km)}
           delta={stats.total_km - prev.total_km}
           deltaText={trendPercent(stats.total_km, prev.total_km)}
           positiveIsGood
@@ -912,7 +913,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Fuel est.")}
-          value={`${stats.fuel_estimate_l.toFixed(1)} L`}
+          value={`${getFormatters().decimal(stats.fuel_estimate_l, 1)} L`}
           delta={stats.fuel_estimate_l - prev.fuel_estimate_l}
           deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
           neutral
@@ -1096,7 +1097,8 @@ function rankAlternatives(
 
 function formatSignedDistance(km: number): string {
   if (Math.abs(km) < 0.05) return "±0 km";
-  return `${km > 0 ? "+" : ""}${km.toFixed(1)} km`;
+  const value = getFormatters().decimal(km, 1);
+  return `${km > 0 ? "+" : ""}${value} km`;
 }
 
 function formatSignedDuration(min: number): string {
@@ -1113,7 +1115,8 @@ function formatAbsDelta(
     const rounded = Math.round(delta);
     return rounded > 0 ? `+${rounded}` : String(rounded);
   }
-  return delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
+  const value = getFormatters().decimal(delta, 1);
+  return delta > 0 ? `+${value}` : value;
 }
 
 function trendPercent(current: number, previous: number): string {

@@ -79,6 +79,7 @@ import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { resolveNavigationRoute } from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // `Navigate` is registered on both TripsStack (the planned-trip flow)
 // and HomeStack (commute), with identical params. Either RouteProp is a
@@ -495,8 +496,7 @@ function buildRoadNameLookup(
 
 function formatManeuverDistance(m: number): string {
   if (m <= 15) return translate("Now");
-  if (m < 1000) return `${Math.round(m / 10) * 10} m`;
-  return `${(m / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(m);
 }
 
 /**
@@ -506,14 +506,11 @@ function formatManeuverDistance(m: number): string {
  * future refactor can't silently introduce a 1000× unit drift.
  */
 function formatDistanceM(m: number): string {
-  if (m <= 0) return "0 km";
-  if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(1)} km`;
+  return getFormatters().distanceM(Math.max(0, m));
 }
 
 function formatMeters(m: number): string {
-  if (m < 1) return "0 m";
-  return `${Math.round(m)} m`;
+  return getFormatters().elevation(Math.max(0, m));
 }
 
 const styles = StyleSheet.create({

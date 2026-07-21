@@ -118,7 +118,7 @@ export default function PrivacyPage() {
       setSaveState({ kind: "saved" });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Could not save settings";
+        err instanceof Error ? err.message : t("Could not save settings");
       setSaveState({ kind: "error", message });
     }
   }

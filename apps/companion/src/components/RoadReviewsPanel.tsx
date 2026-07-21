@@ -185,7 +185,7 @@ export function RoadReviewsPanel({
         if (cancelled) return;
         setReviews([]);
         setError(
-          err instanceof Error ? err.message : "Could not load reviews.",
+          err instanceof Error ? err.message : t("Could not load reviews."),
         );
       })
       .finally(() => {
@@ -354,7 +354,7 @@ export function RoadReviewsPanel({
         return;
       }
       setSubmitError(
-        err instanceof Error ? err.message : "Could not save your review.",
+        err instanceof Error ? err.message : t("Could not save your review."),
       );
     } finally {
       if (
@@ -410,7 +410,7 @@ export function RoadReviewsPanel({
         return;
       }
       setSubmitError(
-        err instanceof Error ? err.message : "Could not delete your review.",
+        err instanceof Error ? err.message : t("Could not delete your review."),
       );
     } finally {
       if (
@@ -695,7 +695,7 @@ function ReviewEditor({
   return (
     <section className={`mb-3 rounded-xl border p-4 ${tc.editorCard}`}>
       <p className={`text-[15px] font-bold ${tc.textPrimary}`}>
-        {mode === "create" ? "Write a review" : "Edit your review"}
+        {mode === "create" ? t("Write a review") : t("Edit your review")}
       </p>
       <p className={`mt-0.5 text-xs ${tc.textBody}`}>
         {t("Rate this road and add quick notes for the next rider. ")}
@@ -866,7 +866,7 @@ function ReviewEditor({
           disabled={uploading}
           loading={disabled}
         >
-          {mode === "create" ? "Submit review" : "Save changes"}
+          {mode === "create" ? t("Submit review") : t("Save changes")}
         </Button>
       </div>
     </section>

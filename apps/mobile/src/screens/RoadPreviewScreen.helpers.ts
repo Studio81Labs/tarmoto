@@ -7,11 +7,14 @@
 
 import type { LatLng, RoadReview } from "@/types";
 import { translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 export function formatLengthKm(m: number): string {
   if (!Number.isFinite(m) || m <= 0) return "";
   const rounded = Math.round(m);
-  return rounded >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${rounded} m`;
+  return rounded >= 1000
+    ? getFormatters().distanceKm(m / 1000)
+    : getFormatters().distanceM(rounded);
 }
 
 export function formatRelativeTime(iso: string): string {

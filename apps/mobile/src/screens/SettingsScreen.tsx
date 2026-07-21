@@ -35,7 +35,14 @@ import {
 import { usePendingHazardReports, usePendingUploads } from "@/hooks";
 import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import {
+  LOCALES,
+  SUPPORTED_LOCALES,
+  t as translate,
+  type EnglishMessageKey,
+  type SupportedLocale,
+} from "@/i18n";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
@@ -63,6 +70,8 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{translate("Settings")}</Text>
+
+      <LocaleCard />
 
       <Card raised pad={brandSpacing.s4} style={styles.card}>
         {/* These stamps are the section headings — use the readable `dim`
@@ -134,6 +143,49 @@ export default function SettingsScreen() {
 
       <PendingHazardReportsCard />
     </ScrollView>
+  );
+}
+
+/** Hidden for the English-only MVP; activates automatically with locale #2. */
+function LocaleCard() {
+  const { locale, t: localize } = useI18n();
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (SUPPORTED_LOCALES.length <= 1) return null;
+
+  const handleChange = async (next: SupportedLocale) => {
+    if (pending || next === locale) return;
+    setError(null);
+    setPending(true);
+    try {
+      if (!user) return;
+      const updated = await api.updateProfile({ language: next });
+      setUser(updated);
+    } catch {
+      setError(localize("Could not save your language."));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Card raised pad={brandSpacing.s4} style={styles.card}>
+      <Stamp color={t.dim}>{localize("Language")}</Stamp>
+      <SegmentedRow
+        options={SUPPORTED_LOCALES.map((value) => ({
+          value,
+          label: LOCALES[value].label,
+        }))}
+        value={locale}
+        onChange={(next) => void handleChange(next)}
+        ariaLabel={localize("Language")}
+      />
+      {pending ? <ActivityIndicator color={t.accent} size="small" /> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+    </Card>
   );
 }
 
