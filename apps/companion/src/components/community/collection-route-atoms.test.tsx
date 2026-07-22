@@ -68,6 +68,12 @@ describe("CollectionRouteRow", () => {
     expect(screen.queryByText("25 km")).not.toBeInTheDocument();
   });
 
+  it("renders the cataloged cancelled ride status", () => {
+    renderRow(item({ status: "cancelled" }));
+    expect(screen.getByText("Canceled")).toBeInTheDocument();
+    expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
+  });
+
   it("stays non-interactive when the underlying entity was deleted (null target)", () => {
     renderRow(item({ target_id: null }), { linkable: true });
     expect(screen.queryByRole("link")).not.toBeInTheDocument();

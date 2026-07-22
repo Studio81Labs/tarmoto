@@ -2,6 +2,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Route as RouteIcon } from "lucide-react";
 import { Mono, QualityBars } from "@tarmoto/ui";
+import type { components } from "@tarmoto/openapi-client";
 import type { EnglishMessageKey, Translate } from "@/i18n";
 import type { RouteCollectionPreviewItem } from "@/lib/api";
 import type { Formatters } from "@tarmoto/shared";
@@ -86,13 +87,17 @@ export function RouteThumb({
 }
 
 /** Status chip (planned / completed / shared / …) coloured like the design. */
+type RideStatus = components["schemas"]["RideResponseDto"]["status"];
+type CollectionRouteStatus = RideStatus | "draft" | "planned" | "shared";
+
 const STATUS_LABELS = {
   draft: "Draft",
   planned: "Planned",
   active: "Active",
   completed: "Completed",
+  cancelled: "Canceled",
   shared: "Shared",
-} as const satisfies Record<string, EnglishMessageKey>;
+} as const satisfies Record<CollectionRouteStatus, EnglishMessageKey>;
 
 export function StatusPill({ status, t }: { status: string; t: Translate }) {
   const s = status.toLowerCase();
