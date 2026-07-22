@@ -137,7 +137,12 @@ export function RouteCollectionFollowCta({
           {t("You own this collection")}
         </h2>
         <p className="text-sm text-fg-dim">
-          {t("Manage routes, visibility, and sharing from your dashboard.")}
+          <Link
+            href="/community/collections"
+            className="text-accent hover:text-accent underline"
+          >
+            {t("Manage routes, visibility, and sharing from your dashboard.")}
+          </Link>
         </p>
       </div>
     );
