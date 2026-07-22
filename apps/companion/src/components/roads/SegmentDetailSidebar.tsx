@@ -25,6 +25,10 @@ import {
 } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
+import {
+  HAZARD_SEVERITY_LABELS,
+  translateKnownLabel,
+} from "@/i18n/domainLabels";
 
 export type SegmentDetailPanelState =
   | { status: "idle" }
@@ -349,7 +353,11 @@ function SegmentDetailContent({
                     <p className="font-semibold text-ink">
                       {t(config.label)}
                       <span className="ml-2 text-[10px] uppercase tracking-wider text-fg-dim">
-                        {hazard.severity}
+                        {translateKnownLabel(
+                          hazard.severity,
+                          HAZARD_SEVERITY_LABELS,
+                          t,
+                        )}
                       </span>
                     </p>
                     {hazard.note && (

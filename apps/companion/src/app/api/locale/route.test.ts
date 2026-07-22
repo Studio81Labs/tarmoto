@@ -19,6 +19,7 @@ const AUTHENTICATED_SESSION: Session = {
     id: "user-1",
     email: "rider@example.com",
     displayName: "Rider One",
+    language: "en",
   },
   accessToken: "access-token-abc",
   expires: "2099-01-01T00:00:00.000Z",

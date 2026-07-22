@@ -35,7 +35,7 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
  * Best-effort locale picker. Accepts a single tag ("en", "en-GB"), a full
  * Accept-Language string ("et,en-GB;q=0.9,en;q=0.8"), or null/undefined.
  * Tags are lowercased and reduced to their primary subtag, then matched against
- * the registry. RFC 7231 q-weights are honoured (highest q wins; header order
+ * the registry. RFC 9110 q-weights are honoured (highest q wins; header order
  * breaks ties; no `q` defaults to 1.0). Anything unresolved → DEFAULT_LOCALE.
  */
 export function resolveLocale(input?: string | null): SupportedLocale {
@@ -48,15 +48,18 @@ export function resolveLocale(input?: string | null): SupportedLocale {
       const tag = parts[0] ?? "";
       let q = 1;
       for (const param of parts.slice(1)) {
-        const match = /^q=([0-9]*\.?[0-9]+)$/i.exec(param);
-        if (match) {
-          const parsed = Number.parseFloat(match[1] ?? "");
-          if (!Number.isNaN(parsed)) q = parsed;
-        }
+        if (!/^q=/i.test(param)) continue;
+        // RFC 9110 qvalues are 0..1 with at most three fractional digits;
+        // only zeroes may follow `1`. A malformed q parameter makes this
+        // candidate unacceptable instead of silently restoring q=1.
+        const match = /^q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/i.exec(param);
+        q = match ? Number.parseFloat(match[1] ?? "0") : 0;
       }
       return { tag, q, index };
     })
-    .filter((candidate) => candidate.tag !== "")
+    // q=0 explicitly means "not acceptable" and must never win merely
+    // because it is the only supported tag in the header.
+    .filter((candidate) => candidate.tag !== "" && candidate.q > 0)
     .sort((a, b) => (b.q !== a.q ? b.q - a.q : a.index - b.index));
 
   for (const candidate of candidates) {

@@ -55,7 +55,10 @@ import {
   routeCollectionsApi,
   type RouteCollectionVisibility,
 } from "@/lib/api";
-import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import {
+  COLLECTION_VISIBILITY_LABELS,
+  RouteCollectionVisibilityPill,
+} from "@/components/RouteCollectionVisibilityPill";
 import { UserAvatar } from "@/components/UserAvatar";
 import {
   RouteThumb,
@@ -344,6 +347,7 @@ export default function CollectionDetailPage() {
           <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13px] text-fg-dim">
             <RouteCollectionVisibilityPill
               visibility={collection!.visibility}
+              label={t(COLLECTION_VISIBILITY_LABELS[collection!.visibility])}
             />
             <span className="text-fg-mute">·</span>
             <span className="inline-flex items-center gap-1.5">
@@ -790,7 +794,7 @@ function RideRow({
         href={`/rides/${ride.id}`}
         className="group flex min-w-0 flex-1 items-center gap-3"
       >
-        <RouteThumb lines={lines} label={displayName} />
+        <RouteThumb lines={lines} label={displayName} t={t} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[14px] font-bold text-ink transition group-hover:text-accent">
             {displayName}
@@ -816,7 +820,7 @@ function RideRow({
           {format.distanceKm(ride.distance_km)}
         </Mono>
       )}
-      <StatusPill status={ride.status} />
+      <StatusPill status={ride.status} t={t} />
       <RemoveRouteButton
         onClick={onRemove}
         label={t("Remove {name} from collection", { name: displayName })}
@@ -1030,7 +1034,7 @@ function PickerRow({
             {meta}
           </Mono>
         </span>
-        <StatusPill status={status} />
+        <StatusPill status={status} t={t} />
       </label>
     </li>
   );

@@ -14,6 +14,7 @@ import type { RoadPreview, RouteSegment } from "@/lib/planner/types";
 import type { Formatters } from "@tarmoto/shared";
 import { plannerSegmentMidpoint } from "@/lib/trip-planner-map";
 import { useFormat } from "@/format/FormatProvider";
+import { SURFACE_LABELS } from "@/lib/utils";
 
 /** Source identifier and tag syntax are technical metadata, not UI copy. */
 const OSM_SOURCE = "OSM";
@@ -289,7 +290,9 @@ export function RoadPreviewPopover({
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {preview.surface ? (
-                  <Pill variant="ghost">{preview.surface}</Pill>
+                  <Pill variant="ghost">
+                    {t(SURFACE_LABELS[preview.surface])}
+                  </Pill>
                 ) : null}
                 {lowConf ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-quality-q2/60 bg-quality-q2/15 px-2.5 py-1">

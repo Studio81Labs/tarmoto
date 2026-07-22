@@ -43,6 +43,10 @@ import {
 } from "@tarmoto/ui";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useFormat } from "@/format/FormatProvider";
+import {
+  SUGGESTION_STATUS_LABELS,
+  translateKnownLabel,
+} from "@/i18n/domainLabels";
 type Tab = "invite" | "people" | "suggestions" | "activity";
 // Progressive disclosure page sizes: both lists render newest-first and
 // grow unbounded within a session (suggestions are fetched whole because
@@ -1348,7 +1352,7 @@ function SuggestionCard({
                 : "text-fg-mute")
           }
         >
-          {suggestion.status}
+          {translateKnownLabel(suggestion.status, SUGGESTION_STATUS_LABELS, t)}
         </span>
       </div>
       {suggestion.description && (

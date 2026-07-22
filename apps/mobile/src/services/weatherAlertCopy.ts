@@ -47,12 +47,12 @@ export function localizeWeatherAlert(
     return { title: alert.title, message: alert.message };
   }
 
-  const location = `${alert.lat.toFixed(2)},${alert.lng.toFixed(2)}`;
+  const format = getFormatters();
+  const location = `${format.decimal(alert.lat, 2)},${format.decimal(alert.lng, 2)}`;
   const hasSurfaceConditions =
     (kind === "ice" || kind === "wet") &&
     Number.isFinite(alert.temperature_c) &&
     Number.isFinite(alert.wind_kmh);
-  const format = getFormatters();
   return {
     title: t(TITLE_KEYS[kind]),
     message: hasSurfaceConditions

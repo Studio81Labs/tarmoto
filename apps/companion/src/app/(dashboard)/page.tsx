@@ -9,6 +9,7 @@ import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { ridesWithinDays, scoreToQualityTier } from "@/lib/utils";
 import type { MonthlyStats } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
+import { TRIP_STATUS_LABELS } from "@/i18n/domainLabels";
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { RecentRidesTable } from "./_home/RecentRidesTable";
 import {
@@ -590,7 +591,9 @@ function TripDraftCard({
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <Stamp tone={STATUS_TONE[status]}>{status}</Stamp>
+            <Stamp tone={STATUS_TONE[status]}>
+              {t(TRIP_STATUS_LABELS[status])}
+            </Stamp>
             <div className="mt-1 line-clamp-2 text-[16px] font-extrabold leading-tight text-ink">
               {trip.name}
             </div>

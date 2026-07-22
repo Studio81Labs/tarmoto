@@ -793,8 +793,17 @@ export const DRAFT_CORRIDOR_FLAVOR_KM = 25;
 const DRAFT_CANDIDATE_LIMIT = 5;
 
 /** Fallback label for a pin the geocoder can't name — trimmed coordinates. */
-function coordinateLabel(lat: number, lng: number): string {
-  return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+const DEFAULT_COORDINATE_FORMAT = createFormatters({
+  locale: DEFAULT_FORMAT_LOCALE,
+  units: "metric",
+});
+
+function coordinateLabel(
+  lat: number,
+  lng: number,
+  format: Pick<Formatters, "decimal"> = DEFAULT_COORDINATE_FORMAT,
+): string {
+  return `${format.decimal(lat, 3)}, ${format.decimal(lng, 3)}`;
 }
 
 /** Bearing (deg, 0 = N) from `a` to `b`; undefined for a zero-length edge. */
@@ -1138,7 +1147,10 @@ export function createPlannerApi(): PlannerApi {
     async reverseGeocode(
       lat: number,
       lng: number,
-      init?: { signal?: AbortSignal },
+      init?: {
+        signal?: AbortSignal;
+        format?: Pick<Formatters, "decimal">;
+      },
     ): Promise<string> {
       const { data, error } = await api.GET("/api/v1/geocode/reverse", {
         params: { query: { lat, lng } },
@@ -1148,7 +1160,7 @@ export function createPlannerApi(): PlannerApi {
       // coordinates rather than a blank name. Hard network/abort errors
       // reject and are left to the caller — both pin-naming call sites
       // already keep their default label on failure.
-      if (error || !data?.label) return coordinateLabel(lat, lng);
+      if (error || !data?.label) return coordinateLabel(lat, lng, init?.format);
       return data.label;
     },
 

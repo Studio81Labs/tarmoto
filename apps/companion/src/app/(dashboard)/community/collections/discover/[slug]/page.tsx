@@ -13,7 +13,10 @@ import {
   type RouteCollectionDetail,
   type RouteCollectionPreviewItem,
 } from "@/lib/api";
-import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import {
+  COLLECTION_VISIBILITY_LABELS,
+  RouteCollectionVisibilityPill,
+} from "@/components/RouteCollectionVisibilityPill";
 import { UserAvatar } from "@/components/UserAvatar";
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
@@ -166,7 +169,10 @@ export default function DiscoverCollectionPage() {
             {detail!.title}
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13px] text-fg-dim">
-            <RouteCollectionVisibilityPill visibility={detail!.visibility} />
+            <RouteCollectionVisibilityPill
+              visibility={detail!.visibility}
+              label={t(COLLECTION_VISIBILITY_LABELS[detail!.visibility])}
+            />
             {ownerName && (
               <>
                 <span className="text-fg-mute">·</span>
@@ -272,6 +278,7 @@ export default function DiscoverCollectionPage() {
               author={author}
               format={format}
               linkable
+              t={t}
             />
           ))}
         </ul>

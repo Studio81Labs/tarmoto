@@ -15,8 +15,10 @@ export const en = {
   "Badge details unavailable.": "Badge details unavailable.",
   "Complete a {distance} ride": "Complete a {distance} ride",
   Explorer: "Explorer",
+  Editor: "Editor",
   "Hazards reported to the community": "Hazards reported to the community",
   "Iron Butt": "Iron Butt",
+  Owner: "Owner",
   "Longest single ride distance": "Longest single ride distance",
   "Reach this goal before the challenge ends.":
     "Reach this goal before the challenge ends.",
@@ -32,6 +34,7 @@ export const en = {
   "Total number of completed rides": "Total number of completed rides",
   "Unique road segments ridden": "Unique road segments ridden",
   "Unknown badge": "Unknown badge",
+  Viewer: "Viewer",
   "{count, plural, one {# active challenge} other {# active challenges}}":
     "{count, plural, one {# active challenge} other {# active challenges}}",
   "{count, plural, one {# badge earned} other {# badges earned}}, open achievements":

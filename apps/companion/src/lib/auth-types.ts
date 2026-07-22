@@ -1,11 +1,13 @@
 import "next-auth";
 import "next-auth/jwt";
+import type { SupportedLocale } from "@tarmoto/shared";
 
 declare module "next-auth" {
   interface User {
     id: string;
     email: string;
     displayName: string;
+    language?: SupportedLocale | undefined;
     phone?: string | undefined;
     accessToken: string;
     refreshToken: string;
@@ -17,6 +19,7 @@ declare module "next-auth" {
       id: string;
       email: string;
       displayName: string;
+      language?: SupportedLocale | undefined;
       phone?: string | undefined;
     };
     accessToken: string;
@@ -29,6 +32,7 @@ declare module "next-auth/jwt" {
     id: string;
     email: string;
     displayName: string;
+    language?: SupportedLocale | undefined;
     phone?: string | undefined;
     accessToken: string;
     refreshToken: string;

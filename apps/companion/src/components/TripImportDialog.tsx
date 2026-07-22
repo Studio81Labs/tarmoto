@@ -307,7 +307,7 @@ function RoutePreview({
                   {wp.name ?? t("Waypoint {n}", { n: i + 1 })}
                 </span>
                 <span className="tabular-nums text-fg-dim">
-                  {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
+                  {format.decimal(wp.lat, 4)}, {format.decimal(wp.lng, 4)}
                 </span>
               </li>
             ))}

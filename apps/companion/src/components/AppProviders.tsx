@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { FormatProvider } from "@/format/FormatProvider";
 import type { FormatPrefs } from "@/format";
-import { usePathname } from "next/navigation";
 import { NetworkStatusProvider } from "./NetworkStatusProvider";
 import { ToastHost } from "./ToastHost";
 
@@ -23,8 +22,6 @@ export function AppProviders({
   locale?: string | null;
   formatPrefs: FormatPrefs;
 }) {
-  const pathname = usePathname();
-
   const localeProp = locale !== undefined ? { locale } : {};
   const formatProps = {
     formatLocale: formatPrefs.formatLocale,

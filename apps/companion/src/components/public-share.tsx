@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Card, Mono, TarmotoMark } from "@tarmoto/ui";
 import type { Formatters } from "@tarmoto/shared";
-import { t } from "@/i18n";
+import type { Translate } from "@/i18n";
 import type { RoutePreview } from "@/lib/ride-detail";
 
 /**
@@ -19,7 +19,13 @@ import type { RoutePreview } from "@/lib/ride-detail";
  * and a CTA into the app. Both the logo and the CTA point at `/` (the companion
  * home, which is public) so a visitor can always reach the app.
  */
-export function PublicShareHeader({ breadcrumb }: { breadcrumb: string }) {
+export function PublicShareHeader({
+  breadcrumb,
+  t,
+}: {
+  breadcrumb: string;
+  t: Translate;
+}) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-cream/[0.86] backdrop-blur-[12px] backdrop-saturate-[1.4]">
       <div className="mx-auto flex h-[60px] max-w-[980px] items-center justify-between gap-4 px-7">
@@ -57,9 +63,11 @@ export function PublicShareHeader({ breadcrumb }: { breadcrumb: string }) {
 export function PublicShareFooter({
   cta,
   year,
+  t,
 }: {
   cta: { href: string; label: string; icon: ReactNode };
   year: number;
+  t: Translate;
 }) {
   return (
     <footer className="border-t border-line bg-paper-2">
@@ -88,12 +96,14 @@ export function SharedRoutePreviewCard({
   title,
   subtitle,
   emptyText,
+  t,
 }: {
   preview: RoutePreview | null;
   label: string;
   title: string;
   subtitle: string;
   emptyText: string;
+  t: Translate;
 }) {
   return (
     <Card className="mb-6 p-6">

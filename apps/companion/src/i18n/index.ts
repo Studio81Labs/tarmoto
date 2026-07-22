@@ -13,6 +13,7 @@ import {
   type EnglishMessageKey,
   type TranslationCatalog,
 } from "./locales";
+export { LOCALE_COOKIE } from "./constants";
 
 export {
   DEFAULT_LOCALE,
@@ -27,8 +28,6 @@ export type {
   TranslationCatalog,
   TranslationValues,
 };
-
-export const LOCALE_COOKIE = "tarmoto-locale";
 
 const baseTranslate = makeTranslator<EnglishMessageKey>(companionCatalogs);
 

@@ -1,4 +1,5 @@
 import type { components } from "@tarmoto/openapi-client";
+import type { SupportedLocale } from "@tarmoto/shared";
 import { apiServer } from "@/lib/api/server";
 import { SOCIAL_ACCOUNT_CONFLICT_MESSAGE } from "@/lib/auth-errors";
 
@@ -16,6 +17,8 @@ interface ExchangeOptions {
    * value so the derived bridge password is deterministic.
    */
   bridgeSecret?: string;
+  /** Locale resolved from the OAuth callback request for new accounts. */
+  locale?: SupportedLocale;
 }
 
 function normalizeEmail(email: string): string {
@@ -92,6 +95,9 @@ export async function exchangeOAuthUserForBackendTokens(
 
   const register = await apiServer.POST("/api/v1/auth/register", {
     body: { email, password, display_name: displayName },
+    ...(options.locale
+      ? { headers: { "Accept-Language": options.locale } }
+      : {}),
   });
   if (register.response.ok && register.data) {
     return register.data;

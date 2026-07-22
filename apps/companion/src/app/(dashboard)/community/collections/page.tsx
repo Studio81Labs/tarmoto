@@ -38,7 +38,10 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
-import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import {
+  COLLECTION_VISIBILITY_LABELS,
+  RouteCollectionVisibilityPill,
+} from "@/components/RouteCollectionVisibilityPill";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
   MAX_COLLECTION_NAME_LENGTH,
@@ -365,6 +368,7 @@ function CollectionCard({
           </h3>
           <RouteCollectionVisibilityPill
             visibility={collection.visibility}
+            label={t(COLLECTION_VISIBILITY_LABELS[collection.visibility])}
             className="shrink-0"
           />
         </div>
@@ -451,6 +455,7 @@ function FollowedCollectionCard({
           </h3>
           <RouteCollectionVisibilityPill
             visibility={collection.visibility}
+            label={t(COLLECTION_VISIBILITY_LABELS[collection.visibility])}
             className="shrink-0"
           />
         </div>

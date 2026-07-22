@@ -45,6 +45,7 @@ import {
   labelForDimension,
   pickNextMilestone,
   seasonalProgress,
+  progressionTierLabel,
   LEADERBOARD_DIMENSION_KEYS,
   type Challenge,
   type ChallengeCategory,
@@ -550,7 +551,7 @@ function TierHero({
         <div>
           <Stamp tone="accent">{t("Current tier")}</Stamp>
           <div className="mt-1.5 text-[36px] font-extrabold leading-[1.05] tracking-[-0.5px] text-cream">
-            {progression.tier}
+            {progressionTierLabel(progression.tier, t)}
           </div>
           <div className="mt-1 text-[12px] text-fg-on-dark-mute">
             {t("Level {level} · {xp} XP", {
@@ -564,7 +565,9 @@ function TierHero({
           {progression.next_tier ? (
             <>
               <Stamp tone="on-dark-dim">
-                {t("Next tier · {tier}", { tier: progression.next_tier })}
+                {t("Next tier · {tier}", {
+                  tier: progressionTierLabel(progression.next_tier, t),
+                })}
               </Stamp>
               <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-cream/15">
                 <div

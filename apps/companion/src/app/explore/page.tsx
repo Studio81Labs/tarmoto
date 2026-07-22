@@ -1333,7 +1333,7 @@ function FunZonesBlock({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
-                        {zone.name ?? funZoneFallbackName(zone)}
+                        {zone.name ?? funZoneFallbackName(zone, format)}
                       </span>
                       <span className="shrink-0 text-xs font-bold tabular-nums text-accent">
                         {format.decimal(zone.composite_score, 1)}
@@ -1367,7 +1367,10 @@ function FunZonesBlock({
 // Placeholder name from the zone polygon centroid when the backend has no
 // human label yet — the boundary is a closed ring, so averaging its vertices
 // is a cheap centroid approximation (mirrors the retired /discover panel).
-function funZoneFallbackName(zone: FunZoneListItem): string {
+function funZoneFallbackName(
+  zone: FunZoneListItem,
+  format: ReturnType<typeof useFormat>,
+): string {
   const points = zone.boundary as unknown as Array<{
     lat: number;
     lng: number;
@@ -1376,8 +1379,8 @@ function funZoneFallbackName(zone: FunZoneListItem): string {
   const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
   const lng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
   return t("Zone near {lat}, {lng}", {
-    lat: lat.toFixed(2),
-    lng: lng.toFixed(2),
+    lat: format.decimal(lat, 2),
+    lng: format.decimal(lng, 2),
   });
 }
 

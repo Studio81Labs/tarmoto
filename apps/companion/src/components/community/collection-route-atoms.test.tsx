@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { CollectionRouteRow } from "./collection-route-atoms";
 import type { RouteCollectionPreviewItem } from "@/lib/api";
 import { createFormatters, type UnitSystem } from "@tarmoto/shared";
+import { translate } from "@/i18n";
 
 function item(
   overrides: Partial<RouteCollectionPreviewItem> = {},
@@ -40,6 +41,7 @@ function renderRow(
         author="Jane Rider"
         format={format}
         linkable={props.linkable}
+        t={translate}
       />
     </ul>,
   );
@@ -64,6 +66,12 @@ describe("CollectionRouteRow", () => {
     renderRow(item({ distance_km: 25 }), { units: "imperial" });
     expect(screen.getByText("15.5 mi")).toBeInTheDocument();
     expect(screen.queryByText("25 km")).not.toBeInTheDocument();
+  });
+
+  it("renders the cataloged cancelled ride status", () => {
+    renderRow(item({ status: "cancelled" }));
+    expect(screen.getByText("Canceled")).toBeInTheDocument();
+    expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
   });
 
   it("stays non-interactive when the underlying entity was deleted (null target)", () => {

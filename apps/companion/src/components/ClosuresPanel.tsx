@@ -15,15 +15,15 @@ import {
 import { monthLabel } from "@/lib/passes-summary";
 import { useFormat } from "@/format/FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
+import {
+  CLOSURE_REASON_LABELS,
+  CLOSURE_SEVERITY_LABELS,
+  CLOSURE_SEVERITY_SHORT_LABELS,
+} from "@/i18n/domainLabels";
 const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
   full: "text-quality-q1",
   partial: "text-amber-600",
   advisory: "text-sky-700",
-};
-const SEVERITY_LABEL: Record<PlannerClosure["severity"], string> = {
-  full: "Full closure",
-  partial: "Partial closure",
-  advisory: "Advisory",
 };
 // Dot colours mirror the severity text classes + the counts line, so the
 // legend, the count summary, and each row all read as one system (matches the
@@ -37,11 +37,6 @@ const SEVERITY_DOT_CLASS: Record<PlannerClosure["severity"], string> = {
   advisory: "bg-sky-700",
 };
 // Compact one-word labels for the legend (the row/tooltip use the full ones).
-const SEVERITY_SHORT_LABEL: Record<PlannerClosure["severity"], string> = {
-  full: "Full",
-  partial: "Partial",
-  advisory: "Advisory",
-};
 const SEVERITY_DISPLAY_ORDER: PlannerClosure["severity"][] = [
   "full",
   "partial",
@@ -60,14 +55,6 @@ function parseDateInputValue(value: string): Date | null {
   const [, y, m, d] = match;
   return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12, 0, 0));
 }
-const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
-  closure: "Closure",
-  roadworks: "Roadworks",
-  seasonal: "Seasonal",
-  weather: "Weather",
-  event: "Event",
-  other: "Other",
-};
 interface ClosuresPanelProps {
   month: number;
   routes: PlannerClosureRoute[];
@@ -408,14 +395,14 @@ function OnRouteClosureCard({
               </span>
             </p>
             <p className="text-xs text-fg-mute">
-              {REASON_LABEL[closure.reason]}
+              {t(CLOSURE_REASON_LABELS[closure.reason])}
               {closure.region ? ` \u00B7 ${closure.region}` : ""}
             </p>
           </div>
           <span
             className={`shrink-0 text-[11px] font-medium ${SEVERITY_CLASS[closure.severity]}`}
           >
-            {SEVERITY_LABEL[closure.severity]}
+            {t(CLOSURE_SEVERITY_LABELS[closure.severity])}
           </span>
         </div>
         <p className="mt-1 text-xs text-fg-dim">
@@ -461,7 +448,7 @@ function ClosuresLegend() {
             aria-hidden
             className={`inline-block h-2 w-2 rounded-full ${SEVERITY_DOT_CLASS[severity]}`}
           />
-          {SEVERITY_SHORT_LABEL[severity]}
+          {t(CLOSURE_SEVERITY_SHORT_LABELS[severity])}
         </span>
       ))}
     </div>
@@ -484,7 +471,7 @@ function ClosureRow({
       <div className="flex items-start gap-2">
         <span
           aria-hidden
-          title={SEVERITY_LABEL[closure.severity]}
+          title={t(CLOSURE_SEVERITY_LABELS[closure.severity])}
           className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT_CLASS[closure.severity]}`}
         />
         <div className="min-w-0">
@@ -492,13 +479,15 @@ function ClosureRow({
             {closure.title}
           </p>
           <p className="text-xs text-fg-mute">
-            {REASON_LABEL[closure.reason]}
+            {t(CLOSURE_REASON_LABELS[closure.reason])}
             {closure.region ? ` · ${closure.region}` : ""}
           </p>
           {/* The severity dot above is decorative (aria-hidden); carry the
               label for screen readers + non-hover devices, since colour and a
               hover tooltip alone don't convey it. */}
-          <span className="sr-only">{SEVERITY_LABEL[closure.severity]}</span>
+          <span className="sr-only">
+            {t(CLOSURE_SEVERITY_LABELS[closure.severity])}
+          </span>
         </div>
       </div>
 

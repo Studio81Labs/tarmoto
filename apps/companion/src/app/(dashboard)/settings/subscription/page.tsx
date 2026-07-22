@@ -17,6 +17,7 @@ import { useAuthStore } from "@/stores/auth";
 import { Button, Card, Heading, SkeletonForm, Stamp } from "@tarmoto/ui";
 import type { Formatters } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
+import { SUBSCRIPTION_STATUS_LABELS } from "@/i18n/domainLabels";
 import { SettingsSubpageHeader } from "../_SettingsSubpageHeader";
 import {
   buildFallbackSubscriptionSnapshot,
@@ -54,12 +55,6 @@ const STATUS_STYLES: Record<SubscriptionStatus, string> = {
   trialing: "bg-accent/20 text-accent border-accent/50",
   past_due: "bg-quality-q2/30 text-quality-q2 border-quality-q2/55",
   canceled: "bg-quality-q1/25 text-quality-q1 border-quality-q1/55",
-};
-const STATUS_LABELS: Record<SubscriptionStatus, string> = {
-  active: "Active",
-  trialing: "Trialing",
-  past_due: "Payment issue",
-  canceled: "Canceled",
 };
 export default function SubscriptionPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -340,7 +335,7 @@ function CurrentPlanCard({
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] ${STATUS_STYLES[currentPlan.status]}`}
             >
-              {STATUS_LABELS[currentPlan.status]}
+              {t(SUBSCRIPTION_STATUS_LABELS[currentPlan.status])}
             </span>
           </div>
         </div>

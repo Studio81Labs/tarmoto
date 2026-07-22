@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { _resetRefreshDedupForTests, dedupedRefresh } from "@/lib/auth-refresh";
+import {
+  _resetRefreshDedupForTests,
+  applyRefreshResult,
+  dedupedRefresh,
+} from "@/lib/auth-refresh";
 import type { BackendAuthResponse } from "@/lib/social-auth-bridge";
+import type { JWT } from "next-auth/jwt";
 
 function mockResponse(
   overrides: Partial<BackendAuthResponse> = {},
@@ -14,6 +19,7 @@ function mockResponse(
       email: "rider@example.com",
       display_name: "Rider",
       phone: null,
+      language: "en",
     },
     ...overrides,
     // Dedup tests only read the token fields; a minimal user stands in for
@@ -121,5 +127,27 @@ describe("dedupedRefresh", () => {
     });
     expect(recovered.access_token).toBe("AT-new");
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("applyRefreshResult", () => {
+  it("repairs a legacy JWT with the current account language", () => {
+    const token = {
+      id: "user-1",
+      email: "rider@example.com",
+      displayName: "Rider",
+      accessToken: "AT-old",
+      refreshToken: "RT-old",
+      expiresAt: 1,
+    } as JWT;
+    const data = mockResponse({ expires_in: 3600 });
+
+    expect(applyRefreshResult(token, data, 10_000)).toMatchObject({
+      accessToken: "AT-new",
+      refreshToken: "RT-new",
+      expiresAt: 3610,
+      language: "en",
+      error: undefined,
+    });
   });
 });

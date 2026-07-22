@@ -1,5 +1,24 @@
 import { apiServer } from "@/lib/api/server";
 import type { BackendAuthResponse } from "@/lib/social-auth-bridge";
+import type { JWT } from "next-auth/jwt";
+
+/** Apply the complete backend refresh result to the long-lived Auth.js JWT. */
+export function applyRefreshResult(
+  token: JWT,
+  data: BackendAuthResponse,
+  nowMs: number = Date.now(),
+): JWT {
+  return {
+    ...token,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt: Math.floor(nowMs / 1000) + data.expires_in,
+    // Refresh responses carry the current profile, so this also repairs JWTs
+    // minted before language was stored and picks up cross-device changes.
+    language: data.user.language,
+    error: undefined,
+  };
+}
 
 /**
  * Calls the backend `/auth/refresh` endpoint, returning the new

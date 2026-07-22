@@ -57,6 +57,7 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import { useFormat } from "@/format/FormatProvider";
+import { translateKnownLabel, TRIP_STATUS_LABELS } from "@/i18n/domainLabels";
 import {
   Button,
   Heading,
@@ -821,7 +822,7 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide ${tone}`}
     >
-      {status}
+      {translateKnownLabel(status, TRIP_STATUS_LABELS, t)}
     </span>
   );
 }

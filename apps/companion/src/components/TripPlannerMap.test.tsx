@@ -3273,7 +3273,7 @@ describe("TripPlannerMap", () => {
       ref.current?.openConditionPopover({ kind: "pass", id: "pass-1" }),
     );
     expect(screen.getByText("Stelvio Pass")).toBeInTheDocument();
-    expect(screen.getByText("Seasonal pass · closed")).toBeInTheDocument();
+    expect(screen.getByText("Seasonal pass · Closed")).toBeInTheDocument();
   });
 
   it("passes per-segment quality features covering every day to the route source", async () => {

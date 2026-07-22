@@ -33,6 +33,8 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
+vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => null) }));
+
 // Two of the four pages (road-map share + collection share) reach a client
 // map component through their default export. `generateMetadata` never
 // renders them, but importing the page module still evaluates each

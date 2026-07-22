@@ -11,6 +11,11 @@ import {
   type Translate,
 } from ".";
 
+// Locale detection runs before the root layout and metadata can render. Auth
+// may refresh an expired token, so bound this best-effort preference lookup
+// rather than letting a stalled backend refresh block the entire page.
+const ACCOUNT_LOCALE_LOOKUP_TIMEOUT_MS = 3000;
+
 /**
  * React `cache()` gives us per-request memoization on the server: every
  * render pass gets its own ref slot, so concurrent requests handled by the
@@ -43,6 +48,27 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
   }
 
   try {
+    // Keep importing the heavy Auth.js module lazy: request-bound `t()` is
+    // also used by static/error rendering paths that never need a session.
+    let timer: number | undefined;
+    const accountLocale = await Promise.race([
+      import("@/lib/auth").then(async ({ auth }) =>
+        Promise.resolve(auth()).then((session) => session?.user?.language),
+      ),
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(resolve, ACCOUNT_LOCALE_LOOKUP_TIMEOUT_MS);
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+    if (accountLocale && isSupportedLocale(accountLocale)) {
+      return accountLocale;
+    }
+  } catch {
+    // An unavailable/expired auth session must not block browser detection.
+  }
+
+  try {
     const headerStore = await headers();
     const acceptLanguage = headerStore.get("accept-language");
     if (acceptLanguage) return resolveLocale(acceptLanguage);
@@ -71,7 +97,8 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
  *      need strict per-request isolation under concurrent rendering should
  *      either pass `locale` explicitly to `t()` or call `getServerLocale()`.
  *
- * Precedence: explicit cookie > Accept-Language header > DEFAULT_LOCALE.
+ * Precedence: explicit cookie > authenticated account language >
+ * Accept-Language header > DEFAULT_LOCALE.
  */
 export async function readLocale(): Promise<SupportedLocale> {
   const ref = requestLocaleRef();

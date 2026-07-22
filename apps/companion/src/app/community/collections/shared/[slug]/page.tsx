@@ -213,6 +213,7 @@ export default async function SharedCollectionPage({
                 index={idx + 1}
                 author={ownerName}
                 format={format}
+                t={t}
               />
             ))}
           </ul>
