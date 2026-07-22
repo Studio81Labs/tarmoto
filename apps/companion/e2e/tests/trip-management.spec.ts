@@ -18,12 +18,12 @@ test.describe("trip management", () => {
     });
 
     await page.goto("/trips");
-    // The source card's accessible name starts with the title, then
-    // "draft", then the days/km strip. The copy's name will contain
-    // "(copy)". Anchor on the no-parens form so the source matcher
-    // isn't ambiguous after the duplicate adds a second card.
+    // The source card's accessible name is one cataloged message:
+    // "{title}, {status}". The copy's name will contain "(copy)". Anchor
+    // on the no-parens form so the source matcher isn't ambiguous after
+    // the duplicate adds a second card.
     const sourceCard = page.getByRole("link", {
-      name: new RegExp(`^${source.title}\\s+draft`, "i"),
+      name: new RegExp(`^${source.title},\\s+draft$`, "i"),
     });
     await expect(sourceCard).toBeVisible({ timeout: 10_000 });
 

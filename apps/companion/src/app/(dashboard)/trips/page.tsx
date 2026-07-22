@@ -952,10 +952,9 @@ function TripCard({
           | 5)
       : 3;
   const updatedIso = trip.updatedAt ?? trip.createdAt;
-  // T7 e2e (`getByRole("link", { name: /^${title}\s+${status}/ })`)
-  // needs the trip name to lead the accessible name; without the
-  // explicit aria-label the visual status badge (rendered above the
-  // title in DOM order) wins, breaking the selector.
+  // T7 e2e anchors on this cataloged "{title}, {status}" accessible name.
+  // Without the explicit aria-label the visual status badge (rendered above
+  // the title in DOM order) wins, making the card ambiguous.
   const statusLabel = t(TRIP_STATUS_LABELS[trip.status]);
   const cardAriaLabel = t("{title}, {status}", {
     title: trip.name,

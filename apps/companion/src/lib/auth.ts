@@ -14,7 +14,7 @@ import "./auth-types";
 
 import { apiServer } from "@/lib/api/server";
 import { exchangeOAuthUserForBackendTokens } from "@/lib/social-auth-bridge";
-import { dedupedRefresh } from "@/lib/auth-refresh";
+import { applyRefreshResult, dedupedRefresh } from "@/lib/auth-refresh";
 import {
   SOCIAL_ACCOUNT_CONFLICT_ERROR,
   SOCIAL_ACCOUNT_CONFLICT_MESSAGE,
@@ -177,13 +177,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // rider remain isolated).
       try {
         const data = await dedupedRefresh(token.refreshToken);
-        return {
-          ...token,
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token,
-          expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
-          error: undefined,
-        };
+        return applyRefreshResult(token, data);
       } catch {
         // If the access token is still technically valid (we entered
         // this branch because of the 5 min refresh buffer, not because
