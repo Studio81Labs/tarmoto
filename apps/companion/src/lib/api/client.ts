@@ -130,6 +130,7 @@ export async function openApiData<T>(
       apiErrorMessage(result.error, status),
       status,
       result.error,
+      true,
     );
   }
   return { data: result.data as T };
