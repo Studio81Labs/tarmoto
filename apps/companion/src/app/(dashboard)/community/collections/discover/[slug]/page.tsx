@@ -69,7 +69,7 @@ export default function DiscoverCollectionPage() {
       setLoad({
         phase: "error",
         message:
-          err instanceof Error ? err.message : "Failed to load collection",
+          err instanceof Error ? err.message : t("Failed to load collection"),
       });
     }
   }, []);

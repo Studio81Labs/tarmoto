@@ -170,7 +170,7 @@ export default function TripListPage() {
       .catch(() => {
         if (cancelled) return;
         setTrips([]);
-        setErrorBanner("Couldn't load your trips. Check your connection.");
+        setErrorBanner(t("Couldn't load your trips. Check your connection."));
       })
       .finally(() => {
         if (cancelled) return;
@@ -223,7 +223,9 @@ export default function TripListPage() {
         }
       } catch {
         if (cancelled) return;
-        setErrorBanner("Couldn't load your folders. Try refreshing the page.");
+        setErrorBanner(
+          t("Couldn't load your folders. Try refreshing the page."),
+        );
       }
     })();
     return () => {
@@ -318,7 +320,7 @@ export default function TripListPage() {
       if (scopePointedAtDeleted) {
         setFilters((prev) => ({ ...prev, folderScope: previousFolderScope }));
       }
-      setErrorBanner("Couldn't delete the folder. Try again.");
+      setErrorBanner(t("Couldn't delete the folder. Try again."));
     }
   };
   const moveTripToFolder = async (
@@ -353,7 +355,7 @@ export default function TripListPage() {
               : storedTrip,
           ),
       );
-      setErrorBanner("Couldn't move the trip. Try again.");
+      setErrorBanner(t("Couldn't move the trip. Try again."));
     } finally {
       clearBusy(trip.id);
     }
@@ -384,7 +386,7 @@ export default function TripListPage() {
       }
       void invalidateTripsCache();
     } catch {
-      setErrorBanner("Couldn't duplicate the trip. Try again.");
+      setErrorBanner(t("Couldn't duplicate the trip. Try again."));
     } finally {
       clearBusy(trip.id);
     }
@@ -409,7 +411,7 @@ export default function TripListPage() {
       const insertAt = Math.min(Math.max(indexBefore, 0), restored.length);
       restored.splice(insertAt, 0, trip);
       setTrips(restored);
-      setErrorBanner("Couldn't delete the trip. Try again.");
+      setErrorBanner(t("Couldn't delete the trip. Try again."));
     } finally {
       clearBusy(trip.id);
     }
@@ -442,7 +444,7 @@ export default function TripListPage() {
         );
       } catch {
         setFolders((prev) => prev.filter((f) => f.id !== tempId));
-        setErrorBanner("Couldn't create the folder. Try again.");
+        setErrorBanner(t("Couldn't create the folder. Try again."));
       }
     } else {
       const target = folderModal.folder;
@@ -467,7 +469,7 @@ export default function TripListPage() {
         }
       } catch {
         setFolders(previous);
-        setErrorBanner("Couldn't rename the folder. Try again.");
+        setErrorBanner(t("Couldn't rename the folder. Try again."));
       }
     }
   };

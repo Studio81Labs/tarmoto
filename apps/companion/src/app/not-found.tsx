@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ErrorState } from "@tarmoto/ui";
-import { t } from "@/i18n";
+import { t } from "@/i18n/server";
 
 // Shared by unknown routes and every `notFound()` call (missing rides,
 // dead share tokens, …) — the v2 "System state · 404" screen.

@@ -117,7 +117,6 @@ describe('AccountService', () => {
       expect(stripe.getBillingSnapshot).not.toHaveBeenCalled();
       expect(snapshot.current_plan).toMatchObject({
         tier: 'free',
-        name: 'Free',
         status: 'canceled',
         cancel_at_period_end: false,
       });
@@ -170,9 +169,12 @@ describe('AccountService', () => {
       expect(snapshot.current_plan).toMatchObject({
         tier: 'premium',
         status: 'active',
-        // premium is the €49.99 top tier (2026-07 tier-name swap)
-        price_label: '€49.99/yr',
       });
+      expect(snapshot.plans).toEqual([
+        { tier: 'free' },
+        { tier: 'pro' },
+        { tier: 'premium' },
+      ]);
       expect(snapshot.payment_method).toMatchObject({
         brand: 'visa',
         last4: '4242',

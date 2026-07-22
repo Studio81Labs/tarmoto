@@ -4053,23 +4053,14 @@ export interface components {
         CurrentSubscriptionPlanDto: {
             /** @enum {string} */
             tier: "free" | "pro" | "premium";
-            name: string;
             /** @enum {string} */
             status: "active" | "trialing" | "past_due" | "canceled";
-            /** @example €29.99/yr */
-            price_label: string;
             renews_at?: string | null;
             cancel_at_period_end: boolean;
         };
         SubscriptionPlanDto: {
             /** @enum {string} */
             tier: "free" | "pro" | "premium";
-            name: string;
-            /** @example €29.99/yr */
-            price_label: string;
-            features: string[];
-            description?: string;
-            highlighted?: boolean;
         };
         SubscriptionPaymentMethodDto: {
             brand: string;

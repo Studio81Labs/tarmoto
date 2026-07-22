@@ -289,7 +289,7 @@ function RoadMapPageInner() {
           message:
             err instanceof Error
               ? err.message
-              : "Could not load road segment details.",
+              : t("Could not load road segment details."),
         });
       });
     return () => {

@@ -74,18 +74,19 @@ describe("Best Roads metadata", () => {
     );
   });
 
-  it("pins the exact English title/imageAlt for the region page (description stays data-sourced)", async () => {
+  it("pins the exact English catalog title, description, and imageAlt for the region page", async () => {
     const metadata = await generateRegionMetadata({
       params: Promise.resolve({ country: "AT", region: "tyrol" }),
     });
 
     expect(metadata.title).toBe("Best motorcycle roads in Tyrol — Tarmoto");
+    expect(metadata.description).toContain("Austrian Alps");
     expect(serializedOpenGraph(metadata)).toContain(
       '"alt":"Best motorcycle roads in Tyrol"',
     );
   });
 
-  it("pins the exact English title/imageAlt for the subregion page (description stays data-sourced)", async () => {
+  it("pins the exact English catalog title, description, and imageAlt for the subregion page", async () => {
     const metadata = await generateSubregionMetadata({
       params: Promise.resolve({
         country: "AT",
@@ -97,6 +98,7 @@ describe("Best Roads metadata", () => {
     expect(metadata.title).toBe(
       "Best motorcycle roads in Alpine Passes — Tarmoto",
     );
+    expect(metadata.description).toContain("signature high passes");
     expect(serializedOpenGraph(metadata)).toContain(
       '"alt":"Best motorcycle roads in Alpine Passes"',
     );

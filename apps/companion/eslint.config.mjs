@@ -19,6 +19,48 @@ import tseslint from "typescript-eslint";
 // locale-formatting additions) rather than relying on the broad block. A
 // single shared array keeps the two copies from drifting out of sync.
 const restrictedSyntaxSelectors = [
+  // Error copy often reaches JSX indirectly through state or callbacks, so
+  // the JSX guards below cannot see it. Keep literals out of error setters,
+  // nested `{ message }` state objects and `onError()` callback boundaries.
+  {
+    selector:
+      "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap rider-facing error state with t()/tDynamic before passing it to the setter.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Compose rider-facing error state through one ICU catalog message.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message: "Wrap every rider-facing error-state branch with t()/tDynamic.",
+  },
+  {
+    selector: "Property[key.name='message'] > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Route rider-facing message properties through t()/tDynamic. Document a scoped exception for non-display protocol data.",
+  },
+  {
+    selector:
+      "Property[key.name='message'] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Compose rider-facing message properties through one ICU catalog message.",
+  },
+  {
+    selector:
+      "Property[key.name='message'] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap every rider-facing message-property branch with t()/tDynamic.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='onError'] > Literal[value=/[A-Za-z]{2,}/]",
+    message: "Wrap rider-facing onError() copy with t()/tDynamic.",
+  },
   // Display helpers are another translation boundary: returning prose from a
   // function and later interpolating the result bypasses every JSX-literal
   // selector below. Semantic enum/token helpers should use names that do not

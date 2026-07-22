@@ -4,35 +4,14 @@ import { SUBSCRIPTION_TIERS, type SubscriptionTier } from '@tarmoto/shared';
 class SubscriptionPlanDto {
   @ApiProperty({ enum: SUBSCRIPTION_TIERS })
   tier!: SubscriptionTier;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty({ example: '€29.99/yr' })
-  price_label!: string;
-
-  @ApiProperty({ type: [String] })
-  features!: string[];
-
-  @ApiPropertyOptional()
-  description?: string;
-
-  @ApiPropertyOptional()
-  highlighted?: boolean;
 }
 
 class CurrentSubscriptionPlanDto {
   @ApiProperty({ enum: SUBSCRIPTION_TIERS })
   tier!: SubscriptionTier;
 
-  @ApiProperty()
-  name!: string;
-
   @ApiProperty({ enum: ['active', 'trialing', 'past_due', 'canceled'] })
   status!: 'active' | 'trialing' | 'past_due' | 'canceled';
-
-  @ApiProperty({ example: '€29.99/yr' })
-  price_label!: string;
 
   @ApiPropertyOptional({ type: String, nullable: true })
   renews_at!: string | null;

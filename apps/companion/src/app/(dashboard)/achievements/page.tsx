@@ -957,7 +957,9 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
         setLoad({
           status: "error",
           message:
-            err instanceof Error ? err.message : "Could not load leaderboards.",
+            err instanceof Error
+              ? err.message
+              : t("Could not load leaderboards."),
         });
       }
     },

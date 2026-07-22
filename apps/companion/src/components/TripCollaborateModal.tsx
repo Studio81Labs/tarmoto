@@ -1811,7 +1811,8 @@ function groupActivityByDay(
   return groups;
 }
 function describeError(err: unknown): string {
-  if (err instanceof ApiError) return err.message ?? `Failed (${err.status})`;
+  if (err instanceof ApiError)
+    return err.message ?? t("Failed ({status})", { status: err.status });
   if (err instanceof Error) return err.message;
   return t("Unknown error");
 }

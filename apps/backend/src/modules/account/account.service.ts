@@ -8,7 +8,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
-import { formatSubscriptionPriceLabel } from '@tarmoto/shared';
+import {
+  formatSubscriptionPriceLabel,
+  SUBSCRIPTION_TIERS,
+} from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
 import { PushService } from '../push/index.js';
@@ -32,49 +35,17 @@ import type {
 const INTRO_TRIAL_DAYS = 14;
 type UserUpdate = Parameters<Repository<User>['update']>[1];
 
-const PLAN_CATALOG: Record<
+// Billing-email variables stay server-owned; client-facing subscription copy
+// is derived from the stable tier in each surface's locale catalog.
+const BILLING_PLAN_META: Record<
   BillingTier,
-  {
-    name: string;
-    priceLabel: string;
-    features: string[];
-    description?: string;
-    highlighted?: boolean;
-  }
+  { name: string; priceLabel: string }
 > = {
-  free: {
-    name: 'Free',
-    priceLabel: formatSubscriptionPriceLabel('free'),
-    features: [
-      'Basic navigation',
-      'Road quality overlay (limited)',
-      'Hazard alerts',
-      '1 active trip',
-    ],
-  },
-  // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
-  // decided 2026-07 — the marketing page originally had them swapped).
-  pro: {
-    name: 'Pro',
-    priceLabel: formatSubscriptionPriceLabel('pro'),
-    highlighted: true,
-    features: [
-      'Unlimited trip planning',
-      'Full road quality zoom',
-      'Offline maps',
-      'GPX export',
-    ],
-  },
+  free: { name: 'Free', priceLabel: formatSubscriptionPriceLabel('free') },
+  pro: { name: 'Pro', priceLabel: formatSubscriptionPriceLabel('pro') },
   premium: {
     name: 'Premium',
     priceLabel: formatSubscriptionPriceLabel('premium'),
-    description: 'For group organisers and power users.',
-    features: [
-      'Everything in Pro',
-      'Unlimited group rides',
-      'Priority hazard alerts',
-      'Advanced analytics',
-    ],
   },
 };
 
@@ -278,7 +249,7 @@ export class AccountService {
       // which would otherwise bombard the user with a cancellation
       // notice for a plan they never had.
       if (previousTier !== 'free') {
-        const planName = PLAN_CATALOG[previousTier]?.name ?? previousTier;
+        const planName = BILLING_PLAN_META[previousTier].name;
         // Fire-and-forget: a 10s Resend timeout on top of normal DB
         // I/O could push the webhook response close to Stripe's 20s
         // timeout window, triggering a retry — which would re-run
@@ -429,7 +400,7 @@ export class AccountService {
     tier: BillingTier,
     renewsAt: Date | null,
   ): Promise<void> {
-    const plan = PLAN_CATALOG[tier];
+    const plan = BILLING_PLAN_META[tier];
     try {
       await this.email.sendSubscriptionConfirmed(
         user.email,
@@ -502,14 +473,10 @@ export class AccountService {
       liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
     const currentStatus =
       liveSnapshot?.currentPlan?.status ?? user.subscription_status;
-    const currentPlanMeta = PLAN_CATALOG[currentTier];
-
     return {
       current_plan: {
         tier: currentTier,
-        name: currentPlanMeta.name,
         status: currentStatus,
-        price_label: currentPlanMeta.priceLabel,
         renews_at:
           liveSnapshot?.currentPlan?.renewsAt ??
           user.subscription_current_period_end?.toISOString() ??
@@ -518,18 +485,10 @@ export class AccountService {
           liveSnapshot?.currentPlan?.cancelAtPeriodEnd ??
           user.subscription_cancel_at_period_end,
       },
-      plans: (
-        Object.entries(PLAN_CATALOG) as Array<
-          [BillingTier, (typeof PLAN_CATALOG)[BillingTier]]
-        >
-      ).map(([tier, plan]) => ({
-        tier,
-        name: plan.name,
-        price_label: plan.priceLabel,
-        features: plan.features,
-        ...(plan.description ? { description: plan.description } : {}),
-        ...(plan.highlighted ? { highlighted: plan.highlighted } : {}),
-      })),
+      // A tier is the stable display-content identifier. Localized names,
+      // features, descriptions and prices belong to each client catalog, not
+      // this locale-neutral API response.
+      plans: SUBSCRIPTION_TIERS.map((tier) => ({ tier })),
       payment_method: liveSnapshot?.paymentMethod
         ? {
             brand: liveSnapshot.paymentMethod.brand,

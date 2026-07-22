@@ -231,4 +231,17 @@ export const settings = {
   "Could not delete account": "Could not delete account",
   "Could not save preferences": "Could not save preferences",
   "Could not save settings": "Could not save settings",
+  "Export marked ready but the download link is missing.":
+    "Export marked ready but the download link is missing.",
+  "Export failed. Please try again.": "Export failed. Please try again.",
+  "Export expired. Request a new archive.":
+    "Export expired. Request a new archive.",
+  "Export is taking longer than expected. Please try again in a few minutes.":
+    "Export is taking longer than expected. Please try again in a few minutes.",
+  "Could not check export progress.": "Could not check export progress.",
+  "Could not load your bikes": "Could not load your bikes",
+  "Could not set active bike": "Could not set active bike",
+  "Could not delete bike": "Could not delete bike",
+  "Could not load subscription settings.":
+    "Could not load subscription settings.",
 } as const;

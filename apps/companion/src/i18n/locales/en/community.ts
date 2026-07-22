@@ -1,4 +1,5 @@
 export const community = {
+  "Failed to load collection": "Failed to load collection",
   "(optional)": "(optional)",
   "100+ views": "100+ views",
   "250+ views": "250+ views",

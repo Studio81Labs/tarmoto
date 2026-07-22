@@ -66,31 +66,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "premium",
-          name: "Premium",
           status: "active",
-          price_label: "€29.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation", "Hazard alerts", "1 active trip"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning", "Offline maps"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€49.99/yr",
-            features: ["Unlimited group rides", "Advanced analytics"],
           },
         ],
         payment_method: {
@@ -162,31 +150,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "pro",
-          name: "Pro",
           status: "active",
-          price_label: "€49.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: null,
@@ -224,31 +200,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "free",
-          name: "Free",
           status: "canceled",
-          price_label: "€0",
           renews_at: null,
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: null,
@@ -286,31 +250,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "pro",
-          name: "Pro",
           status: "canceled",
-          price_label: "€29.99/yr",
           renews_at: null,
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: null,
@@ -368,31 +320,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "pro",
-          name: "Pro",
           status: "canceled",
-          price_label: "€29.99/yr",
           renews_at: null,
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: null,
@@ -424,31 +364,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "premium",
-          name: "Premium",
           status: "active",
-          price_label: "€29.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: {
@@ -486,31 +414,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "premium",
-          name: "Premium",
           status: "active",
-          price_label: "€29.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: {
@@ -550,31 +466,19 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "premium",
-          name: "Premium",
           status: "active",
-          price_label: "€29.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
           cancel_at_period_end: false,
         },
         plans: [
           {
             tier: "free",
-            name: "Free",
-            price_label: "€0",
-            features: ["Basic navigation"],
           },
           {
             tier: "premium",
-            name: "Premium",
-            price_label: "€29.99/yr",
-            highlighted: true,
-            features: ["Unlimited trip planning"],
           },
           {
             tier: "pro",
-            name: "Pro",
-            price_label: "€49.99/yr",
-            features: ["Advanced analytics"],
           },
         ],
         payment_method: {
