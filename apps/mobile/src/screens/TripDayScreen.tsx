@@ -67,7 +67,11 @@ import {
   type FuelLeg,
   type FuelStationAnchor,
 } from "./TripScreens.helpers";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  t as translate,
+  type EnglishMessageKey,
+} from "@/i18n";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
@@ -105,9 +109,7 @@ export default function TripDayScreen() {
         setActiveTrip(next);
       } catch (e) {
         if (ignore) return;
-        setError(
-          e instanceof Error ? e.message : translate("Failed to load day"),
-        );
+        setError(getUserFacingErrorMessage(e, translate("Failed to load day")));
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -550,9 +552,7 @@ function AccommodationsCard({
       } catch (e) {
         if (ignore) return;
         setError(
-          e instanceof Error
-            ? e.message
-            : translate("Couldn't load nearby stays"),
+          getUserFacingErrorMessage(e, translate("Couldn't load nearby stays")),
         );
       } finally {
         if (!ignore) setLoading(false);
@@ -686,9 +686,10 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
       } catch (e) {
         if (ignore) return;
         setError(
-          e instanceof Error
-            ? e.message
-            : translate("Couldn't load nearby places"),
+          getUserFacingErrorMessage(
+            e,
+            translate("Couldn't load nearby places"),
+          ),
         );
       } finally {
         if (!ignore) setLoading(false);

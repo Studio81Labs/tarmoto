@@ -40,7 +40,7 @@ import type { TripFolder, TripSummary } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
 import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
@@ -105,9 +105,7 @@ export default function TripsScreen() {
         if (isInitial && !hadCache) {
           setPhase("error");
           setErrorMessage(
-            err instanceof Error
-              ? err.message
-              : translate("Unable to load trips"),
+            getUserFacingErrorMessage(err, translate("Unable to load trips")),
           );
         }
       } finally {

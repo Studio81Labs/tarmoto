@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import {
@@ -99,8 +99,10 @@ export default function DataPage() {
       if (next) setExportState(next);
       else setExportState({ kind: "polling", id: view.id });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("Could not start export");
+      const message = getUserFacingErrorMessage(
+        err,
+        t("Could not start export"),
+      );
       setExportState({ kind: "error", message });
     }
   }
@@ -158,10 +160,10 @@ export default function DataPage() {
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           setExportState({
             kind: "error",
-            message:
-              err instanceof Error
-                ? err.message
-                : t("Could not check export progress."),
+            message: getUserFacingErrorMessage(
+              err,
+              t("Could not check export progress."),
+            ),
           });
           return;
         }
@@ -322,8 +324,10 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
       // and swallow any signOut error.
       await signOut({ callbackUrl: "/login?deleted=1" });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("Could not delete account");
+      const message = getUserFacingErrorMessage(
+        err,
+        t("Could not delete account"),
+      );
       setState({ kind: "error", message });
     }
   }

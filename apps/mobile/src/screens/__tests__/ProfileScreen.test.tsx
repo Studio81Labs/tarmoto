@@ -360,7 +360,7 @@ describe("ProfileScreen", () => {
       id: "user-1",
       avatar_url: null,
     });
-    expect(await screen.findByText("offline")).toBeTruthy();
+    expect(await screen.findByText("Could not upload avatar.")).toBeTruthy();
   });
 
   it("renders sign-in prompt when no user is authenticated", async () => {

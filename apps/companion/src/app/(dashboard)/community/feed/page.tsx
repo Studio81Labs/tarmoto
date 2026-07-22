@@ -1,5 +1,5 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
@@ -114,9 +114,7 @@ export default function CommunityFeedPage() {
         if (cancelled) return;
         setItems([]);
         setTotal(0);
-        setError(
-          err instanceof Error ? err.message : t("Could not load rides."),
-        );
+        setError(getUserFacingErrorMessage(err, t("Could not load rides.")));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@tarmoto/ui";
@@ -38,7 +38,10 @@ export function RideExportMenu({
       setOpen(false);
     } catch (err) {
       toast.error(t("Export failed"), {
-        description: err instanceof Error ? err.message : undefined,
+        description: getUserFacingErrorMessage(
+          err,
+          t("Export failed. Please try again."),
+        ),
       });
     } finally {
       setBusy(null);

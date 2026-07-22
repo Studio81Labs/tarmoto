@@ -34,7 +34,7 @@ import {
 import { Toggle } from "@/components/brand";
 import { api } from "@/services/api";
 import type { EmergencyContact, EmergencyContactInput } from "@/types";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -55,9 +55,7 @@ export default function EmergencyContactsScreen() {
       setContacts(list);
     } catch (err) {
       setLoadError(
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't load contacts."),
+        getUserFacingErrorMessage(err, translate("Couldn't load contacts.")),
       );
     }
   }, []);
@@ -95,7 +93,7 @@ export default function EmergencyContactsScreen() {
             } catch (err) {
               Alert.alert(
                 translate("Couldn't delete contact"),
-                err instanceof Error ? err.message : translate("Try again."),
+                getUserFacingErrorMessage(err, translate("Try again.")),
               );
             }
           },
@@ -261,9 +259,7 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
       return;
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't save contact."),
+        getUserFacingErrorMessage(err, translate("Couldn't save contact.")),
       );
       setSubmitting(false);
     }

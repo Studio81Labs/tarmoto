@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { Button, FieldLabel, Input } from "@tarmoto/ui";
@@ -71,9 +71,7 @@ export function BikeFormModal({
       await onSubmit(formValuesToPayload(values));
       onClose();
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : t("Could not save bike"),
-      );
+      setSubmitError(getUserFacingErrorMessage(err, t("Could not save bike")));
       setSubmitting(false);
     }
   }

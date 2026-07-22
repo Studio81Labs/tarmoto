@@ -39,7 +39,7 @@ import Avatar from "@/components/Avatar";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { FollowerListItem } from "@/types";
 import { formatFollowedSince } from "./riderProfile.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 export type FollowListMode = "followers" | "following";
 
@@ -96,9 +96,7 @@ export default function FollowList({
         if (signal.cancelled) return;
         setPhase("error");
         setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : translate("Could not load list."),
+          getUserFacingErrorMessage(err, translate("Could not load list.")),
         );
       } finally {
         if (!signal.cancelled) setIsRefreshing(false);

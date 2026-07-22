@@ -36,6 +36,7 @@ import { usePendingHazardReports, usePendingUploads } from "@/hooks";
 import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import {
+  getUserFacingErrorMessage,
   LOCALES,
   SUPPORTED_LOCALES,
   t as translate,
@@ -237,9 +238,7 @@ function BulkExportCard() {
     } catch (err) {
       Alert.alert(
         translate("Couldn't export"),
-        err instanceof Error
-          ? err.message
-          : translate("Unable to export rides."),
+        getUserFacingErrorMessage(err, translate("Unable to export rides.")),
       );
     } finally {
       // Same rationale as the per-ride export: leave the temp file in
@@ -568,9 +567,10 @@ function SafetyCard() {
         setUser(updated);
       } catch (err) {
         setError(
-          err instanceof Error
-            ? err.message
-            : translate("Couldn't update preference."),
+          getUserFacingErrorMessage(
+            err,
+            translate("Couldn't update preference."),
+          ),
         );
       } finally {
         setPending(false);

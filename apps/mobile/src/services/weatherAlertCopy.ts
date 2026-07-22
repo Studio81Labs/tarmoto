@@ -35,8 +35,8 @@ function isWeatherAlertKind(kind: string): kind is WeatherAlertKind {
 
 /**
  * Reconstruct route-alert copy from structured data instead of displaying the
- * backend's English compatibility fields. Unknown future kinds deliberately
- * retain those fields until the mobile catalog gains matching copy.
+ * backend's English compatibility fields. Unknown future kinds use safe,
+ * cataloged generic copy until the mobile catalog gains a structured label.
  */
 export function localizeWeatherAlert(
   alert: WeatherAlert,
@@ -44,7 +44,10 @@ export function localizeWeatherAlert(
 ): WeatherAlertCopy {
   const kind: string = alert.kind;
   if (!isWeatherAlertKind(kind)) {
-    return { title: alert.title, message: alert.message };
+    return {
+      title: t("Weather warning"),
+      message: t("Weather conditions may affect your route. Ride cautiously."),
+    };
   }
 
   const format = getFormatters();

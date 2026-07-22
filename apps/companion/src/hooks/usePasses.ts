@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { api, passesApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -147,14 +148,16 @@ export function usePasses(
     fetching: listQuery.isFetching,
     routeLoading: routes.length > 0 && routeQuery.isLoading,
     error: listQuery.isError
-      ? (listQuery.error as Error)?.message || "Failed to load passes"
+      ? getUserFacingErrorMessage(listQuery.error, t("Failed to load passes"))
       : null,
     routeError:
       routes.length === 0
         ? null
         : routeQuery.isError
-          ? (routeQuery.error as Error)?.message ||
-            "Failed to check route passes"
+          ? getUserFacingErrorMessage(
+              routeQuery.error,
+              t("Failed to check route passes"),
+            )
           : null,
   };
 }

@@ -140,6 +140,7 @@ export const community = {
   "{count} selected": "{count} selected",
   "{title} \u2014 Tarmoto collection": "{title} \u2014 Tarmoto collection",
   "Could not load rider profile": "Could not load rider profile",
+  "Failed to load route collections": "Failed to load route collections",
   "Clear search": "Clear search",
   'Delete "{title}"? The routes inside won’t be affected.':
     'Delete "{title}"? The routes inside won’t be affected.',
@@ -160,6 +161,7 @@ export const community = {
   "Failed to save collection": "Failed to save collection",
   "Could not load rides.": "Could not load rides.",
   "Could not load reviews.": "Could not load reviews.",
+  "Could not upload photos.": "Could not upload photos.",
   "Could not save your review.": "Could not save your review.",
   "Could not delete your review.": "Could not delete your review.",
   "Could not load shared rides.": "Could not load shared rides.",

@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   notFound as renderNotFound,
@@ -156,8 +156,7 @@ export default function TripDetailPage() {
         setSegmentDetailState({
           status: "error",
           segmentId: selectedRoadSegmentId,
-          message:
-            err instanceof Error ? err.message : t("Failed to load segment"),
+          message: getUserFacingErrorMessage(err, t("Failed to load segment")),
         });
       });
     return () => {

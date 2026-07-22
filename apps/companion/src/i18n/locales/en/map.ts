@@ -23,6 +23,10 @@ export const map = {
     "Couldn't refresh Fun Zones for this area ",
   "Couldn't refresh Fun Zones for this area.":
     "Couldn't refresh Fun Zones for this area.",
+  "Failed to check route closures": "Failed to check route closures",
+  "Failed to check route passes": "Failed to check route passes",
+  "Failed to load closures": "Failed to load closures",
+  "Failed to load passes": "Failed to load passes",
   "Create account ": "Create account ",
   "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.":
     "Curated lists of the highest-rated motorcycle roads in each region, ranked by quality and curviness from crowdsourced rider data.",

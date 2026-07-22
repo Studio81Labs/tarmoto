@@ -79,7 +79,7 @@ import {
   segmentQualityHistogram,
   type LeanHistogramRow,
 } from "./RideScreens.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -135,7 +135,7 @@ export default function RideDetailScreen() {
       if (signal.cancelled) return;
       setPhase("error");
       setErrorMessage(
-        err instanceof Error ? err.message : translate("Couldn't load ride"),
+        getUserFacingErrorMessage(err, translate("Couldn't load ride")),
       );
     }
   }, [rideId]);
@@ -554,9 +554,10 @@ function ShareActions({ ride }: { ride: RideDetail }) {
     } catch (err) {
       Alert.alert(
         translate("Couldn't share"),
-        err instanceof Error
-          ? err.message
-          : translate("Unable to open share sheet."),
+        getUserFacingErrorMessage(
+          err,
+          translate("Unable to open share sheet."),
+        ),
       );
     } finally {
       setBusy(null);
@@ -591,7 +592,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
     } catch (err) {
       Alert.alert(
         translate("Couldn't export"),
-        err instanceof Error ? err.message : translate("Unable to export GPX."),
+        getUserFacingErrorMessage(err, translate("Unable to export GPX.")),
       );
     } finally {
       // Don't delete the file here. `RNShare.open` resolves the moment

@@ -22,6 +22,7 @@
 		A5F16ADB0E354019B1629413 /* JetBrainsMono_extrabold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1ABCD0A07BCE48AEB1E2C9C5 /* JetBrainsMono_extrabold.ttf */; };
 		D1219ECA36E74C7EB331E638 /* JetBrainsMono_bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E948CAF207A240EF912E0CD6 /* JetBrainsMono_bold.ttf */; };
 		EAEE0A109D444E34842A6119 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		F25A50A92C4A4F3C8D690001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = F25A50A92C4A4F3C8D690002 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 		E28319B2CA3844F8A0AE356C /* JetBrainsMono_medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = JetBrainsMono_medium.ttf; path = ../assets/fonts/JetBrainsMono_medium.ttf; sourceTree = "<group>"; };
 		E948CAF207A240EF912E0CD6 /* JetBrainsMono_bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = JetBrainsMono_bold.ttf; path = ../assets/fonts/JetBrainsMono_bold.ttf; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		F25A50A92C4A4F3C8D690003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = TarmotoApp/en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +69,7 @@
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				8A9B0C1D2E3F405060708091 /* CarSceneDelegate.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
+				F25A50A92C4A4F3C8D690002 /* InfoPlist.strings */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				8A9B0C1D2E3F405060708090 /* TarmotoApp.entitlements */,
@@ -211,6 +214,7 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				EAEE0A109D444E34842A6119 /* PrivacyInfo.xcprivacy in Resources */,
+				F25A50A92C4A4F3C8D690001 /* InfoPlist.strings in Resources */,
 				902FC47B890644EB8449055F /* SpaceGrotesk_semibold.ttf in Resources */,
 				0CA8EF96BDFB459594827682 /* SpaceGrotesk.ttf in Resources */,
 				51207689B30143568003E0D0 /* JetBrainsMono_medium.ttf in Resources */,
@@ -224,6 +228,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		F25A50A92C4A4F3C8D690002 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				F25A50A92C4A4F3C8D690003 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {

@@ -38,7 +38,7 @@ import {
 import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { tierLabel, tierRank } from "./AchievementsScreen.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
@@ -96,9 +96,10 @@ export default function AchievementsScreen() {
       if (allFailed) {
         const reason = (badgesResult as PromiseRejectedResult).reason;
         setErrorMessage(
-          reason instanceof Error
-            ? reason.message
-            : translate("Couldn't load achievements."),
+          getUserFacingErrorMessage(
+            reason,
+            translate("Couldn't load achievements."),
+          ),
         );
         if (!initial) setIsRefreshing(false);
         return;

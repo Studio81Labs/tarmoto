@@ -37,7 +37,7 @@ import {
 } from "@/theme/brand";
 import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
@@ -77,8 +77,10 @@ export default function JoinTripScreen() {
       // back target should be the list, not this form.
       navigation.replace("TripDetail", { tripId: trimmedId });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : translate("Unable to join trip");
+      const message = getUserFacingErrorMessage(
+        err,
+        translate("Unable to join trip"),
+      );
       setErrorMessage(message);
     } finally {
       setSubmitting(false);

@@ -1,5 +1,5 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
@@ -414,10 +414,10 @@ function ExplorerPageInner() {
         setSegmentDetailState({
           status: "error",
           segmentId: selectedSegmentId,
-          message:
-            err instanceof Error
-              ? err.message
-              : t("Could not load road segment details."),
+          message: getUserFacingErrorMessage(
+            err,
+            t("Could not load road segment details."),
+          ),
         });
       });
 
@@ -448,8 +448,10 @@ function ExplorerPageInner() {
         setTripDetailState({
           status: "error",
           tripId: selectedTripId,
-          message:
-            err instanceof Error ? err.message : t("Could not load this trip."),
+          message: getUserFacingErrorMessage(
+            err,
+            t("Could not load this trip."),
+          ),
         });
       });
     return () => {

@@ -49,6 +49,7 @@ function showRationale(
   rationale: PermissionRationale,
 ): Promise<"allow" | "cancel"> {
   return new Promise((resolve) => {
+    // eslint-disable-next-line no-restricted-syntax -- callers supply cataloged rationale copy.
     Alert.alert(rationale.title, rationale.message, [
       {
         text: translate("Cancel"),

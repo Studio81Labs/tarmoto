@@ -72,7 +72,11 @@ import { useHazardStore } from "@/stores";
 import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import type { HazardType, Severity } from "@/types";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  t as translate,
+  type EnglishMessageKey,
+} from "@/i18n";
 import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
@@ -329,10 +333,10 @@ export default function HazardReportScreen() {
       }
       navigation.goBack();
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't submit the report.");
+      const message = getUserFacingErrorMessage(
+        err,
+        translate("Couldn't submit the report."),
+      );
       setErrorMessage(message);
     } finally {
       setSubmitting(false);

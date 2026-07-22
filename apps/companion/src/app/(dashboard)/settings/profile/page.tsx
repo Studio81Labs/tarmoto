@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
@@ -141,9 +141,10 @@ export default function ProfilePage() {
     } catch (err) {
       setSaveState("error");
       setSaveError(
-        err instanceof Error
-          ? err.message
-          : t("Could not reset your profile. Please try again."),
+        getUserFacingErrorMessage(
+          err,
+          t("Could not reset your profile. Please try again."),
+        ),
       );
     }
   }, []);
@@ -203,7 +204,7 @@ export default function ProfilePage() {
       }
       setSaveState("error");
       setSaveError(
-        err instanceof Error ? err.message : t("Could not save your profile."),
+        getUserFacingErrorMessage(err, t("Could not save your profile.")),
       );
     }
   }, [
@@ -251,9 +252,7 @@ export default function ProfilePage() {
       } catch (err) {
         setAvatarUploadState("error");
         setAvatarUploadError(
-          err instanceof Error
-            ? err.message
-            : t("Could not upload your photo."),
+          getUserFacingErrorMessage(err, t("Could not upload your photo.")),
         );
       }
     },

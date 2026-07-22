@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic } from "@/i18n";
+import { getUserFacingErrorMessage, t, tDynamic } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound as renderNotFound, useParams } from "next/navigation";
 import Link from "next/link";
@@ -149,8 +149,10 @@ export default function RiderProfilePage() {
             }
           : prev,
       );
-      const message =
-        err instanceof Error ? err.message : t("Could not update follow");
+      const message = getUserFacingErrorMessage(
+        err,
+        t("Could not update follow"),
+      );
       setFollowError(message);
     } finally {
       if (activeRiderIdRef.current === targetId) {

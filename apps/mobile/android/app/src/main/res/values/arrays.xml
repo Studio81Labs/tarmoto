@@ -23,7 +23,7 @@
 -->
 <resources>
 
-  <string-array name="hazard_pothole_synonyms" translatable="false">
+  <string-array name="hazard_pothole_synonyms">
     <item>pothole</item>
     <item>potholes</item>
     <item>hole</item>
@@ -31,14 +31,14 @@
     <item>pit</item>
   </string-array>
 
-  <string-array name="hazard_gravel_synonyms" translatable="false">
+  <string-array name="hazard_gravel_synonyms">
     <item>gravel</item>
     <item>loose gravel</item>
     <item>stones</item>
     <item>chippings</item>
   </string-array>
 
-  <string-array name="hazard_oil_spill_synonyms" translatable="false">
+  <string-array name="hazard_oil_spill_synonyms">
     <item>oil_spill</item>
     <item>oil spill</item>
     <item>oil</item>
@@ -48,14 +48,14 @@
     <item>fuel spill</item>
   </string-array>
 
-  <string-array name="hazard_roadworks_synonyms" translatable="false">
+  <string-array name="hazard_roadworks_synonyms">
     <item>roadworks</item>
     <item>road works</item>
     <item>construction</item>
     <item>roadwork</item>
   </string-array>
 
-  <string-array name="hazard_animals_synonyms" translatable="false">
+  <string-array name="hazard_animals_synonyms">
     <item>animals</item>
     <item>animal</item>
     <item>deer</item>
@@ -63,7 +63,7 @@
     <item>roadkill</item>
   </string-array>
 
-  <string-array name="hazard_police_synonyms" translatable="false">
+  <string-array name="hazard_police_synonyms">
     <item>police</item>
     <item>cop</item>
     <item>cops</item>
@@ -71,7 +71,7 @@
     <item>checkpoint</item>
   </string-array>
 
-  <string-array name="hazard_flooding_synonyms" translatable="false">
+  <string-array name="hazard_flooding_synonyms">
     <item>flooding</item>
     <item>flood</item>
     <item>standing water</item>
@@ -79,7 +79,7 @@
     <item>water</item>
   </string-array>
 
-  <string-array name="hazard_ice_synonyms" translatable="false">
+  <string-array name="hazard_ice_synonyms">
     <item>ice</item>
     <item>black ice</item>
     <item>icy</item>
@@ -87,7 +87,7 @@
     <item>frost</item>
   </string-array>
 
-  <string-array name="hazard_other_synonyms" translatable="false">
+  <string-array name="hazard_other_synonyms">
     <item>other</item>
     <item>other hazard</item>
     <item>hazard</item>

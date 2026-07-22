@@ -122,7 +122,7 @@ describe("localizeWeatherAlert", () => {
     );
   });
 
-  it("keeps server copy for an unknown future alert kind", () => {
+  it("uses cataloged generic copy for an unknown future alert kind", () => {
     const alert = buildAlert({
       kind: "hail" as WeatherAlert["kind"],
       title: "Hail ahead",
@@ -130,9 +130,14 @@ describe("localizeWeatherAlert", () => {
     });
 
     expect(localizeWeatherAlert(alert, translate)).toEqual({
-      title: "Hail ahead",
-      message: "Large hail near the route",
+      title: "translated:Weather warning",
+      message:
+        "translated:Weather conditions may affect your route. Ride cautiously.",
     });
-    expect(translate).not.toHaveBeenCalled();
+    expect(translate).toHaveBeenNthCalledWith(1, "Weather warning");
+    expect(translate).toHaveBeenNthCalledWith(
+      2,
+      "Weather conditions may affect your route. Ride cautiously.",
+    );
   });
 });

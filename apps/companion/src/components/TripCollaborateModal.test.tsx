@@ -213,7 +213,7 @@ describe("TripCollaborateModal", () => {
 
     fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
-    expect(await screen.findByText(/network unavailable/i)).toBeInTheDocument();
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
   });
 
   it("calls onClose when Escape is pressed", () => {
@@ -236,7 +236,7 @@ describe("TripCollaborateModal", () => {
 
     fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
 
-    expect(await screen.findByText(/network unavailable/i)).toBeInTheDocument();
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
 
     // Close, then reopen — the previous session's error must not reappear.
     rerender(

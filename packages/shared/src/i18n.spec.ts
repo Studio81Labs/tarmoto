@@ -3,6 +3,7 @@ import {
   DEFAULT_LOCALE,
   LOCALES,
   SUPPORTED_LOCALES,
+  getUserFacingErrorMessage,
   isSupportedLocale,
   makeTranslator,
   resolveLocale,
@@ -14,6 +15,29 @@ describe("i18n / registry", () => {
   it("registers exactly the locales declared in LOCALES, including the default", () => {
     expect(SUPPORTED_LOCALES).toEqual(Object.keys(LOCALES));
     expect(SUPPORTED_LOCALES).toContain(DEFAULT_LOCALE);
+  });
+});
+
+describe("i18n / getUserFacingErrorMessage", () => {
+  it("returns only explicitly cataloged error messages", () => {
+    const localized = Object.assign(new Error("Localized API failure"), {
+      localizedUserMessage: true as const,
+    });
+    expect(getUserFacingErrorMessage(localized, "Translated fallback")).toBe(
+      "Localized API failure",
+    );
+  });
+
+  it("hides arbitrary runtime and non-error values", () => {
+    expect(
+      getUserFacingErrorMessage(
+        new Error("Failed to fetch"),
+        "Translated fallback",
+      ),
+    ).toBe("Translated fallback");
+    expect(getUserFacingErrorMessage("socket exploded", "Fallback")).toBe(
+      "Fallback",
+    );
   });
 });
 

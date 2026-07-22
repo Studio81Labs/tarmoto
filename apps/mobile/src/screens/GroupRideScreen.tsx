@@ -66,7 +66,7 @@ import type {
   GroupRideDetail,
   GroupRideMember,
 } from "@/types";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 // Distinct map-pin colours so each member's dot is visually
 // distinguishable. Cycled by member position in the sorted list so
@@ -243,9 +243,7 @@ export default function GroupRideScreen() {
       setMode("active");
     } catch (err) {
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't create the ride."),
+        getUserFacingErrorMessage(err, translate("Couldn't create the ride.")),
       );
     } finally {
       setSubmitting(false);
@@ -266,9 +264,7 @@ export default function GroupRideScreen() {
       setMode("active");
     } catch (err) {
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't join that ride."),
+        getUserFacingErrorMessage(err, translate("Couldn't join that ride.")),
       );
     } finally {
       setSubmitting(false);

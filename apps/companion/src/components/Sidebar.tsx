@@ -31,7 +31,7 @@ import { useDropdown, useMediaQuery, usePersistentState } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 
 /** Product wordmark; names are intentionally locale-independent. */
 const WORDMARK = "TARMOTO";
@@ -505,8 +505,10 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
         setUnreadCount(data.unread_count);
         setError(null);
       })
-      .catch((err: Error) => {
-        setError(err.message || t("Failed to load notifications"));
+      .catch((err: unknown) => {
+        setError(
+          getUserFacingErrorMessage(err, t("Failed to load notifications")),
+        );
       });
   };
 
@@ -526,9 +528,11 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
         setUnreadCount(data.unread_count);
         setError(null);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err.message || t("Failed to load notifications"));
+        setError(
+          getUserFacingErrorMessage(err, t("Failed to load notifications")),
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

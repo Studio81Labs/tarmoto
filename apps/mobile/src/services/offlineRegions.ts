@@ -78,7 +78,7 @@ export interface OfflineRegion extends OfflineRegionSpec {
   failedTiles: number;
   /** Sum of bytes written. Best-effort — 0 until the first tile completes. */
   bytesOnDisk: number;
-  /** Last error message, if any. Cleared on retry/complete. */
+  /** Last cataloged error message, if any. Cleared on retry/complete. */
   lastError: string | null;
   /** ms timestamp of the most recent successful tile write. */
   lastUpdatedAt: number | null;
@@ -400,7 +400,6 @@ export async function downloadRegion(
   let downloaded = 0;
   let failed = 0;
   let bytesOnDisk = 0;
-  let lastError: string | null = null;
   const total = tiles.length;
 
   const report = (): void => {
@@ -447,9 +446,8 @@ export async function downloadRegion(
       const bytes = await downloader.downloadTile(tileUrl(tile, apiBase), dest);
       downloaded += 1;
       bytesOnDisk += bytes;
-    } catch (err) {
+    } catch {
       failed += 1;
-      lastError = err instanceof Error ? err.message : String(err);
     }
     report();
   }
@@ -471,9 +469,7 @@ export async function downloadRegion(
     failed,
     total,
     bytesOnDisk,
-    error:
-      lastError ??
-      `${failed} of ${total} tiles failed to download. Pull to retry when you have a stronger connection.`,
+    error: translate("Check your connection and try again."),
   };
 }
 

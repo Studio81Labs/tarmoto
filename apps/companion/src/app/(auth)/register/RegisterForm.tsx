@@ -1,4 +1,5 @@
 "use client";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -39,7 +40,7 @@ export function RegisterForm({
         window.location.href = callbackUrl;
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("Registration failed"));
+      setError(getUserFacingErrorMessage(err, t("Registration failed")));
     } finally {
       setLoading(false);
     }

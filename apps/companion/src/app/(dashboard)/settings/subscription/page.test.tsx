@@ -137,7 +137,9 @@ describe("SubscriptionPage", () => {
 
     render(<SubscriptionPage />);
 
-    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Could not load subscription settings."),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(
         "Preview data shown while live billing management is still being wired up.",

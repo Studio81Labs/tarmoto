@@ -2,6 +2,7 @@ import {
   DEFAULT_LOCALE,
   LOCALES,
   SUPPORTED_LOCALES,
+  getUserFacingErrorMessage,
   isSupportedLocale,
   makeTranslator,
   resolveLocale,
@@ -19,6 +20,7 @@ export {
   DEFAULT_LOCALE,
   LOCALES,
   SUPPORTED_LOCALES,
+  getUserFacingErrorMessage,
   isSupportedLocale,
   resolveLocale,
 };

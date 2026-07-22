@@ -134,6 +134,8 @@ describe("SharedRidesSection", () => {
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
-    expect(await screen.findByText("offline")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Could not load shared rides."),
+    ).toBeInTheDocument();
   });
 });

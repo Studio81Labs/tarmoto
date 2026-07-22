@@ -160,7 +160,10 @@ describe("AchievementsScreen", () => {
     // earned" + "No active challenges right now" — the misleading state
     // the review flagged. With the fix the banner appears and the
     // summary lines stay on the "Loading…" placeholder.
-    await waitFor(() => expect(screen.getByText("Network down")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load achievements.")).toBeTruthy(),
+    );
+    expect(screen.queryByText("Network down")).toBeNull();
     expect(screen.queryByText("0 of 0 earned")).toBeNull();
     expect(screen.queryByText("No active challenges right now")).toBeNull();
   });

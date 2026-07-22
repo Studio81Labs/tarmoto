@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import {
   Suspense,
   useCallback,
@@ -199,9 +199,11 @@ function RoadMapPageInner() {
         setRiddenSegments(riddenRes.data.segments);
         setLoading(false);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setLoadError(err.message || t("Could not load exploration data"));
+        setLoadError(
+          getUserFacingErrorMessage(err, t("Could not load exploration data")),
+        );
         setLoading(false);
       });
     return () => {
@@ -286,10 +288,10 @@ function RoadMapPageInner() {
         setSegmentDetailState({
           status: "error",
           segmentId: selectedSegmentId,
-          message:
-            err instanceof Error
-              ? err.message
-              : t("Could not load road segment details."),
+          message: getUserFacingErrorMessage(
+            err,
+            t("Could not load road segment details."),
+          ),
         });
       });
     return () => {
@@ -453,7 +455,7 @@ function RoadMapPageInner() {
       <RidesScaffold fill>
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="max-w-md rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
-            {loadError ?? "Could not load exploration data"}
+            {loadError ?? t("Could not load exploration data")}
           </div>
         </div>
       </RidesScaffold>

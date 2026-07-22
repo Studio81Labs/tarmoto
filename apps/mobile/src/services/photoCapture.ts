@@ -103,8 +103,7 @@ async function defaultLauncher(source: PhotoSource): Promise<CaptureResult> {
     return {
       status: "unavailable",
       source,
-      reason:
-        "Photo picker isn't available — rebuild the app after installing the latest dependencies.",
+      reason: translate("Photo picker isn't available on this device."),
     };
   }
 
@@ -136,10 +135,11 @@ async function defaultLauncher(source: PhotoSource): Promise<CaptureResult> {
         ? await picker.launchCamera(options)
         : await picker.launchImageLibrary(options);
   } catch (error) {
+    console.warn("Photo picker failed:", error);
     return {
       status: "unavailable",
       source,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: translate("Photo picker isn't available on this device."),
     };
   }
 
@@ -148,10 +148,15 @@ async function defaultLauncher(source: PhotoSource): Promise<CaptureResult> {
     return { status: "permission-denied", source };
   }
   if (response.errorCode || response.errorMessage) {
+    console.warn(
+      "Photo picker failed:",
+      response.errorCode,
+      response.errorMessage,
+    );
     return {
       status: "unavailable",
       source,
-      reason: response.errorMessage ?? response.errorCode,
+      reason: translate("Photo picker isn't available on this device."),
     };
   }
 
@@ -212,7 +217,15 @@ export async function capturePhoto(
   // which doesn't require a runtime permission prompt; older OS
   // versions are handled by the picker itself. Either way, we
   // delegate to the launcher.
-  return launcher(source);
+  const result = await launcher(source);
+  if (result.status === "unavailable") {
+    return {
+      ...result,
+      source,
+      reason: translate("Photo picker isn't available on this device."),
+    };
+  }
+  return result;
 }
 
 // ── Test hooks ──

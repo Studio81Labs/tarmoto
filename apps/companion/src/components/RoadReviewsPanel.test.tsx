@@ -150,7 +150,9 @@ describe("RoadReviewsPanel", () => {
         onCountChange={onCountChange}
       />,
     );
-    expect(await screen.findByText("Reviews boom")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Could not load reviews."),
+    ).toBeInTheDocument();
     expect(onCountChange).not.toHaveBeenCalled();
   });
 
@@ -683,7 +685,7 @@ describe("RoadReviewsPanel", () => {
     });
 
     expect(
-      await screen.findByText("Photos must be PNG, JPEG, or WebP images"),
+      await screen.findByText("Could not upload photos."),
     ).toBeInTheDocument();
     // After an upload failure the submit button must remain enabled so the
     // rider can fix it (try a different file) and retry without losing the
@@ -1109,7 +1111,7 @@ describe("RoadReviewsPanel", () => {
     );
 
     expect(
-      await screen.findByText("Cannot vote on your own review"),
+      await screen.findByText("Could not submit vote."),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Mark this review as helpful" }),

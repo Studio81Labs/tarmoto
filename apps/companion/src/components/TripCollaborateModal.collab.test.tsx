@@ -443,7 +443,7 @@ describe("TripCollaborateModal — collab tabs", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
 
-    expect(await screen.findByText(/activity api 500/i)).toBeInTheDocument();
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
     expect(screen.queryByText(/no activity yet/i)).not.toBeInTheDocument();
   });
 
@@ -470,10 +470,10 @@ describe("TripCollaborateModal — collab tabs", () => {
     );
 
     fireEvent.click(screen.getByRole("switch", { name: /group link/i }));
-    expect(await screen.findByText(/invite api down/i)).toBeInTheDocument();
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
-    expect(screen.queryByText(/invite api down/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Unknown error")).not.toBeInTheDocument();
     createSpy.mockRestore();
   });
 
@@ -964,9 +964,7 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
 
-    expect(
-      await screen.findByText(/invite mail api down/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Unknown error")).toBeInTheDocument();
     expect(hoisted.invite).toHaveBeenCalledTimes(1);
   });
 

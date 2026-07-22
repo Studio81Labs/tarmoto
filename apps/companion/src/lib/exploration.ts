@@ -12,14 +12,13 @@
  * the user flips a period chip.
  */
 
-import { kmToMiles, metersToFeet, type UnitSystem } from "@tarmoto/shared";
 import {
   localDateKey,
   parseStartedAt,
   toNumber,
   type RideForStats,
 } from "./ride-stats";
-import type { ExplorationStats, UnriddenSegment } from "./api";
+import type { UnriddenSegment } from "./api";
 import type { EnglishMessageKey } from "@/i18n";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
@@ -147,63 +146,4 @@ function regionLabelFor(roadName: string | null | undefined): string {
   // regardless of whichever variant the backend returned first ("Beskydy"
   // and "beskydy" both surface as "Beskydy").
   return first.charAt(0).toUpperCase() + first.slice(1);
-}
-
-// Single cutover point between feet and miles in imperial mode, expressed in
-// metres. 160.934 m is exactly 0.1 mi.
-const IMPERIAL_FEET_CUTOFF_M = 160.934;
-
-/**
- * Local, private copy of the pre-migration `lib/utils.ts` `formatDistance`,
- * kept only for `buildShareSummary` below. That function's only real caller
- * is its own unit test (see the locale-formatting migration plan's pinned
- * exclusions — this module is a dead-code candidate, deliberately left off
- * the `src/format` seam). `utils.ts` deleted its exported `formatDistance` in
- * the Task 8 cleanup, so this stays inlined rather than reaching for a helper
- * that no longer exists.
- */
-function formatDistance(km: number, units: UnitSystem = "metric"): string {
-  if (units === "imperial") {
-    if (!Number.isFinite(km) || km <= 0) return "0 mi";
-    const meters = km * 1000;
-    if (meters < IMPERIAL_FEET_CUTOFF_M) {
-      return `${metersToFeet(meters)} ft`;
-    }
-    const mi = kmToMiles(km);
-    if (mi < 10) return `${mi.toFixed(1)} mi`;
-    return `${mi.toFixed(0)} mi`;
-  }
-  if (!Number.isFinite(km) || km < 0) return "0 m";
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
-}
-
-/**
- * Formats a social-friendly summary for the "Share exploration stats" action.
- * Takes a `UnitSystem` so metric/imperial riders get the same message in
- * their preferred units.
- */
-export function buildShareSummary(
-  stats: ExplorationStats,
-  period: PeriodStats,
-  units: UnitSystem = "metric",
-): string {
-  const lines = [
-    `I've explored ${stats.percent_explored}% of Tarmoto's road network 🏍️`,
-    // eslint-disable-next-line no-restricted-syntax -- test-only helper, pinned exclusion (migration plan)
-    `${stats.ridden_segments.toLocaleString()} of ${stats.total_segments.toLocaleString()} road segments ridden — ${formatDistance(
-      stats.total_distance_km,
-      units,
-    )} in total.`,
-  ];
-  if (period.period !== "all" && period.rideCount > 0) {
-    lines.push(
-      `${TIME_PERIOD_LABELS[period.period]}: ${period.rideCount} rides, ${formatDistance(
-        period.distanceKm,
-        units,
-      )} across ${period.activeDays} active days.`,
-    );
-  }
-  lines.push("Join me on Tarmoto.");
-  return lines.join("\n");
 }

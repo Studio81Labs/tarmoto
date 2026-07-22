@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildShareSummary,
   computePeriodStats,
   groupUnriddenByRegion,
   periodStartDate,
-  type TimePeriod,
 } from "../exploration";
 import type { RideForStats } from "../ride-stats";
-import type { ExplorationStats, UnriddenSegment } from "../api";
+import type { UnriddenSegment } from "../api";
 
 function ride(overrides: Partial<RideForStats> & { id: string }): RideForStats {
   return {
@@ -224,88 +222,5 @@ describe("groupUnriddenByRegion", () => {
 
   it("returns an empty array for no segments", () => {
     expect(groupUnriddenByRegion([])).toEqual([]);
-  });
-});
-
-describe("buildShareSummary", () => {
-  const stats: ExplorationStats = {
-    ridden_segments: 1234,
-    total_segments: 5678,
-    percent_explored: 22,
-    total_distance_km: 842,
-  };
-
-  it("includes the global percentage and totals in metric", () => {
-    const text = buildShareSummary(
-      stats,
-      {
-        period: "all",
-        distanceKm: 0,
-        rideCount: 0,
-        activeDays: 0,
-      },
-      "metric",
-    );
-    expect(text).toContain("22%");
-    expect(text).toContain("1,234");
-    expect(text).toContain("5,678");
-    expect(text).toContain("842.0 km");
-    expect(text).toContain("Join me on Tarmoto");
-  });
-
-  it("renders distances as miles when units are imperial", () => {
-    const text = buildShareSummary(
-      stats,
-      {
-        period: "year" satisfies TimePeriod,
-        distanceKm: 420,
-        rideCount: 14,
-        activeDays: 9,
-      },
-      "imperial",
-    );
-    expect(text).not.toContain("km");
-    expect(text).toMatch(/\bmi\b/);
-  });
-
-  it("omits the period line when no rides match the selected period", () => {
-    const text = buildShareSummary(
-      stats,
-      {
-        period: "30d",
-        distanceKm: 0,
-        rideCount: 0,
-        activeDays: 0,
-      },
-      "metric",
-    );
-    expect(text).not.toContain("Last 30 days");
-  });
-
-  it("includes a period line when there are rides in the window", () => {
-    const text = buildShareSummary(
-      stats,
-      {
-        period: "year" satisfies TimePeriod,
-        distanceKm: 420,
-        rideCount: 14,
-        activeDays: 9,
-      },
-      "metric",
-    );
-    expect(text).toContain("This year");
-    expect(text).toContain("14 rides");
-    expect(text).toContain("420.0 km");
-    expect(text).toContain("9 active days");
-  });
-
-  it("defaults to metric when no unit system is passed", () => {
-    const text = buildShareSummary(stats, {
-      period: "all",
-      distanceKm: 0,
-      rideCount: 0,
-      activeDays: 0,
-    });
-    expect(text).toContain("842.0 km");
   });
 });

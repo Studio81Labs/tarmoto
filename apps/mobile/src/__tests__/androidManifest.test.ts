@@ -1,6 +1,14 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { HAZARD_TYPES } from "@tarmoto/shared";
+import { HAZARD_TYPES, SUPPORTED_LOCALES } from "@tarmoto/shared";
+
+function androidValuesDirectory(locale: string): string {
+  if (locale === "en") return "values";
+  const [language, ...subtags] = locale.split("-");
+  return subtags.length === 0
+    ? `values-${language}`
+    : `values-b+${[language, ...subtags].join("+")}`;
+}
 
 /**
  * Manifest sanity test for issue #280. Without this guard a rebase or
@@ -94,6 +102,32 @@ describe("Android App Actions wiring", () => {
           `<string-array name="hazard_${type}_synonyms"[\\s\\S]*?<item>${type}</item>`,
         ),
       );
+    },
+  );
+
+  it("keeps Assistant synonym inventories translatable", () => {
+    expect(arrays).not.toContain('translatable="false"');
+  });
+
+  it.each(SUPPORTED_LOCALES)(
+    "ships App Actions labels and phrases for %s",
+    (locale) => {
+      const resourceDir = join(
+        __dirname,
+        "../../android/app/src/main/res",
+        androidValuesDirectory(locale),
+      );
+      const stringsPath = join(resourceDir, "strings.xml");
+      const arraysPath = join(resourceDir, "arrays.xml");
+      expect(existsSync(stringsPath)).toBe(true);
+      expect(existsSync(arraysPath)).toBe(true);
+
+      const localizedStrings = readFileSync(stringsPath, "utf8");
+      const localizedArrays = readFileSync(arraysPath, "utf8");
+      for (const type of HAZARD_TYPES) {
+        expect(localizedStrings).toContain(`name="hazard_${type}_label"`);
+        expect(localizedArrays).toContain(`name="hazard_${type}_synonyms"`);
+      }
     },
   );
 

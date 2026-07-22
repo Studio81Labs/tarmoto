@@ -72,6 +72,27 @@ export function resolveLocale(input?: string | null): SupportedLocale {
 
 export type TranslationValues = Record<string, string | number>;
 
+/**
+ * Marker carried by errors whose message has already passed through a
+ * surface's locale catalog. Keeping this explicit prevents arbitrary browser,
+ * native, or library Error.message strings from leaking into rider-facing UI.
+ */
+export interface LocalizedUserFacingError extends Error {
+  readonly localizedUserMessage: true;
+}
+
+/** Return a cataloged error message, otherwise the caller's translated copy. */
+export function getUserFacingErrorMessage(
+  error: unknown,
+  translatedFallback: string,
+): string {
+  return error instanceof Error &&
+    "localizedUserMessage" in error &&
+    error.localizedUserMessage === true
+    ? error.message
+    : translatedFallback;
+}
+
 /** A fully-populated message map for one surface, in the default locale. */
 export type Catalog<K extends string> = Record<K, string>;
 

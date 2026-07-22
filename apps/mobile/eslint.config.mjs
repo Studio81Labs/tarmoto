@@ -226,6 +226,24 @@ export default [
         },
         {
           selector:
+            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] MemberExpression[computed=false][property.name='message']",
+          message:
+            "Do not expose arbitrary Error.message text. Use getUserFacingErrorMessage(error, translate(…)) so only cataloged API errors pass through.",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='Alert'][callee.property.name='alert'] MemberExpression[computed=false][property.name='message']",
+          message:
+            "Do not expose arbitrary Error.message text in alerts. Use getUserFacingErrorMessage with translated fallback copy.",
+        },
+        {
+          selector:
+            "Property[key.name=/^(error|message|description)$/] MemberExpression[computed=false][property.name='message']",
+          message:
+            "Do not store arbitrary Error.message text in rider-facing state. Use getUserFacingErrorMessage with translated fallback copy.",
+        },
+        {
+          selector:
             "VariableDeclarator[id.name=/^(error|errorMessage|message|notice|validation|warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing conditional status-copy variables with translate() before passing them to state setters or alerts.",
