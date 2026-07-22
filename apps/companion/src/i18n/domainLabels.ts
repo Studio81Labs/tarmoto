@@ -1,4 +1,6 @@
 import type { EnglishMessageKey, Translate } from ".";
+import type { SuggestionStatus } from "@/lib/api/trip-collab";
+import type { Waypoint } from "@/lib/types";
 
 export const TRIP_STATUS_LABELS = {
   draft: "Draft",
@@ -43,10 +45,10 @@ export const TRIP_ROLE_LABELS = {
 } as const satisfies Record<string, EnglishMessageKey>;
 
 export const SUGGESTION_STATUS_LABELS = {
-  pending: "Pending",
+  open: "Open",
   accepted: "Accepted",
   rejected: "Rejected",
-} as const satisfies Record<string, EnglishMessageKey>;
+} as const satisfies Record<SuggestionStatus, EnglishMessageKey>;
 
 export const HAZARD_SEVERITY_LABELS = {
   low: "Low",
@@ -98,8 +100,13 @@ export const SUBSCRIPTION_STATUS_LABELS = {
 export const WAYPOINT_ROLE_LABELS = {
   start: "Start",
   via: "Via",
+  end: "Finish",
   finish: "Finish",
-} as const satisfies Record<string, EnglishMessageKey>;
+  fuel: "Fuel",
+  rest: "Rest",
+  photo: "Photo",
+  accommodation: "Stay",
+} as const satisfies Record<Waypoint["type"] | "finish", EnglishMessageKey>;
 
 /** Translate a constrained wire value, hiding unknown future codes as such. */
 export function translateKnownLabel(
