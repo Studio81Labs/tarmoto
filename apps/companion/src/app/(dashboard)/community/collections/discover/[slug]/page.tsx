@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -43,6 +45,7 @@ type LoadState =
  * surface, and the standalone `/shared/[slug]` page stays for anonymous links.
  */
 export default function DiscoverCollectionPage() {
+  const t = useTranslation();
   const format = useFormat();
   const { slug } = useParams<{ slug: string }>();
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
@@ -52,29 +55,35 @@ export default function DiscoverCollectionPage() {
   const [followPending, setFollowPending] = useState(false);
   const [followError, setFollowError] = useState<string | null>(null);
 
-  const reload = useCallback(async (s: string) => {
-    try {
-      const [detailRes, previewRes] = await Promise.all([
-        routeCollectionsApi.getBySlug(s),
-        routeCollectionsApi.getPreviewBySlug(s),
-      ]);
-      const detail = detailRes.data;
-      const routes = [...previewRes.data.routes].sort(
-        (a, b) => a.position - b.position,
-      );
-      setLoad({ phase: "ready", detail, routes });
-      setFollowing(detail.viewer_is_following);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setLoad({ phase: "not-found" });
-        return;
+  const reload = useCallback(
+    async (s: string) => {
+      try {
+        const [detailRes, previewRes] = await Promise.all([
+          routeCollectionsApi.getBySlug(s),
+          routeCollectionsApi.getPreviewBySlug(s),
+        ]);
+        const detail = detailRes.data;
+        const routes = [...previewRes.data.routes].sort(
+          (a, b) => a.position - b.position,
+        );
+        setLoad({ phase: "ready", detail, routes });
+        setFollowing(detail.viewer_is_following);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          setLoad({ phase: "not-found" });
+          return;
+        }
+        setLoad({
+          phase: "error",
+          message: getUserFacingErrorMessage(
+            err,
+            t("Failed to load collection"),
+          ),
+        });
       }
-      setLoad({
-        phase: "error",
-        message: getUserFacingErrorMessage(err, t("Failed to load collection")),
-      });
-    }
-  }, []);
+    },
+    [t],
+  );
 
   // Gate on the access token hydrating so the first fetch is authenticated and
   // `viewer_is_owner` / `viewer_is_following` are personalised on load. Same
@@ -191,7 +200,9 @@ export default function DiscoverCollectionPage() {
             )}
             <span className="text-fg-mute">·</span>
             <Mono className="text-[11px] text-fg-mute">
-              {t("Updated")} {format.relativeTime(detail!.updated_at)}
+              {t("Updated {time}", {
+                time: format.relativeTime(detail!.updated_at),
+              })}
             </Mono>
           </div>
         </div>
@@ -285,6 +296,7 @@ export default function DiscoverCollectionPage() {
 }
 
 function BackLink() {
+  const t = useTranslation();
   return (
     <Link
       href="/community/collections"

@@ -69,6 +69,10 @@ describe("companion catalog ICU validity", () => {
     expect(mismatches).toEqual([]);
   });
 
+  it("contains no whitespace-dependent catalog keys", () => {
+    expect(entries.filter(([key]) => key !== key.trim())).toEqual([]);
+  });
+
   it("fully translates every registered production locale", () => {
     const sourceKeys = Object.keys(en).sort();
     const incomplete = Object.entries(companionCatalogs).flatMap(

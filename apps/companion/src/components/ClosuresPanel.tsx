@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect } from "react";
 import { AlertTriangle, Loader2, Route } from "lucide-react";
 import { DatePicker } from "@tarmoto/ui";
@@ -193,6 +194,7 @@ function ClosuresPanelBody({
   onRerouteClosure?: ((closure: PlannerClosure) => void) | undefined;
   topDivider?: boolean;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const {
@@ -230,13 +232,13 @@ function ClosuresPanelBody({
     >
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
         <AlertTriangle size={14} className="text-accent" />
-        {t("Closures & roadworks ")}
+        {t("Closures & roadworks")}
       </div>
 
       {onPreviewDateChange ? (
         <DatePicker
           id="closures-preview-date"
-          label={t("Preview date ")}
+          label={t("Preview date")}
           value={toDateInputValue(previewDate)}
           onChange={(value) => {
             const next = parseDateInputValue(value);
@@ -259,12 +261,12 @@ function ClosuresPanelBody({
         <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-dim">
             <Route size={12} />
-            {t("Route warnings ")}
+            {t("Route warnings")}
           </div>
 
           {routes.length === 0 ? (
             <p className="text-xs text-fg-mute">
-              {t("Import or generate a route to check crossings. ")}
+              {t("Import or generate a route to check crossings.")}
             </p>
           ) : routeLoading ? (
             <p className="flex items-center gap-2 text-xs text-fg-mute">
@@ -301,11 +303,11 @@ function ClosuresPanelBody({
             <p className="text-xs text-quality-q1">{routeError}</p>
           ) : status === "no_data" ? (
             <ConditionStatusLine tone="no_data">
-              {t("Closure data not available for this region yet. ")}
+              {t("Closure data not available for this region yet.")}
             </ConditionStatusLine>
           ) : (
             <ConditionStatusLine tone="clear">
-              {t("No active closures on your route. ")}
+              {t("No active closures on your route.")}
             </ConditionStatusLine>
           )}
         </div>
@@ -328,7 +330,7 @@ function ClosuresPanelBody({
         // empty state (revision 6).
         routeBoxVisible ? null : (
           <ConditionStatusLine tone="no_data">
-            {t("Closure data not available for this region yet. ")}
+            {t("Closure data not available for this region yet.")}
           </ConditionStatusLine>
         )
       ) : (
@@ -375,6 +377,7 @@ function OnRouteClosureCard({
   onFocus?: ((closure: PlannerClosure) => void) | undefined;
   onReroute?: ((closure: PlannerClosure) => void) | undefined;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
@@ -432,6 +435,7 @@ function OnRouteClosureCard({
 }
 
 function ClosuresLegend() {
+  const t = useTranslation();
   return (
     <div
       role="list"
@@ -463,6 +467,7 @@ function ClosureRow({
   compact?: boolean;
   onFocus?: ((closure: PlannerClosure) => void) | undefined;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
@@ -497,8 +502,9 @@ function ClosureRow({
 
       {detourKm != null && (
         <p className="mt-2 text-xs text-sky-700">
-          {t("Detour available \u00B7 approx. ")}
-          {format.distanceKm(detourKm)}
+          {t("Detour available · approx. {distance}", {
+            distance: format.distanceKm(detourKm),
+          })}
         </p>
       )}
 

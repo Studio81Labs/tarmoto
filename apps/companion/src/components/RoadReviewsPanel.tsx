@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import Link from "next/link";
 import {
   useEffect,
@@ -109,6 +111,7 @@ export function RoadReviewsPanel({
    */
   onCountChange?: (count: number) => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const tc = TC;
   const canLoadReviews = isUuid(segmentId);
@@ -193,7 +196,7 @@ export function RoadReviewsPanel({
     return () => {
       cancelled = true;
     };
-  }, [canLoadReviews, segmentId, viewerKey]);
+  }, [t, canLoadReviews, segmentId, viewerKey]);
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return null;
     const total = reviews.reduce((sum, review) => sum + review.rating, 0);
@@ -427,7 +430,7 @@ export function RoadReviewsPanel({
             <p
               className={`text-[11px] uppercase tracking-wider ${tc.textMute}`}
             >
-              {t("Road reviews ")}
+              {t("Road reviews")}
             </p>
             {!loading && canLoadReviews && (
               <p className={`text-sm ${tc.textBody}`}>
@@ -461,7 +464,7 @@ export function RoadReviewsPanel({
                   leftIcon={<Pencil size={13} />}
                   aria-label={t("Edit your review")}
                 >
-                  {t("Edit ")}
+                  {t("Edit")}
                 </Button>
                 <Button
                   variant="danger"
@@ -473,7 +476,7 @@ export function RoadReviewsPanel({
                   leftIcon={<Trash2 size={13} />}
                   aria-label={t("Delete your review")}
                 >
-                  {t("Delete ")}
+                  {t("Delete")}
                 </Button>
               </>
             ) : (
@@ -486,12 +489,12 @@ export function RoadReviewsPanel({
                 leftIcon={<Pencil size={13} />}
                 aria-label={t("Write a review for this road")}
               >
-                {t("Write a review ")}
+                {t("Write a review")}
               </Button>
             )
           ) : (
             <p className={`text-xs ${tc.textMute}`}>
-              {t("Sign in to rate this road and share your feedback. ")}
+              {t("Sign in to rate this road and share your feedback.")}
             </p>
           )}
         </div>
@@ -551,7 +554,7 @@ export function RoadReviewsPanel({
             className={`rounded-xl px-3 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
           >
             {t(
-              "Community reviews become available when this segment maps to a saved Tarmoto road. ",
+              "Community reviews become available when this segment maps to a saved Tarmoto road.",
             )}
           </div>
         ) : loading ? (
@@ -559,7 +562,7 @@ export function RoadReviewsPanel({
             className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${tc.loadingBox}`}
           >
             <Loader2 size={14} className="animate-spin" />
-            {t("Loading reviews\u2026 ")}
+            {t("Loading reviews…")}
           </div>
         ) : error ? (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-500">
@@ -570,7 +573,7 @@ export function RoadReviewsPanel({
             className={`rounded-xl px-4 py-4 text-center text-xs leading-relaxed ${tc.infoBox}`}
           >
             {t(
-              "No reviews yet. Riders see community feedback here as soon as someone rates this road. ",
+              "No reviews yet. Riders see community feedback here as soon as someone rates this road.",
             )}
           </div>
         ) : (
@@ -639,6 +642,7 @@ function ReviewEditor({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const t = useTranslation();
   const tc = TC;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
@@ -691,7 +695,7 @@ function ReviewEditor({
         {mode === "create" ? t("Write a review") : t("Edit your review")}
       </p>
       <p className={`mt-0.5 text-xs ${tc.textBody}`}>
-        {t("Rate this road and add quick notes for the next rider. ")}
+        {t("Rate this road and add quick notes for the next rider.")}
       </p>
 
       {/* Rating — cumulative star fill up to the chosen score */}
@@ -818,7 +822,7 @@ function ReviewEditor({
             <Upload size={16} className="text-accent" />
           )}
           <span className="text-[13px] font-bold text-accent">
-            {t("Upload photos ")}
+            {t("Upload photos")}
           </span>
           <span className={`text-[11px] ${tc.textMute}`}>
             {t("Up to {count} · JPEG, PNG, or WebP · max {sizeMb} MB each", {
@@ -849,7 +853,7 @@ function ReviewEditor({
           onClick={onCancel}
           disabled={disabled}
         >
-          {t("Cancel ")}
+          {t("Cancel")}
         </Button>
         <Button
           variant="accent"
@@ -901,6 +905,7 @@ function ReviewCard({
   review: RoadReview;
   onChange: (next: Partial<RoadReview>) => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const tc = TC;
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);

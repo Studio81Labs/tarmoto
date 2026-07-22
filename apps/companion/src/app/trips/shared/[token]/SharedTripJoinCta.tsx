@@ -1,11 +1,13 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Route } from "lucide-react";
 import { Button } from "@tarmoto/ui";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { tripSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
@@ -21,6 +23,7 @@ export function SharedTripJoinCta({
   title,
   tripId,
 }: SharedTripJoinCtaProps) {
+  const t = useTranslation();
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));

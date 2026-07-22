@@ -162,6 +162,7 @@ function dayQuality(
   segments: RouteSegment[],
   dayKm: number,
   dayTimeMin: number,
+  t: Translate,
 ): RouteQualitySummary {
   const metresBySurface: Record<string, number> = {};
   let scoreWeight = 0;
@@ -180,7 +181,7 @@ function dayQuality(
     score:
       scoreWeight > 0 ? Math.round((scoreSum / scoreWeight) * 10) / 10 : null,
     surfaceMix: surfaceMixToPercents(metresBySurface),
-    flagged: deriveFlaggedSections(segments),
+    flagged: deriveFlaggedSections(segments, undefined, t),
   };
 }
 
@@ -378,7 +379,12 @@ export function splitIntoDays(
       distanceKm: Math.round(dayKm * 10) / 10,
       timeMin:
         totalTimeMin > 0 ? Math.round((totalTimeMin * dayKm) / totalKm) : 0,
-      quality: dayQuality(daySegments, dayKm, (totalTimeMin * dayKm) / totalKm),
+      quality: dayQuality(
+        daySegments,
+        dayKm,
+        (totalTimeMin * dayKm) / totalKm,
+        t,
+      ),
       startTown: d === 0 ? t("Start") : boundaryLabel(boundaries[d]!, format),
       endTown:
         d === boundaries.length - 2 ? t("Finish") : boundaryLabel(to, format),

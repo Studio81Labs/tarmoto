@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { MapPin } from "lucide-react";
@@ -50,6 +51,7 @@ const GEOCODE_MIN_CHARS = 2;
 const matchKey = (m: Match, i: number) => `${m.lat},${m.lng}|${m.label}|${i}`;
 
 export function PlaceSearch({ value, onChange, label, placeholder }: Props) {
+  const t = useTranslation();
   const format = useFormat();
   const resolvedLabel = label ?? t("Passes near place");
   const resolvedPlaceholder = placeholder ?? t("Tatra Mountains…");

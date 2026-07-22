@@ -1,7 +1,7 @@
 "use client";
-import clsx from "clsx";
-import { t } from "@/i18n";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+import clsx from "clsx";
 interface PaginationProps {
   /** 1-based current page. */
   currentPage: number;
@@ -32,6 +32,7 @@ export function Pagination({
   onNext,
   className,
 }: PaginationProps) {
+  const t = useTranslation();
   return (
     <div className={clsx("flex items-center justify-between gap-3", className)}>
       <p className="font-mono text-sm tabular-nums text-fg-dim">
@@ -45,7 +46,7 @@ export function Pagination({
           aria-label={t("Previous page")}
           className={PILL}
         >
-          {t("Previous ")}
+          {t("Previous")}
         </button>
         <button
           type="button"
@@ -54,7 +55,7 @@ export function Pagination({
           aria-label={t("Next page")}
           className={PILL}
         >
-          {t("Next ")}
+          {t("Next")}
         </button>
       </div>
     </div>

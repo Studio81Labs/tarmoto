@@ -1,5 +1,7 @@
 "use client";
-import { t, type Translate } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { type Translate } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Loader2, Mountain, Route } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -174,6 +176,7 @@ function PassesPanelBody({
   focusOpenPasses?: boolean | undefined;
   onReroutePass?: ((pass: MountainPass) => void) | undefined;
 }) {
+  const t = useTranslation();
   const {
     passes,
     routePasses,
@@ -204,12 +207,12 @@ function PassesPanelBody({
     <div className="space-y-3 pt-2 border-t border-line">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
         <Mountain size={14} className="text-accent" />
-        {t("Seasonal passes ")}
+        {t("Seasonal passes")}
       </div>
 
       <div>
         <Select
-          label={t("Travel month ")}
+          label={t("Travel month")}
           value={String(month)}
           onChange={(value) => setMonth(Number(value))}
           disabled={isReadOnlyControlled}
@@ -227,13 +230,13 @@ function PassesPanelBody({
         <div className="space-y-2 rounded-xl border border-line bg-paper p-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-dim">
             <Route size={12} />
-            {t("Route warnings ")}
+            {t("Route warnings")}
           </div>
 
           {routes.length === 0 ? (
             <p className="text-xs text-fg-mute">
               {t(
-                "Import or generate a route to check mountain pass crossings. ",
+                "Import or generate a route to check mountain pass crossings.",
               )}
             </p>
           ) : routeLoading ? (
@@ -269,11 +272,11 @@ function PassesPanelBody({
             <p className="text-xs text-quality-q1">{routeError}</p>
           ) : status === "no_data" ? (
             <ConditionStatusLine tone="no_data">
-              {t("Pass data not available for this region yet. ")}
+              {t("Pass data not available for this region yet.")}
             </ConditionStatusLine>
           ) : (
             <ConditionStatusLine tone="clear">
-              {t("No closed or unknown passes on your route. ")}
+              {t("No closed or unknown passes on your route.")}
             </ConditionStatusLine>
           )}
         </div>
@@ -295,25 +298,21 @@ function PassesPanelBody({
         // visible — one status line per section (revision 6).
         routeBoxVisible ? null : (
           <ConditionStatusLine tone="no_data">
-            {t("Pass data not available for this region yet. ")}
+            {t("Pass data not available for this region yet.")}
           </ConditionStatusLine>
         )
       ) : (
         <>
           <p className="text-xs text-fg-dim">
-            {t("In ")}
-            {m ? t(m) : ""}:{" "}
-            <span className="text-quality-q1">
-              {t("{count} closed", { count: counts.closed })}
-            </span>
-            {" • "}
-            <span className="text-fg-dim">
-              {t("{count} unknown", { count: counts.unknown })}
-            </span>
-            {" • "}
-            <span className="text-[#1f8a5b]">
-              {t("{count} open", { count: counts.open })}
-            </span>
+            {t(
+              "In {month}: {closed} closed • {unknown} unknown • {open} open",
+              {
+                month: m ? t(m) : "",
+                closed: counts.closed,
+                unknown: counts.unknown,
+                open: counts.open,
+              },
+            )}
           </p>
 
           <ul className="space-y-2">
@@ -340,6 +339,7 @@ function PassesPanelBody({
   );
 }
 function Legend() {
+  const t = useTranslation();
   return (
     <div
       role="list"
@@ -369,6 +369,7 @@ function PassRow({
   pass: MountainPass;
   onFocus?: ((pass: MountainPass) => void) | undefined;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const body = (
     <>
@@ -418,6 +419,7 @@ function OnRoutePassCard({
   onFocus?: ((pass: MountainPass) => void) | undefined;
   onReroute?: ((pass: MountainPass) => void) | undefined;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   return (
     <li className="rounded-xl border border-line bg-cream p-3">

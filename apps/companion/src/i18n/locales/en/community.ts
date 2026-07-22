@@ -6,129 +6,95 @@ export const community = {
   "500+ views": "500+ views",
   "Actions for {title}": "Actions for {title}",
   Add: "Add",
-  "Add routes": "Add routes",
   "Add routes from your recorded rides.":
     "Add routes from your recorded rides.",
-  "All your rides are already in this collection":
-    "All your rides are already in this collection",
   "Any reach": "Any reach",
   "Any road": "Any road",
   "Anyone can find and view this collection.":
     "Anyone can find and view this collection.",
-  "Anyone with the link can view it \u2014 not listed publicly.":
+  "Anyone with the link can view it — not listed publicly.":
     "Anyone with the link can view it \u2014 not listed publicly.",
   "Anyone with the link can view. Not listed publicly.":
     "Anyone with the link can view. Not listed publicly.",
-  "Automatic copying was blocked \u2014 select and copy the link below. ":
-    "Automatic copying was blocked \u2014 select and copy the link below. ",
-  "Badges earned": "Badges earned",
+  "Automatic copying was blocked — select and copy the link below.":
+    "Automatic copying was blocked — select and copy the link below.",
   Collection: "Collection",
-  "Collection \u2014 Tarmoto": "Collection \u2014 Tarmoto",
-  Collections: "Collections",
-  "Collections from other riders you've saved. They show up here until you unfollow. ":
-    "Collections from other riders you've saved. They show up here until you unfollow. ",
-  Community: "Community",
+  "Collection — Tarmoto": "Collection \u2014 Tarmoto",
+  "Collections from other riders you've saved. They show up here until you unfollow.":
+    "Collections from other riders you've saved. They show up here until you unfollow.",
   "Community sections": "Community sections",
-  Copied: "Copied",
-  "Copy failed": "Copy failed",
   "Copy this share link": "Copy this share link",
   "Could not load profile": "Could not load profile",
-  "Couldn't copy automatically \u2014 link shown so you can copy it":
+  "Couldn't copy automatically — link shown so you can copy it":
     "Couldn't copy automatically \u2014 link shown so you can copy it",
   "Couldn't load the routes in this collection right now. Try refreshing in a moment.":
     "Couldn't load the routes in this collection right now. Try refreshing in a moment.",
-  "Couldn't load this collection": "Couldn't load this collection",
   "Couldn't load this collection right now.":
     "Couldn't load this collection right now.",
-  "Couldn't load your collections": "Couldn't load your collections",
-  "Couldn't load your rides right now. Close this and try again in a moment. ":
-    "Couldn't load your rides right now. Close this and try again in a moment. ",
-  "Couldn't load your routes right now. Try again in a moment. ":
-    "Couldn't load your routes right now. Try again in a moment. ",
+  "Couldn't load your rides right now. Close this and try again in a moment.":
+    "Couldn't load your rides right now. Close this and try again in a moment.",
+  "Couldn't load your routes right now. Try again in a moment.":
+    "Couldn't load your routes right now. Try again in a moment.",
   Create: "Create",
   "Curate your favourite roads into shareable lists. Follow collections from other riders to discover new regions.":
     "Curate your favourite roads into shareable lists. Follow collections from other riders to discover new regions.",
   "Delete collection": "Delete collection",
-  Description: "Description",
   Done: "Done",
-  Edit: "Edit",
-  "Edit profile": "Edit profile",
   "Explore popular shared rides, follow other riders, and curate your favourite roads.":
     "Explore popular shared rides, follow other riders, and curate your favourite roads.",
   "Failed to delete collection": "Failed to delete collection",
   "Failed to unfollow collection": "Failed to unfollow collection",
   Feed: "Feed",
   "Filtering within {distance} of": "Filtering within {distance} of",
-  "Followed collections": "Followed collections",
   Followers: "Followers",
   "Follows you": "Follows you",
-  "Listed publicly \u2014 other riders can follow it.":
+  "Listed publicly — other riders can follow it.":
     "Listed publicly \u2014 other riders can follow it.",
-  "Loading collections\u2026": "Loading collections\u2026",
-  "Loading community rides\u2026": "Loading community rides\u2026",
+  "Loading collections…": "Loading collections\u2026",
   "Make this collection unlisted or public to share":
     "Make this collection unlisted or public to share",
   Manage: "Manage",
-  "Map preview": "Map preview",
   "Maximum distance": "Maximum distance",
-  "Maximum distance ": "Maximum distance ",
   "Minimum curviness": "Minimum curviness",
   "Minimum distance": "Minimum distance",
-  "Minimum distance ": "Minimum distance ",
   "Minimum popularity": "Minimum popularity",
   "Minimum quality": "Minimum quality",
-  Name: "Name",
-  "New collection": "New collection",
-  "Next ": "Next ",
+  Next: "Next",
   "No badges available yet.": "No badges available yet.",
-  "No badges earned yet.": "No badges earned yet.",
   "No collections match your filters": "No collections match your filters",
   "No collections yet": "No collections yet",
-  "No rides match these filters ": "No rides match these filters ",
-  "No rides match your search.": "No rides match your search.",
+  "No rides match these filters": "No rides match these filters",
   "No routes in this collection yet": "No routes in this collection yet",
   "Once you follow other riders or land in a busy region, their shared routes will appear here.":
     "Once you follow other riders or land in a busy region, their shared routes will appear here.",
   "Only you can see this collection.": "Only you can see this collection.",
-  "Previous ": "Previous ",
+  Previous: "Previous",
   Public: "Public",
   "Quiet on the feed": "Quiet on the feed",
-  "Record a ride from the mobile app and it will show up here.":
-    "Record a ride from the mobile app and it will show up here.",
-  "Record another ride to add it here.": "Record another ride to add it here.",
   "Region or place": "Region or place",
-  Remove: "Remove",
   "Remove {name} from collection": "Remove {name} from collection",
   Reorder: "Reorder",
   "Ride no longer available": "Ride no longer available",
   "Rides in this collection. Drag handle to reorder.":
     "Rides in this collection. Drag handle to reorder.",
   "Rides shared": "Rides shared",
-  "Route collection": "Route collection",
   Save: "Save",
   "Search collections": "Search collections",
   "Search your rides": "Search your rides",
-  "Search your rides\u2026": "Search your rides\u2026",
+  "Search your rides…": "Search your rides\u2026",
   "Share link": "Share link",
   "Shared collection": "Shared collection",
   "Sort feed": "Sort feed",
   "Stop following": "Stop following",
-  "The owner hasn't added any routes to this collection yet.":
-    "The owner hasn't added any routes to this collection yet.",
-  "The route may have been deleted or belongs to another account.":
-    "The route may have been deleted or belongs to another account.",
   "This collection has no routes yet.": "This collection has no routes yet.",
   "This collection is private or no longer available.":
     "This collection is private or no longer available.",
   Trophies: "Trophies",
-  "Try broadening the feed or switching back to the most popular rides. ":
-    "Try broadening the feed or switching back to the most popular rides. ",
+  "Try broadening the feed or switching back to the most popular rides.":
+    "Try broadening the feed or switching back to the most popular rides.",
   "Unfollow {title}": "Unfollow {title}",
   Unlisted: "Unlisted",
-  Updated: "Updated",
-  Visibility: "Visibility",
   "What makes this collection special?": "What makes this collection special?",
-  "You don't have any rides yet": "You don't have any rides yet",
   "Your collections": "Your collections",
   "a Tarmoto rider": "a Tarmoto rider",
   "e.g. My Favourite Beskydy Loops": "e.g. My Favourite Beskydy Loops",
@@ -138,10 +104,9 @@ export const community = {
     "{count, plural, one {# route} other {# routes}}",
   "{count} of {total}": "{count} of {total}",
   "{count} selected": "{count} selected",
-  "{title} \u2014 Tarmoto collection": "{title} \u2014 Tarmoto collection",
+  "{title} — Tarmoto collection": "{title} \u2014 Tarmoto collection",
   "Could not load rider profile": "Could not load rider profile",
   "Failed to load route collections": "Failed to load route collections",
-  "Clear search": "Clear search",
   'Delete "{title}"? The routes inside won’t be affected.':
     'Delete "{title}"? The routes inside won’t be affected.',
   "Edit collection": "Edit collection",

@@ -1,4 +1,6 @@
 "use client";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,7 +15,7 @@ import type { RoutePoint } from "@/lib/ride-detail";
 import { TripRouteOverview } from "@/components/TripRouteOverview";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuthStore } from "@/stores/auth";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 
 type JoinState =
   | { kind: "loading" }
@@ -34,6 +36,7 @@ type JoinState =
  * sent straight to the trip.
  */
 export default function TripInviteJoinPage() {
+  const t = useTranslation();
   const { tripId, code } = useParams<{ tripId: string; code: string }>();
   const router = useRouter();
   const [state, setState] = useState<JoinState>({ kind: "loading" });
@@ -71,10 +74,10 @@ export default function TripInviteJoinPage() {
         }
         setState({ kind: "preview", preview: data });
       } catch (err) {
-        setState({ kind: "error", message: messageForError(err) });
+        setState({ kind: "error", message: messageForError(err, t) });
       }
     })();
-  }, [tripId, code, authReady]);
+  }, [t, tripId, code, authReady]);
 
   const handleAccept = useCallback(async () => {
     if (state.kind !== "preview") return;
@@ -83,9 +86,9 @@ export default function TripInviteJoinPage() {
       await tripsApi.join(tripId, code);
       routerRef.current.replace(`/trips/${tripId}`);
     } catch (err) {
-      setState({ kind: "error", message: messageForError(err) });
+      setState({ kind: "error", message: messageForError(err, t) });
     }
-  }, [state, tripId, code]);
+  }, [t, state, tripId, code]);
 
   if (state.kind === "loading") {
     return (
@@ -142,10 +145,10 @@ export default function TripInviteJoinPage() {
           {preview.invited_by_name
             ? t("{name} invited you to collaborate as {role}.", {
                 name: preview.invited_by_name,
-                role: roleLabel(preview.role),
+                role: roleLabel(preview.role, t),
               })
             : t("You've been invited to collaborate as {role}.", {
-                role: roleLabel(preview.role),
+                role: roleLabel(preview.role, t),
               })}
         </span>
       </div>
@@ -200,13 +203,13 @@ function toRouteLines(lines: number[][][]): RoutePoint[][] {
   });
 }
 
-function roleLabel(role: TripInvitePreview["role"]): string {
+function roleLabel(role: TripInvitePreview["role"], t: Translate): string {
   if (role === "editor") return t("an editor");
   if (role === "viewer") return t("a viewer");
   return role;
 }
 
-function messageForError(err: unknown): string {
+function messageForError(err: unknown, t: Translate): string {
   if (err instanceof ApiError) {
     if (err.status === 404) {
       return t(

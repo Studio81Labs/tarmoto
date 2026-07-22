@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, ZoomIn } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -63,6 +64,7 @@ export function TripStopsPanel({
   onFocusStop,
   month,
 }: TripStopsPanelProps) {
+  const t = useTranslation();
   const format = useFormat();
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
@@ -189,7 +191,7 @@ export function TripStopsPanel({
         </div>
         <p className="mb-3 text-[12px] leading-relaxed text-fg-dim">
           {t(
-            "Same filters as the map's category bar. Here they're ranked by distance from your route line. ",
+            "Same filters as the map's category bar. Here they're ranked by distance from your route line.",
           )}
         </p>
         <div className="flex flex-wrap gap-1.5">
@@ -315,7 +317,7 @@ export function TripStopsPanel({
         <Select
           label={
             <>
-              {t("Minimum stay rating ")}
+              {t("Minimum stay rating")}
               <span className="text-fg-faint">
                 {t("(biker hotels & campgrounds)")}
               </span>
@@ -355,14 +357,14 @@ export function TripStopsPanel({
           <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
             <p className="text-[12px] leading-relaxed text-fg-dim">
               {t(
-                "Plan a route to see stops along it — the corridor needs a route line to measure from. The map's category pins work anytime. ",
+                "Plan a route to see stops along it — the corridor needs a route line to measure from. The map's category pins work anytime.",
               )}
             </p>
           </div>
         ) : categories.length === 0 ? (
           <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
             <p className="text-[12px] leading-relaxed text-fg-dim">
-              {t("Turn on a POI category above to see stops along the route. ")}
+              {t("Turn on a POI category above to see stops along the route.")}
             </p>
           </div>
         ) : loading && stops.length === 0 ? (
@@ -373,14 +375,14 @@ export function TripStopsPanel({
               className="shrink-0 animate-spin text-fg-mute"
             />
             <p className="text-[12px] leading-relaxed text-fg-dim">
-              {t("Measuring the corridor… ")}
+              {t("Measuring the corridor…")}
             </p>
           </div>
         ) : stops.length === 0 ? (
           <div className="rounded-[11px] border border-line bg-cream px-3.5 py-3">
             <p className="text-[12px] leading-relaxed text-fg-dim">
               {t(
-                "No {filters} stops within {distance} of your route — try a wider corridor. ",
+                "No {filters} stops within {distance} of your route — try a wider corridor.",
                 {
                   filters: activeLabels,
                   distance: format.distanceKm(corridorKm),

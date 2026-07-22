@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -57,6 +59,7 @@ const STATUS_STYLES: Record<SubscriptionStatus, string> = {
   canceled: "bg-quality-q1/25 text-quality-q1 border-quality-q1/55",
 };
 export default function SubscriptionPage() {
+  const t = useTranslation();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [actionState, setActionState] = useState<{
@@ -102,11 +105,11 @@ export default function SubscriptionPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, format.locale]);
+  }, [t, authReady, format.locale]);
   const snapshot = state.kind === "loaded" ? state.snapshot : null;
   const renewalLabel = useMemo(
     () => (snapshot ? describeRenewal(snapshot.currentPlan, format, t) : ""),
-    [snapshot, format],
+    [t, snapshot, format],
   );
   async function openCheckout(tier: "premium" | "pro") {
     setActionState({ kind: `checkout-${tier}`, error: null });
@@ -216,8 +219,8 @@ export default function SubscriptionPage() {
               onClick={() => void openPortal("manage")}
             >
               {actionState.kind === "portal-manage"
-                ? t("Opening billing portal… ")
-                : t("Open billing portal ")}
+                ? t("Opening billing portal…")
+                : t("Open billing portal")}
             </Button>
           ) : null
         }
@@ -240,7 +243,7 @@ export default function SubscriptionPage() {
           {snapshot.preview ? (
             <div className="mb-6 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-ink">
               {t(
-                "Preview data shown while live billing management is still being wired up. ",
+                "Preview data shown while live billing management is still being wired up.",
               )}
             </div>
           ) : null}
@@ -261,7 +264,7 @@ export default function SubscriptionPage() {
           <section className="mb-4">
             <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
               <Sparkles size={16} className="text-accent" />
-              {t("Plan comparison ")}
+              {t("Plan comparison")}
             </div>
             <div className="grid gap-4 lg:grid-cols-3">
               {snapshot.plans.map((plan) => (
@@ -318,6 +321,7 @@ function CurrentPlanCard({
   snapshot: SubscriptionSnapshot;
   renewalLabel: string;
 }) {
+  const t = useTranslation();
   const { currentPlan } = snapshot;
   // Ink hero card per spec — paired with the canonical Card variant so
   // padding / radius track the design system instead of inline values.
@@ -326,7 +330,7 @@ function CurrentPlanCard({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Stamp tone="accent" className="block">
-            {t("Current plan ")}
+            {t("Current plan")}
           </Stamp>
           <div className="mt-2 flex items-center gap-3">
             <Heading size="lg" as="h2" className="text-cream">
@@ -341,7 +345,7 @@ function CurrentPlanCard({
         </div>
         <div className="rounded-xl border border-accent/30 bg-accent/15 px-4 py-3 text-right">
           <Stamp tone="accent" className="block">
-            {t("Billing ")}
+            {t("Billing")}
           </Stamp>
           <p className="mt-1 text-2xl font-extrabold text-accent">
             {currentPlan.priceLabel}
@@ -353,7 +357,7 @@ function CurrentPlanCard({
         <div className="rounded-xl border border-line-on-dark bg-tarmac/60 p-4">
           <div className="mb-2 inline-flex items-center gap-2 text-[14px] font-semibold text-cream">
             <CalendarClock size={15} className="text-fg-on-dark-dim" />
-            {t("Renewal ")}
+            {t("Renewal")}
           </div>
           <p className="text-[14px] text-fg-on-dark-dim">{renewalLabel}</p>
         </div>
@@ -361,7 +365,7 @@ function CurrentPlanCard({
         <div className="rounded-xl border border-line-on-dark bg-tarmac/60 p-4">
           <div className="mb-2 inline-flex items-center gap-2 text-[14px] font-semibold text-cream">
             <BadgeCheck size={15} className="text-fg-on-dark-dim" />
-            {t("Included right now ")}
+            {t("Included right now")}
           </div>
           <ul className="space-y-2 text-[14px] text-fg-on-dark-dim">
             {snapshot.plans
@@ -390,12 +394,13 @@ function PaymentMethodCard({
   busy: boolean;
   updateBusy: boolean;
 }) {
+  const t = useTranslation();
   const paymentMethod = snapshot.paymentMethod;
   return (
     <Card padded={false} className="p-6">
       <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
         <CreditCard size={16} className="text-fg-mute" />
-        {t("Payment method ")}
+        {t("Payment method")}
       </div>
 
       {paymentMethod ? (
@@ -410,7 +415,7 @@ function PaymentMethodCard({
       ) : (
         <div className="rounded-xl border border-dashed border-line-strong bg-paper p-4 text-[14px] text-fg-dim">
           {t(
-            "No payment method on file yet. Upgrades and invoices will appear here once billing is connected. ",
+            "No payment method on file yet. Upgrades and invoices will appear here once billing is connected.",
           )}
         </div>
       )}
@@ -418,7 +423,7 @@ function PaymentMethodCard({
       <div className="mt-4 space-y-2 text-[14px] text-fg-dim">
         <p>
           {t(
-            "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync. ",
+            "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync.",
           )}
         </p>
         {snapshot.portalAvailable ? (
@@ -432,13 +437,13 @@ function PaymentMethodCard({
             onClick={onUpdatePaymentMethod}
           >
             {updateBusy
-              ? t("Opening payment settings… ")
-              : t("Update payment method ")}
+              ? t("Opening payment settings…")
+              : t("Update payment method")}
           </Button>
         ) : (
           <p className="rounded-xl border border-line bg-paper px-3 py-2 text-fg-dim">
             {t(
-              "Payment method editing will light up automatically as soon as the billing backend is available. ",
+              "Payment method editing will light up automatically as soon as the billing backend is available.",
             )}
           </p>
         )}
@@ -463,6 +468,7 @@ function PlanCard({
   portalAvailable: boolean;
   paidPlanNeedsCheckout: boolean;
 }) {
+  const t = useTranslation();
   const isCurrent = plan.tier === currentTier;
   // Granted paid tier (no live subscription behind it): every paid card
   // routes to Checkout — the current one reads "Subscribe" (convert the
@@ -520,7 +526,7 @@ function PlanCard({
         rightIcon={!isCurrent ? <ExternalLink size={14} /> : undefined}
         onClick={onSelect}
       >
-        {actionBusy ? t("Opening… ") : actionLabel}
+        {actionBusy ? t("Opening…") : actionLabel}
       </Button>
     </article>
   );
@@ -532,17 +538,18 @@ function BillingHistoryCard({
   snapshot: SubscriptionSnapshot;
   format: Formatters;
 }) {
+  const t = useTranslation();
   return (
     <Card padded={false} className="p-6">
       <div className="mb-4 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
         <Receipt size={16} className="text-fg-mute" />
-        {t("Billing history ")}
+        {t("Billing history")}
       </div>
 
       {snapshot.billingHistory.length === 0 ? (
         <div className="rounded-xl border border-dashed border-line-strong bg-paper p-4 text-[14px] text-fg-dim">
           {t(
-            "Your invoices will appear here once the first subscription charge is created. ",
+            "Your invoices will appear here once the first subscription charge is created.",
           )}
         </div>
       ) : (
@@ -569,12 +576,12 @@ function BillingHistoryCard({
                   rel="noreferrer"
                   className="inline-flex items-center gap-2 text-[14px] font-semibold text-accent transition hover:brightness-95"
                 >
-                  {t("Download invoice ")}
+                  {t("Download invoice")}
                   <ExternalLink size={14} />
                 </Link>
               ) : (
                 <span className="text-[14px] text-fg-mute">
-                  {t("Invoice unavailable ")}
+                  {t("Invoice unavailable")}
                 </span>
               )}
             </li>
@@ -593,11 +600,12 @@ function CancelPlanCard({
   renewalLabel: string;
   onCancel: () => void;
 }) {
+  const t = useTranslation();
   return (
     <Card padded={false} className="border-quality-q2/40 bg-quality-q2/15 p-6">
       <div className="mb-3 inline-flex items-center gap-2 text-[14px] font-semibold text-ink">
         <ShieldAlert size={16} className="text-amber-700" />
-        {t("Cancellation options ")}
+        {t("Cancellation options")}
       </div>
       <p className="text-[14px] text-ink">
         {currentTier === "free"
@@ -615,7 +623,7 @@ function CancelPlanCard({
         disabled={currentTier === "free"}
         onClick={onCancel}
       >
-        {t("Cancel subscription ")}
+        {t("Cancel subscription")}
       </Button>
     </Card>
   );
@@ -635,6 +643,7 @@ function RetentionDialog({
   onOpenPortal: () => void;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
       <div
@@ -648,19 +657,19 @@ function RetentionDialog({
         </Heading>
         <p className="mt-2 text-[14px] text-fg-dim">
           {t(
-            "If timing is the issue, downgrading keeps your ride history and billing continuity intact. ",
+            "If timing is the issue, downgrading keeps your ride history and billing continuity intact.",
           )}
         </p>
 
         <div className="mt-5 rounded-xl border border-line bg-paper p-4">
           <p className="text-[14px] font-semibold text-ink">
-            {t("Downgrade to Free at the end of your current billing period. ")}
+            {t("Downgrade to Free at the end of your current billing period.")}
           </p>
           <p className="mt-1 text-[14px] text-fg-dim">
-            {renewalLabel}
-            {t(". Your shared rides and account settings stay intact, while ")}
-            {planName}
-            {t("-only perks switch off after the current cycle ends. ")}
+            {t(
+              "{renewalLabel}. Your shared rides and account settings stay intact, while {planName}-only perks switch off after the current cycle ends.",
+              { renewalLabel, planName },
+            )}
           </p>
         </div>
 
@@ -679,11 +688,11 @@ function RetentionDialog({
               rightIcon={<ExternalLink size={14} />}
               onClick={onOpenPortal}
             >
-              {busy ? t("Opening billing portal… ") : t("Open billing portal ")}
+              {busy ? t("Opening billing portal…") : t("Open billing portal")}
             </Button>
           ) : (
             <Button variant="accent" size="sm" uppercase disabled>
-              {t("Billing portal unavailable ")}
+              {t("Billing portal unavailable")}
             </Button>
           )}
         </div>
@@ -692,11 +701,12 @@ function RetentionDialog({
   );
 }
 function LoadingState() {
+  const t = useTranslation();
   // Mounted only while loading, so the flag is constant `true` — the hook
   // still debounces the spinner so fast loads never flash it.
   const showLoader = useDelayedLoading(true);
   if (!showLoader) return null;
   return (
-    <SkeletonForm sections={2} label={t("Loading subscription settings… ")} />
+    <SkeletonForm sections={2} label={t("Loading subscription settings…")} />
   );
 }

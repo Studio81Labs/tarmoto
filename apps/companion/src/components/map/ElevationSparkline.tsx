@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import { buildSparklinePath, profileExtrema } from "@/lib/segment-preview";
 import type { Formatters } from "@tarmoto/shared";
 interface Props {
@@ -26,6 +26,7 @@ export function ElevationSparkline({
   stroke = "#FF6A1A",
   className,
 }: Props) {
+  const t = useTranslation();
   if (!profile || profile.length < 2) return null;
   const d = buildSparklinePath(profile, width, height);
   const ext = profileExtrema(profile);

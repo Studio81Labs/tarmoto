@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bike as BikeIcon, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -27,6 +29,7 @@ type ListError = {
   message: string;
 } | null;
 export default function BikesPage() {
+  const t = useTranslation();
   const [bikes, setBikes] = useState<Bike[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ListError>(null);
@@ -49,7 +52,7 @@ export default function BikesPage() {
         message: getUserFacingErrorMessage(err, t("Could not load your bikes")),
       });
     }
-  }, []);
+  }, [t]);
   // Wait for the auth store to carry a token before fetching — same
   // hard-navigation race fix as the other settings pages.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
@@ -77,7 +80,7 @@ export default function BikesPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [t, authReady]);
   const sortedBikes = useMemo(
     () =>
       [...bikes].sort((a, b) => {
@@ -209,7 +212,7 @@ export default function BikesPage() {
         message={
           confirmDeleteBike
             ? t(
-                "{bike} is removed from your garage. Rides already recorded with it are kept. ",
+                "{bike} is removed from your garage. Rides already recorded with it are kept.",
                 { bike: formatBikeTitle(confirmDeleteBike) },
               )
             : ""
@@ -243,6 +246,7 @@ function BikeRow({
   onDelete,
   onSetActive,
 }: BikeRowProps) {
+  const t = useTranslation();
   const format = useFormat();
   const isActive = bike.isActive;
   const ridesLabel =
@@ -306,7 +310,7 @@ function BikeRow({
 
       <div className="flex items-center gap-1 sm:gap-2">
         {isActive ? (
-          <Pill variant="accent">{t("Active ")}</Pill>
+          <Pill variant="accent">{t("Active")}</Pill>
         ) : (
           <Button
             variant="secondary"
@@ -354,6 +358,7 @@ function BikeRow({
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
+  const t = useTranslation();
   return (
     <Card padded={false}>
       <div className="px-5 py-12 text-center">
@@ -363,11 +368,11 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           strokeWidth={1.5}
         />
         <p className="mb-2 font-semibold text-ink">
-          {t("No bikes in your garage yet ")}
+          {t("No bikes in your garage yet")}
         </p>
         <p className="mx-auto mb-5 max-w-sm text-[13px] text-fg-dim">
           {t(
-            "Add your motorcycle to get bike-specific stats and recommendations. ",
+            "Add your motorcycle to get bike-specific stats and recommendations.",
           )}
         </p>
         <Button
@@ -376,7 +381,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           leftIcon={<Plus size={16} />}
           onClick={onAdd}
         >
-          {t("Add your first bike ")}
+          {t("Add your first bike")}
         </Button>
       </div>
     </Card>

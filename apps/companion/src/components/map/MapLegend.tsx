@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import { CONDITION_COLORS } from "@/lib/conditions-visual";
 import { HAZARD_CONFIG, HAZARD_TYPES_UI, SURFACE_LABELS } from "@/lib/utils";
@@ -101,6 +102,7 @@ export function MapLegend({
   conditions,
   hazards,
 }: MapLegendProps) {
+  const t = useTranslation();
   const hasQuality = quality != null && quality.length > 0;
   if (!hasQuality && !surface && !conditions && !hazards) return null;
   return (

@@ -28,7 +28,7 @@ import {
 } from "@tarmoto/shared";
 import type { components } from "@tarmoto/openapi-client";
 import { api, ApiError } from "@/lib/api";
-import { t } from "@/i18n";
+import { t as englishTranslate, type Translate } from "@/i18n";
 
 export { formatJoinedLabel, initialsFromName };
 export type { PublicProfile };
@@ -76,7 +76,7 @@ export class RiderProfileFetchError extends Error {
  */
 export async function fetchPublicProfile(
   riderId: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; translate?: Translate } = {},
 ): Promise<PublicProfile> {
   const result = await api.GET("/api/v1/users/{userId}/profile", {
     params: { path: { userId: riderId } },
@@ -90,11 +90,14 @@ export async function fetchPublicProfile(
     if (status === 404 || status === 400) {
       throw new RiderProfileNotFoundError(riderId);
     }
-    throw new RiderProfileFetchError(t("Could not load rider profile"), status);
+    throw new RiderProfileFetchError(
+      (options.translate ?? englishTranslate)("Could not load rider profile"),
+      status,
+    );
   }
   if (!result.data) {
     throw new RiderProfileFetchError(
-      t("Could not load rider profile"),
+      (options.translate ?? englishTranslate)("Could not load rider profile"),
       result.response?.status ?? 0,
     );
   }
@@ -129,22 +132,28 @@ export async function fetchPublicBadges(
  * idempotent from the user's perspective — swallow them so the optimistic
  * UI doesn't flicker when a stale state races against a click.
  */
-export async function followRider(riderId: string): Promise<void> {
+export async function followRider(
+  riderId: string,
+  t: Translate = englishTranslate,
+): Promise<void> {
   const result = await api.POST("/api/v1/users/{userId}/follow", {
     params: { path: { userId: riderId } },
   });
   if (!result.error) return;
   const status = result.response?.status ?? 0;
   if (status === 409) return;
-  throw new ApiError(t("Could not update follow"), status, result.error);
+  throw new ApiError(t("Could not update follow"), status, result.error, true);
 }
 
-export async function unfollowRider(riderId: string): Promise<void> {
+export async function unfollowRider(
+  riderId: string,
+  t: Translate = englishTranslate,
+): Promise<void> {
   const result = await api.DELETE("/api/v1/users/{userId}/follow", {
     params: { path: { userId: riderId } },
   });
   if (!result.error) return;
   const status = result.response?.status ?? 0;
   if (status === 404) return;
-  throw new ApiError(t("Could not update follow"), status, result.error);
+  throw new ApiError(t("Could not update follow"), status, result.error, true);
 }

@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { signIn } from "next-auth/react";
 import { Button } from "@tarmoto/ui";
 import type { OAuthProvider } from "@/lib/oauth-providers";
@@ -10,6 +11,7 @@ export function OAuthButtons({
   providers: readonly OAuthProvider[];
   callbackUrl?: string;
 }) {
+  const t = useTranslation();
   const renderGoogle = providers.includes("google");
   const renderApple = providers.includes("apple");
   if (!renderGoogle && !renderApple) return null;
@@ -21,7 +23,7 @@ export function OAuthButtons({
         </div>
         <div className="relative flex justify-center text-sm">
           <span className="bg-cream px-4 text-ink/55">
-            {t("or continue with ")}
+            {t("or continue with")}
           </span>
         </div>
       </div>
@@ -53,7 +55,7 @@ export function OAuthButtons({
               </svg>
             }
           >
-            {t("Continue with Google ")}
+            {t("Continue with Google")}
           </Button>
         )}
 
@@ -73,7 +75,7 @@ export function OAuthButtons({
               </svg>
             }
           >
-            {t("Continue with Apple ")}
+            {t("Continue with Apple")}
           </Button>
         )}
       </div>

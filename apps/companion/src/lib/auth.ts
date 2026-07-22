@@ -6,7 +6,7 @@ import type { NextAuthConfig } from "next-auth";
 import { cookies, headers } from "next/headers";
 import {
   DEFAULT_LOCALE,
-  isSupportedLocale,
+  matchSupportedLocale,
   resolveLocale,
   type SupportedLocale,
 } from "@tarmoto/shared";
@@ -25,8 +25,8 @@ import { LOCALE_COOKIE } from "@/i18n/constants";
 async function resolveAuthRequestLocale(): Promise<SupportedLocale> {
   try {
     const value = (await cookies()).get(LOCALE_COOKIE)?.value;
-    const normalized = value?.toLowerCase().split("-")[0] ?? "";
-    if (isSupportedLocale(normalized)) return normalized;
+    const resolved = value ? matchSupportedLocale(value) : undefined;
+    if (resolved) return resolved;
   } catch {
     // Auth callbacks can also run in contexts without request cookies.
   }

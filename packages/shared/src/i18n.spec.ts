@@ -5,6 +5,7 @@ import {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  matchSupportedLocale,
   makeTranslator,
   resolveLocale,
   type CatalogsByLocale,
@@ -71,6 +72,14 @@ describe("i18n / resolveLocale", () => {
     expect(resolveLocale("en;q=0.001")).toBe("en");
     expect(resolveLocale("en;q=0")).toBe(DEFAULT_LOCALE);
     expect(resolveLocale("en;q=1.5")).toBe(DEFAULT_LOCALE);
+  });
+});
+
+describe("i18n / matchSupportedLocale", () => {
+  it("matches registry tags case-insensitively without defaulting", () => {
+    expect(matchSupportedLocale("EN")).toBe("en");
+    expect(matchSupportedLocale("en-GB")).toBe("en");
+    expect(matchSupportedLocale("xx-YY")).toBeUndefined();
   });
 });
 

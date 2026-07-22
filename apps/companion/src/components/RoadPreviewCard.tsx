@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useId, useMemo } from "react";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import type { RoutePreviewSegment } from "@/lib/types";
@@ -53,6 +54,7 @@ export function RoadPreviewCard({
   onHoverEnd,
   onToggleExpand,
 }: RoadPreviewCardProps) {
+  const t = useTranslation();
   const format = useFormat();
   const tier = QUALITY_CONFIG[segment.qualityTier];
   const severity = segmentHazardSeverity(segment);
@@ -168,7 +170,7 @@ export function RoadPreviewCard({
 
           <div>
             <p className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wider text-fg-mute">
-              <span>{t("Elevation ")}</span>
+              <span>{t("Elevation")}</span>
               <span className="tabular-nums normal-case">
                 {formatElevationRange(segment.elevationProfile, format)}
               </span>
@@ -194,7 +196,7 @@ export function RoadPreviewCard({
           {segment.qualityHistory && segment.qualityHistory.length > 1 && (
             <div>
               <p className="mb-2 text-[11px] uppercase tracking-wider text-fg-mute">
-                {t("Quality trend ")}
+                {t("Quality trend")}
               </p>
               <SegmentTrendChart
                 segmentId={segment.id}
@@ -206,11 +208,11 @@ export function RoadPreviewCard({
 
           <div>
             <p className="mb-1 text-[11px] uppercase tracking-wider text-fg-mute">
-              {t("Active hazards ")}
+              {t("Active hazards")}
             </p>
             {segment.activeHazards.length === 0 ? (
               <p className="text-fg-mute">
-                {t("No active hazards on this segment. ")}
+                {t("No active hazards on this segment.")}
               </p>
             ) : (
               <ul className="space-y-1.5">
@@ -252,7 +254,7 @@ export function RoadPreviewCard({
           {segment.photos.length > 0 && (
             <div>
               <p className="mb-1 text-[11px] uppercase tracking-wider text-fg-mute">
-                {t("Rider photos ")}
+                {t("Rider photos")}
               </p>
               <div className="grid grid-cols-3 gap-1.5">
                 {segment.photos.map((photo) => (

@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useFormat } from "@/format/FormatProvider";
 import { translateKnownLabel, WAYPOINT_ROLE_LABELS } from "@/i18n/domainLabels";
 import {
@@ -517,7 +518,11 @@ const FetchedTripPlannerMap = forwardRef<
   },
   ref,
 ) {
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip, t), [trip]);
+  const t = useTranslation();
+  const closureRoutes = useMemo(
+    () => buildTripClosureRoutes(trip, t),
+    [t, trip],
+  );
   const closuresData = useClosures(month, closureRoutes);
   const passesData = usePasses(month, closureRoutes);
   return (
@@ -611,6 +616,7 @@ const TripPlannerMapContent = forwardRef<
   },
   ref,
 ) {
+  const t = useTranslation();
   const format = useFormat();
   // The map is "editable" only when the parent wires up waypoint editing (the
   // planner passes onMoveWaypoint; the read-only trip-detail page does not).
@@ -1046,8 +1052,9 @@ const TripPlannerMapContent = forwardRef<
         trip,
         selectedDayNumber,
         focusSelectedDay,
+        t,
       ),
-    [trip, selectedDayNumber, focusSelectedDay],
+    [trip, selectedDayNumber, focusSelectedDay, t],
   );
   // Latest waypoint collection for the drag preview below — the drag
   // effect must not re-run per render, so it reads through a ref.
@@ -1686,7 +1693,7 @@ const TripPlannerMapContent = forwardRef<
     for (const cursor of collaboratorCursors?.values() ?? []) {
       seen.add(cursor.userId);
       const profile = collaboratorProfiles?.get(cursor.userId);
-      const name = profile?.displayName ?? "Rider";
+      const name = profile?.displayName ?? t("Rider");
       const avatarUrl = profile?.avatarUrl ?? null;
       let entry = markers.get(cursor.userId);
       if (!entry) {
@@ -1718,7 +1725,7 @@ const TripPlannerMapContent = forwardRef<
         markers.delete(userId);
       }
     }
-  }, [collaboratorCursors, collaboratorProfiles, ready]);
+  }, [t, collaboratorCursors, collaboratorProfiles, ready]);
   useEffect(() => {
     const markers = cursorMarkersRef.current;
     return () => {
@@ -2111,7 +2118,7 @@ const TripPlannerMapContent = forwardRef<
           // Address is informational — coordinates already show.
         });
     },
-    [format],
+    [t, format],
   );
   // ── Waypoint pin context menu: info + remove (rider feedback) ──
   useEffect(() => {
@@ -2798,7 +2805,7 @@ const TripPlannerMapContent = forwardRef<
                   : "text-fg-dim hover:text-ink"
               }`}
             >
-              {t(label === "Map" ? "Map " : "Aerial ")}
+              {t(label === "Map" ? "Map" : "Aerial")}
             </button>
           ))}
         </div>
@@ -2816,7 +2823,7 @@ const TripPlannerMapContent = forwardRef<
             className={toggleClassName(lineColorMode === "quality")}
           >
             <Layers3 size={14} />
-            {t("Road quality ")}
+            {t("Road quality")}
           </button>
           <button
             type="button"
@@ -2830,7 +2837,7 @@ const TripPlannerMapContent = forwardRef<
             className={toggleClassName(lineColorMode === "surface")}
           >
             <Layers3 size={14} />
-            {t("Surface ")}
+            {t("Surface")}
           </button>
           {/* Ambient point overlays — a distinct set of layer toggles,
               independent of basemap and line coloring. Ordered Hazards then
@@ -2843,7 +2850,7 @@ const TripPlannerMapContent = forwardRef<
             className={toggleClassName(hazardsVisible)}
           >
             <Siren size={14} />
-            {t("Hazards ")}
+            {t("Hazards")}
           </button>
           <button
             type="button"
@@ -2853,20 +2860,20 @@ const TripPlannerMapContent = forwardRef<
             className={toggleClassName(conditionsVisible)}
           >
             <TriangleAlert size={14} />
-            {t("Conditions ")}
+            {t("Conditions")}
           </button>
         </div>
 
         {drawMode === "drawing" && !outlineStarted ? (
           <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
             {t(
-              "Click and drag on the map to outline a region. Release to finish. ",
+              "Click and drag on the map to outline a region. Release to finish.",
             )}
           </div>
         ) : drawMode === "idle" && editable && !pointPlacedForTrip ? (
           <div className="max-w-[320px] self-start rounded-[10px] bg-ink px-3 py-2 text-xs leading-relaxed text-cream/90 shadow-[0_4px_12px_rgba(14,14,16,0.16)]">
             {t(
-              "Click the map to add points. We snap to nearby roads when visible. ",
+              "Click the map to add points. We snap to nearby roads when visible.",
             )}
           </div>
         ) : null}
@@ -3020,7 +3027,7 @@ const TripPlannerMapContent = forwardRef<
               {waypointMenu.name}
             </p>
             <p className="mt-1.5 text-[11.5px] leading-snug text-fg-dim">
-              {waypointMenu.address ?? t("Looking up the place… ")}
+              {waypointMenu.address ?? t("Looking up the place…")}
             </p>
             <p className="mt-1 font-mono text-[10px] tracking-[0.3px] text-fg-mute">
               {format.decimal(waypointMenu.lat, 5)},{" "}

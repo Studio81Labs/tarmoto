@@ -83,7 +83,7 @@ export function importedRouteToTrip(
       ? segments.reduce((s, seg) => s + seg.qualityScore, 0) / segments.length
       : 0;
 
-  const waypoints = deriveWaypoints(route);
+  const waypoints = deriveWaypoints(route, t);
 
   const geometry: GeoJSON.LineString = {
     type: "LineString",
@@ -131,7 +131,7 @@ export function importedRouteToTrip(
   };
 }
 
-function deriveWaypoints(route: ImportedRoute): Waypoint[] {
+function deriveWaypoints(route: ImportedRoute, t: Translate): Waypoint[] {
   const first = route.points[0];
   const last = route.points[route.points.length - 1];
   const explicit: Waypoint[] = route.waypoints.map((wp, i) => ({
@@ -157,13 +157,13 @@ function deriveWaypoints(route: ImportedRoute): Waypoint[] {
 
   const start: Waypoint = {
     id: "imp-wp-start",
-    name: startMatch?.name ?? "Start",
+    name: startMatch?.name ?? t("Start"),
     location: { lng: first[0], lat: first[1] },
     type: "start",
   };
   const end: Waypoint = {
     id: "imp-wp-end",
-    name: endMatch?.name ?? "End",
+    name: endMatch?.name ?? t("End"),
     location: { lng: last[0], lat: last[1] },
     type: "end",
   };

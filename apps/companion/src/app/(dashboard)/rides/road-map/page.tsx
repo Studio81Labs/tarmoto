@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import {
   Suspense,
   useCallback,
@@ -101,6 +103,7 @@ export default function RoadMapPage() {
 }
 
 function RoadMapPageInner() {
+  const t = useTranslation();
   // The tab-row time pills drive the window via `?window=`; the road-map
   // reads it (no local period state) so flipping a pill updates the map,
   // the legend count, and the share snapshot together. The `TimeWindow`
@@ -209,7 +212,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [t, authReady]);
   // `cancelled` guards against stale responses when the centre changes faster
   // than the network round-trip (e.g. pasting coordinates, then immediately
   // clicking "Use my location"). Without it, a late-resolving request would
@@ -251,7 +254,7 @@ function RoadMapPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, mapView, center.lat, center.lng]);
+  }, [t, authReady, mapView, center.lat, center.lng]);
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
@@ -298,7 +301,7 @@ function RoadMapPageInner() {
       cancelled = true;
       controller.abort();
     };
-  }, [selectedSegmentId]);
+  }, [t, selectedSegmentId]);
   // The backend returns nearby-unridden sorted by distance today, but the UI
   // explicitly advertises "Sorted by distance" — sorting client-side makes
   // that claim resilient if the service ordering ever changes.
@@ -372,7 +375,7 @@ function RoadMapPageInner() {
         flyToWhenReady(lat, lng);
       }, options);
     },
-    [requestUserLocation, flyToWhenReady],
+    [t, requestUserLocation, flyToWhenReady],
   );
   // Open centred on the rider so the map lands where they ride instead of the
   // neutral fallback. Runs once; a denied prompt just leaves the fallback centre.
@@ -431,13 +434,14 @@ function RoadMapPageInner() {
       // The DTO accepts an opaque JSON object — narrow the typed snapshot shape
       // to the API contract at the boundary.
       await shareRoadMap(
-        "My Tarmoto road map",
+        t("My Tarmoto road map"),
         snapshot as unknown as Record<string, unknown>,
+        t,
       );
     } finally {
       sharingRef.current = false;
     }
-  }, [stats, period, filteredRidden, center]);
+  }, [stats, period, filteredRidden, center, t]);
   if (loading) {
     return (
       <RidesScaffold fill>
@@ -588,7 +592,7 @@ function RoadMapPageInner() {
             title={t("Centre on me")}
           >
             <Crosshair size={12} />
-            {t("Centre on me ")}
+            {t("Centre on me")}
           </button>
         </div>
 
@@ -715,6 +719,7 @@ function NearbyCenterControls({
   onUseMyLocation,
   onCoordinatesChanged,
 }: NearbyCenterControlsProps) {
+  const t = useTranslation();
   const [latInput, setLatInput] = useState(String(center.lat));
   const [lngInput, setLngInput] = useState(String(center.lng));
   useEffect(() => {
@@ -750,7 +755,7 @@ function NearbyCenterControls({
         loading={locating}
         leftIcon={<Crosshair size={14} />}
       >
-        {locating ? t("Locating… ") : t("Use my location")}
+        {locating ? t("Locating…") : t("Use my location")}
       </Button>
       <div className="grid grid-cols-2 gap-2">
         <div className="text-xs text-fg-dim">
@@ -775,7 +780,7 @@ function NearbyCenterControls({
         </div>
       </div>
       <Button block size="sm" variant="accent" onClick={apply}>
-        {t("Apply coordinates ")}
+        {t("Apply coordinates")}
       </Button>
     </div>
   );
@@ -785,6 +790,7 @@ interface NearbyRowProps {
   format: Formatters;
 }
 function NearbyRow({ segment, format }: NearbyRowProps) {
+  const t = useTranslation();
   const tier = scoreToQualityTier(segment.quality_score);
   return (
     <li className="flex items-center justify-between gap-3">
@@ -830,6 +836,7 @@ function RideRoutePopover({
   format: Formatters;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -928,6 +935,7 @@ function MapViewToggle({
   view: MapView;
   onChange: (view: MapView) => void;
 }) {
+  const t = useTranslation();
   const options: { key: MapView; label: string }[] = [
     { key: "routes", label: t("Routes") },
     { key: "coverage", label: t("Coverage") },
@@ -962,6 +970,7 @@ interface MapLegendProps {
   format: Formatters;
 }
 function MapLegend({ riddenCount, format }: MapLegendProps) {
+  const t = useTranslation();
   return (
     <div className="absolute top-[60px] left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
@@ -972,11 +981,11 @@ function MapLegend({ riddenCount, format }: MapLegendProps) {
       </div>
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-fg-mute" />
-        {t("Unridden ")}
+        {t("Unridden")}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-fg-dim">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-        {t("Click a road for details ")}
+        {t("Click a road for details")}
       </div>
     </div>
   );

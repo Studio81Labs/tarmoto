@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, {
   type GeoJSONSource,
@@ -8,7 +10,6 @@ import maplibregl, {
 } from "maplibre-gl";
 import type { FeatureCollection, LineString } from "geojson";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
-import { t } from "@/i18n";
 import type { RoutePoint } from "@/lib/ride-detail";
 
 const ROUTE_SOURCE_ID = "ride-route";
@@ -30,11 +31,13 @@ interface Props {
 
 export function RideRouteMap({
   geometry,
-  label = t("Ride route map"),
+  label,
   color = "#22d3ee",
   fitBounds,
   containerClassName = "h-[360px] min-h-[280px]",
 }: Props) {
+  const t = useTranslation();
+  const resolvedLabel = label ?? t("Ride route map");
   const handleRef = useRef<MapCanvasHandle>(null);
   const [ready, setReady] = useState(false);
   const collection = useMemo(
@@ -63,7 +66,7 @@ export function RideRouteMap({
   return (
     <div
       className={`relative w-full overflow-hidden rounded-xl border border-line bg-paper ${containerClassName}`}
-      aria-label={label}
+      aria-label={resolvedLabel}
     >
       <MapCanvas
         ref={handleRef}

@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Bell, Check, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -38,6 +40,7 @@ type CategoryChannel = Extract<
   "email" | "push"
 >;
 export default function NotificationsPage() {
+  const t = useTranslation();
   const [loading, setLoading] = useState(true);
   // Debounced: fast loads render content directly, no spinner flash.
   const showLoader = useDelayedLoading(loading);
@@ -115,7 +118,7 @@ export default function NotificationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [t, authReady]);
   const isDirty = !preferencesEqual(prefs, serverPrefs);
   // Clear a prior "saved"/"error" badge once the user starts editing, but
   // never overwrite an in-flight "saving" state — doing so would re-enable
@@ -187,7 +190,7 @@ export default function NotificationsPage() {
         {showLoader && (
           <>
             <SkeletonPageHeader />
-            <SkeletonForm sections={3} label={t("Loading preferences… ")} />
+            <SkeletonForm sections={3} label={t("Loading preferences…")} />
           </>
         )}
       </div>
@@ -205,8 +208,7 @@ export default function NotificationsPage() {
           )}
         />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
-          {t("Could not load preferences: ")}
-          {loadError}
+          {t("Could not load preferences: {error}", { error: loadError })}
         </div>
       </div>
     );
@@ -229,7 +231,7 @@ export default function NotificationsPage() {
             {t("Email digest")}
           </Stamp>
           <p className="text-[12px] text-fg-dim">
-            {t("Summary of your riding stats and community activity. ")}
+            {t("Summary of your riding stats and community activity.")}
           </p>
         </div>
         <RadioCardGrid
@@ -248,15 +250,15 @@ export default function NotificationsPage() {
       {/* Per-category toggles */}
       <Card padded={false} className="mb-4 divide-y divide-line">
         <div className="flex items-center px-5 py-3">
-          <Stamp className="flex-1">{t("Notification ")}</Stamp>
+          <Stamp className="flex-1">{t("Notification")}</Stamp>
           <div className="flex items-center gap-6">
             <Stamp className="flex w-10 items-center justify-center gap-1">
               <Mail size={12} />
-              {t("Email ")}
+              {t("Email")}
             </Stamp>
             <Stamp className="flex w-10 items-center justify-center gap-1">
               <Smartphone size={12} />
-              {t("Push ")}
+              {t("Push")}
             </Stamp>
           </div>
         </div>
@@ -299,7 +301,7 @@ export default function NotificationsPage() {
             </p>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "Product launches, deals with partners, seasonal riding guides. Opt-in only — off by default. ",
+                "Product launches, deals with partners, seasonal riding guides. Opt-in only — off by default.",
               )}
             </p>
           </div>
@@ -322,6 +324,7 @@ interface SaveBarProps {
   onSave: () => void;
 }
 function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
+  const t = useTranslation();
   return (
     <div className="flex items-center gap-3">
       <Button
@@ -331,12 +334,12 @@ function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
         loading={saveState.kind === "saving"}
         onClick={onSave}
       >
-        {saveState.kind === "saving" ? t("Saving… ") : t("Save preferences")}
+        {saveState.kind === "saving" ? t("Saving…") : t("Save preferences")}
       </Button>
       {saveState.kind === "saved" && !isDirty && (
         <span className="inline-flex items-center gap-1 text-[13px] text-accent">
           <Check size={14} />
-          {t("Saved ")}
+          {t("Saved")}
         </span>
       )}
       {saveState.kind === "error" && (

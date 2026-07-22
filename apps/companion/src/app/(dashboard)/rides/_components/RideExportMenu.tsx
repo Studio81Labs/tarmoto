@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@tarmoto/ui";
@@ -17,6 +19,7 @@ export function RideExportMenu({
 }: {
   onExport: (format: RideExportFormat) => Promise<void>;
 }) {
+  const t = useTranslation();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<RideExportFormat | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,7 +77,7 @@ export function RideExportMenu({
             disabled={busy !== null}
             className="w-full px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {t("CSV (stats) ")}
+            {t("CSV (stats)")}
           </button>
           <button
             type="button"
@@ -83,7 +86,7 @@ export function RideExportMenu({
             disabled={busy !== null}
             className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {t("GPX (tracks) ")}
+            {t("GPX (tracks)")}
           </button>
         </div>
       )}

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
-import { t } from "@/i18n";
-import { readLocale } from "@/i18n/server";
+import { readLocale, t } from "@/i18n/server";
 import { readFormatPrefs } from "@/format/server";
 import "./globals.css";
 

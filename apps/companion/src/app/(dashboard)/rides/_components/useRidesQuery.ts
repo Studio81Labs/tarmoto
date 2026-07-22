@@ -1,9 +1,11 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { components } from "@tarmoto/openapi-client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
@@ -195,6 +197,7 @@ interface ListResult {
 }
 
 export function useRidesQuery() {
+  const t = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -273,7 +276,7 @@ export function useRidesQuery() {
         });
       });
     return () => ctrl.abort();
-  }, [authReady, state]);
+  }, [t, authReady, state]);
 
   // Clamp an out-of-range page once the count is known. A stale/bookmarked
   // `?page=` (or data shrinking below the page boundary) would otherwise

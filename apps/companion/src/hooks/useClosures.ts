@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import { closuresApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -63,6 +64,7 @@ export function useClosures(
   routes: PlannerClosureRoute[],
   options?: UseClosuresOptions,
 ): ClosuresQueryResult {
+  const t = useTranslation();
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
   const enabled = options?.enabled ?? true;

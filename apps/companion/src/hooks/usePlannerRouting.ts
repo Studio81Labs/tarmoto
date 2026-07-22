@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import { routingApi, type RouteResponse } from "@/lib/api";
 import {
   concatLegRouteResponses,
@@ -25,6 +26,7 @@ export function usePlannerRouting(
   enabled = true,
   requestKey: number | null = null,
 ): { routing: boolean } {
+  const t = useTranslation();
   const [routing, setRouting] = useState(false);
   const reqIdRef = useRef(0);
   // Snapshot the latest callbacks so the effect doesn't re-run on identity churn.
@@ -89,7 +91,7 @@ export function usePlannerRouting(
       clearTimeout(handle);
       controller.abort();
     };
-  }, [legs, enabled, requestKey]);
+  }, [t, legs, enabled, requestKey]);
 
   return { routing };
 }

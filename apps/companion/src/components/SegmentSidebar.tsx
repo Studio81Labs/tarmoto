@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useMemo, useState } from "react";
 import { GripVertical, MapPin } from "lucide-react";
 import { flattenSegments, useTripStore } from "@/stores/trip";
@@ -13,6 +14,7 @@ import { Stamp } from "@tarmoto/ui";
  * zoom/highlight without coupling to this component.
  */
 export function SegmentSidebar() {
+  const t = useTranslation();
   const format = useFormat();
   const activeTrip = useTripStore((s) => s.activeTrip);
   const focusedSegmentId = useTripStore((s) => s.focusedSegmentId);
@@ -44,11 +46,11 @@ export function SegmentSidebar() {
       className="flex w-full flex-col animate-slide-in-right"
     >
       <div className="shrink-0 p-4 pb-0">
-        <Stamp as="h3">{t("Road preview cards ")}</Stamp>
+        <Stamp as="h3">{t("Road preview cards")}</Stamp>
         <p className="mt-1 text-xs text-fg-dim">
           {segments.length > 0
-            ? t("Tap a segment to preview it on the map ")
-            : t("Each segment of your route ")}
+            ? t("Tap a segment to preview it on the map")
+            : t("Each segment of your route")}
         </p>
       </div>
 
@@ -58,7 +60,7 @@ export function SegmentSidebar() {
             <GripVertical size={32} className="mx-auto mb-3 text-fg-faint" />
             <p className="text-sm text-fg-dim">
               {t(
-                "Add waypoints on the map or generate a route to see segment previews. ",
+                "Add waypoints on the map or generate a route to see segment previews.",
               )}
             </p>
           </div>
@@ -74,8 +76,7 @@ export function SegmentSidebar() {
                   <header className="flex items-center justify-between px-1">
                     <h4 className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[1.2px] text-fg-mute">
                       <MapPin size={11} />
-                      {t("Day ")}
-                      {dayNumber}
+                      {t("Day {day}", { day: dayNumber })}
                     </h4>
                     <span className="font-mono text-[10px] tabular-nums text-fg-mute">
                       {format.distanceKm(dayDistance)}

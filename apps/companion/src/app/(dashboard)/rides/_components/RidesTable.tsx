@@ -1,5 +1,7 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
 import Link from "next/link";
 import { useMemo } from "react";
 import {
@@ -8,7 +10,7 @@ import {
   QualityBars,
   type DataTableColumn,
 } from "@tarmoto/ui";
-import { scoreToQualityTier } from "@/lib/utils";
+import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { Pagination } from "@/components/Pagination";
 import { useFormat } from "@/format/FormatProvider";
 import type { Formatters } from "@tarmoto/shared";
@@ -34,7 +36,10 @@ interface Props {
  * field, so those headers are static. Each row links to the ride detail page
  * (`/rides/[rideId]`).
  */
-function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
+function buildColumns(
+  format: Formatters,
+  t: Translate,
+): DataTableColumn<RideSummary>[] {
   // The cell value converts to the rider's unit preference via
   // `splitDistanceKm`, so the header must too — a static "KM" would lie to
   // imperial riders. The magnitude passed here is arbitrary (unit short-forms
@@ -63,7 +68,7 @@ function buildColumns(format: Formatters): DataTableColumn<RideSummary>[] {
             {r.name ?? format.shortDate(r.started_at)}
           </span>
           <Mono className="text-[10px] uppercase text-fg-mute">
-            {r.ride_type}
+            {t(rideTypeLabel(r.ride_type))}
           </Mono>
         </div>
       ),
@@ -142,8 +147,9 @@ export function RidesTable({
   onSort,
   onPage,
 }: Props) {
+  const t = useTranslation();
   const format = useFormat();
-  const columns = useMemo(() => buildColumns(format), [format]);
+  const columns = useMemo(() => buildColumns(format, t), [format, t]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   // Debounced: fast (re)fetches keep the table steady, no loading-text flash.
   const showLoading = useDelayedLoading(loading);
@@ -167,9 +173,9 @@ export function RidesTable({
         // flash on every warm response.
         loading
           ? showLoading
-            ? t("Loading rides… ")
+            ? t("Loading rides…")
             : " "
-          : t("No rides match these filters. ")
+          : t("No rides match these filters.")
       }
       // Pagination only when it earns its space — on a single page the arrows
       // are inert and the count already lives in the "All rides · N" tab badge,

@@ -1,8 +1,9 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { t } from "@/i18n";
 import { SubRouteTabs } from "@/components/SubRouteTabs";
 
 /**
@@ -24,6 +25,7 @@ export function CommunityTabsBar({
   feedBadge?: ReactNode;
   collectionsBadge?: ReactNode;
 } = {}) {
+  const t = useTranslation();
   const pathname = usePathname() ?? "";
   const show = ROOT_ROUTES.some(
     (r) => pathname === r || pathname.startsWith(r + "/"),

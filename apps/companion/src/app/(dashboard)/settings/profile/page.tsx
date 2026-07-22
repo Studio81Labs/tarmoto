@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
@@ -27,6 +29,7 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 type CopyState = "idle" | "copied" | "error";
 type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
 export default function ProfilePage() {
+  const t = useTranslation();
   const format = useFormat();
   const user = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
@@ -147,7 +150,7 @@ export default function ProfilePage() {
         ),
       );
     }
-  }, []);
+  }, [t]);
   const handleSave = useCallback(async () => {
     if (saveResetTimerRef.current !== null) {
       window.clearTimeout(saveResetTimerRef.current);
@@ -208,6 +211,7 @@ export default function ProfilePage() {
       );
     }
   }, [
+    t,
     displayName,
     bio,
     homeRegion,
@@ -256,7 +260,7 @@ export default function ProfilePage() {
         );
       }
     },
-    [],
+    [t],
   );
   const mobileLinkHref = user?.email
     ? buildLinkAccountDeepLink(user.email)
@@ -467,7 +471,7 @@ export default function ProfilePage() {
             </Stamp>
             <p className="text-sm text-fg-dim">
               {t(
-                "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices. ",
+                "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices.",
               )}
             </p>
           </div>
@@ -478,7 +482,7 @@ export default function ProfilePage() {
         <div className="mt-4 rounded-xl border border-line bg-paper p-4">
           <p className="text-sm text-ink">
             {t(
-              "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ",
+              "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync.",
             )}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
@@ -492,14 +496,14 @@ export default function ProfilePage() {
                 />
               ) : (
                 <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-paper-2 text-xs text-fg-dim">
-                  {t("QR unavailable ")}
+                  {t("QR unavailable")}
                 </div>
               )}
             </div>
             <div className="max-w-sm space-y-3">
               <p className="text-xs text-fg-dim">
                 {t(
-                  "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled. ",
+                  "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled.",
                 )}
               </p>
               {mobileLinkHref ? (
@@ -508,13 +512,13 @@ export default function ProfilePage() {
                   className="inline-flex items-center gap-2 rounded-full border border-accent bg-accent/10 px-4 py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] text-accent transition hover:bg-accent/20"
                 >
                   <Smartphone size={14} />
-                  {t("Open in Tarmoto mobile ")}
+                  {t("Open in Tarmoto mobile")}
                 </a>
               ) : null}
             </div>
           </div>
 
-          <Stamp className="mt-4 block">{t("Sign-in email ")}</Stamp>
+          <Stamp className="mt-4 block">{t("Sign-in email")}</Stamp>
           <p className="mt-1 break-all font-mono text-sm text-ink">
             {user?.email ?? t("No account email available")}
           </p>
@@ -527,16 +531,16 @@ export default function ProfilePage() {
               disabled={!user?.email}
               onClick={handleCopySignInEmail}
             >
-              {t("Copy sign-in email ")}
+              {t("Copy sign-in email")}
             </Button>
             {copyState === "copied" && (
               <span role="status" className="text-sm text-accent">
-                {t("Email copied. Use it to sign in on mobile. ")}
+                {t("Email copied. Use it to sign in on mobile.")}
               </span>
             )}
             {copyState === "error" && (
               <span role="alert" className="text-sm text-red-700">
-                {t("Could not copy your email. Please copy it manually. ")}
+                {t("Could not copy your email. Please copy it manually.")}
               </span>
             )}
           </div>
@@ -548,9 +552,7 @@ export default function ProfilePage() {
           {t("Display units")}
         </Stamp>
         <p className="mb-4 text-sm text-fg-dim">
-          {t(
-            "Choose how distances and speeds are shown across the dashboard. ",
-          )}
+          {t("Choose how distances and speeds are shown across the dashboard.")}
         </p>
         {/* SegmentedControl carries the WAI-ARIA radio-group keyboard
             contract (arrow keys, roving tabindex) the old hand-rolled
@@ -577,7 +579,7 @@ export default function ProfilePage() {
           {t("Language")}
         </Stamp>
         <p className="mb-4 text-sm text-fg-dim">
-          {t("Pick the language used across the dashboard. ")}
+          {t("Pick the language used across the dashboard.")}
         </p>
         <LocaleSwitcher />
       </Card>

@@ -27,5 +27,4 @@ export const regions = {
     "Quality {quality} · Curviness {curviness} · {distance}",
   unrated: "unrated",
   Motorcyclist: "Motorcyclist",
-  "Best roads": "Best roads",
 } as const;

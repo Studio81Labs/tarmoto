@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -79,6 +81,7 @@ const YOY_COLORS = [
   "#047857", // emerald-700 (matches compare DeltaChip improved)
 ] as const;
 export default function StatsPage() {
+  const t = useTranslation();
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   // Debounced: fast loads render content directly, no spinner flash.
@@ -110,7 +113,7 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [t, authReady]);
   // Surface + curviness breakdown is a server-side per-segment aggregate, so it
   // refetches whenever the active filter changes (unlike the client-aggregated
   // cards). `null` = still loading; the card renders honest empty/error states.
@@ -135,7 +138,7 @@ export default function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, filters]);
+  }, [t, authReady, filters]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
   // YoY and the "All years" table compare across years, so they ignore the
@@ -313,11 +316,10 @@ export default function StatsPage() {
           className="mb-[18px]"
           stamp={chartStamp}
           title={chartTitle}
-          caption={
-            <>
-              {chartTotal.value} {chartTotal.unit} {t("total")}
-            </>
-          }
+          caption={t("{value} {unit} total", {
+            value: chartTotal.value,
+            unit: chartTotal.unit,
+          })}
         />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
@@ -488,6 +490,7 @@ export default function StatsPage() {
 // sidebar item ships `Statistics` as a sibling top-level page,
 // not a sub-section).
 function StatsPageHeader() {
+  const t = useTranslation();
   return (
     <PageHeader
       stamp={t("Statistics")}
@@ -512,6 +515,7 @@ const WINDOW_OPTIONS: { value: StatsWindow; label: EnglishMessageKey }[] =
 // Filters mirror the Ride History controls: a time-window pill group + a
 // ride-type group, both the shared `SegmentedControl`.
 function FilterBar({ filters, onChange }: FilterBarProps) {
+  const t = useTranslation();
   // Space the two toggle groups apart on tablet/compact so they use the row
   // width; right-align them together at lg+ where there's room.
   return (
@@ -549,6 +553,7 @@ interface TotalsGridProps {
 // with the accent number; the remaining four use the default cream tile.
 // Distance values are unit-aware (km/mi) so imperial users see honest numbers.
 function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
+  const t = useTranslation();
   const distance = format.splitDistanceKm(totals.totalDistanceKm);
   const avgPerRide = format.splitDistanceKm(totals.avgRideDistanceKm);
   const tiles: MetricTileProps[] = [
@@ -657,6 +662,7 @@ function BreakdownBody({
   emptyLabel,
   children,
 }: BreakdownBodyProps) {
+  const t = useTranslation();
   if (error) {
     return <p className="text-sm text-fg-dim">{error}</p>;
   }
@@ -664,7 +670,7 @@ function BreakdownBody({
     return (
       <div className="flex items-center gap-2 text-sm text-fg-dim">
         <Loader2 size={14} className="animate-spin" />
-        {t("Loading… ")}
+        {t("Loading…")}
       </div>
     );
   }
@@ -684,6 +690,7 @@ function SurfaceBreakdownCard({
   error,
   format,
 }: BreakdownCardProps) {
+  const t = useTranslation();
   return (
     <Card padded={false} className="p-[22px]">
       <SectionHeading
@@ -742,6 +749,7 @@ function SurfaceBreakdownCard({
 }
 
 function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
+  const t = useTranslation();
   return (
     <Card padded={false} className="p-[22px]">
       <SectionHeading
@@ -809,6 +817,7 @@ function QualityTrendCard({
   points: QualityPoint[];
   format: Formatters;
 }) {
+  const t = useTranslation();
   const hasData = points.some((p) => p.avgQuality !== null);
   const byKey = new Map(points.map((p) => [p.key, p]));
   return (
@@ -896,6 +905,7 @@ interface CalendarHeatmapProps {
   format: Formatters;
 }
 function CalendarHeatmap({ days, label, format }: CalendarHeatmapProps) {
+  const t = useTranslation();
   // Find the max so cell intensity scales relative to this filtered view
   // rather than to a hard-coded ceiling that would wash out short rides.
   const maxDistance = days.reduce((acc, d) => Math.max(acc, d.distanceKm), 0);
@@ -968,6 +978,7 @@ interface CalendarCellProps {
   format: Formatters;
 }
 function CalendarCell({ cell, maxDistance, format }: CalendarCellProps) {
+  const t = useTranslation();
   if (!cell) return <span aria-hidden className="block" />;
   const intensity =
     maxDistance > 0 && cell.distanceKm > 0 ? cell.distanceKm / maxDistance : 0;

@@ -71,7 +71,7 @@ export default async function BestRoadsCountryPage({
       <main className="mx-auto max-w-5xl px-6 py-10">
         <nav className="mb-4 text-sm text-fg-dim">
           <Link href="/roads/best" className="hover:text-ink">
-            {t("Best roads ")}
+            {t("Best roads")}
           </Link>
           <span className="mx-2">/</span>
           <span>{countryName}</span>
@@ -79,8 +79,9 @@ export default async function BestRoadsCountryPage({
 
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">
-            {t("Best motorcycle roads in ")}
-            {countryName}
+            {t("Best motorcycle roads in {country}", {
+              country: countryName,
+            })}
           </h1>
           <p className="mt-2 text-fg-dim">
             {t(
@@ -88,7 +89,7 @@ export default async function BestRoadsCountryPage({
               { count: regions.length },
             )}
             {t(
-              "\u2014 tap through for ranked roads, quality scores and a map preview. ",
+              "— tap through for ranked roads, quality scores and a map preview.",
             )}
           </p>
         </header>
@@ -106,14 +107,15 @@ export default async function BestRoadsCountryPage({
                 </p>
                 {r.bestSeason && (
                   <p className="mt-2 text-xs text-fg-dim">
-                    {t("Best season: ")}
-                    {t("{start} – {end}", {
-                      start: format.month(
-                        new Date(Date.UTC(2024, r.bestSeason.start - 1, 1)),
-                      ),
-                      end: format.month(
-                        new Date(Date.UTC(2024, r.bestSeason.end - 1, 1)),
-                      ),
+                    {t("Best season: {season}", {
+                      season: t("{start} – {end}", {
+                        start: format.month(
+                          new Date(Date.UTC(2024, r.bestSeason.start - 1, 1)),
+                        ),
+                        end: format.month(
+                          new Date(Date.UTC(2024, r.bestSeason.end - 1, 1)),
+                        ),
+                      }),
                     })}
                   </p>
                 )}

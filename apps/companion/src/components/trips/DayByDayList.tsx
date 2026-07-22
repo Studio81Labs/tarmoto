@@ -1,6 +1,6 @@
 import { BedDouble, MapPin } from "lucide-react";
 import { QualityBars, Stamp } from "@tarmoto/ui";
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import type { TripDay } from "@/lib/types";
 import { useFormat } from "@/format/FormatProvider";
 
@@ -71,11 +71,12 @@ export function DayByDayList({
   showHeading?: boolean;
   className?: string;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   if (days.length === 0) return null;
   return (
     <section className={`space-y-2 ${className ?? ""}`}>
-      {showHeading ? <Stamp as="h2">{t("Day-by-day ")}</Stamp> : null}
+      {showHeading ? <Stamp as="h2">{t("Day-by-day")}</Stamp> : null}
       <ul className="space-y-3">
         {days.map((day) => {
           const routeLabel = dayRouteLabel(day);
@@ -98,8 +99,7 @@ export function DayByDayList({
                 <div className="mb-3.5 flex items-center justify-between gap-2">
                   <h3 className="flex min-w-0 items-baseline gap-2">
                     <span className="shrink-0 text-[17px] font-extrabold leading-tight tracking-[-0.5px] text-ink">
-                      {t("Day ")}
-                      {day.dayNumber}
+                      {t("Day {day}", { day: day.dayNumber })}
                     </span>
                     {routeLabel ? (
                       <span className="truncate font-mono text-[11px] text-fg-mute">
@@ -142,8 +142,9 @@ export function DayByDayList({
                   {day.overnightStop && (
                     <span className="inline-flex items-center gap-1.5">
                       <BedDouble size={12} className="text-fg-mute" />
-                      {t("Overnight: ")}
-                      {day.overnightStop.name}
+                      {t("Overnight: {name}", {
+                        name: day.overnightStop.name,
+                      })}
                     </span>
                   )}
                   <span className="inline-flex items-center gap-1.5">

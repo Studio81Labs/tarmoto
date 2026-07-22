@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useRef, useState } from "react";
 import { Button, NumberField, Select } from "@tarmoto/ui";
 import {
@@ -77,6 +78,7 @@ export function RoundtripDialog({
   onClose,
   onConfirm,
 }: RoundtripDialogProps) {
+  const t = useTranslation();
   const [distanceKm, setDistanceKm] = useState(initialDistanceKm);
   const [direction, setDirection] =
     useState<RoundtripOptions["direction"]>(initialDirection);
@@ -113,10 +115,10 @@ export function RoundtripDialog({
         <p className="mt-1 text-[12px] leading-relaxed text-fg-dim">
           {recalculate
             ? t(
-                "Propose a fresh loop from your start — same options as last time unless you change them. ",
+                "Propose a fresh loop from your start — same options as last time unless you change them.",
               )
             : t(
-                "A loop out and back to your start. The distance is a soft target — good roads decide the final length. ",
+                "A loop out and back to your start. The distance is a soft target — good roads decide the final length.",
               )}
         </p>
 
@@ -139,7 +141,7 @@ export function RoundtripDialog({
         <p className="mb-1 mt-4 text-xs text-fg-dim">{t("Direction")}</p>
         {hasRegion ? (
           <p className="mb-2 text-[11px] leading-snug text-fg-mute">
-            {t("Your drawn region decides where the loop looks for roads. ")}
+            {t("Your drawn region decides where the loop looks for roads.")}
           </p>
         ) : null}
         <div className="grid grid-cols-3 gap-1">

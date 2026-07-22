@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t, tDynamic } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { notFound as renderNotFound, useParams } from "next/navigation";
 import Link from "next/link";
@@ -42,6 +44,7 @@ function tierColor(tier: string | null): string {
 }
 
 export default function RiderProfilePage() {
+  const t = useTranslation();
   const { riderId } = useParams<{ riderId: string }>();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
@@ -72,7 +75,7 @@ export default function RiderProfilePage() {
     setFollowPending(false);
     setFollowError(null);
     Promise.all([
-      fetchPublicProfile(riderId, { signal: controller.signal }),
+      fetchPublicProfile(riderId, { signal: controller.signal, translate: t }),
       fetchPublicBadges(riderId, { signal: controller.signal }),
     ])
       .then(([nextProfile, nextBadges]) => {
@@ -99,7 +102,7 @@ export default function RiderProfilePage() {
     };
     // accessToken is captured by the typed client through the auth store; we
     // still depend on it so a sign-in / sign-out re-issues the requests.
-  }, [riderId, accessToken]);
+  }, [t, riderId, accessToken]);
 
   const earnedBadges = useMemo(
     () => badges.filter((b) => b.earned_at != null),
@@ -131,9 +134,9 @@ export default function RiderProfilePage() {
     setFollowError(null);
     try {
       if (wasFollowing) {
-        await unfollowRider(targetId);
+        await unfollowRider(targetId, t);
       } else {
-        await followRider(targetId);
+        await followRider(targetId, t);
       }
     } catch (err) {
       if (activeRiderIdRef.current !== targetId) return;
@@ -179,7 +182,7 @@ export default function RiderProfilePage() {
       ) : error || !profile ? (
         <EmptyState
           title={t("Could not load profile")}
-          message={error ?? "Please try again in a moment."}
+          message={error ?? t("Please try again in a moment.")}
         />
       ) : (
         <>
@@ -218,6 +221,7 @@ function Header({
   followError,
   onToggleFollow,
 }: HeaderProps) {
+  const t = useTranslation();
   return (
     <div className="mb-4 rounded-[14px] border border-line bg-cream p-5 md:p-[26px]">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
@@ -251,9 +255,7 @@ function Header({
               </span>
             )}
             {profile.home_region && <span className="text-fg-mute">·</span>}
-            <span>
-              {formatJoinedLabel(profile.created_at, new Date(), tDynamic)}
-            </span>
+            <span>{formatJoinedLabel(profile.created_at, new Date(), t)}</span>
           </div>
           {profile.bio && (
             <p className="mt-3 max-w-[560px] text-[15px] leading-[1.5] text-ink">
@@ -310,6 +312,7 @@ interface StatsRowProps {
   earnedBadgeCount: number;
 }
 function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
+  const t = useTranslation();
   const format = useFormat();
   // `splitDistanceKm().value` is already a locale-formatted string (grouping,
   // decimal), so it renders as-is — MetricTile only runs `formatValue` for a
@@ -356,6 +359,7 @@ interface BadgesSectionProps {
   totalBadges: number;
 }
 function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
+  const t = useTranslation();
   return (
     <div className="mb-4 rounded-[14px] border border-line bg-cream p-[22px]">
       <header className="mb-4 flex items-end justify-between">
@@ -396,6 +400,7 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
   );
 }
 function BadgeCard({ badge }: { badge: UserBadge }) {
+  const t = useTranslation();
   const color = tierColor(badge.tier);
   const copy = badgeCopyForKey(badge.key, t);
   return (

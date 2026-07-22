@@ -1,10 +1,10 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import { useEffect } from "react";
 import Link from "next/link";
 import { Button, ErrorState } from "@tarmoto/ui";
-import { t } from "@/i18n";
-
 /**
  * Route error boundary — any render/data crash below the root layout lands
  * here as the v2 "System state · 500" screen. `reset()` re-renders the
@@ -17,6 +17,7 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useTranslation();
   useEffect(() => {
     // Server components log their own errors; this covers client-side
     // crashes so the digest is greppable in the browser console too.

@@ -1,6 +1,8 @@
 "use client";
 
-import { t, type EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+
+import { type EnglishMessageKey } from "@/i18n";
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SegmentedControl } from "@tarmoto/ui";
@@ -51,6 +53,7 @@ export function useTimeWindow(): TimeWindow {
  * bound).
  */
 export function TimeWindowPills() {
+  const t = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();

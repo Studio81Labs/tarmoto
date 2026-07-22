@@ -1,5 +1,7 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { type EnglishMessageKey, type Translate } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Scale } from "lucide-react";
@@ -19,7 +21,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { QualityTier } from "@/lib/types";
-import { QUALITY_CONFIG, scoreToQualityTier } from "@/lib/utils";
+import { QUALITY_CONFIG, rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
 import {
   computeStatRows,
@@ -49,6 +51,7 @@ const SLOT_LABEL: Record<Slot, EnglishMessageKey> = {
 const SLOT_STAMP: Record<Slot, string> = { a: "RIDE A", b: "RIDE B" };
 
 function CompareRidesPageInner() {
+  const t = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -85,7 +88,7 @@ function CompareRidesPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [t, authReady]);
   // Auto-pick sensible defaults (two most recent rides) once options are
   // loaded and no selection is present in the URL. Users can still change
   // either slot via the dropdowns.
@@ -172,6 +175,7 @@ function CompareBody({
   onChangeB: (id: string) => void;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const ready = selectedA && selectedB && selectedA !== selectedB;
   const sameRide =
     selectedA != null && selectedB != null && selectedA === selectedB;
@@ -220,6 +224,7 @@ function ABCard({
   onChange: (id: string) => void;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const selected = options.find((o) => o.id === value) ?? null;
   const slotLabel = t(SLOT_LABEL[slot]);
   const quality = ride ? scoreToQualityTier(ride.avg_road_quality) : null;
@@ -251,7 +256,7 @@ function ABCard({
         onChange={onChange}
         options={options.map((opt) => ({
           value: opt.id,
-          label: formatPickerOption(opt, format),
+          label: formatPickerOption(opt, format, t),
         }))}
         disabled={optionsLoading || options.length === 0}
         placeholder={optionsLoading ? t("Loading rides…") : t("Select a ride")}
@@ -287,7 +292,11 @@ function ABCard({
 /** `DD Mon · Name (NN km)` per the design's picker option format — unit
  * follows the rider's preference (`splitDistanceKm`'s own `.unit`), so
  * imperial riders see "(NN mi)" instead of a hardcoded "km". */
-function formatPickerOption(ride: RideOption, format: Formatters): string {
+function formatPickerOption(
+  ride: RideOption,
+  format: Formatters,
+  t: Translate,
+): string {
   const date = format.shortDate(ride.started_at);
   const name = ride.name ?? t("Untitled ride");
   const distance =
@@ -317,6 +326,7 @@ function ComparisonView({
   onChangeB: (id: string) => void;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const [rideA, setRideA] = useState<FetchedRide | null>(null);
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
   const [loading, setLoading] = useState(false);
@@ -360,12 +370,12 @@ function ComparisonView({
     return () => {
       cancelled = true;
     };
-  }, [rideAId, rideBId, authReady]);
+  }, [t, rideAId, rideBId, authReady]);
 
   const statRows = useMemo(() => {
     if (!rideA || !rideB) return [];
     return computeStatRows(rideA, rideB, t);
-  }, [rideA, rideB]);
+  }, [t, rideA, rideB]);
   const qualityDiff = useMemo(() => {
     if (!rideA || !rideB) return [];
     return diffQualityBreakdown(rideA, rideB);
@@ -395,7 +405,7 @@ function ComparisonView({
       </div>
 
       {loading && showLoader && (
-        <SkeletonDashboard className="mt-2" label={t("Loading rides… ")} />
+        <SkeletonDashboard className="mt-2" label={t("Loading rides…")} />
       )}
 
       {error && !loading && (
@@ -457,6 +467,7 @@ function MetricTable({
   rows: StatRow[];
   format: Formatters;
 }) {
+  const t = useTranslation();
   const byKey = new Map(rows.map((r) => [r.key, r]));
   // Design rows first, in the design's order.
   const cell = (row: StatRow | undefined, side: "a" | "b"): string => {
@@ -506,7 +517,11 @@ function MetricTable({
     // gracefully rather than inventing numbers (plan decision #5).
     { label: t("Hazards"), a: "—", b: "—" },
     { label: t("Region"), a: "—", b: "—" },
-    { label: t("Ride type"), a: rideA.ride_type, b: rideB.ride_type },
+    {
+      label: t("Ride type"),
+      a: t(rideTypeLabel(rideA.ride_type)),
+      b: t(rideTypeLabel(rideB.ride_type)),
+    },
     // Preserved richer metrics (kept from the previous compare table).
     {
       label: t("Max speed"),
@@ -575,6 +590,7 @@ function ElevationCompareSection({
   rideB: FetchedRide;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const max = Math.max(
     rideA.elevation_gain ?? 0,
     rideA.elevation_loss ?? 0,
@@ -587,7 +603,7 @@ function ElevationCompareSection({
       <Stamp as="h2">{t("Elevation")}</Stamp>
       <p className="mb-4 mt-1 text-xs text-fg-dim">
         {t(
-          "Bars share a scale so gain/loss are visually comparable across both rides. ",
+          "Bars share a scale so gain/loss are visually comparable across both rides.",
         )}
       </p>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -670,6 +686,7 @@ function ElevationBar({
   kind: "gain" | "loss";
   format: Formatters;
 }) {
+  const t = useTranslation();
   const pct = value != null ? Math.round((value / max) * 100) : 0;
   const label = kind === "gain" ? t("Gain") : t("Loss");
   return (
@@ -707,6 +724,7 @@ function QualityDiffSection({
   rows: ReturnType<typeof diffQualityBreakdown>;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const total = rows.reduce((acc, row) => acc + row.percent + row.bPercent, 0);
   const nameA = rideA.name ?? format.shortDate(rideA.started_at);
   const nameB = rideB.name ?? format.shortDate(rideB.started_at);
@@ -715,12 +733,12 @@ function QualityDiffSection({
       <Stamp as="h2">{t("Road quality")}</Stamp>
       <p className="mb-4 mt-1 text-xs text-fg-dim">
         {t(
-          "Share of segments by quality tier for each ride. Arrows indicate change on Ride B relative to Ride A — improved tiers (more excellent/good, less poor/very-poor) are shown in green. ",
+          "Share of segments by quality tier for each ride. Arrows indicate change on Ride B relative to Ride A — improved tiers (more excellent/good, less poor/very-poor) are shown in green.",
         )}
       </p>
       {total === 0 ? (
         <div className="rounded-lg border border-dashed border-line p-6 text-center text-xs text-fg-dim">
-          {t("Neither ride recorded per-segment quality readings. ")}
+          {t("Neither ride recorded per-segment quality readings.")}
         </div>
       ) : (
         <ul className="space-y-2">

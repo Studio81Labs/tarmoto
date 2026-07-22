@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { Suspense, useMemo } from "react";
 import { Activity } from "lucide-react";
 import { downloadAllRidesExport } from "@/lib/ride-export";
@@ -26,6 +27,7 @@ export default function RidesPage() {
   );
 }
 function RidesPageInner() {
+  const t = useTranslation();
   const { state, list, update, reset, pageSize } = useRidesQuery();
   const window = useTimeWindow();
 

@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, MapPin, Search, X } from "lucide-react";
 import { plannerApi } from "@/lib/planner/api";
@@ -49,6 +50,7 @@ export function GeocodeSearchField({
   widenDropdown = false,
   clearable = false,
 }: GeocodeSearchFieldProps) {
+  const t = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
   const [open, setOpen] = useState(false);
@@ -151,7 +153,7 @@ export function GeocodeSearchField({
         {clearable && query ? (
           <button
             type="button"
-            aria-label={t("Clear search ")}
+            aria-label={t("Clear search")}
             onClick={() => {
               setQuery("");
               setResults([]);
@@ -184,7 +186,7 @@ export function GeocodeSearchField({
                 size={12}
                 className="shrink-0 animate-spin text-accent"
               />
-              <span>{t("Searching… ")}</span>
+              <span>{t("Searching…")}</span>
             </li>
           ) : null}
           {results.map((result) => (
@@ -212,7 +214,7 @@ export function GeocodeSearchField({
           ))}
         </ul>
       ) : null}
-      <span className="sr-only">{t("Search places to route through ")}</span>
+      <span className="sr-only">{t("Search places to route through")}</span>
     </div>
   );
 }

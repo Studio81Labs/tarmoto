@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { t as englishTranslate, type Translate } from "@/i18n";
 import { SURFACE_LABELS } from "@/lib/utils";
 import {
   createFormatters,
@@ -241,6 +241,7 @@ export function deriveFlaggedSections(
     locale: DEFAULT_FORMAT_LOCALE,
     units: "metric",
   }),
+  t: Translate = englishTranslate,
 ): FlaggedSection[] {
   const flagged: FlaggedSection[] = [];
   // Coalesce adjacent same-band runs so a long rough/uncovered stretch is one

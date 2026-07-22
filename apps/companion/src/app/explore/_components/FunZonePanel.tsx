@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -10,6 +11,7 @@ import {
 import { ElevationSparkline } from "@/components/map/ElevationSparkline";
 import { Skeleton } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
+import { surfaceTypeLabel } from "@/lib/utils";
 
 interface Props {
   /** Zone whose detail is open; null renders nothing. */
@@ -27,6 +29,7 @@ interface Props {
  * cream explorer and driven by props instead of the discover store.
  */
 export function FunZonePanel({ zoneId, summary, onClose }: Props) {
+  const t = useTranslation();
   const format = useFormat();
   const [detail, setDetail] = useState<FunZoneDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,7 +70,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
     return () => controller.abort();
     // onClose is a stable inline setter wrapper from the page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoneId]);
+  }, [t, zoneId]);
   if (!zoneId) return null;
   const zone = detail?.zone ?? summary;
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
@@ -82,7 +85,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
             {zone?.name ?? t("Unnamed zone")}
           </h2>
           <p className="mt-0.5 text-xs tabular-nums text-fg-dim">
-            {t("Score ")}
+            {t("Score")}
             {zone?.composite_score != null
               ? format.decimal(zone.composite_score, 1)
               : "—"}
@@ -134,7 +137,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
           </div>
         ) : topRoads.length === 0 ? (
           <div className="p-4 text-sm text-fg-dim">
-            {t("No contributing roads available yet. ")}
+            {t("No contributing roads available yet.")}
           </div>
         ) : (
           <ul className="divide-y divide-line">
@@ -143,17 +146,17 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-medium text-ink">
-                      {road.road_name ?? "Unnamed road"}
+                      {road.road_name ?? t("Unnamed road")}
                       {road.road_number ? ` — ${road.road_number}` : ""}
                     </h3>
                     <p className="text-xs tabular-nums text-fg-dim">
                       {road.quality_score != null
                         ? `★ ${format.decimal(road.quality_score, 1)} · `
                         : ""}
-                      {t("curviness ")}
+                      {t("curviness")}
                       {format.decimal(road.curviness_score, 1)} ·{" "}
                       {format.distanceKm(road.length_m / 1000)} ·{" "}
-                      {road.surface_type}
+                      {t(surfaceTypeLabel(road.surface_type))}
                     </p>
                   </div>
                 </div>
@@ -166,7 +169,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                   </div>
                 ) : (
                   <p className="mt-2 text-[10px] text-fg-dim">
-                    {t("No elevation data ")}
+                    {t("No elevation data")}
                   </p>
                 )}
               </li>

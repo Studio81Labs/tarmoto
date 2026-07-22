@@ -26,7 +26,7 @@ export function PublicExploreHeader({ callbackUrl = "/explore" }: Props = {}) {
             </Link>
           )}
         >
-          {t("Sign in ")}
+          {t("Sign in")}
         </Button>
         <Button
           variant="accent"
@@ -41,7 +41,7 @@ export function PublicExploreHeader({ callbackUrl = "/explore" }: Props = {}) {
             </Link>
           )}
         >
-          {t("Create account ")}
+          {t("Create account")}
         </Button>
       </div>
     </header>

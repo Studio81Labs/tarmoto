@@ -4,6 +4,7 @@ import {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  matchSupportedLocale,
   makeTranslator,
   resolveLocale,
   type SupportedLocale,
@@ -22,6 +23,7 @@ export {
   SUPPORTED_LOCALES,
   getUserFacingErrorMessage,
   isSupportedLocale,
+  matchSupportedLocale,
   resolveLocale,
 };
 export type {
@@ -33,18 +35,6 @@ export type {
 
 const baseTranslate = makeTranslator<EnglishMessageKey>(companionCatalogs);
 
-// Module-global active locale consumed by the synchronous `t()` helper. Set by
-// the Next server layer (`server.ts`) per request before children render.
-let activeLocale: SupportedLocale = DEFAULT_LOCALE;
-
-export function setActiveLocale(locale: SupportedLocale): void {
-  activeLocale = locale;
-}
-
-export function getActiveLocale(): SupportedLocale {
-  return activeLocale;
-}
-
 /**
  * Companion translator: the key must be a registered catalog key
  * (`EnglishMessageKey`) — an unregistered string is a compile error. The raw
@@ -54,7 +44,7 @@ export function getActiveLocale(): SupportedLocale {
 export function translate(
   key: EnglishMessageKey,
   values?: TranslationValues,
-  locale: SupportedLocale = activeLocale,
+  locale: SupportedLocale = DEFAULT_LOCALE,
 ): string {
   return baseTranslate(key, values, locale);
 }
@@ -80,7 +70,7 @@ export type Translate = (
 export function tDynamic(
   key: string,
   values?: TranslationValues,
-  locale: SupportedLocale = activeLocale,
+  locale: SupportedLocale = DEFAULT_LOCALE,
 ): string {
   return baseTranslate(key as EnglishMessageKey, values, locale);
 }

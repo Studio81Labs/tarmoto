@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useState } from "react";
 import { Check, Shield } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -36,6 +38,7 @@ type SaveState =
   | { kind: "saved" }
   | { kind: "error"; message: string };
 export default function PrivacyPage() {
+  const t = useTranslation();
   const [loading, setLoading] = useState(true);
   // Debounced: fast loads render content directly, no spinner flash.
   const showLoader = useDelayedLoading(loading);
@@ -73,7 +76,7 @@ export default function PrivacyPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady]);
+  }, [t, authReady]);
   const isDirty = !settingsEqual(settings, serverSettings);
   // Clear transient save state when the user edits, but never overwrite
   // an in-flight save — doing so would re-enable the save button and
@@ -132,7 +135,7 @@ export default function PrivacyPage() {
         {showLoader && (
           <>
             <SkeletonPageHeader />
-            <SkeletonForm sections={3} label={t("Loading settings… ")} />
+            <SkeletonForm sections={3} label={t("Loading settings…")} />
           </>
         )}
       </div>
@@ -150,8 +153,7 @@ export default function PrivacyPage() {
           )}
         />
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
-          {t("Could not load settings: ")}
-          {loadError}
+          {t("Could not load settings: {error}", { error: loadError })}
         </div>
       </div>
     );
@@ -171,10 +173,10 @@ export default function PrivacyPage() {
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
           <Stamp as="h2" className="mb-1 block">
-            {t("Profile visibility ")}
+            {t("Profile visibility")}
           </Stamp>
           <p className="text-[12px] text-fg-dim">
-            {t("Who can see your profile, stats, and shared rides. ")}
+            {t("Who can see your profile, stats, and shared rides.")}
           </p>
         </div>
         <RadioCardGrid
@@ -194,11 +196,11 @@ export default function PrivacyPage() {
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
           <Stamp as="h2" className="mb-1 block">
-            {t("Default ride sharing ")}
+            {t("Default ride sharing")}
           </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t(
-              "How newly recorded rides are shared. You can always change visibility per ride. ",
+              "How newly recorded rides are shared. You can always change visibility per ride.",
             )}
           </p>
         </div>
@@ -220,11 +222,11 @@ export default function PrivacyPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[14px] font-semibold text-ink">
-              {t("Contribute to road quality data ")}
+              {t("Contribute to road quality data")}
             </p>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached. ",
+                "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached.",
               )}
             </p>
           </div>
@@ -240,11 +242,11 @@ export default function PrivacyPage() {
       <Card padded={false} className="mb-4 p-[22px]">
         <div className="mb-4">
           <Stamp as="h2" className="mb-1 block">
-            {t("Location data retention ")}
+            {t("Location data retention")}
           </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t(
-              "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely. ",
+              "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely.",
             )}
           </p>
         </div>
@@ -267,11 +269,11 @@ export default function PrivacyPage() {
       <Card padded={false} className="mb-6 divide-y divide-line">
         <header className="px-5 py-4">
           <Stamp as="h2" className="mb-1 block">
-            {t("Data processing consent ")}
+            {t("Data processing consent")}
           </Stamp>
           <p className="text-[12px] text-fg-dim">
             {t(
-              "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",
+              "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed.",
             )}
           </p>
         </header>
@@ -283,7 +285,7 @@ export default function PrivacyPage() {
             </p>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "Help us improve Tarmoto with anonymized usage analytics (screen views, feature usage). ",
+                "Help us improve Tarmoto with anonymized usage analytics (screen views, feature usage).",
               )}
             </p>
           </div>
@@ -297,11 +299,11 @@ export default function PrivacyPage() {
         <div className="flex items-start justify-between gap-4 px-5 py-4">
           <div>
             <p className="text-[14px] font-semibold text-ink">
-              {t("Personalised recommendations ")}
+              {t("Personalised recommendations")}
             </p>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "Use your riding history to suggest routes, roads, and riders you may enjoy. ",
+                "Use your riding history to suggest routes, roads, and riders you may enjoy.",
               )}
             </p>
           </div>
@@ -324,6 +326,7 @@ interface SaveBarProps {
   onSave: () => void;
 }
 function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
+  const t = useTranslation();
   return (
     <div className="flex items-center gap-3">
       <Button
@@ -333,12 +336,12 @@ function SaveBar({ isDirty, saveState, onSave }: SaveBarProps) {
         loading={saveState.kind === "saving"}
         onClick={onSave}
       >
-        {saveState.kind === "saving" ? t("Saving… ") : t("Save preferences")}
+        {saveState.kind === "saving" ? t("Saving…") : t("Save preferences")}
       </Button>
       {saveState.kind === "saved" && !isDirty && (
         <span className="inline-flex items-center gap-1 text-[13px] text-accent">
           <Check size={14} />
-          {t("Saved ")}
+          {t("Saved")}
         </span>
       )}
       {saveState.kind === "error" && (

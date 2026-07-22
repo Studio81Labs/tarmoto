@@ -6,6 +6,7 @@ import {
   formatRoadQuality,
 } from "@/lib/best-roads-format";
 import { getServerFormatters } from "@/format/server";
+import { surfaceTypeLabel } from "@/lib/utils";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -28,7 +29,7 @@ export async function BestRoadsList({ roads }: Props) {
         <p className="text-lg font-semibold">{t("Not enough data yet")}</p>
         <p className="mt-2 text-sm">
           {t(
-            "This region needs more rides before we can rank its roads. Take a ride through and help build the map. ",
+            "This region needs more rides before we can rank its roads. Take a ride through and help build the map.",
           )}
         </p>
       </div>
@@ -49,13 +50,14 @@ export async function BestRoadsList({ roads }: Props) {
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold">{formatRoadLabel(r)}</h3>
               <p className="text-xs text-fg-dim">
-                {formatRoadLength(r.length_m, format)} · {r.surface_type}
+                {formatRoadLength(r.length_m, format)} ·{" "}
+                {t(surfaceTypeLabel(r.surface_type))}
               </p>
             </div>
             <dl className="hidden gap-6 sm:flex">
               <div className="text-center">
                 <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
-                  {t("Quality ")}
+                  {t("Quality")}
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
                   {formatRoadQuality(r.quality_score, format)}
@@ -63,7 +65,7 @@ export async function BestRoadsList({ roads }: Props) {
               </div>
               <div className="text-center">
                 <dt className="text-[10px] uppercase tracking-wider text-fg-dim">
-                  {t("Curviness ")}
+                  {t("Curviness")}
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
                   {format.decimal(r.curviness_score, 1)}

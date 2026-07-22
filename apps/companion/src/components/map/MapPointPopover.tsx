@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { ExternalLink, MapPin, Plus, TriangleAlert, X } from "lucide-react";
 import type { BasemapPlace } from "@/lib/basemap-poi";
 import { poiCategoryMeta } from "@/components/planner/MapToolbar";
@@ -91,6 +92,7 @@ export function MapPointPopover({
   onClose: () => void;
   actions?: MapPointActions;
 }) {
+  const t = useTranslation();
   const wide = point.kind === "closure" || point.kind === "pass";
   return (
     <div
@@ -138,6 +140,7 @@ function PopoverHeader({
   children?: React.ReactNode;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   return (
     <div className="flex items-start gap-2.5 px-1.5 pb-2 pt-1">
       {badge}
@@ -176,6 +179,7 @@ function PoiBody({
   onClose: () => void;
   actions?: PoiPopoverActions;
 }) {
+  const t = useTranslation();
   const meta = poiCategoryMeta(poi.category);
   const MetaIcon = meta.icon;
   const mapsUrl =
@@ -239,6 +243,7 @@ function PlacementActions({
 }: {
   actions: PoiPopoverActions | undefined;
 }) {
+  const t = useTranslation();
   if (actions?.onRemove) {
     return (
       <button
@@ -304,6 +309,7 @@ function PlaceBody({
   onClose: () => void;
   actions?: PoiPopoverActions;
 }) {
+  const t = useTranslation();
   // Unnamed POIs (a bare parking / bin icon) fall back to the category as the
   // title, so we don't repeat it as the subtitle.
   const title = place.name || place.category;
@@ -357,6 +363,7 @@ function HazardBody({
   hazard: HazardPoint;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const cfg = HAZARD_CONFIG[hazard.hazard_type] ?? HAZARD_CONFIG.other;
   return (
@@ -417,6 +424,7 @@ function ConditionBody({
   onClose: () => void;
   onReroute?: () => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const isClosure = point.kind === "closure";
   const kind = isClosure ? closureConditionKind(point.closure) : "pass";

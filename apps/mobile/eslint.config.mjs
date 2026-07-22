@@ -132,9 +132,15 @@ export default [
         },
         {
           selector:
-            "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][property.name=/^(status|surface|severity|tier|role)$/]",
+            "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][property.name=/(^|_)(status|surface|severity|tier|role|type|reason|metric)$/]",
           message:
             "Translate stable enum/wire values through a cataloged label map before rendering them.",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer > LogicalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing logical fallback copy with translate() instead of rendering a raw string.",
         },
         {
           selector:

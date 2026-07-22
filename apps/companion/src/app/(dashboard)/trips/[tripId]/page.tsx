@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   notFound as renderNotFound,
@@ -78,6 +80,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function TripDetailPage() {
+  const t = useTranslation();
   const format = useFormat();
   const { tripId } = useParams<{
     tripId: string;
@@ -163,7 +166,7 @@ export default function TripDetailPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [selectedRoadSegmentId]);
+  }, [t, selectedRoadSegmentId]);
   // Day-by-day card → map: selecting a day dims the other days' lines
   // (`selectedDayNumber`) and fits its bounds; reselecting clears back
   // to the whole route.
@@ -221,8 +224,11 @@ export default function TripDetailPage() {
       setLeaveError(message);
       setLeaving(false);
     }
-  }, [loaded, router]);
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip, t), [trip]);
+  }, [t, loaded, router]);
+  const closureRoutes = useMemo(
+    () => buildTripClosureRoutes(trip, t),
+    [t, trip],
+  );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   // Activate the trip in the store so the map's store-driven overlays
@@ -306,7 +312,7 @@ export default function TripDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [tripId, router, authReady]);
+  }, [t, tripId, router, authReady]);
   const collabSession = useTripCollabSession(loaded ? loaded.detail.id : null);
   const showLoader = useDelayedLoading(loading);
   // Deleting confirms through the app dialog — system dialogs are
@@ -330,7 +336,7 @@ export default function TripDetailPage() {
       setDeleteError(message);
       setDeleting(false);
     }
-  }, [loaded, router]);
+  }, [t, loaded, router]);
   if (loading) {
     // Debounced skeleton mirroring the page chrome (toolbar / map / panel);
     // warm loads render a blank shell instead of flashing it.
@@ -339,7 +345,7 @@ export default function TripDetailPage() {
         {showLoader && (
           <>
             <span role="status" className="sr-only">
-              {t("Loading trip\u2026 ")}
+              {t("Loading trip…")}
             </span>
             <div
               aria-hidden="true"
@@ -385,10 +391,10 @@ export default function TripDetailPage() {
           className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-fg-dim transition hover:text-ink"
         >
           <ArrowLeft size={14} />
-          {t("Back to trips ")}
+          {t("Back to trips")}
         </Link>
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-6 text-sm text-red-700">
-          {error ?? "Unknown error loading trip."}
+          {error ?? t("Unknown error loading trip.")}
         </div>
       </div>
     );
@@ -533,7 +539,7 @@ export default function TripDetailPage() {
                 </Link>
               )}
             >
-              {t("Edit ")}
+              {t("Edit")}
             </Button>
           )}
           {isOwner && (
@@ -563,7 +569,7 @@ export default function TripDetailPage() {
         open={confirmDeleteOpen}
         title={t("Delete this trip?")}
         message={t(
-          '"{name}" and all its days, waypoints, and collaboration history are permanently removed. This cannot be undone. ',
+          '"{name}" and all its days, waypoints, and collaboration history are permanently removed. This cannot be undone.',
           { name: loaded.detail.title },
         )}
         tone="danger"
@@ -577,7 +583,7 @@ export default function TripDetailPage() {
         open={confirmLeaveOpen}
         title={t("Leave this trip?")}
         message={t(
-          'You\'ll lose access to "{name}" and return to your trips. The owner can re-invite you later. ',
+          'You\'ll lose access to "{name}" and return to your trips. The owner can re-invite you later.',
           { name: loaded.detail.title },
         )}
         tone="danger"
@@ -632,13 +638,13 @@ export default function TripDetailPage() {
         >
           {/* Same panel chrome as the planner's "Plan & inspect" column. */}
           <div className="shrink-0 px-5 pt-4">
-            <Stamp>{t("Trip preview ")}</Stamp>
+            <Stamp>{t("Trip preview")}</Stamp>
             <Heading size="md" as="h2" className="mt-1.5 text-[20px]">
-              {t("Route & inspect ")}
+              {t("Route & inspect")}
             </Heading>
             <p className="mt-1 text-[12px] leading-snug text-fg-dim">
               {t(
-                "Crowdsourced road quality on every metre — no Street View detours. ",
+                "Crowdsourced road quality on every metre — no Street View detours.",
               )}
             </p>
             <div
@@ -708,8 +714,7 @@ export default function TripDetailPage() {
                               : "border-line bg-cream text-fg-dim hover:border-ink"
                           }`}
                         >
-                          {t("Day ")}
-                          {day.dayNumber}
+                          {t("Day {day}", { day: day.dayNumber })}
                         </button>
                       );
                     })}
@@ -736,7 +741,7 @@ export default function TripDetailPage() {
                 {/* Same panels as the planner's CONDITIONS tab, read-only:
                     no onReroute* callbacks, so cards only focus the map. */}
                 <div>
-                  <SectionStamp n="01">{t("Seasonal passes ")}</SectionStamp>
+                  <SectionStamp n="01">{t("Seasonal passes")}</SectionStamp>
                   <PassesPanel
                     month={travelMonth}
                     onMonthChange={setTravelMonth}
@@ -753,7 +758,7 @@ export default function TripDetailPage() {
                 </div>
                 <div>
                   <SectionStamp n="02">
-                    {t("Closures & roadworks ")}
+                    {t("Closures & roadworks")}
                   </SectionStamp>
                   <ClosuresPanel
                     month={travelMonth}
@@ -805,6 +810,7 @@ export default function TripDetailPage() {
   );
 }
 function StatusBadge({ status }: { status: string }) {
+  const t = useTranslation();
   // Mirrors the canonical STATUS_PILL map in /trips/page.tsx — the
   // four trip statuses span q3 (planned) → accent (active) → q5
   // (completed), with paper/fg-dim/line for drafts and anything else.
@@ -867,6 +873,7 @@ function TripSummaryCard({
   totalElevation: number;
   qualityAvg: number | null;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   // Backend rows may not carry quality_avg yet — fall back to the mean of
   // the measured day qualities so the row still reflects real data.
@@ -879,7 +886,7 @@ function TripSummaryCard({
   return (
     <section className="rounded-xl border border-line bg-cream/60 p-4">
       <Stamp as="h2" className="mb-3 block">
-        {t("Trip summary ")}
+        {t("Trip summary")}
       </Stamp>
       <div className="grid grid-cols-2 gap-3">
         <TileStat
@@ -905,7 +912,7 @@ function TripSummaryCard({
           <div className="flex-1">
             <QualityBars q={qualityTierOf(avg)} size={5} />
             <span className="mt-0.5 block font-mono text-[9.5px] uppercase tracking-[0.5px] text-fg-mute">
-              {t("Avg route quality ")}
+              {t("Avg route quality")}
             </span>
           </div>
         </div>

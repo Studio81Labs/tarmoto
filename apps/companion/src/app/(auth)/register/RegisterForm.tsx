@@ -28,7 +28,7 @@ export function RegisterForm({
     setError("");
     setLoading(true);
     try {
-      await registerUser(email, password, displayName);
+      await registerUser(email, password, displayName, t);
       const result = await signIn("credentials", {
         email,
         password,

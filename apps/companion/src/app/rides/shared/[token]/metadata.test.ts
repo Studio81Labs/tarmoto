@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LOCALE_COOKIE, setActiveLocale } from "@/i18n";
-import { DEFAULT_LOCALE } from "@tarmoto/shared";
+import { LOCALE_COOKIE } from "@/i18n";
 import type { RouteCollectionDetail } from "@/lib/api";
 import { generateMetadata as generateSharedRideMetadata } from "./page";
 import { generateMetadata as generateSharedRoadMapMetadata } from "@/app/rides/road-map/shared/[token]/page";
@@ -93,7 +92,6 @@ describe("dynamic share-page metadata (English regression pin)", () => {
   beforeEach(() => {
     state.cookieJar.clear();
     state.acceptLanguage = null;
-    setActiveLocale(DEFAULT_LOCALE);
     vi.mocked(fetchSharedCollection).mockReset();
   });
 

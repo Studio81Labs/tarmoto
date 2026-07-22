@@ -1,6 +1,7 @@
 "use client";
 
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import { useEffect, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Stamp } from "@tarmoto/ui";
@@ -23,6 +24,7 @@ export function RoadSegmentPopover({
   segment: RiddenSegment;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   // The fetched detail, tagged with the segment id it belongs to. Tagging (vs a
   // plain `detail` + a separate reset effect) means a result from a previously-

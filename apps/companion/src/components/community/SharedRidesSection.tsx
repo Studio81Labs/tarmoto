@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 /**
  * SharedRidesSection (#371, v2 profile) — companion mirror of mobile's
  * shared-rides list on the public rider profile.
@@ -41,6 +43,7 @@ export function SharedRidesSection({
   isSelf,
   displayName,
 }: SharedRidesSectionProps) {
+  const t = useTranslation();
   const format = useFormat();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [items, setItems] = useState<UserSharedRide[]>([]);
@@ -81,7 +84,7 @@ export function SharedRidesSection({
     // accessToken is captured by the typed client through the auth store;
     // re-running on token change re-issues the request with the new viewer
     // identity so `is_self` and the private-share filter stay in sync.
-  }, [userId, accessToken]);
+  }, [t, userId, accessToken]);
 
   return (
     <section className="overflow-hidden rounded-[14px] border border-line bg-cream">
@@ -141,6 +144,7 @@ function SharedRideRow({
   ride: UserSharedRide;
   isSelf: boolean;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const preview = buildRoutePreview(ride.route_geometry, 200, 6);
   const tier = scoreToQualityTier(ride.avg_road_quality);

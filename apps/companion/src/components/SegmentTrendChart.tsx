@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -103,6 +104,7 @@ export function SegmentTrendChart({
   regionalHistory,
   now,
 }: SegmentTrendChartProps) {
+  const t = useTranslation();
   const format = useFormat();
   const [range, setRange] = useState<TrendRange>(DEFAULT_RANGE);
   const filteredHistory = useMemo(
@@ -151,7 +153,7 @@ export function SegmentTrendChart({
 
       {!hasTrend ? (
         <p className="text-fg-mute">
-          {t("Not enough readings in this range to plot a trend yet. ")}
+          {t("Not enough readings in this range to plot a trend yet.")}
         </p>
       ) : (
         <>
@@ -267,6 +269,7 @@ function RangeSelector({
   range: TrendRange;
   onChange: (range: TrendRange) => void;
 }) {
+  const t = useTranslation();
   return (
     <div
       role="radiogroup"
@@ -304,6 +307,7 @@ function TrendSummaryBadge({
   summary: ReturnType<typeof summariseTrend>;
   format: Formatters;
 }) {
+  const t = useTranslation();
   if (!summary) return <span />;
   const { delta, direction } = summary;
   const config = {
@@ -345,18 +349,19 @@ function ChartLegend({
   hasRegional: boolean;
   events: ReturnType<typeof detectChangeEvents>;
 }) {
+  const t = useTranslation();
   const repairCount = events.filter((e) => e.kind === "repair").length;
   const detCount = events.filter((e) => e.kind === "deterioration").length;
   return (
     <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-mute">
       <li className="flex items-center gap-1">
         <span className="w-2 h-2 rounded-full bg-accent" />
-        {t("This segment ")}
+        {t("This segment")}
       </li>
       {hasRegional && (
         <li className="flex items-center gap-1">
           <span className="inline-block w-3 border-t border-dashed border-fg-mute" />
-          {t("Regional avg ")}
+          {t("Regional avg")}
         </li>
       )}
       {repairCount > 0 && (

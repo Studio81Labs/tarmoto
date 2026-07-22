@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import { tripCollabApi, type TripSuggestion } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -109,6 +110,7 @@ export function useTripCollabSession(
   serverTripId: string | null,
   callbacks: UseTripCollabSessionCallbacks = {},
 ) {
+  const t = useTranslation();
   const [cursors, setCursors] = useState<Map<string, CollaboratorCursor>>(
     () => new Map(),
   );
@@ -303,7 +305,7 @@ export function useTripCollabSession(
     return () => {
       cancelled = true;
     };
-  }, [serverTripId, hasAuthToken]);
+  }, [t, serverTripId, hasAuthToken]);
 
   // Roster for the map's cursor avatars — one lookup of user id → name +
   // avatar. Non-fatal on failure: a cursor without a profile falls back to a

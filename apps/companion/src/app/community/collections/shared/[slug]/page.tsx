@@ -166,7 +166,9 @@ export default async function SharedCollectionPage({
             </MetaChip>
             <MetaChip>
               <Calendar size={13} className="text-fg-mute" aria-hidden="true" />
-              {t("Updated")} {format.relativeTime(detail.updated_at)}
+              {t("Updated {time}", {
+                time: format.relativeTime(detail.updated_at),
+              })}
             </MetaChip>
           </div>
         </section>
@@ -235,8 +237,9 @@ export default async function SharedCollectionPage({
       <footer className="border-t border-line bg-paper">
         <div className="mx-auto flex max-w-[980px] items-center px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
-            {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
-            {new Date().getUTCFullYear()}
+            {t("TARMOTO · SHARED VIA PUBLIC LINK · {year}", {
+              year: new Date().getUTCFullYear(),
+            })}
           </Mono>
         </div>
       </footer>

@@ -1,12 +1,14 @@
 "use client";
 
-import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { components } from "@tarmoto/openapi-client";
 import { useFormat } from "@/format/FormatProvider";
+import { rideTypeLabel as rideTypeMessage } from "@/lib/utils";
 
 type RideDetail = components["schemas"]["RideDetailDto"];
 
@@ -23,13 +25,6 @@ interface RideDetailSidebarProps {
   anchor?: "container" | "viewport";
 }
 
-const RIDE_TYPE_LABEL: Partial<Record<string, EnglishMessageKey>> = {
-  free: "Free ride",
-  commute: "Commute",
-  trip: "Trip",
-  tracked: "Tracked ride",
-};
-
 /**
  * Right drawer for a "My rides" route clicked on the explorer. Mirrors the
  * segment/trip drawers' slide-in shell; content is the same ride-stat tiles the
@@ -40,6 +35,7 @@ export function RideDetailSidebar({
   onClose,
   anchor = "container",
 }: RideDetailSidebarProps) {
+  const t = useTranslation();
   const open = state.status !== "idle";
   const [entered, setEntered] = useState(false);
   const [mounted, setMounted] = useState(open);
@@ -98,14 +94,14 @@ export function RideDetailSidebar({
         <StatusBlock
           icon={<Loader2 size={18} className="animate-spin" />}
           title={t("Loading ride")}
-          body={t("Fetching the route and ride stats. ")}
+          body={t("Fetching the route and ride stats.")}
         />
       )}
       {snapshot.status === "not-found" && (
         <StatusBlock
           icon={<AlertTriangle size={18} />}
           title={t("Ride not found")}
-          body={t("This ride may have been removed. ")}
+          body={t("This ride may have been removed.")}
         />
       )}
       {snapshot.status === "error" && (
@@ -121,15 +117,13 @@ export function RideDetailSidebar({
 }
 
 function RideBody({ ride }: { ride: RideDetail }) {
+  const t = useTranslation();
   const format = useFormat();
   const distance = format.splitDistanceKm(ride.distance_km ?? 0);
   const avgSpeed = format.splitSpeed(ride.avg_speed ?? 0);
   const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
   const ascent = format.splitElevation(ride.elevation_gain ?? 0);
-  // Fixed 4-way ride-type map goes through the typed `t()`; only the
-  // genuinely-open fallback (an unrecognized ride_type value) is dynamic.
-  const rideTypeKey = RIDE_TYPE_LABEL[ride.ride_type];
-  const rideTypeLabel = rideTypeKey ? t(rideTypeKey) : tDynamic(ride.ride_type);
+  const rideTypeLabel = t(rideTypeMessage(ride.ride_type));
 
   const tiles: MetricTileProps[] = [
     {

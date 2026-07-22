@@ -817,6 +817,7 @@ export const en = {
   Rider: "Rider",
   "rider@example.com": "rider@example.com",
   rides: "rides",
+  units: "units",
   Rides: "Rides",
   "Right here": "Right here",
   "Road preference": "Road preference",

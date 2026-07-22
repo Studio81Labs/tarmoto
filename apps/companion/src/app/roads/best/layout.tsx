@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { AppShell } from "@/components/AppShell";
 import { siteUrl } from "@/lib/site";
-import { t } from "@/i18n";
-import { readLocale } from "@/i18n/server";
+import { readLocale, t } from "@/i18n/server";
 import { PublicExploreHeader } from "../../explore/_components/PublicExploreHeader";
 
 export async function generateMetadata(): Promise<Metadata> {
