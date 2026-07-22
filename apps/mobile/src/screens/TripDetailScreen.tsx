@@ -71,7 +71,7 @@ import {
   sumDistance,
   tripToGpxInput,
 } from "./TripScreens.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
 type DetailNav = NativeStackNavigationProp<TripsStackParamList, "TripDetail">;
@@ -135,7 +135,7 @@ export default function TripDetailScreen() {
       } catch (e) {
         if (!signal.cancelled) {
           setError(
-            e instanceof Error ? e.message : translate("Failed to load trip"),
+            getUserFacingErrorMessage(e, translate("Failed to load trip")),
           );
         }
       } finally {
@@ -198,9 +198,7 @@ export default function TripDetailScreen() {
     try {
       await fetchTrip();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : translate("Failed to load trip"),
-      );
+      setError(getUserFacingErrorMessage(e, translate("Failed to load trip")));
     } finally {
       setLoading(false);
     }
@@ -469,7 +467,7 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
     } catch (err) {
       Alert.alert(
         translate("Couldn't export"),
-        err instanceof Error ? err.message : translate("Unable to export GPX."),
+        getUserFacingErrorMessage(err, translate("Unable to export GPX.")),
       );
     } finally {
       // Same rationale as RideDetailScreen: leave the temp file in

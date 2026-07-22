@@ -303,7 +303,8 @@ describe("downloadRegion", () => {
     expect(result.status).toBe("failed");
     expect(result.failed).toBe(1);
     expect(result.downloaded).toBeGreaterThan(0);
-    expect(result.error).toContain("boom");
+    expect(result.error).toBe("Check your connection and try again.");
+    expect(result.error).not.toContain("boom");
   });
 
   it("aborts cleanly when isCancelled returns true mid-run", async () => {

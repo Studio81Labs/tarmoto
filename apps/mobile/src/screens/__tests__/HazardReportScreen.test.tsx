@@ -365,7 +365,7 @@ describe("HazardReportScreen", () => {
     await fireEvent.press(screen.getByLabelText("Hazard type Other"));
     await fireEvent.press(screen.getByLabelText("Submit hazard report"));
 
-    expect(await screen.findByText("Validation failed")).toBeTruthy();
+    expect(await screen.findByText("Couldn't submit the report.")).toBeTruthy();
     expect(mockGoBack).not.toHaveBeenCalled();
   });
 });

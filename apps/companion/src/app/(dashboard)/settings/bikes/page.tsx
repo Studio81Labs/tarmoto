@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bike as BikeIcon, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -46,8 +46,7 @@ export default function BikesPage() {
     } catch (err) {
       setError({
         kind: "load",
-        message:
-          err instanceof Error ? err.message : t("Could not load your bikes"),
+        message: getUserFacingErrorMessage(err, t("Could not load your bikes")),
       });
     }
   }, []);
@@ -64,9 +63,15 @@ export default function BikesPage() {
         setBikes((data as unknown as Bike[]) ?? []);
         setLoading(false);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setError({ kind: "load", message: err.message });
+        setError({
+          kind: "load",
+          message: getUserFacingErrorMessage(
+            err,
+            t("Could not load your bikes"),
+          ),
+        });
         setLoading(false);
       });
     return () => {
@@ -114,8 +119,7 @@ export default function BikesPage() {
       );
       setError({
         kind: "action",
-        message:
-          err instanceof Error ? err.message : t("Could not set active bike"),
+        message: getUserFacingErrorMessage(err, t("Could not set active bike")),
       });
     } finally {
       setPendingActionBikeId(null);
@@ -131,8 +135,7 @@ export default function BikesPage() {
     } catch (err) {
       setError({
         kind: "action",
-        message:
-          err instanceof Error ? err.message : t("Could not delete bike"),
+        message: getUserFacingErrorMessage(err, t("Could not delete bike")),
       });
     } finally {
       setPendingActionBikeId(null);

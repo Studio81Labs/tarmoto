@@ -1,5 +1,5 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -100,9 +100,11 @@ export default function StatsPage() {
         setRides(all);
         setLoading(false);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setLoadError(err.message || t("Could not load ride history"));
+        setLoadError(
+          getUserFacingErrorMessage(err, t("Could not load ride history")),
+        );
         setLoading(false);
       });
     return () => {
@@ -123,9 +125,11 @@ export default function StatsPage() {
       .then((data) => {
         if (!cancelled) setBreakdown(data);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (!cancelled) {
-          setBreakdownError(err.message || t("Could not load the breakdown"));
+          setBreakdownError(
+            getUserFacingErrorMessage(err, t("Could not load the breakdown")),
+          );
         }
       });
     return () => {

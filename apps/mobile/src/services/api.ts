@@ -115,6 +115,7 @@ import { t } from "@/i18n";
  *  Carries the HTTP status + raw body so callers can branch on auth
  *  failures (401/403) vs validation failures (400/422). */
 export class ApiError extends Error {
+  readonly localizedUserMessage = true as const;
   readonly status: number;
   readonly body: unknown;
 

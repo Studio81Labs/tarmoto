@@ -39,7 +39,7 @@ import {
   tierLabel,
   tierRank,
 } from "./AchievementsScreen.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
@@ -67,10 +67,10 @@ export default function BadgesScreen() {
         setBadges(data);
         setErrorMessage(null);
       } catch (err: unknown) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : translate("Couldn't load badges.");
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Couldn't load badges."),
+        );
         setErrorMessage(message);
       } finally {
         if (!initial) setIsRefreshing(false);

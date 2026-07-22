@@ -34,9 +34,9 @@ export function LocaleSwitcher() {
         if (!response.ok) throw new Error(t("Could not save your language."));
         if (typeof window !== "undefined") window.location.reload();
       })
-      .catch((err: Error) => {
+      .catch(() => {
         setPending(false);
-        setError(err.message);
+        setError(t("Could not save your language."));
       });
   };
 

@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import {
   countTilesForRegion,
   createRNFSDownloader,
@@ -140,7 +141,10 @@ export function useOfflineRegions(
             downloaded: 0,
             failed: 0,
             bytesOnDisk: 0,
-            error: err instanceof Error ? err.message : String(err),
+            error: getUserFacingErrorMessage(
+              err,
+              translate("Check your connection and try again."),
+            ),
           });
         } finally {
           cancelFlags.current.delete(spec.id);

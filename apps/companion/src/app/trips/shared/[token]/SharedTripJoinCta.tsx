@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Route } from "lucide-react";
 import { Button } from "@tarmoto/ui";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { tripSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
@@ -101,11 +101,10 @@ export function SharedTripJoinCta({
       // Persist (no auto-dismiss): the guidance asks the user to take an
       // out-of-band action (get a fresh link), so it shouldn't time out.
       toast.error(
-        err instanceof Error
-          ? err.message
-          : t(
-              "Could not join this shared trip. Ask the owner for a fresh link.",
-            ),
+        getUserFacingErrorMessage(
+          err,
+          t("Could not join this shared trip. Ask the owner for a fresh link."),
+        ),
         { durationMs: null },
       );
     } finally {

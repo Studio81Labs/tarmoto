@@ -1,5 +1,5 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 import {
   Fragment,
   useCallback,
@@ -670,8 +670,7 @@ export default function TripPlannerPage() {
         setSegmentDetailState({
           status: "error",
           segmentId: selectedRoadSegmentId,
-          message:
-            err instanceof Error ? err.message : t("Failed to load segment"),
+          message: getUserFacingErrorMessage(err, t("Failed to load segment")),
         });
       });
     return () => {

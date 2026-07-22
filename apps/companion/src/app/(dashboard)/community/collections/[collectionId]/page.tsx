@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { notFound as renderNotFound, useParams } from "next/navigation";
@@ -125,8 +125,7 @@ export default function CollectionDetailPage() {
       }
       setLoad({
         phase: "error",
-        message:
-          err instanceof Error ? err.message : t("Failed to load collection"),
+        message: getUserFacingErrorMessage(err, t("Failed to load collection")),
       });
     }
   }, []);
@@ -186,9 +185,7 @@ export default function CollectionDetailPage() {
       await reload(collection.id);
       setShowPicker(false);
     } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : t("Failed to add routes"),
-      );
+      setActionError(getUserFacingErrorMessage(err, t("Failed to add routes")));
     } finally {
       setBusy(false);
     }
@@ -232,7 +229,7 @@ export default function CollectionDetailPage() {
       // back to its original position so they know the change didn't take.
       setLoad({ phase: "ready", collection });
       setActionError(
-        err instanceof Error ? err.message : t("Failed to reorder routes"),
+        getUserFacingErrorMessage(err, t("Failed to reorder routes")),
       );
     } finally {
       setBusy(false);
@@ -247,7 +244,7 @@ export default function CollectionDetailPage() {
       await reload(collection.id);
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : t("Failed to remove route"),
+        getUserFacingErrorMessage(err, t("Failed to remove route")),
       );
     } finally {
       setBusy(false);
@@ -268,7 +265,7 @@ export default function CollectionDetailPage() {
       setLoad({ phase: "ready", collection: mapDetailToView(data) });
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : t("Failed to update visibility"),
+        getUserFacingErrorMessage(err, t("Failed to update visibility")),
       );
     } finally {
       setBusy(false);

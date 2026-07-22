@@ -41,7 +41,7 @@ import {
   formatDurationMinutes,
   formatRideDate,
 } from "@/screens/RideScreens.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 interface SharedRidesSectionProps {
   userId: string;
@@ -102,9 +102,10 @@ export default function SharedRidesSection({
       }
       setPhase("error");
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : translate("Could not load shared rides."),
+        getUserFacingErrorMessage(
+          err,
+          translate("Could not load shared rides."),
+        ),
       );
     }
     // refreshKey is a refresh nudge — including it in deps makes

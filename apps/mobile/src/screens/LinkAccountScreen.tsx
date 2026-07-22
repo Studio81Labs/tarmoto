@@ -22,7 +22,11 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
-import { resolveLocale, t as translate } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  resolveLocale,
+  t as translate,
+} from "@/i18n";
 
 type LinkAccountRoute = RouteProp<ProfileStackParamList, "LinkAccount">;
 
@@ -110,9 +114,10 @@ export default function LinkAccountScreen() {
       );
     } catch (err) {
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : translate("Could not link this account."),
+        getUserFacingErrorMessage(
+          err,
+          translate("Could not link this account."),
+        ),
       );
     } finally {
       setSubmitting(false);

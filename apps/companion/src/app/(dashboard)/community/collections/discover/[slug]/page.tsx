@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -71,8 +71,7 @@ export default function DiscoverCollectionPage() {
       }
       setLoad({
         phase: "error",
-        message:
-          err instanceof Error ? err.message : t("Failed to load collection"),
+        message: getUserFacingErrorMessage(err, t("Failed to load collection")),
       });
     }
   }, []);
@@ -111,10 +110,8 @@ export default function DiscoverCollectionPage() {
             ? t("This collection is no longer available.")
             : err.status === 400
               ? t("You can't follow your own collection.")
-              : err.message
-          : err instanceof Error
-            ? err.message
-            : t("Something went wrong.");
+              : getUserFacingErrorMessage(err, t("Something went wrong."))
+          : getUserFacingErrorMessage(err, t("Something went wrong."));
       setFollowError(message);
     } finally {
       setFollowPending(false);

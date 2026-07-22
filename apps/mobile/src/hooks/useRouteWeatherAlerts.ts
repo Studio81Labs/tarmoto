@@ -148,6 +148,7 @@ export function useRouteWeatherAlerts(
           ttsService.speak(
             translate("{title}. {message}", {
               title: copy.title,
+              // eslint-disable-next-line no-restricted-syntax -- localizeWeatherAlert returns cataloged copy.
               message: copy.message,
             }),
             {

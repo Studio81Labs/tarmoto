@@ -146,7 +146,9 @@ describe("lib/socket", () => {
     // Each failed reconnect fires connect_error; status must stay "connecting".
     fake.trigger("connect_error", new Error("ECONNREFUSED"));
     expect(useRealtimeStore.getState().status).toBe("connecting");
-    expect(useRealtimeStore.getState().lastError).toBe("ECONNREFUSED");
+    expect(useRealtimeStore.getState().lastError).toBe(
+      "Check your connection and try again.",
+    );
   });
 
   it("transitions to 'disconnected' when the server denies the connection (active=false)", async () => {
@@ -158,7 +160,9 @@ describe("lib/socket", () => {
     fake.trigger("connect_error", new Error("auth failed"));
 
     expect(useRealtimeStore.getState().status).toBe("disconnected");
-    expect(useRealtimeStore.getState().lastError).toBe("auth failed");
+    expect(useRealtimeStore.getState().lastError).toBe(
+      "Check your connection and try again.",
+    );
   });
 
   it("does not set lastError when the disconnect was client-initiated", async () => {

@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 /**
  * SharedRidesSection (#371, v2 profile) — companion mirror of mobile's
  * shared-rides list on the public rider profile.
@@ -71,9 +71,7 @@ export function SharedRidesSection({
         if ((err as { name?: string })?.name === "AbortError") return;
         setPhase("error");
         setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : t("Could not load shared rides."),
+          getUserFacingErrorMessage(err, t("Could not load shared rides.")),
         );
       });
     return () => {

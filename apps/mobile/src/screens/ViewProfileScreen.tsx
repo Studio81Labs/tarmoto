@@ -41,7 +41,7 @@ import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 import { badgeCopy, tierLabel } from "./AchievementsScreen.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type ViewRoute = RouteProp<ProfileStackParamList, "ViewProfile">;
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "ViewProfile">;
@@ -88,9 +88,10 @@ export default function ViewProfileScreen() {
       if (signal.cancelled) return;
       setPhase("error");
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : translate("Could not load rider profile."),
+        getUserFacingErrorMessage(
+          err,
+          translate("Could not load rider profile."),
+        ),
       );
     }
   }, [userId]);
@@ -161,9 +162,7 @@ export default function ViewProfileScreen() {
           : prev,
       );
       setFollowError(
-        err instanceof Error
-          ? err.message
-          : translate("Could not update follow."),
+        getUserFacingErrorMessage(err, translate("Could not update follow.")),
       );
     } finally {
       setFollowPending(false);

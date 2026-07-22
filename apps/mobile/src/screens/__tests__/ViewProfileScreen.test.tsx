@@ -209,7 +209,7 @@ describe("ViewProfileScreen", () => {
     // Reverted: still "Follow", count back to 3.
     expect(await screen.findByLabelText("Follow rider")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
-    expect(await screen.findByText("server died")).toBeTruthy();
+    expect(await screen.findByText("Could not update follow.")).toBeTruthy();
   });
 
   it("hides the follow button when viewing your own profile", async () => {

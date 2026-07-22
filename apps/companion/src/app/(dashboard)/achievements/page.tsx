@@ -1,5 +1,5 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -175,10 +175,10 @@ export default function AchievementsPage() {
         setState({
           status: "error",
           userId: uid,
-          message:
-            err instanceof Error
-              ? err.message
-              : t("Could not load achievements"),
+          message: getUserFacingErrorMessage(
+            err,
+            t("Could not load achievements"),
+          ),
         });
       }
     },
@@ -222,7 +222,7 @@ export default function AchievementsPage() {
         // confusing (the new user never tried to join anything).
         if (useAuthStore.getState().user?.id === userId) {
           setJoinError(
-            err instanceof Error ? err.message : t("Could not join challenge."),
+            getUserFacingErrorMessage(err, t("Could not join challenge.")),
           );
           setJoiningIds((prev) => {
             const next = new Set(prev);
@@ -959,10 +959,10 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
         if (signal.aborted) return;
         setLoad({
           status: "error",
-          message:
-            err instanceof Error
-              ? err.message
-              : t("Could not load leaderboards."),
+          message: getUserFacingErrorMessage(
+            err,
+            t("Could not load leaderboards."),
+          ),
         });
       }
     },

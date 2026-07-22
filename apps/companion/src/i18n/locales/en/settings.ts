@@ -38,6 +38,8 @@ export const settings = {
   "Could not copy your email. Please copy it manually. ":
     "Could not copy your email. Please copy it manually. ",
   "Could not load preferences: ": "Could not load preferences: ",
+  "Could not load preferences": "Could not load preferences",
+  "Could not load privacy settings": "Could not load privacy settings",
   "Could not load settings: ": "Could not load settings: ",
   "Could not reset your profile. Please try again.":
     "Could not reset your profile. Please try again.",
@@ -244,6 +246,8 @@ export const settings = {
   "Could not delete bike": "Could not delete bike",
   "Could not load subscription settings.":
     "Could not load subscription settings.",
+  "Could not start Stripe Checkout.": "Could not start Stripe Checkout.",
+  "Could not open the billing portal.": "Could not open the billing portal.",
   "Payment issue": "Payment issue",
   Trialing: "Trialing",
 } as const;

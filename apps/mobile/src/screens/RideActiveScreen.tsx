@@ -76,7 +76,7 @@ import {
   surfaceIcon,
   surfaceLabel,
 } from "./RideScreens.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type RideActiveRoute = RouteProp<RideStackParamList, "RideActive">;
 type RideActiveNav = NativeStackNavigationProp<
@@ -281,9 +281,10 @@ export default function RideActiveScreen() {
         })
         .catch((err) => {
           setStartError(
-            err instanceof Error
-              ? err.message
-              : translate("Couldn't sync ride to server"),
+            getUserFacingErrorMessage(
+              err,
+              translate("Couldn't sync ride to server"),
+            ),
           );
         })
         .finally(() => {
@@ -433,10 +434,10 @@ export default function RideActiveScreen() {
         // an alert with retry / force-stop choices and bail out of
         // the cleanup path so the rider can try again.
         setIsStopping(false);
-        const message =
-          err instanceof Error
-            ? err.message
-            : translate("Unable to reach the server.");
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Unable to reach the server."),
+        );
         Alert.alert(translate("Couldn't stop ride"), message, [
           { text: translate("Try again"), onPress: () => void stopAndExit() },
           {

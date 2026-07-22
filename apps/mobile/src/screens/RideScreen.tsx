@@ -43,7 +43,7 @@ import {
   formatDurationMinutes,
   formatRideDate,
 } from "./RideScreens.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type RideNav = NativeStackNavigationProp<RideStackParamList, "RideStart">;
 
@@ -108,9 +108,7 @@ export default function RideScreen() {
         if (isInitial && !hadCache) {
           setPhase("error");
           setErrorMessage(
-            err instanceof Error
-              ? err.message
-              : translate("Unable to load rides"),
+            getUserFacingErrorMessage(err, translate("Unable to load rides")),
           );
         }
       } finally {

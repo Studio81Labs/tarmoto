@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { components } from "@tarmoto/openapi-client";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { parseTimeWindow, windowStartISO } from "./TimeWindowPills";
@@ -262,13 +263,13 @@ export function useRidesQuery() {
           error: null,
         });
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (ctrl.signal.aborted) return;
         setList({
           rides: [],
           total: 0,
           loading: false,
-          error: err.message,
+          error: getUserFacingErrorMessage(err, t("Could not load rides")),
         });
       });
     return () => ctrl.abort();

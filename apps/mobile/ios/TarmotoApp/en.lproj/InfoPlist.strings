@@ -1,0 +1,5 @@
+"NSCameraUsageDescription" = "Tarmoto uses the camera to attach photos to road reviews and hazard reports captured at the side of the road.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Tarmoto records rides while your phone is locked or the screen is off so you don't lose data on long trips. Location is only used during an active ride.";
+"NSLocationWhenInUseUsageDescription" = "Tarmoto uses your location to record rides, surface road quality intelligence, alert you to nearby hazards, and route you to fuel and rest stops on multi-day trips.";
+"NSMotionUsageDescription" = "Tarmoto reads accelerometer and gyroscope data during rides to classify road surface quality and capture lean angles. Sensor data stays on your device unless you opt in to anonymised crowd-sourcing.";
+"NSPhotoLibraryUsageDescription" = "Tarmoto reads photos you select from your library to attach to road reviews and hazard reports.";

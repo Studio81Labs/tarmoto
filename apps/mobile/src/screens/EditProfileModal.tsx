@@ -29,7 +29,7 @@ import {
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 type Nav = NativeStackNavigationProp<ProfileStackParamList, "EditProfile">;
 
@@ -77,9 +77,7 @@ export default function EditProfileModal() {
       navigation.goBack();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : translate("Could not save profile."),
+        getUserFacingErrorMessage(err, translate("Could not save profile.")),
       );
     } finally {
       setSubmitting(false);

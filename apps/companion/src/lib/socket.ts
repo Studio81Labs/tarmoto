@@ -2,6 +2,7 @@ import { io, type Socket } from "socket.io-client";
 import { API_HOST } from "@/lib/config";
 import { useRealtimeStore } from "@/stores/realtime";
 import type { HazardResponse } from "@/lib/api";
+import { t } from "@/i18n";
 
 /**
  * Socket.io client bound to the backend `/events` namespace (see
@@ -100,13 +101,14 @@ export function connectSocket(token: string | null = null): Socket {
     setStatus(next.active ? "connecting" : "disconnected");
     // "io client disconnect" means we called disconnect() on purpose — not an error.
     if (reason !== "io client disconnect") {
-      setError(reason);
+      setError(t("Check your connection and try again."));
     }
   });
 
   next.on("connect_error", (err) => {
     setStatus(next.active ? "connecting" : "disconnected");
-    setError(err.message);
+    console.warn("Realtime connection error:", err);
+    setError(t("Check your connection and try again."));
   });
 
   // Re-attach any listeners consumers registered before this (re)connection,

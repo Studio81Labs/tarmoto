@@ -58,7 +58,7 @@ import {
   type RidePeriod,
 } from "./AchievementsScreen.helpers";
 import { surfaceLabel } from "./RideScreens.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 // Default camera centre when we don't have a fix yet — Brno, the
 // reference city for the design + early-access community. This matches
@@ -107,10 +107,10 @@ export default function PersonalRoadMapScreen() {
       setUnridden(unriddenResp);
       setErrorMessage(null);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't load your map.");
+      const message = getUserFacingErrorMessage(
+        err,
+        translate("Couldn't load your map."),
+      );
       setErrorMessage(message);
     } finally {
       if (initial) setIsInitialLoad(false);

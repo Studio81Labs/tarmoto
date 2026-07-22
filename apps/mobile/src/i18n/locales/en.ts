@@ -1099,6 +1099,8 @@ export const en = {
     "Weather alert: {value0}. Tap for details.",
   "Weather alerts": "Weather alerts",
   "Weather alerts ahead": "Weather alerts ahead",
+  "Weather conditions may affect your route. Ride cautiously.":
+    "Weather conditions may affect your route. Ride cautiously.",
   "Weather warning": "Weather warning",
   Wet: "Wet",
   "Wet roads ahead": "Wet roads ahead",

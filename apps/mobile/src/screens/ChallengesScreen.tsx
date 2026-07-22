@@ -52,7 +52,7 @@ import {
   formatTimeRemaining,
   rankChallenges,
 } from "./AchievementsScreen.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 
@@ -72,10 +72,10 @@ export default function ChallengesScreen() {
       setChallenges(data);
       setErrorMessage(null);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : translate("Couldn't load challenges.");
+      const message = getUserFacingErrorMessage(
+        err,
+        translate("Couldn't load challenges."),
+      );
       setErrorMessage(message);
     } finally {
       if (!initial) setIsRefreshing(false);
@@ -115,10 +115,10 @@ export default function ChallengesScreen() {
         await api.joinChallenge(challengeId);
         await loadDetail(challengeId);
       } catch (err: unknown) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : translate("Couldn't join this challenge. Try again.");
+        const message = getUserFacingErrorMessage(
+          err,
+          translate("Couldn't join this challenge. Try again."),
+        );
         Alert.alert(translate("Couldn't join"), message);
       } finally {
         setPendingJoinId(null);

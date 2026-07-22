@@ -55,10 +55,7 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
     return {
       ok: false,
       cancelled: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : translate("Could not open file picker."),
+      error: translate("Could not open file picker."),
     };
   }
 
@@ -125,14 +122,11 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
   let text: string;
   try {
     text = await RNFS.readFile(response.uri, "utf8");
-  } catch (err) {
+  } catch {
     return {
       ok: false,
       cancelled: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : translate("Could not read the file."),
+      error: translate("Could not read the file."),
     };
   }
 

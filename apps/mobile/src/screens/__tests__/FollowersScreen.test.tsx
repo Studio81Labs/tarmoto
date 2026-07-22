@@ -101,7 +101,7 @@ describe("FollowersScreen", () => {
 
     await render(<FollowersScreen />);
 
-    expect(await screen.findByText("offline")).toBeTruthy();
+    expect(await screen.findByText("Could not load list.")).toBeTruthy();
 
     mockedApi.listFollowers.mockResolvedValueOnce([
       {

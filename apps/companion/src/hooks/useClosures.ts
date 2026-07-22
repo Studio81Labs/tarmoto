@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { closuresApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -159,14 +160,16 @@ export function useClosures(
     fetching: listQuery.isFetching,
     routeLoading: routes.length > 0 && routeQuery.isLoading,
     error: listQuery.isError
-      ? (listQuery.error as Error)?.message || "Failed to load closures"
+      ? getUserFacingErrorMessage(listQuery.error, t("Failed to load closures"))
       : null,
     routeError:
       routes.length === 0
         ? null
         : routeQuery.isError
-          ? (routeQuery.error as Error)?.message ||
-            "Failed to check route closures"
+          ? getUserFacingErrorMessage(
+              routeQuery.error,
+              t("Failed to check route closures"),
+            )
           : null,
     previewDate,
   };

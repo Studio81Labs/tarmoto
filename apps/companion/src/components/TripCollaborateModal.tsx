@@ -1,5 +1,5 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
 import {
   useCallback,
   useEffect,
@@ -1816,8 +1816,10 @@ function groupActivityByDay(
 }
 function describeError(err: unknown): string {
   if (err instanceof ApiError)
-    return err.message ?? t("Failed ({status})", { status: err.status });
-  if (err instanceof Error) return err.message;
+    return getUserFacingErrorMessage(
+      err,
+      t("Failed ({status})", { status: err.status }),
+    );
   return t("Unknown error");
 }
 function buildInviteUrl(token: string): string {

@@ -57,6 +57,7 @@ export const api = createTarmotoClient({
 export const $api = createTarmotoQueryClient(api);
 
 export class ApiError extends Error {
+  readonly localizedUserMessage = true as const;
   readonly status: number;
   readonly body: unknown;
 

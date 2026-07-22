@@ -13,7 +13,7 @@ import type { RoutePoint } from "@/lib/ride-detail";
 import { TripRouteOverview } from "@/components/TripRouteOverview";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuthStore } from "@/stores/auth";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 
 type JoinState =
   | { kind: "loading" }
@@ -217,9 +217,10 @@ function messageForError(err: unknown): string {
       return t("Sign in to open this trip invite.");
     }
   }
-  return err instanceof Error
-    ? err.message
-    : t("Could not open this invite. Please try again later.");
+  return getUserFacingErrorMessage(
+    err,
+    t("Could not open this invite. Please try again later."),
+  );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

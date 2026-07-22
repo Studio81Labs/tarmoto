@@ -32,6 +32,8 @@ function TestHarness({
       <span>partial={result.routeCounts.partial}</span>
       <span>advisory={result.routeCounts.advisory}</span>
       <span>total={result.routeCounts.total}</span>
+      <span>{result.error ?? "no-error"}</span>
+      <span>{result.routeError ?? "no-route-error"}</span>
     </div>
   );
 }
@@ -91,6 +93,19 @@ describe("useClosures", () => {
     });
 
     expect(closuresApi.list).not.toHaveBeenCalled();
+  });
+
+  it("hides uncataloged query diagnostics from rider-facing state", async () => {
+    vi.mocked(closuresApi.list).mockRejectedValue(new Error("socket exploded"));
+
+    render(<TestHarness bbox="17.5,49.6,18.9,49.9" />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load closures")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("socket exploded")).not.toBeInTheDocument();
   });
 
   it("uses one backend query for unique exact counts across route chunks", async () => {

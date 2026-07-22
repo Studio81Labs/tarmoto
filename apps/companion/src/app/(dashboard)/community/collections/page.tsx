@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import {
   useEffect,
   useMemo,
@@ -93,7 +93,7 @@ export default function RouteCollectionsPage() {
       await unfollowCollection(collection.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : t("Failed to unfollow collection"),
+        getUserFacingErrorMessage(err, t("Failed to unfollow collection")),
       );
     }
   };
@@ -127,7 +127,7 @@ export default function RouteCollectionsPage() {
       await removeCollection(collection.id);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : t("Failed to delete collection"),
+        getUserFacingErrorMessage(err, t("Failed to delete collection")),
       );
     }
   };
@@ -556,9 +556,7 @@ function CollectionModal({
     } catch (err) {
       // Render the error inline inside the modal form so it's visible above
       // the modal overlay and stays put while the user fixes their input.
-      setError(
-        err instanceof Error ? err.message : t("Failed to save collection"),
-      );
+      setError(getUserFacingErrorMessage(err, t("Failed to save collection")));
     } finally {
       setSubmitting(false);
     }

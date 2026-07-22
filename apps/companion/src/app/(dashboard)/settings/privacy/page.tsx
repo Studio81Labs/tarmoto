@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { Check, Shield } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -63,9 +63,11 @@ export default function PrivacyPage() {
         setSettings(merged);
         setLoading(false);
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setLoadError(err.message);
+        setLoadError(
+          getUserFacingErrorMessage(err, t("Could not load privacy settings")),
+        );
         setLoading(false);
       });
     return () => {
@@ -117,8 +119,10 @@ export default function PrivacyPage() {
       setServerSettings(settings);
       setSaveState({ kind: "saved" });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("Could not save settings");
+      const message = getUserFacingErrorMessage(
+        err,
+        t("Could not save settings"),
+      );
       setSaveState({ kind: "error", message });
     }
   }

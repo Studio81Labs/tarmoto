@@ -215,7 +215,9 @@ describe("EmergencyContactsScreen", () => {
     mockedApi.listContacts.mockRejectedValueOnce(new Error("offline"));
 
     await render(<EmergencyContactsScreen />);
-    await waitFor(() => expect(screen.getByText(/offline/i)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't load contacts.")).toBeTruthy(),
+    );
 
     mockedApi.listContacts.mockResolvedValueOnce([
       {

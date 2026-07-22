@@ -6,7 +6,7 @@ interface RealtimeState {
   status: RealtimeStatus;
   /** Timestamp (ms) of the most recent successful `connect` event. */
   connectedAt: number | null;
-  /** Last error reason surfaced by socket.io (`connect_error` or `disconnect`). */
+  /** Last cataloged connection error, safe to render in rider-facing UI. */
   lastError: string | null;
 
   setStatus: (status: RealtimeStatus) => void;

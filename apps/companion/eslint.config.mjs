@@ -40,6 +40,24 @@ const restrictedSyntaxSelectors = [
     message: "Wrap every rider-facing error-state branch with t()/tDynamic.",
   },
   {
+    selector:
+      "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] MemberExpression[computed=false][property.name='message']",
+    message:
+      "Do not expose arbitrary Error.message text. Use getUserFacingErrorMessage(error, t(…)) so only cataloged API errors pass through.",
+  },
+  {
+    selector:
+      "CallExpression[callee.object.name='toast'][callee.property.name=/^(error|success|info|warning)$/] MemberExpression[computed=false][property.name='message']",
+    message:
+      "Do not expose arbitrary Error.message text in toasts. Use getUserFacingErrorMessage with translated fallback copy.",
+  },
+  {
+    selector:
+      "Property[key.name=/^(error|message|description)$/] MemberExpression[computed=false][property.name='message']",
+    message:
+      "Do not store arbitrary Error.message text in rider-facing state. Use getUserFacingErrorMessage with translated fallback copy.",
+  },
+  {
     selector: "Property[key.name='message'] > Literal[value=/[A-Za-z]{2,}/]",
     message:
       "Route rider-facing message properties through t()/tDynamic. Document a scoped exception for non-display protocol data.",

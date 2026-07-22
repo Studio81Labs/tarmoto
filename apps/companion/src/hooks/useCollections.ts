@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import {
   routeCollectionsApi,
   type CreateRouteCollectionInput,
@@ -209,9 +210,10 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     errorMessage:
       errorMessage ??
       (query.isError
-        ? query.error instanceof Error
-          ? query.error.message
-          : "Failed to load route collections"
+        ? getUserFacingErrorMessage(
+            query.error,
+            t("Failed to load route collections"),
+          )
         : null),
     refresh,
     createCollection,

@@ -202,7 +202,9 @@ describe("SharedRidesSection", () => {
       <SharedRidesSection userId="user-2" isSelf={false} displayName="Other" />,
     );
 
-    expect(await screen.findByText("offline")).toBeTruthy();
+    expect(
+      await screen.findByText("Could not load shared rides."),
+    ).toBeTruthy();
   });
 
   it("re-fetches when refreshKey is bumped (parent pull-to-refresh nudge)", async () => {

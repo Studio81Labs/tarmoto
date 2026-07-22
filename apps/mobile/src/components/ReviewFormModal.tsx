@@ -55,7 +55,7 @@ import { ApiError, api } from "@/services/api";
 import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
 import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 
 const t = brandColorsLight;
 
@@ -911,7 +911,8 @@ function PhotoButton({
  * `ApiError.body` for diagnostics and must never cross into rider-facing UI.
  */
 function apiErrorMessage(error: unknown): string | undefined {
-  return error instanceof ApiError ? error.message : undefined;
+  const message = getUserFacingErrorMessage(error, "");
+  return message || undefined;
 }
 
 function isConflictError(error: unknown): boolean {

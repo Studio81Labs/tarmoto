@@ -46,7 +46,7 @@ import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { MeProfile, PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
-import { t as translate } from "@/i18n";
+import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { getFormatters } from "@/format";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
@@ -117,9 +117,7 @@ export default function ProfileScreen() {
         if (signal.cancelled) return;
         setPhase("error");
         setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : translate("Could not load profile."),
+          getUserFacingErrorMessage(err, translate("Could not load profile.")),
         );
       } finally {
         if (!signal.cancelled) setIsRefreshing(false);
@@ -176,9 +174,7 @@ export default function ProfileScreen() {
     } catch (err) {
       if (previousUser) setUser(previousUser);
       setAvatarError(
-        err instanceof Error
-          ? err.message
-          : translate("Could not upload avatar."),
+        getUserFacingErrorMessage(err, translate("Could not upload avatar.")),
       );
     } finally {
       setAvatarUploading(false);

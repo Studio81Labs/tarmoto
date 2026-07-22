@@ -56,7 +56,11 @@ import type {
   RootTabParamList,
 } from "@/navigation/RootNavigator";
 import { formatRelativeTime } from "./RoadPreviewScreen.helpers";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  t as translate,
+  type EnglishMessageKey,
+} from "@/i18n";
 import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
@@ -769,12 +773,12 @@ function SavedRoutesCard({
               // would leave them tapping the same row forever.
               onSetPrimary(route.id)
                 .catch((err: unknown) => {
-                  const message =
-                    err instanceof Error
-                      ? err.message
-                      : translate(
-                          "Couldn't switch your primary commute. Try again.",
-                        );
+                  const message = getUserFacingErrorMessage(
+                    err,
+                    translate(
+                      "Couldn't switch your primary commute. Try again.",
+                    ),
+                  );
                   Alert.alert(translate("Couldn't update primary"), message);
                 })
                 .finally(() => setPendingId(null));

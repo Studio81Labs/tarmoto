@@ -95,7 +95,7 @@ describe("photoCapture", () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
-  it("forwards the launcher's unavailable status with its reason", async () => {
+  it("replaces launcher diagnostics with cataloged rider-facing copy", async () => {
     requestMock.mockResolvedValueOnce("granted");
     __setLauncherForTest(async () => ({
       status: "unavailable",
@@ -105,6 +105,7 @@ describe("photoCapture", () => {
     const result = await capturePhoto("camera");
 
     expect(result.status).toBe("unavailable");
-    expect(result.reason).toBe("feature flag off");
+    expect(result.reason).toBe("Photo picker isn't available on this device.");
+    expect(result.reason).not.toContain("feature flag off");
   });
 });

@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import Link from "next/link";
 import {
   useEffect,
@@ -21,7 +21,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  ApiError,
   roadsApi,
   type RoadReview,
   type UpsertRoadReviewInput,
@@ -184,9 +183,7 @@ export function RoadReviewsPanel({
       .catch((err) => {
         if (cancelled) return;
         setReviews([]);
-        setError(
-          err instanceof Error ? err.message : t("Could not load reviews."),
-        );
+        setError(getUserFacingErrorMessage(err, t("Could not load reviews.")));
       })
       .finally(() => {
         if (!cancelled) {
@@ -354,7 +351,7 @@ export function RoadReviewsPanel({
         return;
       }
       setSubmitError(
-        err instanceof Error ? err.message : t("Could not save your review."),
+        getUserFacingErrorMessage(err, t("Could not save your review.")),
       );
     } finally {
       if (
@@ -410,7 +407,7 @@ export function RoadReviewsPanel({
         return;
       }
       setSubmitError(
-        err instanceof Error ? err.message : t("Could not delete your review."),
+        getUserFacingErrorMessage(err, t("Could not delete your review.")),
       );
     } finally {
       if (
@@ -677,11 +674,7 @@ function ReviewEditor({
     } catch (err) {
       if (!mountedRef.current) return;
       setUploadError(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Could not upload photos.",
+        getUserFacingErrorMessage(err, t("Could not upload photos.")),
       );
     } finally {
       // Editor may have unmounted while the upload was in flight (e.g.
@@ -929,9 +922,7 @@ function ReviewCard({
       onChange(data);
     } catch (err) {
       onChange(previous);
-      toast.error(
-        err instanceof Error ? err.message : t("Could not submit vote."),
-      );
+      toast.error(getUserFacingErrorMessage(err, t("Could not submit vote.")));
     } finally {
       setPendingVote(null);
     }

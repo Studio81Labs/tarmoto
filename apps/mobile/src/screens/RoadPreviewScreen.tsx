@@ -57,7 +57,11 @@ import {
   normalizeBreakdown,
 } from "./RoadPreviewScreen.helpers";
 import { surfaceLabel } from "./RideScreens.helpers";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  t as translate,
+  type EnglishMessageKey,
+} from "@/i18n";
 import { getFormatters } from "@/format";
 
 const ELEVATION_CHART_HEIGHT = 80;
@@ -117,9 +121,10 @@ export default function RoadPreviewScreen() {
       } catch (e) {
         if (!ignore) {
           setError(
-            e instanceof Error
-              ? e.message
-              : translate("Failed to load road segment"),
+            getUserFacingErrorMessage(
+              e,
+              translate("Failed to load road segment"),
+            ),
           );
         }
       } finally {

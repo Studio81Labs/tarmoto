@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -93,10 +93,10 @@ export default function SubscriptionPage() {
         }
         setState({
           kind: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : t("Could not load subscription settings."),
+          message: getUserFacingErrorMessage(
+            error,
+            t("Could not load subscription settings."),
+          ),
         });
       });
     return () => {
@@ -116,10 +116,10 @@ export default function SubscriptionPage() {
     } catch (error) {
       setActionState({
         kind: null,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not start Stripe Checkout.",
+        error: getUserFacingErrorMessage(
+          error,
+          t("Could not start Stripe Checkout."),
+        ),
       });
     }
   }
@@ -145,10 +145,10 @@ export default function SubscriptionPage() {
     } catch (error) {
       setActionState({
         kind: null,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not open the billing portal.",
+        error: getUserFacingErrorMessage(
+          error,
+          t("Could not open the billing portal."),
+        ),
       });
     }
   }

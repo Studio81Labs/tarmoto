@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Bell, Check, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
@@ -105,9 +105,11 @@ export default function NotificationsPage() {
             });
         }
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setLoadError(err.message);
+        setLoadError(
+          getUserFacingErrorMessage(err, t("Could not load preferences")),
+        );
         setLoading(false);
       });
     return () => {
@@ -172,8 +174,10 @@ export default function NotificationsPage() {
       setPrefs(merged);
       setSaveState({ kind: "saved" });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : t("Could not save preferences");
+      const message = getUserFacingErrorMessage(
+        err,
+        t("Could not save preferences"),
+      );
       setSaveState({ kind: "error", message });
     }
   }

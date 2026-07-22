@@ -105,7 +105,7 @@ describe("shareRoadMap", () => {
     await shareRoadMap("My Tarmoto road map", SNAPSHOT);
 
     expect(revokeMock).toHaveBeenCalledWith("share-9");
-    expect(errorMock).toHaveBeenCalledWith("denied");
+    expect(errorMock).toHaveBeenCalledWith("Could not generate share link");
     expect(successMock).not.toHaveBeenCalled();
   });
 
@@ -134,7 +134,7 @@ describe("shareRoadMap", () => {
 
     await shareRoadMap("My Tarmoto road map", SNAPSHOT);
 
-    expect(errorMock).toHaveBeenCalledWith("offline");
+    expect(errorMock).toHaveBeenCalledWith("Could not generate share link");
     // No share id was ever assigned, so there's nothing to revoke.
     expect(revokeMock).not.toHaveBeenCalled();
     expect(writeText).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import { mapSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
@@ -67,7 +67,7 @@ export async function shareRoadMap(
     // user opted out, so no error toast.
     if (!(err instanceof Error && err.name === "AbortError")) {
       toast.error(
-        err instanceof Error ? err.message : t("Could not generate share link"),
+        getUserFacingErrorMessage(err, t("Could not generate share link")),
       );
     }
   }

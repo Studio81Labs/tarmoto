@@ -1,5 +1,5 @@
 "use client";
-import { t } from "@/i18n";
+import { getUserFacingErrorMessage, t } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -177,10 +177,8 @@ export function RouteCollectionFollowCta({
             ? t("This collection is no longer available.")
             : err.status === 400
               ? t("You can't follow your own collection.")
-              : err.message
-          : err instanceof Error
-            ? err.message
-            : t("Something went wrong.");
+              : getUserFacingErrorMessage(err, t("Something went wrong."))
+          : getUserFacingErrorMessage(err, t("Something went wrong."));
       setError(message);
     } finally {
       setPending(false);

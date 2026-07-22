@@ -33,6 +33,8 @@ function TestHarness({
       <span>{result.routeLoading ? "route-loading" : "route-idle"}</span>
       <span>closed={result.routeClosedCount}</span>
       <span>unknown={result.routeUnknownCount}</span>
+      <span>{result.error ?? "no-error"}</span>
+      <span>{result.routeError ?? "no-route-error"}</span>
     </div>
   );
 }
@@ -139,6 +141,19 @@ describe("usePasses", () => {
     });
 
     expect(api.GET).not.toHaveBeenCalled();
+  });
+
+  it("hides uncataloged query diagnostics from rider-facing state", async () => {
+    vi.mocked(api.GET).mockRejectedValue(new Error("socket exploded"));
+
+    render(<TestHarness bbox="17.5,49.6,18.9,49.9" />, {
+      wrapper: withQueryClient(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load passes")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("socket exploded")).not.toBeInTheDocument();
   });
 
   it("keeps route loading active on the first render after routes appear", async () => {

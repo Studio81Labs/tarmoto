@@ -228,9 +228,10 @@ describe("RideDetailScreen", () => {
     await render(<RideDetailScreen />);
 
     await waitFor(() =>
-      expect(screen.getByText(/Couldn't load ride/i)).toBeTruthy(),
+      expect(screen.getAllByText(/Couldn't load ride/i).length).toBeGreaterThan(
+        0,
+      ),
     );
-    expect(screen.getByText("offline")).toBeTruthy();
   });
 
   it("exports GPX as a file attachment via the system share sheet", async () => {
