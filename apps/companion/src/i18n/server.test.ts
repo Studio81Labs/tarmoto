@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCALE_COOKIE } from "./constants";
 
 const state = vi.hoisted(() => ({
@@ -23,6 +23,10 @@ vi.mock("next/headers", () => ({
 
 import { readLocale } from "./server";
 
+// Mirrors ACCOUNT_LOCALE_LOOKUP_TIMEOUT_MS without exporting an internal
+// implementation detail from the server locale module.
+const ACCOUNT_LOCALE_LOOKUP_TIMEOUT_MS = 3000;
+
 describe("server locale resolution", () => {
   beforeEach(() => {
     state.cookies.clear();
@@ -39,6 +43,10 @@ describe("server locale resolution", () => {
       get: (name: string) =>
         name.toLowerCase() === "accept-language" ? state.acceptLanguage : null,
     }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("gives a valid explicit cookie precedence over account and browser state", async () => {
@@ -66,6 +74,21 @@ describe("server locale resolution", () => {
 
     await expect(readLocale()).resolves.toBe("en");
     expect(authMock).toHaveBeenCalledOnce();
+    expect(headersMock).toHaveBeenCalledOnce();
+  });
+
+  it("bounds a hanging auth refresh and falls through to browser detection", async () => {
+    vi.useFakeTimers();
+    state.acceptLanguage = "en-GB";
+    authMock.mockReturnValueOnce(new Promise(() => {}));
+
+    const localePromise = readLocale();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(authMock).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(ACCOUNT_LOCALE_LOOKUP_TIMEOUT_MS + 1);
+
+    await expect(localePromise).resolves.toBe("en");
     expect(headersMock).toHaveBeenCalledOnce();
   });
 });
