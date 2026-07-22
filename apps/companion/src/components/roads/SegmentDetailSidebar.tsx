@@ -1,6 +1,8 @@
 "use client";
 
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
+
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -56,6 +58,7 @@ export function SegmentDetailSidebar({
   onClose,
   anchor = "container",
 }: SegmentDetailSidebarProps) {
+  const t = useTranslation();
   const open = state.status !== "idle";
   // Slide in on open and back out on close (up/down from the bottom on mobile,
   // in/out from the right on desktop). `entered` drives the transform; rAF so
@@ -122,7 +125,7 @@ export function SegmentDetailSidebar({
         <StatusBlock
           icon={<Loader2 size={18} className="animate-spin" />}
           title={t("Loading road details")}
-          body={t("Fetching the latest segment quality and community data. ")}
+          body={t("Fetching the latest segment quality and community data.")}
         />
       )}
 
@@ -131,7 +134,7 @@ export function SegmentDetailSidebar({
           icon={<AlertTriangle size={18} />}
           title={t("Road segment not found")}
           body={t(
-            "This segment may have been merged, removed, or not synced from the tile source yet. ",
+            "This segment may have been merged, removed, or not synced from the tile source yet.",
           )}
         />
       )}
@@ -161,6 +164,7 @@ function SegmentDetailContent({
 }: {
   segment: RoadSegmentDetailResponse;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const score = segment.quality_score ?? 0;
@@ -224,7 +228,7 @@ function SegmentDetailContent({
           icon={<Gauge size={14} />}
           label={t("Confidence")}
           value={format.percent(confidence / 100)}
-          caption={confidenceCaption(confidence)}
+          caption={confidenceCaption(confidence, t)}
         />
         <Metric
           icon={<Activity size={14} />}
@@ -332,7 +336,7 @@ function SegmentDetailContent({
         </div>
         {segment.active_hazards.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-fg-dim">
-            {t("No active hazards on this segment. ")}
+            {t("No active hazards on this segment.")}
           </p>
         ) : (
           <ul className="mt-3 space-y-3">
@@ -427,7 +431,7 @@ function Divider() {
 }
 
 /** Short qualitative caption for the confidence metric tile. */
-function confidenceCaption(confidence: number): string {
+function confidenceCaption(confidence: number, t: Translate): string {
   if (confidence < 40) return t("Needs more passes");
   if (confidence < 75) return t("Building confidence");
   return t("Well established");

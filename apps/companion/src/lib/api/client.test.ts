@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { ApiError, openApiData } from "./client";
 
 describe("openApiData", () => {
@@ -23,6 +24,7 @@ describe("openApiData", () => {
     ).rejects.toMatchObject({
       status: 400,
       message: "Some information is invalid. Check it and try again.",
+      localizedUserMessage: true,
     });
   });
 
@@ -38,6 +40,19 @@ describe("openApiData", () => {
       }),
     );
     await expect(promise).rejects.toBeInstanceOf(ApiError);
-    await expect(promise).rejects.toMatchObject({ status: 502 });
+    await expect(promise).rejects.toMatchObject({
+      status: 502,
+      message: "The server is temporarily unavailable. Try again shortly.",
+      localizedUserMessage: true,
+    });
+  });
+
+  it("does not trust arbitrary ApiError messages by default", () => {
+    expect(
+      getUserFacingErrorMessage(
+        new ApiError("raw server detail", 400, null),
+        "Safe fallback",
+      ),
+    ).toBe("Safe fallback");
   });
 });

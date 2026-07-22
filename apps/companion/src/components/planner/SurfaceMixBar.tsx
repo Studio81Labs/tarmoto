@@ -1,7 +1,8 @@
 "use client";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import type { RouteQualitySummary } from "@/lib/planner/types";
-import { t } from "@/i18n";
 import { SURFACE_LABELS } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 
@@ -15,6 +16,7 @@ export function SurfaceMixBar({
 }: {
   mix: RouteQualitySummary["surfaceMix"];
 }) {
+  const t = useTranslation();
   const format = useFormat();
   if (mix.length === 0) return null;
   return (

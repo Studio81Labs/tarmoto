@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import { api, passesApi } from "@/lib/api";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -55,6 +56,7 @@ export function usePasses(
   routes: PlannerClosureRoute[] = EMPTY_ROUTES,
   options?: UsePassesOptions,
 ): PassesQueryResult {
+  const t = useTranslation();
   const reconnectRevision = useNetworkReconnectRevision();
   const bbox = options?.bbox;
   const enabled = options?.enabled ?? true;

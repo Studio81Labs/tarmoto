@@ -1,8 +1,9 @@
 "use client";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import type { ReactNode } from "react";
 import { Activity } from "lucide-react";
 import { PageHeader, Mono } from "@tarmoto/ui";
-import { t } from "@/i18n";
 import { RidesTabsBar } from "./_RidesTabsBar";
 import { useRidesTotal } from "./_useRidesTotal";
 
@@ -48,6 +49,7 @@ export function RidesScaffold({
   fill?: boolean;
   children: ReactNode;
 }) {
+  const t = useTranslation();
   const fallbackTotal = useRidesTotal();
   const badge =
     allRidesBadge !== undefined ? (

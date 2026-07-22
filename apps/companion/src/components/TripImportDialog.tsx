@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Loader2, MapPin, X } from "lucide-react";
 import { Button } from "@tarmoto/ui";
@@ -28,6 +29,7 @@ export function TripImportDialog({
   initialFile,
   onClose,
 }: TripImportDialogProps) {
+  const t = useTranslation();
   const format = useFormat();
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -71,7 +73,7 @@ export function TripImportDialog({
         setStatus("error");
       }
     },
-    [format],
+    [t, format],
   );
   useEffect(() => {
     if (!open) {
@@ -117,7 +119,7 @@ export function TripImportDialog({
             className="flex items-center gap-2 text-sm font-semibold text-ink"
           >
             <FileUp size={14} className="text-accent" />
-            {t("Import GPX or KML ")}
+            {t("Import GPX or KML")}
           </h2>
           <button
             type="button"
@@ -137,7 +139,7 @@ export function TripImportDialog({
           {status === "parsing" && (
             <div className="flex items-center justify-center gap-3 py-6 text-sm text-fg-dim">
               <Loader2 size={16} className="animate-spin" />
-              {t("Parsing route\u2026 ")}
+              {t("Parsing route…")}
             </div>
           )}
 
@@ -149,7 +151,7 @@ export function TripImportDialog({
                 onClick={() => fileInputRef.current?.click()}
                 className="text-xs font-semibold text-red-700 underline hover:text-ink"
               >
-                {t("Pick another file ")}
+                {t("Pick another file")}
               </button>
             </div>
           )}
@@ -181,11 +183,11 @@ export function TripImportDialog({
 
         <footer className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="secondary" size="sm" onClick={onClose}>
-            {t("Cancel ")}
+            {t("Cancel")}
           </Button>
           {status === "ready" && (
             <Button variant="accent" size="sm" onClick={handleAdopt}>
-              {t("Adopt as trip draft ")}
+              {t("Adopt as trip draft")}
             </Button>
           )}
         </footer>
@@ -194,6 +196,7 @@ export function TripImportDialog({
   );
 }
 function IdlePicker({ onPick }: { onPick: () => void }) {
+  const t = useTranslation();
   return (
     <button
       type="button"
@@ -205,10 +208,10 @@ function IdlePicker({ onPick }: { onPick: () => void }) {
         className="mx-auto mb-3 text-fg-dim group-hover:text-accent"
       />
       <p className="text-sm font-medium text-ink">
-        {t("Choose a GPX or KML file ")}
+        {t("Choose a GPX or KML file")}
       </p>
       <p className="mt-1 text-xs text-fg-dim">
-        {t("Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ")}
+        {t("Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth")}
       </p>
     </button>
   );
@@ -222,6 +225,7 @@ function RoutePreview({
   trip: Trip;
   segmentCount: number;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const firstDay = trip.days[0];
   const maxSegmentKm =
@@ -230,7 +234,7 @@ function RoutePreview({
     <div className="space-y-4">
       <div className="rounded-xl border border-line bg-paper-2 p-4">
         <p className="mb-1 text-xs uppercase tracking-wider text-fg-dim">
-          {t("Route ")}
+          {t("Route")}
         </p>
         <p className="truncate text-base font-semibold text-ink">
           {route.name}
@@ -248,7 +252,7 @@ function RoutePreview({
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-fg-dim">
           {t(
-            "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay. ",
+            "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay.",
           )}
         </p>
       </div>

@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
@@ -86,6 +87,7 @@ function ChallengeCard({
   challenge: ActiveChallengeCard;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const pct =
     challenge.target > 0
       ? Math.min(100, Math.round((challenge.current / challenge.target) * 100))
@@ -154,6 +156,7 @@ function LeaderboardCard({
   region: string | null;
   format: Formatters;
 }) {
+  const t = useTranslation();
   // Show the top rows; if the rider is outside them, append their own row.
   const rows = board.entries.slice(0, 5);
   const meInRows = board.me != null && rows.some((e) => e.isMe);
@@ -212,6 +215,7 @@ function LeaderboardCard({
 }
 
 function SuggestionsCard({ riders }: { riders: SuggestedRider[] }) {
+  const t = useTranslation();
   return (
     <div className="rounded-[14px] border border-line bg-cream p-[18px]">
       <Stamp>{t("People you might follow")}</Stamp>
@@ -225,6 +229,7 @@ function SuggestionsCard({ riders }: { riders: SuggestedRider[] }) {
 }
 
 function SuggestionRow({ rider }: { rider: SuggestedRider }) {
+  const t = useTranslation();
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
 

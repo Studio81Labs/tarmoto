@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import { getUserFacingErrorMessage } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import {
   routeCollectionsApi,
   type CreateRouteCollectionInput,
@@ -72,6 +73,7 @@ const EMPTY_CACHE: LibraryCacheShape = { owned: [], followed: [] };
  * visitors); the query is disabled.
  */
 export function useCollections(userId: string | null): UseCollectionsResult {
+  const t = useTranslation();
   const queryClient = useQueryClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 

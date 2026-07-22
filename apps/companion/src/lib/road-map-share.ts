@@ -1,4 +1,8 @@
-import { getUserFacingErrorMessage, t } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  t as englishTranslate,
+  type Translate,
+} from "@/i18n";
 import { mapSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
@@ -15,6 +19,7 @@ import { toast } from "@/lib/toast";
 export async function shareRoadMap(
   title: string,
   snapshot: Record<string, unknown>,
+  t: Translate = englishTranslate,
 ): Promise<void> {
   // Capability check first: with neither Web Share nor the async Clipboard
   // API there's no way to hand the URL back, so bail BEFORE persisting and
@@ -42,7 +47,7 @@ export async function shareRoadMap(
         : data.share_url;
     const shareData: ShareData = {
       title,
-      text: "Check out the roads I've ridden on Tarmoto.",
+      text: t("Check out the roads I've ridden on Tarmoto."),
       url: fullUrl,
     };
     if (canWebShare && (!navigator.canShare || navigator.canShare(shareData))) {

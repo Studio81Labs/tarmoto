@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
@@ -51,6 +53,7 @@ const RIDE_TYPE_LABEL = {
   tracked: "Tracked",
 } satisfies Record<(typeof RIDE_TYPES)[number], EnglishMessageKey>;
 export default function CommunityFeedPage() {
+  const t = useTranslation();
   const format = useFormat();
   const [sort, setSort] = useState<CommunityRideSort>("most_popular");
   const [rideType, setRideType] = useState<RideTypeFilter>("all");
@@ -122,7 +125,7 @@ export default function CommunityFeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [query, authReady]);
+  }, [t, query, authReady]);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   // Distinguish "pristine empty feed" (no filters, nothing in the
@@ -230,7 +233,7 @@ export default function CommunityFeedPage() {
 
         <div>
           <FieldLabel htmlFor="min-distance-km">
-            {t("Minimum distance ")}
+            {t("Minimum distance")}
           </FieldLabel>
           <Input
             id="min-distance-km"
@@ -247,7 +250,7 @@ export default function CommunityFeedPage() {
 
         <div>
           <FieldLabel htmlFor="max-distance-km">
-            {t("Maximum distance ")}
+            {t("Maximum distance")}
           </FieldLabel>
           <Input
             id="max-distance-km"
@@ -307,11 +310,11 @@ export default function CommunityFeedPage() {
             <Card padded={false} className="p-16 text-center">
               <Users size={48} className="mx-auto mb-4 text-fg-mute" />
               <p className="mb-2 text-lg font-semibold text-ink">
-                {t("No rides match these filters ")}
+                {t("No rides match these filters")}
               </p>
               <p className="text-sm text-fg-dim">
                 {t(
-                  "Try broadening the feed or switching back to the most popular rides. ",
+                  "Try broadening the feed or switching back to the most popular rides.",
                 )}
               </p>
             </Card>

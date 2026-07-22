@@ -32,10 +32,33 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
 }
 
 /**
+ * Match one BCP-47 tag against the registry without applying a default.
+ * Registry keys are compared case-insensitively while preserving their
+ * canonical spelling (for example `pt-BR`). If an exact regional match is not
+ * registered, a language-only tag such as `pt` may still match a `pt` entry.
+ */
+export function matchSupportedLocale(
+  value: string,
+): SupportedLocale | undefined {
+  const normalized = value.trim().replaceAll("_", "-").toLowerCase();
+  if (!normalized) return undefined;
+
+  const exact = SUPPORTED_LOCALES.find(
+    (locale) => locale.toLowerCase() === normalized,
+  );
+  if (exact) return exact;
+
+  const primary = normalized.split("-")[0] ?? "";
+  return SUPPORTED_LOCALES.find(
+    (locale) => !locale.includes("-") && locale.toLowerCase() === primary,
+  );
+}
+
+/**
  * Best-effort locale picker. Accepts a single tag ("en", "en-GB"), a full
  * Accept-Language string ("et,en-GB;q=0.9,en;q=0.8"), or null/undefined.
- * Tags are lowercased and reduced to their primary subtag, then matched against
- * the registry. RFC 9110 q-weights are honoured (highest q wins; header order
+ * Tags first match a registered regional tag exactly, then a registered
+ * language-only primary subtag. RFC 9110 q-weights are honoured (highest q wins; header order
  * breaks ties; no `q` defaults to 1.0). Anything unresolved → DEFAULT_LOCALE.
  */
 export function resolveLocale(input?: string | null): SupportedLocale {
@@ -63,8 +86,8 @@ export function resolveLocale(input?: string | null): SupportedLocale {
     .sort((a, b) => (b.q !== a.q ? b.q - a.q : a.index - b.index));
 
   for (const candidate of candidates) {
-    const primary = candidate.tag.toLowerCase().split("-")[0] ?? "";
-    if (isSupportedLocale(primary)) return primary;
+    const locale = matchSupportedLocale(candidate.tag);
+    if (locale) return locale;
   }
 
   return DEFAULT_LOCALE;

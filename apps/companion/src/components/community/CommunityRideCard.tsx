@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -18,6 +19,7 @@ import { useFormat } from "@/format/FormatProvider";
  * engagement endpoints; `viewer_has_liked` drives the initial heart state.
  */
 export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
+  const t = useTranslation();
   const router = useRouter();
   const format = useFormat();
   const preview = buildRoutePreview(ride.route_geometry, 200, 8);

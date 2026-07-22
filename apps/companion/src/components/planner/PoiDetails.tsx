@@ -10,7 +10,7 @@ import {
   Utensils,
   type LucideIcon,
 } from "lucide-react";
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 import type { Poi } from "@/lib/planner/types";
 import type { PassStatus } from "@/lib/passes-summary";
 import { useFormat } from "@/format/FormatProvider";
@@ -170,6 +170,7 @@ function DetailRow({
  * nodes render nothing.
  */
 export function PoiDetails({ poi }: { poi: Poi }) {
+  const t = useTranslation();
   const format = useFormat();
   const d = readPoiDetails(poi);
   if (!hasPoiDetails(d)) return null;

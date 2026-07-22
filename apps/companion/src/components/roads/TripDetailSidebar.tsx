@@ -1,6 +1,7 @@
 "use client";
 
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, MapPin, X } from "lucide-react";
@@ -50,6 +51,7 @@ export function TripDetailSidebar({
   onClose,
   anchor = "container",
 }: TripDetailSidebarProps) {
+  const t = useTranslation();
   const open = state.status !== "idle";
   const [entered, setEntered] = useState(false);
   const [mounted, setMounted] = useState(open);
@@ -108,7 +110,7 @@ export function TripDetailSidebar({
         <StatusBlock
           icon={<Loader2 size={18} className="animate-spin" />}
           title={t("Loading trip")}
-          body={t("Fetching the route, distance and stops. ")}
+          body={t("Fetching the route, distance and stops.")}
         />
       )}
       {snapshot.status === "error" && (
@@ -124,6 +126,7 @@ export function TripDetailSidebar({
 }
 
 function TripBody({ trip }: { trip: TripDetail }) {
+  const t = useTranslation();
   const format = useFormat();
   const distanceKm =
     trip.distance_km ??

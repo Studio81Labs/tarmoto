@@ -57,15 +57,21 @@ export const api = createTarmotoClient({
 export const $api = createTarmotoQueryClient(api);
 
 export class ApiError extends Error {
-  readonly localizedUserMessage = true as const;
+  readonly localizedUserMessage?: true;
   readonly status: number;
   readonly body: unknown;
 
-  constructor(message: string, status: number, body: unknown) {
+  constructor(
+    message: string,
+    status: number,
+    body: unknown,
+    localizedUserMessage = false,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    if (localizedUserMessage) this.localizedUserMessage = true;
   }
 }
 
@@ -124,6 +130,7 @@ export async function openApiData<T>(
       apiErrorMessage(result.error, status),
       status,
       result.error,
+      true,
     );
   }
   return { data: result.data as T };

@@ -236,8 +236,9 @@ export default async function SharedRoadMapPage({
       <footer className="border-t border-line bg-paper">
         <div className="mx-auto flex max-w-[980px] flex-wrap items-center justify-between gap-4 px-7 py-[22px]">
           <Mono className="text-[11px] tracking-[0.5px] text-fg-mute">
-            {t("TARMOTO · SHARED VIA PUBLIC LINK ·")}{" "}
-            {new Date().getUTCFullYear()}
+            {t("TARMOTO · SHARED VIA PUBLIC LINK · {year}", {
+              year: new Date().getUTCFullYear(),
+            })}
           </Mono>
           <Link
             href="/"

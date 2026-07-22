@@ -1,5 +1,11 @@
 "use client";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import {
+  getUserFacingErrorMessage,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -118,6 +124,7 @@ type LoadState =
       message: string;
     };
 export default function AchievementsPage() {
+  const t = useTranslation();
   const format = useFormat();
   const userId = useAuthStore((s) => s.user?.id);
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -166,6 +173,7 @@ export default function AchievementsPage() {
         const snapshot = await fetchGamificationSnapshot(uid, {
           format,
           signal: controller.signal,
+          translate: t,
         });
         if (controller.signal.aborted) return;
         setState({ status: "ready", userId: uid, snapshot });
@@ -182,7 +190,7 @@ export default function AchievementsPage() {
         });
       }
     },
-    [format],
+    [t, format],
   );
   useEffect(() => {
     // The user changed (sign-in, sign-out, or account switch). Clear any
@@ -213,7 +221,7 @@ export default function AchievementsPage() {
       });
       setJoinError(null);
       try {
-        await joinChallenge(challengeId);
+        await joinChallenge(challengeId, { translate: t });
       } catch (err) {
         // Only surface the error to the user that initiated the join.
         // If the rider switched accounts while the request was in flight,
@@ -262,7 +270,7 @@ export default function AchievementsPage() {
         });
       }
     },
-    [userId, load],
+    [t, userId, load],
   );
   // Render-time guard: a snapshot tagged for a different user (because
   // the userId prop changed before the new fetch resolved) must NOT be
@@ -356,6 +364,7 @@ function Dashboard({
   onJoin: (id: string) => void;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const visibleChallenges = useMemo(
     () => activeChallenges(snapshot.challenges),
     [snapshot.challenges],
@@ -463,6 +472,7 @@ function Dashboard({
   );
 }
 function PageHeader() {
+  const t = useTranslation();
   return (
     <DashboardPageHeader
       stamp={t("Achievements")}
@@ -491,6 +501,7 @@ function TierHero({
   activeCount: number;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const accessToken = useAuthStore((s) => s.accessToken);
   const [progression, setProgression] = useState<RiderProgression | null>(null);
   const [rank, setRank] = useState<number | null>(null);
@@ -500,7 +511,7 @@ function TierHero({
     const controller = new AbortController();
     let cancelled = false;
     // Each widget is independent — a failed rank fetch still shows the tier.
-    void fetchProgression({ signal: controller.signal })
+    void fetchProgression({ signal: controller.signal, translate: t })
       .then((p) => {
         if (!cancelled) setProgression(p);
       })
@@ -515,6 +526,7 @@ function TierHero({
         return fetchRegionalLeaderboards({
           ...(region !== undefined ? { region } : {}),
           signal: controller.signal,
+          translate: t,
         });
       })
       .then((board) => {
@@ -525,7 +537,7 @@ function TierHero({
       cancelled = true;
       controller.abort();
     };
-  }, [accessToken]);
+  }, [accessToken, t]);
 
   // Brand-new riders (no XP) get no hero — matches the empty-state design.
   if (!progression || progression.xp <= 0) return null;
@@ -632,6 +644,7 @@ function SeasonalBanner({
   seasonal: SeasonalChallenge;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const fraction = seasonalProgress(seasonal);
   const daysLeft = formatDaysRemaining(seasonal.endsAt, new Date(), t);
   return (
@@ -697,6 +710,7 @@ function BadgeCard({
   badge: BadgeType;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const Icon = BADGE_ICONS[badge.icon] ?? Medal;
   const earned = Boolean(badge.earnedAt);
   const earnedLabel =
@@ -756,6 +770,7 @@ function ChallengeCard({
   onJoin: (id: string) => void;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const style = CATEGORY_STYLE[challenge.category];
   const fraction = challengeProgress(challenge);
   const percent = Math.round(fraction * 100);
@@ -763,7 +778,7 @@ function ChallengeCard({
   // Spec footer collapses the long "5 days left" / "Ends today" into a
   // tight mono `5 D LEFT`. Re-using `formatDaysRemaining` keeps the
   // expired / today branching in one place.
-  const daysFooter = formatDaysShort(challenge.endsAt);
+  const daysFooter = formatDaysShort(challenge.endsAt, t);
   const safePercent = Math.max(0, Math.min(100, percent));
   return (
     <div className="rounded-[14px] border border-line bg-cream p-[18px]">
@@ -824,7 +839,7 @@ function ChallengeCard({
         <span>
           {challenge.reward && (
             <>
-              {t("Reward \u00b7 ")}
+              {t("Reward ·")}
               <span className="font-bold text-ink">{challenge.reward}</span>
             </>
           )}
@@ -858,7 +873,11 @@ function ChallengeCard({
 // long form \u2014 the prose strings ("3 weeks left", "2w 3d left", "1 month
 // left") would be mislabelled "D LEFT" by a naive leading-digit regex,
 // understating the time remaining on multi-week / multi-month challenges.
-function formatDaysShort(endsAt: string, now: Date = new Date()): string {
+function formatDaysShort(
+  endsAt: string,
+  t: Translate,
+  now: Date = new Date(),
+): string {
   const end = new Date(endsAt).getTime();
   if (!Number.isFinite(end)) return t("Ongoing");
   const diffMs = end - now.getTime();
@@ -904,6 +923,7 @@ type LeaderboardLoad =
  * ranking so the section is never blank.
  */
 function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
+  const t = useTranslation();
   const [homeRegion, setHomeRegion] = useState<string | null>(null);
   const [scope, setScope] = useState<RegionScope>("global");
   const [dimension, setDimension] =
@@ -952,6 +972,7 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           region,
           currentUserId: userId,
           signal,
+          translate: t,
         });
         if (signal.aborted) return;
         setLoad({ status: "ready", data });
@@ -966,7 +987,7 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
         });
       }
     },
-    [region, userId],
+    [t, region, userId],
   );
   useEffect(() => {
     controllerRef.current?.abort();
@@ -1059,6 +1080,7 @@ function RegionalLeaderboardTable({
   dim: RegionalDimensionLeaderboard;
   format: Formatters;
 }) {
+  const t = useTranslation();
   // Surface `me` even when outside the top N. The backend already excludes
   // duplicates by design — `entries` and `me` only ever overlap on the same
   // row when the rider ranks in the visible window, in which case `me.rank`
@@ -1118,6 +1140,7 @@ function RegionalLeaderboardRow({
   zebra?: boolean;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const isMe = entry.isMe;
   const topThree = entry.rank >= 1 && entry.rank <= 3;
   return (
@@ -1187,6 +1210,7 @@ function MilestoneCard({
   progress: MilestoneProgress;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const label = formatMilestoneLabel(progress, format, t);
   return (
     <div className="rounded-[14px] border border-line bg-cream p-5">
@@ -1354,6 +1378,7 @@ function ErrorCard({
   message: string;
   onRetry: () => void;
 }) {
+  const t = useTranslation();
   return (
     <div
       role="alert"
@@ -1375,6 +1400,7 @@ function ErrorCard({
   );
 }
 function AchievementsSkeleton() {
+  const t = useTranslation();
   return (
     <div>
       <span role="status" className="sr-only">

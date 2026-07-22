@@ -1,20 +1,14 @@
 import { makeTranslator } from "@tarmoto/shared";
 import {
-  DEFAULT_LOCALE,
   LOCALES,
   SUPPORTED_LOCALES,
   resolveLocale,
-  setActiveLocale,
   tDynamic,
   translate,
 } from ".";
 import { companionCatalogs, en, type EnglishMessageKey } from "./locales";
 
 describe("companion i18n barrel", () => {
-  beforeEach(() => {
-    setActiveLocale(DEFAULT_LOCALE);
-  });
-
   it("translates a known companion catalog key", () => {
     expect(translate("Home")).toBe("Home");
   });

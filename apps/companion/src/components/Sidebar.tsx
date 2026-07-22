@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -31,7 +33,7 @@ import { useDropdown, useMediaQuery, usePersistentState } from "@/hooks";
 import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import { accountApi } from "@/lib/api";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 
 /** Product wordmark; names are intentionally locale-independent. */
 const WORDMARK = "TARMOTO";
@@ -165,6 +167,7 @@ function isItemActive(item: NavItem, pathname: string): boolean {
 }
 
 export function Sidebar() {
+  const t = useTranslation();
   const pathname = usePathname();
   // The rider's explicit choice, persisted. `null` = never toggled, so the
   // sidebar follows the viewport default below. Once they collapse/expand it
@@ -293,6 +296,7 @@ function SidebarItem({
   active: boolean;
   collapsed: boolean;
 }) {
+  const t = useTranslation();
   const label = t(item.label);
   const Icon = item.icon;
   return (
@@ -350,6 +354,7 @@ function SidebarFooter({ collapsed }: { collapsed: boolean }) {
  * (1st = full), derived from the real rank rather than the design's mock 68%.
  */
 function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
+  const t = useTranslation();
   const format = useFormat();
   const { contribution } = useContribution();
   if (collapsed || !contribution || contribution.km_mapped <= 0) return null;
@@ -399,7 +404,7 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
       <div className="mt-1 text-[20px] font-extrabold tracking-[-0.5px] text-cream">
         {mapped.value}{" "}
         <Mono className="text-[10px] font-medium text-cream/60">
-          {mapped.unit.toUpperCase()} {t("MAPPED")}
+          {t("{unit} MAPPED", { unit: mapped.unit.toUpperCase() })}
         </Mono>
       </div>
       {ranked && (
@@ -425,6 +430,7 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
 const GRACE_PERIOD_MS = 1500;
 
 function SidebarOfflineIndicator({ collapsed }: { collapsed: boolean }) {
+  const t = useTranslation();
   const status = useRealtimeStore((s) => s.status);
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
@@ -490,6 +496,7 @@ function SidebarOfflineIndicator({ collapsed }: { collapsed: boolean }) {
 }
 
 function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
+  const t = useTranslation();
   const { open, close, toggle, ref } = useDropdown();
   const [items, setItems] = useState<InAppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -540,7 +547,7 @@ function SidebarNotificationBell({ collapsed }: { collapsed: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [t, accessToken]);
 
   const markRead = (note: InAppNotification) => {
     if (note.read_at) {
@@ -647,6 +654,7 @@ function NotificationsDropdown({
   onMarkAllRead: () => void;
   onClose: () => void;
 }): ReactNode {
+  const t = useTranslation();
   const format = useFormat();
   return (
     <div
@@ -770,6 +778,7 @@ function hrefForNotification(note: InAppNotification): string {
 }
 
 function SidebarUserMenu({ collapsed }: { collapsed: boolean }) {
+  const t = useTranslation();
   const { data: session } = useSession();
   const user = session?.user;
   const { open, close, toggle, ref } = useDropdown();

@@ -1,8 +1,9 @@
 "use client";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import type { ReactNode } from "react";
 import { Users } from "lucide-react";
 import { PageHeader, Mono } from "@tarmoto/ui";
-import { t } from "@/i18n";
 import { CommunityTabsBar } from "./_CommunityTabsBar";
 import {
   useCommunityFeedTotal,
@@ -35,6 +36,7 @@ export function CommunityScaffold({
   collectionsBadge?: ReactNode;
   children: ReactNode;
 }) {
+  const t = useTranslation();
   const fallbackFeed = useCommunityFeedTotal();
   const fallbackCollections = useCommunityCollectionsTotal();
   const feed =

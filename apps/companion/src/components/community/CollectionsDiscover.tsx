@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Mono, Stamp } from "@tarmoto/ui";
@@ -39,6 +40,7 @@ function linePath(line: number[][]): string {
 }
 
 export function CollectionsDiscover({ search }: { search: string }) {
+  const t = useTranslation();
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const [items, setItems] = useState<DiscoverCollection[] | null>(null);
 
@@ -77,6 +79,7 @@ export function CollectionsDiscover({ search }: { search: string }) {
 }
 
 function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
+  const t = useTranslation();
   const [lines, setLines] = useState<number[][][]>([]);
   useEffect(() => {
     let cancelled = false;

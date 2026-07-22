@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { Mono } from "@tarmoto/ui";
 import {
   coalesceQualityRuns,
@@ -28,6 +29,7 @@ export function RouteQualityStrip({
   endLabel,
   onSegmentClick,
 }: RouteQualityStripProps) {
+  const t = useTranslation();
   const format = useFormat();
   if (segments.length === 0) return null;
   const totalKm = segments.reduce((sum, s) => sum + s.lengthKm, 0);

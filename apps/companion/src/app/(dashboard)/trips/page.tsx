@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
@@ -80,6 +81,7 @@ const STATUS_PILL: Record<TripStatus, string> = {
   completed: "bg-cream text-ink border border-line-strong",
 };
 export default function TripListPage() {
+  const t = useTranslation();
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
@@ -172,7 +174,7 @@ export default function TripListPage() {
     return () => {
       cancelled = true;
     };
-  }, [setTrips, userId]);
+  }, [t, setTrips, userId]);
   useEffect(() => {
     // On any userId change (sign-out, sign-in, or direct account switch)
     // drop the previous user's folder scope so it doesn't point at a folder
@@ -224,7 +226,7 @@ export default function TripListPage() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [t, userId]);
   const visibleTrips = useMemo(
     () => applyTripFilters(trips, filters),
     [trips, filters],
@@ -597,11 +599,11 @@ export default function TripListPage() {
         }
         message={
           confirmDelete?.kind === "folder"
-            ? t('"{name}" is deleted; trips inside become unfiled. ', {
+            ? t('"{name}" is deleted; trips inside become unfiled.', {
                 name: confirmDelete.folder.name,
               })
             : confirmDelete
-              ? t('"{name}" is deleted for good. This cannot be undone. ', {
+              ? t('"{name}" is deleted for good. This cannot be undone.', {
                   name: confirmDelete.trip.name,
                 })
               : ""
@@ -650,6 +652,7 @@ function FolderChipRow({
   onRename,
   onDelete,
 }: FolderChipRowProps) {
+  const t = useTranslation();
   // Spec uses pill-shaped folder filters above the toolbar: `All trips`
   // first, then user folders (rename / delete via the kebab), then
   // `Unfiled` and a dashed `+ New folder` affordance. Chips wrap to a
@@ -720,6 +723,7 @@ function FolderChip({
   onRename?: () => void;
   onDelete?: () => void;
 }) {
+  const t = useTranslation();
   const [open, setOpen] = useState(false);
   // Chip menus need to flip alignment based on where the chip
   // lands on the wrapping row. A leftmost wrapped chip with the
@@ -833,6 +837,7 @@ function TripToolbar({
   statusCounts: Record<TripStatus, number>;
   onChange: (next: TripFilters) => void;
 }) {
+  const t = useTranslation();
   const toggleStatus = (status: TripStatus) => {
     const next = new Set(filters.statuses);
     if (next.has(status)) next.delete(status);
@@ -920,6 +925,7 @@ function TripCard({
   onDelete,
   onMove,
 }: TripCardProps) {
+  const t = useTranslation();
   const format = useFormat();
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -1118,7 +1124,7 @@ function TripCard({
                 ))}
                 {folders.length === 0 && (
                   <p className="py-1 text-[11px] text-fg-dim">
-                    {t("No folders yet. Create one from the sidebar. ")}
+                    {t("No folders yet. Create one from the sidebar.")}
                   </p>
                 )}
               </div>
@@ -1218,6 +1224,7 @@ function FolderModal({
   onClose: () => void;
   onSubmit: (name: string) => void;
 }) {
+  const t = useTranslation();
   const [value, setValue] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   // Keep the latest onClose in a ref so the keydown effect doesn't re-add
@@ -1254,7 +1261,7 @@ function FolderModal({
         <h2 className="text-sm font-semibold text-ink mb-3">
           {mode === "create" ? t("New folder") : t("Rename folder")}
         </h2>
-        <FieldLabel htmlFor="folder-name">{t("Name ")}</FieldLabel>
+        <FieldLabel htmlFor="folder-name">{t("Name")}</FieldLabel>
         <Input
           id="folder-name"
           autoFocus
@@ -1268,7 +1275,7 @@ function FolderModal({
         {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            {t("Cancel ")}
+            {t("Cancel")}
           </Button>
           <Button type="submit" variant="accent" size="sm" uppercase>
             {mode === "create" ? t("Create") : t("Save")}

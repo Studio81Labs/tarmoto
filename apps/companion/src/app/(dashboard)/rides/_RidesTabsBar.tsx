@@ -1,8 +1,9 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+
 import type { ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { t } from "@/i18n";
 import { SubRouteTabs } from "@/components/SubRouteTabs";
 import {
   TimeWindowPills,
@@ -23,6 +24,7 @@ import {
 const ROOT_ROUTES = ["/rides", "/rides/road-map", "/rides/compare"];
 
 export function RidesTabsBar({ allRidesBadge }: { allRidesBadge?: ReactNode }) {
+  const t = useTranslation();
   const pathname = usePathname();
   const params = useSearchParams();
   const show = ROOT_ROUTES.includes(pathname);

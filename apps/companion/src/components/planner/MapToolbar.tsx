@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import {
   Bike,
   Coffee,
@@ -61,6 +62,7 @@ interface MapToolbarProps {
 }
 
 export function MapToolbar({ onPlace }: MapToolbarProps) {
+  const t = useTranslation();
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
 
@@ -72,7 +74,7 @@ export function MapToolbar({ onPlace }: MapToolbarProps) {
     <div className="absolute left-3 right-14 top-3 z-30 flex items-center gap-2">
       <div className="relative w-[240px] shrink-0 rounded-[10px] border border-line-strong bg-cream/95 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.10)]">
         <GeocodeSearchField
-          placeholder={t("Address search ")}
+          placeholder={t("Address search")}
           ariaLabel={t("Address search")}
           onSelect={onPlace}
           clearOnSelect

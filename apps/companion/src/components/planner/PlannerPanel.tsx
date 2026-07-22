@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import type { ReactNode } from "react";
 import { Heading, Stamp } from "@tarmoto/ui";
 
@@ -33,16 +34,17 @@ export function PlannerPanel({
   conditions,
   stops,
 }: PlannerPanelProps) {
+  const t = useTranslation();
   return (
     <aside className="flex min-h-0 flex-col border-l border-line bg-paper">
       <div className="shrink-0 px-5 pt-4">
-        <Stamp>{t("Route planner ")}</Stamp>
+        <Stamp>{t("Route planner")}</Stamp>
         <Heading size="md" as="h2" className="mt-1.5 text-[20px]">
-          {t("Plan & inspect ")}
+          {t("Plan & inspect")}
         </Heading>
         <p className="mt-1 text-[12px] leading-snug text-fg-dim">
           {t(
-            "Crowdsourced road quality on every metre — no Street View detours. ",
+            "Crowdsourced road quality on every metre — no Street View detours.",
           )}
         </p>
         <div

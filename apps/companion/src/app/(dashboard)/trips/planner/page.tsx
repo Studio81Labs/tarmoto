@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import {
   Fragment,
   useCallback,
@@ -227,6 +229,7 @@ const URL_PARAM_KEYS = {
   bbox: "bbox",
 } as const;
 export default function TripPlannerPage() {
+  const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
@@ -677,7 +680,7 @@ export default function TripPlannerPage() {
       cancelled = true;
       controller.abort();
     };
-  }, [selectedRoadSegmentId]);
+  }, [t, selectedRoadSegmentId]);
   // Shared with the map's Road Preview reroute: arm a one-shot animated
   // fit for whenever the rerouted line lands.
   const armFitAfterRoute = useCallback(() => {
@@ -785,7 +788,7 @@ export default function TripPlannerPage() {
     } finally {
       setSplitting(false);
     }
-  }, [applySplit, dailyKmTarget, forcedDays, format]);
+  }, [t, applySplit, dailyKmTarget, forcedDays, format]);
   // Changing the DAY CONTROLS while split means "recompute now" — route
   // and pref edits, by contrast, only mark the split stale (§5).
   const splitInputsRef = useRef({ dailyKmTarget, forcedDays });
@@ -1300,7 +1303,7 @@ export default function TripPlannerPage() {
   }, [plannerParams, setDraftPlannerParameters]);
   const closureRoutes = useMemo(
     () => buildTripClosureRoutes(displayedTrip, t),
-    [displayedTrip],
+    [t, displayedTrip],
   );
   const currentGenerationSignature = useMemo(
     () =>
@@ -1375,7 +1378,7 @@ export default function TripPlannerPage() {
       }
     }
     setRenameOpen(false);
-  }, [nameDraft, renameActiveTrip, serverTripId, canEditTripMetadata]);
+  }, [t, nameDraft, renameActiveTrip, serverTripId, canEditTripMetadata]);
   // Start over WITHOUT leaving the planner (rider feedback): drop the
   // working route, drawn region, splits and any server-trip binding so
   // the canvas is blank again. Pref controls keep their values.
@@ -1416,7 +1419,7 @@ export default function TripPlannerPage() {
     }
     setActiveTrip(null);
     router.push("/trips");
-  }, [router, serverTripId, setActiveTrip]);
+  }, [t, router, serverTripId, setActiveTrip]);
   // Dormant: the "Push to phone" toolbar action was pulled from the UI
   // (rider feedback — not needed for now). Kept intact for when the
   // itinerary-push flow returns; it is still the metadata+imported-route
@@ -1534,6 +1537,7 @@ export default function TripPlannerPage() {
       setSaving(false);
     }
   }, [
+    t,
     currentGenerationSignature,
     displayedTrip,
     generatedOptionsSignature,
@@ -1795,6 +1799,7 @@ export default function TripPlannerPage() {
       setSavingRoute(false);
     }
   }, [
+    t,
     savingRoute,
     routing,
     serverTripId,
@@ -2250,6 +2255,7 @@ export default function TripPlannerPage() {
       t("Place a start point first — click the map or type a place."),
     );
   }, [
+    t,
     dailyKmTarget,
     format,
     plannerRegion,
@@ -2342,6 +2348,7 @@ export default function TripPlannerPage() {
       }
     },
     [
+      t,
       format,
       plannerParams,
       plannerRegion,
@@ -2422,7 +2429,14 @@ export default function TripPlannerPage() {
         }
       }
     },
-    [plannerParams, plannerRegion, serverTripId, setActiveTrip, setGenerating],
+    [
+      t,
+      plannerParams,
+      plannerRegion,
+      serverTripId,
+      setActiveTrip,
+      setGenerating,
+    ],
   );
   const totalDistanceKm = useMemo(() => {
     if (!displayedTrip) return null;
@@ -2875,7 +2889,7 @@ export default function TripPlannerPage() {
               (displayedTrip?.days.length ?? 0) <= 1 ? (
                 <div className="flex items-center justify-between gap-2 rounded-[10px] border border-accent/40 bg-accent/10 px-3 py-2">
                   <span className="text-[11.5px] font-semibold text-ink">
-                    {t("Route changed ")}
+                    {t("Route changed")}
                   </span>
                   <button
                     type="button"
@@ -2993,7 +3007,7 @@ export default function TripPlannerPage() {
             <div className="flex flex-col gap-6">
               <div>
                 <div className="flex items-center justify-between">
-                  <SectionStamp n="01">{t("Route ")}</SectionStamp>
+                  <SectionStamp n="01">{t("Route")}</SectionStamp>
                   {isRoundtripMode ? (
                     <span className="mb-3 inline-flex items-center gap-1.5 font-mono text-[8.5px] font-bold tracking-[0.4px] text-accent">
                       <span
@@ -3024,7 +3038,7 @@ export default function TripPlannerPage() {
                   toggles the full controls inline (no modal, map stays
                   visible, changes re-route live). */}
               <div>
-                <SectionStamp n="02">{t("Route preferences ")}</SectionStamp>
+                <SectionStamp n="02">{t("Route preferences")}</SectionStamp>
                 <button
                   type="button"
                   aria-expanded={prefsOpen}
@@ -3052,7 +3066,7 @@ export default function TripPlannerPage() {
                       </span>
                     </span>
                     <span className="mt-1 block truncate text-[12px] font-bold text-ink">
-                      {buildPrefsSummary(currentRoutePrefs)}
+                      {buildPrefsSummary(currentRoutePrefs, t)}
                     </span>
                   </span>
                   <ChevronDown
@@ -3072,7 +3086,7 @@ export default function TripPlannerPage() {
                 >
                   <p className="mb-3.5 text-[11px] leading-relaxed text-fg-mute">
                     {t(
-                      "Applied to every new trip. Changing a value re-draws the route on the map live. ",
+                      "Applied to every new trip. Changing a value re-draws the route on the map live.",
                     )}
                   </p>
                   {/* Road preference — one card per row (rider
@@ -3153,7 +3167,7 @@ export default function TripPlannerPage() {
                     {!canEditTripMetadata ? (
                       <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
                         {t(
-                          "The trip-wide road character is set by the trip owner — use per-leg overrides for your edits. ",
+                          "The trip-wide road character is set by the trip owner — use per-leg overrides for your edits.",
                         )}
                       </p>
                     ) : null}
@@ -3290,11 +3304,11 @@ export default function TripPlannerPage() {
 
                 {isRoundtripMode ? (
                   <>
-                    <SectionStamp n="03">{t("Draft route ")}</SectionStamp>
+                    <SectionStamp n="03">{t("Draft route")}</SectionStamp>
                     {!isLoopRoute ? (
                       <p className="mb-3.5 text-[12px] leading-relaxed text-fg-dim">
                         {t(
-                          "No finish set — Tarmoto will loop you back to your start. ",
+                          "No finish set — Tarmoto will loop you back to your start.",
                         )}
                       </p>
                     ) : null}
@@ -3357,12 +3371,12 @@ export default function TripPlannerPage() {
                     </span>
                     <span className="mt-0.5 block text-[11.5px] leading-snug text-fg-dim">
                       {regionDrawing
-                        ? t("Drag a box on the map to scan it. ")
+                        ? t("Drag a box on the map to scan it.")
                         : plannerRegion
                           ? t(
-                              "Region set — drafting keeps the route inside it. ",
+                              "Region set — drafting keeps the route inside it.",
                             )
-                          : t("Find dense clusters of great road. ")}
+                          : t("Find dense clusters of great road.")}
                     </span>
                   </span>
                   <Star
@@ -3394,7 +3408,7 @@ export default function TripPlannerPage() {
                               distance: format.distanceKm(totalDistanceKm),
                             })}
                       </b>
-                      {t("Save it as-is, or add days below. ")}
+                      {t("Save it as-is, or add days below.")}
                     </p>
                   </div>
                 ) : null}
@@ -3515,7 +3529,7 @@ export default function TripPlannerPage() {
                     return perDay !== null && perDay > 400 ? (
                       <p className="mt-2 text-[11.5px] leading-snug text-quality-q2">
                         {t(
-                          "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route. ",
+                          "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route.",
                         )}
                       </p>
                     ) : null;
@@ -3541,12 +3555,12 @@ export default function TripPlannerPage() {
                   {(displayedTrip?.days.length ?? 0) > 1 ? (
                     <p className="mt-2 text-[11.5px] leading-snug text-fg-dim">
                       {t(
-                        "This trip's days are saved — edit them directly; re-splitting applies to a single working route. ",
+                        "This trip's days are saved — edit them directly; re-splitting applies to a single working route.",
                       )}
                     </p>
                   ) : splitStatus === "stale" ? (
                     <p className="mt-2 text-[11.5px] leading-snug text-accent">
-                      {t("Route changed — re-split to refresh the days. ")}
+                      {t("Route changed — re-split to refresh the days.")}
                     </p>
                   ) : null}
                 </div>
@@ -3566,7 +3580,7 @@ export default function TripPlannerPage() {
           conditions={
             <div className="flex flex-col gap-6">
               <div>
-                <SectionStamp n="01">{t("Seasonal passes ")}</SectionStamp>
+                <SectionStamp n="01">{t("Seasonal passes")}</SectionStamp>
                 <PassesPanel
                   month={travelMonth}
                   onMonthChange={setTravelMonth}
@@ -3583,7 +3597,7 @@ export default function TripPlannerPage() {
                 />
               </div>
               <div>
-                <SectionStamp n="02">{t("Closures & roadworks ")}</SectionStamp>
+                <SectionStamp n="02">{t("Closures & roadworks")}</SectionStamp>
                 <ClosuresPanel
                   month={travelMonth}
                   routes={conditionRoutes}
@@ -3652,7 +3666,7 @@ export default function TripPlannerPage() {
         open={confirmLeaveOpen}
         title={t("Leave this trip?")}
         message={t(
-          "You'll lose access to this trip and return to your trips. The owner can re-invite you later. ",
+          "You'll lose access to this trip and return to your trips. The owner can re-invite you later.",
         )}
         tone="danger"
         confirmLabel={t("Leave trip")}
@@ -3680,7 +3694,7 @@ export default function TripPlannerPage() {
       <ConfirmDialog
         open={renameOpen}
         title={t("Name this trip")}
-        message={t("Shown in your trips list and on exports. ")}
+        message={t("Shown in your trips list and on exports.")}
         confirmLabel={t("Save name")}
         onCancel={() => setRenameOpen(false)}
         onConfirm={confirmRename}
@@ -3711,9 +3725,9 @@ export default function TripPlannerPage() {
         message={
           pendingConfirm === "discard"
             ? t(
-                "The route is removed and a saved trip is deleted for good. This cannot be undone. ",
+                "The route is removed and a saved trip is deleted for good. This cannot be undone.",
               )
-            : t("This clears the current route from the planner. ")
+            : t("This clears the current route from the planner.")
         }
         tone={pendingConfirm === "discard" ? "danger" : "default"}
         confirmLabel={
@@ -4206,6 +4220,7 @@ function WaypointEditor({
   onAddVia?: (result: GeoResult) => void;
   onCreateEndpoint?: (role: "start" | "end", result: GeoResult) => void;
 }) {
+  const t = useTranslation();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [addingVia, setAddingVia] = useState(false);
   // Which leg's road-type picker is expanded (fromWaypointId), if any.
@@ -4233,7 +4248,7 @@ function WaypointEditor({
               {t("start")}
             </span>
             <GeocodeSearchField
-              placeholder={t("Type a place or click the map… ")}
+              placeholder={t("Type a place or click the map…")}
               ariaLabel={t("Search location for start waypoint")}
               onSelect={(result) => onCreateEndpoint("start", result)}
               clearOnSelect
@@ -4418,7 +4433,7 @@ function WaypointEditor({
               {t("finish")}
             </span>
             <GeocodeSearchField
-              placeholder={t("Type a place or click the map… ")}
+              placeholder={t("Type a place or click the map…")}
               ariaLabel={t("Search location for finish waypoint")}
               onSelect={(result) => onCreateEndpoint("end", result)}
               clearOnSelect
@@ -4435,7 +4450,7 @@ function WaypointEditor({
               style={{ background: SPINE_ROLE_COLORS.via }}
             />
             <GeocodeSearchField
-              placeholder={t("Search a place… ")}
+              placeholder={t("Search a place…")}
               ariaLabel={t("Search location for a new via point")}
               autoFocus
               clearOnSelect

@@ -1,5 +1,7 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { type EnglishMessageKey } from "@/i18n";
 import { useEffect, useState } from "react";
 import { FilterX, Search } from "lucide-react";
 import {
@@ -82,6 +84,7 @@ function useDebouncedNumberDraft(
 }
 
 export function RidesFilters({ state, update, reset }: Props) {
+  const t = useTranslation();
   // Local state for the search box — debounced before writing to URL.
   const [searchLocal, setSearchLocal] = useState(state.q ?? "");
   useEffect(() => {
@@ -171,7 +174,7 @@ export function RidesFilters({ state, update, reset }: Props) {
             bold/uppercase/tracking styles inherit into the field text
             otherwise (letter-spacing and text-transform cascade). */}
         <div className="flex flex-col gap-1.5">
-          <span className={labelClass}>{t("From ")}</span>
+          <span className={labelClass}>{t("From")}</span>
           <DatePicker
             ariaLabel={t("From date")}
             value={state.from ?? ""}
@@ -180,7 +183,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className={labelClass}>{t("To ")}</span>
+          <span className={labelClass}>{t("To")}</span>
           <DatePicker
             ariaLabel={t("To date")}
             value={state.to ?? ""}
@@ -189,7 +192,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className={labelClass}>{t("Min km ")}</span>
+          <span className={labelClass}>{t("Min km")}</span>
           <Input
             ariaLabel={t("Min km")}
             value={minKmLocal}
@@ -197,7 +200,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className={labelClass}>{t("Max km ")}</span>
+          <span className={labelClass}>{t("Max km")}</span>
           <Input
             ariaLabel={t("Max km")}
             value={maxKmLocal}

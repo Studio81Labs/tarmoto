@@ -1,5 +1,7 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
 import { useEffect, useState } from "react";
 import { Camera, ExternalLink, History, Loader2, X } from "lucide-react";
 import { Button, Heading, Mono, Pill } from "@tarmoto/ui";
@@ -66,7 +68,11 @@ function formatCapturedMonth(
 
 // Takes the formatter so the heading speaks the same unit as the
 // micro-strip tooltips and scale below it (miles for imperial riders).
-function segmentTitle(segment: RouteSegment, format: Formatters): string {
+function segmentTitle(
+  segment: RouteSegment,
+  format: Formatters,
+  t: Translate,
+): string {
   const length = format.distanceKm(segment.lengthKm);
   if (segment.band === "no_data") {
     return t("{distance} · no rider passes yet", { distance: length });
@@ -78,6 +84,7 @@ function segmentTitle(segment: RouteSegment, format: Formatters): string {
 }
 
 function StreetViewLink({ segment }: { segment: RouteSegment }) {
+  const t = useTranslation();
   const midpoint = plannerSegmentMidpoint(segment);
   if (!midpoint) return null;
   const href = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${midpoint.lat},${midpoint.lng}`;
@@ -90,7 +97,7 @@ function StreetViewLink({ segment }: { segment: RouteSegment }) {
       className="mt-3 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-fg-dim transition hover:text-ink"
     >
       <ExternalLink size={12} />
-      {t("Open in Google Street View ")}
+      {t("Open in Google Street View")}
     </a>
   );
 }
@@ -107,6 +114,7 @@ function StreetLevelThumb({
   preview: RoadPreview;
   tall?: boolean;
 }) {
+  const t = useTranslation();
   return (
     <div
       data-testid="street-level-thumb"
@@ -145,7 +153,7 @@ function StreetLevelThumb({
       <div className="absolute left-2.5 top-2 flex items-center gap-1.5 rounded-[5px] bg-ink/60 px-2 py-1">
         <Camera size={10} className="text-cream" />
         <Mono className="text-[8px] tracking-[0.4px] text-cream">
-          {preview.imageUrl ? t("MAPILLARY ") : t("NO STREET IMAGERY ")}
+          {preview.imageUrl ? t("MAPILLARY") : t("NO STREET IMAGERY")}
         </Mono>
       </div>
       {/* CC-BY-SA credit — Mapillary requires a visible credit LINKING back to
@@ -172,6 +180,7 @@ export function RoadPreviewPopover({
   onReroute,
   onOpenFullDetail,
 }: RoadPreviewPopoverProps) {
+  const t = useTranslation();
   const format = useFormat();
   const [preview, setPreview] = useState<RoadPreview | null>(null);
   // A coalesced run (`run:<first>:<last>`) carries only its FIRST child's
@@ -188,7 +197,7 @@ export function RoadPreviewPopover({
         className="mt-3.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line-strong bg-paper px-3 py-2 text-[12.5px] font-bold text-ink transition hover:border-ink"
       >
         <History size={13} />
-        {t("Full history & reviews ")}
+        {t("Full history & reviews")}
       </button>
     ) : null;
 
@@ -249,7 +258,7 @@ export function RoadPreviewPopover({
               style={{ background: tone }}
             />
             <Mono className="text-[10px] font-bold tracking-[1px] text-fg-mute">
-              {t("ROAD PREVIEW ")}
+              {t("ROAD PREVIEW")}
             </Mono>
           </div>
           <button
@@ -263,7 +272,7 @@ export function RoadPreviewPopover({
         </div>
 
         <div className="p-[18px]">
-          <Heading size="sm">{segmentTitle(segment, format)}</Heading>
+          <Heading size="sm">{segmentTitle(segment, format, t)}</Heading>
 
           {preview?.hasData ? (
             <>
@@ -298,7 +307,7 @@ export function RoadPreviewPopover({
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-quality-q2/60 bg-quality-q2/15 px-2.5 py-1">
                     <span className="h-[7px] w-[7px] rounded-full bg-quality-q2" />
                     <Mono className="text-[9.5px] font-bold tracking-[0.4px] text-[#A9762A]">
-                      {t("LOW CONFIDENCE ")}·{" "}
+                      {t("LOW CONFIDENCE")}·{" "}
                       {t("{count, plural, one {# PASS} other {# PASSES}}", {
                         count: preview.passes ?? 0,
                       })}
@@ -316,7 +325,7 @@ export function RoadPreviewPopover({
               {lowConf ? (
                 <p className="mt-2 text-[11.5px] leading-normal text-fg-dim">
                   {t(
-                    "Too few passes to be sure — treat this as provisional and check the section yourself. ",
+                    "Too few passes to be sure — treat this as provisional and check the section yourself.",
                   )}
                 </p>
               ) : null}
@@ -328,7 +337,7 @@ export function RoadPreviewPopover({
                     as="div"
                     className="mb-2 mt-[18px] text-[9.5px] tracking-[1px] text-fg-mute"
                   >
-                    {t("QUALITY ACROSS SECTION ")}
+                    {t("QUALITY ACROSS SECTION")}
                   </Mono>
                   <div
                     className="flex h-12 items-end gap-1 px-0.5"
@@ -377,7 +386,7 @@ export function RoadPreviewPopover({
                   as="div"
                   className="mb-2 text-[9.5px] tracking-[1px] text-fg-mute"
                 >
-                  {t("STREET-LEVEL CHECK ")}
+                  {t("STREET-LEVEL CHECK")}
                 </Mono>
                 <StreetLevelThumb preview={preview} />
                 {captured ? (
@@ -385,8 +394,9 @@ export function RoadPreviewPopover({
                     as="div"
                     className="mt-1.5 text-[9px] tracking-[0.3px] text-fg-mute"
                   >
-                    {t("captured ")}
-                    {captured} {t("· confirmation only ")}
+                    {t("captured {date} · confirmation only", {
+                      date: captured,
+                    })}
                   </Mono>
                 ) : null}
                 <StreetViewLink segment={segment} />
@@ -395,7 +405,7 @@ export function RoadPreviewPopover({
               {onReroute ? (
                 <div className="mt-[18px] flex gap-2">
                   <Button variant="ghost" size="sm" block onClick={onClose}>
-                    {t("Keep anyway ")}
+                    {t("Keep anyway")}
                   </Button>
                   <Button
                     variant="primary"
@@ -403,7 +413,7 @@ export function RoadPreviewPopover({
                     block
                     onClick={() => onReroute(segment)}
                   >
-                    {t("Reroute around this ")}
+                    {t("Reroute around this")}
                   </Button>
                 </div>
               ) : null}
@@ -418,8 +428,7 @@ export function RoadPreviewPopover({
               {captured ? (
                 <div className="mt-2 flex items-center gap-1.5">
                   <Mono className="text-[9.5px] uppercase tracking-[0.4px] text-fg-mute">
-                    {t("MAPILLARY · CAPTURED ")}
-                    {captured}
+                    {t("MAPILLARY · CAPTURED {date}", { date: captured })}
                   </Mono>
                 </div>
               ) : null}
@@ -433,13 +442,13 @@ export function RoadPreviewPopover({
                     {preview.osmSurfaceTag}
                   </Mono>
                   <Mono className="text-[10px] text-fg-mute">
-                    {t("· unverified ")}
+                    {t("· unverified")}
                   </Mono>
                 </div>
               ) : null}
               <p className="mt-3 text-[12.5px] leading-normal text-fg-dim">
-                {t("No one’s ridden this yet — ")}
-                <b className="text-ink">{t("be the first to map it. ")}</b>
+                {t("No one’s ridden this yet —")}
+                <b className="text-ink">{t("be the first to map it.")}</b>
               </p>
               <StreetViewLink segment={segment} />
               {onReroute ? (
@@ -450,10 +459,10 @@ export function RoadPreviewPopover({
                     block
                     onClick={() => onReroute(segment)}
                   >
-                    {t("Reroute around this ")}
+                    {t("Reroute around this")}
                   </Button>
                   <Button variant="primary" size="sm" block onClick={onClose}>
-                    {t("Keep in route ")}
+                    {t("Keep in route")}
                   </Button>
                 </div>
               ) : null}
@@ -466,7 +475,7 @@ export function RoadPreviewPopover({
                 aria-hidden
                 className="shrink-0 animate-spin"
               />
-              {t("Loading road preview… ")}
+              {t("Loading road preview…")}
             </p>
           )}
         </div>

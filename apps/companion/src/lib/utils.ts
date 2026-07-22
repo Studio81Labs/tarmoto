@@ -17,6 +17,11 @@ export const SURFACE_LABELS: Record<SurfaceType, EnglishMessageKey> = {
   unknown: "Unknown",
 };
 
+/** Catalog key for an open surface value from an older/newer backend. */
+export function surfaceTypeLabel(value: string): EnglishMessageKey {
+  return SURFACE_LABELS[value as SurfaceType] ?? "Unknown";
+}
+
 // ── Road Quality ──
 
 // Canonical ordering used everywhere the app renders tier lists (legends,

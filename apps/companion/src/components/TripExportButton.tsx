@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { Download } from "lucide-react";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
@@ -18,6 +19,7 @@ interface TripExportButtonProps {
  * first.
  */
 export function TripExportButton({ trip }: TripExportButtonProps) {
+  const t = useTranslation();
   const disabled = !trip;
   function handleGpx() {
     if (!trip) return;

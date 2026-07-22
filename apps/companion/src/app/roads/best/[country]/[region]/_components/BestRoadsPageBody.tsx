@@ -61,7 +61,7 @@ export async function BestRoadsPageBody({
       <main className="mx-auto max-w-5xl px-6 py-10">
         <nav className="mb-4 text-sm text-fg-dim">
           <Link href="/roads/best" className="hover:text-ink">
-            {t("Best roads ")}
+            {t("Best roads")}
           </Link>
           <span className="mx-2">/</span>
           <Link href={`/roads/best/${country.code}`} className="hover:text-ink">
@@ -84,14 +84,16 @@ export async function BestRoadsPageBody({
 
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">
-            {t("Best motorcycle roads in ")}
-            {displayRegionName}
+            {t("Best motorcycle roads in {region}", {
+              region: displayRegionName,
+            })}
           </h1>
           <p className="mt-3 max-w-3xl text-fg-dim">{description}</p>
           {region.bestSeason && (
             <p className="mt-2 text-sm text-fg-dim">
-              {t("Best season: ")}
-              {formatBestSeason(region.bestSeason, format, t)}
+              {t("Best season: {season}", {
+                season: formatBestSeason(region.bestSeason, format, t),
+              })}
             </p>
           )}
         </header>
@@ -136,18 +138,18 @@ export async function BestRoadsPageBody({
         {roads.length > 0 && (
           <section className="mb-12 rounded-xl border border-line bg-paper p-6">
             <h2 className="text-lg font-semibold">
-              {t("Plan a trip with these roads ")}
+              {t("Plan a trip with these roads")}
             </h2>
             <p className="mt-2 text-sm text-fg-dim">
               {t(
-                "Pre-load this list into your trip planner to build a multi-day ride around them. ",
+                "Pre-load this list into your trip planner to build a multi-day ride around them.",
               )}
             </p>
             <Link
               href={`/trip-planner?segments=${segmentIds}`}
               className="mt-4 inline-flex items-center rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink transition hover:brightness-95"
             >
-              {t("Plan a trip with these roads ")}
+              {t("Plan a trip with these roads")}
             </Link>
           </section>
         )}

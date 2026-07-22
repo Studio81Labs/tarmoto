@@ -95,7 +95,7 @@ describe("RidesTable", () => {
 
     const cells = within(row).getAllByRole("cell");
     // RIDE name + ride_type subtext (region/hazard omitted by design).
-    expect(within(row).getByText("trip")).toBeInTheDocument();
+    expect(within(row).getByText("Trip")).toBeInTheDocument();
     // KM via the format seam's splitDistanceKm (one decimal), AVG
     // (avg_speed) rounded no unit, LEAN with degree.
     expect(within(row).getByText("142.4")).toBeInTheDocument();

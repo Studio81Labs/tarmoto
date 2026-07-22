@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import type { ReactNode } from "react";
 import { Button } from "@tarmoto/ui";
 
@@ -39,6 +40,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const t = useTranslation();
   if (!open) return null;
 
   return (

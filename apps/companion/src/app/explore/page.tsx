@@ -1,5 +1,11 @@
 "use client";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import {
+  getUserFacingErrorMessage,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
@@ -172,6 +178,7 @@ function todayAsPreviewDate(): Date {
 // holds quality-shaped 0–5 values, not the 0–100 the slider implied,
 // so the filter was effectively a no-op for every realistic value.
 function ExplorerPageInner() {
+  const t = useTranslation();
   // SSR-stable initial value (true) avoids a hydration mismatch on
   // narrow viewports where a `matchMedia`-driven initializer would
   // return a different value than the server-rendered HTML. The
@@ -425,7 +432,7 @@ function ExplorerPageInner() {
       cancelled = true;
       controller.abort();
     };
-  }, [selectedSegmentId]);
+  }, [t, selectedSegmentId]);
   // Load the clicked trip's detail into the drawer (mirrors the segment fetch).
   useEffect(() => {
     if (!selectedTripId) {
@@ -457,7 +464,7 @@ function ExplorerPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTripId]);
+  }, [t, selectedTripId]);
   // Load the clicked ride's detail into the drawer.
   useEffect(() => {
     if (!selectedRideId) {
@@ -501,7 +508,7 @@ function ExplorerPageInner() {
       cancelled = true;
       controller.abort();
     };
-  }, [selectedRideId]);
+  }, [t, selectedRideId]);
   // Toggling a route overlay off closes its drawer.
   useEffect(() => {
     if (!showMyTrips) setSelectedTripId(null);
@@ -920,7 +927,7 @@ function ExplorerPageInner() {
             {isAuthenticated ? (
               <div className="relative w-[240px] shrink-0 rounded-[10px] border border-line-strong bg-cream/95 px-3 py-2 shadow-[0_4px_12px_rgba(14,14,16,0.10)]">
                 <GeocodeSearchField
-                  placeholder={t("Address search ")}
+                  placeholder={t("Address search")}
                   ariaLabel={t("Address search")}
                   onSelect={(place) => {
                     // Fly the actual MapLibre camera; MapCanvas reads
@@ -1000,7 +1007,7 @@ function ExplorerPageInner() {
                       : "text-fg-dim hover:text-ink"
                   }`}
                 >
-                  {t(label === "Map" ? "Map " : "Aerial ")}
+                  {t(label === "Map" ? "Map" : "Aerial")}
                 </button>
               ))}
             </div>
@@ -1017,7 +1024,7 @@ function ExplorerPageInner() {
                 className={overlayPillClass(showQualityOverlay)}
               >
                 <Layers3 size={14} />
-                {t("Road quality ")}
+                {t("Road quality")}
               </button>
               <button
                 type="button"
@@ -1026,7 +1033,7 @@ function ExplorerPageInner() {
                 className={overlayPillClass(showSurfaceOverlay)}
               >
                 <Layers3 size={14} />
-                {t("Surface ")}
+                {t("Surface")}
               </button>
               <button
                 type="button"
@@ -1035,7 +1042,7 @@ function ExplorerPageInner() {
                 className={overlayPillClass(showHazardOverlay)}
               >
                 <Siren size={14} />
-                {t("Hazards ")}
+                {t("Hazards")}
               </button>
               <button
                 type="button"
@@ -1044,7 +1051,7 @@ function ExplorerPageInner() {
                 className={overlayPillClass(showConditionsLayer)}
               >
                 <TriangleAlert size={14} />
-                {t("Conditions ")}
+                {t("Conditions")}
               </button>
               <button
                 type="button"
@@ -1053,7 +1060,7 @@ function ExplorerPageInner() {
                 className={overlayPillClass(showFunZones)}
               >
                 <Flame size={14} />
-                {t("Fun Zones ")}
+                {t("Fun Zones")}
               </button>
             </div>
           </div>
@@ -1073,7 +1080,7 @@ function ExplorerPageInner() {
               legend; pointer-events-none so it never blocks the map. */}
           {showFunZones && funZonesError && (
             <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-quality-q1/40 bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-red-700 shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
-              {t("Couldn't refresh Fun Zones for this area ")}
+              {t("Couldn't refresh Fun Zones for this area")}
             </div>
           )}
           {showMyRides && rideTracksTruncated && (
@@ -1201,6 +1208,7 @@ function InfoPanelContent({
   onFocusClosure: (closure: PlannerClosure) => void;
   onFocusPass: (pass: MountainPass) => void;
 }) {
+  const t = useTranslation();
   return (
     <>
       {conditionBbox ? (
@@ -1265,6 +1273,7 @@ function FunZonesBlock({
   onDrawRegion: () => void;
   onClearRegion: () => void;
 }) {
+  const t = useTranslation();
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -1335,7 +1344,7 @@ function FunZonesBlock({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
-                        {zone.name ?? funZoneFallbackName(zone, format)}
+                        {zone.name ?? funZoneFallbackName(zone, format, t)}
                       </span>
                       <span className="shrink-0 text-xs font-bold tabular-nums text-accent">
                         {format.decimal(zone.composite_score, 1)}
@@ -1372,6 +1381,7 @@ function FunZonesBlock({
 function funZoneFallbackName(
   zone: FunZoneListItem,
   format: ReturnType<typeof useFormat>,
+  t: Translate,
 ): string {
   const points = zone.boundary as unknown as Array<{
     lat: number;

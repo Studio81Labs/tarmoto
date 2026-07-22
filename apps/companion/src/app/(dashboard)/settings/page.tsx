@@ -1,5 +1,7 @@
 "use client";
-import { t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { type EnglishMessageKey } from "@/i18n";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -63,6 +65,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 // Hub is now a pure 2-col section grid per spec. Profile-editing UI
 // previously bundled into this page lives at /settings/profile.
 export default function SettingsHubPage() {
+  const t = useTranslation();
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <PageHeader

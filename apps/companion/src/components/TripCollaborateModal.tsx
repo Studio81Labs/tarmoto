@@ -1,5 +1,11 @@
 "use client";
-import { getUserFacingErrorMessage, t, type EnglishMessageKey } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import {
+  getUserFacingErrorMessage,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
 import {
   useCallback,
   useEffect,
@@ -112,6 +118,7 @@ export function TripCollaborateModal({
   mode = "full",
   onClose,
 }: TripCollaborateModalProps) {
+  const t = useTranslation();
   const suggestionsOnly = mode === "suggestions";
   const [tab, setTab] = useState<Tab>(
     suggestionsOnly ? "suggestions" : "invite",
@@ -171,10 +178,10 @@ export function TripCollaborateModal({
         if (existing) setShare((prev) => prev ?? existing);
       } catch (err) {
         if (session !== sessionRef.current) return;
-        setError(describeError(err));
+        setError(describeError(err, t));
       }
     })();
-  }, [open, trip, canCreateInviteLink, serverTripId]);
+  }, [t, open, trip, canCreateInviteLink, serverTripId]);
   const handleGenerate = useCallback(async () => {
     if (!trip || !canCreateInviteLink) return;
     const session = sessionRef.current;
@@ -182,7 +189,7 @@ export function TripCollaborateModal({
     setError(null);
     try {
       const { data } = await tripSharesApi.create({
-        title: trip.name || "Untitled trip",
+        title: trip.name || t("Untitled trip"),
         snapshot: tripSnapshotForSharing(trip) as unknown as Record<
           string,
           unknown
@@ -193,11 +200,11 @@ export function TripCollaborateModal({
       setShare(data);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(describeError(err));
+      setError(describeError(err, t));
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [canCreateInviteLink, serverTripId, trip]);
+  }, [t, canCreateInviteLink, serverTripId, trip]);
   const handleRevoke = useCallback(async () => {
     if (!share) return;
     const session = sessionRef.current;
@@ -210,11 +217,11 @@ export function TripCollaborateModal({
       setCopied(false);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(describeError(err));
+      setError(describeError(err, t));
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [share]);
+  }, [t, share]);
   const handleCopy = useCallback(async () => {
     if (!share) return;
     const url = buildInviteUrl(share.share_token);
@@ -224,7 +231,7 @@ export function TripCollaborateModal({
     } catch {
       setError(t("Copy failed — select the URL manually."));
     }
-  }, [share]);
+  }, [t, share]);
   // "Revoke & regenerate": invalidate the current group link and mint a
   // fresh one in a single action. The old token stops resolving the
   // moment the revoke lands; only then is the new share created so a
@@ -237,7 +244,7 @@ export function TripCollaborateModal({
     try {
       await tripSharesApi.revoke(share.id);
       const { data } = await tripSharesApi.create({
-        title: trip.name || "Untitled trip",
+        title: trip.name || t("Untitled trip"),
         snapshot: tripSnapshotForSharing(trip) as unknown as Record<
           string,
           unknown
@@ -249,11 +256,11 @@ export function TripCollaborateModal({
       setCopied(false);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(describeError(err));
+      setError(describeError(err, t));
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [serverTripId, share, trip]);
+  }, [t, serverTripId, share, trip]);
   // Roster (People tab + the count badge). Fetched once per open for
   // saved trips; PeopleTab mutations refresh it via this callback.
   const refreshCollaborators = useCallback(async () => {
@@ -265,9 +272,9 @@ export function TripCollaborateModal({
       setCollaborators(data);
     } catch (err) {
       if (session !== sessionRef.current) return;
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
-  }, [serverTripId]);
+  }, [t, serverTripId]);
   useEffect(() => {
     if (!open || !serverTripId) return;
     void refreshCollaborators();
@@ -304,17 +311,17 @@ export function TripCollaborateModal({
                   className="font-sans text-[19px] font-extrabold leading-[1.05] tracking-[-0.5px] text-ink"
                 >
                   {suggestionsOnly
-                    ? t("Suggestions ")
-                    : t("Collaborate on this trip ")}
+                    ? t("Suggestions")
+                    : t("Collaborate on this trip")}
                 </h2>
               </div>
               <p className="mt-1.5 max-w-[380px] text-[12.5px] leading-normal text-fg-dim">
                 {suggestionsOnly
                   ? t(
-                      "Propose route changes, vote on your group's ideas, and follow which ones get accepted. ",
+                      "Propose route changes, vote on your group's ideas, and follow which ones get accepted.",
                     )
                   : t(
-                      "Share a group link, gather route suggestions from your riders, and track the activity log. ",
+                      "Share a group link, gather route suggestions from your riders, and track the activity log.",
                     )}
               </p>
             </div>
@@ -464,17 +471,18 @@ function InviteTab({
   onRegenerate: () => void;
   onCopy: () => void;
 }) {
+  const t = useTranslation();
   if (!trip) {
     return (
       <HintBox>
-        {t("Generate or load a trip first to create an invite link. ")}
+        {t("Generate or load a trip first to create an invite link.")}
       </HintBox>
     );
   }
   if (!canCreateInviteLink) {
     return (
       <HintBox>
-        {t("Only trip owners and admins can create invite links. ")}
+        {t("Only trip owners and admins can create invite links.")}
       </HintBox>
     );
   }
@@ -502,7 +510,7 @@ function InviteTab({
       {share ? (
         <>
           <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-fg-dim">
-            {t("Invite link ")}
+            {t("Invite link")}
           </span>
           <div className="flex gap-2">
             <CopyField
@@ -519,13 +527,13 @@ function InviteTab({
               onClick={onCopy}
               leftIcon={copied ? <Check size={14} /> : <Copy size={14} />}
             >
-              {copied ? t("Copied ") : t("Copy ")}
+              {copied ? t("Copied") : t("Copy")}
             </Button>
           </div>
           <p className="mt-2.5 text-[11.5px] leading-normal text-fg-mute">
             {serverTripId
               ? t(
-                  "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
+                  "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote.",
                 )
               : t(
                   "Anyone with the link can view a read-only preview of this trip. Save the trip to the server to let riders join and collaborate.",
@@ -597,6 +605,7 @@ function PeopleTab({
   onChanged: () => Promise<void> | void;
   onPromoted?: ((id: string) => void) | undefined;
 }) {
+  const t = useTranslation();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AssignableTripRole>("editor");
   const [inviting, setInviting] = useState(false);
@@ -626,7 +635,7 @@ function PeopleTab({
       setNotice(t("Invite sent to {email}.", { email: recipient }));
       await onChanged();
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     } finally {
       setInviting(false);
     }
@@ -644,7 +653,7 @@ function PeopleTab({
       );
       await onChanged();
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const handleRemoveMember = async (memberUserId: string) => {
@@ -653,7 +662,7 @@ function PeopleTab({
       await tripCollabApi.removeMember(serverTripId, memberUserId);
       await onChanged();
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const handleRevokeInvite = async (inviteId: string) => {
@@ -662,7 +671,7 @@ function PeopleTab({
       await tripCollabApi.revokeInvite(serverTripId, inviteId);
       await onChanged();
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const total = collaborators
@@ -837,6 +846,7 @@ function RoleMenu({
   onRoleChange: (role: AssignableTripRole) => void;
   onRemove: () => void;
 }) {
+  const t = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   // The rows live in the modal body's `overflow-y-auto` scrollport, which
   // clips the menu on whichever side runs out of room — so pick the side
@@ -974,6 +984,7 @@ function SuggestionsTab({
   externalError?: string | null | undefined;
   onPromoted?: ((id: string) => void) | undefined;
 }) {
+  const t = useTranslation();
   const [localSuggestions, setLocalSuggestions] = useState<TripSuggestion[]>(
     [],
   );
@@ -1011,7 +1022,7 @@ function SuggestionsTab({
         if (cancelled) return;
         setLocalSuggestions(data);
       } catch (err) {
-        if (!cancelled) setError(describeError(err));
+        if (!cancelled) setError(describeError(err, t));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1019,7 +1030,7 @@ function SuggestionsTab({
     return () => {
       cancelled = true;
     };
-  }, [serverTripId, usingExternal]);
+  }, [t, serverTripId, usingExternal]);
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -1058,7 +1069,7 @@ function SuggestionsTab({
       setTitle("");
       setDescription("");
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     } finally {
       setCreating(false);
     }
@@ -1072,7 +1083,7 @@ function SuggestionsTab({
       );
       setSuggestions((prev) => prev.map((s) => (s.id === id ? data : s)));
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const handleUnvote = async (id: string) => {
@@ -1080,7 +1091,7 @@ function SuggestionsTab({
       const { data } = await tripCollabApi.unvoteSuggestion(serverTripId, id);
       setSuggestions((prev) => prev.map((s) => (s.id === id ? data : s)));
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const handleResolve = async (id: string, action: "accept" | "reject") => {
@@ -1091,7 +1102,7 @@ function SuggestionsTab({
           : await tripCollabApi.rejectSuggestion(serverTripId, id);
       setSuggestions((prev) => prev.map((s) => (s.id === id ? data : s)));
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const handleReopen = async (id: string) => {
@@ -1099,7 +1110,7 @@ function SuggestionsTab({
       const { data } = await tripCollabApi.reopenSuggestion(serverTripId, id);
       setSuggestions((prev) => prev.map((s) => (s.id === id ? data : s)));
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   const handleDelete = async (id: string) => {
@@ -1107,7 +1118,7 @@ function SuggestionsTab({
       await tripCollabApi.deleteSuggestion(serverTripId, id);
       setSuggestions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     }
   };
   // Every member may propose and vote (backend opened this to viewers);
@@ -1155,11 +1166,11 @@ function SuggestionsTab({
                   fill="currentColor"
                   className="shrink-0 text-accent"
                 />
-                {t("Propose an alternative ")}
+                {t("Propose an alternative")}
               </h3>
               <p className="mb-3 mt-1 text-xs leading-snug text-fg-dim">
                 {t(
-                  "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
+                  "Share a route change idea with your group. Members can vote; the trip owner can accept or reject.",
                 )}
               </p>
             </>
@@ -1198,7 +1209,7 @@ function SuggestionsTab({
       ) : (
         <HintBox>
           {t(
-            "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below. ",
+            "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below.",
           )}
         </HintBox>
       )}
@@ -1216,7 +1227,7 @@ function SuggestionsTab({
 
       {suggestions.length === 0 && !loading && !externalError && (
         <HintBox>
-          {t("No suggestions yet — be the first to propose a route change. ")}
+          {t("No suggestions yet — be the first to propose a route change.")}
         </HintBox>
       )}
 
@@ -1317,6 +1328,7 @@ function SuggestionCard({
   onReopen: () => void;
   onDelete: () => void;
 }) {
+  const t = useTranslation();
   const isOpen = suggestion.status === "open";
   return (
     <li
@@ -1338,8 +1350,7 @@ function SuggestionCard({
               size={18}
               fontSize={8}
             />
-            {t("by ")}
-            {suggestion.suggester_display_name}
+            {t("by {name}", { name: suggestion.suggester_display_name })}
           </p>
         </div>
         <span
@@ -1387,14 +1398,14 @@ function SuggestionCard({
                 size="sm"
                 onClick={() => onResolve("accept")}
               >
-                {t("Accept ")}
+                {t("Accept")}
               </Button>
               <Button
                 variant="danger"
                 size="sm"
                 onClick={() => onResolve("reject")}
               >
-                {t("Reject ")}
+                {t("Reject")}
               </Button>
             </>
           )}
@@ -1464,6 +1475,7 @@ function ActivityTab({
   serverTripId: string | null;
   onPromoted?: ((id: string) => void) | undefined;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const [entries, setEntries] = useState<TripActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1489,7 +1501,7 @@ function ActivityTab({
           return [...liveOnly, ...data.activity];
         });
       } catch (err) {
-        if (!cancelled) setError(describeError(err));
+        if (!cancelled) setError(describeError(err, t));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1497,7 +1509,7 @@ function ActivityTab({
     return () => {
       cancelled = true;
     };
-  }, [serverTripId]);
+  }, [t, serverTripId]);
   useEffect(() => {
     if (!serverTripId) return;
     const off = onTripActivity((payload) => {
@@ -1543,7 +1555,7 @@ function ActivityTab({
     return (
       <HintBox>
         {t(
-          "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ",
+          "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here.",
         )}
       </HintBox>
     );
@@ -1567,7 +1579,7 @@ function ActivityTab({
                     <UserAvatar name={actor} size={30} fontSize={10} />
                     <div className="min-w-0 flex-1 text-[13px] text-ink">
                       <b className="font-bold">{actor}</b>{" "}
-                      {describeActivityAction(entry)}
+                      {describeActivityAction(entry, t)}
                     </div>
                     <time
                       dateTime={entry.created_at}
@@ -1613,12 +1625,13 @@ function PromoteTripCTA({
   body: string;
   onPromoted?: ((id: string) => void) | undefined;
 }) {
+  const t = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!trip) {
     return (
       <HintBox>
-        {t("Generate or load a trip first to enable collaboration. ")}
+        {t("Generate or load a trip first to enable collaboration.")}
       </HintBox>
     );
   }
@@ -1628,7 +1641,7 @@ function PromoteTripCTA({
     try {
       const { tripsApi } = await import("@/lib/api");
       const { data } = await tripsApi.create({
-        title: trip.name || "Untitled trip",
+        title: trip.name || t("Untitled trip"),
         num_days: trip.days.length || 1,
       });
       const serverId = (
@@ -1638,7 +1651,7 @@ function PromoteTripCTA({
       ).id;
       if (serverId && onPromoted) onPromoted(serverId);
     } catch (err) {
-      setError(describeError(err));
+      setError(describeError(err, t));
     } finally {
       setLoading(false);
     }
@@ -1715,7 +1728,10 @@ function ErrorAlert({
  * Action clause WITHOUT the actor — the timeline row renders the actor
  * name separately (bold, per the v2 design) in front of this text.
  */
-function describeActivityAction(entry: TripActivityEntry): string {
+function describeActivityAction(
+  entry: TripActivityEntry,
+  t: Translate,
+): string {
   switch (entry.action) {
     case "member_joined":
       return t("joined the trip");
@@ -1814,7 +1830,7 @@ function groupActivityByDay(
   }
   return groups;
 }
-function describeError(err: unknown): string {
+function describeError(err: unknown, t: Translate): string {
   if (err instanceof ApiError)
     return getUserFacingErrorMessage(
       err,

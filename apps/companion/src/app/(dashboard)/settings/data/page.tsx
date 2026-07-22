@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import {
@@ -37,7 +39,7 @@ type ExportView = Awaited<
 // treats `status === "ready"` as terminal regardless of whether
 // `downloadUrl` came through. Without this, a (contract-breaking) ready
 // row with a falsy URL would trap the user on a spinner forever.
-function nextExportState(view: ExportView): ExportState | null {
+function nextExportState(view: ExportView, t: Translate): ExportState | null {
   if (view.status === "ready") {
     if (view.downloadUrl) {
       return {
@@ -77,6 +79,7 @@ const EXPORT_CONTENTS = [
   "Hazard reports you've submitted",
 ];
 export default function DataPage() {
+  const t = useTranslation();
   const user = useAuthStore((s) => s.user);
   // Gate the export button on `AuthSync` hydrating the access
   // token. The data page is reachable on a hard navigation
@@ -95,7 +98,7 @@ export default function DataPage() {
     setExportState({ kind: "requesting" });
     try {
       const { data: view } = await accountApi.requestDataExport();
-      const next = nextExportState(view);
+      const next = nextExportState(view, t);
       if (next) setExportState(next);
       else setExportState({ kind: "polling", id: view.id });
     } catch (err) {
@@ -148,7 +151,7 @@ export default function DataPage() {
         const { data: view } = await accountApi.getDataExport(pollingId);
         if (cancelled) return;
         consecutiveErrors = 0;
-        const next = nextExportState(view);
+        const next = nextExportState(view, t);
         if (next) {
           setExportState(next);
           return;
@@ -175,7 +178,7 @@ export default function DataPage() {
       cancelled = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [pollingId]);
+  }, [t, pollingId]);
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       <SettingsSubpageHeader
@@ -195,11 +198,11 @@ export default function DataPage() {
           </div>
           <div>
             <Stamp as="h2" className="mb-1 block">
-              {t("Download my data ")}
+              {t("Download my data")}
             </Stamp>
             <p className="mt-0.5 text-[12px] text-fg-dim">
               {t(
-                "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days. ",
+                "We'll prepare a ZIP archive with everything tied to your account. The download link appears here when ready and stays valid for 7 days.",
               )}
             </p>
           </div>
@@ -227,10 +230,10 @@ export default function DataPage() {
             onClick={requestExport}
           >
             {exportState.kind === "requesting"
-              ? t("Requesting… ")
+              ? t("Requesting…")
               : exportState.kind === "polling"
-                ? t("Assembling your data… ")
-                : t("Request export ")}
+                ? t("Assembling your data…")
+                : t("Request export")}
           </Button>
 
           {exportState.kind === "polling" && (
@@ -238,7 +241,7 @@ export default function DataPage() {
               role="status"
               className="inline-flex items-center gap-1.5 text-[13px] text-fg-dim"
             >
-              {t("Usually takes under a minute. ")}
+              {t("Usually takes under a minute.")}
             </span>
           )}
           {exportState.kind === "ready" && (
@@ -249,7 +252,7 @@ export default function DataPage() {
               className="inline-flex items-center gap-1.5 text-[13px] text-accent underline hover:brightness-95"
             >
               <Download size={14} />
-              {t("Download your data (link expires in 7 days) ")}
+              {t("Download your data (link expires in 7 days)")}
             </a>
           )}
           {exportState.kind === "error" && (
@@ -271,11 +274,11 @@ export default function DataPage() {
           </div>
           <div>
             <Stamp as="h2" className="mb-1 block text-quality-q1">
-              {t("Danger zone ")}
+              {t("Danger zone")}
             </Stamp>
             <p className="mt-0.5 max-w-[520px] text-[12px] leading-[1.5] text-quality-q1/80">
               {t(
-                "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone. ",
+                "Permanently removes your profile, rides, routes, reviews and hazard reports within 30 days. Anonymized road quality contributions stay in the community dataset (no personal identifiers). This action cannot be undone.",
               )}
             </p>
           </div>
@@ -288,7 +291,7 @@ export default function DataPage() {
             leftIcon={<Trash2 size={14} />}
             onClick={() => setConfirmOpen(true)}
           >
-            {t("Delete my account… ")}
+            {t("Delete my account…")}
           </Button>
         </div>
       </Card>
@@ -307,6 +310,7 @@ interface DeleteConfirmModalProps {
   onClose: () => void;
 }
 function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
+  const t = useTranslation();
   const [typed, setTyped] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<DeleteState>({ kind: "idle" });
@@ -349,7 +353,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               id="delete-account-title"
               className="font-sans text-[18px] font-extrabold tracking-[-0.5px] text-ink"
             >
-              {t("Delete account permanently ")}
+              {t("Delete account permanently")}
             </h3>
           </div>
           <button
@@ -366,17 +370,17 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
         <div className="space-y-4 p-5">
           <p className="text-[14px] text-ink">
             {t(
-              "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation. ",
+              "This will schedule your account and all associated personal data for deletion within 30 days. We'll email you a confirmation.",
             )}
           </p>
           <p className="text-[14px] text-fg-dim">
-            {t("To confirm, type your email address")}{" "}
-            <span className="font-mono text-ink">{email}</span>
-            {t("below. ")}
+            {t("To confirm, type your email address {email} below.", {
+              email,
+            })}
           </p>
           <div>
             <FieldLabel htmlFor="delete-confirm-email">
-              {t("Your email address ")}
+              {t("Your email address")}
             </FieldLabel>
             <Input
               id="delete-confirm-email"
@@ -390,7 +394,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
           </div>
           <div>
             <FieldLabel htmlFor="delete-confirm-password">
-              {t("Your password ")}
+              {t("Your password")}
             </FieldLabel>
             <PasswordInput
               id="delete-confirm-password"
@@ -408,7 +412,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
 
         <footer className="flex items-center justify-end gap-2 border-t border-line p-5">
           <Button variant="ghost" disabled={busy} onClick={onClose}>
-            {t("Cancel ")}
+            {t("Cancel")}
           </Button>
           <Button
             variant="danger-solid"
@@ -419,7 +423,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
             leftIcon={<Trash2 size={14} />}
             onClick={confirmDelete}
           >
-            {busy ? t("Deleting… ") : t("Delete account ")}
+            {busy ? t("Deleting…") : t("Delete account")}
           </Button>
         </footer>
       </div>

@@ -1,8 +1,10 @@
 "use client";
 
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
+
 import type { RideStats } from "@tarmoto/shared";
 import { MetricTile, type MetricTileProps } from "@tarmoto/ui";
-import { t } from "@/i18n";
 import { useFormat } from "@/format/FormatProvider";
 
 const DASH = "—";
@@ -11,7 +13,10 @@ const DASH = "—";
  * Backend serves unrounded hour totals; round for display, but drop to minutes
  * for sub-hour windows so a 20-minute total doesn't floor to "0 HRS".
  */
-function formatRideTime(hours: number): { value: number; unit: string } {
+function formatRideTime(
+  hours: number,
+  t: Translate,
+): { value: number; unit: string } {
   if (hours > 0 && hours < 1) {
     return { value: Math.round(hours * 60), unit: t("MIN") };
   }
@@ -41,6 +46,7 @@ export function RideKpiCards({
   stats: RideStats | null;
   error?: boolean;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const has = stats != null;
   // Distance honours the rider's unit preference (km/m vs mi/ft) via the
@@ -49,7 +55,7 @@ export function RideKpiCards({
   const distance = has ? format.splitDistanceKm(stats.total_distance_km) : null;
   const distanceUnit =
     distance?.unit ?? (format.units === "imperial" ? "mi" : "km");
-  const rideTime = formatRideTime(stats?.total_hours ?? 0);
+  const rideTime = formatRideTime(stats?.total_hours ?? 0, t);
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
   // ink + accent "proudest metric"; the rest are default cream tiles.

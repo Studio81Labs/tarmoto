@@ -1,10 +1,10 @@
 "use client";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { PageHeader } from "@tarmoto/ui";
-import { t } from "@/i18n";
-
 /**
  * Shared chrome for every `/settings/*` sub-page. Spec: v2-pages.jsx
  * Settings views — every sub-page leads with a `← Settings` back link,
@@ -26,6 +26,7 @@ export function SettingsSubpageHeader({
   sub: string;
   right?: ReactNode;
 }) {
+  const t = useTranslation();
   return (
     <>
       <Link

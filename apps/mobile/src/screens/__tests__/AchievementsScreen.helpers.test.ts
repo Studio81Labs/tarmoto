@@ -193,7 +193,7 @@ describe("metricUnit", () => {
     expect(metricUnit("unique_segments")).toBe("roads");
   });
   it("falls back to the raw metric for unknowns", () => {
-    expect(metricUnit("freshly_added_metric")).toBe("freshly_added_metric");
+    expect(metricUnit("freshly_added_metric")).toBe("units");
   });
 });
 
@@ -403,9 +403,7 @@ describe("formatChallengeProgress", () => {
     expect(formatChallengeMetric(200, "total_km")).toBe("124.3 mi");
   });
 
-  it("uses the raw metric key as the unit for unknown metrics — matching metricUnit's fallback", () => {
-    expect(formatChallengeProgress(5, 10, "fresh_metric")).toBe(
-      "5 / 10 fresh_metric",
-    );
+  it("uses the cataloged generic unit for unknown metrics", () => {
+    expect(formatChallengeProgress(5, 10, "fresh_metric")).toBe("5 / 10 units");
   });
 });

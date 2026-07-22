@@ -16,7 +16,11 @@
 import type { components } from "@tarmoto/openapi-client";
 import type { Formatters } from "@tarmoto/shared";
 import { api } from "@/lib/api";
-import { t, type EnglishMessageKey } from "@/i18n";
+import {
+  t as englishTranslate,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
 import {
   buildLiveSnapshot,
   mapRegionalLeaderboards,
@@ -39,7 +43,11 @@ export class GamificationFetchError extends Error {
   }
 }
 
-function errorMessage(error: unknown, fallback: EnglishMessageKey): string {
+function errorMessage(
+  error: unknown,
+  fallback: EnglishMessageKey,
+  t: Translate,
+): string {
   void error;
   return t(fallback);
 }
@@ -47,6 +55,8 @@ function errorMessage(error: unknown, fallback: EnglishMessageKey): string {
 export interface FetchOptions {
   /** Aborts the in-flight fetch when triggered (page unmount, user switch). */
   signal?: AbortSignal | undefined;
+  /** Request-bound translator supplied by the rendering surface. */
+  translate?: Translate | undefined;
 }
 
 export interface FetchGamificationSnapshotOptions extends FetchOptions {
@@ -73,7 +83,11 @@ export async function fetchBadges(
   const status = response.status;
   if (error) {
     throw new GamificationFetchError(
-      errorMessage(error, "Could not load badges"),
+      errorMessage(
+        error,
+        "Could not load badges",
+        options.translate ?? englishTranslate,
+      ),
       status,
     );
   }
@@ -89,7 +103,11 @@ export async function fetchActiveChallenges(
   const status = response.status;
   if (error) {
     throw new GamificationFetchError(
-      errorMessage(error, "Could not load challenges"),
+      errorMessage(
+        error,
+        "Could not load challenges",
+        options.translate ?? englishTranslate,
+      ),
       status,
     );
   }
@@ -105,7 +123,11 @@ export async function fetchMeProfile(
   const status = response.status;
   if (error || !data) {
     throw new GamificationFetchError(
-      errorMessage(error, "Could not load your profile summary"),
+      errorMessage(
+        error,
+        "Could not load your profile summary",
+        options.translate ?? englishTranslate,
+      ),
       status,
     );
   }
@@ -122,7 +144,11 @@ export async function fetchProgression(
   const status = response.status;
   if (error || !data) {
     throw new GamificationFetchError(
-      errorMessage(error, "Could not load your progression"),
+      errorMessage(
+        error,
+        "Could not load your progression",
+        options.translate ?? englishTranslate,
+      ),
       status,
     );
   }
@@ -143,7 +169,11 @@ export async function fetchChallengeDetail(
   const status = response.status;
   if (error || !data) {
     throw new GamificationFetchError(
-      errorMessage(error, "Could not load challenge details"),
+      errorMessage(
+        error,
+        "Could not load challenge details",
+        options.translate ?? englishTranslate,
+      ),
       status,
     );
   }
@@ -155,7 +185,10 @@ export async function fetchChallengeDetail(
  * a click that races against an existing entry doesn't surface an error.
  * 404 / other errors propagate so the page can show a toast.
  */
-export async function joinChallenge(challengeId: string): Promise<void> {
+export async function joinChallenge(
+  challengeId: string,
+  options: Pick<FetchOptions, "translate"> = {},
+): Promise<void> {
   const { error, response } = await api.POST(
     "/api/v1/challenges/{challengeId}/join",
     { params: { path: { challengeId } } },
@@ -164,7 +197,11 @@ export async function joinChallenge(challengeId: string): Promise<void> {
   if (!error) return;
   if (status === 409) return;
   throw new GamificationFetchError(
-    errorMessage(error, "Could not join challenge"),
+    errorMessage(
+      error,
+      "Could not join challenge",
+      options.translate ?? englishTranslate,
+    ),
     status,
   );
 }
@@ -188,16 +225,20 @@ export async function fetchGamificationSnapshot(
   userId: string,
   options: FetchGamificationSnapshotOptions,
 ): Promise<GamificationSnapshot> {
-  const { format, signal } = options;
+  const { format, signal, translate = englishTranslate } = options;
   const [badges, challenges, meProfile] = await Promise.all([
-    fetchBadges(userId, { signal }),
-    fetchActiveChallenges({ signal }),
-    fetchMeProfile({ signal }),
+    fetchBadges(userId, { signal, translate }),
+    fetchActiveChallenges({ signal, translate }),
+    fetchMeProfile({ signal, translate }),
   ]);
   const challengeDetails = await Promise.all(
-    challenges.map((c) => fetchChallengeDetail(c.id, { signal })),
+    challenges.map((c) => fetchChallengeDetail(c.id, { signal, translate })),
   );
-  return buildLiveSnapshot({ badges, challengeDetails, meProfile }, format, t);
+  return buildLiveSnapshot(
+    { badges, challengeDetails, meProfile },
+    format,
+    translate,
+  );
 }
 
 export interface FetchRegionalLeaderboardsOptions extends FetchOptions {
@@ -241,7 +282,11 @@ export async function fetchRegionalLeaderboards(
   const status = response.status;
   if (error || !data) {
     throw new GamificationFetchError(
-      errorMessage(error, "Could not load regional leaderboards"),
+      errorMessage(
+        error,
+        "Could not load regional leaderboards",
+        options.translate ?? englishTranslate,
+      ),
       status,
     );
   }

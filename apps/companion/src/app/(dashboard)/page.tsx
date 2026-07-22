@@ -1,5 +1,7 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
@@ -64,6 +66,7 @@ const QUICK_ACTIONS = [
 ] as const;
 
 export default function HomePage() {
+  const t = useTranslation();
   const user = useAuthStore((s) => s.user);
   const { trips, loading, error: tripsError } = useUserTrips();
   const {
@@ -312,6 +315,7 @@ export default function HomePage() {
 }
 
 function SyncPill({ syncedAt }: { syncedAt: string | null }) {
+  const t = useTranslation();
   if (!syncedAt) {
     // Spec's empty-state pill — ghost / line-strong border / fg-mute
     // dot + text. Shown until the rider's first mobile upload lands.
@@ -325,7 +329,7 @@ function SyncPill({ syncedAt }: { syncedAt: string | null }) {
   return (
     <div className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 py-[5px] text-[11px] font-bold tracking-[0.2px] text-ink">
       <span aria-hidden="true" className="size-1.5 rounded-full bg-ink" />
-      {formatSyncedLabel(syncedAt)}
+      {formatSyncedLabel(syncedAt, t)}
     </div>
   );
 }
@@ -340,7 +344,7 @@ function SyncPill({ syncedAt }: { syncedAt: string | null }) {
 // preference yields mixed-language copy ("Mobile synced před 5 m") and the
 // <1 min bucket reads "synced now" instead of "synced just now". Same
 // translated-copy exclusion class as the challenge countdowns.
-function formatSyncedLabel(iso: string): string {
+function formatSyncedLabel(iso: string, t: Translate): string {
   const d = new Date(iso);
   const diffMin = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
   if (diffMin < 1) return t("Mobile synced just now");
@@ -351,6 +355,7 @@ function formatSyncedLabel(iso: string): string {
 }
 
 function KpiTileRow({ stats }: { stats: MonthlyStats }) {
+  const t = useTranslation();
   const format = useFormat();
   const kmFraction =
     stats.prev_month_km > 0
@@ -436,6 +441,7 @@ function DualEmptyState({
 // place of the "you have nothing yet" empty card — a transient outage
 // must not read as an empty account. Reload re-runs both queries.
 function LoadErrorCard({ title, message }: { title: string; message: string }) {
+  const t = useTranslation();
   return (
     <Card padded={false} className="px-6 py-10 text-center">
       <Stamp className="text-quality-q1">{title}</Stamp>
@@ -457,6 +463,7 @@ function LoadErrorCard({ title, message }: { title: string; message: string }) {
 }
 
 function RidesEmptyCard() {
+  const t = useTranslation();
   return (
     <Card padded={false} className="px-6 py-10 text-center">
       <History size={18} strokeWidth={2} className="mx-auto text-fg-mute" />
@@ -474,6 +481,7 @@ function RidesEmptyCard() {
 }
 
 function TripsEmptyCard() {
+  const t = useTranslation();
   return (
     <Card padded={false} className="px-6 py-10 text-center">
       <Route size={18} strokeWidth={2} className="mx-auto text-fg-mute" />
@@ -559,6 +567,7 @@ function TripDraftCard({
   };
   seed: number;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const status =
     (trip.status as "draft" | "planned" | "active" | "completed") ?? "draft";

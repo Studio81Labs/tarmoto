@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -49,6 +51,7 @@ export function RouteCollectionFollowCta({
   slug,
   ownerName,
 }: Props) {
+  const t = useTranslation();
   const loginHref = `/login?callbackUrl=${encodeURIComponent(
     `/community/collections/shared/${encodeURIComponent(slug)}`,
   )}`;
@@ -106,17 +109,17 @@ export function RouteCollectionFollowCta({
     return (
       <div className="rounded-2xl border border-line bg-cream p-6">
         <h2 className="text-sm font-semibold text-ink mb-1">
-          {t("Want to save this collection? ")}
+          {t("Want to save this collection?")}
         </h2>
         <p className="text-sm text-fg-dim mb-4">
-          {t(
-            "Sign in to Tarmoto to follow {collectionOwner} and add their routes to your own library.",
-            {
-              collectionOwner: ownerName
-                ? `${ownerName}'s collection`
-                : "the curator",
-            },
-          )}
+          {ownerName
+            ? t(
+                "Sign in to Tarmoto to follow {ownerName}'s collection and add its routes to your own library.",
+                { ownerName },
+              )
+            : t(
+                "Sign in to Tarmoto to follow the curator's collection and add its routes to your own library.",
+              )}
         </p>
         <Link
           href={loginHref}
@@ -131,17 +134,15 @@ export function RouteCollectionFollowCta({
     return (
       <div className="rounded-2xl border border-line bg-cream p-6">
         <h2 className="text-sm font-semibold text-ink mb-1">
-          {t("You own this collection ")}
+          {t("You own this collection")}
         </h2>
         <p className="text-sm text-fg-dim">
-          {t("Manage routes, visibility, and sharing from")}{" "}
           <Link
             href="/community/collections"
             className="text-accent hover:text-accent underline"
           >
-            {t("your dashboard ")}
+            {t("Manage routes, visibility, and sharing from your dashboard.")}
           </Link>
-          .
         </p>
       </div>
     );

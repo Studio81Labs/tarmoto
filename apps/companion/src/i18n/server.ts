@@ -3,9 +3,8 @@ import { cache } from "react";
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
-  isSupportedLocale,
+  matchSupportedLocale,
   resolveLocale,
-  setActiveLocale,
   translate as isomorphicTranslate,
   type SupportedLocale,
   type Translate,
@@ -39,8 +38,8 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
       // locale. A stale/tampered cookie — e.g. left over after a locale
       // was removed from the registry — must not pin the user to English
       // when a valid Accept-Language header would otherwise carry them.
-      const normalized = cookieLocale.toLowerCase().split("-")[0] ?? "";
-      if (isSupportedLocale(normalized)) return normalized;
+      const resolved = matchSupportedLocale(cookieLocale);
+      if (resolved) return resolved;
     }
   } catch {
     // `cookies()` is not available in some contexts (e.g. static prerender);
@@ -61,8 +60,9 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
     ]).finally(() => {
       if (timer) clearTimeout(timer);
     });
-    if (accountLocale && isSupportedLocale(accountLocale)) {
-      return accountLocale;
+    if (accountLocale) {
+      const resolved = matchSupportedLocale(accountLocale);
+      if (resolved) return resolved;
     }
   } catch {
     // An unavailable/expired auth session must not block browser detection.
@@ -84,19 +84,6 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
  * locale before any client code runs, so the `<html lang>` attribute and the
  * initial render reflect the rider's preference.
  *
- * Two pieces of state are touched on every call:
- *   1. A `cache()`-backed ref — authoritative, per-request, safe under
- *      concurrent renders on the same isolate.
- *   2. The module-level `activeLocale` consumed by the synchronous `t()`
- *      helper — set so server components that import `t` directly (e.g.
- *      `app/(auth)/layout.tsx`) see the right locale by the time React
- *      renders them. Because the root layout awaits `readLocale()` before
- *      returning JSX, the assignment lands before children render in the
- *      same request. Concurrent requests on the same isolate can still
- *      stomp this global at a Suspense boundary — server components that
- *      need strict per-request isolation under concurrent rendering should
- *      either pass `locale` explicitly to `t()` or call `getServerLocale()`.
- *
  * Precedence: explicit cookie > authenticated account language >
  * Accept-Language header > DEFAULT_LOCALE.
  */
@@ -104,7 +91,6 @@ export async function readLocale(): Promise<SupportedLocale> {
   const ref = requestLocaleRef();
   const locale = await resolveFromRequest();
   ref.current = locale;
-  setActiveLocale(locale);
   return locale;
 }
 

@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { QUALITY_BAND_COLORS } from "@/lib/planner/quality-bands";
 import type { FlaggedSection } from "@/lib/planner/types";
 import type { EnglishMessageKey } from "@/i18n";
@@ -28,6 +29,7 @@ export function FlaggedSectionCard({
   onOpen,
   onReroute,
 }: FlaggedSectionCardProps) {
+  const t = useTranslation();
   const tone =
     flag.kind === "rough"
       ? QUALITY_BAND_COLORS.rough

@@ -7,7 +7,18 @@
  * Zero platform-specific dependencies; only `Date` and string APIs.
  */
 
-import type { LooseTranslate } from "./i18n";
+import type { TranslationValues } from "./i18n";
+
+export type JoinedLabelKey =
+  | "Joined recently"
+  | "Joined this month"
+  | "Joined {count, plural, one {# month} other {# months}} ago"
+  | "Joined {count, plural, one {# year} other {# years}} ago";
+
+export type JoinedLabelTranslate = (
+  key: JoinedLabelKey,
+  values?: TranslationValues,
+) => string;
 
 /**
  * "Joined this month" / "Joined 5 months ago" / "Joined 2 years ago".
@@ -27,7 +38,7 @@ import type { LooseTranslate } from "./i18n";
 export function formatJoinedLabel(
   joinedAt: string,
   now: Date = new Date(),
-  t?: LooseTranslate,
+  t?: JoinedLabelTranslate,
 ): string {
   const date = new Date(joinedAt);
   if (Number.isNaN(date.getTime())) {

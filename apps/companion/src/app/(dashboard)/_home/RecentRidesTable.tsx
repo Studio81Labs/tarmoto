@@ -1,5 +1,7 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import type { Translate } from "@/i18n";
 import Link from "next/link";
 import { useMemo } from "react";
 import {
@@ -18,7 +20,10 @@ import type { Formatters } from "@tarmoto/shared";
  * `DataTable`; each row links to the ride detail page. Mirrors the Ride
  * History table's columns minus LEAN, sorting, and pagination.
  */
-function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
+function buildColumns(
+  format: Formatters,
+  t: Translate,
+): DataTableColumn<UserRide>[] {
   return [
     {
       key: "date",
@@ -93,8 +98,9 @@ function buildColumns(format: Formatters): DataTableColumn<UserRide>[] {
 }
 
 export function RecentRidesTable({ rides }: { rides: UserRide[] }) {
+  const t = useTranslation();
   const format = useFormat();
-  const columns = useMemo(() => buildColumns(format), [format]);
+  const columns = useMemo(() => buildColumns(format, t), [format, t]);
   return (
     <DataTable<UserRide>
       ariaLabel={t("Recent rides")}

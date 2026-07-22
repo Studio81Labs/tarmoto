@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useMemo } from "react";
 import { Mono } from "@tarmoto/ui";
 import { deriveFlaggedSections, surfaceMixToPercents } from "@/lib/planner/api";
@@ -86,6 +87,7 @@ export function InspectTab({
   onInspectSegment,
   onRerouteSegment,
 }: InspectTabProps) {
+  const t = useTranslation();
   const format = useFormat();
   const allSegments = useMemo(
     () => (day ? deriveDayQualitySegments(day) : []),
@@ -100,8 +102,8 @@ export function InspectTab({
     [allSegments, plan],
   );
   const flagged = useMemo(
-    () => deriveFlaggedSections(segments, format),
-    [format, segments],
+    () => deriveFlaggedSections(segments, format, t),
+    [format, segments, t],
   );
   const surfaceMix = useMemo(
     () =>
@@ -122,14 +124,14 @@ export function InspectTab({
     return (
       <p className="text-[12px] leading-relaxed text-fg-dim">
         {t(
-          "Build a route first — place a start and finish on the map (right-click) or generate a draft from the BUILD tab. Once a route exists you can inspect its road quality here. ",
+          "Build a route first — place a start and finish on the map (right-click) or generate a draft from the BUILD tab. Once a route exists you can inspect its road quality here.",
         )}
       </p>
     );
   }
 
-  const startLabel = spine[0]?.name ?? "Start";
-  const finishLabel = spine[spine.length - 1]?.name ?? "Finish";
+  const startLabel = spine[0]?.name ?? t("Start");
+  const finishLabel = spine[spine.length - 1]?.name ?? t("Finish");
 
   // Distance keeps its value and unit paired from the SAME `splitDistanceKm`
   // call — an imperial viewer must see "mi", never a converted mile figure
@@ -162,8 +164,11 @@ export function InspectTab({
       {plan ? (
         <div className="flex items-center justify-between gap-2 rounded-[10px] border border-line bg-cream px-3 py-2">
           <span className="text-[12px] font-bold text-ink">
-            {t("Inspecting Day ")}
-            {plan.dayNumber} · {plan.startTown} → {plan.endTown}
+            {t("Inspecting Day {day} · {start} → {end}", {
+              day: plan.dayNumber,
+              start: plan.startTown,
+              end: plan.endTown,
+            })}
           </span>
           {onClearPlan ? (
             <button
@@ -246,7 +251,7 @@ export function InspectTab({
 
       {/* quality along route */}
       <div>
-        <SectionStamp n="01">{t("Road quality along route ")}</SectionStamp>
+        <SectionStamp n="01">{t("Road quality along route")}</SectionStamp>
         <RouteQualityStrip
           segments={segments}
           startLabel={startLabel}
@@ -257,19 +262,19 @@ export function InspectTab({
 
       {/* surface mix */}
       <div>
-        <SectionStamp n="02">{t("Surface mix ")}</SectionStamp>
+        <SectionStamp n="02">{t("Surface mix")}</SectionStamp>
         <SurfaceMixBar mix={surfaceMix} />
       </div>
 
       {/* flagged sections */}
       <div>
         <SectionStamp n="03">
-          {t("Flagged sections ")}· {flagged.length}
+          {t("Flagged sections · {count}", { count: flagged.length })}
         </SectionStamp>
         {flagged.length === 0 ? (
           <p className="text-[11.5px] leading-relaxed text-fg-mute">
             {t(
-              "Nothing flagged — every section of this route is measured at Fair or better. ",
+              "Nothing flagged — every section of this route is measured at Fair or better.",
             )}
           </p>
         ) : (
@@ -287,7 +292,7 @@ export function InspectTab({
             </div>
             <p className="mt-3 text-[11.5px] leading-relaxed text-fg-mute">
               {t(
-                "Tap a flagged section to preview the road before you commit — measured quality where we have it, street-level imagery where we don’t. ",
+                "Tap a flagged section to preview the road before you commit — measured quality where we have it, street-level imagery where we don’t.",
               )}
             </p>
           </>

@@ -1,6 +1,6 @@
 import { buildRoutePreviewFromLines, type RoutePoint } from "@/lib/ride-detail";
 import { useFormat } from "@/format/FormatProvider";
-import { t } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 /**
  * Raw route overview for a trip: the simplified route drawn on a card plus a
@@ -30,6 +30,7 @@ export function TripRouteOverview({
   region,
   label,
 }: TripRouteOverviewProps) {
+  const t = useTranslation();
   const format = useFormat();
   const preview = buildRoutePreviewFromLines(lines, 960, 14);
 

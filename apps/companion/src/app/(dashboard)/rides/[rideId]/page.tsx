@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useMemo, useState } from "react";
 import {
   notFound as renderNotFound,
@@ -27,7 +28,7 @@ import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
-import { scoreToQualityTier } from "@/lib/utils";
+import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
 import { kmToMiles, type Formatters } from "@tarmoto/shared";
 import { downloadRideExport } from "@/lib/ride-export";
@@ -56,6 +57,7 @@ const LEAN_BUCKETS: Array<{
 ];
 
 export default function RideDetailPage() {
+  const t = useTranslation();
   const { rideId } = useParams<{ rideId: string }>();
   // The same detail view is mounted under `/rides/:id` (ride history) and
   // `/community/rides/:id` (community). Drive the back link from the route so
@@ -113,7 +115,7 @@ export default function RideDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [rideId, authReady]);
+  }, [t, rideId, authReady]);
 
   async function handleShare() {
     if (typeof window === "undefined" || !ride) return;
@@ -201,7 +203,7 @@ export default function RideDetailPage() {
     return (
       <PageShell backHref={backHref} backLabel={backLabel}>
         <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-5 text-sm text-red-700">
-          {error ?? "Could not load ride"}
+          {error ?? t("Could not load ride")}
         </div>
       </PageShell>
     );
@@ -289,7 +291,7 @@ export default function RideDetailPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
                 <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
-                  {ride.ride_type}
+                  {t(rideTypeLabel(ride.ride_type))}
                 </Mono>
                 <span className="h-[3px] w-[3px] rounded-full bg-fg-mute" />
                 <Mono className="text-[10px] uppercase tracking-[1.6px] text-fg-dim">
@@ -564,13 +566,15 @@ function PageShell({
   children,
   header,
   backHref = "/rides",
-  backLabel = t("Ride History · All rides"),
+  backLabel,
 }: {
   children: React.ReactNode;
   header?: React.ReactNode;
   backHref?: string;
   backLabel?: string;
 }) {
+  const t = useTranslation();
+  const resolvedBackLabel = backLabel ?? t("Ride History · All rides");
   return (
     <div className="mx-auto w-full max-w-page animate-fade-in p-4 md:p-7">
       {header ?? (
@@ -579,7 +583,7 @@ function PageShell({
           className="mb-6 inline-flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-[0.3px] text-fg-dim transition hover:text-ink"
         >
           <ArrowLeft size={14} />
-          {backLabel}
+          {resolvedBackLabel}
         </Link>
       )}
       {children}
@@ -629,6 +633,7 @@ function LeanHistogram({
 }: {
   distribution: LeanDistribution | null;
 }) {
+  const t = useTranslation();
   if (!distribution) {
     return (
       <div className="mt-[18px] flex h-[150px] items-center justify-center rounded-xl border border-dashed border-line text-center text-sm text-fg-dim">
@@ -676,6 +681,7 @@ function RoadSegments({
   distanceKm: number | null;
   format: Formatters;
 }) {
+  const t = useTranslation();
   const total = distanceKm != null ? format.splitDistanceKm(distanceKm) : null;
   const speedUnit = format.splitSpeed(0).unit;
   // KM-per-segment, surface, and character aren't on the segment payload, so
@@ -763,7 +769,10 @@ function RoadSegments({
           </div>
           {total != null && (
             <Mono className="text-[11px] text-fg-dim">
-              {total.value} {total.unit} {t("TOTAL")}
+              {t("{value} {unit} TOTAL", {
+                value: total.value,
+                unit: total.unit,
+              })}
             </Mono>
           )}
         </div>
@@ -796,6 +805,7 @@ function SpeedProfileCard({
   segments: RideSegment[];
   format: Formatters;
 }) {
+  const t = useTranslation();
   const points = buildSpeedProfile(segments);
   const conv = (kmh: number) =>
     format.units === "imperial" ? kmToMiles(kmh) : kmh;
@@ -818,7 +828,10 @@ function SpeedProfileCard({
         </div>
         {points.length > 0 && (
           <Mono className="text-[11px] text-fg-dim">
-            {Math.round(peak)} {unit} {t("PEAK")}
+            {t("{value} {unit} PEAK", {
+              value: Math.round(peak),
+              unit,
+            })}
           </Mono>
         )}
       </div>
@@ -864,6 +877,7 @@ function SpeedLineChart({
   maxY: number;
   unit: string;
 }) {
+  const t = useTranslation();
   const all = [...points, ...secondaryPoints];
   const minX = Math.min(...all.map((p) => p.x));
   const maxX = Math.max(...all.map((p) => p.x));

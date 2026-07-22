@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { notFound as renderNotFound, useParams } from "next/navigation";
@@ -95,6 +97,7 @@ type LoadState =
  * `/community/collections/shared/[slug]` route, not this page.
  */
 export default function CollectionDetailPage() {
+  const t = useTranslation();
   const format = useFormat();
   const { collectionId } = useParams<{
     collectionId: string;
@@ -109,26 +112,32 @@ export default function CollectionDetailPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const reload = useCallback(async (id: string) => {
-    try {
-      const { data } = await routeCollectionsApi.get(id);
-      setLoad({ phase: "ready", collection: mapDetailToView(data) });
-    } catch (err) {
-      // 400 = malformed id in the URL — same dead link as a missing
-      // collection; both land on the 404 screen.
-      if (
-        err instanceof ApiError &&
-        (err.status === 404 || err.status === 400)
-      ) {
-        setLoad({ phase: "not-found" });
-        return;
+  const reload = useCallback(
+    async (id: string) => {
+      try {
+        const { data } = await routeCollectionsApi.get(id);
+        setLoad({ phase: "ready", collection: mapDetailToView(data) });
+      } catch (err) {
+        // 400 = malformed id in the URL — same dead link as a missing
+        // collection; both land on the 404 screen.
+        if (
+          err instanceof ApiError &&
+          (err.status === 404 || err.status === 400)
+        ) {
+          setLoad({ phase: "not-found" });
+          return;
+        }
+        setLoad({
+          phase: "error",
+          message: getUserFacingErrorMessage(
+            err,
+            t("Failed to load collection"),
+          ),
+        });
       }
-      setLoad({
-        phase: "error",
-        message: getUserFacingErrorMessage(err, t("Failed to load collection")),
-      });
-    }
-  }, []);
+    },
+    [t],
+  );
   // Gate the detail fetch on AuthSync hydrating the access token —
   // without it the cold-load race 401s and the page never recovers.
   // Same pattern as the rides pages.
@@ -358,7 +367,9 @@ export default function CollectionDetailPage() {
             </span>
             <span className="text-fg-mute">·</span>
             <Mono className="text-[11px] text-fg-mute">
-              {t("Updated")} {format.relativeTime(collection!.updatedAt)}
+              {t("Updated {time}", {
+                time: format.relativeTime(collection!.updatedAt),
+              })}
             </Mono>
           </div>
         </div>
@@ -457,7 +468,7 @@ export default function CollectionDetailPage() {
                 className="mb-3 rounded-xl border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700"
               >
                 {t(
-                  "Couldn't load your routes right now. Try again in a moment. ",
+                  "Couldn't load your routes right now. Try again in a moment.",
                 )}
               </div>
             )}
@@ -525,6 +536,7 @@ function VisibilitySelector({
   onChange: (next: RouteCollectionVisibility) => void;
   disabled: boolean;
 }) {
+  const t = useTranslation();
   const description =
     value === "private"
       ? t("Only you can see this collection.")
@@ -555,6 +567,7 @@ function VisibilitySelector({
   );
 }
 function ShareButton({ collection }: { collection: RouteCollectionView }) {
+  const t = useTranslation();
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const [fallbackOpen, setFallbackOpen] = useState(false);
   useEffect(() => {
@@ -588,7 +601,7 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
         open={fallbackOpen}
         title={t("Copy this share link")}
         message={t(
-          "Automatic copying was blocked — select and copy the link below. ",
+          "Automatic copying was blocked — select and copy the link below.",
         )}
         confirmLabel={t("Done")}
         hideCancel
@@ -712,6 +725,7 @@ function SortableRow({
   disabled: boolean;
   children: React.ReactNode;
 }) {
+  const t = useTranslation();
   const {
     attributes,
     listeners,
@@ -753,6 +767,7 @@ function SortableRow({
   );
 }
 function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
+  const t = useTranslation();
   return (
     <div className="px-6 py-12 text-center">
       <RouteIcon size={40} className="mx-auto mb-3 text-fg-mute" />
@@ -783,6 +798,7 @@ function RideRow({
   lines: number[][][] | undefined;
   onRemove: () => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const displayName = ride.name ?? `Ride on ${format.date(ride.started_at)}`;
   return (
@@ -826,6 +842,7 @@ function RideRow({
   );
 }
 function MissingItemRow({ onRemove }: { onRemove: () => void }) {
+  const t = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
@@ -869,6 +886,7 @@ function RoutePickerModal({
   onClose: () => void;
   onAdd: (input: { rideIds: string[] }) => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const [selectedRides, setSelectedRides] = useState<Set<string>>(
     () => new Set(),
@@ -993,6 +1011,7 @@ function PickerRow({
   meta: string;
   status: string;
 }) {
+  const t = useTranslation();
   return (
     <li>
       <label
@@ -1053,6 +1072,7 @@ function RidePickerList({
   selected: Set<string>;
   onToggle: (id: string) => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   if (loading) {
     return (
@@ -1072,7 +1092,7 @@ function RidePickerList({
         className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-700"
       >
         {t(
-          "Couldn't load your rides right now. Close this and try again in a moment. ",
+          "Couldn't load your rides right now. Close this and try again in a moment.",
         )}
       </div>
     );

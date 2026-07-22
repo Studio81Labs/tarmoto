@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { t as englishTranslate, type Translate } from "@/i18n";
 import { api, ApiError, openApiData } from "./client";
 
 // ── Auth helpers ──
@@ -14,6 +14,7 @@ export async function registerUser(
   email: string,
   password: string,
   displayName: string,
+  t: Translate = englishTranslate,
 ) {
   try {
     const { data } = await openApiData(
@@ -28,6 +29,7 @@ export async function registerUser(
         t("An account with that email already exists"),
         error.status,
         error.body,
+        true,
       );
     }
     throw error;

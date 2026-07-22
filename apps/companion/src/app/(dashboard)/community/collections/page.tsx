@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import {
   useEffect,
   useMemo,
@@ -57,6 +59,7 @@ interface CollectionInputForm {
   visibility: RouteCollectionVisibility;
 }
 export default function RouteCollectionsPage() {
+  const t = useTranslation();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
     collections,
@@ -203,7 +206,7 @@ export default function RouteCollectionsPage() {
             {t("Couldn't load your collections")}
           </p>
           <p className="text-sm text-fg-dim mb-4">
-            {errorMessage ?? "Try again in a moment."}
+            {errorMessage ?? t("Try again in a moment.")}
           </p>
           <Button variant="secondary" onClick={() => void refresh()}>
             {t("Retry")}
@@ -251,7 +254,7 @@ export default function RouteCollectionsPage() {
           </div>
           <p className="text-xs text-fg-dim mb-3">
             {t(
-              "Collections from other riders you've saved. They show up here until you unfollow. ",
+              "Collections from other riders you've saved. They show up here until you unfollow.",
             )}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -321,6 +324,7 @@ function Toolbar({
   search: string;
   onSearch: (value: string) => void;
 }) {
+  const t = useTranslation();
   return (
     <div className="max-w-md">
       <Input
@@ -346,6 +350,7 @@ function CollectionCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   const [menuOpen, setMenuOpen] = useState(false);
   // Distance + missing-count breakdowns deliberately live on the detail page,
@@ -442,6 +447,7 @@ function FollowedCollectionCard({
   collection: RouteCollectionView;
   onUnfollow: () => void;
 }) {
+  const t = useTranslation();
   const format = useFormat();
   return (
     <div className="relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong">
@@ -522,6 +528,7 @@ function CollectionModal({
   onClose: () => void;
   onSubmit: (input: CollectionInputForm) => Promise<void>;
 }) {
+  const t = useTranslation();
   const [title, setTitle] = useState(initial.title);
   const [description, setDescription] = useState(initial.description);
   const [visibility, setVisibility] = useState<RouteCollectionVisibility>(
@@ -783,6 +790,7 @@ function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useTranslation();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {

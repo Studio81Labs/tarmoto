@@ -202,9 +202,8 @@ export function challengePercent(progress: number, target: number): number {
 
 /**
  * Human-friendly metric label, e.g. `total_km` → `km`. Used in challenge
- * cards next to the rider's progress number. Falls back to the raw metric
- * if we don't have a translation for it (forward-compatibility with
- * future challenge metrics added on the backend).
+ * cards next to the rider's progress number. Unknown future metrics use a
+ * cataloged generic label so backend identifiers never become display copy.
  */
 const METRIC_UNITS: Record<string, EnglishMessageKey> = {
   ride_count: "rides",
@@ -220,7 +219,7 @@ export function metricUnit(metric: string): string {
   }
   const canonicalMetric = challengeContentKeyForMetric(metric) ?? metric;
   const unit = METRIC_UNITS[canonicalMetric];
-  return unit ? translate(unit) : metric;
+  return translate(unit ?? "units");
 }
 
 export function challengeCopy(challenge: {
@@ -378,9 +377,8 @@ export function formatSegmentLength(lengthM: number): string {
  * Whole-number metrics (rides, reports, …) drop the decimal; floats keep
  * one decimal so a 12.4 km mark doesn't display as 12 km. The unit comes
  * from the challenge's `metric` field (e.g. `total_km`), not its ID, and
- * is resolved through `metricUnit()` so an unknown metric falls back to
- * the raw key — same behaviour as the meta-pill rendered next to it on
- * the same card.
+ * is resolved through `metricUnit()` so unknown metrics use cataloged generic
+ * copy, matching the companion.
  */
 export function formatChallengeProgress(
   progress: number,

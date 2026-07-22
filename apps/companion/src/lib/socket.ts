@@ -2,7 +2,7 @@ import { io, type Socket } from "socket.io-client";
 import { API_HOST } from "@/lib/config";
 import { useRealtimeStore } from "@/stores/realtime";
 import type { HazardResponse } from "@/lib/api";
-import { t } from "@/i18n";
+import { t as englishTranslate, type Translate } from "@/i18n";
 
 /**
  * Socket.io client bound to the backend `/events` namespace (see
@@ -53,7 +53,10 @@ export type HazardDismissedEvent = Omit<HazardResponse, "severity"> & {
 };
 export type HazardNewEvent = HazardResponse | HazardDismissedEvent;
 
-export function connectSocket(token: string | null = null): Socket {
+export function connectSocket(
+  token: string | null = null,
+  t: Translate = englishTranslate,
+): Socket {
   if (socket) {
     if (currentToken === token) return socket;
     // Token changed (login / logout / refresh) — reconnect with new

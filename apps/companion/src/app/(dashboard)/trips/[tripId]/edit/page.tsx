@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -11,6 +12,7 @@ import { Loader2 } from "lucide-react";
  * planner/page.tsx`'s `serverTripId` flow).
  */
 export default function TripEditRedirectPage() {
+  const t = useTranslation();
   const { tripId } = useParams<{
     tripId: string;
   }>();
@@ -22,7 +24,7 @@ export default function TripEditRedirectPage() {
   return (
     <div className="flex h-full items-center justify-center text-fg-dim">
       <Loader2 size={20} className="mr-2 animate-spin" />
-      {t("Opening planner\u2026 ")}
+      {t("Opening planner…")}
     </div>
   );
 }

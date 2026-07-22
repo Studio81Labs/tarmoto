@@ -1,5 +1,7 @@
 "use client";
-import { getUserFacingErrorMessage, t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
+import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { Button, FieldLabel, Input } from "@tarmoto/ui";
@@ -28,6 +30,7 @@ export function BikeFormModal({
   onClose,
   onSubmit,
 }: BikeFormModalProps) {
+  const t = useTranslation();
   const [values, setValues] = useState<BikeFormValues>(EMPTY_BIKE_FORM);
   const [errors, setErrors] = useState<BikeFormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -154,7 +157,7 @@ export function BikeFormModal({
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button variant="ghost" disabled={submitting} onClick={onClose}>
-              {t("Cancel ")}
+              {t("Cancel")}
             </Button>
             <Button
               type="submit"
@@ -164,7 +167,7 @@ export function BikeFormModal({
               loading={submitting}
             >
               {submitting
-                ? t("Saving\u2026 ")
+                ? t("Saving…")
                 : mode === "add"
                   ? t("Add bike")
                   : t("Save changes")}

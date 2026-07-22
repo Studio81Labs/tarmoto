@@ -1,5 +1,6 @@
 "use client";
-import { t } from "@/i18n";
+
+import { useTranslation } from "@/i18n/I18nProvider";
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, {
   type LngLatBoundsLike,
@@ -38,6 +39,7 @@ const ROUTE_COLOR = "#FF6A1A";
  *  - Bounds auto-fit once; later user interactions aren't clobbered.
  */
 export function CollectionPreviewMap({ routes }: Props) {
+  const t = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
