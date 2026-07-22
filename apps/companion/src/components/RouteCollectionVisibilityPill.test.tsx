@@ -12,8 +12,10 @@ describe("RouteCollectionVisibilityPill", () => {
     expect(screen.queryByText("Public")).not.toBeInTheDocument();
   });
 
-  it("uses the client translator when no label override is provided", () => {
-    render(<RouteCollectionVisibilityPill visibility="unlisted" />);
+  it("renders a caller-translated label", () => {
+    render(
+      <RouteCollectionVisibilityPill visibility="unlisted" label="Unlisted" />,
+    );
 
     expect(screen.getByText("Unlisted")).toBeInTheDocument();
   });

@@ -27,7 +27,7 @@ import {
 } from "@/lib/rider-profile";
 import { UserAvatar } from "@/components/UserAvatar";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
-import { badgeCopyForKey } from "@/lib/gamification";
+import { badgeCopyForKey, badgeTierLabel } from "@/lib/gamification";
 
 // Medal colours for earned-badge tiers. Keyed by the lowercase tier the
 // gamification service emits (`bronze` / `silver` / `gold`); the card border,
@@ -420,7 +420,7 @@ function BadgeCard({ badge }: { badge: UserBadge }) {
           className="font-mono text-[10px] font-extrabold uppercase tracking-[1.5px]"
           style={{ color }}
         >
-          {badge.tier}
+          {badgeTierLabel(badge.tier, t)}
         </span>
       )}
     </div>

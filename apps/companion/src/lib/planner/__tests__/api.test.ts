@@ -1437,6 +1437,18 @@ describe("plannerApi.reverseGeocode (#864)", () => {
       "12.346, -7.891",
     );
   });
+
+  it("formats fallback coordinates with the rider's regional preferences", async () => {
+    apiGetMock.mockResolvedValue({
+      data: { label: null },
+      error: undefined,
+    } as never);
+    const format = createFormatters({ locale: "de-DE", units: "metric" });
+
+    expect(
+      await createPlannerApi().reverseGeocode(12.3456, -7.891, { format }),
+    ).toBe("12,346, -7,891");
+  });
 });
 
 describe("plannerApi.getRoadPreview (#863)", () => {

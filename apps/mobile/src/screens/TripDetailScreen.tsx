@@ -64,6 +64,7 @@ import {
   formatElevationM,
   formatKm,
   formatStatus,
+  formatMemberRole,
   routeGeometrySignature,
   summarizeWaypoints,
   isLastDay,
@@ -558,7 +559,7 @@ function MemberRow({ member }: { member: TripMember }) {
       </Text>
       <View style={[styles.roleBadge, { borderColor: badgeColor }]}>
         <Text style={[styles.roleLabel, { color: badgeColor }]}>
-          {member.role}
+          {formatMemberRole(member.role)}
         </Text>
       </View>
     </TouchableOpacity>

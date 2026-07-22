@@ -874,7 +874,9 @@ export default function TripPlannerPage() {
       if (seen.has(key)) continue;
       seen.add(key);
       void plannerApi
-        .reverseGeocode(waypoint.location.lat, waypoint.location.lng)
+        .reverseGeocode(waypoint.location.lat, waypoint.location.lng, {
+          format,
+        })
         .then((placeName) => {
           if (!placeName) return;
           // Apply only if the waypoint still exists at the same position and
@@ -897,7 +899,7 @@ export default function TripPlannerPage() {
           // Naming is cosmetic — keep the default label on failure.
         });
     }
-  }, [selectedDay, renameWaypoint]);
+  }, [selectedDay, renameWaypoint, format]);
   // Dropping a day-break marker pins that break at the drop's along-route
   // km and re-splits the surrounding days around it (addendum §6).
   const handleMoveDayBreak = useCallback(

@@ -76,6 +76,19 @@ describe("resolveFormatLocaleFromAcceptLanguage", () => {
     );
   });
 
+  it("rejects explicitly unacceptable and out-of-range quality values", () => {
+    expect(resolveFormatLocaleFromAcceptLanguage("cs-CZ;q=0")).toBeNull();
+    expect(
+      resolveFormatLocaleFromAcceptLanguage("de-DE;q=1.5,en-GB;q=0.8"),
+    ).toBe("en-GB");
+    expect(
+      resolveFormatLocaleFromAcceptLanguage("de-DE;q=garbage,en-GB;q=0.8"),
+    ).toBe("en-GB");
+    expect(
+      resolveFormatLocaleFromAcceptLanguage("de-DE;q=0.1234,en-GB;q=0.8"),
+    ).toBe("en-GB");
+  });
+
   it("returns null for empty/absent/unusable headers", () => {
     expect(resolveFormatLocaleFromAcceptLanguage(null)).toBeNull();
     expect(resolveFormatLocaleFromAcceptLanguage(undefined)).toBeNull();

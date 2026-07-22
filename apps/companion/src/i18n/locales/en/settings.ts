@@ -244,4 +244,6 @@ export const settings = {
   "Could not delete bike": "Could not delete bike",
   "Could not load subscription settings.":
     "Could not load subscription settings.",
+  "Payment issue": "Payment issue",
+  Trialing: "Trialing",
 } as const;

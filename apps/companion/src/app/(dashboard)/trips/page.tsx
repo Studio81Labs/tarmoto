@@ -61,12 +61,11 @@ import {
 import { RouteOutlineSvg } from "@/components/trips/RouteOutlineSvg";
 import { toast } from "@/lib/toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-const STATUS_LABEL: Record<TripStatus, string> = {
-  draft: "Drafts",
-  planned: "Planned",
-  active: "Active",
-  completed: "Completed",
-};
+import {
+  TRIP_SORT_LABELS,
+  TRIP_STATUS_FILTER_LABELS,
+  TRIP_STATUS_LABELS,
+} from "@/i18n/domainLabels";
 // Spec card status badge palette (v2-pages.jsx · trip cards). Each
 // badge sits absolute over the MiniRouteSvg image area; all share
 // padding/font/letter-spacing, only the surface + border vary:
@@ -79,12 +78,6 @@ const STATUS_PILL: Record<TripStatus, string> = {
   planned: "bg-ink text-cream",
   active: "bg-accent text-ink",
   completed: "bg-cream text-ink border border-line-strong",
-};
-const SORT_LABEL: Record<TripSortKey, string> = {
-  updated: "Last updated",
-  created: "Date created",
-  name: "Name (A→Z)",
-  distance: "Distance",
 };
 export default function TripListPage() {
   const trips = useTripStore((s) => s.trips);
@@ -876,7 +869,7 @@ function TripToolbar({
                 : "border-line-strong bg-cream text-ink hover:border-ink"
             }`}
           >
-            {STATUS_LABEL[status]}
+            {t(TRIP_STATUS_FILTER_LABELS[status])}
             <span className="font-mono text-[11px] tabular-nums opacity-70">
               {statusCounts[status]}
             </span>
@@ -899,7 +892,7 @@ function TripToolbar({
           }
           options={TRIP_SORT_KEYS.map((key) => ({
             value: key,
-            label: SORT_LABEL[key],
+            label: t(TRIP_SORT_LABELS[key]),
           }))}
           tone="cream"
           className="w-[170px]"
@@ -963,7 +956,11 @@ function TripCard({
   // needs the trip name to lead the accessible name; without the
   // explicit aria-label the visual status badge (rendered above the
   // title in DOM order) wins, breaking the selector.
-  const cardAriaLabel = `${trip.name} ${trip.status}`;
+  const statusLabel = t(TRIP_STATUS_LABELS[trip.status]);
+  const cardAriaLabel = t("{title}, {status}", {
+    title: trip.name,
+    status: statusLabel,
+  });
   return (
     <div
       className={`group relative rounded-[14px] border border-line bg-cream transition hover:border-line-strong ${busy ? "opacity-60" : ""}`}
@@ -990,7 +987,7 @@ function TripCard({
             <span
               className={`inline-flex items-center rounded-full px-[10px] py-[5px] text-[11px] font-bold uppercase tracking-[0.2px] ${STATUS_PILL[trip.status]}`}
             >
-              {trip.status}
+              {statusLabel}
             </span>
           </div>
           <div className="absolute right-[10px] top-[10px]" aria-hidden="true">

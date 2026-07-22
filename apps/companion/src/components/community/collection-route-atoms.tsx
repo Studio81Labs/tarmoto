@@ -2,7 +2,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Route as RouteIcon } from "lucide-react";
 import { Mono, QualityBars } from "@tarmoto/ui";
-import { t } from "@/i18n";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 import type { RouteCollectionPreviewItem } from "@/lib/api";
 import type { Formatters } from "@tarmoto/shared";
 
@@ -44,10 +44,12 @@ export function RouteThumb({
   lines,
   label,
   className,
+  t,
 }: {
   lines: number[][][] | undefined;
   label: string;
   className?: string;
+  t: Translate;
 }) {
   const line = lines?.find((l) => l && l.length >= 2);
   return (
@@ -84,7 +86,15 @@ export function RouteThumb({
 }
 
 /** Status chip (planned / completed / shared / …) coloured like the design. */
-export function StatusPill({ status }: { status: string }) {
+const STATUS_LABELS = {
+  draft: "Draft",
+  planned: "Planned",
+  active: "Active",
+  completed: "Completed",
+  shared: "Shared",
+} as const satisfies Record<string, EnglishMessageKey>;
+
+export function StatusPill({ status, t }: { status: string; t: Translate }) {
   const s = status.toLowerCase();
   const tone =
     s === "completed"
@@ -98,7 +108,7 @@ export function StatusPill({ status }: { status: string }) {
     <span
       className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-[0.2px] ${tone}`}
     >
-      {status}
+      {t(STATUS_LABELS[s as keyof typeof STATUS_LABELS] ?? "Unknown")}
     </span>
   );
 }
@@ -122,12 +132,14 @@ export function CollectionRouteRow({
   author,
   format,
   linkable = false,
+  t,
 }: {
   route: RouteCollectionPreviewItem;
   index: number;
   author: string;
   format: Formatters;
   linkable?: boolean | undefined;
+  t: Translate;
 }) {
   // A ride is a single recorded day.
   const metaParts = [t("1 day"), author || null].filter(Boolean);
@@ -148,6 +160,7 @@ export function CollectionRouteRow({
       <RouteThumb
         lines={route.lines}
         label={route.title ?? t("Route")}
+        t={t}
         className="h-[42px] w-16 shrink-0 overflow-hidden rounded-lg border border-line bg-paper"
       />
       <div className="min-w-0">
@@ -168,7 +181,7 @@ export function CollectionRouteRow({
         )}
       </div>
       <div className="justify-self-start max-sm:hidden">
-        {route.status && <StatusPill status={route.status} />}
+        {route.status && <StatusPill status={route.status} t={t} />}
       </div>
       <div className="justify-self-end">
         {route.quality_avg != null && (

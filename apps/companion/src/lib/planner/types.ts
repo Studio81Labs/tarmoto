@@ -1,5 +1,5 @@
 import type * as GeoJSON from "geojson";
-import type { SurfaceType } from "@tarmoto/shared";
+import type { Formatters, SurfaceType } from "@tarmoto/shared";
 import type { RouteRequestBody, RouteResponse } from "@/lib/api";
 
 /**
@@ -322,7 +322,10 @@ export interface PlannerApi {
   reverseGeocode(
     lat: number,
     lng: number,
-    init?: { signal?: AbortSignal },
+    init?: {
+      signal?: AbortSignal;
+      format?: Pick<Formatters, "decimal">;
+    },
   ): Promise<string>;
 
   /**

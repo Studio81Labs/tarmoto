@@ -3,6 +3,13 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import Apple from "next-auth/providers/apple";
 import type { NextAuthConfig } from "next-auth";
+import { cookies, headers } from "next/headers";
+import {
+  DEFAULT_LOCALE,
+  isSupportedLocale,
+  resolveLocale,
+  type SupportedLocale,
+} from "@tarmoto/shared";
 import "./auth-types";
 
 import { apiServer } from "@/lib/api/server";
@@ -13,6 +20,23 @@ import {
   SOCIAL_ACCOUNT_CONFLICT_MESSAGE,
   SOCIAL_SIGNIN_FAILED_ERROR,
 } from "@/lib/auth-errors";
+import { LOCALE_COOKIE } from "@/i18n/constants";
+
+async function resolveAuthRequestLocale(): Promise<SupportedLocale> {
+  try {
+    const value = (await cookies()).get(LOCALE_COOKIE)?.value;
+    const normalized = value?.toLowerCase().split("-")[0] ?? "";
+    if (isSupportedLocale(normalized)) return normalized;
+  } catch {
+    // Auth callbacks can also run in contexts without request cookies.
+  }
+
+  try {
+    return resolveLocale((await headers()).get("accept-language"));
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
 
 const providers: NextAuthConfig["providers"] = [
   Credentials({
@@ -39,6 +63,7 @@ const providers: NextAuthConfig["providers"] = [
           id: data.user.id,
           email: data.user.email,
           displayName: data.user.display_name,
+          language: data.user.language,
           // `UserResponseDto.phone` is `string | null`; the NextAuth `User`
           // models an absent phone as `undefined`.
           phone: data.user.phone ?? undefined,
@@ -89,15 +114,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!account || account.provider === "credentials") return true;
 
       try {
-        const data = await exchangeOAuthUserForBackendTokens({
-          email: user.email,
-          displayName: user.name ?? null,
-        });
+        const data = await exchangeOAuthUserForBackendTokens(
+          {
+            email: user.email,
+            displayName: user.name ?? null,
+          },
+          { locale: await resolveAuthRequestLocale() },
+        );
 
         Object.assign(user, {
           id: data.user.id,
           email: data.user.email,
           displayName: data.user.display_name,
+          language: data.user.language,
           phone: data.user.phone ?? undefined,
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
@@ -125,6 +154,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           email: user.email!,
           displayName: user.displayName,
+          language: user.language,
           phone: user.phone,
           accessToken: user.accessToken,
           refreshToken: user.refreshToken,
@@ -177,6 +207,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         id: token.id,
         email: token.email,
         displayName: token.displayName,
+        language: token.language,
         phone: token.phone,
       };
       session.accessToken = token.accessToken;

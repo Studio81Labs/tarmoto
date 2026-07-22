@@ -20,6 +20,7 @@ import type {
   MountainPass,
   Trip,
   TripDay,
+  TripMember,
   TripStatus,
   Waypoint,
   WaypointType,
@@ -123,6 +124,18 @@ export function formatDurationMin(minutes: number): string {
   return getFormatters().durationCompact(
     !Number.isFinite(minutes) || minutes <= 0 ? 0 : minutes,
   );
+}
+
+export function formatMemberRole(
+  role: TripMember["role"],
+  t: Translate = translate,
+): string {
+  const labels: Record<TripMember["role"], EnglishMessageKey> = {
+    owner: "Owner",
+    editor: "Editor",
+    viewer: "Viewer",
+  };
+  return t(labels[role]);
 }
 
 export function capitalize(s: string): string {

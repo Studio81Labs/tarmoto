@@ -1,6 +1,9 @@
 "use client";
 import { SURFACE_COLORS } from "@/components/map/MapCanvas";
 import type { RouteQualitySummary } from "@/lib/planner/types";
+import { t } from "@/i18n";
+import { SURFACE_LABELS } from "@/lib/utils";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Surface mix: thin stacked bar + legend (design: Inspect § 02). Colors
@@ -12,6 +15,7 @@ export function SurfaceMixBar({
 }: {
   mix: RouteQualitySummary["surfaceMix"];
 }) {
+  const format = useFormat();
   if (mix.length === 0) return null;
   return (
     <div>
@@ -39,7 +43,10 @@ export function SurfaceMixBar({
               }}
             />
             <span className="text-[11.5px] text-fg-dim">
-              <b className="font-bold text-ink">{entry.pct}%</b> {entry.surface}
+              <b className="font-bold text-ink">
+                {format.percent(entry.pct / 100)}
+              </b>{" "}
+              {t(SURFACE_LABELS[entry.surface])}
             </span>
           </span>
         ))}

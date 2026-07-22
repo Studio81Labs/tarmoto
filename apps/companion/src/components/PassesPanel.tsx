@@ -7,6 +7,7 @@ import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { ConditionStatusLine } from "@/components/ConditionStatusLine";
 import { deriveConditionStatus } from "@/lib/conditions-status";
 import { useFormat } from "@/format/FormatProvider";
+import { PASS_STATUS_LABELS } from "@/i18n/domainLabels";
 import {
   MONTH_NAMES,
   STATUS_DISPLAY_ORDER,
@@ -46,11 +47,6 @@ const STATUS_DOT_CLASS: Record<PassStatus, string> = {
   open: "bg-[#1f8a5b]",
   closed: "bg-quality-q1",
   unknown: "bg-ink/40",
-};
-const STATUS_LABEL: Record<PassStatus, string> = {
-  open: "Open",
-  closed: "Closed",
-  unknown: "Unknown",
 };
 const MAX_PASSES_PER_GROUP = 5;
 /**
@@ -360,7 +356,7 @@ function Legend() {
             aria-hidden
             className={`inline-block w-2 h-2 rounded-full ${STATUS_DOT_CLASS[status]}`}
           />
-          {STATUS_LABEL[status]}
+          {t(PASS_STATUS_LABELS[status])}
         </span>
       ))}
     </div>
@@ -443,7 +439,7 @@ function OnRoutePassCard({
               pass.status === "closed" ? "text-quality-q1" : "text-fg-dim"
             }`}
           >
-            {STATUS_LABEL[pass.status]}
+            {t(PASS_STATUS_LABELS[pass.status])}
           </span>
         </div>
         <p className="mt-1 text-xs text-fg-mute">

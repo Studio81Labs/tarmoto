@@ -44,7 +44,7 @@ export default async function SharedRidePage({
 
   return (
     <div className="min-h-screen bg-cream text-ink">
-      <PublicShareHeader breadcrumb={t("Shared ride")} />
+      <PublicShareHeader breadcrumb={t("Shared ride")} t={t} />
 
       <main className="mx-auto max-w-[980px] px-7 pb-16 pt-8">
         {/* Hero */}
@@ -88,6 +88,7 @@ export default async function SharedRidePage({
             "Snapshot of the shared route and its current ride metrics.",
           )}
           emptyText={t("Route preview unavailable for this shared ride.")}
+          t={t}
         />
 
         {/* Stat tiles */}
@@ -131,6 +132,7 @@ export default async function SharedRidePage({
           icon: <Plus size={14} />,
         }}
         year={new Date().getFullYear()}
+        t={t}
       />
     </div>
   );

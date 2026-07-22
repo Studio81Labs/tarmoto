@@ -15,6 +15,10 @@ import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
 import { useFormat } from "@/format/FormatProvider";
 import { MiniRouteSvg, QualityBars } from "@tarmoto/ui";
+import {
+  HAZARD_RISK_LABELS,
+  HAZARD_SEVERITY_LABELS,
+} from "@/i18n/domainLabels";
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
   none: "text-fg-mute",
   low: "text-yellow-600",
@@ -57,7 +61,7 @@ export function RoadPreviewCard({
     [segment.elevationProfile],
   );
   const detailId = useId();
-  const severityLabel = severity === "none" ? "No hazards" : `${severity} risk`;
+  const severityLabel = t(HAZARD_RISK_LABELS[severity]);
   return (
     <div
       data-testid={`road-preview-card-${segment.id}`}
@@ -221,7 +225,7 @@ export function RoadPreviewCard({
                           <span
                             className={`ml-2 text-[10px] uppercase tracking-wider ${SEVERITY_COLOR[hazard.severity]}`}
                           >
-                            {hazard.severity}
+                            {t(HAZARD_SEVERITY_LABELS[hazard.severity])}
                           </span>
                         </p>
                         {hazard.note && (
@@ -230,8 +234,10 @@ export function RoadPreviewCard({
                         <p className="mt-0.5 text-[10px] text-fg-mute">
                           {hazard.reporterName} ·{" "}
                           {format.relativeTime(hazard.createdAt)} ·{" "}
-                          {hazard.confirmations}
-                          {t("confirmations ")}
+                          {t(
+                            "{count, plural, one {# confirmation} other {# confirmations}}",
+                            { count: hazard.confirmations },
+                          )}
                         </p>
                       </div>
                     </li>

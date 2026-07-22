@@ -19,6 +19,13 @@ import {
 import type { Poi } from "@/lib/planner/types";
 import type { HazardType } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
+import {
+  CLOSURE_REASON_LABELS,
+  CLOSURE_SEVERITY_SHORT_LABELS,
+  HAZARD_SEVERITY_LABELS,
+  PASS_STATUS_LABELS,
+  translateKnownLabel,
+} from "@/i18n/domainLabels";
 
 /** Legally required provider attributions are proper names, not UI copy. */
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
@@ -369,7 +376,7 @@ function HazardBody({
             hazard.severity,
           )}`}
         >
-          {hazard.severity || "—"}
+          {translateKnownLabel(hazard.severity, HAZARD_SEVERITY_LABELS, t)}
         </span>
       </PopoverHeader>
       <div className="px-1.5 pb-2">
@@ -391,7 +398,9 @@ function HazardBody({
             {hazard.reporter ?? t("Unknown rider")} ·{" "}
             {format.relativeTime(hazard.created_at)}
           </span>
-          <span className="shrink-0">✓ {hazard.confirmations}</span>
+          <span className="shrink-0">
+            ✓ {format.integer(hazard.confirmations)}
+          </span>
         </div>
       </div>
     </>
@@ -415,8 +424,22 @@ function ConditionBody({
   const BadgeIcon = conditionKindIcon(kind);
   const title = isClosure ? point.closure.title : point.pass.name;
   const subtitle = isClosure
-    ? `${point.closure.reason} · ${point.closure.severity}`
-    : `${t("Seasonal pass")} · ${point.pass.status}`;
+    ? t("{reason} · {severity}", {
+        reason: translateKnownLabel(
+          point.closure.reason,
+          CLOSURE_REASON_LABELS,
+          t,
+        ),
+        severity: translateKnownLabel(
+          point.closure.severity,
+          CLOSURE_SEVERITY_SHORT_LABELS,
+          t,
+        ),
+      })
+    : t("{kind} · {status}", {
+        kind: t("Seasonal pass"),
+        status: translateKnownLabel(point.pass.status, PASS_STATUS_LABELS, t),
+      });
   const detourKm =
     isClosure && point.closure.reason === "roadworks"
       ? detourLengthKm(point.closure)

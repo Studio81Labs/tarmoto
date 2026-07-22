@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { CollectionRouteRow } from "./collection-route-atoms";
 import type { RouteCollectionPreviewItem } from "@/lib/api";
 import { createFormatters, type UnitSystem } from "@tarmoto/shared";
+import { translate } from "@/i18n";
 
 function item(
   overrides: Partial<RouteCollectionPreviewItem> = {},
@@ -40,6 +41,7 @@ function renderRow(
         author="Jane Rider"
         format={format}
         linkable={props.linkable}
+        t={translate}
       />
     </ul>,
   );

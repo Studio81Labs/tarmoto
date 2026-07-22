@@ -43,6 +43,18 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
   }
 
   try {
+    // Keep importing the heavy Auth.js module lazy: request-bound `t()` is
+    // also used by static/error rendering paths that never need a session.
+    const { auth } = await import("@/lib/auth");
+    const accountLocale = (await auth())?.user?.language;
+    if (accountLocale && isSupportedLocale(accountLocale)) {
+      return accountLocale;
+    }
+  } catch {
+    // An unavailable/expired auth session must not block browser detection.
+  }
+
+  try {
     const headerStore = await headers();
     const acceptLanguage = headerStore.get("accept-language");
     if (acceptLanguage) return resolveLocale(acceptLanguage);
@@ -71,7 +83,8 @@ async function resolveFromRequest(): Promise<SupportedLocale> {
  *      need strict per-request isolation under concurrent rendering should
  *      either pass `locale` explicitly to `t()` or call `getServerLocale()`.
  *
- * Precedence: explicit cookie > Accept-Language header > DEFAULT_LOCALE.
+ * Precedence: explicit cookie > authenticated account language >
+ * Accept-Language header > DEFAULT_LOCALE.
  */
 export async function readLocale(): Promise<SupportedLocale> {
   const ref = requestLocaleRef();

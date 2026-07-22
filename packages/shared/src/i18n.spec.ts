@@ -45,6 +45,8 @@ describe("i18n / resolveLocale", () => {
     expect(resolveLocale("xx;q=1.0,en;q=0.2")).toBe("en");
     expect(resolveLocale("en;q=garbage")).toBe("en");
     expect(resolveLocale("en;q=0.001")).toBe("en");
+    expect(resolveLocale("en;q=0")).toBe(DEFAULT_LOCALE);
+    expect(resolveLocale("en;q=1.5")).toBe(DEFAULT_LOCALE);
   });
 });
 

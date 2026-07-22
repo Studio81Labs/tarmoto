@@ -145,7 +145,7 @@ describe("MapPointPopover", () => {
         },
       });
       expect(screen.getByText(/deep on the apex/i)).toBeInTheDocument();
-      expect(screen.getByText("high")).toBeInTheDocument();
+      expect(screen.getByText("High")).toBeInTheDocument();
       expect(screen.getByText(/✓ 4/)).toBeInTheDocument();
       // Hazards never carry a maps link or route actions.
       expect(screen.queryByRole("link", { name: /google maps/i })).toBeNull();

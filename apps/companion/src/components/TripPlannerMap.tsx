@@ -1,5 +1,7 @@
 "use client";
 import { t } from "@/i18n";
+import { useFormat } from "@/format/FormatProvider";
+import { translateKnownLabel, WAYPOINT_ROLE_LABELS } from "@/i18n/domainLabels";
 import {
   forwardRef,
   useCallback,
@@ -609,6 +611,7 @@ const TripPlannerMapContent = forwardRef<
   },
   ref,
 ) {
+  const format = useFormat();
   // The map is "editable" only when the parent wires up waypoint editing (the
   // planner passes onMoveWaypoint; the read-only trip-detail page does not).
   // Gate the placement context menu on this so a right-click/long-press on the
@@ -2095,7 +2098,7 @@ const TripPlannerMapContent = forwardRef<
       const controller = new AbortController();
       reverseAddressCtrlRef.current = controller;
       void plannerApi
-        .reverseGeocode(lat, lng, { signal: controller.signal })
+        .reverseGeocode(lat, lng, { signal: controller.signal, format })
         .then((address) => {
           if (controller.signal.aborted) return;
           setWaypointMenu((menu) =>
@@ -2108,7 +2111,7 @@ const TripPlannerMapContent = forwardRef<
           // Address is informational — coordinates already show.
         });
     },
-    [],
+    [format],
   );
   // ── Waypoint pin context menu: info + remove (rider feedback) ──
   useEffect(() => {
@@ -3011,7 +3014,7 @@ const TripPlannerMapContent = forwardRef<
         >
           <div className="px-3.5 pb-2.5 pt-3">
             <p className="font-mono text-[8.5px] font-bold uppercase tracking-[1.2px] text-fg-mute">
-              {waypointMenu.role}
+              {translateKnownLabel(waypointMenu.role, WAYPOINT_ROLE_LABELS, t)}
             </p>
             <p className="mt-0.5 truncate text-[13px] font-bold text-ink">
               {waypointMenu.name}
@@ -3020,7 +3023,8 @@ const TripPlannerMapContent = forwardRef<
               {waypointMenu.address ?? t("Looking up the place… ")}
             </p>
             <p className="mt-1 font-mono text-[10px] tracking-[0.3px] text-fg-mute">
-              {waypointMenu.lat.toFixed(5)}, {waypointMenu.lng.toFixed(5)}
+              {format.decimal(waypointMenu.lat, 5)},{" "}
+              {format.decimal(waypointMenu.lng, 5)}
             </p>
           </div>
           {onRemoveWaypoint ? (

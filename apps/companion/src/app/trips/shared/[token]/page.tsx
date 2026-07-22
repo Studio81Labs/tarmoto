@@ -74,7 +74,7 @@ export default async function SharedTripPage({
 
   return (
     <div className="min-h-screen bg-cream text-ink">
-      <PublicShareHeader breadcrumb={t("Shared trip")} />
+      <PublicShareHeader breadcrumb={t("Shared trip")} t={t} />
 
       <main className="mx-auto max-w-[980px] px-7 pb-16 pt-8">
         {/* Hero */}
@@ -132,6 +132,7 @@ export default async function SharedTripPage({
                 "Simplified overview of the planned route across all days.",
               )}
               emptyText={t("Route preview unavailable for this shared trip.")}
+              t={t}
             />
 
             {/* Stat tiles */}
@@ -172,6 +173,7 @@ export default async function SharedTripPage({
           icon: <MapPin size={14} />,
         }}
         year={new Date().getFullYear()}
+        t={t}
       />
     </div>
   );

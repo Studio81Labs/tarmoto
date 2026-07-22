@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { t } from "@/i18n/server";
 import Link from "next/link";
 import { Button } from "@tarmoto/ui";
 import { AppLogo } from "@/components/AppLogo";
@@ -15,7 +15,7 @@ export function PublicExploreHeader({ callbackUrl = "/explore" }: Props = {}) {
   const encoded = encodeURIComponent(callbackUrl);
   return (
     <header className="flex h-14 items-center justify-between border-b border-line px-4 md:px-6">
-      <AppLogo />
+      <AppLogo label={t("Tarmoto")} />
       <div className="flex items-center gap-2">
         <Button
           variant="ghost"

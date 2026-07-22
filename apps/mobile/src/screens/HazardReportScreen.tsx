@@ -359,11 +359,12 @@ export default function HazardReportScreen() {
         ? translate("Acquiring GPS…")
         : translate("Waiting for GPS…");
     }
+    const format = getFormatters();
     const acc =
       Number.isFinite(location.accuracy) && location.accuracy > 0
-        ? ` · ±${getFormatters().distanceM(location.accuracy)}`
+        ? ` · ±${format.distanceM(location.accuracy)}`
         : "";
-    return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${acc}`;
+    return `${format.decimal(location.lat, 5)}, ${format.decimal(location.lng, 5)}${acc}`;
   }, [location, locationLoading]);
 
   const locationIconColor = isLocationStale

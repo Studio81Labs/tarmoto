@@ -132,6 +132,24 @@ export default [
         },
         {
           selector:
+            "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][property.name=/^(status|surface|severity|tier|role)$/]",
+          message:
+            "Translate stable enum/wire values through a cataloged label map before rendering them.",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer > MemberExpression[computed=true][object.name=/[A-Z0-9_]*(LABEL|TITLE|DESCRIPTION|MESSAGE|COPY|TEXT)[A-Z0-9_]*/]",
+          message:
+            "Translate catalog-shaped label maps at render time; type their values as EnglishMessageKey.",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer CallExpression[callee.property.name='toFixed']",
+          message:
+            "Format rider-facing numbers with getFormatters() instead of toFixed().",
+        },
+        {
+          selector:
             "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|aria-label|ariaLabel|cancelText|confirmText|description|emptyText|headerTitle|helpText|label|message|placeholder|subtitle|tabBarLabel|title)$/] > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing prop text with translate(), or document a deliberate non-translatable value.",

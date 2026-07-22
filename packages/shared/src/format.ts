@@ -71,21 +71,21 @@ export function resolveFormatLocaleFromAcceptLanguage(
     .split(",")
     .map((part) => {
       const [tag, ...params] = part.trim().split(";");
-      // Case-insensitive and numerically strict, mirroring resolveLocale's
-      // q-weight parsing in i18n.ts: only a full `q=<number>` match (any
-      // case) overrides the default of 1; anything else is ignored rather
-      // than mis-parsed via a lenient case-sensitive prefix + parseFloat.
+      // Case-insensitive and RFC-strict, mirroring resolveLocale's q-weight
+      // parsing in i18n.ts. Malformed q parameters reject the candidate.
       let q = 1;
       for (const param of params) {
-        const match = /^q=([0-9]*\.?[0-9]+)$/i.exec(param.trim());
-        if (match) {
-          const parsed = Number.parseFloat(match[1] ?? "");
-          if (!Number.isNaN(parsed)) q = parsed;
-        }
+        const trimmed = param.trim();
+        if (!/^q=/i.test(trimmed)) continue;
+        const match = /^q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/i.exec(trimmed);
+        q = match ? Number.parseFloat(match[1] ?? "0") : 0;
       }
       return { tag: (tag ?? "").trim(), q };
     })
-    .filter((candidate) => candidate.tag !== "" && candidate.tag !== "*")
+    .filter(
+      (candidate) =>
+        candidate.tag !== "" && candidate.tag !== "*" && candidate.q > 0,
+    )
     .sort((a, b) => b.q - a.q);
   for (const candidate of candidates) {
     const canonical = canonicalizeFormatLocale(candidate.tag);

@@ -14,6 +14,7 @@ import { t } from "@/i18n";
 import type { Poi } from "@/lib/planner/types";
 import type { PassStatus } from "@/lib/passes-summary";
 import { useFormat } from "@/format/FormatProvider";
+import { PASS_STATUS_LABELS } from "@/i18n/domainLabels";
 
 /**
  * Decision-support fields a POI can carry: OSM tags for store-backed POIs
@@ -132,11 +133,6 @@ const PASS_STATUS_DOT: Record<PassStatus, string> = {
   closed: "bg-quality-q1",
   unknown: "bg-ink/40",
 };
-const PASS_STATUS_LABEL: Record<PassStatus, string> = {
-  open: "Open",
-  closed: "Closed",
-  unknown: "Unknown",
-};
 
 /** Strip protocol + leading `www.` + trailing slash for a compact label. */
 function displayHost(url: string): string {
@@ -187,7 +183,7 @@ export function PoiDetails({ poi }: { poi: Poi }) {
             className={`inline-block h-2 w-2 shrink-0 rounded-full ${PASS_STATUS_DOT[d.passStatus]}`}
           />
           <span className="min-w-0 break-words">
-            {PASS_STATUS_LABEL[d.passStatus]}
+            {t(PASS_STATUS_LABELS[d.passStatus])}
           </span>
         </div>
       ) : null}

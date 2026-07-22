@@ -67,6 +67,27 @@ describe("social auth bridge", () => {
     expect(authResult.access_token).toBe("access-token");
   });
 
+  it("forwards the callback locale when registering a new OAuth rider", async () => {
+    post.mockResolvedValueOnce(result(201, AUTH_RESPONSE));
+
+    await exchangeOAuthUserForBackendTokens(
+      { email: "rider@example.com", displayName: "Rider One" },
+      { bridgeSecret: "secret-key", locale: "en" },
+    );
+
+    expect(post).toHaveBeenCalledWith("/api/v1/auth/register", {
+      body: {
+        email: "rider@example.com",
+        password: await buildSocialBridgePassword(
+          "rider@example.com",
+          "secret-key",
+        ),
+        display_name: "Rider One",
+      },
+      headers: { "Accept-Language": "en" },
+    });
+  });
+
   it("falls back to backend login when the social account already exists", async () => {
     post
       .mockResolvedValueOnce(

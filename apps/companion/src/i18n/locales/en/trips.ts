@@ -366,4 +366,7 @@ export const trips = {
   "avoid unpaved": "avoid unpaved",
   "other surface": "other surface",
   "{label} +{count}": "{label} +{count}",
+  "Date created": "Date created",
+  "Name (A→Z)": "Name (A→Z)",
+  "{title}, {status}": "{title}, {status}",
 } as const;

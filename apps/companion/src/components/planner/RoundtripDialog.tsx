@@ -44,7 +44,9 @@ const DIRECTIONS: Array<RoundtripOptions["direction"]> = [
   "SE",
 ];
 
-const DIRECTION_LABELS: Record<RoundtripOptions["direction"], string> = {
+// Compass abbreviations and the random-direction question mark are map glyphs,
+// not natural-language labels.
+const DIRECTION_GLYPHS: Record<RoundtripOptions["direction"], string> = {
   N: "N",
   NE: "NE",
   E: "E",
@@ -158,7 +160,7 @@ export function RoundtripDialog({
                   : "border-line bg-cream text-fg-dim hover:text-ink"
               }`}
             >
-              {DIRECTION_LABELS[option]}
+              {DIRECTION_GLYPHS[option]}
             </button>
           ))}
         </div>

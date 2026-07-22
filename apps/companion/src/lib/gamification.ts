@@ -26,6 +26,11 @@ import {
   type Formatters,
 } from "@tarmoto/shared";
 import type { EnglishMessageKey, Translate } from "@/i18n";
+import {
+  BADGE_TIER_LABELS,
+  PROGRESSION_TIER_LABELS,
+  translateKnownLabel,
+} from "@/i18n/domainLabels";
 import type { Badge, RiderStats } from "@/lib/types";
 
 type MeProfileDto = components["schemas"]["MeProfileDto"];
@@ -565,6 +570,14 @@ export function badgeCopyForKey(
   }
   const copy = BADGE_COPY[key];
   return { name: t(copy.name), description: t(copy.description) };
+}
+
+export function badgeTierLabel(tier: string, t: Translate): string {
+  return translateKnownLabel(tier.toLowerCase(), BADGE_TIER_LABELS, t);
+}
+
+export function progressionTierLabel(tier: string, t: Translate): string {
+  return translateKnownLabel(tier, PROGRESSION_TIER_LABELS, t);
 }
 
 export function challengeCopyForKey(

@@ -53,6 +53,7 @@ import {
   type RoadPreferenceValue,
 } from "./TripScreens.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripCreate">;
 
@@ -525,7 +526,8 @@ export default function TripCreateScreen() {
               {startIsLive
                 ? translate("Your current location")
                 : translate("Last map location")}{" "}
-              · {startLocation.lat.toFixed(3)}, {startLocation.lng.toFixed(3)}
+              · {getFormatters().decimal(startLocation.lat, 3)},{" "}
+              {getFormatters().decimal(startLocation.lng, 3)}
             </Text>
           </View>
         </View>
