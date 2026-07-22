@@ -1,9 +1,14 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import { QUALITY_BAND_COLORS } from "@/lib/planner/quality-bands";
+import {
+  QUALITY_BAND_COLORS,
+  QUALITY_BAND_LABELS_SHORT,
+} from "@/lib/planner/quality-bands";
 import type { FlaggedSection } from "@/lib/planner/types";
 import type { EnglishMessageKey } from "@/i18n";
+import { useFormat } from "@/format/FormatProvider";
+import { SURFACE_LABELS } from "@/lib/utils";
 
 /**
  * Flagged-section card (design: Inspect § 03): rough sections carry a
@@ -30,6 +35,18 @@ export function FlaggedSectionCard({
   onReroute,
 }: FlaggedSectionCardProps) {
   const t = useTranslation();
+  const format = useFormat();
+  const label =
+    flag.kind === "rough" && flag.surface
+      ? t("{quality} · {surface}, {distance}", {
+          quality: t(QUALITY_BAND_LABELS_SHORT.rough),
+          surface: t(SURFACE_LABELS[flag.surface]),
+          distance: format.distanceKm(flag.lengthKm),
+        })
+      : t("{quality} · {distance}", {
+          quality: t("No data yet"),
+          distance: format.distanceKm(flag.lengthKm),
+        });
   const tone =
     flag.kind === "rough"
       ? QUALITY_BAND_COLORS.rough
@@ -39,7 +56,7 @@ export function FlaggedSectionCard({
     <div
       role="button"
       tabIndex={0}
-      aria-label={t("Preview flagged section: {label}", { label: flag.label })}
+      aria-label={t("Preview flagged section: {label}", { label })}
       onClick={() => onOpen(flag.segmentId)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -57,7 +74,7 @@ export function FlaggedSectionCard({
       />
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-bold tracking-[-0.1px] text-ink">
-          {flag.label}
+          {label}
         </div>
         <div className="mt-0.5 text-[11.5px] leading-snug text-fg-dim">
           {t(FLAG_COPY[flag.kind])}
@@ -68,9 +85,9 @@ export function FlaggedSectionCard({
         aria-label={
           action === "REROUTE"
             ? t("Reroute around flagged section: {label}", {
-                label: flag.label,
+                label,
               })
-            : t("Inspect flagged section: {label}", { label: flag.label })
+            : t("Inspect flagged section: {label}", { label })
         }
         onClick={(event) => {
           event.stopPropagation();

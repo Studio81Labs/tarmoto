@@ -1,4 +1,5 @@
 export const trips = {
+  Accommodation: "Accommodation",
   "A planned Tarmoto trip. Sign in to join the group plan, suggest route changes, and vote with the riders.":
     "A planned Tarmoto trip. Sign in to join the group plan, suggest route changes, and vote with the riders.",
   "A read-only preview of a planned Tarmoto trip. You can view the route without an account.":
@@ -229,12 +230,15 @@ export const trips = {
   fuel: "fuel",
   rest: "rest",
   "waypoint {n}": "waypoint {n}",
+  "Twisty highlight": "Twisty highlight",
+  "Day {day} — {title}": "Day {day} — {title}",
   "{count, plural, one {# member} other {# members}}":
     "{count, plural, one {# member} other {# members}}",
   "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.":
     "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
   "{name} invited you to collaborate as {role}.":
     "{name} invited you to collaborate as {role}.",
+  "{name} loop": "{name} loop",
   "≈{distance} — already a full day's ride, left as routed.":
     "\u2248{distance} \u2014 already a full day's ride, left as routed.",
   "≈{distance} — limited fun roads nearby.":

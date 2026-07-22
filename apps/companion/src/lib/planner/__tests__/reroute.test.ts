@@ -132,7 +132,7 @@ describe("rerouteViaWaypoint", () => {
     const waypoint = rerouteViaWaypoint(plan, "d1-s1");
     expect(waypoint.type).toBe("via");
     expect(waypoint.location).toEqual(plan.location);
-    expect(waypoint.name).toBe("Reroute via");
+    expect(waypoint.name).toBeUndefined();
     expect(waypoint.id).toContain("d1-s1");
   });
 });

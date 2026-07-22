@@ -17,9 +17,14 @@ describe("useTripStore planner editing", () => {
     store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
 
     const firstDay = useTripStore.getState().activeTrip?.days[0];
+    expect(useTripStore.getState().activeTrip?.name).toBe("");
     expect(firstDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
       "start",
       "end",
+    ]);
+    expect(firstDay?.waypoints.map((waypoint) => waypoint.name)).toEqual([
+      undefined,
+      undefined,
     ]);
     // Geometry is now driven exclusively by applyRouteResult (live routing
     // hook). appendPlannerWaypoint no longer synthesises geometry.
@@ -35,6 +40,11 @@ describe("useTripStore planner editing", () => {
       "start",
       "via",
       "end",
+    ]);
+    expect(updatedDay?.waypoints.map((waypoint) => waypoint.name)).toEqual([
+      undefined,
+      undefined,
+      undefined,
     ]);
     // Still no geometry until the live routing hook calls applyRouteResult.
     expect(updatedDay?.routeGeometry).toBeUndefined();
@@ -2459,8 +2469,8 @@ describe("useTripStore role-from-index waypoints (addendum §1)", () => {
     seed(); // [start, via, end]
     useTripStore.getState().reorderWaypoints(0, 1, 0);
     expect(types()).toEqual(["start", "via", "end"]);
-    // The moved via is now named Start; the old start became a via.
-    expect(names()).toEqual(["Start", "Via 1", "Finish"]);
+    // Generated roles remain semantic; render boundaries translate the types.
+    expect(names()).toEqual([undefined, undefined, undefined]);
   });
 
   it("dragging the start to the bottom makes it the finish", () => {
@@ -2668,7 +2678,7 @@ describe("useTripStore split lifecycle (addendum)", () => {
     expect(trip.days[1]!.waypoints.some((w) => w.type === "via")).toBe(false);
 
     // Original endpoints survive at the outer boundaries.
-    expect(trip.days[0]!.waypoints[0]!.name).toBe("Start");
+    expect(trip.days[0]!.waypoints[0]!.name).toBeUndefined();
     expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
   });
 
@@ -2885,7 +2895,7 @@ describe("renameActiveTrip", () => {
     expect(useTripStore.getState().routeDirty).toBe(false);
 
     useTripStore.getState().undo();
-    expect(useTripStore.getState().activeTrip?.name).toBe("New Trip");
+    expect(useTripStore.getState().activeTrip?.name).toBe("");
   });
 
   it("ignores empty and unchanged names", () => {

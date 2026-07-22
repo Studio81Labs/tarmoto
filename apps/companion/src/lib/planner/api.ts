@@ -1,5 +1,3 @@
-import { t as englishTranslate, type Translate } from "@/i18n";
-import { SURFACE_LABELS } from "@/lib/utils";
 import {
   createFormatters,
   DEFAULT_FORMAT_LOCALE,
@@ -64,10 +62,7 @@ import type {
   RouteQualitySummary,
   RouteSegment,
 } from "./types";
-import {
-  coalesceQualityRuns,
-  QUALITY_BAND_LABELS_SHORT,
-} from "./quality-bands";
+import { coalesceQualityRuns } from "./quality-bands";
 
 /**
  * The planner's single data seam. Real sources: backend Valhalla routing
@@ -237,11 +232,6 @@ export function surfaceMixToPercents(
 
 export function deriveFlaggedSections(
   segments: readonly RouteSegment[],
-  format: Pick<Formatters, "distanceKm"> = createFormatters({
-    locale: DEFAULT_FORMAT_LOCALE,
-    units: "metric",
-  }),
-  t: Translate = englishTranslate,
 ): FlaggedSection[] {
   const flagged: FlaggedSection[] = [];
   // Coalesce adjacent same-band runs so a long rough/uncovered stretch is one
@@ -253,21 +243,13 @@ export function deriveFlaggedSections(
         segmentId: run.id,
         kind: "rough",
         lengthKm,
-        label: t("{quality} · {surface}, {distance}", {
-          quality: t(QUALITY_BAND_LABELS_SHORT.rough),
-          surface: t(SURFACE_LABELS[run.surface]),
-          distance: format.distanceKm(lengthKm),
-        }),
+        surface: run.surface,
       });
     } else if (run.band === "no_data") {
       flagged.push({
         segmentId: run.id,
         kind: "no_data",
         lengthKm,
-        label: t("{quality} · {distance}", {
-          quality: t("No data yet"),
-          distance: format.distanceKm(lengthKm),
-        }),
       });
     }
   }
@@ -305,7 +287,9 @@ function alongRoutePoiToPlannerPoi(poi: RoutePoiSuggestion): PlannerPoi {
   return {
     id: poi.external_id,
     type: TYPE_BY_ALONG_ROUTE_KIND[poi.kind],
-    name: poi.name ?? "Unnamed",
+    // Empty is semantic "source supplied no name"; render boundaries choose a
+    // cataloged fallback for the active locale.
+    name: poi.name?.trim() ?? "",
     lat: poi.lat,
     lng: poi.lng,
     distanceFromRouteKm: poi.distance_from_route_km,
@@ -317,7 +301,7 @@ function accommodationToPlannerPoi(stay: AccommodationSuggestion): PlannerPoi {
   return {
     id: stay.external_id,
     type: "stay",
-    name: stay.name ?? "Unnamed",
+    name: stay.name?.trim() ?? "",
     lat: stay.lat,
     lng: stay.lng,
     distanceFromRouteKm: stay.distance_km,
@@ -371,7 +355,7 @@ function storedPoiToCategoryPoi(poi: StoredPoiSuggestion): Poi | null {
     // map/legend/popover can credit OSM vs Foursquare. Anything unexpected falls
     // back to `osm` (the only pre-FSQ source).
     source: poi.source === "fsq" ? "fsq" : "osm",
-    name: poi.name ?? "Unnamed",
+    name: poi.name?.trim() ?? "",
     lat: poi.lat,
     lng: poi.lng,
     meta: {
@@ -417,7 +401,7 @@ function funZoneToCategoryPoi(zone: FunZoneListItem): Poi | null {
     id: zone.id,
     category: "twisty_highlight",
     source: "tarmoto",
-    name: zone.name ?? "Twisty highlight",
+    name: zone.name?.trim() ?? "",
     lat: centroid.lat,
     lng: centroid.lng,
     meta: { twistyScore: zone.composite_score, lengthKm: zone.total_curve_km },

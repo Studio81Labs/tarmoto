@@ -169,6 +169,8 @@ describe("InspectTab", () => {
     const rough = flags.find((f) => f.kind === "rough");
     const noData = flags.find((f) => f.kind === "no_data");
     if (!rough || !noData) throw new Error("fixture must flag both kinds");
+    const roughLabel = "Rough · Gravel, 6.2 km";
+    const noDataLabel = "No data yet · 4.1 km";
 
     const onInspectSegment = vi.fn();
     const onRerouteSegment = vi.fn();
@@ -183,21 +185,21 @@ describe("InspectTab", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: `Reroute around flagged section: ${rough.label}`,
+        name: `Reroute around flagged section: ${roughLabel}`,
       }),
     );
     expect(onRerouteSegment).toHaveBeenCalledWith(rough.segmentId);
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: `Inspect flagged section: ${noData.label}`,
+        name: `Inspect flagged section: ${noDataLabel}`,
       }),
     );
     expect(onInspectSegment).toHaveBeenCalledWith(noData.segmentId);
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: `Preview flagged section: ${rough.label}`,
+        name: `Preview flagged section: ${roughLabel}`,
       }),
     );
     expect(onInspectSegment).toHaveBeenCalledWith(rough.segmentId);

@@ -58,7 +58,8 @@ export interface FlaggedSection {
   segmentId: string;
   kind: "rough" | "no_data";
   lengthKm: number;
-  label: string;
+  /** Present for rough runs; UI combines this semantic value with locale copy. */
+  surface?: SurfaceType;
 }
 
 export interface RouteQualitySummary {

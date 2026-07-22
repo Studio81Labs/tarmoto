@@ -102,7 +102,7 @@ describe("tripToGpx", () => {
 
     expect(gpx.match(/<rte>/g)?.length).toBe(2);
     expect(gpx).toContain("<name>Day 1 — Stelvio</name>");
-    expect(gpx).toContain("<name>Fuel stop</name>");
+    expect(gpx).toContain("<name>Fuel</name>");
     expect(gpx).toContain("<type>fuel</type>");
     expect(gpx).toContain("<name>Day 2</name>");
   });

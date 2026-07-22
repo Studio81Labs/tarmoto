@@ -18,6 +18,7 @@ import {
   conditionKindIcon,
 } from "@/lib/conditions-visual";
 import type { Poi } from "@/lib/planner/types";
+import { poiDisplayName } from "@/lib/planner/labels";
 import type { HazardType } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
 import {
@@ -188,7 +189,7 @@ function PoiBody({
     <>
       <PopoverHeader
         onClose={onClose}
-        title={poi.name}
+        title={poiDisplayName(poi, t)}
         subtitle={`${t(meta.label)} · ${poi.source}`}
         badge={
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-paper text-ink">

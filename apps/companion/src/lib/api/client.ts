@@ -4,7 +4,7 @@ import { createTarmotoQueryClient } from "@tarmoto/openapi-client/react-query";
 import type { paths } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
 import { API_HOST } from "@/lib/config";
-import { t } from "@/i18n";
+import { getDocumentLocale, t } from "@/i18n";
 
 // Typed openapi-fetch client for all spec-defined endpoints.
 //
@@ -138,19 +138,33 @@ export async function openApiData<T>(
 
 function apiErrorMessage(body: unknown, status: number): string {
   void body;
-  if (status === 401) return t("Your session has expired. Sign in again.");
-  if (status === 403) return t("You don't have permission to do that.");
-  if (status === 404) return t("The requested item could not be found.");
+  const locale = getDocumentLocale();
+  if (status === 401)
+    return t("Your session has expired. Sign in again.", undefined, locale);
+  if (status === 403)
+    return t("You don't have permission to do that.", undefined, locale);
+  if (status === 404)
+    return t("The requested item could not be found.", undefined, locale);
   if (status === 409) {
     return t(
       "That change conflicts with the current state. Refresh and try again.",
+      undefined,
+      locale,
     );
   }
   if (status === 400 || status === 422) {
-    return t("Some information is invalid. Check it and try again.");
+    return t(
+      "Some information is invalid. Check it and try again.",
+      undefined,
+      locale,
+    );
   }
   if (status >= 500) {
-    return t("The server is temporarily unavailable. Try again shortly.");
+    return t(
+      "The server is temporarily unavailable. Try again shortly.",
+      undefined,
+      locale,
+    );
   }
-  return t("Check your connection and try again.");
+  return t("Check your connection and try again.", undefined, locale);
 }

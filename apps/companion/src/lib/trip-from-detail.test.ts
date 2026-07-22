@@ -217,7 +217,7 @@ describe("tripFromDetail", () => {
     });
   });
 
-  it("falls back to a 'Day N overnight' label when the hotel waypoint has no name", () => {
+  it("keeps an unnamed overnight semantic for locale-aware rendering", () => {
     const detail = makeDetail();
     const day = detail.days[0]!;
     const trip = tripFromDetail({
@@ -231,7 +231,7 @@ describe("tripFromDetail", () => {
         },
       ],
     });
-    expect(trip.days[0]!.overnightStop?.name).toBe("Day 1 overnight");
+    expect(trip.days[0]!.overnightStop?.name).toBe("");
   });
 
   it("leaves overnightStop undefined when the day has no hotel waypoint", () => {

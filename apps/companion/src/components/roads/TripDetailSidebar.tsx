@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Loader2, MapPin, X } from "lucide-react";
 import { MetricTile, Stamp, type MetricTileProps } from "@tarmoto/ui";
 import type { TripDetail, Waypoint } from "@/lib/types";
+import { waypointDisplayName } from "@/lib/planner/labels";
 import { useFormat } from "@/format/FormatProvider";
 import type { EnglishMessageKey } from "@/i18n";
 
@@ -202,7 +203,7 @@ function TripBody({ trip }: { trip: TripDetail }) {
                 >
                   <MapPin size={13} className="shrink-0 text-fg-mute" />
                   <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
-                    {wp.name ?? role}
+                    {waypointDisplayName(wp, t)}
                   </span>
                   <span className="shrink-0 font-mono text-[9px] font-bold uppercase tracking-[1px] text-fg-mute">
                     {role}

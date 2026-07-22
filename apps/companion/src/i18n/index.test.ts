@@ -2,6 +2,7 @@ import { makeTranslator } from "@tarmoto/shared";
 import {
   LOCALES,
   SUPPORTED_LOCALES,
+  getDocumentLocale,
   resolveLocale,
   tDynamic,
   translate,
@@ -28,6 +29,11 @@ describe("companion i18n barrel", () => {
   it("re-exports the shared registry + resolver", () => {
     expect(SUPPORTED_LOCALES).toEqual(Object.keys(LOCALES));
     expect(resolveLocale("en-GB")).toBe("en");
+  });
+
+  it("reads the request-resolved browser locale from the root document", () => {
+    document.documentElement.lang = "en-GB";
+    expect(getDocumentLocale()).toBe("en");
   });
 
   it("registers a companion catalog for every supported locale", () => {

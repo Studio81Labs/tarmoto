@@ -5,6 +5,10 @@ export const MAX_TRIP_DAYS = 14;
 import type { Position as GeoJSONPosition } from "geojson";
 import { haversineKm } from "@tarmoto/shared";
 import { filterRoutingWaypoints, isRoutingWaypoint } from "@/lib/trip-routing";
+import {
+  hasCustomWaypointName,
+  isLegacyGeneratedWaypointName,
+} from "@/lib/planner/labels";
 import type { RouteResponse } from "@/lib/api";
 import type {
   DayPlan,
@@ -41,7 +45,6 @@ const DEFAULT_PLANNER_PARAMETERS: TripParameters = {
 function createEmptyPlannerDay(dayNumber: number): TripDay {
   return {
     dayNumber,
-    title: `Day ${dayNumber}`,
     waypoints: [],
     distanceKm: 0,
     durationMinutes: 0,
@@ -57,13 +60,15 @@ function createPlannerDraftTrip(
 ): Trip {
   return {
     id: `planner-${nowIso.replace(/[^0-9]/g, "").slice(0, 14)}`,
-    name: "New Trip",
+    // Empty is the semantic "not named yet" state. Presentation and save
+    // boundaries resolve it through the active locale catalog.
+    name: "",
     status: "draft",
     num_days: 1,
     createdAt: nowIso,
     updatedAt: nowIso,
     parameters: { ...parameters },
-    collaborators: [{ userId: "u-owner", displayName: "You", role: "owner" }],
+    collaborators: [{ userId: "u-owner", displayName: "", role: "owner" }],
     days: [createEmptyPlannerDay(1)],
   };
 }
@@ -88,22 +93,12 @@ function appendPlannerWaypointToDay(
   const insertAt = viaInsertIndex(waypoints);
 
   if (waypoints.length === 0) {
-    waypoints.push({ id, name: "Start", location, type: "start" });
+    waypoints.push({ id, location, type: "start" });
   } else if (insertAt === waypoints.length) {
-    waypoints.push({ id, name: "Finish", location, type: "end" });
+    waypoints.push({ id, location, type: "end" });
   } else {
-    const viaCount =
-      waypoints.filter(
-        (w) =>
-          w.type === "via" ||
-          w.type === "fuel" ||
-          w.type === "rest" ||
-          w.type === "photo" ||
-          w.type === "accommodation",
-      ).length + 1;
     waypoints.splice(insertAt, 0, {
       id,
-      name: `Via ${viaCount}`,
       location,
       type: "via",
     });
@@ -515,7 +510,7 @@ function activePlannerSaveWaypoints(waypoints: Waypoint[]): {
     // Always emit the `name` key (null for an unnamed via) — the save-route
     // contract (SaveRouteBody) types it `string | null` and the store test
     // asserts the key's presence on every waypoint.
-    name: w.name ?? null,
+    name: hasCustomWaypointName(w.name) ? w.name : null,
     type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
   }));
 }
@@ -557,18 +552,15 @@ export function dayFinishWaypoint(waypoints: Waypoint[]): Waypoint | undefined {
   return waypoints.find((w) => w.type === "end");
 }
 
-/** Matches the auto-generated names the planner assigns to routing waypoints. */
-const DEFAULT_ROLE_NAME_RE = /^(Start|Finish|Via \d+|Reroute via)$/;
-
 /**
  * Role-from-index: among the ROUTING waypoints (start/via/end — stop types
  * like fuel or accommodation keep their type and don't participate), the
  * first is the start, the last is the finish, everything between is a via.
  * Called after any reorder/removal so dragging a via to the top makes it
  * the start (demoting the old start to a via), and deleting the start
- * promotes the next routing waypoint. Auto-generated names ("Start",
- * "Via 2", …) are re-derived to match the new role; custom names (geocoded
- * towns) are preserved.
+ * promotes the next routing waypoint. Legacy auto-generated English names are
+ * removed so the new role is translated at render time; custom names
+ * (geocoded towns) are preserved.
  */
 export function reassignWaypointRoles(waypoints: Waypoint[]): Waypoint[] {
   const routing = waypoints
@@ -586,16 +578,23 @@ export function reassignWaypointRoles(waypoints: Waypoint[]): Waypoint[] {
   routing.forEach(({ waypoint, index }, order) => {
     const role: Waypoint["type"] =
       order === 0 ? "start" : order === routing.length - 1 ? "end" : "via";
-    if (waypoint.type === role) return;
+    const clearLegacyName = isLegacyGeneratedWaypointName(waypoint.name);
+    if (waypoint.type === role && !clearLegacyName) return;
     changed = true;
-    let name = waypoint.name;
-    if (name === undefined || DEFAULT_ROLE_NAME_RE.test(name)) {
-      name =
-        role === "start" ? "Start" : role === "end" ? "Finish" : `Via ${order}`;
-    }
-    next[index] = { ...waypoint, type: role, name };
+    const updated = stripLegacyGeneratedWaypointName({
+      ...waypoint,
+      type: role,
+    });
+    next[index] = updated;
   });
   return changed ? next : waypoints;
+}
+
+function stripLegacyGeneratedWaypointName(waypoint: Waypoint): Waypoint {
+  if (!isLegacyGeneratedWaypointName(waypoint.name)) return waypoint;
+  const updated = { ...waypoint };
+  delete updated.name;
+  return updated;
 }
 
 /**
@@ -654,7 +653,6 @@ function syncLinkedStart(
   }
   const seededStart: Waypoint = {
     id: nextWaypoints[startIdx]?.id ?? `link-${next.dayNumber}`,
-    name: "Start",
     type: "start",
     location: { ...end.location },
   };
@@ -1044,39 +1042,46 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             return km > fromKm + 0.5 && km < toKm - 0.5;
           });
 
+          const existingStart = routeDay.waypoints.find(
+            (waypoint) => waypoint.type === "start",
+          );
           const startWaypoint: Waypoint =
-            index === 0
-              ? (routeDay.waypoints.find((w) => w.type === "start") ?? {
-                  id: `split-start-${plan.dayNumber}`,
-                  name: plan.startTown,
-                  location: { lng: startCoord[0]!, lat: startCoord[1]! },
-                  type: "start",
-                })
-              : {
-                  id: `split-start-${plan.dayNumber}`,
-                  name: plan.startTown,
-                  location: { lng: startCoord[0]!, lat: startCoord[1]! },
-                  type: "start",
-                };
+            index === 0 && existingStart
+              ? stripLegacyGeneratedWaypointName(existingStart)
+              : index === 0
+                ? {
+                    id: `split-start-${plan.dayNumber}`,
+                    location: { lng: startCoord[0]!, lat: startCoord[1]! },
+                    type: "start",
+                  }
+                : {
+                    id: `split-start-${plan.dayNumber}`,
+                    ...(plan.startTown ? { name: plan.startTown } : {}),
+                    location: { lng: startCoord[0]!, lat: startCoord[1]! },
+                    type: "start",
+                  };
+          const existingEnd = routeDay.waypoints.find(
+            (waypoint) => waypoint.type === "end",
+          );
           const endWaypoint: Waypoint =
-            index === plans.length - 1
-              ? (routeDay.waypoints.find((w) => w.type === "end") ?? {
-                  id: `split-end-${plan.dayNumber}`,
-                  name: plan.endTown,
-                  location: { lng: endCoord[0]!, lat: endCoord[1]! },
-                  type: "end",
-                })
-              : {
-                  id: `split-end-${plan.dayNumber}`,
-                  name: plan.endTown,
-                  location: { lng: endCoord[0]!, lat: endCoord[1]! },
-                  type: "end",
-                };
+            index === plans.length - 1 && existingEnd
+              ? stripLegacyGeneratedWaypointName(existingEnd)
+              : index === plans.length - 1
+                ? {
+                    id: `split-end-${plan.dayNumber}`,
+                    location: { lng: endCoord[0]!, lat: endCoord[1]! },
+                    type: "end",
+                  }
+                : {
+                    id: `split-end-${plan.dayNumber}`,
+                    ...(plan.endTown ? { name: plan.endTown } : {}),
+                    location: { lng: endCoord[0]!, lat: endCoord[1]! },
+                    type: "end",
+                  };
 
           const share = totalKm > 0 ? (toKm - fromKm) / totalKm : 0;
           return {
             dayNumber: plan.dayNumber,
-            title: `Day ${plan.dayNumber}`,
             waypoints: [startWaypoint, ...interior, endWaypoint],
             routeGeometry: { type: "LineString", coordinates: sliced },
             distanceKm: plan.distanceKm,
@@ -1504,12 +1509,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
               else delete updated.poiCategory;
               if (meta?.name) updated.name = meta.name;
+              else if (isLegacyGeneratedWaypointName(updated.name))
+                delete updated.name;
               waypoints[startIndex] = updated;
             } else {
               waypoints.unshift({
                 ...newWaypoint,
                 type: "start",
-                name: meta?.name ?? "Start",
+                ...(meta?.name ? { name: meta.name } : {}),
                 ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
@@ -1532,11 +1539,14 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               const updated: Waypoint = {
                 ...finish,
                 type: "end",
-                name:
-                  meta?.name ??
-                  (finish.type === "end" ? finish.name : "Finish"),
                 location: { lng: coords.lng, lat: coords.lat },
               };
+              if (meta?.name) updated.name = meta.name;
+              else if (
+                finish.type !== "end" ||
+                isLegacyGeneratedWaypointName(updated.name)
+              )
+                delete updated.name;
               if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
               else delete updated.poiCategory;
               waypoints[finishIdx] = updated;
@@ -1544,7 +1554,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               waypoints.push({
                 ...newWaypoint,
                 type: "end",
-                name: meta?.name ?? "Finish",
+                ...(meta?.name ? { name: meta.name } : {}),
                 ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
@@ -1710,7 +1720,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           dayNumber: result.length + 1, // renumber contiguously
           // Send the title with the day so it follows the day through
           // renumbering (the server can't map it back after a removal).
-          title: d.title ?? null,
+          title:
+            d.title?.trim().toLowerCase() === `day ${d.dayNumber}`
+              ? null
+              : (d.title ?? null),
           startLinked: predecessorSurvived ? (d.startLinked ?? false) : false,
           waypoints: activePlannerSaveWaypoints(
             normalizeDayFinish(d.waypoints),
@@ -1819,7 +1832,6 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             newDay.waypoints = [
               {
                 id: `link-${newDay.dayNumber}`,
-                name: "Start",
                 type: "start",
                 location: { ...prevEnd.location },
               },
@@ -2250,8 +2262,8 @@ function dayPlansFromTripDays(days: TripDay[]): DayPlan[] {
         surfaceMix: [],
         flagged: [],
       },
-      startTown: startName ?? "Start",
-      endTown: finishName ?? "Finish",
+      startTown: startName ?? "",
+      endTown: finishName ?? "",
       suggestedStays: [],
       endKm: Math.round(endKm * 10) / 10,
     };

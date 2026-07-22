@@ -1,7 +1,11 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
 import {
   Fragment,
   useCallback,
@@ -76,6 +80,11 @@ import {
 import { fetchOvernightTowns } from "@/lib/planner/api";
 import { aggregateInspectDay } from "@/lib/planner/inspect-day";
 import { plannerApi } from "@/lib/planner/api";
+import {
+  hasCustomWaypointName,
+  isLegacyGeneratedWaypointName,
+  waypointDisplayName,
+} from "@/lib/planner/labels";
 import {
   buildPrefsSummary,
   DEFAULT_ROAD_PREFERENCE,
@@ -551,12 +560,11 @@ export default function TripPlannerPage() {
         ? undefined
         : displayedTrip?.days[index];
       if (savedDay) return savedDay;
+      const startLabel = plan.startTown || t("Start");
+      const endLabel = plan.endTown || t("Finish");
       return {
         dayNumber: plan.dayNumber,
-        title:
-          plan.startTown && plan.endTown
-            ? `${plan.startTown} → ${plan.endTown}`
-            : undefined,
+        title: `${startLabel} → ${endLabel}`,
         waypoints: [],
         distanceKm: plan.distanceKm,
         durationMinutes: plan.timeMin ?? 0,
@@ -564,7 +572,7 @@ export default function TripPlannerPage() {
         avgQuality: plan.quality.score ?? 0,
       };
     });
-  }, [dayPlans, displayedTrip, splitOnSingleDay]);
+  }, [dayPlans, displayedTrip, splitOnSingleDay, t]);
   // The day-view selection (card highlight + map day focus) is explicit and
   // nullable: day 1 is preselected on load, and clicking the active day
   // deselects it (all days shown again).
@@ -853,20 +861,20 @@ export default function TripPlannerPage() {
         : [];
     });
   }, [splitStatus, dayPlans, displayedTrip]);
-  // Map-placed pins carry auto-generated names ("Start", "Via 2") —
-  // reverse-geocode them to a place name once per placement (addendum §2).
+  // Unnamed semantic pins and legacy auto-generated names are reverse-geocoded
+  // to a real place name once per placement (addendum §2).
   const reverseGeocodedRef = useRef(new Set<string>());
   useEffect(() => {
     const seen = reverseGeocodedRef.current;
     const waypoints = selectedDay?.waypoints ?? [];
-    const isAutoName = (name: string) =>
-      /^(Start|Finish|Via \d+|Reroute via)$/.test(name);
+    const needsPlaceName = (name: string | undefined) =>
+      !name?.trim() || isLegacyGeneratedWaypointName(name);
     const keyFor = (w: {
       id: string;
       location: { lat: number; lng: number };
     }) => `${w.id}:${w.location.lat.toFixed(4)}:${w.location.lng.toFixed(4)}`;
     for (const waypoint of waypoints) {
-      if (!isAutoName(waypoint.name ?? "")) continue;
+      if (!needsPlaceName(waypoint.name)) continue;
       const key = keyFor(waypoint);
       // Fire once per (waypoint, position) ever. We deliberately do NOT abort +
       // re-issue on cleanup: with several default-named waypoints, the first
@@ -892,7 +900,7 @@ export default function TripPlannerPage() {
           if (
             current &&
             keyFor(current) === key &&
-            isAutoName(current.name ?? "")
+            needsPlaceName(current.name)
           ) {
             renameWaypoint(waypoint.id, placeName);
           }
@@ -1356,9 +1364,9 @@ export default function TripPlannerPage() {
   const openRenameDialog = useCallback(() => {
     const trip = activeTripRef.current;
     if (!trip) return;
-    setNameDraft(tripDisplayName(trip) ?? "");
+    setNameDraft(tripDisplayName(trip, t) ?? "");
     setRenameOpen(true);
-  }, []);
+  }, [t]);
   const confirmRename = useCallback(() => {
     const trimmed = nameDraft.trim();
     if (trimmed) {
@@ -1435,7 +1443,7 @@ export default function TripPlannerPage() {
       // drafts keep local in-memory ids, but their suggestions and activity
       // already belong to the promoted backend trip.
       const existingTripId = resolveExistingTripId(serverTripId, displayedTrip);
-      const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
+      const importedRoutePayload = buildImportedRoutePayload(displayedTrip, t);
       if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
         toast.error(
           t("Imported routes need at least two route points before saving."),
@@ -1483,7 +1491,7 @@ export default function TripPlannerPage() {
         setSaving(false);
         return;
       }
-      const basePayload = buildTripMetadataPayload(displayedTrip, p);
+      const basePayload = buildTripMetadataPayload(displayedTrip, p, t);
       const { data: saved } = existingTripId
         ? await tripsApi.update(existingTripId, basePayload)
         : await tripsApi.create(basePayload);
@@ -1617,7 +1625,7 @@ export default function TripPlannerPage() {
       // re-route and replace. Persist it (names + geometry) through the import
       // endpoint instead. Both branches below skip the re-routing PUT.
       const importedRoutePayload = trip
-        ? buildImportedRoutePayload(trip)
+        ? buildImportedRoutePayload(trip, t)
         : null;
       let persistNames: (() => Promise<{ data: unknown }>) | null = null;
       // Whether this persist CREATES a new backend trip (importRoute on an
@@ -1700,12 +1708,11 @@ export default function TripPlannerPage() {
         // the trip metadata stays consistent with the persisted day payload.
         const basePayload = {
           ...(currentTrip
-            ? buildTripMetadataPayload(currentTrip, plannerParams)
+            ? buildTripMetadataPayload(currentTrip, plannerParams, t)
             : buildTripMetadataPayload(
-                { name: "New Trip" } as Parameters<
-                  typeof buildTripMetadataPayload
-                >[0],
+                { name: "" } as Parameters<typeof buildTripMetadataPayload>[0],
                 plannerParams,
+                t,
               )),
           num_days: days.length,
         };
@@ -1770,7 +1777,7 @@ export default function TripPlannerPage() {
         // plain members (metadata is owner/admin-only while route saves
         // are any-member).
         const { data: updated } = await tripsApi.update(tripId, {
-          ...buildTripMetadataPayload(currentTrip, plannerParams),
+          ...buildTripMetadataPayload(currentTrip, plannerParams, t),
           num_days: days.length,
         });
         detail = updated as typeof data;
@@ -2589,7 +2596,7 @@ export default function TripPlannerPage() {
                   className="group flex min-w-0 items-center gap-1.5 text-left disabled:cursor-default"
                 >
                   <h1 className="min-w-0 truncate text-[15px] font-extrabold leading-tight tracking-[-0.3px] text-ink group-hover:text-accent group-disabled:group-hover:text-ink">
-                    {tripDisplayName(displayedTrip) ?? t("New Trip")}
+                    {tripDisplayName(displayedTrip, t) ?? t("New Trip")}
                   </h1>
                   {canRenameTrip ? (
                     <Pencil
@@ -3754,7 +3761,7 @@ function isDefaultTripName(name: string | undefined): boolean {
  * — "Praha → Brno", or "Praha loop" for roundtrips. Reverse-geocoded
  * "near X" prefixes are stripped for the title.
  */
-function deriveDefaultTripName(trip: Trip | null): string | null {
+function deriveDefaultTripName(trip: Trip | null, t: Translate): string | null {
   const day = trip?.days[0];
   if (!day) return null;
   const start = day.waypoints.find((w) => w.type === "start");
@@ -3765,7 +3772,7 @@ function deriveDefaultTripName(trip: Trip | null): string | null {
   if (!startName) return null;
   const loop =
     !finish || (start !== finish && sameSpot(start!.location, finish.location));
-  if (loop) return `${startName} loop`;
+  if (loop) return t("{name} loop", { name: startName });
   const finishName = clean(finish?.name);
   return finishName ? `${startName} → ${finishName}` : null;
 }
@@ -3774,10 +3781,10 @@ function deriveDefaultTripName(trip: Trip | null): string | null {
  * The trip name we show AND save: the rider's own name, or the derived
  * endpoints name while the placeholder is still in place.
  */
-function tripDisplayName(trip: Trip | null): string | null {
+function tripDisplayName(trip: Trip | null, t: Translate): string | null {
   if (!trip) return null;
   if (!isDefaultTripName(trip.name)) return trip.name;
-  return deriveDefaultTripName(trip) ?? trip.name;
+  return deriveDefaultTripName(trip, t) ?? t("New Trip");
 }
 
 function clampNumberInput(
@@ -3808,10 +3815,14 @@ function findCallerRole(
     null
   );
 }
-function buildTripMetadataPayload(trip: Trip, params: TripParameters) {
+function buildTripMetadataPayload(
+  trip: Trip,
+  params: TripParameters,
+  t: Translate,
+) {
   const dailyKmTarget = normalizeBackendDailyKm(params.dailyKmTarget);
   return {
-    title: tripDisplayName(trip) ?? trip.name,
+    title: tripDisplayName(trip, t) ?? t("New Trip"),
     num_days: params.days,
     min_quality: params.minQuality,
     road_preference: toBackendRoadPreference(params.roadPreference),
@@ -4140,13 +4151,13 @@ async function cleanupCreatedTrip(tripId: string) {
     console.warn("Failed to clean up ungenerated trip", cleanupError);
   }
 }
-function buildImportedRoutePayload(trip: Trip) {
+function buildImportedRoutePayload(trip: Trip, t: Translate) {
   if (!trip.id.startsWith("imported-")) return null;
   const firstDay = trip.days[0];
   const coordinates = firstDay?.routeGeometry?.coordinates ?? [];
   if (coordinates.length < 2) return null;
   return {
-    title: tripDisplayName(trip) ?? trip.name,
+    title: tripDisplayName(trip, t) ?? t("New Trip"),
     source_format: trip.importSourceFormat ?? "gpx",
     geometry: coordinates.flatMap(([lng, lat]) =>
       lng !== undefined && lat !== undefined ? [{ lng, lat }] : [],
@@ -4161,7 +4172,7 @@ function buildImportedRoutePayload(trip: Trip) {
         lat: waypoint.location.lat,
         lng: waypoint.location.lng,
       };
-      if (waypoint.name) payload.name = waypoint.name;
+      if (hasCustomWaypointName(waypoint.name)) payload.name = waypoint.name;
       if (IMPORTABLE_WAYPOINT_TYPES.has(waypoint.type)) {
         payload.type = waypoint.type as "via" | "fuel" | "rest" | "photo";
       }
@@ -4258,6 +4269,7 @@ function WaypointEditor({
       ) : null}
       {waypoints.map((waypoint, index) => {
         const role = WAYPOINT_ROLE_LABEL[waypoint.type];
+        const displayName = waypointDisplayName(waypoint, t);
         const dotColor = SPINE_ROLE_COLORS[waypoint.type] ?? "#A89D8B";
         // Thin LEG row between consecutive routing waypoints (revision 3
         // §C): its road-type control overrides the trip-wide preference
@@ -4308,9 +4320,7 @@ function WaypointEditor({
                   // until the rider types a new place.
                   <GeocodeSearchField
                     variant="spine"
-                    placeholder={
-                      waypoint.name ?? t("Waypoint {n}", { n: index + 1 })
-                    }
+                    placeholder={displayName}
                     ariaLabel={t("Search location for {role} waypoint", {
                       role: t(role),
                     })}
@@ -4318,7 +4328,7 @@ function WaypointEditor({
                   />
                 ) : (
                   <span className="block truncate text-[13px] font-bold text-ink">
-                    {waypoint.name ?? t("Waypoint {n}", { n: index + 1 })}
+                    {displayName}
                   </span>
                 )}
               </div>
@@ -4326,7 +4336,7 @@ function WaypointEditor({
                 <button
                   type="button"
                   aria-label={t("Remove {name}", {
-                    name: waypoint.name ?? t("waypoint {n}", { n: index + 1 }),
+                    name: displayName,
                   })}
                   onClick={() => onRemove(waypoint.id)}
                   className="shrink-0 rounded p-0.5 text-fg-mute transition hover:text-quality-q1"

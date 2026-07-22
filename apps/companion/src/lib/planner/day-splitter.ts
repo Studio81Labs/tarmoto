@@ -162,7 +162,6 @@ function dayQuality(
   segments: RouteSegment[],
   dayKm: number,
   dayTimeMin: number,
-  t: Translate,
 ): RouteQualitySummary {
   const metresBySurface: Record<string, number> = {};
   let scoreWeight = 0;
@@ -181,7 +180,7 @@ function dayQuality(
     score:
       scoreWeight > 0 ? Math.round((scoreSum / scoreWeight) * 10) / 10 : null,
     surfaceMix: surfaceMixToPercents(metresBySurface),
-    flagged: deriveFlaggedSections(segments, undefined, t),
+    flagged: deriveFlaggedSections(segments),
   };
 }
 
@@ -379,15 +378,13 @@ export function splitIntoDays(
       distanceKm: Math.round(dayKm * 10) / 10,
       timeMin:
         totalTimeMin > 0 ? Math.round((totalTimeMin * dayKm) / totalKm) : 0,
-      quality: dayQuality(
-        daySegments,
-        dayKm,
-        (totalTimeMin * dayKm) / totalKm,
-        t,
-      ),
-      startTown: d === 0 ? t("Start") : boundaryLabel(boundaries[d]!, format),
+      quality: dayQuality(daySegments, dayKm, (totalTimeMin * dayKm) / totalKm),
+      startTown:
+        d === 0 ? t("Start") : boundaryLabel(boundaries[d]!, format, t),
       endTown:
-        d === boundaries.length - 2 ? t("Finish") : boundaryLabel(to, format),
+        d === boundaries.length - 2
+          ? t("Finish")
+          : boundaryLabel(to, format, t),
       suggestedStays: to.town
         ? [to.town.poi, ...stays.filter((poi) => poi.id !== to.town!.poi.id)]
         : stays,
@@ -406,7 +403,8 @@ function boundaryLabel(
     town: TownOnRoute | null;
   },
   format: Formatters,
+  t: Translate,
 ): string {
-  if (boundary.town) return boundary.town.poi.name;
+  if (boundary.town) return boundary.town.poi.name.trim() || t("Unnamed");
   return format.distanceKm(Math.round(boundary.km));
 }

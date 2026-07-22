@@ -389,8 +389,8 @@ describe("importedRouteToTrip", () => {
     if (!day) throw new Error("expected a day");
     const wps = day.waypoints;
     // Mid-route waypoint must not be promoted to start/end…
-    expect(wps.find((w) => w.type === "start")?.name).toBe("Start");
-    expect(wps.find((w) => w.type === "end")?.name).toBe("End");
+    expect(wps.find((w) => w.type === "start")?.name).toBeUndefined();
+    expect(wps.find((w) => w.type === "end")?.name).toBeUndefined();
     // …and should survive as a via with its actual name.
     const vias = wps.filter((w) => w.type === "via");
     expect(vias).toHaveLength(1);

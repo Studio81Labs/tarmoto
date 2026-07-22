@@ -223,7 +223,7 @@ function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
   const overnightStop: POI | undefined = overnightSource
     ? {
         id: overnightSource.id,
-        name: overnightSource.name ?? `Day ${day.day_number} overnight`,
+        name: overnightSource.name?.trim() ?? "",
         type: "accommodation",
         location: { lat: overnightSource.lat, lng: overnightSource.lng },
       }

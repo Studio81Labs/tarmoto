@@ -918,11 +918,15 @@ const TripPlannerMapContent = forwardRef<
           : hasEnd
             ? "set-new-end"
             : "set-end";
+      const name = poi.name.trim();
       store.placeWaypoint(
         { lat: poi.lat, lng: poi.lng },
         action,
         store.draftPlannerParameters ?? undefined,
-        { name: poi.name, poiCategory: poi.category },
+        {
+          ...(name ? { name } : {}),
+          poiCategory: poi.category,
+        },
       );
       setPoiMenu(null);
     },
@@ -949,9 +953,10 @@ const TripPlannerMapContent = forwardRef<
       const anchorId = day
         ? insertionAnchorForPoint(day, { lat: poi.lat, lng: poi.lng })
         : null;
+      const name = poi.name.trim();
       store.insertWaypointBefore(dayIndex, anchorId, {
         id: `poi-${poi.id}-${Date.now()}`,
-        name: poi.name,
+        ...(name ? { name } : {}),
         location: { lat: poi.lat, lng: poi.lng },
         type,
         poiCategory: poi.category,
@@ -3024,7 +3029,7 @@ const TripPlannerMapContent = forwardRef<
               {translateKnownLabel(waypointMenu.role, WAYPOINT_ROLE_LABELS, t)}
             </p>
             <p className="mt-0.5 truncate text-[13px] font-bold text-ink">
-              {waypointMenu.name}
+              {waypointMenu.name || t("Waypoint")}
             </p>
             <p className="mt-1.5 text-[11.5px] leading-snug text-fg-dim">
               {waypointMenu.address ?? t("Looking up the place…")}

@@ -12,6 +12,7 @@ import { readPoiDetails } from "@/components/planner/PoiDetails";
 import { FSQ_BRAND_COLOR } from "@/components/map/attribution";
 import { haversineKm } from "@tarmoto/shared";
 import { plannerApi } from "@/lib/planner/api";
+import { poiDisplayName } from "@/lib/planner/labels";
 import type { RouteStop } from "@/lib/planner/types";
 import type { Trip } from "@/lib/types";
 import { useTripStore } from "@/stores/trip";
@@ -415,7 +416,7 @@ export function TripStopsPanel({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-bold text-ink">
-                      {stop.name}
+                      {poiDisplayName(stop, t)}
                     </span>
                     <span className="font-mono text-[9.5px] uppercase tracking-[0.4px] text-fg-mute">
                       {t("{category} · {offset} · {along}", {
