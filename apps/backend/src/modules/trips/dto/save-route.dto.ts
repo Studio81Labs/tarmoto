@@ -1,4 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  PLANNER_POI_CATEGORIES,
+  type PlannerPoiCategory,
+} from '@tarmoto/shared';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -43,6 +47,17 @@ export class SaveRouteWaypointDto extends LatLngDto {
   @IsString()
   @MaxLength(200)
   name?: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    enum: PLANNER_POI_CATEGORIES,
+    description:
+      'Semantic planner POI category used to localize unnamed saved stops.',
+  })
+  @IsOptional()
+  @IsIn(PLANNER_POI_CATEGORIES)
+  poi_category?: PlannerPoiCategory | null;
 
   @ApiProperty({ enum: SAVE_ROUTE_WAYPOINT_TYPES })
   @IsIn(SAVE_ROUTE_WAYPOINT_TYPES)

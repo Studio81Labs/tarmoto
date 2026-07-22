@@ -1,5 +1,9 @@
 import type * as GeoJSON from "geojson";
-import type { Formatters, SurfaceType } from "@tarmoto/shared";
+import type {
+  Formatters,
+  PlannerPoiCategory,
+  SurfaceType,
+} from "@tarmoto/shared";
 import type { RouteRequestBody, RouteResponse } from "@/lib/api";
 
 /**
@@ -131,15 +135,7 @@ export interface RouteStop extends Poi {
  * Curated POI vocabulary for the map-top toolbar + STOPS filters
  * (revision 4 §A). Deliberately a closed set — no generic POI browser.
  */
-export type PoiCategory =
-  | "fuel"
-  | "food"
-  | "cafe"
-  | "viewpoint"
-  | "campground"
-  | "biker_hotel"
-  | "mountain_pass"
-  | "twisty_highlight";
+export type PoiCategory = PlannerPoiCategory;
 
 /** Provenance of a category POI. `osm` + `fsq` are the two bulk venue sources
  * (#869); `passes`/`tarmoto` are Tarmoto-derived categories. */

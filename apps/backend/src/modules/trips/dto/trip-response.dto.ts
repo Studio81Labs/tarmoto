@@ -1,4 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  PLANNER_POI_CATEGORIES,
+  type PlannerPoiCategory,
+} from '@tarmoto/shared';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 import {
   ROUTE_PREFERENCES,
@@ -143,6 +147,15 @@ export class TripWaypointDto {
 
   @ApiProperty({ enum: TRIP_WAYPOINT_TYPES })
   waypoint_type!: TripWaypointType;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    enum: PLANNER_POI_CATEGORIES,
+    description:
+      'Semantic planner POI category used to localize unnamed saved stops.',
+  })
+  poi_category?: PlannerPoiCategory | null;
 
   @ApiProperty({ nullable: true })
   road_segment_id!: string | null;

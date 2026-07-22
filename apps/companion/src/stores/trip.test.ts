@@ -510,6 +510,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
       id: "fuel-1",
       type: "fuel",
       name: "Gas station",
+      poiCategory: "fuel",
       location: { lat: 2.5, lng: 2.5 },
     });
 
@@ -529,6 +530,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(saved[2]!.lat).toBe(2.5);
     expect(saved[2]!.lng).toBe(2.5);
     expect(saved[2]!.name).toBe("Gas station");
+    expect(saved[2]!.poi_category).toBe("fuel");
 
     expect(saved[3]!.type).toBe("end");
     expect(saved[3]!.lat).toBe(3);

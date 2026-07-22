@@ -136,6 +136,7 @@ import { AddLimitEntitlements1813000000000 } from './migrations/1813000000000-Ad
 import { AlignFeatureFlagCatalog1814000000000 } from './migrations/1814000000000-AlignFeatureFlagCatalog.js';
 import { AddCommuteRoutingCacheUpdatedAt1815000000000 } from './migrations/1815000000000-AddCommuteRoutingCacheUpdatedAt.js';
 import { AddChallengeContentKey1816000000000 } from './migrations/1816000000000-AddChallengeContentKey.js';
+import { AddTripWaypointPoiCategory1817000000000 } from './migrations/1817000000000-AddTripWaypointPoiCategory.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -290,6 +291,7 @@ export const AppDataSource = new DataSource({
     AlignFeatureFlagCatalog1814000000000,
     AddCommuteRoutingCacheUpdatedAt1815000000000,
     AddChallengeContentKey1816000000000,
+    AddTripWaypointPoiCategory1817000000000,
   ],
   synchronize: false,
 });

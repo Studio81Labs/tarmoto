@@ -31,6 +31,9 @@ export class TripWaypoint {
   @Column({ type: 'varchar', length: 30, default: 'via' })
   waypoint_type!: string;
 
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  poi_category!: string | null;
+
   @Column({ type: 'uuid', nullable: true })
   road_segment_id!: string | null;
 

@@ -96,8 +96,9 @@ function makeDetail(
             sequence: 1,
             lat: 46.55,
             lng: 11.25,
-            name: "Coffee stop",
+            name: null,
             waypoint_type: "coffee",
+            poi_category: "twisty_highlight",
             road_segment_id: null,
             notes: null,
             duration_min: 30,
@@ -110,6 +111,15 @@ function makeDetail(
 }
 
 describe("tripFromDetail", () => {
+  it("rehydrates semantic POI categories for localized waypoint fallbacks", () => {
+    const trip = tripFromDetail(makeDetail());
+    expect(trip.days[0]?.waypoints[1]).toMatchObject({
+      name: undefined,
+      poiCategory: "twisty_highlight",
+      type: "rest",
+    });
+  });
+
   it("maps top-level fields including renamed title → name", () => {
     const trip = tripFromDetail(makeDetail());
     expect(trip.id).toBe("trip-1");

@@ -360,6 +360,7 @@ interface TripState {
     lat: number;
     lng: number;
     name?: string | null;
+    poi_category?: PoiCategory | null;
     type: BackendWaypointType;
   }[];
 
@@ -376,6 +377,7 @@ interface TripState {
       lat: number;
       lng: number;
       name?: string | null;
+      poi_category?: PoiCategory | null;
       type: BackendWaypointType;
     }[];
   }[];
@@ -502,6 +504,7 @@ function activePlannerSaveWaypoints(waypoints: Waypoint[]): {
   lat: number;
   lng: number;
   name?: string | null;
+  poi_category?: PoiCategory | null;
   type: BackendWaypointType;
 }[] {
   return waypoints.map((w) => ({
@@ -511,6 +514,7 @@ function activePlannerSaveWaypoints(waypoints: Waypoint[]): {
     // contract (SaveRouteBody) types it `string | null` and the store test
     // asserts the key's presence on every waypoint.
     name: hasCustomWaypointName(w.name) ? w.name : null,
+    poi_category: w.poiCategory ?? null,
     type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
   }));
 }

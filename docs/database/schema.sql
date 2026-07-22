@@ -331,6 +331,7 @@ CREATE TABLE trip_waypoints (
     location        GEOMETRY(Point, 4326) NOT NULL,
     name            VARCHAR(200),
     waypoint_type   VARCHAR(30) DEFAULT 'via', -- start, via, fuel, food, coffee, hotel, photo, end
+    poi_category    VARCHAR(30),                -- semantic planner POI category; translated by clients
     road_segment_id UUID REFERENCES road_segments(id),
     notes           TEXT,
     duration_min    INT                        -- planned stop duration

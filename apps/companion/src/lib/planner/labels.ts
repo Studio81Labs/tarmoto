@@ -36,11 +36,14 @@ export function hasCustomWaypointName(
 
 /** Translate a semantic waypoint role while preserving rider/place names. */
 export function waypointDisplayName(
-  waypoint: Pick<Waypoint, "name" | "type">,
+  waypoint: Pick<Waypoint, "name" | "type" | "poiCategory">,
   t: Translate,
 ): string {
   const label = WAYPOINT_TYPE_LABELS[waypoint.type] ?? "Waypoint";
-  return hasCustomWaypointName(waypoint.name) ? waypoint.name : t(label);
+  if (hasCustomWaypointName(waypoint.name)) return waypoint.name;
+  return waypoint.poiCategory === "twisty_highlight"
+    ? t("Twisty highlight")
+    : t(label);
 }
 
 /** Translate source-owned POI fallbacks; real venue/place names stay data. */

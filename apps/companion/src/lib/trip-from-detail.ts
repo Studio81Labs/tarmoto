@@ -198,6 +198,7 @@ function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
     name: w.name ?? undefined,
     location: { lat: w.lat, lng: w.lng },
     type: WAYPOINT_TYPE_MAP[w.waypoint_type] ?? "via",
+    ...(w.poi_category ? { poiCategory: w.poi_category } : {}),
   }));
 
   // Surface the day's overnight stop as a `POI` so the detail page's

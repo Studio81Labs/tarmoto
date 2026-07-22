@@ -17,6 +17,16 @@ describe("planner display labels", () => {
     expect(
       waypointDisplayName({ type: "via", name: "Via 2" }, translated),
     ).toBe("xx:Via");
+    expect(
+      waypointDisplayName(
+        {
+          type: "via",
+          name: undefined,
+          poiCategory: "twisty_highlight",
+        },
+        translated,
+      ),
+    ).toBe("xx:Twisty highlight");
     expect(waypointDisplayName({ type: "end", name: "Brno" }, translated)).toBe(
       "Brno",
     );

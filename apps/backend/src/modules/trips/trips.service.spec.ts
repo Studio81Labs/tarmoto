@@ -2504,7 +2504,13 @@ describe('TripsService', () => {
             startLinked: false,
             waypoints: [
               { lat: 46.5, lng: 10.5, name: 'Bormio', type: 'start' },
-              { lat: 46.55, lng: 10.55, name: 'Fuel stop', type: 'fuel' },
+              {
+                lat: 46.55,
+                lng: 10.55,
+                name: 'Fuel stop',
+                type: 'fuel',
+                poi_category: 'fuel',
+              },
               { lat: 46.6, lng: 10.6, name: 'Prato', type: 'end' },
             ],
           },
@@ -2529,7 +2535,11 @@ describe('TripsService', () => {
         sequence: 0,
         waypoint_type: 'start',
       });
-      expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'fuel' });
+      expect(wpBodies[1]).toMatchObject({
+        sequence: 1,
+        waypoint_type: 'fuel',
+        poi_category: 'fuel',
+      });
       expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
     });
 
@@ -3138,6 +3148,7 @@ describe('TripsService', () => {
                 location: { type: 'Point', coordinates: [11.34, 46.49] },
                 name: 'Start',
                 waypoint_type: 'start',
+                poi_category: 'twisty_highlight',
                 road_segment_id: null,
                 notes: null,
                 duration_min: null,
@@ -3164,6 +3175,7 @@ describe('TripsService', () => {
         lat: 46.49,
         lng: 11.34,
         waypoint_type: 'start',
+        poi_category: 'twisty_highlight',
       });
     });
 

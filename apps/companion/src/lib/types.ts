@@ -259,8 +259,8 @@ export interface Waypoint {
   /**
    * Set when the waypoint was placed from a map POI pin (revision 4):
    * the map renders the category glyph inside the role circle and
-   * clicking it reopens the POI popover. Client-side display metadata —
-   * not persisted by the save contract.
+   * clicking it reopens the POI popover. Persisted as semantic metadata so
+   * unnamed POIs remain localizable after save/reload.
    */
   poiCategory?: import("@/lib/planner/types").PoiCategory;
 }
