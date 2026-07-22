@@ -47,7 +47,7 @@ export default function BikesPage() {
       setError({
         kind: "load",
         message:
-          err instanceof Error ? err.message : "Could not load your bikes",
+          err instanceof Error ? err.message : t("Could not load your bikes"),
       });
     }
   }, []);
@@ -115,7 +115,7 @@ export default function BikesPage() {
       setError({
         kind: "action",
         message:
-          err instanceof Error ? err.message : "Could not set active bike",
+          err instanceof Error ? err.message : t("Could not set active bike"),
       });
     } finally {
       setPendingActionBikeId(null);
@@ -131,7 +131,8 @@ export default function BikesPage() {
     } catch (err) {
       setError({
         kind: "action",
-        message: err instanceof Error ? err.message : "Could not delete bike",
+        message:
+          err instanceof Error ? err.message : t("Could not delete bike"),
       });
     } finally {
       setPendingActionBikeId(null);

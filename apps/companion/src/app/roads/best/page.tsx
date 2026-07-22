@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { t } from "@/i18n/server";
 import Link from "next/link";
 import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
 export const revalidate = 604800;
@@ -26,7 +26,9 @@ export default function BestRoadsHubPage() {
                   href={`/roads/best/${country.code}`}
                   className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
                 >
-                  <h2 className="text-xl font-semibold">{country.name}</h2>
+                  <h2 className="text-xl font-semibold">
+                    {t(country.nameKey)}
+                  </h2>
                   <p className="mt-1 text-sm text-fg-dim">
                     {t("{count, plural, one {# region} other {# regions}}", {
                       count: regionCount,

@@ -417,7 +417,7 @@ function ExplorerPageInner() {
           message:
             err instanceof Error
               ? err.message
-              : "Could not load road segment details.",
+              : t("Could not load road segment details."),
         });
       });
 
@@ -449,7 +449,7 @@ function ExplorerPageInner() {
           status: "error",
           tripId: selectedTripId,
           message:
-            err instanceof Error ? err.message : "Could not load this trip.",
+            err instanceof Error ? err.message : t("Could not load this trip."),
         });
       });
     return () => {
@@ -480,7 +480,7 @@ function ExplorerPageInner() {
           setRideDetailState({
             status: "error",
             rideId: selectedRideId,
-            message: "Could not load this ride.",
+            message: t("Could not load this ride."),
           });
           return;
         }
@@ -492,7 +492,7 @@ function ExplorerPageInner() {
         setRideDetailState({
           status: "error",
           rideId: selectedRideId,
-          message: "Could not load this ride.",
+          message: t("Could not load this ride."),
         });
       });
     return () => {

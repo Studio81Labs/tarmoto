@@ -671,7 +671,7 @@ export default function TripPlannerPage() {
           status: "error",
           segmentId: selectedRoadSegmentId,
           message:
-            err instanceof Error ? err.message : "Failed to load segment",
+            err instanceof Error ? err.message : t("Failed to load segment"),
         });
       });
     return () => {

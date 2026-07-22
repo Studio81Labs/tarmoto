@@ -1,4 +1,4 @@
-import { t } from "@/i18n";
+import { t } from "@/i18n/server";
 
 /**
  * Auth-screen hero brand mark — the same road-bar-and-mountains glyph

@@ -4,6 +4,7 @@ import { common } from "./common";
 import { community } from "./community";
 import { map } from "./map";
 import { rides } from "./rides";
+import { regions } from "./regions";
 import { settings } from "./settings";
 import { trips } from "./trips";
 
@@ -18,6 +19,7 @@ export const en = {
   ...community,
   ...map,
   ...rides,
+  ...regions,
   ...settings,
   ...trips,
 } as const;
@@ -32,6 +34,7 @@ export const __catalogModules = {
   community,
   map,
   rides,
+  regions,
   settings,
   trips,
 } as const;

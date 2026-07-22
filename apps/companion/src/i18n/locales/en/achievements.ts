@@ -1,4 +1,5 @@
 export const achievements = {
+  "Could not load leaderboards.": "Could not load leaderboards.",
   Achievements: "Achievements",
   Active: "Active",
   "Active challenges": "Active challenges",

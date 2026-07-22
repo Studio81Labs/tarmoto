@@ -1,10 +1,17 @@
-import { t } from "@/i18n";
+import { readLocale, t } from "@/i18n/server";
+import { getServerFormatters } from "@/format/server";
 import Link from "next/link";
 import { findSubRegions, type Country, type Region } from "@tarmoto/shared";
 import { BestRoadsMap } from "./BestRoadsMap";
 import { BestRoadsList } from "./BestRoadsList";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
 import type { BestRoad } from "@/lib/bestRoads";
+import {
+  countryDisplayName,
+  formatBestSeason,
+  regionDescription,
+  regionDisplayName,
+} from "@/lib/region-display";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -31,13 +38,19 @@ interface Props {
  * props — keeping a single component means the header, map, list and CTA
  * layouts can't drift between them.
  */
-export function BestRoadsPageBody({
+export async function BestRoadsPageBody({
   region,
   country,
   parent,
   pageUrl,
   roads,
 }: Props) {
+  await readLocale();
+  const format = await getServerFormatters();
+  const displayRegionName = regionDisplayName(region, t);
+  const displayCountryName = countryDisplayName(country, t);
+  const displayParentName = parent ? regionDisplayName(parent, t) : undefined;
+  const description = regionDescription(region, t);
   const segmentIds = roads.map((r) => r.id).join(",");
   // Sub-regions live at 3-level URLs, so a top-level region page links down
   // to its children here — otherwise those sub-region pages are only
@@ -52,7 +65,7 @@ export function BestRoadsPageBody({
           </Link>
           <span className="mx-2">/</span>
           <Link href={`/roads/best/${country.code}`} className="hover:text-ink">
-            {country.name}
+            {displayCountryName}
           </Link>
           {parent && (
             <>
@@ -61,24 +74,24 @@ export function BestRoadsPageBody({
                 href={`/roads/best/${country.code}/${parent.slug}`}
                 className="hover:text-ink"
               >
-                {parent.name}
+                {displayParentName}
               </Link>
             </>
           )}
           <span className="mx-2">/</span>
-          <span>{region.name}</span>
+          <span>{displayRegionName}</span>
         </nav>
 
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">
             {t("Best motorcycle roads in ")}
-            {region.name}
+            {displayRegionName}
           </h1>
-          <p className="mt-3 max-w-3xl text-fg-dim">{region.description}</p>
+          <p className="mt-3 max-w-3xl text-fg-dim">{description}</p>
           {region.bestSeason && (
             <p className="mt-2 text-sm text-fg-dim">
               {t("Best season: ")}
-              {region.bestSeason}
+              {formatBestSeason(region.bestSeason, format, t)}
             </p>
           )}
         </header>
@@ -107,9 +120,11 @@ export function BestRoadsPageBody({
                     href={`/roads/best/${country.code}/${region.slug}/${sr.slug}`}
                     className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
                   >
-                    <h3 className="text-lg font-semibold">{sr.name}</h3>
+                    <h3 className="text-lg font-semibold">
+                      {regionDisplayName(sr, t)}
+                    </h3>
                     <p className="mt-1 text-sm text-fg-dim line-clamp-2">
-                      {sr.description}
+                      {regionDescription(sr, t)}
                     </p>
                   </Link>
                 </li>
@@ -138,15 +153,17 @@ export function BestRoadsPageBody({
         )}
 
         <BestRoadsSchemaOrg
-          regionName={region.name}
-          countryName={country.name}
+          regionName={displayRegionName}
+          countryName={displayCountryName}
           countryCode={country.code}
           regionSlug={region.slug}
           parentSlug={parent?.slug}
-          parentName={parent?.name}
+          parentName={displayParentName}
           pageUrl={pageUrl}
-          description={region.description}
+          description={description}
           roads={roads}
+          format={format}
+          t={t}
         />
       </main>
     </div>

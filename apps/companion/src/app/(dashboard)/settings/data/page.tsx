@@ -48,13 +48,19 @@ function nextExportState(view: ExportView): ExportState | null {
     }
     return {
       kind: "error",
-      message: "Export marked ready but the download link is missing.",
+      message: t("Export marked ready but the download link is missing."),
     };
   }
-  if (view.status === "failed" || view.status === "expired") {
+  if (view.status === "failed") {
     return {
       kind: "error",
-      message: view.errorMessage ?? `Export ${view.status}`,
+      message: t("Export failed. Please try again."),
+    };
+  }
+  if (view.status === "expired") {
+    return {
+      kind: "error",
+      message: t("Export expired. Request a new archive."),
     };
   }
   return null;
@@ -130,8 +136,9 @@ export default function DataPage() {
       if (Date.now() - startedAt > MAX_POLL_MS) {
         setExportState({
           kind: "error",
-          message:
+          message: t(
             "Export is taking longer than expected. Please try again in a few minutes.",
+          ),
         });
         return;
       }
@@ -151,7 +158,10 @@ export default function DataPage() {
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           setExportState({
             kind: "error",
-            message: err instanceof Error ? err.message : "Polling failed",
+            message:
+              err instanceof Error
+                ? err.message
+                : t("Could not check export progress."),
           });
           return;
         }

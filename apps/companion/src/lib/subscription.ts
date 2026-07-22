@@ -62,10 +62,40 @@ export interface SubscriptionSnapshot {
 
 // Pro is the €29.99 mid tier, Premium the €49.99 top tier (naming
 // decided 2026-07 — earlier copy had the two names swapped).
-const DEFAULT_PLAN_FEATURES: Record<SubscriptionTier, EnglishMessageKey[]> = {
-  free: ["Basic navigation", "Hazard alerts", "1 active trip"],
-  pro: ["Unlimited trip planning", "Offline maps", "GPX export"],
-  premium: ["Unlimited group rides", "Priority hazard alerts", "API access"],
+const PLAN_COPY: Record<
+  SubscriptionTier,
+  {
+    features: readonly EnglishMessageKey[];
+    description?: EnglishMessageKey;
+    highlighted?: boolean;
+  }
+> = {
+  free: {
+    features: [
+      "Basic navigation",
+      "Road quality overlay (limited)",
+      "Hazard alerts",
+      "1 active trip",
+    ],
+  },
+  pro: {
+    features: [
+      "Unlimited trip planning",
+      "Full road quality zoom",
+      "Offline maps",
+      "GPX export",
+    ],
+    highlighted: true,
+  },
+  premium: {
+    features: [
+      "Everything in Pro",
+      "Unlimited group rides",
+      "Priority hazard alerts",
+      "Advanced analytics",
+    ],
+    description: "For group organisers and power users.",
+  },
 };
 
 const TIER_ORDER: Record<SubscriptionTier, number> = {
@@ -100,42 +130,9 @@ export function buildFallbackSubscriptionSnapshot(
       cancelAtPeriodEnd: false,
       manageUrl: null,
     },
-    plans: [
-      {
-        tier: "free",
-        name: tierLabel("free", t),
-        priceLabel: subscriptionPriceLabel("free", locale, t),
-        features: [
-          t("Basic navigation"),
-          t("Road quality overlay (limited)"),
-          t("Hazard alerts"),
-          t("1 active trip"),
-        ],
-      },
-      {
-        tier: "pro",
-        name: tierLabel("pro", t),
-        priceLabel: subscriptionPriceLabel("pro", locale, t),
-        highlighted: true,
-        features: [
-          t("Unlimited trip planning"),
-          t("Full road quality zoom"),
-          t("Offline maps"),
-          t("GPX export"),
-        ],
-      },
-      {
-        tier: "premium",
-        name: tierLabel("premium", t),
-        priceLabel: subscriptionPriceLabel("premium", locale, t),
-        features: [
-          t("Everything in Pro"),
-          t("Unlimited group rides"),
-          t("Priority hazard alerts"),
-          t("Advanced analytics"),
-        ],
-      },
-    ],
+    plans: (["free", "pro", "premium"] as const).map((tier) =>
+      buildPlan(tier, t, locale),
+    ),
     paymentMethod: {
       brand: "Visa",
       last4: "4242",
@@ -178,7 +175,7 @@ export function normalizeSubscriptionSnapshot(
   const currentTier = normalizedTier ?? fallback.currentPlan.tier;
   const currentPlan: CurrentSubscriptionPlan = {
     tier: currentTier,
-    name: planNameFrom(currentPlanRaw.name, currentTier, t),
+    name: tierLabel(currentTier, t),
     status: normalizedStatus ?? fallback.currentPlan.status,
     priceLabel: subscriptionPriceLabel(currentTier, locale, t),
     renewsAt: optionalString(currentPlanRaw.renews_at),
@@ -193,7 +190,7 @@ export function normalizeSubscriptionSnapshot(
     currentPlan,
     plans: currentInPlans
       ? plans
-      : sortPlans([...plans, buildPlanFromCurrent(currentPlan, t)]),
+      : sortPlans([...plans, buildPlanFromCurrent(currentPlan, t, locale)]),
     paymentMethod: normalizePaymentMethod(root.payment_method),
     billingHistory: normalizeInvoices(root.billing_history, t, locale),
     portalAvailable:
@@ -298,42 +295,13 @@ function normalizePlans(
     return fallbackPlans;
   }
 
-  const normalized = rawPlans
-    .map((entry) => {
-      const rawPlan = asRecord(entry);
-      const tier = normalizeTier(rawPlan.tier);
-      if (!tier) return null;
-      const features =
-        Array.isArray(rawPlan.features) && rawPlan.features.length > 0
-          ? rawPlan.features
-              .map((feature) =>
-                typeof feature === "string" ? feature.trim() : "",
-              )
-              .filter(Boolean)
-              // Backend feature strings mirror the registered DEFAULT_PLAN_FEATURES
-              // catalog keys — translate them at this boundary (English-identical
-              // today, localized once a locale ships; unknown strings fall back).
-              // dynamic: arbitrary wire copy, not a compile-time literal.
-              .map((feature) => t(feature as EnglishMessageKey))
-          : DEFAULT_PLAN_FEATURES[tier].map((feature) => t(feature));
-      // Backend-provided plan descriptions are English (e.g. the Premium
-      // catalog copy) — translate at this boundary like the name/features
-      // (English-identical today, localized once a locale ships; unknown
-      // strings fall back to the raw English).
-      const description = optionalString(rawPlan.description);
-      return {
-        tier,
-        name: planNameFrom(rawPlan.name, tier, t),
-        priceLabel: subscriptionPriceLabel(tier, locale, t),
-        features,
-        // dynamic: arbitrary wire copy, not a compile-time literal.
-        description: description
-          ? t(description as EnglishMessageKey)
-          : undefined,
-        highlighted: Boolean(rawPlan.highlighted),
-      } as SubscriptionPlanSummary;
-    })
-    .filter((plan): plan is SubscriptionPlanSummary => plan !== null);
+  const seen = new Set<SubscriptionTier>();
+  const normalized = rawPlans.flatMap((entry) => {
+    const tier = normalizeTier(asRecord(entry).tier);
+    if (!tier || seen.has(tier)) return [];
+    seen.add(tier);
+    return [buildPlan(tier, t, locale)];
+  });
 
   return normalized.length > 0 ? sortPlans(normalized) : fallbackPlans;
 }
@@ -411,14 +379,24 @@ function normalizeInvoiceStatus(value: unknown): InvoiceStatus | null {
 function buildPlanFromCurrent(
   currentPlan: CurrentSubscriptionPlan,
   t: Translate,
+  locale: string,
 ): SubscriptionPlanSummary {
+  return buildPlan(currentPlan.tier, t, locale);
+}
+
+function buildPlan(
+  tier: SubscriptionTier,
+  t: Translate,
+  locale: string,
+): SubscriptionPlanSummary {
+  const copy = PLAN_COPY[tier];
   return {
-    tier: currentPlan.tier,
-    name: currentPlan.name,
-    priceLabel: currentPlan.priceLabel,
-    features: DEFAULT_PLAN_FEATURES[currentPlan.tier].map((feature) =>
-      t(feature),
-    ),
+    tier,
+    name: tierLabel(tier, t),
+    priceLabel: subscriptionPriceLabel(tier, locale, t),
+    features: copy.features.map((feature) => t(feature)),
+    ...(copy.description ? { description: t(copy.description) } : {}),
+    ...(copy.highlighted ? { highlighted: true } : {}),
   };
 }
 
@@ -441,24 +419,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-/**
- * Resolve a plan's display name. The backend `PLAN_CATALOG` sends the name in
- * English (`Free`/`Pro`/`Premium`), which mirrors the registered catalog keys,
- * so a wire-provided name is routed through the translator (English-identical
- * today, localized once a locale ships; unknown strings fall back to English).
- * When the wire omits a name we use the already-translated tier label.
- */
-function planNameFrom(
-  rawName: unknown,
-  tier: SubscriptionTier,
-  t: Translate,
-): string {
-  return typeof rawName === "string" && rawName.trim()
-    ? // dynamic: arbitrary wire copy, not a compile-time literal.
-      t(rawName.trim() as EnglishMessageKey)
-    : tierLabel(tier, t);
 }
 
 function optionalString(value: unknown): string | null {

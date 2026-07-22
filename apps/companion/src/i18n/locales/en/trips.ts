@@ -337,6 +337,23 @@ export const trips = {
   "Couldn't delete the trip. Try again.":
     "Couldn't delete the trip. Try again.",
   "Failed to load suggestions": "Failed to load suggestions",
+  "Couldn't load your trips. Check your connection.":
+    "Couldn't load your trips. Check your connection.",
+  "Couldn't load your folders. Try refreshing the page.":
+    "Couldn't load your folders. Try refreshing the page.",
+  "Couldn't delete the folder. Try again.":
+    "Couldn't delete the folder. Try again.",
+  "Couldn't move the trip. Try again.": "Couldn't move the trip. Try again.",
+  "Couldn't duplicate the trip. Try again.":
+    "Couldn't duplicate the trip. Try again.",
+  "Couldn't create the folder. Try again.":
+    "Couldn't create the folder. Try again.",
+  "Couldn't rename the folder. Try again.":
+    "Couldn't rename the folder. Try again.",
+  "Could not load this trip.": "Could not load this trip.",
+  "Failed to load segment": "Failed to load segment",
+  "Could not compute the route": "Could not compute the route",
+  "Failed ({status})": "Failed ({status})",
   "Any quality": "Any quality",
   asphalt: "asphalt",
   cobbles: "cobbles",

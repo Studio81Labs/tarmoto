@@ -1,4 +1,6 @@
 import type { BestRoad } from "@/lib/bestRoads";
+import type { Formatters } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 type Road = Pick<
   BestRoad,
   | "id"
@@ -19,6 +21,8 @@ interface Props {
   pageUrl: string;
   description: string;
   roads: Road[];
+  format: Formatters;
+  t: Translate;
 }
 
 // Serialises a JSON-LD payload for inline injection. Replaces `<` with
@@ -38,13 +42,15 @@ export function BestRoadsSchemaOrg({
   pageUrl,
   description,
   roads,
+  format,
+  t,
 }: Props) {
   const origin = pageUrl.replace(/\/roads\/best.*$/, "");
 
   const itemList = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    name: `Best motorcycle roads in ${regionName}`,
+    name: t("Best motorcycle roads in {name}", { name: regionName }),
     description,
     numberOfItems: roads.length,
     itemListOrder: "https://schema.org/ItemListOrderDescending",
@@ -52,18 +58,27 @@ export function BestRoadsSchemaOrg({
       const name =
         r.road_name ??
         (r.road_number
-          ? `Road ${r.road_number}`
-          : `Segment ${r.id.slice(0, 6)}`);
-      const km = (r.length_m / 1000).toFixed(1);
-      const quality = r.quality_score?.toFixed(1) ?? "unrated";
+          ? t("Road {number}", { number: r.road_number })
+          : t("Segment {id}", { id: r.id.slice(0, 6) }));
+      const quality =
+        r.quality_score === null || r.quality_score === undefined
+          ? t("unrated")
+          : format.decimal(r.quality_score, 1);
       return {
         "@type": "ListItem",
         position: i + 1,
         item: {
           "@type": "TouristAttraction",
           name,
-          description: `Quality ${quality} \u00b7 Curviness ${r.curviness_score.toFixed(1)} \u00b7 ${km} km`,
-          touristType: "Motorcyclist",
+          description: t(
+            "Quality {quality} · Curviness {curviness} · {distance}",
+            {
+              quality,
+              curviness: format.decimal(r.curviness_score, 1),
+              distance: format.distanceKm(r.length_m / 1000),
+            },
+          ),
+          touristType: t("Motorcyclist"),
         },
       };
     }),
@@ -77,7 +92,7 @@ export function BestRoadsSchemaOrg({
           {
             "@type": "ListItem",
             position: 1,
-            name: "Best roads",
+            name: t("Best roads"),
             item: `${origin}/roads/best`,
           },
           {
@@ -103,7 +118,7 @@ export function BestRoadsSchemaOrg({
           {
             "@type": "ListItem",
             position: 1,
-            name: "Best roads",
+            name: t("Best roads"),
             item: `${origin}/roads/best`,
           },
           {

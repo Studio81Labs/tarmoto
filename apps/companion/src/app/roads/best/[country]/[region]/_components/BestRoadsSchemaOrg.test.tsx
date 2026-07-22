@@ -1,4 +1,6 @@
 import { render } from "@testing-library/react";
+import { createFormatters } from "@tarmoto/shared";
+import { t } from "@/i18n";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
 
 describe("BestRoadsSchemaOrg", () => {
@@ -11,6 +13,8 @@ describe("BestRoadsSchemaOrg", () => {
         regionSlug="tyrol"
         pageUrl="https://tarmoto.com/roads/best/at/tyrol"
         description="Alpine riding routes."
+        format={createFormatters({ locale: "en", units: "metric" })}
+        t={t}
         roads={[
           {
             id: "road-123456",

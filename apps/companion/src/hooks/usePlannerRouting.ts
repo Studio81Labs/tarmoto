@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { t } from "@/i18n";
 import { routingApi, type RouteResponse } from "@/lib/api";
 import {
   concatLegRouteResponses,
@@ -77,7 +78,9 @@ export function usePlannerRouting(
         .catch((err: unknown) => {
           if (controller.signal.aborted || reqId !== reqIdRef.current) return;
           cbRef.current.onError(
-            err instanceof Error ? err.message : "Could not compute the route",
+            err instanceof Error
+              ? err.message
+              : t("Could not compute the route"),
           );
         })
         .finally(() => {

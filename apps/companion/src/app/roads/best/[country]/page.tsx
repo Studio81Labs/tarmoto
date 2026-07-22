@@ -1,4 +1,5 @@
 import { readLocale, t } from "@/i18n/server";
+import { getServerFormatters } from "@/format/server";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -28,21 +29,26 @@ export async function generateMetadata({
   // visitor locale until locale-segmented routing exists. Acceptable today
   // (English-only, per the i18n readiness spec) and out of scope to fix here.
   const locale = await readLocale();
+  const countryName = t(c.nameKey, undefined, locale);
   const title = t(
     "Best motorcycle roads in {name} — Tarmoto",
-    { name: c.name },
+    { name: countryName },
     locale,
   );
   const description = t(
     "Ranked lists of the top-rated motorcycle roads in {name}, scored by quality and curviness.",
-    { name: c.name },
+    { name: countryName },
     locale,
   );
   return buildBestRoadsMetadata({
     title,
     description,
     canonicalPath: `/roads/best/${c.code}`,
-    imageAlt: t("Best motorcycle roads in {name}", { name: c.name }, locale),
+    imageAlt: t(
+      "Best motorcycle roads in {name}",
+      { name: countryName },
+      locale,
+    ),
   });
 }
 export default async function BestRoadsCountryPage({
@@ -57,6 +63,9 @@ export default async function BestRoadsCountryPage({
   const c = findCountry(country);
   if (!c) notFound();
   const regions = findCountryRegions(c.code);
+  await readLocale();
+  const format = await getServerFormatters();
+  const countryName = t(c.nameKey);
   return (
     <div className="min-h-screen bg-cream text-ink">
       <main className="mx-auto max-w-5xl px-6 py-10">
@@ -65,13 +74,13 @@ export default async function BestRoadsCountryPage({
             {t("Best roads ")}
           </Link>
           <span className="mx-2">/</span>
-          <span>{c.name}</span>
+          <span>{countryName}</span>
         </nav>
 
         <header className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight">
             {t("Best motorcycle roads in ")}
-            {c.name}
+            {countryName}
           </h1>
           <p className="mt-2 text-fg-dim">
             {t(
@@ -91,14 +100,21 @@ export default async function BestRoadsCountryPage({
                 href={`/roads/best/${c.code}/${r.slug}`}
                 className="block rounded-xl border border-line bg-paper p-5 transition hover:bg-paper-2"
               >
-                <h2 className="text-xl font-semibold">{r.name}</h2>
+                <h2 className="text-xl font-semibold">{t(r.nameKey)}</h2>
                 <p className="mt-1 text-sm text-fg-dim line-clamp-2">
-                  {r.description}
+                  {t(r.descriptionKey)}
                 </p>
                 {r.bestSeason && (
                   <p className="mt-2 text-xs text-fg-dim">
                     {t("Best season: ")}
-                    {r.bestSeason}
+                    {t("{start} – {end}", {
+                      start: format.month(
+                        new Date(Date.UTC(2024, r.bestSeason.start - 1, 1)),
+                      ),
+                      end: format.month(
+                        new Date(Date.UTC(2024, r.bestSeason.end - 1, 1)),
+                      ),
+                    })}
                   </p>
                 )}
               </Link>

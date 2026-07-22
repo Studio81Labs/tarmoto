@@ -101,7 +101,7 @@ export default function SubscriptionPage() {
           message:
             error instanceof Error
               ? error.message
-              : "Could not load subscription settings.",
+              : t("Could not load subscription settings."),
         });
       });
     return () => {

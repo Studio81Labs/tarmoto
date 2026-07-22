@@ -1,4 +1,7 @@
 export const map = {
+  "Could not load road segment details.":
+    "Could not load road segment details.",
+  "Could not load this ride.": "Could not load this ride.",
   "Add as stop": "Add as stop",
   "Add as via": "Add as via",
   "Add via here": "Add via here",
