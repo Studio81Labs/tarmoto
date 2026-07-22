@@ -41,6 +41,12 @@ export const CHALLENGE_CONTENT_KEYS = [
 
 export type ChallengeContentKey = (typeof CHALLENGE_CONTENT_KEYS)[number];
 
+/** Legacy metric identifiers still present in challenge rows from early builds. */
+export const CHALLENGE_METRIC_ALIASES = {
+  total_km: "total_distance",
+  unique_segments: "roads_discovered",
+} as const satisfies Readonly<Record<string, ChallengeContentKey>>;
+
 export function isBadgeKey(value: string): value is BadgeKey {
   return (BADGE_KEYS as readonly string[]).includes(value);
 }
@@ -55,4 +61,23 @@ export function isChallengeContentKey(
   value: string,
 ): value is ChallengeContentKey {
   return (CHALLENGE_CONTENT_KEYS as readonly string[]).includes(value);
+}
+
+/** Resolve canonical and legacy metric identifiers to catalog-backed copy. */
+export function challengeContentKeyForMetric(
+  metric: string,
+): ChallengeContentKey | null {
+  if (isChallengeContentKey(metric)) return metric;
+  return (
+    (
+      CHALLENGE_METRIC_ALIASES as Readonly<
+        Record<string, ChallengeContentKey | undefined>
+      >
+    )[metric] ?? null
+  );
+}
+
+export function isDistanceChallengeMetric(metric: string): boolean {
+  const contentKey = challengeContentKeyForMetric(metric);
+  return contentKey === "total_distance" || contentKey === "single_ride";
 }

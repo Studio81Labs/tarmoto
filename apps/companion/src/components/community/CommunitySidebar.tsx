@@ -3,7 +3,11 @@ import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
-import type { Formatters } from "@tarmoto/shared";
+import {
+  challengeContentKeyForMetric,
+  isDistanceChallengeMetric,
+  type Formatters,
+} from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useFormat } from "@/format/FormatProvider";
@@ -95,9 +99,11 @@ function ChallengeCard({
     format,
     t,
   );
-  const distanceMetric =
-    challenge.metric === "total_distance" || challenge.metric === "single_ride";
-  const progressMessage = CHALLENGE_PROGRESS_MESSAGES[challenge.metric];
+  const distanceMetric = isDistanceChallengeMetric(challenge.metric);
+  const progressMessage =
+    CHALLENGE_PROGRESS_MESSAGES[
+      challengeContentKeyForMetric(challenge.metric) ?? challenge.metric
+    ];
   return (
     <div className="rounded-[14px] bg-ink p-[18px] text-cream">
       <Stamp tone="accent">{t("Active challenge")}</Stamp>

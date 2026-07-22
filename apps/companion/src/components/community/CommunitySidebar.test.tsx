@@ -101,11 +101,11 @@ describe("CommunitySidebar", () => {
     expect(screen.queryByRole("link", { name: "You" })).not.toBeInTheDocument();
   });
 
-  it("uses ICU singular copy and cataloged challenge units", async () => {
+  it("uses ICU singular copy and cataloged units for a legacy metric", async () => {
     fetchActiveChallengeCardMock.mockResolvedValue({
       id: "challenge-1",
       contentKey: "roads_discovered",
-      metric: "roads_discovered",
+      metric: "unique_segments",
       current: 1,
       target: 1,
       daysLeft: 1,

@@ -1,4 +1,5 @@
 import {
+  challengeCopy,
   challengePercent,
   daysRemaining,
   filterByPeriod,
@@ -165,10 +166,31 @@ describe("challengePercent", () => {
   });
 });
 
+describe("challengeCopy", () => {
+  it("falls back from legacy metrics to cataloged goal-specific copy", () => {
+    expect(
+      challengeCopy({
+        content_key: "stale-key",
+        metric: "total_km",
+        target: 100,
+      }).title,
+    ).toBe("Ride 100 km");
+    expect(
+      challengeCopy({
+        content_key: "stale-key",
+        metric: "unique_segments",
+        target: 10,
+      }).title,
+    ).toBe("Discover 10 roads");
+  });
+});
+
 describe("metricUnit", () => {
   it("translates known metrics", () => {
     expect(metricUnit("total_distance")).toBe("km");
     expect(metricUnit("ride_count")).toBe("rides");
+    expect(metricUnit("total_km")).toBe("km");
+    expect(metricUnit("unique_segments")).toBe("roads");
   });
   it("falls back to the raw metric for unknowns", () => {
     expect(metricUnit("freshly_added_metric")).toBe("freshly_added_metric");
@@ -372,8 +394,13 @@ describe("formatChallengeProgress", () => {
     expect(formatChallengeProgress(100, 200, "total_distance")).toBe(
       "62.1 / 124.3 mi",
     );
+    expect(formatChallengeProgress(100, 200, "total_km")).toBe(
+      "62.1 / 124.3 mi",
+    );
     expect(metricUnit("total_distance")).toBe("mi");
+    expect(metricUnit("total_km")).toBe("mi");
     expect(formatChallengeMetric(200, "total_distance")).toBe("124.3 mi");
+    expect(formatChallengeMetric(200, "total_km")).toBe("124.3 mi");
   });
 
   it("uses the raw metric key as the unit for unknown metrics — matching metricUnit's fallback", () => {

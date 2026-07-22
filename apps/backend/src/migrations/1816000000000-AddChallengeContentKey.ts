@@ -11,6 +11,8 @@ export class AddChallengeContentKey1816000000000 implements MigrationInterface {
     await queryRunner.query(`
       UPDATE challenges
       SET content_key = CASE
+        WHEN metric = 'total_km' THEN 'total_distance'
+        WHEN metric = 'unique_segments' THEN 'roads_discovered'
         WHEN metric IN (
           'total_distance', 'single_ride', 'ride_count',
           'roads_discovered', 'reviews_written',

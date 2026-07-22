@@ -16,6 +16,7 @@
 
 import type { components } from "@tarmoto/openapi-client";
 import {
+  challengeContentKeyForMetric,
   isBadgeKey,
   isChallengeContentKey,
   isChallengeRewardKey,
@@ -575,9 +576,7 @@ export function challengeCopyForKey(
     challenge.contentKey,
   )
     ? challenge.contentKey
-    : isChallengeContentKey(challenge.metric)
-      ? challenge.metric
-      : "generic";
+    : (challengeContentKeyForMetric(challenge.metric) ?? "generic");
   const distance = format.distanceKm(challenge.target);
   let title: string;
   switch (contentKey) {
@@ -670,7 +669,8 @@ const CHALLENGE_CATEGORY_BY_METRIC: Record<string, ChallengeCategory> = {
 };
 
 export function categoryForChallengeMetric(metric: string): ChallengeCategory {
-  return CHALLENGE_CATEGORY_BY_METRIC[metric] ?? "distance";
+  const canonicalMetric = challengeContentKeyForMetric(metric) ?? metric;
+  return CHALLENGE_CATEGORY_BY_METRIC[canonicalMetric] ?? "distance";
 }
 
 /** Mapping from backend metric key → unit label rendered next to progress. */
@@ -693,7 +693,8 @@ const UNIT_BY_METRIC: Record<string, EnglishMessageKey> = {
  * happens at the display boundary via `t(challenge.unit)`.
  */
 export function unitForChallengeMetric(metric: string): EnglishMessageKey {
-  return UNIT_BY_METRIC[metric] ?? "units";
+  const canonicalMetric = challengeContentKeyForMetric(metric) ?? metric;
+  return UNIT_BY_METRIC[canonicalMetric] ?? "units";
 }
 
 /**

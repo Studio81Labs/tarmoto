@@ -16,8 +16,10 @@ import { UNSCORED_COLOR } from "@/theme/brand";
 import { translate, type EnglishMessageKey } from "@/i18n";
 import { getFormatters } from "@/format";
 import {
+  challengeContentKeyForMetric,
   isBadgeKey,
   isChallengeContentKey,
+  isDistanceChallengeMetric,
   type BadgeKey,
   type ChallengeContentKey,
 } from "@tarmoto/shared";
@@ -213,10 +215,11 @@ const METRIC_UNITS: Record<string, EnglishMessageKey> = {
 };
 
 export function metricUnit(metric: string): string {
-  if (metric === "total_distance" || metric === "single_ride") {
+  if (isDistanceChallengeMetric(metric)) {
     return getFormatters().splitDistanceKm(0).unit;
   }
-  const unit = METRIC_UNITS[metric];
+  const canonicalMetric = challengeContentKeyForMetric(metric) ?? metric;
+  const unit = METRIC_UNITS[canonicalMetric];
   return unit ? translate(unit) : metric;
 }
 
@@ -227,7 +230,7 @@ export function challengeCopy(challenge: {
 }): { title: string; description: string } {
   const key: ChallengeContentKey = isChallengeContentKey(challenge.content_key)
     ? challenge.content_key
-    : "generic";
+    : (challengeContentKeyForMetric(challenge.metric) ?? "generic");
   const distance = getFormatters().distanceKm(challenge.target);
   let title: string;
   switch (key) {
@@ -384,7 +387,7 @@ export function formatChallengeProgress(
   target: number,
   metric: string,
 ): string {
-  if (metric === "total_distance" || metric === "single_ride") {
+  if (isDistanceChallengeMetric(metric)) {
     const format = getFormatters();
     const currentDistance = format.splitDistanceKm(progress);
     const targetDistance = format.splitDistanceKm(target);
@@ -407,7 +410,7 @@ export function formatChallengeProgress(
 
 /** Format one challenge metric value with its active display unit. */
 export function formatChallengeMetric(value: number, metric: string): string {
-  if (metric === "total_distance" || metric === "single_ride") {
+  if (isDistanceChallengeMetric(metric)) {
     const distance = getFormatters().splitDistanceKm(value);
     return translate("{value0} {value1}", {
       value0: distance.value,

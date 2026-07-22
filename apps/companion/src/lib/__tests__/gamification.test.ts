@@ -8,6 +8,7 @@ import {
   buildDemoSnapshot,
   buildLiveSnapshot,
   categoryForChallengeMetric,
+  challengeCopyForKey,
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
@@ -371,6 +372,30 @@ describe("categoryForChallengeMetric", () => {
   it("falls back to distance for unknown metrics", () => {
     expect(categoryForChallengeMetric("anything_else")).toBe("distance");
   });
+
+  it("maps legacy metrics to their canonical categories", () => {
+    expect(categoryForChallengeMetric("total_km")).toBe("distance");
+    expect(categoryForChallengeMetric("unique_segments")).toBe("discovery");
+  });
+});
+
+describe("challengeCopyForKey", () => {
+  it("falls back from legacy metrics to cataloged goal-specific copy", () => {
+    expect(
+      challengeCopyForKey(
+        { contentKey: "stale-key", metric: "total_km", target: 100 },
+        format,
+        t,
+      ).title,
+    ).toBe("Ride 100 km");
+    expect(
+      challengeCopyForKey(
+        { contentKey: "stale-key", metric: "unique_segments", target: 10 },
+        format,
+        t,
+      ).title,
+    ).toBe("Discover 10 roads");
+  });
 });
 
 describe("unitForChallengeMetric", () => {
@@ -379,6 +404,8 @@ describe("unitForChallengeMetric", () => {
     expect(unitForChallengeMetric("ride_count")).toBe("rides");
     expect(unitForChallengeMetric("roads_discovered")).toBe("roads");
     expect(unitForChallengeMetric("hazards_reported")).toBe("reports");
+    expect(unitForChallengeMetric("total_km")).toBe("km");
+    expect(unitForChallengeMetric("unique_segments")).toBe("roads");
   });
 });
 
