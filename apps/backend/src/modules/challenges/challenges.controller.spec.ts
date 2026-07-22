@@ -12,8 +12,7 @@ describe('ChallengesController', () => {
 
   const mockChallenge = {
     id: 'ch-1',
-    title: 'Spring Explorer',
-    description: 'Ride 10 new roads',
+    content_key: 'roads_discovered',
     metric: 'roads_discovered',
     target: 10,
     starts_at: '2026-04-01T00:00:00.000Z',
@@ -62,7 +61,7 @@ describe('ChallengesController', () => {
 
     expect(service.listActive).toHaveBeenCalled();
     expect(result).toHaveLength(1);
-    expect(result[0].title).toBe('Spring Explorer');
+    expect(result[0].content_key).toBe('roads_discovered');
   });
 
   it('GET /challenges/:id should return detail with leaderboard', async () => {

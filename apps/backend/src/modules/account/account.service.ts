@@ -543,6 +543,8 @@ export class AccountService {
           id: invoice.id,
           date: invoice.date,
           amount_label: invoice.amountLabel,
+          amount_minor: invoice.amountMinor,
+          currency: invoice.currency,
           status: invoice.status,
           invoice_url: invoice.invoiceUrl,
         })) ?? [],

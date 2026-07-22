@@ -4081,6 +4081,10 @@ export interface components {
             id: string;
             date: string;
             amount_label: string;
+            /** @description Charge amount in the currency minor unit. */
+            amount_minor: number;
+            /** @example EUR */
+            currency: string;
             /** @enum {string} */
             status: "paid" | "open" | "refunded";
             invoice_url?: string | null;
@@ -4369,9 +4373,8 @@ export interface components {
             gold: number;
         };
         BadgeDto: {
-            key: string;
-            name: string;
-            description: string;
+            /** @enum {string} */
+            key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared";
             category: string;
             tier: string | null;
             earned_at?: string | null;
@@ -6157,13 +6160,17 @@ export interface components {
         };
         ChallengeDto: {
             id: string;
-            title: string;
-            description: string;
+            /**
+             * @description Stable client-catalog key for challenge title and copy.
+             * @enum {string}
+             */
+            content_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | "generic";
             metric: string;
             target: number;
             starts_at: string;
             ends_at: string;
-            reward_badge_key: string | null;
+            /** @enum {string|null} */
+            reward_badge_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | "spring_explorer" | null;
             participant_count: number;
         };
         LeaderboardEntryDto: {
@@ -6175,13 +6182,17 @@ export interface components {
         };
         ChallengeDetailDto: {
             id: string;
-            title: string;
-            description: string;
+            /**
+             * @description Stable client-catalog key for challenge title and copy.
+             * @enum {string}
+             */
+            content_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | "generic";
             metric: string;
             target: number;
             starts_at: string;
             ends_at: string;
-            reward_badge_key: string | null;
+            /** @enum {string|null} */
+            reward_badge_key: "total_distance" | "single_ride" | "ride_count" | "roads_discovered" | "reviews_written" | "hazards_reported" | "rides_shared" | "spring_explorer" | null;
             participant_count: number;
             my_progress: number | null;
             my_completed: boolean | null;

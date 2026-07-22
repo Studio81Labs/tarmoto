@@ -364,7 +364,15 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
   // from the raw values to avoid rounding-induced misleading deltas.
   const hoursNow = Math.round(stats.ride_hours);
   const rawHoursDelta = Math.round(stats.ride_hours - stats.prev_ride_hours);
-  const hoursDelta = `${rawHoursDelta > 0 ? "+" : ""}${rawHoursDelta}h ${t("vs last month")}`;
+  const hoursDelta = t("{hours} vs last month", {
+    hours: format.number(rawHoursDelta, {
+      style: "unit",
+      unit: "hour",
+      unitDisplay: "narrow",
+      signDisplay: "exceptZero",
+      maximumFractionDigits: 0,
+    }),
+  });
   // Key the sublabel off the lean reading itself (max_lean_at), not the
   // ride name — an unnamed ride can still hold this month's max lean, so
   // fall back to just the date rather than the misleading "No lean recorded".

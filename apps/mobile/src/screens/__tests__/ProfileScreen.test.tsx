@@ -165,9 +165,7 @@ describe("ProfileScreen", () => {
     });
     mockedApi.listUserBadges.mockResolvedValue([
       {
-        key: "pioneer",
-        name: "Pioneer",
-        description: "First 100 roads",
+        key: "total_distance",
         category: "explore",
         tier: "bronze",
         earned_at: "2025-12-01T10:00:00.000Z",

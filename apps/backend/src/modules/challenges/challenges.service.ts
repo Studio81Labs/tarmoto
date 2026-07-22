@@ -211,8 +211,7 @@ export class ChallengesService {
   private toChallengeDto(c: Challenge, participantCount: number): ChallengeDto {
     return {
       id: c.id,
-      title: c.title,
-      description: c.description,
+      content_key: c.content_key,
       metric: c.metric,
       target: c.target,
       starts_at: c.starts_at.toISOString(),

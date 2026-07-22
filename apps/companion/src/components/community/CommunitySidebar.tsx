@@ -3,7 +3,11 @@ import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, Stamp, Mono } from "@tarmoto/ui";
-import type { Formatters } from "@tarmoto/shared";
+import {
+  challengeContentKeyForMetric,
+  isDistanceChallengeMetric,
+  type Formatters,
+} from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useFormat } from "@/format/FormatProvider";
@@ -16,15 +20,20 @@ import {
 import { fetchRegionalLeaderboards } from "@/lib/gamification-fetch";
 import type { RegionalDimensionLeaderboard } from "@/lib/gamification";
 import { followRider } from "@/lib/rider-profile";
+import { challengeCopyForKey } from "@/lib/gamification";
+import type { EnglishMessageKey } from "@/i18n";
 
-// Short unit word for the challenge progress, derived from its metric key.
-function challengeUnit(metric: string): string {
-  if (/pass/i.test(metric)) return "passes";
-  if (/road/i.test(metric)) return "roads";
-  if (/hazard/i.test(metric)) return "hazards";
-  if (/distance|km/i.test(metric)) return "km";
-  return "";
-}
+const CHALLENGE_PROGRESS_MESSAGES: Record<string, EnglishMessageKey> = {
+  ride_count: "{current} / {target} {target, plural, one {ride} other {rides}}",
+  roads_discovered:
+    "{current} / {target} {target, plural, one {road} other {roads}}",
+  reviews_written:
+    "{current} / {target} {target, plural, one {review} other {reviews}}",
+  hazards_reported:
+    "{current} / {target} {target, plural, one {report} other {reports}}",
+  rides_shared:
+    "{current} / {target} {target, plural, one {ride} other {rides}}",
+};
 
 export function CommunitySidebar() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
@@ -81,12 +90,25 @@ function ChallengeCard({
     challenge.target > 0
       ? Math.min(100, Math.round((challenge.current / challenge.target) * 100))
       : 0;
-  const unit = challengeUnit(challenge.metric);
+  const copy = challengeCopyForKey(
+    {
+      contentKey: challenge.contentKey,
+      metric: challenge.metric,
+      target: challenge.target,
+    },
+    format,
+    t,
+  );
+  const distanceMetric = isDistanceChallengeMetric(challenge.metric);
+  const progressMessage =
+    CHALLENGE_PROGRESS_MESSAGES[
+      challengeContentKeyForMetric(challenge.metric) ?? challenge.metric
+    ];
   return (
     <div className="rounded-[14px] bg-ink p-[18px] text-cream">
       <Stamp tone="accent">{t("Active challenge")}</Stamp>
       <div className="mt-1.5 text-[18px] font-extrabold tracking-[-0.2px]">
-        {challenge.title}
+        {copy.title}
       </div>
       <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-cream/15">
         <div
@@ -96,14 +118,27 @@ function ChallengeCard({
       </div>
       <div className="mt-2 flex justify-between text-[11px] text-fg-on-dark-mute">
         <Mono>
-          {format.integer(challenge.current)} /{" "}
-          {format.integer(challenge.target)}
-          {unit ? ` ${unit}` : ""}
+          {distanceMetric
+            ? t("{current} / {target}", {
+                current: format.distanceKm(challenge.current),
+                target: format.distanceKm(challenge.target),
+              })
+            : progressMessage
+              ? t(progressMessage, {
+                  current: format.integer(challenge.current),
+                  target: challenge.target,
+                })
+              : t("{current} / {target}", {
+                  current: format.integer(challenge.current),
+                  target: format.integer(challenge.target),
+                })}
         </Mono>
         <Mono>
           {challenge.daysLeft === 0
             ? t("Ends today")
-            : t("{count} days left", { count: challenge.daysLeft })}
+            : t("{count, plural, one {# day left} other {# days left}}", {
+                count: challenge.daysLeft,
+              })}
         </Mono>
       </div>
     </div>

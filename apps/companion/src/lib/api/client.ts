@@ -4,6 +4,7 @@ import { createTarmotoQueryClient } from "@tarmoto/openapi-client/react-query";
 import type { paths } from "@tarmoto/openapi-client";
 import { useAuthStore } from "@/stores/auth";
 import { API_HOST } from "@/lib/config";
+import { t } from "@/i18n";
 
 // Typed openapi-fetch client for all spec-defined endpoints.
 //
@@ -128,13 +129,20 @@ export async function openApiData<T>(
 }
 
 function apiErrorMessage(body: unknown, status: number): string {
-  if (
-    body &&
-    typeof body === "object" &&
-    "message" in body &&
-    typeof body.message === "string"
-  ) {
-    return body.message;
+  void body;
+  if (status === 401) return t("Your session has expired. Sign in again.");
+  if (status === 403) return t("You don't have permission to do that.");
+  if (status === 404) return t("The requested item could not be found.");
+  if (status === 409) {
+    return t(
+      "That change conflicts with the current state. Refresh and try again.",
+    );
   }
-  return `Request failed (${status})`;
+  if (status === 400 || status === 422) {
+    return t("Some information is invalid. Check it and try again.");
+  }
+  if (status >= 500) {
+    return t("The server is temporarily unavailable. Try again shortly.");
+  }
+  return t("Check your connection and try again.");
 }

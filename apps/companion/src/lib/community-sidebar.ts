@@ -27,7 +27,7 @@ export async function fetchSuggestedRiders(
 
 export interface ActiveChallengeCard {
   id: string;
-  title: string;
+  contentKey: string;
   metric: string;
   current: number;
   target: number;
@@ -60,7 +60,7 @@ export async function fetchActiveChallengeCard(
   const daysLeft = Math.max(0, Math.ceil((endMs - now.getTime()) / 86_400_000));
   return {
     id: next.id,
-    title: next.title,
+    contentKey: next.content_key,
     metric: next.metric,
     current: Math.round(detail.my_progress ?? 0),
     target: next.target,

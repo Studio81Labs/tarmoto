@@ -312,6 +312,29 @@ describe("normalizeSubscriptionSnapshot", () => {
 
     expect(snapshot.billingHistory[0]?.amountLabel).toBe("Unavailable");
   });
+
+  it("formats stable invoice amounts with the rider's regional locale", () => {
+    const snapshot = normalizeSubscriptionSnapshot(
+      {
+        billing_history: [
+          {
+            id: "inv_1",
+            date: "2026-01-01T00:00:00.000Z",
+            amount_minor: 2999,
+            currency: "EUR",
+            amount_label: "backend display text",
+            status: "paid",
+          },
+        ],
+      },
+      t,
+      "cs-CZ",
+    );
+
+    expect(
+      snapshot.billingHistory[0]?.amountLabel.replace(/[\u00A0\u202F]/g, " "),
+    ).toBe("29,99 €");
+  });
 });
 
 // Builds a translator over a minimal en-only catalog stub (independent of the

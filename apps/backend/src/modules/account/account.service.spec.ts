@@ -152,6 +152,8 @@ describe('AccountService', () => {
           {
             id: 'inv_1',
             date: '2026-04-23T12:00:00.000Z',
+            amountMinor: 2999,
+            currency: 'EUR',
             amountLabel: '€29.99',
             status: 'paid',
             invoiceUrl: 'https://billing.example.com/invoices/inv_1.pdf',

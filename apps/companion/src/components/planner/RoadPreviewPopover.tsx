@@ -48,26 +48,19 @@ function scoreToStripHeight(score: number): string {
   return `${Math.round(32 + ((clamped - 1) / 4) * 68)}%`;
 }
 
-function formatCapturedMonth(isoMonth: string | undefined): string | null {
+function formatCapturedMonth(
+  isoMonth: string | undefined,
+  format: Formatters,
+): string | null {
   if (!isoMonth) return null;
-  const [year, month] = isoMonth.split("-");
-  const monthIndex = Number(month) - 1;
-  if (!year || !Number.isInteger(monthIndex)) return null;
-  const label = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ][monthIndex];
-  return label ? `${label} ${year}` : null;
+  const match = /^(\d{4})-(0[1-9]|1[0-2])(?:-\d{2}.*)?$/.exec(isoMonth);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  // The captured value has calendar-month semantics, not instant semantics.
+  // Mid-month at noon stays in the same month in every IANA time zone while
+  // still letting Intl choose the locale's month/year order and punctuation.
+  return format.monthYear(new Date(Date.UTC(year, monthIndex, 15, 12))) || null;
 }
 
 // Takes the formatter so the heading speaks the same unit as the
@@ -230,7 +223,7 @@ export function RoadPreviewPopover({
   }, [segment]);
 
   const tone = QUALITY_BAND_COLORS[segment.band];
-  const captured = formatCapturedMonth(preview?.imageCapturedAt);
+  const captured = formatCapturedMonth(preview?.imageCapturedAt, format);
   const lowConf =
     preview?.hasData === true && isLowConfidence(preview.passes ?? 0);
   const scoreColor = lowConf ? "var(--color-fg-mute)" : tone;
@@ -421,9 +414,9 @@ export function RoadPreviewPopover({
               </div>
               {captured ? (
                 <div className="mt-2 flex items-center gap-1.5">
-                  <Mono className="text-[9.5px] tracking-[0.4px] text-fg-mute">
+                  <Mono className="text-[9.5px] uppercase tracking-[0.4px] text-fg-mute">
                     {t("MAPILLARY · CAPTURED ")}
-                    {captured.toUpperCase()}
+                    {captured}
                   </Mono>
                 </div>
               ) : null}

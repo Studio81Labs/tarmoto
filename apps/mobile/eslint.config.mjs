@@ -69,6 +69,30 @@ export default [
       "no-restricted-syntax": [
         "error",
         {
+          selector:
+            "FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/]:not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Display helpers must return translate()-cataloged copy, not raw prose. Return an EnglishMessageKey for translation at the caller, or document a non-display token.",
+        },
+        {
+          selector:
+            "FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/]:not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Display helpers must compose rider-facing templates through one ICU catalog message.",
+        },
+        {
+          selector:
+            "VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) > Literal[value=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Display helpers must return translate()-cataloged copy, not raw prose. Return an EnglishMessageKey for translation at the caller, or document a non-display token.",
+        },
+        {
+          selector:
+            "VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/] > :matches(ArrowFunctionExpression, FunctionExpression):not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Display helpers must compose rider-facing templates through one ICU catalog message.",
+        },
+        {
           selector: "CallExpression[callee.name='fetch']",
           message:
             "Don't call fetch() directly. Use the generated client — `client` from `@/services/typedClient` (via `@/services/api`). (Raw fetch is confined to services/typedClient.ts, the auth-refresh middleware.)",

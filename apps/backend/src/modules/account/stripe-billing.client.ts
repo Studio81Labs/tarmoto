@@ -84,6 +84,8 @@ export interface StripeBillingSnapshot {
   invoices: Array<{
     id: string;
     date: string;
+    amountMinor: number;
+    currency: string;
     amountLabel: string;
     status: InvoiceStatus;
     invoiceUrl: string | null;
@@ -223,16 +225,19 @@ export class StripeNodeBillingClient implements StripeBillingClient {
             ? null
             : customer.invoice_settings.default_payment_method),
       ),
-      invoices: invoices.data.map((invoice) => ({
-        id: invoice.id ?? `invoice-${invoice.created}`,
-        date: new Date(invoice.created * 1000).toISOString(),
-        amountLabel: formatAmountLabel(
-          invoice.amount_paid || invoice.amount_due,
-          invoice.currency,
-        ),
-        status: normalizeInvoiceStatus(invoice.status),
-        invoiceUrl: invoice.invoice_pdf ?? invoice.hosted_invoice_url ?? null,
-      })),
+      invoices: invoices.data.map((invoice) => {
+        const amountMinor = invoice.amount_paid || invoice.amount_due;
+        const currency = (invoice.currency ?? 'usd').toUpperCase();
+        return {
+          id: invoice.id ?? `invoice-${invoice.created}`,
+          date: new Date(invoice.created * 1000).toISOString(),
+          amountMinor,
+          currency,
+          amountLabel: formatAmountLabel(amountMinor, currency),
+          status: normalizeInvoiceStatus(invoice.status),
+          invoiceUrl: invoice.invoice_pdf ?? invoice.hosted_invoice_url ?? null,
+        };
+      }),
     };
   }
 

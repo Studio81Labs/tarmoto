@@ -24,6 +24,7 @@ describe('ChallengesService', () => {
     id: 'ch-1',
     title: 'Spring Explorer',
     description: 'Ride 10 new roads this month',
+    content_key: 'roads_discovered',
     metric: 'roads_discovered',
     target: 10,
     starts_at: new Date(now.getTime() - 86400000),
@@ -90,7 +91,7 @@ describe('ChallengesService', () => {
       const result = await service.listActive();
 
       expect(result).toHaveLength(1);
-      expect(result[0].title).toBe('Spring Explorer');
+      expect(result[0].content_key).toBe('roads_discovered');
       expect(result[0].participant_count).toBe(12);
     });
 
@@ -121,7 +122,7 @@ describe('ChallengesService', () => {
 
       const result = await service.getDetail('ch-1', 'user-1');
 
-      expect(result.title).toBe('Spring Explorer');
+      expect(result.content_key).toBe('roads_discovered');
       expect(result.my_progress).toBe(5);
       expect(result.my_completed).toBe(false);
       expect(result.leaderboard).toHaveLength(1);

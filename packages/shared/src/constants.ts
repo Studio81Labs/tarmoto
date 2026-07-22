@@ -1,3 +1,5 @@
+import { formatCurrencyAmount } from "./format";
+
 export const ROAD_QUALITY = {
   EXCELLENT: 5,
   GOOD: 4,
@@ -144,16 +146,43 @@ export const SUBSCRIPTION_PRICING: Record<
 // Plan-card price (e.g. "€29.99/yr"). Free is rendered without an
 // interval suffix because "€0/yr" reads as a quirky billing claim
 // rather than "this plan costs nothing".
-export function formatSubscriptionPriceLabel(tier: SubscriptionTier): string {
+export interface SubscriptionPriceFormatOptions {
+  locale?: string;
+  yearLabel?: string;
+  monthLabel?: string;
+}
+
+export function formatSubscriptionPriceLabel(
+  tier: SubscriptionTier,
+  options: SubscriptionPriceFormatOptions = {},
+): string {
   const { price_eur, interval } = SUBSCRIPTION_PRICING[tier];
-  if (price_eur === 0) return "€0";
-  const suffix = interval === "year" ? "/yr" : "/mo";
-  return `€${price_eur.toFixed(2)}${suffix}`;
+  const amount = formatCurrencyAmount(
+    price_eur,
+    "EUR",
+    options.locale ?? "en",
+    {
+      minimumFractionDigits: price_eur === 0 ? 0 : 2,
+      maximumFractionDigits: price_eur === 0 ? 0 : 2,
+    },
+  );
+  if (price_eur === 0) return amount;
+  const suffix =
+    interval === "year"
+      ? (options.yearLabel ?? "yr")
+      : (options.monthLabel ?? "mo");
+  return `${amount}/${suffix}`;
 }
 
 // Invoice / charge amount (e.g. "€29.99") without billing-interval
 // suffix — used for billing-history rows and confirmation emails.
-export function formatSubscriptionAmountLabel(tier: SubscriptionTier): string {
+export function formatSubscriptionAmountLabel(
+  tier: SubscriptionTier,
+  locale = "en",
+): string {
   const { price_eur } = SUBSCRIPTION_PRICING[tier];
-  return `€${price_eur.toFixed(2)}`;
+  return formatCurrencyAmount(price_eur, "EUR", locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }

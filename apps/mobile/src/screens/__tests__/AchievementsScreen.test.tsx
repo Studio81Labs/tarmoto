@@ -75,18 +75,14 @@ describe("AchievementsScreen", () => {
     jest.clearAllMocks();
     mockedApi.listUserBadges.mockResolvedValue([
       {
-        key: "k1",
-        name: "Road Warrior",
-        description: "",
+        key: "total_distance",
         category: "distance",
         tier: "silver",
         earned_at: "2026-04-01T00:00:00Z",
         progress: { current: 1500, bronze: 100, silver: 1000, gold: 10000 },
       },
       {
-        key: "k2",
-        name: "Iron Butt",
-        description: "",
+        key: "single_ride",
         category: "distance",
         tier: null,
         earned_at: null,
@@ -96,9 +92,8 @@ describe("AchievementsScreen", () => {
     mockedApi.listChallenges.mockResolvedValue([
       {
         id: "c1",
-        title: "T",
-        description: "",
-        metric: "total_km",
+        content_key: "total_distance",
+        metric: "total_distance",
         target: 100,
         starts_at: "2026-05-01T00:00:00Z",
         ends_at: "2026-12-31T00:00:00Z",

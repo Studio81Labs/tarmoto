@@ -26,8 +26,6 @@ const MOCK_ROAD_SEGMENT_ID = "11111111-2222-4333-8444-555555555111";
 const MOCK_BADGE_CATALOGUE = [
   {
     key: "total_distance",
-    name: "Road Warrior",
-    description: "Total distance ridden",
     category: "distance",
     tier: null,
     earned_at: null,
@@ -35,8 +33,6 @@ const MOCK_BADGE_CATALOGUE = [
   },
   {
     key: "single_ride",
-    name: "Iron Butt",
-    description: "Longest single ride distance",
     category: "distance",
     tier: null,
     earned_at: null,
@@ -44,8 +40,6 @@ const MOCK_BADGE_CATALOGUE = [
   },
   {
     key: "ride_count",
-    name: "Regular Rider",
-    description: "Total number of completed rides",
     category: "distance",
     tier: null,
     earned_at: null,
@@ -53,8 +47,6 @@ const MOCK_BADGE_CATALOGUE = [
   },
   {
     key: "roads_discovered",
-    name: "Explorer",
-    description: "Unique road segments ridden",
     category: "exploration",
     tier: null,
     earned_at: null,
@@ -62,8 +54,6 @@ const MOCK_BADGE_CATALOGUE = [
   },
   {
     key: "reviews_written",
-    name: "Road Critic",
-    description: "Road reviews written",
     category: "exploration",
     tier: null,
     earned_at: null,
@@ -71,8 +61,6 @@ const MOCK_BADGE_CATALOGUE = [
   },
   {
     key: "hazards_reported",
-    name: "Safety Scout",
-    description: "Hazards reported to the community",
     category: "community",
     tier: null,
     earned_at: null,
@@ -80,8 +68,6 @@ const MOCK_BADGE_CATALOGUE = [
   },
   {
     key: "rides_shared",
-    name: "Social Rider",
-    description: "Rides shared with the community",
     category: "community",
     tier: null,
     earned_at: null,

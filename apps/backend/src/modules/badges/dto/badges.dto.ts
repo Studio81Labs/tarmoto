@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BADGE_KEYS, type BadgeKey } from '@tarmoto/shared';
 
 export class BadgeProgressDto {
   @ApiProperty()
@@ -15,14 +16,8 @@ export class BadgeProgressDto {
 }
 
 export class BadgeDto {
-  @ApiProperty()
-  key!: string;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty()
-  description!: string;
+  @ApiProperty({ enum: BADGE_KEYS })
+  key!: BadgeKey;
 
   @ApiProperty()
   category!: string;

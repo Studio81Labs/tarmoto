@@ -1,14 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  CHALLENGE_CONTENT_KEYS,
+  CHALLENGE_REWARD_KEYS,
+  type ChallengeContentKey,
+  type ChallengeRewardKey,
+} from '@tarmoto/shared';
 
 export class ChallengeDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty()
-  title!: string;
-
-  @ApiProperty()
-  description!: string;
+  @ApiProperty({
+    enum: CHALLENGE_CONTENT_KEYS,
+    description: 'Stable client-catalog key for challenge title and copy.',
+  })
+  content_key!: ChallengeContentKey;
 
   @ApiProperty()
   metric!: string;
@@ -22,8 +28,8 @@ export class ChallengeDto {
   @ApiProperty()
   ends_at!: string;
 
-  @ApiProperty({ nullable: true })
-  reward_badge_key!: string | null;
+  @ApiProperty({ enum: CHALLENGE_REWARD_KEYS, nullable: true })
+  reward_badge_key!: ChallengeRewardKey | null;
 
   @ApiProperty()
   participant_count!: number;

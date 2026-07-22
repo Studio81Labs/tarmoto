@@ -69,9 +69,8 @@ beforeAll(() => {
 
 const baseChallenge: Challenge = {
   id: "c1",
-  title: "May Distance",
-  description: "Ride 200 km in May",
-  metric: "total_km",
+  content_key: "total_distance",
+  metric: "total_distance",
   target: 200,
   starts_at: "2026-05-01T00:00:00Z",
   // Far enough in the future that "Ends today" never matches in CI.
@@ -112,8 +111,10 @@ describe("ChallengesScreen", () => {
     mockedApi.listChallenges.mockResolvedValue([baseChallenge]);
     await render(<ChallengesScreen />);
 
-    await waitFor(() => expect(screen.getByText("May Distance")).toBeTruthy());
-    expect(screen.getByText("Ride 200 km in May")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Ride 200 km")).toBeTruthy());
+    expect(
+      screen.getByText("Reach this goal before the challenge ends."),
+    ).toBeTruthy();
     expect(screen.getByText("200 km")).toBeTruthy();
     expect(screen.getByText("12 riders")).toBeTruthy();
   });
@@ -141,7 +142,7 @@ describe("ChallengesScreen", () => {
 
     await act(async () => {
       await fireEvent.press(
-        screen.getByLabelText("Expand May Distance details"),
+        screen.getByLabelText("Expand Ride 124.3 mi details"),
       );
       await Promise.resolve();
       await Promise.resolve();
@@ -168,11 +169,11 @@ describe("ChallengesScreen", () => {
     });
 
     await render(<ChallengesScreen />);
-    await waitFor(() => expect(screen.getByText("May Distance")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Ride 200 km")).toBeTruthy());
 
     await act(async () => {
       await fireEvent.press(
-        screen.getByLabelText("Expand May Distance details"),
+        screen.getByLabelText("Expand Ride 200 km details"),
       );
       // Flush the detail fetch promise.
       await Promise.resolve();
@@ -193,7 +194,7 @@ describe("ChallengesScreen", () => {
 
     await act(async () => {
       await fireEvent.press(
-        screen.getByLabelText("Join challenge May Distance"),
+        screen.getByLabelText("Join challenge Ride 200 km"),
       );
       await Promise.resolve();
       await Promise.resolve();

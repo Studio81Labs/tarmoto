@@ -109,6 +109,7 @@ import {
   isCurrentAuthSession,
   type AuthSessionSnapshot,
 } from "./authBootstrap";
+import { t } from "@/i18n";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -127,20 +128,17 @@ export class ApiError extends Error {
 
 function unwrap<T>(
   result: { data?: T; error?: unknown; response: Response },
-  fallbackMessage: string,
+  _fallbackMessage: string,
 ): T {
   if (result.error !== undefined) {
     const status = result.response.status;
-    const message =
-      (result.error as { message?: string } | undefined)?.message ??
-      fallbackMessage;
-    throw new ApiError(message, status, result.error);
+    throw new ApiError(localizedApiErrorMessage(status), status, result.error);
   }
   if (result.data === undefined) {
     // 204s are valid for DELETEs / dismissals — callers should use
     // `unwrapVoid` for those. Reaching here means we expected a body.
     throw new ApiError(
-      `Empty response body (${result.response.status})`,
+      localizedApiErrorMessage(result.response.status),
       result.response.status,
       null,
     );
@@ -151,12 +149,29 @@ function unwrap<T>(
 function unwrapVoid(result: { error?: unknown; response: Response }): void {
   if (result.error !== undefined) {
     throw new ApiError(
-      (result.error as { message?: string } | undefined)?.message ??
-        "Request failed",
+      localizedApiErrorMessage(result.response.status),
       result.response.status,
       result.error,
     );
   }
+}
+
+function localizedApiErrorMessage(status: number): string {
+  if (status === 401) return t("Your session has expired. Sign in again.");
+  if (status === 403) return t("You don't have permission to do that.");
+  if (status === 404) return t("The requested item could not be found.");
+  if (status === 409) {
+    return t(
+      "That change conflicts with the current state. Refresh and try again.",
+    );
+  }
+  if (status === 400 || status === 422) {
+    return t("Some information is invalid. Check it and try again.");
+  }
+  if (status >= 500) {
+    return t("The server is temporarily unavailable. Try again shortly.");
+  }
+  return t("Check your connection and try again.");
 }
 
 class ApiService {
@@ -170,6 +185,13 @@ class ApiService {
     const result = await client.POST("/api/v1/auth/register", {
       body: { email, password, display_name },
     });
+    if (result.error !== undefined && result.response.status === 409) {
+      throw new ApiError(
+        t("An account with that email already exists"),
+        result.response.status,
+        result.error,
+      );
+    }
     const data = unwrap(result, "Registration failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
@@ -188,6 +210,13 @@ class ApiService {
     const result = await client.POST("/api/v1/auth/login", {
       body: { email, password },
     });
+    if (result.error !== undefined && result.response.status === 401) {
+      throw new ApiError(
+        t("Invalid email or password"),
+        result.response.status,
+        result.error,
+      );
+    }
     const data = unwrap(result, "Login failed");
     storeTokens(data);
     void registerForPush(this.pushApi());

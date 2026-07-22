@@ -1,5 +1,5 @@
 "use client";
-import { t, tDynamic, type EnglishMessageKey } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -163,6 +163,7 @@ export default function AchievementsPage() {
       if (!silent) setState({ status: "loading", userId: uid });
       try {
         const snapshot = await fetchGamificationSnapshot(uid, {
+          format,
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
@@ -176,11 +177,11 @@ export default function AchievementsPage() {
           message:
             err instanceof Error
               ? err.message
-              : "Could not load achievements right now.",
+              : t("Could not load achievements"),
         });
       }
     },
-    [],
+    [format],
   );
   useEffect(() => {
     // The user changed (sign-in, sign-out, or account switch). Clear any
@@ -767,7 +768,7 @@ function ChallengeCard({
         <Mono className="text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
           {t(style.label)}
         </Mono>
-        <Mono className="text-[10px] text-fg-mute">{daysFooter}</Mono>
+        <Mono className="text-[10px] uppercase text-fg-mute">{daysFooter}</Mono>
       </div>
 
       <p className="mt-2 text-[15px] font-extrabold leading-snug text-ink">
@@ -808,9 +809,7 @@ function ChallengeCard({
               {format.integer(challenge.current)} /{" "}
               {format.integer(challenge.target)}
               {challenge.unit && (
-                <span className="ml-1 text-fg-mute">
-                  {tDynamic(challenge.unit)}
-                </span>
+                <span className="ml-1 text-fg-mute">{t(challenge.unit)}</span>
               )}
             </>
           )}
@@ -858,14 +857,24 @@ function ChallengeCard({
 // understating the time remaining on multi-week / multi-month challenges.
 function formatDaysShort(endsAt: string, now: Date = new Date()): string {
   const end = new Date(endsAt).getTime();
-  if (!Number.isFinite(end)) return "ONGOING";
+  if (!Number.isFinite(end)) return t("Ongoing");
   const diffMs = end - now.getTime();
-  if (diffMs <= 0) return "ENDED";
+  if (diffMs <= 0) return t("Ended");
   const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  if (days === 0) return "TODAY";
-  if (days < 14) return `${days}D LEFT`;
-  if (days < 90) return `${Math.floor(days / 7)}W LEFT`;
-  return `${Math.floor(days / 30)}MO LEFT`;
+  if (days === 0) return t("Ends today");
+  if (days < 14) {
+    return t("{count, plural, one {# DAY LEFT} other {# DAYS LEFT}}", {
+      count: days,
+    });
+  }
+  if (days < 90) {
+    return t("{count, plural, one {# WEEK LEFT} other {# WEEKS LEFT}}", {
+      count: Math.floor(days / 7),
+    });
+  }
+  return t("{count, plural, one {# MONTH LEFT} other {# MONTHS LEFT}}", {
+    count: Math.floor(days / 30),
+  });
 }
 // ── Regional leaderboards ──
 type RegionScope = "region" | "global";

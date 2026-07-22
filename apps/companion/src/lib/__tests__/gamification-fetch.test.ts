@@ -8,6 +8,9 @@ import {
   joinChallenge,
 } from "../gamification-fetch";
 import { api } from "@/lib/api";
+import { createFormatters } from "@tarmoto/shared";
+
+const format = createFormatters({ locale: "en", units: "metric" });
 
 const ME_PROFILE_RESPONSE = {
   joined_at: "2024-04-13T10:00:00.000Z",
@@ -76,7 +79,7 @@ describe("joinChallenge", () => {
     );
   });
 
-  it("includes the backend message and status on the thrown error", async () => {
+  it("uses cataloged rider copy while preserving the response status", async () => {
     mockPost.mockResolvedValueOnce(fail(500, { message: "Server died" }));
 
     try {
@@ -85,7 +88,7 @@ describe("joinChallenge", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(GamificationFetchError);
       const ge = err as GamificationFetchError;
-      expect(ge.message).toBe("Server died");
+      expect(ge.message).toBe("Could not join challenge");
       expect(ge.status).toBe(500);
     }
   });
@@ -113,7 +116,7 @@ describe("fetchMeProfile", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(GamificationFetchError);
       const ge = err as GamificationFetchError;
-      expect(ge.message).toBe("boom");
+      expect(ge.message).toBe("Could not load your profile summary");
       expect(ge.status).toBe(500);
     }
   });
@@ -170,8 +173,6 @@ describe("fetchGamificationSnapshot", () => {
           ok([
             {
               key: "total_distance",
-              name: "Road Warrior",
-              description: "Total distance ridden",
               category: "distance",
               tier: "bronze",
               earned_at: "2026-04-01T00:00:00Z",
@@ -190,8 +191,7 @@ describe("fetchGamificationSnapshot", () => {
           ok([
             {
               id: "ch-1",
-              title: "Spring Explorer",
-              description: "Ride 10 new roads",
+              content_key: "roads_discovered",
               metric: "roads_discovered",
               target: 10,
               starts_at: "2026-04-01T00:00:00Z",
@@ -207,8 +207,7 @@ describe("fetchGamificationSnapshot", () => {
         return Promise.resolve(
           ok({
             id,
-            title: "Spring Explorer",
-            description: "Ride 10 new roads",
+            content_key: "roads_discovered",
             metric: "roads_discovered",
             target: 10,
             starts_at: "2026-04-01T00:00:00Z",
@@ -236,7 +235,7 @@ describe("fetchGamificationSnapshot", () => {
   it("composes badges + challenges + details + me-profile into a snapshot", async () => {
     setupHappyPath();
 
-    const snap = await fetchGamificationSnapshot("user-1");
+    const snap = await fetchGamificationSnapshot("user-1", { format });
 
     expect(snap.badges).toHaveLength(1);
     expect(snap.badges[0]?.id).toBe("total_distance");
@@ -260,9 +259,9 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(ok([]));
     });
 
-    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "DB down",
-    );
+    await expect(
+      fetchGamificationSnapshot("user-1", { format }),
+    ).rejects.toThrow("Could not load badges");
   });
 
   it("propagates errors from the challenges list call", async () => {
@@ -279,9 +278,9 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(ok([]));
     });
 
-    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Unavailable",
-    );
+    await expect(
+      fetchGamificationSnapshot("user-1", { format }),
+    ).rejects.toThrow("Could not load challenges");
   });
 
   it("propagates errors from the me-profile call", async () => {
@@ -292,9 +291,9 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(ok([]));
     });
 
-    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
-      "Profile lookup failed",
-    );
+    await expect(
+      fetchGamificationSnapshot("user-1", { format }),
+    ).rejects.toThrow("Could not load your profile summary");
   });
 
   it("returns an empty-but-valid snapshot when there are no challenges", async () => {
@@ -307,7 +306,7 @@ describe("fetchGamificationSnapshot", () => {
       return Promise.resolve(fail(404));
     });
 
-    const snap = await fetchGamificationSnapshot("user-1");
+    const snap = await fetchGamificationSnapshot("user-1", { format });
     expect(snap.challenges).toEqual([]);
     expect(snap.milestones.length).toBeGreaterThan(0);
   });
@@ -316,7 +315,10 @@ describe("fetchGamificationSnapshot", () => {
     setupHappyPath();
     const controller = new AbortController();
 
-    await fetchGamificationSnapshot("user-1", { signal: controller.signal });
+    await fetchGamificationSnapshot("user-1", {
+      format,
+      signal: controller.signal,
+    });
 
     // Every api.GET invocation should have received the same signal so
     // that aborting the controller cancels the whole fan-out.

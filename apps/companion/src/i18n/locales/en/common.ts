@@ -1,4 +1,23 @@
 export const common = {
+  "An account with that email already exists":
+    "An account with that email already exists",
+  mo: "mo",
+  yr: "yr",
+  "{hours} vs last month": "{hours} vs last month",
+  "Check your connection and try again.":
+    "Check your connection and try again.",
+  "Some information is invalid. Check it and try again.":
+    "Some information is invalid. Check it and try again.",
+  "That change conflicts with the current state. Refresh and try again.":
+    "That change conflicts with the current state. Refresh and try again.",
+  "The requested item could not be found.":
+    "The requested item could not be found.",
+  "The server is temporarily unavailable. Try again shortly.":
+    "The server is temporarily unavailable. Try again shortly.",
+  "You don't have permission to do that.":
+    "You don't have permission to do that.",
+  "Your session has expired. Sign in again.":
+    "Your session has expired. Sign in again.",
   " image URL from your CDN, photo host, or social profile. ":
     " image URL from your CDN, photo host, or social profile. ",
   '"{name}" and all its days, waypoints, and collaboration history are permanently removed. This cannot be undone. ':

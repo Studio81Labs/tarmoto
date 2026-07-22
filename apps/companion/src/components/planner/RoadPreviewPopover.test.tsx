@@ -174,6 +174,7 @@ describe("RoadPreviewPopover", () => {
     expect(await screen.findByText("surface = asphalt")).toBeInTheDocument();
     expect(screen.getByText(/· unverified/)).toBeInTheDocument();
     expect(screen.getByText(/MAPILLARY · CAPTURED/)).toBeInTheDocument();
+    expect(screen.getByText(/Sep 2024/)).toBeInTheDocument();
     expect(screen.getByText(/be the first to map it/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Keep in route/ }),

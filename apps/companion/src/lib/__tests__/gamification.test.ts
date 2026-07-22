@@ -8,10 +8,10 @@ import {
   buildDemoSnapshot,
   buildLiveSnapshot,
   categoryForChallengeMetric,
+  challengeCopyForKey,
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
-  humanizeRewardBadgeKey,
   iconForBadgeKey,
   labelForDimension,
   mapBadgeDto,
@@ -296,8 +296,6 @@ type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
 function badgeDto(overrides: Partial<BadgeDto> = {}): BadgeDto {
   return {
     key: "total_distance",
-    name: "Road Warrior",
-    description: "Total distance ridden",
     category: "distance",
     tier: null,
     earned_at: null,
@@ -309,8 +307,7 @@ function badgeDto(overrides: Partial<BadgeDto> = {}): BadgeDto {
 function challengeDto(overrides: Partial<ChallengeDto> = {}): ChallengeDto {
   return {
     id: "ch-1",
-    title: "Spring Explorer",
-    description: "Ride 10 new roads this month",
+    content_key: "roads_discovered",
     metric: "roads_discovered",
     target: 10,
     starts_at: "2026-04-01T00:00:00Z",
@@ -349,15 +346,16 @@ describe("mapBadgeDto", () => {
   it("uses earned_at when set and leaves it undefined when null", () => {
     const earned = mapBadgeDto(
       badgeDto({ tier: "bronze", earned_at: "2026-04-01T00:00:00Z" }),
+      t,
     );
     expect(earned.earnedAt).toBe("2026-04-01T00:00:00Z");
 
-    const locked = mapBadgeDto(badgeDto());
+    const locked = mapBadgeDto(badgeDto(), t);
     expect(locked.earnedAt).toBeUndefined();
   });
 
   it("derives id from the backend key and picks an icon", () => {
-    const mapped = mapBadgeDto(badgeDto({ key: "roads_discovered" }));
+    const mapped = mapBadgeDto(badgeDto({ key: "roads_discovered" }), t);
     expect(mapped.id).toBe("roads_discovered");
     expect(mapped.icon).toBe("compass");
   });
@@ -374,6 +372,30 @@ describe("categoryForChallengeMetric", () => {
   it("falls back to distance for unknown metrics", () => {
     expect(categoryForChallengeMetric("anything_else")).toBe("distance");
   });
+
+  it("maps legacy metrics to their canonical categories", () => {
+    expect(categoryForChallengeMetric("total_km")).toBe("distance");
+    expect(categoryForChallengeMetric("unique_segments")).toBe("discovery");
+  });
+});
+
+describe("challengeCopyForKey", () => {
+  it("falls back from legacy metrics to cataloged goal-specific copy", () => {
+    expect(
+      challengeCopyForKey(
+        { contentKey: "stale-key", metric: "total_km", target: 100 },
+        format,
+        t,
+      ).title,
+    ).toBe("Ride 100 km");
+    expect(
+      challengeCopyForKey(
+        { contentKey: "stale-key", metric: "unique_segments", target: 10 },
+        format,
+        t,
+      ).title,
+    ).toBe("Discover 10 roads");
+  });
 });
 
 describe("unitForChallengeMetric", () => {
@@ -382,42 +404,55 @@ describe("unitForChallengeMetric", () => {
     expect(unitForChallengeMetric("ride_count")).toBe("rides");
     expect(unitForChallengeMetric("roads_discovered")).toBe("roads");
     expect(unitForChallengeMetric("hazards_reported")).toBe("reports");
+    expect(unitForChallengeMetric("total_km")).toBe("km");
+    expect(unitForChallengeMetric("unique_segments")).toBe("roads");
   });
 });
 
 describe("mapChallengeDto", () => {
   it("treats null my_progress as not-yet-joined (current = 0)", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), null);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), null, format, t);
     expect(c.current).toBe(0);
     expect(c.target).toBe(10);
   });
 
   it("uses my_progress when the rider has joined", () => {
-    const c = mapChallengeDto(challengeDto({ target: 10 }), 4);
+    const c = mapChallengeDto(challengeDto({ target: 10 }), 4, format, t);
     expect(c.current).toBe(4);
   });
 
-  it("renames title → name and forwards endsAt", () => {
+  it("maps the stable content key and forwards endsAt", () => {
     const c = mapChallengeDto(
-      challengeDto({ title: "Spring", ends_at: "2026-05-01T00:00:00Z" }),
+      challengeDto({
+        content_key: "roads_discovered",
+        ends_at: "2026-05-01T00:00:00Z",
+      }),
       undefined,
+      format,
+      t,
     );
-    expect(c.name).toBe("Spring");
+    expect(c.name).toBe("Discover 10 roads");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
   });
 
-  it("humanises a reward badge key into user-facing copy", () => {
+  it("maps a seasonal reward identifier through cataloged copy", () => {
     const c = mapChallengeDto(
-      challengeDto({ reward_badge_key: "spring_explorer" }),
+      challengeDto({
+        reward_badge_key: "spring_explorer",
+      }),
       undefined,
+      format,
+      t,
     );
-    expect(c.reward).toBe("Spring explorer");
+    expect(c.reward).toBe("Spring Explorer");
   });
 
   it("leaves reward undefined when no badge key is set", () => {
     const c = mapChallengeDto(
       challengeDto({ reward_badge_key: null }),
       undefined,
+      format,
+      t,
     );
     expect(c.reward).toBeUndefined();
   });
@@ -428,26 +463,13 @@ describe("mapChallengeDto", () => {
     // "km" — the achievements page branches on `challenge.unit === "km"` to
     // apply imperial distance conversion, and translation happens only at
     // the display boundary via `t(challenge.unit)`.
-    const c = mapChallengeDto(challengeDto({ metric: "total_distance" }), 1);
-    expect(c.unit).toBe("km");
-  });
-});
-
-describe("humanizeRewardBadgeKey", () => {
-  it("converts snake_case to Sentence case", () => {
-    expect(humanizeRewardBadgeKey("spring_explorer")).toBe("Spring explorer");
-    expect(humanizeRewardBadgeKey("road_warrior_2026")).toBe(
-      "Road warrior 2026",
+    const c = mapChallengeDto(
+      challengeDto({ metric: "total_distance" }),
+      1,
+      format,
+      t,
     );
-  });
-
-  it("treats hyphens like underscores", () => {
-    expect(humanizeRewardBadgeKey("safety-scout")).toBe("Safety scout");
-  });
-
-  it("returns an empty string for blank input", () => {
-    expect(humanizeRewardBadgeKey("")).toBe("");
-    expect(humanizeRewardBadgeKey("   ")).toBe("");
+    expect(c.unit).toBe("km");
   });
 });
 
@@ -656,7 +678,11 @@ describe("gamification translator wiring", () => {
   });
 
   it("buildLiveSnapshot routes milestone name/description through the translator", () => {
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [] },
+      format,
+      t,
+    );
     expect(snap.milestones[0]?.name).toBe("XX-DistanceTraveller");
     expect(snap.milestones[0]?.description).toBe("XX-CumulativeKm");
   });
@@ -664,7 +690,11 @@ describe("gamification translator wiring", () => {
 
 describe("buildLiveSnapshot", () => {
   it("produces an empty snapshot when no data is available", () => {
-    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] }, t);
+    const snap = buildLiveSnapshot(
+      { badges: [], challengeDetails: [] },
+      format,
+      t,
+    );
     expect(snap.badges).toEqual([]);
     expect(snap.challenges).toEqual([]);
     expect(snap.seasonal).toBeNull();
@@ -679,6 +709,7 @@ describe("buildLiveSnapshot", () => {
     });
     const snap = buildLiveSnapshot(
       { badges: [], challengeDetails: [detail] },
+      format,
       t,
     );
     expect(snap.challengeMeta["ch-1"]).toEqual({
@@ -696,6 +727,7 @@ describe("buildLiveSnapshot", () => {
     });
     const snap = buildLiveSnapshot(
       { badges: [], challengeDetails: [detail] },
+      format,
       t,
     );
     expect(snap.challengeMeta["ch-1"]?.joined).toBe(false);
@@ -718,6 +750,7 @@ describe("buildLiveSnapshot", () => {
         ],
         challengeDetails: [],
       },
+      format,
       t,
     );
     expect(snap.stats.totalKm).toBe(8_000);
@@ -751,6 +784,7 @@ describe("buildLiveSnapshot", () => {
           badges_earned: 3,
         },
       },
+      format,
       t,
     );
 

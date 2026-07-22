@@ -32,6 +32,7 @@ import {
 } from "@/theme/brand";
 import type { UserBadge } from "@/types";
 import {
+  badgeCopy,
   nextMilestone,
   progressToNext,
   tierColor,
@@ -39,6 +40,7 @@ import {
   tierRank,
 } from "./AchievementsScreen.helpers";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
 
@@ -184,6 +186,8 @@ function Section({
 }
 
 function BadgeRow({ badge }: { badge: UserBadge }) {
+  const copy = badgeCopy(badge.key);
+  const format = getFormatters();
   const next = nextMilestone(badge);
   const ratio = progressToNext(badge);
   const earned = badge.tier !== null;
@@ -193,11 +197,11 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
       accessibilityLabel={
         earned
           ? translate("{name}, {tier} tier earned", {
-              name: badge.name,
+              name: copy.name,
               tier: tierLabel(badge.tier ?? ""),
             })
           : translate("{name}, locked, {progress}% to {nextTier}", {
-              name: badge.name,
+              name: copy.name,
               progress: Math.round(ratio * 100),
               nextTier: tierLabel(next?.tier ?? ""),
             })
@@ -221,7 +225,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
       </View>
       <View style={styles.badgeBody}>
         <View style={styles.badgeHeaderRow}>
-          <Text style={styles.badgeName}>{badge.name}</Text>
+          <Text style={styles.badgeName}>{copy.name}</Text>
           {earned ? (
             <View
               style={[
@@ -235,7 +239,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
             </View>
           ) : null}
         </View>
-        <Text style={styles.badgeDesc}>{badge.description}</Text>
+        <Text style={styles.badgeDesc}>{copy.description}</Text>
         {next ? (
           <>
             <View style={styles.progressBar}>
@@ -250,7 +254,8 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               />
             </View>
             <Text style={styles.progressLabel}>
-              {Math.round(badge.progress.current)} / {Math.round(next.target)} →{" "}
+              {format.integer(badge.progress.current)} /{" "}
+              {format.integer(next.target)} →{" "}
               <Text style={styles.progressTier}>
                 {tierLabel(next.tier).toLocaleUpperCase()}
               </Text>

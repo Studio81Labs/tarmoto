@@ -52,8 +52,6 @@ export class BadgesService {
 
       return {
         key: def.key,
-        name: def.name,
-        description: def.description,
         category: def.category,
         tier: userBadge?.tier ?? null,
         earned_at: userBadge?.earned_at.toISOString() ?? null,

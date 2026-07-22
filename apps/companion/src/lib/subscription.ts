@@ -1,6 +1,8 @@
 import {
   formatSubscriptionAmountLabel,
   formatSubscriptionPriceLabel,
+  formatCurrencyMinorAmount,
+  DEFAULT_FORMAT_LOCALE,
   type Formatters,
   type SubscriptionTier,
 } from "@tarmoto/shared";
@@ -72,15 +74,28 @@ const TIER_ORDER: Record<SubscriptionTier, number> = {
   premium: 2,
 };
 
+function subscriptionPriceLabel(
+  tier: SubscriptionTier,
+  locale: string,
+  t: Translate,
+): string {
+  return formatSubscriptionPriceLabel(tier, {
+    locale,
+    yearLabel: t("yr"),
+    monthLabel: t("mo"),
+  });
+}
+
 export function buildFallbackSubscriptionSnapshot(
   t: Translate,
+  locale = DEFAULT_FORMAT_LOCALE,
 ): SubscriptionSnapshot {
   return {
     currentPlan: {
       tier: "pro",
       name: tierLabel("pro", t),
       status: "active",
-      priceLabel: formatSubscriptionPriceLabel("pro"),
+      priceLabel: subscriptionPriceLabel("pro", locale, t),
       renewsAt: "2026-11-15T00:00:00.000Z",
       cancelAtPeriodEnd: false,
       manageUrl: null,
@@ -89,7 +104,7 @@ export function buildFallbackSubscriptionSnapshot(
       {
         tier: "free",
         name: tierLabel("free", t),
-        priceLabel: formatSubscriptionPriceLabel("free"),
+        priceLabel: subscriptionPriceLabel("free", locale, t),
         features: [
           t("Basic navigation"),
           t("Road quality overlay (limited)"),
@@ -100,7 +115,7 @@ export function buildFallbackSubscriptionSnapshot(
       {
         tier: "pro",
         name: tierLabel("pro", t),
-        priceLabel: formatSubscriptionPriceLabel("pro"),
+        priceLabel: subscriptionPriceLabel("pro", locale, t),
         highlighted: true,
         features: [
           t("Unlimited trip planning"),
@@ -112,7 +127,7 @@ export function buildFallbackSubscriptionSnapshot(
       {
         tier: "premium",
         name: tierLabel("premium", t),
-        priceLabel: formatSubscriptionPriceLabel("premium"),
+        priceLabel: subscriptionPriceLabel("premium", locale, t),
         features: [
           t("Everything in Pro"),
           t("Unlimited group rides"),
@@ -131,14 +146,14 @@ export function buildFallbackSubscriptionSnapshot(
       {
         id: "preview-invoice-2026-03",
         date: "2026-03-15T00:00:00.000Z",
-        amountLabel: formatSubscriptionAmountLabel("pro"),
+        amountLabel: formatSubscriptionAmountLabel("pro", locale),
         status: "paid",
         invoiceUrl: null,
       },
       {
         id: "preview-invoice-2026-02",
         date: "2026-02-15T00:00:00.000Z",
-        amountLabel: formatSubscriptionAmountLabel("pro"),
+        amountLabel: formatSubscriptionAmountLabel("pro", locale),
         status: "paid",
         invoiceUrl: null,
       },
@@ -151,30 +166,27 @@ export function buildFallbackSubscriptionSnapshot(
 export function normalizeSubscriptionSnapshot(
   raw: unknown,
   t: Translate,
+  locale = DEFAULT_FORMAT_LOCALE,
 ): SubscriptionSnapshot {
-  const fallback = buildFallbackSubscriptionSnapshot(t);
+  const fallback = buildFallbackSubscriptionSnapshot(t, locale);
   const root = asRecord(raw);
 
   const currentPlanRaw = asRecord(root.current_plan);
   const normalizedTier = normalizeTier(currentPlanRaw.tier);
   const normalizedStatus = normalizeStatus(currentPlanRaw.status);
-  const normalizedPriceLabel = optionalString(currentPlanRaw.price_label);
-  const preview =
-    normalizedTier === null ||
-    normalizedStatus === null ||
-    normalizedPriceLabel === null;
+  const preview = normalizedTier === null || normalizedStatus === null;
   const currentTier = normalizedTier ?? fallback.currentPlan.tier;
   const currentPlan: CurrentSubscriptionPlan = {
     tier: currentTier,
     name: planNameFrom(currentPlanRaw.name, currentTier, t),
     status: normalizedStatus ?? fallback.currentPlan.status,
-    priceLabel: normalizedPriceLabel ?? fallback.currentPlan.priceLabel,
+    priceLabel: subscriptionPriceLabel(currentTier, locale, t),
     renewsAt: optionalString(currentPlanRaw.renews_at),
     cancelAtPeriodEnd: Boolean(currentPlanRaw.cancel_at_period_end),
     manageUrl: normalizeUrl(currentPlanRaw.manage_url),
   };
 
-  const plans = normalizePlans(root.plans, fallback.plans, t);
+  const plans = normalizePlans(root.plans, fallback.plans, t, locale);
   const currentInPlans = plans.some((plan) => plan.tier === currentPlan.tier);
 
   return {
@@ -183,7 +195,7 @@ export function normalizeSubscriptionSnapshot(
       ? plans
       : sortPlans([...plans, buildPlanFromCurrent(currentPlan, t)]),
     paymentMethod: normalizePaymentMethod(root.payment_method),
-    billingHistory: normalizeInvoices(root.billing_history, t),
+    billingHistory: normalizeInvoices(root.billing_history, t, locale),
     portalAvailable:
       Boolean(root.portal_available) || currentPlan.manageUrl !== null,
     preview,
@@ -280,6 +292,7 @@ function normalizePlans(
   rawPlans: unknown,
   fallbackPlans: SubscriptionPlanSummary[],
   t: Translate,
+  locale: string,
 ): SubscriptionPlanSummary[] {
   if (!Array.isArray(rawPlans) || rawPlans.length === 0) {
     return fallbackPlans;
@@ -311,10 +324,7 @@ function normalizePlans(
       return {
         tier,
         name: planNameFrom(rawPlan.name, tier, t),
-        priceLabel: stringOr(
-          rawPlan.price_label,
-          formatSubscriptionPriceLabel(tier),
-        ),
+        priceLabel: subscriptionPriceLabel(tier, locale, t),
         features,
         // dynamic: arbitrary wire copy, not a compile-time literal.
         description: description
@@ -347,14 +357,23 @@ function normalizePaymentMethod(
   };
 }
 
-function normalizeInvoices(raw: unknown, t: Translate): SubscriptionInvoice[] {
+function normalizeInvoices(
+  raw: unknown,
+  t: Translate,
+  locale: string,
+): SubscriptionInvoice[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry, index) => {
       const invoice = asRecord(entry);
       const id = stringOr(invoice.id, `invoice-${index + 1}`);
       const date = optionalString(invoice.date);
-      const amountLabel = stringOr(invoice.amount_label, t("Unavailable"));
+      const amountMinor = numberOr(invoice.amount_minor, Number.NaN);
+      const currency = optionalString(invoice.currency)?.toUpperCase();
+      const amountLabel =
+        Number.isFinite(amountMinor) && currency
+          ? formatCurrencyMinorAmount(amountMinor, currency, locale)
+          : stringOr(invoice.amount_label, t("Unavailable"));
       const status = normalizeInvoiceStatus(invoice.status) ?? "paid";
       if (!date) return null;
       return {

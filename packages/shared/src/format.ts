@@ -120,6 +120,12 @@ export interface Formatters {
   decimal(value: number, digits: number): string;
   /** Takes a fraction: `percent(0.42)` → "42%". */
   percent(fraction: number): string;
+  /** Locale-aware monetary amount, including currency placement/separators. */
+  currency(
+    value: number,
+    currency: string,
+    options?: Intl.NumberFormatOptions,
+  ): string;
   /** Instant, medium date, in the context timezone. */
   date(value: DateInput): string;
   /** Instant, "18 Apr"-shaped, in the context timezone. */
@@ -187,6 +193,37 @@ function getNumberFormat(
     numberFormats.set(key, format);
   }
   return format;
+}
+
+export function formatCurrencyAmount(
+  value: number,
+  currency: string,
+  locale = DEFAULT_FORMAT_LOCALE,
+  options: Intl.NumberFormatOptions = {},
+): string {
+  const resolvedLocale =
+    canonicalizeFormatLocale(locale) ?? DEFAULT_FORMAT_LOCALE;
+  return getNumberFormat(resolvedLocale, {
+    style: "currency",
+    currency,
+    ...options,
+  }).format(value);
+}
+
+/** Formats an amount expressed in the ISO currency's smallest unit. */
+export function formatCurrencyMinorAmount(
+  valueMinor: number,
+  currency: string,
+  locale = DEFAULT_FORMAT_LOCALE,
+): string {
+  const resolvedLocale =
+    canonicalizeFormatLocale(locale) ?? DEFAULT_FORMAT_LOCALE;
+  const formatter = getNumberFormat(resolvedLocale, {
+    style: "currency",
+    currency,
+  });
+  const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+  return formatter.format(valueMinor / 10 ** fractionDigits);
 }
 
 function getDateTimeFormat(
@@ -342,6 +379,8 @@ export function createFormatters(ctx: FormatContext): Formatters {
       }),
     percent: (fraction) =>
       formatNumber(fraction, { style: "percent", maximumFractionDigits: 0 }),
+    currency: (value, currency, options) =>
+      formatCurrencyAmount(value, currency, locale, options),
     date,
     shortDate: (value) =>
       formatDate(value, instant({ day: "numeric", month: "short" })),

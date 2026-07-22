@@ -14,8 +14,9 @@
  */
 
 import type { components } from "@tarmoto/openapi-client";
+import type { Formatters } from "@tarmoto/shared";
 import { api } from "@/lib/api";
-import { t } from "@/i18n";
+import { t, type EnglishMessageKey } from "@/i18n";
 import {
   buildLiveSnapshot,
   mapRegionalLeaderboards,
@@ -38,17 +39,18 @@ export class GamificationFetchError extends Error {
   }
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const m = (error as { message?: unknown }).message;
-    if (typeof m === "string" && m.length > 0) return m;
-  }
-  return fallback;
+function errorMessage(error: unknown, fallback: EnglishMessageKey): string {
+  void error;
+  return t(fallback);
 }
 
 export interface FetchOptions {
   /** Aborts the in-flight fetch when triggered (page unmount, user switch). */
   signal?: AbortSignal | undefined;
+}
+
+export interface FetchGamificationSnapshotOptions extends FetchOptions {
+  format: Formatters;
 }
 
 // Capturing `response.status` before the `error` narrow avoids an
@@ -184,9 +186,9 @@ export async function joinChallenge(challengeId: string): Promise<void> {
  */
 export async function fetchGamificationSnapshot(
   userId: string,
-  options: FetchOptions = {},
+  options: FetchGamificationSnapshotOptions,
 ): Promise<GamificationSnapshot> {
-  const { signal } = options;
+  const { format, signal } = options;
   const [badges, challenges, meProfile] = await Promise.all([
     fetchBadges(userId, { signal }),
     fetchActiveChallenges({ signal }),
@@ -195,7 +197,7 @@ export async function fetchGamificationSnapshot(
   const challengeDetails = await Promise.all(
     challenges.map((c) => fetchChallengeDetail(c.id, { signal })),
   );
-  return buildLiveSnapshot({ badges, challengeDetails, meProfile }, t);
+  return buildLiveSnapshot({ badges, challengeDetails, meProfile }, format, t);
 }
 
 export interface FetchRegionalLeaderboardsOptions extends FetchOptions {

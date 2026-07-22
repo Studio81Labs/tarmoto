@@ -20,7 +20,10 @@ describe("openApiData", () => {
           response: new Response(null, { status: 400 }),
         }),
       ),
-    ).rejects.toMatchObject({ status: 400 });
+    ).rejects.toMatchObject({
+      status: 400,
+      message: "Some information is invalid. Check it and try again.",
+    });
   });
 
   it("throws on a non-2xx response even when `error` is empty (empty-body 5xx)", async () => {

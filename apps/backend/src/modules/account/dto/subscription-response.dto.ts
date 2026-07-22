@@ -65,6 +65,12 @@ class SubscriptionInvoiceDto {
   @ApiProperty()
   amount_label!: string;
 
+  @ApiProperty({ description: 'Charge amount in the currency minor unit.' })
+  amount_minor!: number;
+
+  @ApiProperty({ example: 'EUR' })
+  currency!: string;
+
   @ApiProperty({ enum: ['paid', 'open', 'refunded'] })
   status!: 'paid' | 'open' | 'refunded';
 
