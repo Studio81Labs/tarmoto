@@ -8,7 +8,7 @@ import type { Waypoint } from "@/lib/types";
  * new waypoints never persist translated role copy in `name`.
  */
 const LEGACY_GENERATED_WAYPOINT_NAME_RE =
-  /^(Start|Finish|Via \d+|Reroute via)$/;
+  /^(Start|Finish|End|Via \d+|Reroute via)$/;
 
 const WAYPOINT_TYPE_LABELS = {
   start: "Start",

@@ -24,6 +24,7 @@ describe("planner display labels", () => {
 
   it("recognizes only legacy generated names as migration sentinels", () => {
     expect(isLegacyGeneratedWaypointName("Start")).toBe(true);
+    expect(isLegacyGeneratedWaypointName("End")).toBe(true);
     expect(isLegacyGeneratedWaypointName("Reroute via")).toBe(true);
     expect(hasCustomWaypointName("Praha")).toBe(true);
     expect(hasCustomWaypointName("Finish")).toBe(false);
