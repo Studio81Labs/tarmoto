@@ -546,7 +546,10 @@ export default function TripListPage() {
           <div className="mb-4">
             <UpgradePrompt
               variant="inline"
-              capability={{ limit: "max_active_trips" }}
+              capability={{
+                limit: "max_active_trips",
+                resolvedLimit: maxActiveTrips,
+              }}
               currentTier={tier}
               message={t("{used} of {max} trips used on the {tier} plan.", {
                 used: openTripCount,
@@ -687,7 +690,10 @@ export default function TripListPage() {
       {upgradeModalOpen && tier ? (
         <UpgradePrompt
           variant="modal"
-          capability={{ limit: "max_active_trips" }}
+          capability={{
+            limit: "max_active_trips",
+            resolvedLimit: maxActiveTrips,
+          }}
           currentTier={tier}
           message={t("You've reached your trip limit on the {tier} plan.", {
             tier: tierLabel(tier),

@@ -31,6 +31,7 @@ vi.mock("@/hooks", async (importOriginal) => ({
     limits: null,
     isLoading: false,
   }),
+  useLimit: () => ({ limit: null, isLoading: false }),
 }));
 
 const { mockPush } = vi.hoisted(() => ({

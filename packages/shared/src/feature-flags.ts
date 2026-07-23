@@ -643,18 +643,29 @@ function isMoreGenerousLimit(
 }
 
 /** Lowest tier ABOVE `currentTier` whose `key` limit is strictly more generous
- *  than the current tier's, or null when no higher tier improves it. */
+ *  than the current tier's default, or null when no higher tier improves it.
+ *
+ *  `resolvedLimit` is the rider's ACTUAL cap from `/users/me` (already through
+ *  `resolveLimit`). When it differs from the current tier's static default, a
+ *  per-user or global override REPLACED the tier value (see `resolveLimit`) —
+ *  overrides are tier-independent, so a paid upgrade would not reliably lift
+ *  the cap. In that case return null so the caller shows no dead-end upgrade
+ *  CTA. (Residual: a global override numerically equal to the current tier's
+ *  default is indistinguishable from "no override" client-side and is not
+ *  caught here — it needs the operator override map, out of scope.) */
 export function upgradeTierForLimit(
   key: LimitFeatureKey,
   currentTier: SubscriptionTier,
+  resolvedLimit: number | null,
 ): SubscriptionTier | null {
   const def = FEATURE_DEFINITIONS[key];
   if (!def || def.kind !== "limit") return null;
-  const currentValue = def.tiers[currentTier];
+  const tierDefault = def.tiers[currentTier];
+  if (resolvedLimit !== tierDefault) return null;
   const currentIdx = SUBSCRIPTION_TIERS.indexOf(currentTier);
   for (let i = currentIdx + 1; i < SUBSCRIPTION_TIERS.length; i++) {
     const tier = SUBSCRIPTION_TIERS[i]!;
-    if (isMoreGenerousLimit(currentValue, def.tiers[tier])) return tier;
+    if (isMoreGenerousLimit(tierDefault, def.tiers[tier])) return tier;
   }
   return null;
 }

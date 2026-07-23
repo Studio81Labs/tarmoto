@@ -11,7 +11,7 @@ describe("UpgradePrompt", () => {
     render(
       <UpgradePrompt
         variant="inline"
-        capability={{ limit: "max_active_trips" }}
+        capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
         currentTier="free"
         message="You've hit your limit."
       />,
@@ -44,13 +44,28 @@ describe("UpgradePrompt", () => {
     render(
       <UpgradePrompt
         variant="inline"
-        capability={{ limit: "max_active_trips" }}
+        capability={{ limit: "max_active_trips", resolvedLimit: null }}
         currentTier="premium"
         message="You're already unlimited."
       />,
     );
     expect(screen.getByText("You're already unlimited.")).toBeTruthy();
     // premium is already unlimited for max_active_trips → no upgrade target
+    expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+  });
+
+  it("shows no CTA when an override clamps the limit below the tier default", () => {
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
+        currentTier="pro"
+        message="You've reached your trip limit."
+      />,
+    );
+    expect(screen.getByText("You've reached your trip limit.")).toBeTruthy();
+    // Pro's default is unlimited; a resolved cap of 1 is an override, not tier —
+    // upgrading to Premium wouldn't lift it, so no dead-end CTA.
     expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
   });
 

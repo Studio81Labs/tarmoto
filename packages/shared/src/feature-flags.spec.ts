@@ -443,15 +443,26 @@ describe("upgrade-tier derivation", () => {
     expect(upgradeTierForFeature("group_rides", "premium")).toBeNull();
   });
 
-  it("finds the lowest tier that raises a numeric limit", () => {
-    // max_active_trips: free=1, pro=null (unlimited), premium=null
-    expect(upgradeTierForLimit("max_active_trips", "free")).toBe("pro");
+  it("finds the lowest tier that raises a numeric limit (no override binding)", () => {
+    // max_active_trips: free=1, pro=null (unlimited), premium=null.
+    // resolvedLimit === the tier default → no override, upgrade is meaningful.
+    expect(upgradeTierForLimit("max_active_trips", "free", 1)).toBe("pro");
     // already unlimited on pro → nothing more generous
-    expect(upgradeTierForLimit("max_active_trips", "pro")).toBeNull();
+    expect(upgradeTierForLimit("max_active_trips", "pro", null)).toBeNull();
     // max_trip_collaborators: free=0, pro=5, premium=null
-    expect(upgradeTierForLimit("max_trip_collaborators", "free")).toBe("pro");
-    expect(upgradeTierForLimit("max_trip_collaborators", "pro")).toBe(
+    expect(upgradeTierForLimit("max_trip_collaborators", "free", 0)).toBe(
+      "pro",
+    );
+    expect(upgradeTierForLimit("max_trip_collaborators", "pro", 5)).toBe(
       "premium",
     );
+  });
+
+  it("returns null when an override clamps the limit below the tier default (upgrade can't lift it)", () => {
+    // Pro's default is unlimited (null); a resolved cap of 1 means a per-user or
+    // global override replaced it → upgrading to Premium wouldn't help.
+    expect(upgradeTierForLimit("max_active_trips", "pro", 1)).toBeNull();
+    // Free's default is 1; a resolved cap of 0 is an override → no dead-end CTA.
+    expect(upgradeTierForLimit("max_active_trips", "free", 0)).toBeNull();
   });
 });

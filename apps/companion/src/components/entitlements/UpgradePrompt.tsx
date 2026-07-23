@@ -13,7 +13,7 @@ import { tierLabel } from "@/lib/entitlements";
 
 type UpgradeCapability =
   | { feature: ToggleFeatureKey }
-  | { limit: LimitFeatureKey };
+  | { limit: LimitFeatureKey; resolvedLimit: number | null };
 
 interface UpgradePromptProps {
   capability: UpgradeCapability;
@@ -32,7 +32,11 @@ function resolveTarget(
 ): SubscriptionTier | null {
   return "feature" in capability
     ? upgradeTierForFeature(capability.feature, currentTier)
-    : upgradeTierForLimit(capability.limit, currentTier);
+    : upgradeTierForLimit(
+        capability.limit,
+        currentTier,
+        capability.resolvedLimit,
+      );
 }
 
 export function UpgradePrompt({

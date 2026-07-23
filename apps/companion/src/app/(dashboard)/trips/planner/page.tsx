@@ -132,7 +132,7 @@ import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
-import { useEntitlements } from "@/hooks";
+import { useEntitlements, useLimit } from "@/hooks";
 import { isFeatureLimitError, tierLabel } from "@/lib/entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useAuthStore } from "@/stores/auth";
@@ -286,6 +286,7 @@ export default function TripPlannerPage() {
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const { tier } = useEntitlements();
+  const { limit: maxActiveTrips } = useLimit("max_active_trips");
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState<number>(
@@ -3787,7 +3788,10 @@ export default function TripPlannerPage() {
       {upgradeModalOpen && tier ? (
         <UpgradePrompt
           variant="modal"
-          capability={{ limit: "max_active_trips" }}
+          capability={{
+            limit: "max_active_trips",
+            resolvedLimit: maxActiveTrips,
+          }}
           currentTier={tier}
           message={t("You've reached your trip limit on the {tier} plan.", {
             tier: tierLabel(tier),
