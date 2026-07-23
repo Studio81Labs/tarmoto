@@ -354,4 +354,8 @@ export const trips = {
   "Date created": "Date created",
   "Name (A→Z)": "Name (A→Z)",
   "{title}, {status}": "{title}, {status}",
+  "{used} of {max} trips used on the {tier} plan.":
+    "{used} of {max} trips used on the {tier} plan.",
+  "You've reached your trip limit on the {tier} plan.":
+    "You've reached your trip limit on the {tier} plan.",
 } as const;

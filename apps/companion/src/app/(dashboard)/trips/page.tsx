@@ -30,18 +30,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import { USER_TRIPS_QUERY_KEY } from "@/hooks/useUserTrips";
+import { useEntitlements, useLimit } from "@/hooks";
 import {
   DEFAULT_TRIP_FILTERS,
   TRIP_STATUSES,
   TRIP_SORT_KEYS,
   applyTripFilters,
   countByStatus,
+  countOpenOwnedTrips,
   tripDistanceKmOrNull,
   type FolderScope,
   type TripFilters,
   type TripSortKey,
   type TripStatus,
 } from "@/lib/trip-filters";
+import { isFeatureLimitError, tierLabel } from "@/lib/entitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import {
   migrateLegacyFolders,
   sortFoldersForDisplay,
@@ -86,6 +90,14 @@ export default function TripListPage() {
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const queryClient = useQueryClient();
+  // max_active_trips gate (numeric-limits entitlement, #1032/#1036): ships
+  // dark under a seeded-unlimited limit, so `atTripLimit` is inert until an
+  // admin sets a finite limit. `null` means unlimited — never treat it as 0.
+  const { tier } = useEntitlements();
+  const { limit: maxActiveTrips } = useLimit("max_active_trips");
+  const openTripCount = countOpenOwnedTrips(trips, userId);
+  const atTripLimit =
+    maxActiveTrips !== null && openTripCount >= maxActiveTrips;
   // After any optimistic mutation that touches the persisted list,
   // drop the React Query cache for `useUserTrips`. `removeQueries`
   // (not `invalidateQueries`) — invalidation leaves the stale data
@@ -116,6 +128,11 @@ export default function TripListPage() {
   >(null);
   const [busyTripIds, setBusyTripIds] = useState<Set<string>>(() => new Set());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  // Safety net for the duplicate-mint 403: the proactive `atTripLimit` block
+  // above covers the common case, but a stale client-side count (another tab
+  // minted a trip, or the count just hasn't refetched yet) can still let the
+  // request through — the backend is the actual source of truth.
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   // Deletes confirm through the app dialog — system dialogs are disallowed.
   const [confirmDelete, setConfirmDelete] = useState<
     | { kind: "folder"; folder: TripFolder }
@@ -380,8 +397,12 @@ export default function TripListPage() {
         setTrips([created, ...useTripStore.getState().trips]);
       }
       void invalidateTripsCache();
-    } catch {
-      setErrorBanner(t("Couldn't duplicate the trip. Try again."));
+    } catch (err) {
+      if (isFeatureLimitError(err)) {
+        setUpgradeModalOpen(true);
+      } else {
+        setErrorBanner(t("Couldn't duplicate the trip. Try again."));
+      }
     } finally {
       clearBusy(trip.id);
     }
@@ -480,23 +501,61 @@ export default function TripListPage() {
           )}
           right={
             <div className="flex items-center gap-2">
-              <Link
-                href="/trips/planner?import=1"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
-              >
-                <FileUp size={14} />
-                {t("Import GPX")}
-              </Link>
-              <Link
-                href="/trips/planner"
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
-              >
-                <Plus size={14} />
-                {t("New trip")}
-              </Link>
+              {atTripLimit ? (
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink opacity-50"
+                  >
+                    <FileUp size={14} />
+                    {t("Import GPX")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink opacity-50"
+                  >
+                    <Plus size={14} />
+                    {t("New trip")}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/trips/planner?import=1"
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-line-strong bg-paper px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:bg-paper-2"
+                  >
+                    <FileUp size={14} />
+                    {t("Import GPX")}
+                  </Link>
+                  <Link
+                    href="/trips/planner"
+                    className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border border-accent bg-accent px-4 py-[11px] text-[12.5px] font-bold uppercase tracking-[0.4px] text-ink transition hover:brightness-95"
+                  >
+                    <Plus size={14} />
+                    {t("New trip")}
+                  </Link>
+                </>
+              )}
             </div>
           }
         />
+
+        {atTripLimit && tier && maxActiveTrips !== null ? (
+          <div className="mb-4">
+            <UpgradePrompt
+              variant="inline"
+              capability={{ limit: "max_active_trips" }}
+              currentTier={tier}
+              message={t("{used} of {max} trips used on the {tier} plan.", {
+                used: openTripCount,
+                max: maxActiveTrips,
+                tier: tierLabel(tier),
+              })}
+            />
+          </div>
+        ) : null}
 
         {errorBanner && (
           <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-quality-q1/30 bg-quality-q1/10 px-4 py-3 text-sm text-red-700">
@@ -624,6 +683,18 @@ export default function TripListPage() {
           else void deleteTrip(pending.trip);
         }}
       />
+
+      {upgradeModalOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ limit: "max_active_trips" }}
+          currentTier={tier}
+          message={t("You've reached your trip limit on the {tier} plan.", {
+            tier: tierLabel(tier),
+          })}
+          onClose={() => setUpgradeModalOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
