@@ -599,3 +599,50 @@ export function isWithinLimit(
 ): boolean {
   return limit === null || currentCount < limit;
 }
+
+/** Machine-readable code carried on limit-rejection 403 bodies (see the
+ *  backend `featureLimitExceeded`). Single source of truth for the wire code. */
+export const FEATURE_LIMIT_EXCEEDED = "FEATURE_LIMIT_EXCEEDED";
+
+/** Lowest tier (in SUBSCRIPTION_TIERS order) that grants a toggle feature,
+ *  or null when no tier grants it / the key is not a toggle. */
+export function upgradeTierForFeature(
+  key: ToggleFeatureKey,
+): SubscriptionTier | null {
+  const def = FEATURE_DEFINITIONS[key];
+  if (!def || def.kind !== "toggle") return null;
+  // Widened the same way as `resolveFeature`'s `grantTiers`: per-key, `def.tiers`
+  // infers as a narrow literal tuple (e.g. `readonly ["premium"]`) under
+  // `as const satisfies`, which `Array.prototype.includes` can't accept a
+  // broader `SubscriptionTier` argument against across the key union.
+  const grantTiers: readonly SubscriptionTier[] = def.tiers;
+  return SUBSCRIPTION_TIERS.find((tier) => grantTiers.includes(tier)) ?? null;
+}
+
+/** `null` = unlimited (most generous); otherwise a larger number is more
+ *  generous. */
+function isMoreGenerousLimit(
+  current: number | null,
+  candidate: number | null,
+): boolean {
+  if (candidate === null) return current !== null;
+  if (current === null) return false;
+  return candidate > current;
+}
+
+/** Lowest tier ABOVE `currentTier` whose `key` limit is strictly more generous
+ *  than the current tier's, or null when no higher tier improves it. */
+export function upgradeTierForLimit(
+  key: LimitFeatureKey,
+  currentTier: SubscriptionTier,
+): SubscriptionTier | null {
+  const def = FEATURE_DEFINITIONS[key];
+  if (!def || def.kind !== "limit") return null;
+  const currentValue = def.tiers[currentTier];
+  const currentIdx = SUBSCRIPTION_TIERS.indexOf(currentTier);
+  for (let i = currentIdx + 1; i < SUBSCRIPTION_TIERS.length; i++) {
+    const tier = SUBSCRIPTION_TIERS[i]!;
+    if (isMoreGenerousLimit(currentValue, def.tiers[tier])) return tier;
+  }
+  return null;
+}

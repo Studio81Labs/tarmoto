@@ -1,6 +1,7 @@
 import {
   FEATURE_DEFINITIONS,
   FEATURE_KEYS,
+  FEATURE_LIMIT_EXCEEDED,
   LIMIT_FEATURE_KEYS,
   SYSTEM_FEATURE_KEYS,
   TOGGLE_FEATURE_KEYS,
@@ -18,6 +19,8 @@ import {
   resolveFeature,
   resolveLimit,
   resolveSystemSwitch,
+  upgradeTierForFeature,
+  upgradeTierForLimit,
 } from "./feature-flags";
 import { SUBSCRIPTION_TIERS } from "./constants";
 
@@ -415,5 +418,29 @@ describe("isWithinLimit", () => {
     expect(isWithinLimit(1, 1)).toBe(false);
     expect(isWithinLimit(1, 2)).toBe(false);
     expect(isWithinLimit(0, 0)).toBe(false);
+  });
+});
+
+describe("upgrade-tier derivation", () => {
+  it("exposes the limit-exceeded wire code", () => {
+    expect(FEATURE_LIMIT_EXCEEDED).toBe("FEATURE_LIMIT_EXCEEDED");
+  });
+
+  it("finds the lowest tier that grants a toggle", () => {
+    expect(upgradeTierForFeature("basic_navigation")).toBe("free"); // all tiers
+    expect(upgradeTierForFeature("offline_maps")).toBe("pro"); // pro-and-up
+    expect(upgradeTierForFeature("group_rides")).toBe("premium"); // premium-only
+  });
+
+  it("finds the lowest tier that raises a numeric limit", () => {
+    // max_active_trips: free=1, pro=null (unlimited), premium=null
+    expect(upgradeTierForLimit("max_active_trips", "free")).toBe("pro");
+    // already unlimited on pro → nothing more generous
+    expect(upgradeTierForLimit("max_active_trips", "pro")).toBeNull();
+    // max_trip_collaborators: free=0, pro=5, premium=null
+    expect(upgradeTierForLimit("max_trip_collaborators", "free")).toBe("pro");
+    expect(upgradeTierForLimit("max_trip_collaborators", "pro")).toBe(
+      "premium",
+    );
   });
 });
