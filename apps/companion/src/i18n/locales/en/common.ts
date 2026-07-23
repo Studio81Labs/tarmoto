@@ -902,6 +902,8 @@ export const common = {
   "Up to {count, plural, one {# photo} other {# photos}} · JPEG, PNG, or WebP · max {sizeMb} MB each":
     "Up to {count, plural, one {# photo} other {# photos}} \u00b7 JPEG, PNG, or WebP \u00b7 max {sizeMb} MB each",
   "Updated weekly": "Updated weekly",
+  "Upgrade required": "Upgrade required",
+  "Upgrade to {tier}": "Upgrade to {tier}",
   "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today.":
     "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today.",
   "Upload avatar": "Upload avatar",
