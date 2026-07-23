@@ -1316,6 +1316,7 @@ export default function TripPlannerPage() {
       insertWaypointBeforeEnd(selectedDayIndex, {
         id: `search-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         name: result.name,
+        nameIsSource: true,
         location: { lng: result.lng, lat: result.lat },
         type: "via",
       });

@@ -689,6 +689,32 @@ describe("TripPlannerPage", () => {
     );
   });
 
+  it("marks typed-search via names as source data", async () => {
+    vi.spyOn(plannerApi, "geocode").mockResolvedValue([
+      { name: "Via 1", lat: 46.52, lng: 10.45 },
+    ]);
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add via point" }));
+    fireEvent.change(
+      screen.getByLabelText("Search location for a new via point"),
+      { target: { value: "Via 1" } },
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "Via 1" }));
+
+    expect(storeState.insertWaypointBeforeEnd).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({
+        name: "Via 1",
+        nameIsSource: true,
+        location: { lng: 10.45, lat: 46.52 },
+        type: "via",
+      }),
+    );
+  });
+
   it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
 
