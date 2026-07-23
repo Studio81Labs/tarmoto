@@ -14,10 +14,24 @@ import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
-import { tripsApi } from "@/lib/api";
+import { ApiError, tripsApi } from "@/lib/api";
 import { plannerApi } from "@/lib/planner/api";
 import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+
+// Entitlements: a fixed free tier is enough for the upgrade-modal safety-net
+// test below — the tier/limit resolution itself is covered by useEntitlements'
+// own tests and the /trips list suite (Task 6).
+vi.mock("@/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks")>()),
+  useEntitlements: () => ({
+    tier: "free",
+    features: null,
+    limits: null,
+    isLoading: false,
+  }),
+}));
 
 const { mockPush } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -2621,6 +2635,39 @@ describe("TripPlannerPage", () => {
     expect(
       await screen.findByText("Could not save the route. Please try again."),
     ).toBeInTheDocument();
+  });
+
+  // Task 7: the planner's Save route button is the primary mint path — a
+  // brand-new trip is created (tripsApi.create) as part of the same save.
+  // The client-side gate (Task 6) can be stale, so the backend's real
+  // featureLimitExceeded 403 must still surface as the upgrade modal
+  // instead of the generic error toast.
+  it("shows the upgrade modal when the create call hits the server's feature-limit 403", async () => {
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    tripsApiCreateMock.mockRejectedValueOnce(
+      new ApiError("Feature limit exceeded", 403, {
+        code: FEATURE_LIMIT_EXCEEDED,
+      }),
+    );
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("You've reached your trip limit on the Free plan."),
+    ).toBeInTheDocument();
+    // The generic failure toast must NOT also fire for this rejection.
+    expect(
+      screen.queryByText("Could not save the route. Please try again."),
+    ).not.toBeInTheDocument();
   });
 
   // ── Live routing gate (per-day stale gate) ──────────────────────────

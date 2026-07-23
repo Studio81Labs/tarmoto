@@ -132,6 +132,9 @@ import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
+import { useEntitlements } from "@/hooks";
+import { isFeatureLimitError, tierLabel } from "@/lib/entitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError, roadsApi, tripsApi } from "@/lib/api";
 import {
@@ -282,6 +285,8 @@ export default function TripPlannerPage() {
   // so later `setDays(params.days)` etc. with arbitrary numbers compile.
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
+  const { tier } = useEntitlements();
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState<number>(
     PLANNER_DEFAULTS.dailyKmTarget,
@@ -1561,8 +1566,12 @@ export default function TripPlannerPage() {
       }
       router.push(`/trips/${tripId}`);
     } catch (err) {
-      toast.error(t("Could not save this trip. Please try again."));
-      console.warn("Failed to save trip", err);
+      if (isFeatureLimitError(err)) {
+        setUpgradeModalOpen(true);
+      } else {
+        toast.error(t("Could not save this trip. Please try again."));
+        console.warn("Failed to save trip", err);
+      }
       setSaving(false);
     }
   }, [
@@ -1815,14 +1824,22 @@ export default function TripPlannerPage() {
         handlePromotedToServer(tripId);
       }
       toast.success(t("Route saved"));
-    } catch {
+    } catch (err) {
       // If we just created a new server trip but the route save failed,
       // delete the empty trip so it doesn't linger in the rider's library.
       // Mirrors the cleanup pattern in handleSave.
       if (createdTripId) {
         await cleanupCreatedTrip(createdTripId);
       }
-      toast.error(t("Could not save the route. Please try again."));
+      // The backend's max_active_trips gate rejects the create call above
+      // with a 403 FEATURE_LIMIT_EXCEEDED — this IS the planner's primary
+      // mint path (create-on-first-save), so it needs the same upgrade-modal
+      // safety net as the /trips list's mint entry points.
+      if (isFeatureLimitError(err)) {
+        setUpgradeModalOpen(true);
+      } else {
+        toast.error(t("Could not save the route. Please try again."));
+      }
     } finally {
       setSavingRoute(false);
     }
@@ -3769,6 +3786,18 @@ export default function TripPlannerPage() {
           else if (action === "discard") void performDiscard();
         }}
       />
+
+      {upgradeModalOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ limit: "max_active_trips" }}
+          currentTier={tier}
+          message={t("You've reached your trip limit on the {tier} plan.", {
+            tier: tierLabel(tier),
+          })}
+          onClose={() => setUpgradeModalOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   BadgeCheck,
@@ -73,6 +74,11 @@ export default function SubscriptionPage() {
   // banner.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const format = useFormat();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    // Entitlements (tier/features/limits) may have changed via checkout/portal.
+    void queryClient.invalidateQueries({ queryKey: ["users-me"] });
+  }, [queryClient]);
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
