@@ -38,6 +38,28 @@ describe("UpgradePrompt", () => {
     expect(
       screen.getByRole("button", { name: /Upgrade to Premium/i }),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Upgrade required" }),
+    ).toBeTruthy();
+  });
+
+  it("titles the modal neutrally (no upgrade framing) when there is no target tier", () => {
+    // Pro clamped to 1 by an override → no higher tier lifts it. The modal must
+    // not say "Upgrade required" or offer a billing CTA that can't help.
+    render(
+      <UpgradePrompt
+        variant="modal"
+        capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
+        currentTier="pro"
+        message="You've reached your trip limit on the Pro plan."
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Limit reached" })).toBeTruthy();
+    expect(screen.queryByText("Upgrade required")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+    // Dismiss is still available.
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
   });
 
   it("renders the message without a CTA when the target tier is null", () => {

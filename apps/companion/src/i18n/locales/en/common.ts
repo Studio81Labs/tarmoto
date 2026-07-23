@@ -416,6 +416,7 @@ export const common = {
   Like: "Like",
   "Link copied": "Link copied",
   "Link sharing is off": "Link sharing is off",
+  "Limit reached": "Limit reached",
   List: "List",
   "Live preview": "Live preview",
   "Load demo trip": "Load demo trip",

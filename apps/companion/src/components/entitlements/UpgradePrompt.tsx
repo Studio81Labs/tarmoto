@@ -50,6 +50,12 @@ export function UpgradePrompt({
   const t = useTranslation();
   const target = resolveTarget(capability, currentTier);
 
+  // With no higher tier to offer (an override-clamped cap, or already the top
+  // tier) a paid upgrade can't lift the restriction — title the modal neutrally
+  // instead of pointing the rider at a billing action that won't help.
+  const modalTitle =
+    target === null ? t("Limit reached") : t("Upgrade required");
+
   const cta =
     target === null ? null : (
       <Button
@@ -67,11 +73,11 @@ export function UpgradePrompt({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={t("Upgrade required")}
+          aria-label={modalTitle}
           className="w-full max-w-md rounded-[14px] border border-line bg-cream p-6"
         >
           <Heading size="md" as="h2">
-            {t("Upgrade required")}
+            {modalTitle}
           </Heading>
           <p className="mt-2 text-[13px] text-ink/80">{message}</p>
           <div className="mt-5 flex justify-end gap-2">
