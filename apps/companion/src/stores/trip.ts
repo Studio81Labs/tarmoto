@@ -704,6 +704,23 @@ function viaInsertIndex(waypoints: Waypoint[]): number {
 // ── Task 8: linked-start sync helper ─────────────────────────────────────────
 
 /**
+ * A linked start represents the same place as the predecessor finish. Mirror
+ * semantic POI metadata and genuine source names along with its coordinates so
+ * the successor day keeps the same localizable identity after save/reload.
+ */
+function linkedStartFromFinish(finish: Waypoint, id: string): Waypoint {
+  const sourceName =
+    finish.nameIsSource && finish.name?.trim() ? finish.name : undefined;
+  return {
+    id,
+    type: "start",
+    ...(sourceName ? { name: sourceName, nameIsSource: true } : {}),
+    ...(finish.poiCategory ? { poiCategory: finish.poiCategory } : {}),
+    location: { ...finish.location },
+  };
+}
+
+/**
  * After mutating day at `idx`, if it changed its `end`, push that end into the
  * next day's start when the next day is linked, marking both days stale.
  * Returns `{ days, stale }` — thread the returned stale array through.
@@ -732,23 +749,25 @@ function syncLinkedStart(
     cleared[idx + 1] = { ...next, startLinked: false };
     return { days: cleared, stale: staleDays };
   }
-  // If the linked start already mirrors the predecessor's end, the edit didn't
-  // move the end (e.g. a via/POI change) — don't rewrite or re-stale the
-  // successor, or it would sit in stalePreviewDays with unchanged routing
-  // inputs and wedge the Save gate until the rider visits it.
+  // If the linked start already mirrors the predecessor's end identity, the
+  // edit was unrelated to the boundary (e.g. a via change) — don't rewrite or
+  // re-stale the successor, or it would sit in stalePreviewDays with unchanged
+  // routing inputs and wedge the Save gate until the rider visits it.
   const existingStart = startIdx >= 0 ? nextWaypoints[startIdx] : undefined;
+  const seededStart = linkedStartFromFinish(
+    end,
+    existingStart?.id ?? `link-${next.dayNumber}`,
+  );
   if (
     existingStart &&
     existingStart.location.lng === end.location.lng &&
-    existingStart.location.lat === end.location.lat
+    existingStart.location.lat === end.location.lat &&
+    existingStart.name === seededStart.name &&
+    existingStart.nameIsSource === seededStart.nameIsSource &&
+    existingStart.poiCategory === seededStart.poiCategory
   ) {
     return { days, stale: staleDays };
   }
-  const seededStart: Waypoint = {
-    id: nextWaypoints[startIdx]?.id ?? `link-${next.dayNumber}`,
-    type: "start",
-    location: { ...end.location },
-  };
   if (startIdx >= 0) nextWaypoints[startIdx] = seededStart;
   else nextWaypoints.unshift(seededStart);
   const updated = [...days];
@@ -1957,11 +1976,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           newDay.startLinked = !!prevEnd;
           if (prevEnd) {
             newDay.waypoints = [
-              {
-                id: `link-${newDay.dayNumber}`,
-                type: "start",
-                location: { ...prevEnd.location },
-              },
+              linkedStartFromFinish(prevEnd, `link-${newDay.dayNumber}`),
             ];
           }
         }

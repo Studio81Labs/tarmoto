@@ -1946,6 +1946,72 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(state.routeDirty).toBe(true);
   });
 
+  it("copies finish provenance when adding and re-seeding linked starts", () => {
+    const store = useTripStore.getState();
+    store.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    store.placeWaypoint({ lat: 2, lng: 2 }, "set-end", undefined, {
+      poiCategory: "campground",
+    });
+    store.addDay();
+
+    let trip = useTripStore.getState().activeTrip!;
+    let linkedStart = trip.days[1]!.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    )!;
+    expect(linkedStart).toMatchObject({
+      location: { lat: 2, lng: 2 },
+      poiCategory: "campground",
+    });
+    expect(linkedStart.name).toBeUndefined();
+    expect(useTripStore.getState().saveDays()[1]!.waypoints[0]).toMatchObject({
+      name: null,
+      poi_category: "campground",
+      type: "start",
+    });
+
+    // Replacing the predecessor finish at the same coordinates must refresh
+    // provenance too; coordinate equality alone is not a sufficient no-op.
+    useTripStore.setState({ selectedDayIndex: 0 });
+    store.placeWaypoint({ lat: 2, lng: 2 }, "set-end", undefined, {
+      name: "Via 1",
+      poiCategory: "biker_hotel",
+    });
+
+    trip = useTripStore.getState().activeTrip!;
+    linkedStart = trip.days[1]!.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    )!;
+    expect(linkedStart).toMatchObject({
+      name: "Via 1",
+      nameIsSource: true,
+      location: { lat: 2, lng: 2 },
+      poiCategory: "biker_hotel",
+    });
+
+    // A manual successor start breaks the link; relinking must restore the
+    // predecessor's semantic/source identity, not only its coordinates.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    store.placeWaypoint({ lat: 9, lng: 9 }, "set-start");
+    store.relinkDayStart(1);
+
+    linkedStart = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find(
+        (waypoint) => waypoint.type === "start",
+      )!;
+    expect(linkedStart).toMatchObject({
+      name: "Via 1",
+      nameIsSource: true,
+      location: { lat: 2, lng: 2 },
+      poiCategory: "biker_hotel",
+    });
+    expect(useTripStore.getState().saveDays()[1]!.waypoints[0]).toMatchObject({
+      name: "Via 1",
+      poi_category: "biker_hotel",
+      type: "start",
+    });
+  });
+
   it("addDay is capped at 14 days", () => {
     seedOneDay();
     // Add 13 more days (starting from 1 we already have → total 14).
