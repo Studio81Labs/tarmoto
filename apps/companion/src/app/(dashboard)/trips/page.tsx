@@ -94,7 +94,8 @@ export default function TripListPage() {
   // dark under a seeded-unlimited limit, so `atTripLimit` is inert until an
   // admin sets a finite limit. `null` means unlimited — never treat it as 0.
   const { tier } = useEntitlements();
-  const { limit: maxActiveTrips } = useLimit("max_active_trips");
+  const { limit: maxActiveTrips, isLoading: limitLoading } =
+    useLimit("max_active_trips");
   const openTripCount = countOpenOwnedTrips(trips, userId);
   const atTripLimit =
     maxActiveTrips !== null && openTripCount >= maxActiveTrips;
@@ -110,6 +111,11 @@ export default function TripListPage() {
       queryKey: USER_TRIPS_QUERY_KEY(userId),
     });
   const [loading, setLoading] = useState(true);
+  // Block mint entry points until BOTH inputs are known: while the trip list or
+  // the resolved limit is still loading, `atTripLimit` reads an empty count /
+  // unresolved `null` and would let an already-capped rider slip into the
+  // planner during the load window. Treat "unknown" as blocked.
+  const mintBlocked = atTripLimit || loading || limitLoading;
   const [folders, setFolders] = useState<TripFolder[]>([]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
     ...DEFAULT_TRIP_FILTERS,
@@ -501,7 +507,7 @@ export default function TripListPage() {
           )}
           right={
             <div className="flex items-center gap-2">
-              {atTripLimit ? (
+              {mintBlocked ? (
                 <>
                   <button
                     type="button"

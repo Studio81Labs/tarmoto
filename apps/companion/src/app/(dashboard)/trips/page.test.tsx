@@ -117,6 +117,25 @@ describe("trips page — max_active_trips gate", () => {
     expect(screen.queryByRole("link", { name: /New trip/i })).toBeNull();
   });
 
+  it("keeps mint controls disabled while the resolved limit is still loading", async () => {
+    // Until the cap resolves, atTripLimit reads a false negative; a capped
+    // rider must not be able to click New trip in the load window.
+    useLimitMock.mockReturnValue({ limit: null, isLoading: true });
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+
+    // Even once the trip list has resolved, an unresolved limit keeps mint
+    // blocked — the controls are disabled buttons, not enabled links.
+    await waitFor(() =>
+      expect(screen.getByText("Alpine loop")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("link", { name: /New trip/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /New trip/i })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
   it("leaves minting enabled when the limit is unlimited", async () => {
     useLimitMock.mockReturnValue({ limit: null, isLoading: false });
 
