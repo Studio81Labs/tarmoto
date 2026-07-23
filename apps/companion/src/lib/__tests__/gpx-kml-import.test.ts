@@ -370,6 +370,21 @@ describe("importedRouteToTrip", () => {
     expect(wps.find((w) => w.type === "end")?.name).toBe("Prato");
   });
 
+  it("marks imported names as source-owned even when they match legacy roles", () => {
+    const parsed = parseImportedRoute(KML_LINESTRING, "alps.kml");
+    if (!parsed.ok) throw new Error("parse failed");
+
+    const start = importedRouteToTrip(parsed.route).days[0]?.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    );
+
+    expect(start).toMatchObject({
+      name: "Start",
+      nameIsSource: true,
+      type: "start",
+    });
+  });
+
   it("does not adopt mid-route waypoint names for start/end", () => {
     const gpx = `<?xml version="1.0"?>
 <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">

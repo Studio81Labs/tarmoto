@@ -128,6 +128,15 @@ describe("tripFromDetail", () => {
     expect(trip.createdAt).toBe("2026-04-24T10:00:00.000Z");
   });
 
+  it("marks non-blank server waypoint names as source-owned", () => {
+    const detail = makeDetail();
+    detail.days[0]!.waypoints[0]!.name = "Start";
+
+    const start = tripFromDetail(detail).days[0]!.waypoints[0]!;
+
+    expect(start).toMatchObject({ name: "Start", nameIsSource: true });
+  });
+
   it("falls back to a safe status when the backend returns an unknown value", () => {
     // `"archived"` is outside the `TripDetailDto.status` union; the adapter
     // defends against a future/legacy status the client doesn't model.
@@ -222,6 +231,7 @@ describe("tripFromDetail", () => {
     expect(trip.days[0]!.overnightStop).toEqual({
       id: "w-2",
       name: "Hotel Sella",
+      nameIsSource: true,
       type: "accommodation",
       location: { lat: 46.6, lng: 11.3 },
     });

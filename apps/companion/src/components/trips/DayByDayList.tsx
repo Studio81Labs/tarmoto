@@ -31,10 +31,22 @@ export function qualityTierOf(score: number): 1 | 2 | 3 | 4 | 5 {
 export function dayRouteLabel(day: TripDay): string | null {
   const title = day.title?.trim();
   if (title && title.toLowerCase() !== `day ${day.dayNumber}`) return title;
-  const startName = day.waypoints[0]?.name;
-  const endName = day.waypoints[day.waypoints.length - 1]?.name;
-  const start = hasCustomWaypointName(startName) ? startName.trim() : "";
-  const end = hasCustomWaypointName(endName) ? endName.trim() : "";
+  const startWaypoint = day.waypoints[0];
+  const endWaypoint = day.waypoints[day.waypoints.length - 1];
+  const startName = startWaypoint?.name;
+  const endName = endWaypoint?.name;
+  const start = hasCustomWaypointName(
+    startName,
+    startWaypoint?.nameIsSource || Boolean(startWaypoint?.poiCategory),
+  )
+    ? startName.trim()
+    : "";
+  const end = hasCustomWaypointName(
+    endName,
+    endWaypoint?.nameIsSource || Boolean(endWaypoint?.poiCategory),
+  )
+    ? endName.trim()
+    : "";
   return day.waypoints.length >= 2 && start && end ? `${start} → ${end}` : null;
 }
 
@@ -149,7 +161,11 @@ export function DayByDayList({
                     <span className="inline-flex items-center gap-1.5">
                       <BedDouble size={12} className="text-fg-mute" />
                       {t("Overnight: {name}", {
-                        name: hasCustomWaypointName(day.overnightStop.name)
+                        name: hasCustomWaypointName(
+                          day.overnightStop.name,
+                          day.overnightStop.nameIsSource ||
+                            Boolean(day.overnightStop.poiCategory),
+                        )
                           ? day.overnightStop.name
                           : day.overnightStop.poiCategory
                             ? poiCategoryDisplayName(

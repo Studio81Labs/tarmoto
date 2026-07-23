@@ -48,17 +48,28 @@ export function isLegacyGeneratedWaypointName(
 
 export function hasCustomWaypointName(
   name: string | null | undefined,
+  preserveLegacyLikeName = false,
 ): name is string {
-  return Boolean(name?.trim()) && !isLegacyGeneratedWaypointName(name);
+  return (
+    Boolean(name?.trim()) &&
+    (preserveLegacyLikeName || !isLegacyGeneratedWaypointName(name))
+  );
 }
 
 /** Translate a semantic waypoint role while preserving rider/place names. */
 export function waypointDisplayName(
-  waypoint: Pick<Waypoint, "name" | "type" | "poiCategory">,
+  waypoint: Pick<Waypoint, "name" | "nameIsSource" | "type" | "poiCategory">,
   t: Translate,
 ): string {
   const label = WAYPOINT_TYPE_LABELS[waypoint.type] ?? "Waypoint";
-  if (hasCustomWaypointName(waypoint.name)) return waypoint.name;
+  if (
+    hasCustomWaypointName(
+      waypoint.name,
+      waypoint.nameIsSource || Boolean(waypoint.poiCategory),
+    )
+  ) {
+    return waypoint.name;
+  }
   return waypoint.poiCategory
     ? poiCategoryDisplayName(waypoint.poiCategory, t)
     : t(label);

@@ -868,8 +868,11 @@ export default function TripPlannerPage() {
   useEffect(() => {
     const seen = reverseGeocodedRef.current;
     const waypoints = selectedDay?.waypoints ?? [];
-    const needsPlaceName = (waypoint: Pick<Waypoint, "name" | "poiCategory">) =>
+    const needsPlaceName = (
+      waypoint: Pick<Waypoint, "name" | "nameIsSource" | "poiCategory">,
+    ) =>
       !waypoint.poiCategory &&
+      !waypoint.nameIsSource &&
       (!waypoint.name?.trim() || isLegacyGeneratedWaypointName(waypoint.name));
     const keyFor = (w: {
       id: string;

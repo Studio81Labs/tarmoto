@@ -555,6 +555,7 @@ function activePlannerSaveWaypoints(
     const preserveLegacyLikeName =
       nameContext.preserveLegacyLikeNames ||
       nameContext.renamedWaypointIds.has(w.id) ||
+      w.nameIsSource ||
       Boolean(w.poiCategory);
     const generatedLegacyName =
       !preserveLegacyLikeName &&
@@ -587,7 +588,8 @@ function plannerWaypointNameContext(
   // With no historical provenance column, a non-blank server baseline is
   // ambiguous: it may be an old generated role or a genuine rider/source
   // label with the same spelling. Preserve it rather than destructively
-  // guessing. Presentation still recognizes legacy roles semantically.
+  // guessing. Hydration marks those non-blank names as source-owned too, so
+  // display and export make the same conservative choice as persistence.
   for (const [waypointId, name] of Object.entries(savedWaypointNames)) {
     if (name?.trim()) sourceNameWaypointIds.add(waypointId);
   }
@@ -660,7 +662,10 @@ export function reassignWaypointRoles(waypoints: Waypoint[]): Waypoint[] {
   routing.forEach(({ waypoint, index }, order) => {
     const role: Waypoint["type"] =
       order === 0 ? "start" : order === routing.length - 1 ? "end" : "via";
-    const clearLegacyName = isLegacyGeneratedWaypointName(waypoint.name);
+    const clearLegacyName =
+      !waypoint.nameIsSource &&
+      !waypoint.poiCategory &&
+      isLegacyGeneratedWaypointName(waypoint.name);
     if (waypoint.type === role && !clearLegacyName) return;
     changed = true;
     const updated = stripLegacyGeneratedWaypointName({
@@ -673,7 +678,13 @@ export function reassignWaypointRoles(waypoints: Waypoint[]): Waypoint[] {
 }
 
 function stripLegacyGeneratedWaypointName(waypoint: Waypoint): Waypoint {
-  if (!isLegacyGeneratedWaypointName(waypoint.name)) return waypoint;
+  if (
+    waypoint.nameIsSource ||
+    waypoint.poiCategory ||
+    !isLegacyGeneratedWaypointName(waypoint.name)
+  ) {
+    return waypoint;
+  }
   const updated = { ...waypoint };
   delete updated.name;
   return updated;
@@ -1029,7 +1040,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           return {
             ...day,
             waypoints: day.waypoints.map((w) =>
-              w.id === waypointId ? { ...w, name } : w,
+              w.id === waypointId ? { ...w, name, nameIsSource: true } : w,
             ),
           };
         });
@@ -1590,15 +1601,20 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               // provenance so a stale glyph never survives the move.
               if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
               else delete updated.poiCategory;
-              if (meta?.name) updated.name = meta.name;
-              else if (isLegacyGeneratedWaypointName(updated.name))
+              if (meta?.name) {
+                updated.name = meta.name;
+                updated.nameIsSource = true;
+              } else if (
+                !updated.nameIsSource &&
+                isLegacyGeneratedWaypointName(updated.name)
+              )
                 delete updated.name;
               waypoints[startIndex] = updated;
             } else {
               waypoints.unshift({
                 ...newWaypoint,
                 type: "start",
-                ...(meta?.name ? { name: meta.name } : {}),
+                ...(meta?.name ? { name: meta.name, nameIsSource: true } : {}),
                 ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
@@ -1623,12 +1639,17 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 type: "end",
                 location: { lng: coords.lng, lat: coords.lat },
               };
-              if (meta?.name) updated.name = meta.name;
-              else if (
+              if (meta?.name) {
+                updated.name = meta.name;
+                updated.nameIsSource = true;
+              } else if (
                 finish.type !== "end" ||
-                isLegacyGeneratedWaypointName(updated.name)
-              )
+                (!updated.nameIsSource &&
+                  isLegacyGeneratedWaypointName(updated.name))
+              ) {
                 delete updated.name;
+                delete updated.nameIsSource;
+              }
               if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
               else delete updated.poiCategory;
               waypoints[finishIdx] = updated;
@@ -1636,7 +1657,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               waypoints.push({
                 ...newWaypoint,
                 type: "end",
-                ...(meta?.name ? { name: meta.name } : {}),
+                ...(meta?.name ? { name: meta.name, nameIsSource: true } : {}),
                 ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
@@ -1647,7 +1668,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             waypoints.splice(insertAt, 0, {
               ...newWaypoint,
               type: "via",
-              ...(meta?.name ? { name: meta.name } : {}),
+              ...(meta?.name ? { name: meta.name, nameIsSource: true } : {}),
               ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
             });
           }

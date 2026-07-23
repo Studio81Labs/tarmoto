@@ -2923,6 +2923,7 @@ describe("useTripStore renameWaypoint", () => {
       .getState()
       .activeTrip!.days[0]!.waypoints.find((w) => w.id === start.id)!;
     expect(renamed.name).toBe("Jihlava");
+    expect(renamed.nameIsSource).toBe(true);
     expect(useTripStore.getState().routeDirty).toBe(false);
     expect(useTripStore.getState().splitStatus).toBe("split");
   });

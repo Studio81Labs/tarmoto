@@ -34,6 +34,22 @@ describe("planner display labels", () => {
     );
   });
 
+  it("preserves source-owned labels even when they match legacy roles", () => {
+    expect(
+      waypointDisplayName(
+        { type: "start", name: "Start", nameIsSource: true },
+        translated,
+      ),
+    ).toBe("Start");
+    expect(
+      waypointDisplayName(
+        { type: "via", name: "Via 1", poiCategory: "viewpoint" },
+        translated,
+      ),
+    ).toBe("Via 1");
+    expect(hasCustomWaypointName("End", true)).toBe(true);
+  });
+
   it("recognizes only legacy generated names as migration sentinels", () => {
     expect(isLegacyGeneratedWaypointName("Start")).toBe(true);
     expect(isLegacyGeneratedWaypointName("End")).toBe(true);
