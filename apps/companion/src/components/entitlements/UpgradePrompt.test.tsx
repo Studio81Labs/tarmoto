@@ -39,4 +39,18 @@ describe("UpgradePrompt", () => {
       screen.getByRole("button", { name: /Upgrade to Premium/i }),
     ).toBeTruthy();
   });
+
+  it("renders the message without a CTA when the target tier is null", () => {
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ limit: "max_active_trips" }}
+        currentTier="premium"
+        message="You're already unlimited."
+      />,
+    );
+    expect(screen.getByText("You're already unlimited.")).toBeTruthy();
+    // premium is already unlimited for max_active_trips → no upgrade target
+    expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+  });
 });
