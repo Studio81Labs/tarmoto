@@ -1590,6 +1590,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           const days = ensurePlannerDays(baseTrip.days, idx + 1);
           const day = days[idx]!;
           const waypoints = [...day.waypoints];
+          const sourceName = meta?.name?.trim();
 
           const newWaypoint: Waypoint = {
             id: `planner-${idx}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1611,20 +1612,19 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               // provenance so a stale glyph never survives the move.
               if (meta?.poiCategory) updated.poiCategory = meta.poiCategory;
               else delete updated.poiCategory;
-              if (meta?.name) {
-                updated.name = meta.name;
+              if (sourceName) {
+                updated.name = sourceName;
                 updated.nameIsSource = true;
-              } else if (
-                !updated.nameIsSource &&
-                isLegacyGeneratedWaypointName(updated.name)
-              )
+              } else {
                 delete updated.name;
+                delete updated.nameIsSource;
+              }
               waypoints[startIndex] = updated;
             } else {
               waypoints.unshift({
                 ...newWaypoint,
                 type: "start",
-                ...(meta?.name ? { name: meta.name, nameIsSource: true } : {}),
+                ...(sourceName ? { name: sourceName, nameIsSource: true } : {}),
                 ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
@@ -1649,14 +1649,10 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                 type: "end",
                 location: { lng: coords.lng, lat: coords.lat },
               };
-              if (meta?.name) {
-                updated.name = meta.name;
+              if (sourceName) {
+                updated.name = sourceName;
                 updated.nameIsSource = true;
-              } else if (
-                finish.type !== "end" ||
-                (!updated.nameIsSource &&
-                  isLegacyGeneratedWaypointName(updated.name))
-              ) {
+              } else {
                 delete updated.name;
                 delete updated.nameIsSource;
               }
@@ -1667,7 +1663,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
               waypoints.push({
                 ...newWaypoint,
                 type: "end",
-                ...(meta?.name ? { name: meta.name, nameIsSource: true } : {}),
+                ...(sourceName ? { name: sourceName, nameIsSource: true } : {}),
                 ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
               });
             }
@@ -1678,7 +1674,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
             waypoints.splice(insertAt, 0, {
               ...newWaypoint,
               type: "via",
-              ...(meta?.name ? { name: meta.name, nameIsSource: true } : {}),
+              ...(sourceName ? { name: sourceName, nameIsSource: true } : {}),
               ...(meta?.poiCategory ? { poiCategory: meta.poiCategory } : {}),
             });
           }

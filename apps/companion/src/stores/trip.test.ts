@@ -3011,7 +3011,39 @@ describe("placeWaypoint POI metadata (revision 4)", () => {
       .getState()
       .activeTrip?.days[0]?.waypoints.find((w) => w.type === "start");
     expect(start?.poiCategory).toBeUndefined();
+    expect(start?.name).toBeUndefined();
+    expect(start?.nameIsSource).toBeUndefined();
     expect(start?.location).toEqual({ lng: 14.4, lat: 50.0 });
+  });
+
+  it("clears stale endpoint names when replacing them with unnamed POIs", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.64, lng: 16.04 }, "set-start", undefined, {
+      name: "Old start",
+      poiCategory: "viewpoint",
+    });
+    s.placeWaypoint({ lat: 49.2, lng: 16.6 }, "set-end", undefined, {
+      name: "Old finish",
+      poiCategory: "biker_hotel",
+    });
+
+    s.placeWaypoint({ lat: 50.0, lng: 14.4 }, "set-new-start", undefined, {
+      poiCategory: "twisty_highlight",
+    });
+    s.placeWaypoint({ lat: 50.5, lng: 14.9 }, "set-new-end", undefined, {
+      poiCategory: "campground",
+    });
+
+    const waypoints =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+    const start = waypoints.find((waypoint) => waypoint.type === "start");
+    const finish = waypoints.find((waypoint) => waypoint.type === "end");
+    expect(start).toMatchObject({ poiCategory: "twisty_highlight" });
+    expect(start?.name).toBeUndefined();
+    expect(start?.nameIsSource).toBeUndefined();
+    expect(finish).toMatchObject({ poiCategory: "campground" });
+    expect(finish?.name).toBeUndefined();
+    expect(finish?.nameIsSource).toBeUndefined();
   });
 });
 
