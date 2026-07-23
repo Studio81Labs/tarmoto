@@ -94,11 +94,8 @@ export default function TripListPage() {
   // dark under a seeded-unlimited limit, so `atTripLimit` is inert until an
   // admin sets a finite limit. `null` means unlimited — never treat it as 0.
   const { tier } = useEntitlements();
-  const {
-    limit: maxActiveTrips,
-    isLoading: limitLoading,
-    isError: limitError,
-  } = useLimit("max_active_trips");
+  const { limit: maxActiveTrips, isSuccess: capResolved } =
+    useLimit("max_active_trips");
   const openTripCount = countOpenOwnedTrips(trips, userId);
   const atTripLimit =
     maxActiveTrips !== null && openTripCount >= maxActiveTrips;
@@ -117,11 +114,15 @@ export default function TripListPage() {
   // True when the trip list fetch failed — the count is unknown, not "zero".
   const [tripsLoadError, setTripsLoadError] = useState(false);
   // Block mint entry points unless we can prove the rider is under a FINITE
-  // cap. The open-trip COUNT only matters for a finite cap, so only then does an
+  // cap. `capResolved` is the entitlement query having actually SUCCEEDED — NOT
+  // merely "not loading and not errored": before AuthSync hydrates the store,
+  // `userId` is null, the /users/me query is disabled, and it reports
+  // isLoading:false/isError:false while producing no snapshot. Failing closed on
+  // `isSuccess` covers that auth-hydration window plus loading and error alike.
+  // The open-trip COUNT only matters for a finite cap, so only then does an
   // unknown count (list loading/error) fail closed — an unlimited (null) cap
   // never gates on the count, so a /trips outage mustn't disable minting for
-  // unlimited riders. An unresolved/errored CAP always blocks (unknown cap).
-  const capResolved = !limitLoading && !limitError;
+  // unlimited riders.
   const countUnknown = loading || tripsLoadError;
   const mintBlocked =
     !capResolved || (maxActiveTrips !== null && (atTripLimit || countUnknown));

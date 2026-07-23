@@ -3,12 +3,15 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { withQueryClient } from "./test-utils";
 
 const getMock = vi.fn();
+const { authState } = vi.hoisted(() => ({
+  authState: { user: { id: "u1" } as { id: string } | null },
+}));
 vi.mock("@/lib/api", () => ({
   api: { GET: (...a: unknown[]) => getMock(...a) },
 }));
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } | null }) => unknown) =>
-    sel({ user: { id: "u1" } }),
+    sel(authState),
 }));
 
 import { useEntitlements, useFeature, useLimit } from "./useEntitlements";
@@ -21,7 +24,10 @@ const ME = {
 };
 
 describe("useEntitlements", () => {
-  beforeEach(() => getMock.mockReset());
+  beforeEach(() => {
+    getMock.mockReset();
+    authState.user = { id: "u1" };
+  });
 
   it("exposes the resolved tier/features/limits from /users/me", async () => {
     getMock.mockResolvedValue({ data: ME, error: undefined });
@@ -34,6 +40,20 @@ describe("useEntitlements", () => {
     });
     expect(result.current.tier).toBe("free");
     expect(result.current.limits?.max_active_trips).toBe(1);
+    expect(result.current.isSuccess).toBe(true);
+  });
+
+  it("useLimit is unresolved before auth hydrates (query disabled, no userId)", async () => {
+    authState.user = null; // AuthSync hasn't copied the session in yet
+    const { result } = renderHook(() => useLimit("max_active_trips"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // A disabled query is NOT resolved — must not read as "unlimited".
+    expect(result.current.isSuccess).toBe(false);
+    expect(result.current.isError).toBe(false);
+    expect(result.current.limit).toBeNull();
+    expect(getMock).not.toHaveBeenCalled();
   });
 
   it("useFeature indexes the resolved snapshot (does not re-resolve from tier)", async () => {

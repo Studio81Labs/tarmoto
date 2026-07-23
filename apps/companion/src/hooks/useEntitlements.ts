@@ -28,6 +28,12 @@ export function useEntitlements(): {
   /** The entitlement query settled in error — the snapshot is unknown, not
    *  "resolved to unlimited". Callers gating access must fail closed on this. */
   isError: boolean;
+  /** The query has actually SUCCEEDED and produced a snapshot. Gating callers
+   *  must fail closed until this is true: a not-yet-started query (auth store
+   *  not hydrated → `userId` null → query disabled) reports `isLoading:false` +
+   *  `isError:false` yet is NOT resolved — treating that as "unlimited" would
+   *  reopen mint controls during the auth-hydration window. */
+  isSuccess: boolean;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const query = useQuery({
@@ -47,6 +53,7 @@ export function useEntitlements(): {
     limits: data?.limits ?? null,
     isLoading: query.isLoading,
     isError: query.isError,
+    isSuccess: query.isSuccess,
   };
 }
 
@@ -74,11 +81,15 @@ export function useLimit(key: LimitFeatureKey): {
   limit: number | null;
   isLoading: boolean;
   isError: boolean;
+  /** The cap has actually resolved (query succeeded). Gate callers must fail
+   *  closed until this is true — see `useEntitlements`. */
+  isSuccess: boolean;
 } {
-  const { limits, isLoading, isError } = useEntitlements();
+  const { limits, isLoading, isError, isSuccess } = useEntitlements();
   return {
     limit: limits ? getFeatureLimit(limits, key) : null,
     isLoading,
     isError,
+    isSuccess,
   };
 }

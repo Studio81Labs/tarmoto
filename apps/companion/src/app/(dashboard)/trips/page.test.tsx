@@ -86,7 +86,11 @@ describe("trips page — max_active_trips gate", () => {
   });
 
   it("blocks minting and shows the counter when at the limit", async () => {
-    useLimitMock.mockReturnValue({ limit: 1, isLoading: false });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
 
     render(<TripsPage />, { wrapper: withQueryClient() });
 
@@ -106,7 +110,11 @@ describe("trips page — max_active_trips gate", () => {
     // true even with no trips. The header buttons are disabled, but the no-trips
     // empty state must not offer a working "Create trip" link that slips the
     // rider into the planner before the backend rejects the save.
-    useLimitMock.mockReturnValue({ limit: 0, isLoading: false });
+    useLimitMock.mockReturnValue({
+      limit: 0,
+      isLoading: false,
+      isSuccess: true,
+    });
     tripsApiListMock.mockResolvedValue({ data: { data: [] } } as never);
 
     render(<TripsPage />, { wrapper: withQueryClient() });
@@ -120,12 +128,39 @@ describe("trips page — max_active_trips gate", () => {
   it("keeps mint controls disabled while the resolved limit is still loading", async () => {
     // Until the cap resolves, atTripLimit reads a false negative; a capped
     // rider must not be able to click New trip in the load window.
-    useLimitMock.mockReturnValue({ limit: null, isLoading: true });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: true,
+      isSuccess: false,
+    });
 
     render(<TripsPage />, { wrapper: withQueryClient() });
 
     // Even once the trip list has resolved, an unresolved limit keeps mint
     // blocked — the controls are disabled buttons, not enabled links.
+    await waitFor(() =>
+      expect(screen.getByText("Alpine loop")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("link", { name: /New trip/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /New trip/i })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("blocks minting before entitlements resolve (auth not hydrated: not loading, not errored, not resolved)", async () => {
+    // Before AuthSync hydrates the store, the /users/me query is disabled and
+    // reports isLoading:false/isError:false while producing no snapshot. That
+    // must NOT read as "unlimited" — fail closed until it actually resolves.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+      isSuccess: false,
+    });
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+
     await waitFor(() =>
       expect(screen.getByText("Alpine loop")).toBeInTheDocument(),
     );
@@ -143,6 +178,7 @@ describe("trips page — max_active_trips gate", () => {
       limit: null,
       isLoading: false,
       isError: true,
+      isSuccess: false,
     });
 
     render(<TripsPage />, { wrapper: withQueryClient() });
@@ -163,6 +199,7 @@ describe("trips page — max_active_trips gate", () => {
       limit: 1,
       isLoading: false,
       isError: false,
+      isSuccess: true,
     });
     tripsApiListMock.mockRejectedValue(new Error("network"));
 
@@ -183,6 +220,7 @@ describe("trips page — max_active_trips gate", () => {
       limit: null,
       isLoading: false,
       isError: false,
+      isSuccess: true,
     });
     tripsApiListMock.mockRejectedValue(new Error("network"));
 
@@ -193,7 +231,11 @@ describe("trips page — max_active_trips gate", () => {
   });
 
   it("leaves minting enabled when the limit is unlimited", async () => {
-    useLimitMock.mockReturnValue({ limit: null, isLoading: false });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
 
     render(<TripsPage />, { wrapper: withQueryClient() });
 
@@ -218,7 +260,11 @@ describe("trips page — max_active_trips gate", () => {
     // Limit is unlimited on the client — the proactive block never fires.
     // The backend is still the source of truth: it rejects with the real
     // featureLimitExceeded 403, and the safety net must catch it anyway.
-    useLimitMock.mockReturnValue({ limit: null, isLoading: false });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
     tripsApiDuplicateMock.mockRejectedValue(
       new ApiError("Feature limit exceeded", 403, {
         code: FEATURE_LIMIT_EXCEEDED,
@@ -250,7 +296,11 @@ describe("trips page — max_active_trips gate", () => {
     // message, so without this fallback the rider would get no feedback at
     // all after the click — a silent no-op.
     useEntitlementsMock.mockReturnValue({ tier: null });
-    useLimitMock.mockReturnValue({ limit: null, isLoading: false });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
     tripsApiDuplicateMock.mockRejectedValue(
       new ApiError("Feature limit exceeded", 403, {
         code: FEATURE_LIMIT_EXCEEDED,
@@ -272,7 +322,11 @@ describe("trips page — max_active_trips gate", () => {
   });
 
   it("falls back to the generic error banner (no modal) for a non-limit duplicate failure", async () => {
-    useLimitMock.mockReturnValue({ limit: null, isLoading: false });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
     tripsApiDuplicateMock.mockRejectedValue(new Error("boom"));
 
     render(<TripsPage />, { wrapper: withQueryClient() });
