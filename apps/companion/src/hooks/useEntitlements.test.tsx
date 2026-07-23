@@ -37,7 +37,16 @@ describe("useEntitlements", () => {
   });
 
   it("useFeature indexes the resolved snapshot (does not re-resolve from tier)", async () => {
-    getMock.mockResolvedValue({ data: ME, error: undefined });
+    // Premium nominally qualifies for group_rides, but the resolved snapshot
+    // says false (e.g. a server-side global force_off). A tier-deriving
+    // implementation would wrongly return true here; reading the snapshot
+    // returns false — proving the hook trusts the resolved data, not the tier.
+    const MEForceOff = {
+      ...ME,
+      subscription_tier: "premium",
+      features: { ...ME.features, group_rides: false },
+    };
+    getMock.mockResolvedValue({ data: MEForceOff, error: undefined });
     const { result } = renderHook(() => useFeature("group_rides"), {
       wrapper: withQueryClient(),
     });

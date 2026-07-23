@@ -39,7 +39,7 @@ export function useEntitlements(): {
   });
   const data = query.data ?? null;
   return {
-    tier: (data?.subscription_tier as SubscriptionTier | undefined) ?? null,
+    tier: data?.subscription_tier ?? null,
     features: data?.features ?? null,
     limits: data?.limits ?? null,
     isLoading: query.isLoading,
