@@ -288,66 +288,79 @@ export default function CommunityFeedPage() {
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_320px]">
-        <div className="flex min-w-0 flex-col gap-[14px]">
-          {error ? (
-            <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-700">
-              {error}
-            </div>
-          ) : loading ? (
-            showLoader && (
-              <SkeletonList rows={4} label={t("Loading community rides…")} />
-            )
-          ) : isPristineEmpty ? (
-            <CommunityEmptyState
-              icon={<Users size={18} strokeWidth={2} />}
-              title={t("Quiet on the feed")}
-              body={t(
-                "Once you follow other riders or land in a busy region, their shared routes will appear here.",
-              )}
-            />
-          ) : items.length === 0 ? (
-            <Card padded={false} className="p-16 text-center">
-              <Users size={48} className="mx-auto mb-4 text-fg-mute" />
-              <p className="mb-2 text-lg font-semibold text-ink">
-                {t("No rides match these filters")}
-              </p>
-              <p className="text-sm text-fg-dim">
-                {t(
-                  "Try broadening the feed or switching back to the most popular rides.",
-                )}
-              </p>
-            </Card>
-          ) : (
-            <>
-              {items.map((ride) => (
-                <CommunityRideCard key={ride.id} ride={ride} />
-              ))}
-
-              {pageCount > 1 && (
-                <Card padded={false} className="p-4">
-                  <Pagination
-                    currentPage={currentPage}
-                    pageCount={pageCount}
-                    onPrevious={() =>
-                      setOffset((current) => Math.max(current - PAGE_SIZE, 0))
-                    }
-                    onNext={() =>
-                      setOffset((current) =>
-                        current + PAGE_SIZE >= total
-                          ? current
-                          : current + PAGE_SIZE,
-                      )
-                    }
-                  />
-                </Card>
-              )}
-            </>
-          )}
+      {isPristineEmpty ? (
+        // A pristine-empty feed has no ride list for the rail to sit beside,
+        // so the card spans the full content width (matching the filter bar
+        // above) instead of being pinned into the narrow `1fr` feed column.
+        // The sidebar stays mounted below it — its "follow suggestions" and
+        // challenge widgets are exactly the CTA the empty copy points to.
+        <div className="flex flex-col gap-[18px]">
+          <CommunityEmptyState
+            icon={<Users size={18} strokeWidth={2} />}
+            title={t("Quiet on the feed")}
+            body={t(
+              "Once you follow other riders or land in a busy region, their shared routes will appear here.",
+            )}
+          />
+          <div className="lg:grid lg:grid-cols-[1fr_320px] lg:gap-[18px]">
+            <div className="hidden lg:block" aria-hidden />
+            <CommunitySidebar />
+          </div>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_320px]">
+          <div className="flex min-w-0 flex-col gap-[14px]">
+            {error ? (
+              <div className="rounded-xl border border-quality-q1/30 bg-quality-q1/10 p-4 text-sm text-red-700">
+                {error}
+              </div>
+            ) : loading ? (
+              showLoader && (
+                <SkeletonList rows={4} label={t("Loading community rides…")} />
+              )
+            ) : items.length === 0 ? (
+              <Card padded={false} className="p-16 text-center">
+                <Users size={48} className="mx-auto mb-4 text-fg-mute" />
+                <p className="mb-2 text-lg font-semibold text-ink">
+                  {t("No rides match these filters")}
+                </p>
+                <p className="text-sm text-fg-dim">
+                  {t(
+                    "Try broadening the feed or switching back to the most popular rides.",
+                  )}
+                </p>
+              </Card>
+            ) : (
+              <>
+                {items.map((ride) => (
+                  <CommunityRideCard key={ride.id} ride={ride} />
+                ))}
 
-        {!error && <CommunitySidebar />}
-      </div>
+                {pageCount > 1 && (
+                  <Card padded={false} className="p-4">
+                    <Pagination
+                      currentPage={currentPage}
+                      pageCount={pageCount}
+                      onPrevious={() =>
+                        setOffset((current) => Math.max(current - PAGE_SIZE, 0))
+                      }
+                      onNext={() =>
+                        setOffset((current) =>
+                          current + PAGE_SIZE >= total
+                            ? current
+                            : current + PAGE_SIZE,
+                        )
+                      }
+                    />
+                  </Card>
+                )}
+              </>
+            )}
+          </div>
+
+          {!error && <CommunitySidebar />}
+        </div>
+      )}
     </CommunityScaffold>
   );
 }
