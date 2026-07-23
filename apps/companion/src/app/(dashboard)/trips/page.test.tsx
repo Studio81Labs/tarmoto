@@ -101,6 +101,22 @@ describe("trips page — max_active_trips gate", () => {
     expect(importGpx).toHaveProperty("disabled", true);
   });
 
+  it("suppresses the empty-state Create CTA when the cap is zero (kill-switch override)", async () => {
+    // An admin override can resolve max_active_trips to 0, making atTripLimit
+    // true even with no trips. The header buttons are disabled, but the no-trips
+    // empty state must not offer a working "Create trip" link that slips the
+    // rider into the planner before the backend rejects the save.
+    useLimitMock.mockReturnValue({ limit: 0, isLoading: false });
+    tripsApiListMock.mockResolvedValue({ data: { data: [] } } as never);
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+
+    expect(await screen.findByText("No trips yet")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Create trip/i })).toBeNull();
+    // The header New trip control is a disabled button, not a link, too.
+    expect(screen.queryByRole("link", { name: /New trip/i })).toBeNull();
+  });
+
   it("leaves minting enabled when the limit is unlimited", async () => {
     useLimitMock.mockReturnValue({ limit: null, isLoading: false });
 

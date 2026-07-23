@@ -604,7 +604,14 @@ export default function TripListPage() {
             body={t(
               "Plan your first ride with the trip planner. Pick a region, tune the curves and asphalt, push it to your phone.",
             )}
-            action={{ label: t("Create trip"), href: "/trips/planner" }}
+            {...(atTripLimit
+              ? {}
+              : {
+                  action: {
+                    label: t("Create trip"),
+                    href: "/trips/planner",
+                  },
+                })}
           />
         ) : visibleTrips.length === 0 ? (
           <EmptyState
