@@ -96,8 +96,9 @@ function makeDetail(
             sequence: 1,
             lat: 46.55,
             lng: 11.25,
-            name: "Coffee stop",
+            name: null,
             waypoint_type: "coffee",
+            poi_category: "twisty_highlight",
             road_segment_id: null,
             notes: null,
             duration_min: 30,
@@ -110,12 +111,30 @@ function makeDetail(
 }
 
 describe("tripFromDetail", () => {
+  it("rehydrates semantic POI categories for localized waypoint fallbacks", () => {
+    const trip = tripFromDetail(makeDetail());
+    expect(trip.days[0]?.waypoints[1]).toMatchObject({
+      name: undefined,
+      poiCategory: "twisty_highlight",
+      type: "rest",
+    });
+  });
+
   it("maps top-level fields including renamed title → name", () => {
     const trip = tripFromDetail(makeDetail());
     expect(trip.id).toBe("trip-1");
     expect(trip.name).toBe("Italian Loop");
     expect(trip.status).toBe("planned");
     expect(trip.createdAt).toBe("2026-04-24T10:00:00.000Z");
+  });
+
+  it("marks non-blank server waypoint names as source-owned", () => {
+    const detail = makeDetail();
+    detail.days[0]!.waypoints[0]!.name = "Start";
+
+    const start = tripFromDetail(detail).days[0]!.waypoints[0]!;
+
+    expect(start).toMatchObject({ name: "Start", nameIsSource: true });
   });
 
   it("falls back to a safe status when the backend returns an unknown value", () => {
@@ -212,12 +231,13 @@ describe("tripFromDetail", () => {
     expect(trip.days[0]!.overnightStop).toEqual({
       id: "w-2",
       name: "Hotel Sella",
+      nameIsSource: true,
       type: "accommodation",
       location: { lat: 46.6, lng: 11.3 },
     });
   });
 
-  it("falls back to a 'Day N overnight' label when the hotel waypoint has no name", () => {
+  it("keeps an unnamed overnight semantic for locale-aware rendering", () => {
     const detail = makeDetail();
     const day = detail.days[0]!;
     const trip = tripFromDetail({
@@ -226,12 +246,17 @@ describe("tripFromDetail", () => {
         {
           ...day,
           waypoints: day.waypoints.map((w) =>
-            w.waypoint_type === "hotel" ? { ...w, name: null } : w,
+            w.waypoint_type === "hotel"
+              ? { ...w, name: null, poi_category: "campground" as const }
+              : w,
           ),
         },
       ],
     });
-    expect(trip.days[0]!.overnightStop?.name).toBe("Day 1 overnight");
+    expect(trip.days[0]!.overnightStop).toMatchObject({
+      name: "",
+      poiCategory: "campground",
+    });
   });
 
   it("leaves overnightStop undefined when the day has no hotel waypoint", () => {

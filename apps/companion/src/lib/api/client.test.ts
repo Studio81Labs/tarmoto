@@ -1,6 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { ApiError, openApiData } from "./client";
+
+const { translateSpy } = vi.hoisted(() => ({ translateSpy: vi.fn() }));
+
+vi.mock("@/i18n", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/i18n")>();
+  return {
+    ...actual,
+    t: (...args: Parameters<typeof actual.t>) => {
+      translateSpy(...args);
+      return actual.t(...args);
+    },
+  };
+});
+
+afterEach(() => translateSpy.mockClear());
 
 describe("openApiData", () => {
   it("returns the data on a 2xx result", async () => {
@@ -14,6 +29,7 @@ describe("openApiData", () => {
   });
 
   it("throws ApiError when openapi-fetch populates `error`", async () => {
+    document.documentElement.lang = "en-GB";
     await expect(
       openApiData(
         Promise.resolve({
@@ -26,6 +42,11 @@ describe("openApiData", () => {
       message: "Some information is invalid. Check it and try again.",
       localizedUserMessage: true,
     });
+    expect(translateSpy).toHaveBeenCalledWith(
+      "Some information is invalid. Check it and try again.",
+      undefined,
+      "en",
+    );
   });
 
   it("throws on a non-2xx response even when `error` is empty (empty-body 5xx)", async () => {

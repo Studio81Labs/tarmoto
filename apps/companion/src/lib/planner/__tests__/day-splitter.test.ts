@@ -5,7 +5,7 @@ import {
   snapWindowKm,
   splitIntoDays,
 } from "../day-splitter";
-import type { PlannerPoi, RouteSegment } from "../types";
+import type { PlannerPoi, PoiCategory, RouteSegment } from "../types";
 import type { Translate } from "@/i18n";
 
 /** ~1 degree of latitude in km for the haversine radius used repo-wide. */
@@ -45,11 +45,17 @@ function makeSegments(totalKm: number, segmentKm = 20): RouteSegment[] {
   return segments;
 }
 
-function town(id: string, name: string, alongKm: number): PlannerPoi {
+function town(
+  id: string,
+  name: string,
+  alongKm: number,
+  poiCategory?: PoiCategory,
+): PlannerPoi {
   return {
     id,
     type: "stay",
     name,
+    ...(poiCategory ? { poiCategory } : {}),
     lat: 45 + alongKm * degPerKm,
     lng: 15,
     kmAlongRoute: alongKm,
@@ -111,6 +117,44 @@ describe("splitIntoDays", () => {
     expect(totalTime).toBeLessThan(720);
     // Snapped town leads the day's suggested stays.
     expect(plans[0]!.suggestedStays[0]!.name).toBe("Brno");
+  });
+
+  it("keeps an unnamed stay semantic instead of creating localized name data", () => {
+    const plans = splitIntoDays(
+      makeSegments(600),
+      { dailyKmTarget: 250, forcedDays: null },
+      [town("stay-1", "", 240, "biker_hotel")],
+    );
+
+    expect(plans[0]).toMatchObject({
+      endTown: "",
+      endPoiCategory: "biker_hotel",
+    });
+    expect(plans[0]!.endNameIsSource).toBeUndefined();
+    expect(plans[1]).toMatchObject({
+      startTown: "",
+      startPoiCategory: "biker_hotel",
+    });
+    expect(plans[1]!.startNameIsSource).toBeUndefined();
+  });
+
+  it("marks a real town name as source-owned even when it matches a role", () => {
+    const plans = splitIntoDays(
+      makeSegments(600),
+      { dailyKmTarget: 250, forcedDays: null },
+      [town("stay-1", "Start", 240, "biker_hotel")],
+    );
+
+    expect(plans[0]).toMatchObject({
+      endTown: "Start",
+      endNameIsSource: true,
+      endPoiCategory: "biker_hotel",
+    });
+    expect(plans[1]).toMatchObject({
+      startTown: "Start",
+      startNameIsSource: true,
+      startPoiCategory: "biker_hotel",
+    });
   });
 
   it("breaks at the raw distance and flags noTownNearby when no town is close", () => {

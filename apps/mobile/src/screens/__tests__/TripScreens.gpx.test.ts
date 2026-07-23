@@ -8,8 +8,10 @@
 import { tripToGpx, tripGpxFileName } from "@tarmoto/shared";
 import { tripToGpxInput } from "../TripScreens.helpers";
 import type { Trip } from "@/types";
+import type { Translate } from "@/i18n";
 
 const TRIP_NOW = new Date("2026-04-30T12:00:00Z");
+const taggedTranslate: Translate = (key) => `xx:${key}`;
 
 function makeTrip(overrides: Partial<Trip> = {}): Trip {
   return {
@@ -124,6 +126,23 @@ describe("tripToGpxInput", () => {
     const input = tripToGpxInput(makeTrip());
     expect(input.name).toBe("Stelvio loop");
     expect(input.description).toBe("Dolomites");
+  });
+
+  it("exports an unnamed POI with its localized semantic category", () => {
+    const trip = makeTrip();
+    const firstDay = trip.days.find((day) => day.day_number === 1);
+    firstDay?.waypoints.splice(1, 0, {
+      id: "twisty-1",
+      sequence: 1,
+      lat: 46.5,
+      lng: 10.41,
+      name: null,
+      waypoint_type: "via",
+      poi_category: "twisty_highlight",
+    } as Trip["days"][number]["waypoints"][number]);
+
+    const input = tripToGpxInput(trip, taggedTranslate);
+    expect(input.days[0]?.waypoints[1]?.name).toBe("xx:Twisty highlight");
   });
 });
 

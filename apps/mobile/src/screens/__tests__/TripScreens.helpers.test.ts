@@ -11,7 +11,10 @@ import {
   formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
   formatNearbyRadius,
+  formatPlannerPoiCategory,
   formatStatus,
+  formatWaypointDisplayName,
+  formatWaypointSemanticLabel,
   formatWaypointType,
   isLastDay,
   isSuggestedOvernightWaypoint,
@@ -26,6 +29,7 @@ import {
   sumDistance,
   withSuggestedOvernightStop,
 } from "../TripScreens.helpers";
+import { PLANNER_POI_CATEGORIES } from "@tarmoto/shared";
 import type {
   Accommodation,
   CheckRouteForPassesResponse,
@@ -140,6 +144,30 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
     expect(formatWaypointType("fuel")).toBe("Fuel");
     expect(formatWaypointType("start")).toBe("Start");
     expect(formatWaypointType("rest")).toBe("Rest");
+  });
+
+  it("uses every semantic POI category before the waypoint role fallback", () => {
+    expect(
+      PLANNER_POI_CATEGORIES.map((category) =>
+        formatPlannerPoiCategory(category),
+      ),
+    ).toEqual([
+      "Fuel",
+      "Food",
+      "Cafe",
+      "Viewpoint",
+      "Campground",
+      "Biker hotel",
+      "Mountain pass",
+      "Twisty highlight",
+    ]);
+    const unnamedCafe = wp("cafe", "via", 1, { poi_category: "cafe" });
+    expect(formatWaypointDisplayName(unnamedCafe)).toBe("Cafe");
+    expect(formatWaypointSemanticLabel(unnamedCafe)).toBe("Cafe");
+
+    const namedCafe = { ...unnamedCafe, name: "Kavárna" };
+    expect(formatWaypointDisplayName(namedCafe)).toBe("Kavárna");
+    expect(formatWaypointSemanticLabel(namedCafe)).toBe("Cafe");
   });
 });
 

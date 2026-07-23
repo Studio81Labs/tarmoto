@@ -131,13 +131,12 @@ describe("deriveFlaggedSections", () => {
         segmentId: "run:d1-s1:d1-s1",
         kind: "rough",
         lengthKm: 4.2,
-        label: "Rough · Gravel, 4.2 km",
+        surface: "gravel",
       },
       {
         segmentId: "run:d1-s2:d1-s2",
         kind: "no_data",
         lengthKm: 3.1,
-        label: "No data yet · 3.1 km",
       },
     ]);
   });
@@ -171,13 +170,12 @@ describe("deriveFlaggedSections", () => {
         segmentId: "run:d1-s1:d1-s2",
         kind: "rough",
         lengthKm: 5,
-        label: "Rough · Gravel, 5 km",
+        surface: "gravel",
       },
       {
         segmentId: "run:d1-s3:d1-s4",
         kind: "no_data",
         lengthKm: 3,
-        label: "No data yet · 3 km",
       },
     ]);
   });
@@ -186,14 +184,17 @@ describe("deriveFlaggedSections", () => {
     expect(deriveFlaggedSections([segment({})])).toEqual([]);
   });
 
-  it("uses the viewer's unit system in flagged labels", () => {
-    const imperial = createFormatters({ locale: "en-US", units: "imperial" });
+  it("keeps flagged output semantic for locale-aware rendering", () => {
     expect(
-      deriveFlaggedSections(
-        [segment({ band: "rough", surface: "gravel", lengthKm: 10 })],
-        imperial,
-      )[0]?.label,
-    ).toBe("Rough · Gravel, 6.2 mi");
+      deriveFlaggedSections([
+        segment({ band: "rough", surface: "gravel", lengthKm: 10 }),
+      ])[0],
+    ).toEqual({
+      segmentId: "run:d1-s0:d1-s0",
+      kind: "rough",
+      lengthKm: 10,
+      surface: "gravel",
+    });
   });
 });
 
@@ -646,6 +647,7 @@ describe("plannerApi.getPois", () => {
         id: "w456",
         type: "stay",
         name: "Penzion U Lesa",
+        poiCategory: "biker_hotel",
         lat: 49.51,
         lng: 15.21,
         distanceFromRouteKm: 2.1,

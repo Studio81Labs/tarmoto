@@ -308,7 +308,7 @@ function RoutePreview({
               <li key={i} className="flex items-center gap-2 truncate">
                 <MapPin size={12} className="shrink-0 text-fg-dim" />
                 <span className="truncate">
-                  {wp.name ?? t("Waypoint {n}", { n: i + 1 })}
+                  {wp.name?.trim() ? wp.name : t("Waypoint {n}", { n: i + 1 })}
                 </span>
                 <span className="tabular-nums text-fg-dim">
                   {format.decimal(wp.lat, 4)}, {format.decimal(wp.lng, 4)}

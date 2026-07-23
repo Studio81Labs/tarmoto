@@ -16,6 +16,7 @@ import {
   isWithinLimit,
   latLngToPoint,
   pointToLatLng,
+  type PlannerPoiCategory,
   type SupportedLocale,
 } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
@@ -272,6 +273,7 @@ export class TripsService {
               sequence: wp.sequence,
               name: wp.name,
               waypoint_type: wp.waypoint_type,
+              poi_category: wp.poi_category,
               road_segment_id: wp.road_segment_id,
               notes: wp.notes,
               duration_min: wp.duration_min,
@@ -1262,6 +1264,7 @@ export class TripsService {
             location: latLngToPoint({ lat: w.lat, lng: w.lng }),
             name: w.name ?? null,
             waypoint_type: w.type,
+            poi_category: w.poi_category ?? null,
           }),
         );
         if (waypointRows.length > 0) {
@@ -1860,6 +1863,7 @@ export class TripsService {
           lng: latLng.lng,
           name: w.name,
           waypoint_type: w.waypoint_type as TripWaypointType,
+          poi_category: w.poi_category as PlannerPoiCategory | null,
           road_segment_id: w.road_segment_id,
           notes: w.notes,
           duration_min: w.duration_min,

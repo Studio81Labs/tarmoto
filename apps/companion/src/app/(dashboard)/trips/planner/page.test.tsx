@@ -643,6 +643,78 @@ describe("TripPlannerPage", () => {
     expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
   });
 
+  it("keeps unnamed POI category fallbacks instead of reverse-geocoding them", async () => {
+    const reverseGeocode = vi
+      .spyOn(plannerApi, "reverseGeocode")
+      .mockResolvedValue("Generated address");
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            activeTrip.days[0]!.waypoints[0]!,
+            {
+              id: "generic-via",
+              type: "via",
+              location: { lng: 10.45, lat: 46.52 },
+            },
+            {
+              id: "poi-via",
+              type: "via",
+              poiCategory: "cafe",
+              location: { lng: 10.5, lat: 46.56 },
+            },
+            activeTrip.days[0]!.waypoints[1]!,
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() => expect(reverseGeocode).toHaveBeenCalledTimes(1));
+    expect(reverseGeocode).toHaveBeenCalledWith(46.52, 10.45, {
+      format: expect.any(Object),
+    });
+    await waitFor(() =>
+      expect(storeState.renameWaypoint).toHaveBeenCalledWith(
+        "generic-via",
+        "Generated address",
+      ),
+    );
+    expect(storeState.renameWaypoint).not.toHaveBeenCalledWith(
+      "poi-via",
+      expect.any(String),
+    );
+  });
+
+  it("marks typed-search via names as source data", async () => {
+    vi.spyOn(plannerApi, "geocode").mockResolvedValue([
+      { name: "Via 1", lat: 46.52, lng: 10.45 },
+    ]);
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add via point" }));
+    fireEvent.change(
+      screen.getByLabelText("Search location for a new via point"),
+      { target: { value: "Via 1" } },
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "Via 1" }));
+
+    expect(storeState.insertWaypointBeforeEnd).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({
+        name: "Via 1",
+        nameIsSource: true,
+        location: { lng: 10.45, lat: 46.52 },
+        type: "via",
+      }),
+    );
+  });
+
   it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
 
@@ -1903,12 +1975,12 @@ describe("TripPlannerPage", () => {
             {
               ...activeTrip.days[0]!.waypoints[0]!,
               id: "imp-wp-start",
-              name: "Trailhead",
+              name: "Start",
             },
             {
               ...activeTrip.days[0]!.waypoints[1]!,
               id: "imp-wp-end",
-              name: "Summit",
+              name: "End",
             },
           ],
         },
@@ -1948,8 +2020,8 @@ describe("TripPlannerPage", () => {
           ]),
           // Edited labels ride along.
           waypoints: expect.arrayContaining([
-            expect.objectContaining({ name: "Trailhead" }),
-            expect.objectContaining({ name: "Summit" }),
+            expect.objectContaining({ name: "Start" }),
+            expect.objectContaining({ name: "End" }),
           ]),
         }),
       ),

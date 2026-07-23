@@ -5049,6 +5049,11 @@ export interface components {
             name: string | null;
             /** @enum {string} */
             waypoint_type: "start" | "via" | "fuel" | "food" | "coffee" | "hotel" | "photo" | "end";
+            /**
+             * @description Semantic planner POI category used to localize unnamed saved stops.
+             * @enum {string|null}
+             */
+            poi_category?: "fuel" | "food" | "cafe" | "viewpoint" | "campground" | "biker_hotel" | "mountain_pass" | "twisty_highlight" | null;
             road_segment_id: string | null;
             notes: string | null;
             duration_min: number | null;
@@ -5125,6 +5130,11 @@ export interface components {
             lat: number;
             lng: number;
             name?: string | null;
+            /**
+             * @description Semantic planner POI category used to localize unnamed saved stops.
+             * @enum {string|null}
+             */
+            poi_category?: "fuel" | "food" | "cafe" | "viewpoint" | "campground" | "biker_hotel" | "mountain_pass" | "twisty_highlight" | null;
             /** @enum {string} */
             type: "start" | "via" | "end" | "fuel" | "food" | "coffee" | "hotel" | "photo";
         };

@@ -57,7 +57,8 @@ import {
   formatNearbyPlaceAccessibilityLabel,
   formatNearbyPlaceMeta,
   formatNearbyRadius,
-  formatWaypointType,
+  formatWaypointDisplayName,
+  formatWaypointSemanticLabel,
   isLastDay,
   pickDayEndAnchor,
   poiOpenCandidates,
@@ -858,6 +859,7 @@ function WaypointRow({
   const isFuel = waypoint.waypoint_type === "fuel";
   const iconName = WAYPOINT_ICONS[waypoint.waypoint_type] ?? "map-marker";
   const iconColor = isFuel ? statusFg.warning : t.fg;
+  const semanticLabel = formatWaypointSemanticLabel(waypoint);
 
   return (
     <View style={styles.timelineRow}>
@@ -872,7 +874,7 @@ function WaypointRow({
       <View style={styles.timelineBody}>
         <View style={styles.timelineHeader}>
           <Text style={styles.timelineTitle}>
-            {waypoint.name ?? formatWaypointType(waypoint.waypoint_type)}
+            {formatWaypointDisplayName(waypoint)}
           </Text>
           {isFuel ? (
             <View style={styles.fuelBadge}>
@@ -883,10 +885,10 @@ function WaypointRow({
         <Text style={styles.timelineMeta}>
           {waypoint.duration_min
             ? translate("{type} · {duration} stop", {
-                type: formatWaypointType(waypoint.waypoint_type),
+                type: semanticLabel,
                 duration: formatDurationMin(waypoint.duration_min),
               })
-            : formatWaypointType(waypoint.waypoint_type)}
+            : semanticLabel}
         </Text>
         {waypoint.notes ? (
           <Text style={styles.timelineNotes}>{waypoint.notes}</Text>

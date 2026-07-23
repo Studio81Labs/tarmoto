@@ -196,8 +196,10 @@ function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
   const waypoints: Waypoint[] = sortedSourceWaypoints.map((w) => ({
     id: w.id,
     name: w.name ?? undefined,
+    ...(w.name?.trim() ? { nameIsSource: true } : {}),
     location: { lat: w.lat, lng: w.lng },
     type: WAYPOINT_TYPE_MAP[w.waypoint_type] ?? "via",
+    ...(w.poi_category ? { poiCategory: w.poi_category } : {}),
   }));
 
   // Surface the day's overnight stop as a `POI` so the detail page's
@@ -223,8 +225,12 @@ function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
   const overnightStop: POI | undefined = overnightSource
     ? {
         id: overnightSource.id,
-        name: overnightSource.name ?? `Day ${day.day_number} overnight`,
+        name: overnightSource.name?.trim() ?? "",
+        ...(overnightSource.name?.trim() ? { nameIsSource: true } : {}),
         type: "accommodation",
+        ...(overnightSource.poi_category
+          ? { poiCategory: overnightSource.poi_category }
+          : {}),
         location: { lat: overnightSource.lat, lng: overnightSource.lng },
       }
     : undefined;

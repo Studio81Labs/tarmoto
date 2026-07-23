@@ -565,6 +565,44 @@ describe("TripPlannerMap", () => {
       expect(waypoints.find((w) => w.type === "via")?.name).toBe("Parking");
     });
 
+    it("preserves a basemap source name that resembles a legacy via role", () => {
+      withBasemapPoiLayer();
+      mockMap.queryRenderedFeatures.mockReturnValue([]);
+      useTripStore.setState({ activeTrip: trip(), selectedDayIndex: 0 });
+      const clicks = captureLayerClicks();
+      render(
+        <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={vi.fn()} />,
+      );
+      act(() =>
+        clicks.get(POI_LAYER)?.({
+          ...namedPoiClick,
+          features: [
+            {
+              ...namedPoiClick.features[0],
+              properties: {
+                ...namedPoiClick.features[0]!.properties,
+                name: "Via 1",
+              },
+            },
+          ],
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Add as via/ }));
+
+      const inserted = useTripStore
+        .getState()
+        .activeTrip?.days[0]?.waypoints.find(
+          (waypoint) => waypoint.name === "Via 1",
+        );
+      expect(inserted?.nameIsSource).toBe(true);
+      expect(
+        useTripStore
+          .getState()
+          .saveWaypoints()
+          .find((waypoint) => waypoint.name === "Via 1")?.name,
+      ).toBe("Via 1");
+    });
+
     it("closes the place card when another marker opens its popover", () => {
       withBasemapPoiLayer();
       mockMap.queryRenderedFeatures.mockReturnValue([]);

@@ -262,7 +262,6 @@ export function rerouteViaWaypoint(
 ): Waypoint {
   return {
     id: `reroute-${segmentId}-${Math.random().toString(36).slice(2, 8)}`,
-    name: "Reroute via",
     location: plan.location,
     type: "via",
   };

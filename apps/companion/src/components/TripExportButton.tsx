@@ -24,7 +24,7 @@ export function TripExportButton({ trip }: TripExportButtonProps) {
   function handleGpx() {
     if (!trip) return;
     try {
-      const xml = tripToGpx(trip);
+      const xml = tripToGpx(trip, new Date(), t);
       const blob = new Blob([xml], { type: "application/gpx+xml" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

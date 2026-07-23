@@ -492,6 +492,58 @@ describe('TripsService', () => {
       });
     });
 
+    it('duplicate preserves semantic POI categories on copied waypoints', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({
+          days: [
+            {
+              id: 'src-day-1',
+              day_number: 1,
+              title: null,
+              distance_km: 120,
+              route_geom: null,
+              avg_quality: null,
+              elevation_gain: null,
+              elevation_loss: null,
+              curviness_score: null,
+              scenic_score: null,
+              estimated_time: null,
+              start_linked: false,
+              leg_preferences: null,
+              waypoints: [
+                {
+                  id: 'src-waypoint-1',
+                  trip_day_id: 'src-day-1',
+                  sequence: 1,
+                  location: { type: 'Point', coordinates: [10.5, 46.5] },
+                  name: null,
+                  waypoint_type: 'via',
+                  poi_category: 'twisty_highlight',
+                  road_segment_id: null,
+                  notes: null,
+                  duration_min: null,
+                },
+              ],
+            },
+          ],
+          members: [{ user_id: OWNER_ID, role: 'owner' }],
+        } as unknown as Partial<Trip>),
+      );
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.duplicate(OWNER_ID, TRIP_ID);
+
+      expect(manager.create).toHaveBeenCalledWith(
+        TripWaypoint,
+        expect.objectContaining({
+          trip_day_id: TRIP_ID,
+          name: null,
+          waypoint_type: 'via',
+          poi_category: 'twisty_highlight',
+        }),
+      );
+    });
+
     it("uses the duplicating rider's stored locale for the persisted copy name", async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
       userRepo.findOne.mockResolvedValueOnce({
@@ -2504,7 +2556,13 @@ describe('TripsService', () => {
             startLinked: false,
             waypoints: [
               { lat: 46.5, lng: 10.5, name: 'Bormio', type: 'start' },
-              { lat: 46.55, lng: 10.55, name: 'Fuel stop', type: 'fuel' },
+              {
+                lat: 46.55,
+                lng: 10.55,
+                name: 'Fuel stop',
+                type: 'fuel',
+                poi_category: 'fuel',
+              },
               { lat: 46.6, lng: 10.6, name: 'Prato', type: 'end' },
             ],
           },
@@ -2529,7 +2587,11 @@ describe('TripsService', () => {
         sequence: 0,
         waypoint_type: 'start',
       });
-      expect(wpBodies[1]).toMatchObject({ sequence: 1, waypoint_type: 'fuel' });
+      expect(wpBodies[1]).toMatchObject({
+        sequence: 1,
+        waypoint_type: 'fuel',
+        poi_category: 'fuel',
+      });
       expect(wpBodies[2]).toMatchObject({ sequence: 2, waypoint_type: 'end' });
     });
 
@@ -3138,6 +3200,7 @@ describe('TripsService', () => {
                 location: { type: 'Point', coordinates: [11.34, 46.49] },
                 name: 'Start',
                 waypoint_type: 'start',
+                poi_category: 'twisty_highlight',
                 road_segment_id: null,
                 notes: null,
                 duration_min: null,
@@ -3164,6 +3227,7 @@ describe('TripsService', () => {
         lat: 46.49,
         lng: 11.34,
         waypoint_type: 'start',
+        poi_category: 'twisty_highlight',
       });
     });
 

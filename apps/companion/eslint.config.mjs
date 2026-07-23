@@ -236,6 +236,24 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
+      "JSXOpeningElement[name.name='UserAvatar'] JSXAttribute[name.name='name'] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Translate static self/avatar names before passing them to UserAvatar; the value also becomes image alt text.",
+  },
+  {
+    selector:
+      "CallExpression[callee.object.name=/^(role|status|surface|severity|tier|type|reason|metric)$/][callee.property.name=/^(toUpperCase|toLocaleUpperCase)$/]",
+    message:
+      "Translate semantic enum values through a cataloged label map before changing display case.",
+  },
+  {
+    selector:
+      "Property[key.name='name'] > Literal[value=/^(New Trip|Start|Finish|Reroute via|Twisty highlight|Unnamed)$/]",
+    message:
+      "Do not persist generated English display labels in domain data. Store semantic state and translate at the render boundary.",
+  },
+  {
+    selector:
       "JSXElement > JSXExpressionContainer > LogicalExpression > Literal[value=/[A-Za-z]{2,}/]",
     message:
       "Wrap rider-facing logical fallback copy with t()/tDynamic instead of rendering a raw string.",

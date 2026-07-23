@@ -745,7 +745,7 @@ function PeopleTab({
                   className="flex items-center gap-3 px-1.5 py-2.5"
                 >
                   <UserAvatar
-                    name={isSelf ? "You" : member.display_name}
+                    name={isSelf ? t("You") : member.display_name}
                     avatarUrl={member.avatar_url}
                     size={34}
                     fontSize={11}

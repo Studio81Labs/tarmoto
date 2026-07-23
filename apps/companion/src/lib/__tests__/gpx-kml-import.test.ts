@@ -370,6 +370,21 @@ describe("importedRouteToTrip", () => {
     expect(wps.find((w) => w.type === "end")?.name).toBe("Prato");
   });
 
+  it("marks imported names as source-owned even when they match legacy roles", () => {
+    const parsed = parseImportedRoute(KML_LINESTRING, "alps.kml");
+    if (!parsed.ok) throw new Error("parse failed");
+
+    const start = importedRouteToTrip(parsed.route).days[0]?.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    );
+
+    expect(start).toMatchObject({
+      name: "Start",
+      nameIsSource: true,
+      type: "start",
+    });
+  });
+
   it("does not adopt mid-route waypoint names for start/end", () => {
     const gpx = `<?xml version="1.0"?>
 <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
@@ -389,8 +404,8 @@ describe("importedRouteToTrip", () => {
     if (!day) throw new Error("expected a day");
     const wps = day.waypoints;
     // Mid-route waypoint must not be promoted to start/end…
-    expect(wps.find((w) => w.type === "start")?.name).toBe("Start");
-    expect(wps.find((w) => w.type === "end")?.name).toBe("End");
+    expect(wps.find((w) => w.type === "start")?.name).toBeUndefined();
+    expect(wps.find((w) => w.type === "end")?.name).toBeUndefined();
     // …and should survive as a via with its actual name.
     const vias = wps.filter((w) => w.type === "via");
     expect(vias).toHaveLength(1);

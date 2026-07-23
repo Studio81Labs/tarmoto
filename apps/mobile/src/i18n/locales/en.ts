@@ -477,6 +477,11 @@ export const en = {
     "Following {count, plural, one {# rider} other {# riders}}, open list",
   "Follows you": "Follows you",
   Food: "Food",
+  Cafe: "Cafe",
+  Campground: "Campground",
+  "Biker hotel": "Biker hotel",
+  "Mountain pass": "Mountain pass",
+  "Twisty highlight": "Twisty highlight",
   "Free ride": "Free ride",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",

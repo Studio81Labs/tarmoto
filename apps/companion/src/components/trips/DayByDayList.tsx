@@ -3,6 +3,10 @@ import { QualityBars, Stamp } from "@tarmoto/ui";
 import { useTranslation } from "@/i18n/I18nProvider";
 import type { TripDay } from "@/lib/types";
 import { useFormat } from "@/format/FormatProvider";
+import {
+  hasCustomWaypointName,
+  poiCategoryDisplayName,
+} from "@/lib/planner/labels";
 
 /**
  * Shared "Day-by-day" itinerary cards. Rendered read-only in the trip
@@ -27,8 +31,22 @@ export function qualityTierOf(score: number): 1 | 2 | 3 | 4 | 5 {
 export function dayRouteLabel(day: TripDay): string | null {
   const title = day.title?.trim();
   if (title && title.toLowerCase() !== `day ${day.dayNumber}`) return title;
-  const start = day.waypoints[0]?.name?.trim();
-  const end = day.waypoints[day.waypoints.length - 1]?.name?.trim();
+  const startWaypoint = day.waypoints[0];
+  const endWaypoint = day.waypoints[day.waypoints.length - 1];
+  const startName = startWaypoint?.name;
+  const endName = endWaypoint?.name;
+  const start = hasCustomWaypointName(
+    startName,
+    startWaypoint?.nameIsSource || Boolean(startWaypoint?.poiCategory),
+  )
+    ? startName.trim()
+    : "";
+  const end = hasCustomWaypointName(
+    endName,
+    endWaypoint?.nameIsSource || Boolean(endWaypoint?.poiCategory),
+  )
+    ? endName.trim()
+    : "";
   return day.waypoints.length >= 2 && start && end ? `${start} → ${end}` : null;
 }
 
@@ -143,7 +161,18 @@ export function DayByDayList({
                     <span className="inline-flex items-center gap-1.5">
                       <BedDouble size={12} className="text-fg-mute" />
                       {t("Overnight: {name}", {
-                        name: day.overnightStop.name,
+                        name: hasCustomWaypointName(
+                          day.overnightStop.name,
+                          day.overnightStop.nameIsSource ||
+                            Boolean(day.overnightStop.poiCategory),
+                        )
+                          ? day.overnightStop.name
+                          : day.overnightStop.poiCategory
+                            ? poiCategoryDisplayName(
+                                day.overnightStop.poiCategory,
+                                t,
+                              )
+                            : t("Accommodation"),
                       })}
                     </span>
                   )}

@@ -254,13 +254,20 @@ export interface RoutePreviewSegment {
 export interface Waypoint {
   id: string;
   name?: string | undefined;
+  /**
+   * Client-side provenance for a rider/source-owned name. The backend does not
+   * yet persist name provenance, so imports, hydrated server names, POI
+   * placement, and rider renames set this flag to keep legitimate labels such
+   * as "Start" or "Via 1" from being mistaken for legacy generated roles.
+   */
+  nameIsSource?: boolean;
   location: { lng: number; lat: number };
   type: "start" | "via" | "end" | "fuel" | "rest" | "photo" | "accommodation";
   /**
    * Set when the waypoint was placed from a map POI pin (revision 4):
    * the map renders the category glyph inside the role circle and
-   * clicking it reopens the POI popover. Client-side display metadata —
-   * not persisted by the save contract.
+   * clicking it reopens the POI popover. Persisted as semantic metadata so
+   * unnamed POIs remain localizable after save/reload.
    */
   poiCategory?: import("@/lib/planner/types").PoiCategory;
 }
@@ -367,7 +374,11 @@ export interface RouteCollection {
 export interface POI {
   id: string;
   name: string;
+  /** See `Waypoint.nameIsSource`; used by itinerary-only POI projections. */
+  nameIsSource?: boolean;
   type: "accommodation" | "fuel" | "restaurant" | "viewpoint" | "cafe";
+  /** Semantic planner category used when the source has no custom place name. */
+  poiCategory?: import("@/lib/planner/types").PoiCategory;
   location: { lng: number; lat: number };
   rating?: number;
   priceLevel?: number;

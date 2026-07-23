@@ -102,9 +102,47 @@ describe("tripToGpx", () => {
 
     expect(gpx.match(/<rte>/g)?.length).toBe(2);
     expect(gpx).toContain("<name>Day 1 — Stelvio</name>");
-    expect(gpx).toContain("<name>Fuel stop</name>");
+    expect(gpx).toContain("<name>Fuel</name>");
     expect(gpx).toContain("<type>fuel</type>");
     expect(gpx).toContain("<name>Day 2</name>");
+  });
+
+  it("preserves source labels that happen to match legacy waypoint roles", () => {
+    const trip = minimalTrip({
+      days: [
+        {
+          dayNumber: 1,
+          distanceKm: 10,
+          durationMinutes: 20,
+          elevationGain: 0,
+          avgQuality: 4,
+          waypoints: [
+            {
+              id: "source-start",
+              name: "Start",
+              nameIsSource: true,
+              location: { lng: 10.1, lat: 46.1 },
+              type: "start",
+            },
+            {
+              id: "legacy-via",
+              name: "Via 1",
+              location: { lng: 10.2, lat: 46.2 },
+              type: "via",
+            },
+          ],
+        },
+      ],
+    });
+
+    const gpx = tripToGpx(
+      trip,
+      new Date("2026-04-18T12:00:00Z"),
+      (key) => `xx:${key}`,
+    );
+
+    expect(gpx).toContain("<name>Start</name>");
+    expect(gpx).toContain("<name>xx:Via</name>");
   });
 
   it("emits a <trk> with trackpoints when a day has route geometry", () => {

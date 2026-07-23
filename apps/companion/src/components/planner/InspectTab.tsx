@@ -1,6 +1,10 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import {
+  dayPlanBoundaryDisplayName,
+  waypointDisplayName,
+} from "@/lib/planner/labels";
 import { useMemo } from "react";
 import { Mono } from "@tarmoto/ui";
 import { deriveFlaggedSections, surfaceMixToPercents } from "@/lib/planner/api";
@@ -101,10 +105,7 @@ export function InspectTab({
         : allSegments,
     [allSegments, plan],
   );
-  const flagged = useMemo(
-    () => deriveFlaggedSections(segments, format, t),
-    [format, segments, t],
-  );
+  const flagged = useMemo(() => deriveFlaggedSections(segments), [segments]);
   const surfaceMix = useMemo(
     () =>
       plan
@@ -130,8 +131,9 @@ export function InspectTab({
     );
   }
 
-  const startLabel = spine[0]?.name ?? t("Start");
-  const finishLabel = spine[spine.length - 1]?.name ?? t("Finish");
+  const startLabel = spine[0] ? waypointDisplayName(spine[0], t) : t("Start");
+  const finish = spine[spine.length - 1];
+  const finishLabel = finish ? waypointDisplayName(finish, t) : t("Finish");
 
   // Distance keeps its value and unit paired from the SAME `splitDistanceKm`
   // call — an imperial viewer must see "mi", never a converted mile figure
@@ -166,8 +168,20 @@ export function InspectTab({
           <span className="text-[12px] font-bold text-ink">
             {t("Inspecting Day {day} · {start} → {end}", {
               day: plan.dayNumber,
-              start: plan.startTown,
-              end: plan.endTown,
+              start: dayPlanBoundaryDisplayName(
+                plan.startTown,
+                plan.startNameIsSource,
+                plan.startPoiCategory,
+                "start",
+                t,
+              ),
+              end: dayPlanBoundaryDisplayName(
+                plan.endTown,
+                plan.endNameIsSource,
+                plan.endPoiCategory,
+                "end",
+                t,
+              ),
             })}
           </span>
           {onClearPlan ? (
@@ -186,6 +200,12 @@ export function InspectTab({
         <div className="px-4 py-3.5">
           {spine.map((waypoint, index) => {
             const role = waypointRole(waypoint, index, spine.length);
+            const roleLabel =
+              role === "start"
+                ? t("Start")
+                : role === "finish"
+                  ? t("Finish")
+                  : t("Via");
             return (
               <div
                 key={waypoint.id}
@@ -196,10 +216,10 @@ export function InspectTab({
                   style={{ background: ROLE_COLORS[role] }}
                 />
                 <Mono className="w-11 shrink-0 text-[9.5px] text-fg-mute">
-                  {role.toUpperCase()}
+                  {roleLabel.toLocaleUpperCase()}
                 </Mono>
                 <span className="truncate text-[13.5px] font-bold tracking-[-0.2px] text-ink">
-                  {waypoint.name ?? role}
+                  {waypointDisplayName(waypoint, t)}
                 </span>
               </div>
             );

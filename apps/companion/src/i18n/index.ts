@@ -52,6 +52,18 @@ export function translate(
 export const t = translate;
 
 /**
+ * Read the locale already resolved onto the document by the root layout.
+ * Browser-only services cannot use React hooks, but they must still translate
+ * with the current request/device locale instead of silently defaulting to
+ * English. Server callers deliberately fall back to the registered default;
+ * request-rendered server code uses the request-bound translator instead.
+ */
+export function getDocumentLocale(): SupportedLocale {
+  if (typeof document === "undefined") return DEFAULT_LOCALE;
+  return resolveLocale(document.documentElement.lang);
+}
+
+/**
  * Typed companion translator: the key must be a registered catalog key.
  * PR 3b narrows `translate`/`t` to this; libs that receive a translator
  * declare their parameter as `Translate`.

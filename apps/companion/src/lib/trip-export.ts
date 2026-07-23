@@ -1,4 +1,6 @@
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
+import { t as englishTranslate, type Translate } from "@/i18n";
+import { waypointDisplayName } from "@/lib/planner/labels";
 
 /**
  * Route export (US-39): GPX generation and share links for a planned Trip.
@@ -10,24 +12,18 @@ import type { Trip, TripDay, Waypoint } from "@/lib/types";
 const GPX_CREATOR = "Tarmoto Companion";
 const GPX_XMLNS = "http://www.topografix.com/GPX/1/1";
 
-const WAYPOINT_LABEL: Record<Waypoint["type"], string> = {
-  start: "Start",
-  end: "End",
-  via: "Via",
-  fuel: "Fuel stop",
-  rest: "Rest",
-  photo: "Photo stop",
-  accommodation: "Overnight",
-};
-
-export function tripToGpx(trip: Trip, now: Date = new Date()): string {
+export function tripToGpx(
+  trip: Trip,
+  now: Date = new Date(),
+  t: Translate = englishTranslate,
+): string {
   const parts: string[] = [];
   parts.push('<?xml version="1.0" encoding="UTF-8"?>');
   parts.push(
     `<gpx version="1.1" creator="${escapeAttr(GPX_CREATOR)}" xmlns="${GPX_XMLNS}">`,
   );
   parts.push("  <metadata>");
-  parts.push(`    <name>${escapeText(trip.name)}</name>`);
+  parts.push(`    <name>${escapeText(trip.name || t("New Trip"))}</name>`);
   if (trip.description) {
     parts.push(`    <desc>${escapeText(trip.description)}</desc>`);
   }
@@ -35,12 +31,12 @@ export function tripToGpx(trip: Trip, now: Date = new Date()): string {
   parts.push("  </metadata>");
 
   for (const day of trip.days) {
-    const dayLabel = formatDayLabel(day);
+    const dayLabel = formatDayLabel(day, t);
     if (day.waypoints.length > 0) {
       parts.push("  <rte>");
       parts.push(`    <name>${escapeText(dayLabel)}</name>`);
       for (const wp of day.waypoints) {
-        parts.push(renderRoutePoint(wp));
+        parts.push(renderRoutePoint(wp, t));
       }
       parts.push("  </rte>");
     }
@@ -73,14 +69,14 @@ export function tripFileName(trip: Trip, ext: string): string {
   return `tarmoto-${slug}.${cleanExt}`;
 }
 
-function formatDayLabel(day: TripDay): string {
+function formatDayLabel(day: TripDay, t: Translate): string {
   return day.title
-    ? `Day ${day.dayNumber} — ${day.title}`
-    : `Day ${day.dayNumber}`;
+    ? t("Day {day} — {title}", { day: day.dayNumber, title: day.title })
+    : t("Day {day}", { day: day.dayNumber });
 }
 
-function renderRoutePoint(wp: Waypoint): string {
-  const name = wp.name ?? WAYPOINT_LABEL[wp.type];
+function renderRoutePoint(wp: Waypoint, t: Translate): string {
+  const name = waypointDisplayName(wp, t);
   const lat = formatCoord(wp.location.lat);
   const lng = formatCoord(wp.location.lng);
   return [

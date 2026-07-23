@@ -17,9 +17,14 @@ describe("useTripStore planner editing", () => {
     store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
 
     const firstDay = useTripStore.getState().activeTrip?.days[0];
+    expect(useTripStore.getState().activeTrip?.name).toBe("");
     expect(firstDay?.waypoints.map((waypoint) => waypoint.type)).toEqual([
       "start",
       "end",
+    ]);
+    expect(firstDay?.waypoints.map((waypoint) => waypoint.name)).toEqual([
+      undefined,
+      undefined,
     ]);
     // Geometry is now driven exclusively by applyRouteResult (live routing
     // hook). appendPlannerWaypoint no longer synthesises geometry.
@@ -35,6 +40,11 @@ describe("useTripStore planner editing", () => {
       "start",
       "via",
       "end",
+    ]);
+    expect(updatedDay?.waypoints.map((waypoint) => waypoint.name)).toEqual([
+      undefined,
+      undefined,
+      undefined,
     ]);
     // Still no geometry until the live routing hook calls applyRouteResult.
     expect(updatedDay?.routeGeometry).toBeUndefined();
@@ -500,6 +510,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
       id: "fuel-1",
       type: "fuel",
       name: "Gas station",
+      poiCategory: "fuel",
       location: { lat: 2.5, lng: 2.5 },
     });
 
@@ -519,6 +530,7 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(saved[2]!.lat).toBe(2.5);
     expect(saved[2]!.lng).toBe(2.5);
     expect(saved[2]!.name).toBe("Gas station");
+    expect(saved[2]!.poi_category).toBe("fuel");
 
     expect(saved[3]!.type).toBe("end");
     expect(saved[3]!.lat).toBe(3);
@@ -562,6 +574,109 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(saved[2]!.type).toBe("hotel");
     expect(saved[2]!.name).toBe("Overnight hotel");
     expect(saved[3]!.type).toBe("end");
+  });
+
+  it("preserves imported labels even when they resemble legacy generated roles", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 4, lat: 4 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    const trip = useTripStore.getState().activeTrip!;
+    useTripStore.setState({
+      activeTrip: {
+        ...trip,
+        importSourceFormat: "gpx",
+        days: [
+          {
+            ...trip.days[0]!,
+            waypoints: trip.days[0]!.waypoints.map((waypoint, index) => ({
+              ...waypoint,
+              name: ["Start", "Via 1", "End"][index],
+            })),
+          },
+        ],
+      },
+    });
+
+    expect(
+      useTripStore
+        .getState()
+        .saveWaypoints()
+        .map((waypoint) => waypoint.name),
+    ).toEqual(["Start", "Via 1", "End"]);
+  });
+
+  it("only migrates legacy labels that match the waypoint role and routing index", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 5, lat: 5 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    s.appendPlannerWaypoint(0, { lng: 3, lat: 3 });
+    const trip = useTripStore.getState().activeTrip!;
+    useTripStore.setState({
+      activeTrip: {
+        ...trip,
+        days: [
+          {
+            ...trip.days[0]!,
+            waypoints: trip.days[0]!.waypoints.map((waypoint, index) => ({
+              ...waypoint,
+              // The first via is routing order 1, so "Via 2" is real/source
+              // data there; the second via is order 2 and is a legacy sentinel.
+              name: ["Start", "Via 2", "Via 2", "Finish"][index],
+            })),
+          },
+        ],
+      },
+    });
+
+    expect(
+      useTripStore
+        .getState()
+        .saveWaypoints()
+        .map((waypoint) => waypoint.name),
+    ).toEqual([null, "Via 2", null, null]);
+  });
+
+  it("preserves an explicitly renamed label that resembles a legacy role", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    const startId =
+      useTripStore.getState().activeTrip!.days[0]!.waypoints[0]!.id;
+
+    useTripStore.getState().renameWaypoint(startId, "Start");
+
+    expect(useTripStore.getState().saveWaypoints()[0]!.name).toBe("Start");
+  });
+
+  it("preserves an ambiguous legacy-like name loaded from the server baseline", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    const trip = useTripStore.getState().activeTrip!;
+    const loaded = {
+      ...trip,
+      id: "server-trip",
+      days: [
+        {
+          ...trip.days[0]!,
+          waypoints: trip.days[0]!.waypoints.map((waypoint, index) => ({
+            ...waypoint,
+            name: index === 0 ? "Start" : "End",
+          })),
+        },
+      ],
+    };
+
+    useTripStore.getState().setActiveTrip(loaded);
+
+    expect(
+      useTripStore
+        .getState()
+        .saveWaypoints()
+        .map((waypoint) => waypoint.name),
+    ).toEqual(["Start", "End"]);
   });
 
   it("saveDays drops empty days, renumbers, and maps waypoint types", () => {
@@ -1831,6 +1946,72 @@ describe("useTripStore day lifecycle + overnight link sync (Task 8)", () => {
     expect(state.routeDirty).toBe(true);
   });
 
+  it("copies finish provenance when adding and re-seeding linked starts", () => {
+    const store = useTripStore.getState();
+    store.placeWaypoint({ lat: 1, lng: 1 }, "set-start");
+    store.placeWaypoint({ lat: 2, lng: 2 }, "set-end", undefined, {
+      poiCategory: "campground",
+    });
+    store.addDay();
+
+    let trip = useTripStore.getState().activeTrip!;
+    let linkedStart = trip.days[1]!.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    )!;
+    expect(linkedStart).toMatchObject({
+      location: { lat: 2, lng: 2 },
+      poiCategory: "campground",
+    });
+    expect(linkedStart.name).toBeUndefined();
+    expect(useTripStore.getState().saveDays()[1]!.waypoints[0]).toMatchObject({
+      name: null,
+      poi_category: "campground",
+      type: "start",
+    });
+
+    // Replacing the predecessor finish at the same coordinates must refresh
+    // provenance too; coordinate equality alone is not a sufficient no-op.
+    useTripStore.setState({ selectedDayIndex: 0 });
+    store.placeWaypoint({ lat: 2, lng: 2 }, "set-end", undefined, {
+      name: "Via 1",
+      poiCategory: "biker_hotel",
+    });
+
+    trip = useTripStore.getState().activeTrip!;
+    linkedStart = trip.days[1]!.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    )!;
+    expect(linkedStart).toMatchObject({
+      name: "Via 1",
+      nameIsSource: true,
+      location: { lat: 2, lng: 2 },
+      poiCategory: "biker_hotel",
+    });
+
+    // A manual successor start breaks the link; relinking must restore the
+    // predecessor's semantic/source identity, not only its coordinates.
+    useTripStore.setState({ selectedDayIndex: 1 });
+    store.placeWaypoint({ lat: 9, lng: 9 }, "set-start");
+    store.relinkDayStart(1);
+
+    linkedStart = useTripStore
+      .getState()
+      .activeTrip!.days[1]!.waypoints.find(
+        (waypoint) => waypoint.type === "start",
+      )!;
+    expect(linkedStart).toMatchObject({
+      name: "Via 1",
+      nameIsSource: true,
+      location: { lat: 2, lng: 2 },
+      poiCategory: "biker_hotel",
+    });
+    expect(useTripStore.getState().saveDays()[1]!.waypoints[0]).toMatchObject({
+      name: "Via 1",
+      poi_category: "biker_hotel",
+      type: "start",
+    });
+  });
+
   it("addDay is capped at 14 days", () => {
     seedOneDay();
     // Add 13 more days (starting from 1 we already have → total 14).
@@ -2459,8 +2640,8 @@ describe("useTripStore role-from-index waypoints (addendum §1)", () => {
     seed(); // [start, via, end]
     useTripStore.getState().reorderWaypoints(0, 1, 0);
     expect(types()).toEqual(["start", "via", "end"]);
-    // The moved via is now named Start; the old start became a via.
-    expect(names()).toEqual(["Start", "Via 1", "Finish"]);
+    // Generated roles remain semantic; render boundaries translate the types.
+    expect(names()).toEqual([undefined, undefined, undefined]);
   });
 
   it("dragging the start to the bottom makes it the finish", () => {
@@ -2668,8 +2849,42 @@ describe("useTripStore split lifecycle (addendum)", () => {
     expect(trip.days[1]!.waypoints.some((w) => w.type === "via")).toBe(false);
 
     // Original endpoints survive at the outer boundaries.
-    expect(trip.days[0]!.waypoints[0]!.name).toBe("Start");
+    expect(trip.days[0]!.waypoints[0]!.name).toBeUndefined();
     expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
+
+    // Raw-distance labels ("250 km", etc.) are display copy, never names.
+    expect(dayFinishWaypoint(trip.days[0]!.waypoints)!.name).toBeUndefined();
+    expect(
+      trip.days[1]!.waypoints.find((w) => w.type === "start")!.name,
+    ).toBeUndefined();
+  });
+
+  it("materializes unnamed stay boundaries with semantic categories only", () => {
+    seedRoutedTrip();
+    const plans = plansFor();
+    plans[0] = {
+      ...plans[0]!,
+      endTown: "",
+      endPoiCategory: "biker_hotel",
+    };
+    plans[1] = {
+      ...plans[1]!,
+      startTown: "",
+      startPoiCategory: "biker_hotel",
+    };
+    useTripStore.getState().applySplit(plans);
+    useTripStore.getState().materializeSplit();
+
+    const trip = useTripStore.getState().activeTrip!;
+    const dayOneFinish = dayFinishWaypoint(trip.days[0]!.waypoints)!;
+    const dayTwoStart = trip.days[1]!.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    )!;
+
+    expect(dayOneFinish).toMatchObject({ poiCategory: "biker_hotel" });
+    expect(dayOneFinish.name).toBeUndefined();
+    expect(dayTwoStart).toMatchObject({ poiCategory: "biker_hotel" });
+    expect(dayTwoStart.name).toBeUndefined();
   });
 
   it("interpolates a between-vertices break so consecutive days share the exact boundary", () => {
@@ -2808,6 +3023,7 @@ describe("useTripStore renameWaypoint", () => {
       .getState()
       .activeTrip!.days[0]!.waypoints.find((w) => w.id === start.id)!;
     expect(renamed.name).toBe("Jihlava");
+    expect(renamed.nameIsSource).toBe(true);
     expect(useTripStore.getState().routeDirty).toBe(false);
     expect(useTripStore.getState().splitStatus).toBe("split");
   });
@@ -2861,7 +3077,39 @@ describe("placeWaypoint POI metadata (revision 4)", () => {
       .getState()
       .activeTrip?.days[0]?.waypoints.find((w) => w.type === "start");
     expect(start?.poiCategory).toBeUndefined();
+    expect(start?.name).toBeUndefined();
+    expect(start?.nameIsSource).toBeUndefined();
     expect(start?.location).toEqual({ lng: 14.4, lat: 50.0 });
+  });
+
+  it("clears stale endpoint names when replacing them with unnamed POIs", () => {
+    const s = useTripStore.getState();
+    s.placeWaypoint({ lat: 49.64, lng: 16.04 }, "set-start", undefined, {
+      name: "Old start",
+      poiCategory: "viewpoint",
+    });
+    s.placeWaypoint({ lat: 49.2, lng: 16.6 }, "set-end", undefined, {
+      name: "Old finish",
+      poiCategory: "biker_hotel",
+    });
+
+    s.placeWaypoint({ lat: 50.0, lng: 14.4 }, "set-new-start", undefined, {
+      poiCategory: "twisty_highlight",
+    });
+    s.placeWaypoint({ lat: 50.5, lng: 14.9 }, "set-new-end", undefined, {
+      poiCategory: "campground",
+    });
+
+    const waypoints =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints ?? [];
+    const start = waypoints.find((waypoint) => waypoint.type === "start");
+    const finish = waypoints.find((waypoint) => waypoint.type === "end");
+    expect(start).toMatchObject({ poiCategory: "twisty_highlight" });
+    expect(start?.name).toBeUndefined();
+    expect(start?.nameIsSource).toBeUndefined();
+    expect(finish).toMatchObject({ poiCategory: "campground" });
+    expect(finish?.name).toBeUndefined();
+    expect(finish?.nameIsSource).toBeUndefined();
   });
 });
 
@@ -2885,7 +3133,7 @@ describe("renameActiveTrip", () => {
     expect(useTripStore.getState().routeDirty).toBe(false);
 
     useTripStore.getState().undo();
-    expect(useTripStore.getState().activeTrip?.name).toBe("New Trip");
+    expect(useTripStore.getState().activeTrip?.name).toBe("");
   });
 
   it("ignores empty and unchanged names", () => {

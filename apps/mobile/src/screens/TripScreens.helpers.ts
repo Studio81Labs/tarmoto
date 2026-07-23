@@ -7,6 +7,7 @@
 
 import {
   haversineKm as sharedHaversineKm,
+  type PlannerPoiCategory,
   type TripGpxInput,
 } from "@tarmoto/shared";
 import type { IconName } from "@/components/Icon";
@@ -155,7 +156,10 @@ export function formatStatus(status: TripStatus): string {
 
 type DisplayWaypointType = WaypointType | "rest";
 
-export function formatWaypointType(t: DisplayWaypointType): string {
+export function formatWaypointType(
+  type: DisplayWaypointType,
+  t: Translate = translate,
+): string {
   const labels: Record<DisplayWaypointType, EnglishMessageKey> = {
     start: "Start",
     via: "Waypoint",
@@ -167,7 +171,43 @@ export function formatWaypointType(t: DisplayWaypointType): string {
     photo: "Photo",
     end: "End",
   };
-  return translate(labels[t]);
+  return t(labels[type]);
+}
+
+const PLANNER_POI_CATEGORY_LABELS = {
+  fuel: "Fuel",
+  food: "Food",
+  cafe: "Cafe",
+  viewpoint: "Viewpoint",
+  campground: "Campground",
+  biker_hotel: "Biker hotel",
+  mountain_pass: "Mountain pass",
+  twisty_highlight: "Twisty highlight",
+} satisfies Record<PlannerPoiCategory, EnglishMessageKey>;
+
+export function formatPlannerPoiCategory(
+  category: PlannerPoiCategory,
+  t: Translate = translate,
+): string {
+  return t(PLANNER_POI_CATEGORY_LABELS[category]);
+}
+
+export function formatWaypointSemanticLabel(
+  waypoint: Pick<Waypoint, "waypoint_type" | "poi_category">,
+  t: Translate = translate,
+): string {
+  return waypoint.poi_category
+    ? formatPlannerPoiCategory(waypoint.poi_category, t)
+    : formatWaypointType(waypoint.waypoint_type, t);
+}
+
+export function formatWaypointDisplayName(
+  waypoint: Pick<Waypoint, "name" | "waypoint_type" | "poi_category">,
+  t: Translate = translate,
+): string {
+  return waypoint.name?.trim()
+    ? waypoint.name
+    : formatWaypointSemanticLabel(waypoint, t);
 }
 
 export const WAYPOINT_ICONS: Record<WaypointType, IconName> = {
@@ -428,7 +468,10 @@ export function buildClosedPassWarning(
  * the exported GPX walks day 1 → day N regardless of how the API
  * happened to return them.
  */
-export function tripToGpxInput(trip: Trip): TripGpxInput {
+export function tripToGpxInput(
+  trip: Trip,
+  t: Translate = translate,
+): TripGpxInput {
   const orderedDays = [...trip.days].sort(
     (a, b) => a.day_number - b.day_number,
   );
@@ -443,7 +486,7 @@ export function tripToGpxInput(trip: Trip): TripGpxInput {
         .map((w) => ({
           lat: w.lat,
           lng: w.lng,
-          ...(w.name != null ? { name: w.name } : {}),
+          name: formatWaypointDisplayName(w, t),
           type: w.waypoint_type,
         })),
       ...(Array.isArray(day.route_geometry)

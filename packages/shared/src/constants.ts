@@ -72,6 +72,24 @@ export const POI_KINDS = [
 export type PoiKind = (typeof POI_KINDS)[number];
 
 /**
+ * Curated planner POI categories shared by persistence and clients. Unlike
+ * `POI_KINDS`, this includes Tarmoto-derived route highlights and overnight
+ * categories used by the companion planner.
+ */
+export const PLANNER_POI_CATEGORIES = [
+  "fuel",
+  "food",
+  "cafe",
+  "viewpoint",
+  "campground",
+  "biker_hotel",
+  "mountain_pass",
+  "twisty_highlight",
+] as const;
+
+export type PlannerPoiCategory = (typeof PLANNER_POI_CATEGORIES)[number];
+
+/**
  * Kinds of overnight stop the API serves — the `kind` enum of the
  * `/accommodations` endpoint. Mirrors the OSM `tourism=*` tag subset we accept;
  * anything outside this list is dropped at the provider layer.

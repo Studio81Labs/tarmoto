@@ -11,6 +11,7 @@ import {
   QUALITY_BAND_COLORS,
 } from "@/lib/planner/quality-bands";
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
+import { waypointDisplayName } from "@/lib/planner/labels";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 import { t as translate, type Translate } from "@/i18n";
 
@@ -315,7 +316,7 @@ export function buildTripPlannerWaypointCollection(
           dayNumber: day.dayNumber,
           waypointId: waypoint.id,
           waypointType: waypoint.type,
-          label: waypoint.name ?? fallbackWaypointLabel(waypoint.type, t),
+          label: waypointDisplayName(waypoint, t),
           ...(waypoint.poiCategory
             ? { poiCategory: waypoint.poiCategory }
             : {}),
@@ -521,14 +522,6 @@ function getDayRouteCoordinates(day: Trip["days"][number]): [number, number][] {
     waypoint.location.lng,
     waypoint.location.lat,
   ]);
-}
-
-function fallbackWaypointLabel(type: string, t: Translate): string {
-  const normalizedType = type.trim();
-
-  if (normalizedType === "start") return t("Start");
-  if (normalizedType === "end") return t("Finish");
-  return t("Waypoint");
 }
 
 function emptyQualityLineCollection(): FeatureCollection<

@@ -1,5 +1,9 @@
 import type * as GeoJSON from "geojson";
-import type { Formatters, SurfaceType } from "@tarmoto/shared";
+import type {
+  Formatters,
+  PlannerPoiCategory,
+  SurfaceType,
+} from "@tarmoto/shared";
 import type { RouteRequestBody, RouteResponse } from "@/lib/api";
 
 /**
@@ -58,7 +62,8 @@ export interface FlaggedSection {
   segmentId: string;
   kind: "rough" | "no_data";
   lengthKm: number;
-  label: string;
+  /** Present for rough runs; UI combines this semantic value with locale copy. */
+  surface?: SurfaceType;
 }
 
 export interface RouteQualitySummary {
@@ -108,6 +113,8 @@ export interface PlannerPoi {
   id: string;
   type: PlannerPoiType;
   name: string;
+  /** Semantic category retained when the accommodation source has no name. */
+  poiCategory?: PlannerPoiCategory;
   lat: number;
   lng: number;
   distanceFromRouteKm?: number;
@@ -130,15 +137,7 @@ export interface RouteStop extends Poi {
  * Curated POI vocabulary for the map-top toolbar + STOPS filters
  * (revision 4 §A). Deliberately a closed set — no generic POI browser.
  */
-export type PoiCategory =
-  | "fuel"
-  | "food"
-  | "cafe"
-  | "viewpoint"
-  | "campground"
-  | "biker_hotel"
-  | "mountain_pass"
-  | "twisty_highlight";
+export type PoiCategory = PlannerPoiCategory;
 
 /** Provenance of a category POI. `osm` + `fsq` are the two bulk venue sources
  * (#869); `passes`/`tarmoto` are Tarmoto-derived categories. */
@@ -194,6 +193,12 @@ export interface DayPlan {
   quality: RouteQualitySummary;
   startTown: string;
   endTown: string;
+  /** True only when the matching town label came from the POI source. */
+  startNameIsSource?: boolean;
+  endNameIsSource?: boolean;
+  /** Semantic fallback for an unnamed overnight boundary. */
+  startPoiCategory?: PoiCategory;
+  endPoiCategory?: PoiCategory;
   /** True when no overnight town was near the target break distance. */
   noTownNearby?: boolean;
   suggestedStays: PlannerPoi[];
