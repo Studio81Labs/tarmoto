@@ -127,10 +127,11 @@ export class ApiError extends Error {
   }
 }
 
-function unwrap<T>(
-  result: { data?: T; error?: unknown; response: Response },
-  _fallbackMessage: string,
-): T {
+function unwrap<T>(result: {
+  data?: T;
+  error?: unknown;
+  response: Response;
+}): T {
   if (result.error !== undefined) {
     const status = result.response.status;
     throw new ApiError(localizedApiErrorMessage(status), status, result.error);
@@ -193,7 +194,7 @@ class ApiService {
         result.error,
       );
     }
-    const data = unwrap(result, "Registration failed");
+    const data = unwrap(result);
     storeTokens(data);
     void registerForPush(this.pushApi());
     // Fire-and-forget so a transient privacy fetch failure can't
@@ -218,7 +219,7 @@ class ApiService {
         result.error,
       );
     }
-    const data = unwrap(result, "Login failed");
+    const data = unwrap(result);
     storeTokens(data);
     void registerForPush(this.pushApi());
     // See `register` — same fire-and-forget pull so the sensor
@@ -279,7 +280,7 @@ class ApiService {
     let userIdAtStart = getAuthenticatedUserId();
     if (!userIdAtStart) {
       const meResult = await client.GET("/api/v1/users/me");
-      const me = unwrap(meResult, "Failed to load profile");
+      const me = unwrap(meResult);
       // #279 / #501 — re-check the session before writing the
       // backfilled id (Codex review on PR #513 r3212865489). A
       // logout that fires while `/users/me` is in flight clears
@@ -296,7 +297,7 @@ class ApiService {
       userIdAtStart = me.id;
     }
     const result = await client.GET("/api/v1/account/privacy");
-    const dto = unwrap(result, "Failed to load privacy preferences");
+    const dto = unwrap(result);
     if (getAuthenticatedUserId() !== userIdAtStart) return;
     setCachedPreferences({
       profile_visibility: dto.profile_visibility,
@@ -385,7 +386,7 @@ class ApiService {
 
   async getProfile(): Promise<User> {
     const result = await client.GET("/api/v1/users/me");
-    return unwrap(result, "Failed to load profile");
+    return unwrap(result);
   }
 
   /**
@@ -396,7 +397,7 @@ class ApiService {
    */
   async getMyProfile(): Promise<MeProfile> {
     const result = await client.GET("/api/v1/users/me/profile");
-    return unwrap(result, "Failed to load profile summary");
+    return unwrap(result);
   }
 
   async updateProfile(updates: Schemas["UpdateProfileDto"]): Promise<User> {
@@ -404,7 +405,7 @@ class ApiService {
     const result = await client.PATCH("/api/v1/users/me", {
       body: updates,
     });
-    const user = unwrap(result, "Failed to update profile");
+    const user = unwrap(result);
     if (
       sessionAtStart &&
       isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
@@ -426,7 +427,7 @@ class ApiService {
     const result = await client.GET("/api/v1/users/{userId}/profile", {
       params: { path: { userId } },
     });
-    return unwrap(result, "Failed to load profile");
+    return unwrap(result);
   }
 
   async followUser(userId: string): Promise<void> {
@@ -447,21 +448,21 @@ class ApiService {
     const result = await client.GET("/api/v1/users/{userId}/followers", {
       params: { path: { userId } },
     });
-    return unwrap(result, "Failed to load followers");
+    return unwrap(result);
   }
 
   async listFollowing(userId: string): Promise<FollowerListItem[]> {
     const result = await client.GET("/api/v1/users/{userId}/following", {
       params: { path: { userId } },
     });
-    return unwrap(result, "Failed to load following");
+    return unwrap(result);
   }
 
   async listUserBadges(userId: string): Promise<UserBadge[]> {
     const result = await client.GET("/api/v1/users/{userId}/badges", {
       params: { path: { userId } },
     });
-    return unwrap(result, "Failed to load badges");
+    return unwrap(result);
   }
 
   /**
@@ -477,7 +478,7 @@ class ApiService {
     const result = await client.GET("/api/v1/users/{userId}/shared-rides", {
       params: { path: { userId }, query: params },
     });
-    return unwrap(result, "Failed to load shared rides");
+    return unwrap(result);
   }
 
   /**
@@ -510,7 +511,7 @@ class ApiService {
       // multipart boundary.
       bodySerializer: (body) => body as unknown as FormData,
     });
-    const user = unwrap(result, "Failed to upload avatar");
+    const user = unwrap(result);
     if (
       sessionAtStart &&
       isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
@@ -524,14 +525,14 @@ class ApiService {
 
   async listContacts(): Promise<EmergencyContact[]> {
     const result = await client.GET("/api/v1/users/me/contacts");
-    return unwrap(result, "Failed to load contacts");
+    return unwrap(result);
   }
 
   async addContact(input: EmergencyContactInput): Promise<EmergencyContact> {
     const result = await client.POST("/api/v1/users/me/contacts", {
       body: { is_emergency: true, ...input },
     });
-    return unwrap(result, "Failed to add contact");
+    return unwrap(result);
   }
 
   async updateContact(
@@ -542,7 +543,7 @@ class ApiService {
       params: { path: { contactId } },
       body: input,
     });
-    return unwrap(result, "Failed to update contact");
+    return unwrap(result);
   }
 
   async deleteContact(contactId: string): Promise<void> {
@@ -566,7 +567,7 @@ class ApiService {
     // bike) that the chip doesn't need, so a `RideActiveScreen` mount
     // is one cheap `findOne` round trip instead.
     const result = await client.GET("/api/v1/account/bikes/active");
-    const dto = unwrap(result, "Failed to load active bike");
+    const dto = unwrap(result);
     return dto ? bikeFromSchema(dto) : null;
   }
 
@@ -590,7 +591,7 @@ class ApiService {
     // /start returns the slim `RideResponseDto`. Detail-only fields
     // (segments, route_geometry, lean_distribution, …) are absent from
     // the JSON, not nulls — call `getRide` to populate them.
-    return unwrap(result, "Failed to start ride");
+    return unwrap(result);
   }
 
   async stopRide(rideId: string): Promise<RideResponse> {
@@ -598,14 +599,14 @@ class ApiService {
       params: { path: { rideId } },
     });
     // /stop returns the same slim `RideResponseDto` — see `startRide`.
-    return unwrap(result, "Failed to stop ride");
+    return unwrap(result);
   }
 
   async getRide(rideId: string): Promise<RideDetail> {
     const result = await client.GET("/api/v1/rides/{rideId}", {
       params: { path: { rideId } },
     });
-    return unwrap(result, "Failed to load ride");
+    return unwrap(result);
   }
 
   async listRides(
@@ -624,7 +625,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to list rides");
+    return unwrap(result);
   }
 
   /**
@@ -644,7 +645,7 @@ class ApiService {
     // returns the raw GPX XML string. Surfacing `application/gpx+xml`
     // in the backend swagger annotations would let openapi-typescript
     // generate `string` here and the cast can go away.
-    return unwrap(result, "Failed to export ride GPX") as unknown as string;
+    return unwrap(result) as unknown as string;
   }
 
   /**
@@ -658,7 +659,7 @@ class ApiService {
       parseAs: "text",
     });
     // TODO drift-detection-irrelevant: text-body — same as exportRideGpx.
-    return unwrap(result, "Failed to export rides GPX") as unknown as string;
+    return unwrap(result) as unknown as string;
   }
 
   /**
@@ -672,7 +673,7 @@ class ApiService {
     });
     // TODO drift-detection-irrelevant: text-body — same as exportRideGpx,
     // but for `text/csv`.
-    return unwrap(result, "Failed to export rides CSV") as unknown as string;
+    return unwrap(result) as unknown as string;
   }
 
   // ── Sensor Data ──
@@ -739,7 +740,7 @@ class ApiService {
           : {}),
       },
     });
-    return unwrap(result, "Sensor upload failed") as {
+    return unwrap(result) as {
       accepted: number;
       segments_updated: number;
     };
@@ -812,21 +813,21 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load nearby roads");
+    return unwrap(result);
   }
 
   async getRoadSegment(segmentId: string): Promise<RoadSegmentDetail> {
     const result = await client.GET("/api/v1/roads/{segmentId}", {
       params: { path: { segmentId } },
     });
-    return unwrap(result, "Failed to load road segment");
+    return unwrap(result);
   }
 
   async getFunZones(bbox: string): Promise<FunZone[]> {
     const result = await client.GET("/api/v1/roads/fun-zones", {
       params: { query: { bbox } },
     });
-    return unwrap(result, "Failed to load fun zones");
+    return unwrap(result);
   }
 
   // ── Hazards ──
@@ -847,7 +848,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load hazards");
+    return unwrap(result);
   }
 
   async reportHazard(
@@ -868,7 +869,7 @@ class ApiService {
         ...(photoUrl !== undefined ? { photo_url: photoUrl } : {}),
       },
     });
-    return unwrap(result, "Failed to report hazard");
+    return unwrap(result);
   }
 
   /**
@@ -900,7 +901,7 @@ class ApiService {
       bodySerializer: (body) => body as unknown as FormData,
       signal: options?.signal,
     });
-    return unwrap(result, "Failed to upload hazard photo");
+    return unwrap(result);
   }
 
   /**
@@ -968,7 +969,7 @@ class ApiService {
     const result = await client.POST("/api/v1/hazards/{hazardId}/confirm", {
       params: { path: { hazardId } },
     });
-    return unwrap(result, "Failed to confirm hazard");
+    return unwrap(result);
   }
 
   async dismissHazard(hazardId: string): Promise<void> {
@@ -985,7 +986,7 @@ class ApiService {
     const result = await client.POST("/api/v1/hazards/route", {
       body: { route, buffer_m: bufferM },
     });
-    return unwrap(result, "Failed to load route hazards");
+    return unwrap(result);
   }
 
   // ── Trips ──
@@ -1002,7 +1003,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load trips");
+    return unwrap(result);
   }
 
   /**
@@ -1012,7 +1013,7 @@ class ApiService {
    */
   async listTripFolders(): Promise<TripFolder[]> {
     const result = await client.GET("/api/v1/trip-folders");
-    const body = unwrap(result, "Failed to load trip folders") as {
+    const body = unwrap(result) as {
       items?: TripFolder[];
     };
     return body.items ?? [];
@@ -1030,7 +1031,7 @@ class ApiService {
     const result = await client.POST("/api/v1/trips", {
       body: params as Schemas["CreateTripDto"],
     });
-    return unwrap(result, "Failed to create trip");
+    return unwrap(result);
   }
 
   /**
@@ -1050,14 +1051,14 @@ class ApiService {
     const result = await client.POST("/api/v1/trips/import", {
       body: params,
     });
-    return unwrap(result, "Failed to import trip");
+    return unwrap(result);
   }
 
   async getTrip(tripId: string): Promise<Trip> {
     const result = await client.GET("/api/v1/trips/{tripId}", {
       params: { path: { tripId } },
     });
-    return unwrap(result, "Failed to load trip");
+    return unwrap(result);
   }
 
   async generateTripRoute(
@@ -1090,7 +1091,7 @@ class ApiService {
           : {}),
       },
     });
-    return unwrap(result, "Failed to generate trip route");
+    return unwrap(result);
   }
 
   async joinTrip(tripId: string, inviteCode: string): Promise<void> {
@@ -1107,14 +1108,14 @@ class ApiService {
     const result = await client.POST("/api/v1/group-rides", {
       body: { name },
     });
-    return unwrap(result, "Failed to create group ride");
+    return unwrap(result);
   }
 
   async joinGroupRide(code: string): Promise<GroupRideDetail> {
     const result = await client.POST("/api/v1/group-rides/{code}/join", {
       params: { path: { code } },
     });
-    return unwrap(result, "Failed to join group ride");
+    return unwrap(result);
   }
 
   async leaveGroupRide(groupRideId: string): Promise<void> {
@@ -1135,7 +1136,7 @@ class ApiService {
     const result = await client.GET("/api/v1/group-rides/{id}", {
       params: { path: { id: groupRideId } },
     });
-    return unwrap(result, "Failed to load group ride");
+    return unwrap(result);
   }
 
   // ── Reviews ──
@@ -1144,7 +1145,7 @@ class ApiService {
     const result = await client.GET("/api/v1/roads/{segmentId}/reviews", {
       params: { path: { segmentId } },
     });
-    return unwrap(result, "Failed to load reviews");
+    return unwrap(result);
   }
 
   async submitReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {
@@ -1157,7 +1158,7 @@ class ApiService {
         ...(payload.photos != null ? { photos: payload.photos } : {}),
       },
     });
-    return unwrap(result, "Failed to submit review");
+    return unwrap(result);
   }
 
   /**
@@ -1202,7 +1203,7 @@ class ApiService {
         ...(payload.photos != null ? { photos: payload.photos } : {}),
       },
     });
-    return unwrap(result, "Failed to update review");
+    return unwrap(result);
   }
 
   async deleteReview(segmentId: string): Promise<void> {
@@ -1256,7 +1257,7 @@ class ApiService {
         signal: options?.signal,
       },
     );
-    return unwrap(result, "Failed to upload review photos");
+    return unwrap(result);
   }
 
   async voteOnReview(
@@ -1267,7 +1268,7 @@ class ApiService {
       params: { path: { reviewId } },
       body: { is_helpful: isHelpful },
     });
-    return unwrap(result, "Failed to vote on review");
+    return unwrap(result);
   }
 
   async clearReviewVote(reviewId: string): Promise<ReviewVoteResult> {
@@ -1275,24 +1276,24 @@ class ApiService {
       "/api/v1/roads/reviews/{reviewId}/vote",
       { params: { path: { reviewId } } },
     );
-    return unwrap(result, "Failed to clear review vote");
+    return unwrap(result);
   }
 
   // ── Commute ──
 
   async getCommuteRoutes(): Promise<CommuteRoute[]> {
     const result = await client.GET("/api/v1/commute/routes");
-    return unwrap(result, "Failed to load commute routes");
+    return unwrap(result);
   }
 
   async getCommuteStatus(): Promise<CommuteStatus> {
     const result = await client.GET("/api/v1/commute/status");
-    return unwrap(result, "Failed to load commute status");
+    return unwrap(result);
   }
 
   async getCommuteAlternatives(): Promise<CommuteAlternativesResponse> {
     const result = await client.GET("/api/v1/commute/alternatives");
-    return unwrap(result, "Failed to load commute alternatives");
+    return unwrap(result);
   }
 
   async getCommuteStats(
@@ -1301,7 +1302,7 @@ class ApiService {
     const result = await client.GET("/api/v1/commute/stats", {
       params: { query: { period } },
     });
-    return unwrap(result, "Failed to load commute stats");
+    return unwrap(result);
   }
 
   async setPrimaryCommuteRoute(routeId: string): Promise<CommuteRoute> {
@@ -1309,7 +1310,7 @@ class ApiService {
       "/api/v1/commute/routes/{routeId}/primary",
       { params: { path: { routeId } } },
     );
-    return unwrap(result, "Failed to set primary commute route");
+    return unwrap(result);
   }
 
   // ── Weather ──
@@ -1325,7 +1326,7 @@ class ApiService {
     const result = await client.POST("/api/v1/weather/route", {
       body: { route },
     });
-    return unwrap(result, "Failed to load route weather");
+    return unwrap(result);
   }
 
   // ── Mountain Passes (US-11) ──
@@ -1343,7 +1344,7 @@ class ApiService {
           },
         },
       });
-      const page = unwrap(result, "Failed to load passes");
+      const page = unwrap(result);
       passes.push(...page);
       if (page.length < pageSize) return passes;
     }
@@ -1359,7 +1360,7 @@ class ApiService {
     const result = await client.POST("/api/v1/passes/check-route", {
       body: { route, buffer_m: bufferM ?? 1500 },
     });
-    return unwrap(result, "Failed to check passes");
+    return unwrap(result);
   }
 
   // ── POI / Accommodations (US-10) ──
@@ -1378,7 +1379,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load accommodations");
+    return unwrap(result);
   }
 
   async listPois(
@@ -1403,7 +1404,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load POIs");
+    return unwrap(result);
   }
 
   async listPoisAlongRoute(
@@ -1420,7 +1421,7 @@ class ApiService {
         ...(options.kinds !== undefined ? { kinds: options.kinds } : {}),
       },
     });
-    return unwrap(result, "Failed to load POIs along route");
+    return unwrap(result);
   }
 
   // ── Gamification: Badges (US-28) ──
@@ -1429,40 +1430,40 @@ class ApiService {
 
   async checkBadges(): Promise<CheckBadgesResponse> {
     const result = await client.POST("/api/v1/badges/check");
-    return unwrap(result, "Failed to check badges");
+    return unwrap(result);
   }
 
   // ── Gamification: Challenges (US-29) ──
 
   async listChallenges(): Promise<Challenge[]> {
     const result = await client.GET("/api/v1/challenges");
-    return unwrap(result, "Failed to load challenges");
+    return unwrap(result);
   }
 
   async getChallenge(challengeId: string): Promise<ChallengeDetail> {
     const result = await client.GET("/api/v1/challenges/{challengeId}", {
       params: { path: { challengeId } },
     });
-    return unwrap(result, "Failed to load challenge");
+    return unwrap(result);
   }
 
   async joinChallenge(challengeId: string): Promise<ChallengeJoinResponse> {
     const result = await client.POST("/api/v1/challenges/{challengeId}/join", {
       params: { path: { challengeId } },
     });
-    return unwrap(result, "Failed to join challenge");
+    return unwrap(result);
   }
 
   // ── Gamification: Exploration / Personal road map (US-30) ──
 
   async getExplorationStats(): Promise<ExplorationStats> {
     const result = await client.GET("/api/v1/exploration/stats");
-    return unwrap(result, "Failed to load exploration stats");
+    return unwrap(result);
   }
 
   async getRiddenSegments(): Promise<RiddenSegmentsList> {
     const result = await client.GET("/api/v1/exploration/ridden-segments");
-    return unwrap(result, "Failed to load ridden segments");
+    return unwrap(result);
   }
 
   async getNearbyUnriddenSegments(
@@ -1482,14 +1483,14 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load unridden segments");
+    return unwrap(result);
   }
 
   // ── Notification preferences ──
 
   async getNotificationPreferences(): Promise<NotificationPreferences> {
     const result = await client.GET("/api/v1/me/notification-preferences");
-    return unwrap(result, "Failed to load notification preferences");
+    return unwrap(result);
   }
 
   async updateNotificationPreferences(
@@ -1498,7 +1499,7 @@ class ApiService {
     const result = await client.PUT("/api/v1/me/notification-preferences", {
       body: patch as Schemas["UpdateNotificationPreferencesDto"],
     });
-    return unwrap(result, "Failed to update notification preferences");
+    return unwrap(result);
   }
 
   // ── Safety ──
@@ -1532,7 +1533,7 @@ class ApiService {
         ...(options.locale !== undefined ? { locale: options.locale } : {}),
       },
     });
-    return unwrap(result, "Failed to send crash alert");
+    return unwrap(result);
   }
 }
 
