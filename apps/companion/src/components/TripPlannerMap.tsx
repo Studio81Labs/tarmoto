@@ -44,6 +44,7 @@ import {
   type PoiPopoverActions,
 } from "@/components/map/MapPointPopover";
 import {
+  basemapPlaceCategoryDisplay,
   getBasemapPoiLayerIds,
   readBasemapPlace,
   topBasemapPlaceAt,
@@ -981,16 +982,16 @@ const TripPlannerMapContent = forwardRef<
         : null;
       store.insertWaypointBefore(dayIndex, anchorId, {
         id: `place-${place.lng},${place.lat}-${Date.now()}`,
-        // Unnamed POIs carry an empty name — fall back to the category so the
-        // saved waypoint isn't blank (the same label the card shows).
-        name: place.name || place.category,
+        // Unnamed POIs carry an empty name — fall back to the localized
+        // category so the saved waypoint isn't blank and matches the card.
+        name: place.name || basemapPlaceCategoryDisplay(place, t),
         ...(place.name ? { nameIsSource: true } : {}),
         location: { lat: place.lat, lng: place.lng },
         type,
       });
       setPlaceMenu(null);
     },
-    [trip],
+    [trip, t],
   );
   const handlePlacePlaceEndpoint = useCallback(
     (place: BasemapPlace, endpoint: "start" | "end") => {
@@ -1007,11 +1008,11 @@ const TripPlannerMapContent = forwardRef<
         { lat: place.lat, lng: place.lng },
         action,
         store.draftPlannerParameters ?? undefined,
-        { name: place.name || place.category },
+        { name: place.name || basemapPlaceCategoryDisplay(place, t) },
       );
       setPlaceMenu(null);
     },
-    [hasStart, hasEnd],
+    [hasStart, hasEnd, t],
   );
   const handleContextMenuAction = useCallback(
     (actionId: PlacementActionId) => {

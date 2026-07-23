@@ -1,4 +1,5 @@
 import type { Formatters } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 import type { BestRoad } from "@/lib/bestRoads";
 
 type RoadLabelInput = Pick<BestRoad, "id" | "road_name" | "road_number">;
@@ -23,11 +24,11 @@ export function formatRoadQualityColor(qualityScore: number | null): string {
   return "#EF4444";
 }
 
-export function formatRoadLabel(road: RoadLabelInput): string {
+export function formatRoadLabel(road: RoadLabelInput, t: Translate): string {
   return (
     road.road_name ??
     (road.road_number
-      ? `Road ${road.road_number}`
-      : `Segment ${road.id.slice(0, 6)}`)
+      ? t("Road {number}", { number: road.road_number })
+      : t("Segment {id}", { id: road.id.slice(0, 6) }))
   );
 }

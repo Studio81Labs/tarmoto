@@ -82,17 +82,29 @@ describe("readBasemapPlace", () => {
     expect(place).toEqual({
       name: "Zbýšov",
       category: "Station",
+      categoryKey: "Station",
       lng: 16.6,
       lat: 49.2,
       mapsUrl: expect.stringContaining("google.com/maps"),
     });
   });
 
+  it("leaves categoryKey null for an unrecognised subclass (title-cased fallback)", () => {
+    const place = readBasemapPlace(
+      poiFeature({ name: "Odd", subclass: "helipad" }),
+    );
+    expect(place).toMatchObject({ category: "Helipad", categoryKey: null });
+  });
+
   it("projects an unnamed POI with an empty name (category becomes the title)", () => {
     const place = readBasemapPlace(
       poiFeature({ class: "amenity", subclass: "parking" }),
     );
-    expect(place).toMatchObject({ name: "", category: "Parking" });
+    expect(place).toMatchObject({
+      name: "",
+      category: "Parking",
+      categoryKey: "Parking",
+    });
     // A whitespace-only name trims to empty too.
     expect(
       readBasemapPlace(poiFeature({ name: "   ", subclass: "bench" }))?.name,

@@ -77,10 +77,11 @@ describe("MapPointPopover", () => {
     const place = {
       name: "Brněnská oblast",
       category: "Information",
+      categoryKey: "Information",
       lat: 49.2,
       lng: 16.6,
       mapsUrl: "https://www.google.com/maps/search/?api=1&query=x",
-    };
+    } as const;
 
     it("shows name, category, OSM credit and the Google Maps link (info-only)", () => {
       renderPopover({ kind: "place", place });
@@ -101,6 +102,7 @@ describe("MapPointPopover", () => {
         place: {
           name: "",
           category: "Parking",
+          categoryKey: "Parking",
           lat: 49.2,
           lng: 16.6,
           mapsUrl: "https://www.google.com/maps/search/?api=1&query=x",
