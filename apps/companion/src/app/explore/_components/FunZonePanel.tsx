@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
   fetchFunZoneDetail,
+  funZoneSeasonLabel,
   type FunZoneDetail,
   type FunZoneListItem,
 } from "@/lib/discover";
@@ -85,11 +86,20 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
             {zone?.name ?? t("Unnamed zone")}
           </h2>
           <p className="mt-0.5 text-xs tabular-nums text-fg-dim">
-            {t("Score")}
-            {zone?.composite_score != null
-              ? format.decimal(zone.composite_score, 1)
-              : "—"}
-            {zone?.best_season ? ` · ${zone.best_season}` : ""}
+            {zone?.best_season
+              ? t("Score {score} · {season}", {
+                  score:
+                    zone.composite_score != null
+                      ? format.decimal(zone.composite_score, 1)
+                      : "—",
+                  season: t(funZoneSeasonLabel(zone.best_season)),
+                })
+              : t("Score {score}", {
+                  score:
+                    zone?.composite_score != null
+                      ? format.decimal(zone.composite_score, 1)
+                      : "—",
+                })}
           </p>
         </div>
         <button
@@ -104,7 +114,7 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
 
       {zone ? (
         <div className="grid grid-cols-3 gap-3 border-b border-line px-4 py-3 text-center">
-          <Stat label={t("Roads")} value={String(zone.road_count)} />
+          <Stat label={t("Roads")} value={format.integer(zone.road_count)} />
           <Stat
             label={t("Curve {unit}", { unit: format.splitDistanceKm(1).unit })}
             value={

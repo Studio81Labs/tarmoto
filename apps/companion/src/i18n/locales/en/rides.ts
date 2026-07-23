@@ -1,4 +1,5 @@
 export const rides = {
+  "Failed to load rides": "Failed to load rides",
   "0–5 scale": "0\u20135 scale",
   "All years": "All years",
   "All-time": "All-time",

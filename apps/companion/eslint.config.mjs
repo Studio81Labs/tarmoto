@@ -56,6 +56,18 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
+      "CallExpression[callee.name=/^set[A-Z]/] Property[key.name=/^(error|message|description)$/] > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Wrap rider-facing copy nested in state objects with t()/tDynamic before passing it to the setter.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^set[A-Z]/] Property[key.name=/^(error|message|description)$/] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Compose rider-facing copy nested in state objects through one ICU catalog message.",
+  },
+  {
+    selector:
       "CallExpression[callee.object.name='toast'][callee.property.name=/^(error|success|info|warning)$/] MemberExpression[computed=false][property.name='message']",
     message:
       "Do not expose arbitrary Error.message text in toasts. Use getUserFacingErrorMessage with translated fallback copy.",
@@ -357,8 +369,7 @@ const restrictedSyntaxSelectors = [
   {
     selector:
       "VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > Literal[value=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > :matches(ConditionalExpression, LogicalExpression) > Literal[value=/[A-Za-z]{2,}/]",
-    message:
-      "Translate rider-facing display variables before rendering them.",
+    message: "Translate rider-facing display variables before rendering them.",
   },
   {
     selector:

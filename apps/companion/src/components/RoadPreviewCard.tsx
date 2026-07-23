@@ -89,7 +89,11 @@ export function RoadPreviewCard({
         className="flex w-full items-center gap-3 p-3 text-left"
       >
         <span className="w-[18px] shrink-0 text-center font-mono text-xs font-extrabold text-fg-mute">
-          {String(segment.orderInDay + 1).padStart(2, "0")}
+          {format.number(segment.orderInDay + 1, {
+            useGrouping: false,
+            minimumIntegerDigits: 2,
+            maximumFractionDigits: 0,
+          })}
         </span>
         <span className="h-[46px] w-[68px] shrink-0 overflow-hidden rounded-lg border border-line">
           <MiniRouteSvg

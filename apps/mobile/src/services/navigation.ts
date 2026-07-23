@@ -19,6 +19,7 @@
  */
 import type { LatLng } from "@/types";
 import type { EnglishMessageKey } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // ── Maneuvers ─────────────────────────────────────────────────────────────
 
@@ -868,10 +869,10 @@ function formatWarningDistance(
 ): string {
   if (unit === "imperial") {
     const yd = Math.round((distanceM * 1.0936133) / 50) * 50;
-    return strings.yards.replace("{distance}", String(yd));
+    return strings.yards.replace("{distance}", getFormatters().integer(yd));
   }
   const m = Math.round(distanceM / 50) * 50;
-  return strings.meters.replace("{distance}", String(m));
+  return strings.meters.replace("{distance}", getFormatters().integer(m));
 }
 
 /**

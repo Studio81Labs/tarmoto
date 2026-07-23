@@ -910,7 +910,9 @@ function FunZoneCard({
       <View style={styles.funZoneStatsRow}>
         <FunZoneStat
           label={translate("Roads")}
-          value={zone.road_count > 0 ? zone.road_count.toString() : "—"}
+          value={
+            zone.road_count > 0 ? getFormatters().integer(zone.road_count) : "—"
+          }
         />
         <FunZoneStat label={translate("Curve km")} value={curveKm ?? "—"} />
         <FunZoneStat

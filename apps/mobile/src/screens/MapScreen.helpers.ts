@@ -65,7 +65,9 @@ export function getQualityTileUrlTemplate(
 export const APP_MAP_STYLE_URL = MAP_STYLE_URL;
 
 const FUN_ZONE_SEASON_LABELS = {
+  spring: "Spring",
   summer: "Summer",
+  autumn: "Autumn",
   year_round: "Year-round",
 } as const satisfies Record<string, EnglishMessageKey>;
 
@@ -76,7 +78,7 @@ export function formatFunZoneSeason(
 ): string {
   const key =
     FUN_ZONE_SEASON_LABELS[season as keyof typeof FUN_ZONE_SEASON_LABELS];
-  return key ? t(key) : season;
+  return t(key ?? "Unknown");
 }
 
 /**

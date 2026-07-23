@@ -364,7 +364,13 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
   const kmDelta =
     kmFraction == null
       ? t("first tracked month")
-      : `${kmFraction > 0 ? "+" : ""}${format.percent(kmFraction)} ${t("vs last month")}`;
+      : t("{percent} vs last month", {
+          percent: format.number(kmFraction, {
+            style: "percent",
+            signDisplay: "exceptZero",
+            maximumFractionDigits: 0,
+          }),
+        });
   // Hours arrive with one decimal of precision; the design shows whole
   // hours ("32 HRS"), so round the display value but compute the delta
   // from the raw values to avoid rounding-induced misleading deltas.
@@ -401,21 +407,30 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
       />
       <MetricTile
         label={t("Ride time")}
-        value={String(hoursNow)}
-        unit="HRS"
+        value={format.integer(hoursNow)}
+        unit={t("HRS")}
         delta={hoursDelta}
       />
       <MetricTile
         label={t("New roads")}
-        value={String(stats.new_roads)}
-        unit="DISCOVERED"
+        value={format.integer(stats.new_roads)}
+        unit={t("DISCOVERED")}
         delta={t("this month")}
       />
       <MetricTile
         accentNumber
         label={t("Lean angle")}
-        value={stats.max_lean_deg != null ? `${stats.max_lean_deg}°` : "—"}
-        unit="MAX"
+        value={
+          stats.max_lean_deg != null
+            ? format.number(stats.max_lean_deg, {
+                style: "unit",
+                unit: "degree",
+                unitDisplay: "narrow",
+                maximumFractionDigits: 0,
+              })
+            : "—"
+        }
+        unit={t("MAX")}
         delta={leanSub}
       />
     </div>

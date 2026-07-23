@@ -220,19 +220,19 @@ export default [
         },
         {
           selector:
-            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
+            "CallExpression[callee.name=/^set.*(Banner|Error|Message|Notice|Validation|Warning)$/] > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing validation/status messages with translate().",
         },
         {
           selector:
-            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+            "CallExpression[callee.name=/^set.*(Banner|Error|Message|Notice|Validation|Warning)$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap rider-facing conditional validation/status messages with translate().",
         },
         {
           selector:
-            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] MemberExpression[computed=false][property.name='message']",
+            "CallExpression[callee.name=/^set.*(Banner|Error|Message|Notice|Validation|Warning)$/] MemberExpression[computed=false][property.name='message']",
           message:
             "Do not expose arbitrary Error.message text. Use getUserFacingErrorMessage(error, translate(…)) so only cataloged API errors pass through.",
         },

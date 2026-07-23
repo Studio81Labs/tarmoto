@@ -160,6 +160,11 @@ export interface Formatters {
    * non-finite fallback ("—") as `duration()`.
    */
   durationCompact(totalMinutes: number): string;
+  /**
+   * Active-timer duration in `m:ss` / `h:mm:ss` form, with locale-aware
+   * digits. Non-finite and non-positive input renders the localized `0:00`.
+   */
+  durationClock(totalSeconds: number): string;
   distanceKm(km: number): string;
   distanceM(m: number): string;
   speed(kmh: number): string;
@@ -430,6 +435,26 @@ export function createFormatters(ctx: FormatContext): Formatters {
       return `${formattedHours} ${unitNumber(minutes, "minute", {
         unitDisplay: "narrow",
       })}`;
+    },
+    durationClock: (totalSeconds) => {
+      const total =
+        Number.isFinite(totalSeconds) && totalSeconds > 0
+          ? Math.floor(totalSeconds)
+          : 0;
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+      const unpadded = (value: number) =>
+        formatNumber(value, { useGrouping: false, maximumFractionDigits: 0 });
+      const padded = (value: number) =>
+        formatNumber(value, {
+          useGrouping: false,
+          minimumIntegerDigits: 2,
+          maximumFractionDigits: 0,
+        });
+      return hours > 0
+        ? `${unpadded(hours)}:${padded(minutes)}:${padded(seconds)}`
+        : `${unpadded(minutes)}:${padded(seconds)}`;
     },
     distanceKm: (km) =>
       units === "imperial"

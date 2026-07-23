@@ -234,13 +234,13 @@ function SegmentDetailContent({
         <Metric
           icon={<Activity size={14} />}
           label={t("Rider passes")}
-          value={String(segment.reading_count)}
+          value={format.integer(segment.reading_count)}
           caption={passLabel}
         />
         <Metric
           icon={<Users size={14} />}
           label={t("Recent riders")}
-          value={String(segment.riders_per_month)}
+          value={format.integer(segment.riders_per_month)}
           caption={t("per month")}
         />
         <Metric

@@ -313,6 +313,24 @@ describe("createFormatters — durationCompact", () => {
   });
 });
 
+describe("createFormatters — durationClock", () => {
+  const en = createFormatters({ locale: "en-US", units: "metric" });
+
+  it("formats active timers without rounding into the next second", () => {
+    expect(en.durationClock(0)).toBe("0:00");
+    expect(en.durationClock(65.9)).toBe("1:05");
+    expect(en.durationClock(3661)).toBe("1:01:01");
+    expect(en.durationClock(Number.NaN)).toBe("0:00");
+    expect(en.durationClock(-5)).toBe("0:00");
+  });
+
+  it("localizes every numeral, including padded fields", () => {
+    const ar = createFormatters({ locale: "ar-EG", units: "metric" });
+    expect(ar.durationClock(3661)).toBe("١:٠١:٠١");
+    expect(ar.durationClock(0)).toBe("٠:٠٠");
+  });
+});
+
 describe("createFormatters — unit-aware measurements", () => {
   const metric = createFormatters({ locale: "en-US", units: "metric" });
   const imperial = createFormatters({ locale: "en-US", units: "imperial" });

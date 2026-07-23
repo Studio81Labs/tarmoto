@@ -400,6 +400,8 @@ export default function TripCreateScreen() {
             {DAILY_KM_PRESETS.map((preset) => {
               const selected = preset.label === dailyKm.label;
               const presetLabel = translate(preset.label);
+              const minDistance = getFormatters().distanceKm(preset.min);
+              const maxDistance = getFormatters().distanceKm(preset.max);
               return (
                 <TouchableOpacity
                   key={preset.label}
@@ -411,11 +413,11 @@ export default function TripCreateScreen() {
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
                   accessibilityLabel={translate(
-                    "{value0}, {value1} to {value2} km",
+                    "{label}, {min} to {max} per day",
                     {
-                      value0: presetLabel,
-                      value1: preset.min,
-                      value2: preset.max,
+                      label: presetLabel,
+                      min: minDistance,
+                      max: maxDistance,
                     },
                   )}
                 >
@@ -433,9 +435,9 @@ export default function TripCreateScreen() {
                       selected && styles.stackPillMetaSelected,
                     ]}
                   >
-                    {translate("{min}–{max} km / day", {
-                      min: preset.min,
-                      max: preset.max,
+                    {translate("{min}–{max} per day", {
+                      min: minDistance,
+                      max: maxDistance,
                     })}
                   </Text>
                 </TouchableOpacity>

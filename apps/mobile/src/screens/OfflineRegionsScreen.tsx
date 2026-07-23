@@ -198,8 +198,8 @@ export default function OfflineRegionsScreen() {
             >
               <Icon name="map-marker-plus-outline" size={20} color={INK} />
               <Text style={styles.primaryBtnLabel}>
-                {translate("Save current area ({distance} km)", {
-                  distance: DEFAULT_SAVE_RADIUS_KM,
+                {translate("Save current area ({distance})", {
+                  distance: getFormatters().distanceKm(DEFAULT_SAVE_RADIUS_KM),
                 })}
               </Text>
             </TouchableOpacity>

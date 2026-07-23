@@ -18,19 +18,7 @@ export function formatLengthKm(m: number): string {
 }
 
 export function formatRelativeTime(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  const diffS = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffS < 60) return translate("just now");
-  const mins = Math.floor(diffS / 60);
-  if (mins < 60) return translate("{count}m ago", { count: mins });
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return translate("{count}h ago", { count: hrs });
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return translate("{count}d ago", { count: days });
-  const months = Math.floor(days / 30);
-  if (months < 12) return translate("{count}mo ago", { count: months });
-  return translate("{count}y ago", { count: Math.floor(months / 12) });
+  return getFormatters().relativeTime(iso, Date.now());
 }
 
 export function curvinessLabel(score: number): string {

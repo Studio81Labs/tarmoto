@@ -271,7 +271,7 @@ function dayPoint(date: Date, format: Formatters): DistancePoint {
   const key = localDateKey(date);
   return {
     key,
-    axisLabel: String(date.getDate()),
+    axisLabel: format.integer(date.getDate()),
     tooltipLabel: format.calendarDate(key),
     distanceKm: 0,
     rides: 0,

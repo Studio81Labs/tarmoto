@@ -117,7 +117,14 @@ function buildColumns(
       size: "70px",
       render: (r) => (
         <Mono className="text-ink">
-          {r.max_lean_angle != null ? `${Math.round(r.max_lean_angle)}°` : "—"}
+          {r.max_lean_angle != null
+            ? format.number(r.max_lean_angle, {
+                style: "unit",
+                unit: "degree",
+                unitDisplay: "narrow",
+                maximumFractionDigits: 0,
+              })
+            : "—"}
         </Mono>
       ),
     },

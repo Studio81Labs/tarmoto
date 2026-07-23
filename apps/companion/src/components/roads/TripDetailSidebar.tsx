@@ -154,7 +154,10 @@ function TripBody({ trip }: { trip: TripDetail }) {
       label: t("Ride time"),
       value: durationMin > 0 ? format.duration(durationMin) : "—",
     },
-    { label: t("Days"), value: String(trip.days.length || trip.num_days) },
+    {
+      label: t("Days"),
+      value: format.integer(trip.days.length || trip.num_days),
+    },
     {
       label: t("Elevation"),
       value: elevationM > 0 ? elevation.value : "—",

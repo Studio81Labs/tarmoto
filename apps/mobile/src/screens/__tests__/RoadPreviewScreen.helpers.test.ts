@@ -54,9 +54,9 @@ describe("formatRelativeTime", () => {
     jest.restoreAllMocks();
   });
 
-  it('returns "just now" for very recent timestamps', () => {
+  it('returns the locale formatter "now" label for recent timestamps', () => {
     expect(formatRelativeTime(new Date(NOW - 10_000).toISOString())).toBe(
-      "just now",
+      "now",
     );
   });
 
@@ -83,7 +83,7 @@ describe("formatRelativeTime", () => {
     );
     expect(
       formatRelativeTime(new Date(NOW - 36 * 3_600_000).toISOString()),
-    ).toBe("1d ago");
+    ).toBe("yesterday");
   });
 
   it("returns empty string for unparseable input", () => {

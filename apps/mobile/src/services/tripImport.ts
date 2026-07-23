@@ -13,8 +13,12 @@ import {
   types,
 } from "@react-native-documents/picker";
 import RNFS from "react-native-fs";
-import { parseImportedRoute, type ImportedRoute } from "@tarmoto/shared";
-import { translate } from "@/i18n";
+import {
+  parseImportedRoute,
+  type ImportedRoute,
+  type ImportErrorCode,
+} from "@tarmoto/shared";
+import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
 
 export type TripImportOutcome =
   | { ok: true; route: ImportedRoute; filename: string }
@@ -22,6 +26,22 @@ export type TripImportOutcome =
   | { ok: false; cancelled: false; error: string };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+const IMPORT_ERROR_MESSAGES = {
+  empty_file: "File is empty.",
+  unsupported_format: "Unsupported file format. Upload a GPX or KML file.",
+  invalid_xml: "File is not valid XML.",
+  gpx_without_route: "GPX file has no track or route points.",
+  kml_without_linestring: "KML file has no LineString coordinates.",
+  too_few_points: "Route needs at least two points.",
+} as const satisfies Record<ImportErrorCode, EnglishMessageKey>;
+
+export function importErrorMessage(
+  error: ImportErrorCode,
+  t: Translate = translate,
+): string {
+  return t(IMPORT_ERROR_MESSAGES[error]);
+}
 
 /**
  * Open the system document picker, read the chosen file, and parse it.
@@ -147,7 +167,11 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
 
   const parsed = parseImportedRoute(text, filename);
   if (!parsed.ok) {
-    return { ok: false, cancelled: false, error: parsed.error };
+    return {
+      ok: false,
+      cancelled: false,
+      error: importErrorMessage(parsed.error),
+    };
   }
   return { ok: true, route: parsed.route, filename };
 }

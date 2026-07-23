@@ -14,14 +14,12 @@ import {
 } from "@tarmoto/ui";
 import type { RidesQueryState } from "./useRidesQuery";
 import { PlaceSearch, type PlaceValue } from "./PlaceSearch";
+import { useFormat } from "@/format/FormatProvider";
 
 // Ride-type segmented control. "all" is a UI sentinel that clears the `type`
 // filter; the rest map 1:1 to the backend ride_type values.
 // "any" is a UI sentinel that clears the corresponding quality bound.
-const QUALITY_OPTIONS: SelectOption[] = [
-  { value: "any", label: "Any" },
-  ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
-];
+const QUALITY_VALUES = [1, 2, 3, 4, 5] as const;
 
 const TYPE_OPTIONS: { value: string; label: EnglishMessageKey }[] = [
   { value: "all", label: "All" },
@@ -85,6 +83,7 @@ function useDebouncedNumberDraft(
 
 export function RidesFilters({ state, update, reset }: Props) {
   const t = useTranslation();
+  const format = useFormat();
   // Local state for the search box — debounced before writing to URL.
   const [searchLocal, setSearchLocal] = useState(state.q ?? "");
   useEffect(() => {
@@ -156,13 +155,13 @@ export function RidesFilters({ state, update, reset }: Props) {
   };
   const labelClass =
     "font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-fg-dim";
-  // Only the "any" sentinel is a translatable word — the 1-5 star options are
-  // numerals, left as-is (translating them would be meaningless noise).
-  // SelectOption's `label` is typed ReactNode (it also renders JSX elsewhere
-  // in the app); this array's own literals are always plain strings.
-  const qualityOptions = QUALITY_OPTIONS.map((opt) =>
-    opt.value === "any" ? { ...opt, label: t("Any") } : opt,
-  );
+  const qualityOptions: SelectOption[] = [
+    { value: "any", label: t("Any") },
+    ...QUALITY_VALUES.map((value) => ({
+      value: String(value),
+      label: format.integer(value),
+    })),
+  ];
   const typeOptions = TYPE_OPTIONS.map((opt) => ({
     ...opt,
     label: t(opt.label),
