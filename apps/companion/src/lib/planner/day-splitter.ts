@@ -379,12 +379,21 @@ export function splitIntoDays(
       timeMin:
         totalTimeMin > 0 ? Math.round((totalTimeMin * dayKm) / totalKm) : 0,
       quality: dayQuality(daySegments, dayKm, (totalTimeMin * dayKm) / totalKm),
-      startTown:
-        d === 0 ? t("Start") : boundaryLabel(boundaries[d]!, format, t),
+      startTown: d === 0 ? t("Start") : boundaryLabel(boundaries[d]!, format),
       endTown:
-        d === boundaries.length - 2
-          ? t("Finish")
-          : boundaryLabel(to, format, t),
+        d === boundaries.length - 2 ? t("Finish") : boundaryLabel(to, format),
+      ...(d > 0 && from.town?.poi.name.trim()
+        ? { startNameIsSource: true }
+        : {}),
+      ...(d < boundaries.length - 2 && to.town?.poi.name.trim()
+        ? { endNameIsSource: true }
+        : {}),
+      ...(d > 0 && from.town?.poi.poiCategory
+        ? { startPoiCategory: from.town.poi.poiCategory }
+        : {}),
+      ...(d < boundaries.length - 2 && to.town?.poi.poiCategory
+        ? { endPoiCategory: to.town.poi.poiCategory }
+        : {}),
       suggestedStays: to.town
         ? [to.town.poi, ...stays.filter((poi) => poi.id !== to.town!.poi.id)]
         : stays,
@@ -403,8 +412,7 @@ function boundaryLabel(
     town: TownOnRoute | null;
   },
   format: Formatters,
-  t: Translate,
 ): string {
-  if (boundary.town) return boundary.town.poi.name.trim() || t("Unnamed");
+  if (boundary.town) return boundary.town.poi.name.trim();
   return format.distanceKm(Math.round(boundary.km));
 }

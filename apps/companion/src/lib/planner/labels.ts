@@ -75,6 +75,25 @@ export function waypointDisplayName(
     : t(label);
 }
 
+/** Render a day-plan boundary without turning display-only copy into data. */
+export function dayPlanBoundaryDisplayName(
+  name: string,
+  nameIsSource: boolean | undefined,
+  poiCategory: PoiCategory | undefined,
+  type: "start" | "end",
+  t: Translate,
+): string {
+  return waypointDisplayName(
+    {
+      type,
+      ...(name ? { name } : {}),
+      ...(nameIsSource ? { nameIsSource: true } : {}),
+      ...(poiCategory ? { poiCategory } : {}),
+    },
+    t,
+  );
+}
+
 /** Translate source-owned POI fallbacks; real venue/place names stay data. */
 export function poiDisplayName(
   poi: Pick<Poi, "category" | "name">,

@@ -302,6 +302,7 @@ function accommodationToPlannerPoi(stay: AccommodationSuggestion): PlannerPoi {
     id: stay.external_id,
     type: "stay",
     name: stay.name?.trim() ?? "",
+    poiCategory: stay.kind === "camp_site" ? "campground" : "biker_hotel",
     lat: stay.lat,
     lng: stay.lng,
     distanceFromRouteKm: stay.distance_km,

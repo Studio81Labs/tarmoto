@@ -1,7 +1,10 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import { waypointDisplayName } from "@/lib/planner/labels";
+import {
+  dayPlanBoundaryDisplayName,
+  waypointDisplayName,
+} from "@/lib/planner/labels";
 import { useMemo } from "react";
 import { Mono } from "@tarmoto/ui";
 import { deriveFlaggedSections, surfaceMixToPercents } from "@/lib/planner/api";
@@ -165,8 +168,20 @@ export function InspectTab({
           <span className="text-[12px] font-bold text-ink">
             {t("Inspecting Day {day} · {start} → {end}", {
               day: plan.dayNumber,
-              start: plan.startTown || t("Start"),
-              end: plan.endTown || t("Finish"),
+              start: dayPlanBoundaryDisplayName(
+                plan.startTown,
+                plan.startNameIsSource,
+                plan.startPoiCategory,
+                "start",
+                t,
+              ),
+              end: dayPlanBoundaryDisplayName(
+                plan.endTown,
+                plan.endNameIsSource,
+                plan.endPoiCategory,
+                "end",
+                t,
+              ),
             })}
           </span>
           {onClearPlan ? (

@@ -113,6 +113,8 @@ export interface PlannerPoi {
   id: string;
   type: PlannerPoiType;
   name: string;
+  /** Semantic category retained when the accommodation source has no name. */
+  poiCategory?: PlannerPoiCategory;
   lat: number;
   lng: number;
   distanceFromRouteKm?: number;
@@ -191,6 +193,12 @@ export interface DayPlan {
   quality: RouteQualitySummary;
   startTown: string;
   endTown: string;
+  /** True only when the matching town label came from the POI source. */
+  startNameIsSource?: boolean;
+  endNameIsSource?: boolean;
+  /** Semantic fallback for an unnamed overnight boundary. */
+  startPoiCategory?: PoiCategory;
+  endPoiCategory?: PoiCategory;
   /** True when no overnight town was near the target break distance. */
   noTownNearby?: boolean;
   suggestedStays: PlannerPoi[];

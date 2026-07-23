@@ -2785,6 +2785,40 @@ describe("useTripStore split lifecycle (addendum)", () => {
     // Original endpoints survive at the outer boundaries.
     expect(trip.days[0]!.waypoints[0]!.name).toBeUndefined();
     expect(trip.days[trip.days.length - 1]!.waypoints.at(-1)!.type).toBe("end");
+
+    // Raw-distance labels ("250 km", etc.) are display copy, never names.
+    expect(dayFinishWaypoint(trip.days[0]!.waypoints)!.name).toBeUndefined();
+    expect(
+      trip.days[1]!.waypoints.find((w) => w.type === "start")!.name,
+    ).toBeUndefined();
+  });
+
+  it("materializes unnamed stay boundaries with semantic categories only", () => {
+    seedRoutedTrip();
+    const plans = plansFor();
+    plans[0] = {
+      ...plans[0]!,
+      endTown: "",
+      endPoiCategory: "biker_hotel",
+    };
+    plans[1] = {
+      ...plans[1]!,
+      startTown: "",
+      startPoiCategory: "biker_hotel",
+    };
+    useTripStore.getState().applySplit(plans);
+    useTripStore.getState().materializeSplit();
+
+    const trip = useTripStore.getState().activeTrip!;
+    const dayOneFinish = dayFinishWaypoint(trip.days[0]!.waypoints)!;
+    const dayTwoStart = trip.days[1]!.waypoints.find(
+      (waypoint) => waypoint.type === "start",
+    )!;
+
+    expect(dayOneFinish).toMatchObject({ poiCategory: "biker_hotel" });
+    expect(dayOneFinish.name).toBeUndefined();
+    expect(dayTwoStart).toMatchObject({ poiCategory: "biker_hotel" });
+    expect(dayTwoStart.name).toBeUndefined();
   });
 
   it("interpolates a between-vertices break so consecutive days share the exact boundary", () => {

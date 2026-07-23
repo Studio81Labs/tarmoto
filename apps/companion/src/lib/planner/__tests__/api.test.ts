@@ -647,6 +647,7 @@ describe("plannerApi.getPois", () => {
         id: "w456",
         type: "stay",
         name: "Penzion U Lesa",
+        poiCategory: "biker_hotel",
         lat: 49.51,
         lng: 15.21,
         distanceFromRouteKm: 2.1,

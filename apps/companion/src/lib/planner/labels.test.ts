@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PLANNER_POI_CATEGORIES } from "@tarmoto/shared";
 import type { Translate } from "@/i18n";
 import {
+  dayPlanBoundaryDisplayName,
   hasCustomWaypointName,
   isLegacyGeneratedWaypointName,
   poiCategoryDisplayName,
@@ -48,6 +49,30 @@ describe("planner display labels", () => {
       ),
     ).toBe("Via 1");
     expect(hasCustomWaypointName("End", true)).toBe(true);
+  });
+
+  it("renders semantic day-plan boundaries without treating fallback copy as data", () => {
+    expect(
+      dayPlanBoundaryDisplayName(
+        "",
+        undefined,
+        "biker_hotel",
+        "end",
+        translated,
+      ),
+    ).toBe("xx:Biker hotel");
+    expect(
+      dayPlanBoundaryDisplayName(
+        "250 km",
+        undefined,
+        undefined,
+        "end",
+        translated,
+      ),
+    ).toBe("250 km");
+    expect(
+      dayPlanBoundaryDisplayName("Start", true, undefined, "end", translated),
+    ).toBe("Start");
   });
 
   it("recognizes only legacy generated names as migration sentinels", () => {

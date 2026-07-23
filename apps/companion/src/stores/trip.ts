@@ -1149,7 +1149,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                   }
                 : {
                     id: `split-start-${plan.dayNumber}`,
-                    ...(plan.startTown ? { name: plan.startTown } : {}),
+                    ...(plan.startNameIsSource && plan.startTown
+                      ? { name: plan.startTown, nameIsSource: true }
+                      : {}),
+                    ...(plan.startPoiCategory
+                      ? { poiCategory: plan.startPoiCategory }
+                      : {}),
                     location: { lng: startCoord[0]!, lat: startCoord[1]! },
                     type: "start",
                   };
@@ -1167,7 +1172,12 @@ export const useTripStore = create<TripState & TripStoreHistory>(
                   }
                 : {
                     id: `split-end-${plan.dayNumber}`,
-                    ...(plan.endTown ? { name: plan.endTown } : {}),
+                    ...(plan.endNameIsSource && plan.endTown
+                      ? { name: plan.endTown, nameIsSource: true }
+                      : {}),
+                    ...(plan.endPoiCategory
+                      ? { poiCategory: plan.endPoiCategory }
+                      : {}),
                     location: { lng: endCoord[0]!, lat: endCoord[1]! },
                     type: "end",
                   };
@@ -2369,8 +2379,10 @@ function dayPlansFromTripDays(days: TripDay[]): DayPlan[] {
   let endKm = 0;
   return days.map((day) => {
     endKm += day.distanceKm;
-    const startName = day.waypoints.find((w) => w.type === "start")?.name;
-    const finishName = dayFinishWaypoint(day.waypoints)?.name;
+    const start = day.waypoints.find((w) => w.type === "start");
+    const finish = dayFinishWaypoint(day.waypoints);
+    const startName = start?.name;
+    const finishName = finish?.name;
     return {
       dayNumber: day.dayNumber,
       segmentIds: [],
@@ -2385,6 +2397,10 @@ function dayPlansFromTripDays(days: TripDay[]): DayPlan[] {
       },
       startTown: startName ?? "",
       endTown: finishName ?? "",
+      ...(startName?.trim() ? { startNameIsSource: true } : {}),
+      ...(finishName?.trim() ? { endNameIsSource: true } : {}),
+      ...(start?.poiCategory ? { startPoiCategory: start.poiCategory } : {}),
+      ...(finish?.poiCategory ? { endPoiCategory: finish.poiCategory } : {}),
       suggestedStays: [],
       endKm: Math.round(endKm * 10) / 10,
     };

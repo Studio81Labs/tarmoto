@@ -81,6 +81,7 @@ import { fetchOvernightTowns } from "@/lib/planner/api";
 import { aggregateInspectDay } from "@/lib/planner/inspect-day";
 import { plannerApi } from "@/lib/planner/api";
 import {
+  dayPlanBoundaryDisplayName,
   isLegacyGeneratedWaypointName,
   waypointDisplayName,
 } from "@/lib/planner/labels";
@@ -559,8 +560,20 @@ export default function TripPlannerPage() {
         ? undefined
         : displayedTrip?.days[index];
       if (savedDay) return savedDay;
-      const startLabel = plan.startTown || t("Start");
-      const endLabel = plan.endTown || t("Finish");
+      const startLabel = dayPlanBoundaryDisplayName(
+        plan.startTown,
+        plan.startNameIsSource,
+        plan.startPoiCategory,
+        "start",
+        t,
+      );
+      const endLabel = dayPlanBoundaryDisplayName(
+        plan.endTown,
+        plan.endNameIsSource,
+        plan.endPoiCategory,
+        "end",
+        t,
+      );
       return {
         dayNumber: plan.dayNumber,
         title: `${startLabel} → ${endLabel}`,
@@ -853,13 +866,19 @@ export default function TripPlannerPage() {
             {
               lng: at.lng,
               lat: at.lat,
-              label: plan.endTown,
+              label: dayPlanBoundaryDisplayName(
+                plan.endTown,
+                plan.endNameIsSource,
+                plan.endPoiCategory,
+                "end",
+                t,
+              ),
               pinned: plan.breakPinned === true,
             },
           ]
         : [];
     });
-  }, [splitStatus, dayPlans, displayedTrip]);
+  }, [splitStatus, dayPlans, displayedTrip, t]);
   // Unnamed non-POI pins and legacy auto-generated names are reverse-geocoded
   // to a real place name once per placement (addendum §2). POI pins keep their
   // semantic category fallback instead of turning a generated address into a
