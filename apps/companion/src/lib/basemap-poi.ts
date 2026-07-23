@@ -9,6 +9,7 @@
  */
 
 import type { Map as MapLibreMap, MapGeoJSONFeature } from "maplibre-gl";
+import type { EnglishMessageKey } from "@/i18n";
 
 /** The OpenMapTiles source-layer the basemap POI symbols read from. */
 const POI_SOURCE_LAYER = "poi";
@@ -16,8 +17,18 @@ const POI_SOURCE_LAYER = "poi";
 /** A clickable basemap POI, projected from an OSM `poi` tile feature. */
 export interface BasemapPlace {
   name: string;
-  /** Friendly category label, e.g. "Parking", "Picnic area". */
+  /**
+   * Friendly category label in English, e.g. "Parking", "Picnic area". Used
+   * for the Google Maps search query and as the display fallback for an
+   * unrecognised OSM subclass. Rendered copy prefers `categoryKey` via `t()`.
+   */
   category: string;
+  /**
+   * Catalog key for the category when it maps to a known OSM class/subclass,
+   * or null for an unrecognised subclass (title-cased raw OSM data, which has
+   * no catalog entry). The popover renders `t(categoryKey)` when set.
+   */
+  categoryKey: EnglishMessageKey | null;
   lng: number;
   lat: number;
   /** Google Maps link built from the name + coordinates. */
@@ -43,7 +54,7 @@ export function getBasemapPoiLayerIds(map: MapLibreMap): string[] {
 
 // Nicer labels for the common OSM classes/subclasses; anything else falls back
 // to a title-cased subclass. Keyed by subclass first, then class.
-const LABEL_OVERRIDES: Record<string, string> = {
+const LABEL_OVERRIDES: Record<string, EnglishMessageKey> = {
   parking: "Parking",
   bicycle_parking: "Bike parking",
   waste_basket: "Waste bin",
@@ -86,7 +97,11 @@ function titleCase(value: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-/** Friendly category label for an OSM poi feature's class/subclass. */
+/**
+ * English category label for an OSM poi feature's class/subclass — the maps
+ * search query and the display fallback when the subclass is unrecognised.
+ * For rendered copy, prefer `basemapPlaceCategoryKey` + `t()`.
+ */
 export function basemapPlaceCategoryLabel(
   klass: string | undefined,
   subclass: string | undefined,
@@ -96,6 +111,23 @@ export function basemapPlaceCategoryLabel(
     LABEL_OVERRIDES[key] ??
     LABEL_OVERRIDES[klass ?? ""] ??
     (key ? titleCase(key) : "Place")
+  );
+}
+
+/**
+ * Catalog key for an OSM poi feature's category, or null when the subclass is
+ * unrecognised (a title-cased raw OSM value with no catalog entry). The empty
+ * class/subclass case maps to the translatable "Place" fallback.
+ */
+export function basemapPlaceCategoryKey(
+  klass: string | undefined,
+  subclass: string | undefined,
+): EnglishMessageKey | null {
+  const key = subclass || klass || "";
+  return (
+    LABEL_OVERRIDES[key] ??
+    LABEL_OVERRIDES[klass ?? ""] ??
+    (key ? null : "Place")
   );
 }
 
@@ -128,9 +160,11 @@ export function readBasemapPlace(
   const subclass =
     typeof props.subclass === "string" ? props.subclass : undefined;
   const category = basemapPlaceCategoryLabel(klass, subclass);
+  const categoryKey = basemapPlaceCategoryKey(klass, subclass);
   return {
     name,
     category,
+    categoryKey,
     lng,
     lat,
     mapsUrl: basemapPlaceMapsUrl(name || category, lat, lng),

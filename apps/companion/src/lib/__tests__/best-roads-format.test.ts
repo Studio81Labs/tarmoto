@@ -1,4 +1,5 @@
 import { createFormatters } from "@tarmoto/shared";
+import { translate } from "@/i18n";
 import {
   formatRoadLabel,
   formatRoadLength,
@@ -13,27 +14,36 @@ const format = createFormatters({ locale: "en", units: "metric" });
 describe("best-roads-format", () => {
   it("formats road labels from name, number, or segment id", () => {
     expect(
-      formatRoadLabel({
-        id: "segment-123456",
-        road_name: "Grossglockner High Alpine Road",
-        road_number: "B107",
-      }),
+      formatRoadLabel(
+        {
+          id: "segment-123456",
+          road_name: "Grossglockner High Alpine Road",
+          road_number: "B107",
+        },
+        translate,
+      ),
     ).toBe("Grossglockner High Alpine Road");
 
     expect(
-      formatRoadLabel({
-        id: "segment-123456",
-        road_name: null,
-        road_number: "B107",
-      }),
+      formatRoadLabel(
+        {
+          id: "segment-123456",
+          road_name: null,
+          road_number: "B107",
+        },
+        translate,
+      ),
     ).toBe("Road B107");
 
     expect(
-      formatRoadLabel({
-        id: "segment-123456",
-        road_name: null,
-        road_number: null,
-      }),
+      formatRoadLabel(
+        {
+          id: "segment-123456",
+          road_name: null,
+          road_number: null,
+        },
+        translate,
+      ),
     ).toBe("Segment segmen");
   });
 

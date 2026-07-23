@@ -61,11 +61,11 @@ type NavItem = {
   match?: string[];
 };
 
-const SECTION_LABELS: Record<Exclude<NavSection, null>, string> = {
+const SECTION_LABELS = {
   plan: "Plan",
   activity: "Activity",
   discover: "Discover",
-};
+} satisfies Record<Exclude<NavSection, null>, EnglishMessageKey>;
 
 const NAV_ITEMS: NavItem[] = [
   {
@@ -124,7 +124,7 @@ const NAV_ITEMS: NavItem[] = [
 const COLLAPSED_STORAGE_KEY = "tarmoto:sidebar-collapsed";
 
 type NavGroup =
-  | { type: "section"; label: string | null; key: string }
+  | { type: "section"; label: EnglishMessageKey | null; key: string }
   | { type: "item"; item: NavItem };
 
 function buildNavGroups(items: ReadonlyArray<NavItem>): NavGroup[] {
@@ -270,9 +270,10 @@ function SectionSplitter({
   label,
   collapsed,
 }: {
-  label: string | null;
+  label: EnglishMessageKey | null;
   collapsed: boolean;
 }) {
+  const t = useTranslation();
   if (label === null) return null;
   if (collapsed) {
     // Tightened divider — separates groups visually without a label.
@@ -281,7 +282,7 @@ function SectionSplitter({
   return (
     <div className="mt-3 mb-1 px-3">
       <Stamp tone="on-dark-dim" className="text-cream/40">
-        {label}
+        {t(label)}
       </Stamp>
     </div>
   );

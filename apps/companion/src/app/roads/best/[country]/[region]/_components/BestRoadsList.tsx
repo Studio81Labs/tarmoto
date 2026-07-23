@@ -48,7 +48,9 @@ export async function BestRoadsList({ roads }: Props) {
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <h3 className="truncate font-semibold">{formatRoadLabel(r)}</h3>
+              <h3 className="truncate font-semibold">
+                {formatRoadLabel(r, t)}
+              </h3>
               <p className="text-xs text-fg-dim">
                 {formatRoadLength(r.length_m, format)} ·{" "}
                 {t(surfaceTypeLabel(r.surface_type))}
