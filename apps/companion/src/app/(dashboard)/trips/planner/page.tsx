@@ -1690,8 +1690,15 @@ export default function TripPlannerPage() {
             handlePromotedToServer(hydrated.id);
           }
           toast.success(t("Names saved"));
-        } catch {
-          toast.error(t("Couldn't save the names. Try again."));
+        } catch (err) {
+          // The unsaved-import branch mints a trip (importRoute) and can hit
+          // the max_active_trips 403 — route it to the upgrade modal like the
+          // full-save path, not a generic toast.
+          if (isFeatureLimitError(err) && tier) {
+            setUpgradeModalOpen(true);
+          } else {
+            toast.error(t("Couldn't save the names. Try again."));
+          }
         } finally {
           setSavingRoute(false);
         }
@@ -2458,11 +2465,19 @@ export default function TripPlannerPage() {
         setSelectedOptionId(selected?.id ?? option.id);
         setActiveTrip(selected?.trip ?? option.trip);
         setFitRouteToken((t) => t + 1);
-      } catch {
+      } catch (err) {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
-        toast.error(t("Could not select this route option. Please try again."));
+        // Regenerating a completed trip re-mints it (assertCanMintOpenTrip) and
+        // can hit the max_active_trips 403 — surface the upgrade modal.
+        if (isFeatureLimitError(err) && tier) {
+          setUpgradeModalOpen(true);
+        } else {
+          toast.error(
+            t("Could not select this route option. Please try again."),
+          );
+        }
       } finally {
         if (requestTokenRef.current === requestToken) {
           generationLockRef.current = false;
@@ -2479,6 +2494,7 @@ export default function TripPlannerPage() {
       serverTripId,
       setActiveTrip,
       setGenerating,
+      tier,
     ],
   );
   const totalDistanceKm = useMemo(() => {
