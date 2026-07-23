@@ -24,6 +24,7 @@ import {
   QUALITY_CONFIG,
   qualityProvenanceLabel,
   scoreToTier,
+  surfaceTypeLabel,
 } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -204,7 +205,7 @@ function SegmentDetailContent({
         </div>
         <div className="min-w-0">
           <div className="truncate font-sans text-[20px] font-extrabold leading-[1.1] tracking-[-0.5px] text-ink">
-            {segmentTitle(segment)}
+            {segmentTitle(segment, t)}
           </div>
           <Mono className="mt-1 block text-[11px] text-fg-mute">
             {segment.road_number ? `${segment.road_number} · ` : ""}
@@ -212,7 +213,7 @@ function SegmentDetailContent({
           </Mono>
           <div className="mt-[9px] flex flex-wrap gap-1.5">
             <Pill>{tier ? t(tier.label) : t("Unrated")}</Pill>
-            <Pill>{formatSurface(segment.surface_type)}</Pill>
+            <Pill>{t(surfaceTypeLabel(segment.surface_type))}</Pill>
           </div>
           {provenance ? (
             <div className="mt-2 text-[11px] italic text-fg-mute">
@@ -497,14 +498,15 @@ function Pill({ children }: { children: ReactNode }) {
   );
 }
 
-function segmentTitle(segment: RoadSegmentDetailResponse): string {
-  return segment.road_name ?? segment.road_number ?? `Segment ${segment.id}`;
-}
-
-function formatSurface(surface: string): string {
-  return surface
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+function segmentTitle(
+  segment: RoadSegmentDetailResponse,
+  t: Translate,
+): string {
+  return (
+    segment.road_name ??
+    segment.road_number ??
+    t("Segment {id}", { id: segment.id })
+  );
 }
 
 function trendPoints(points: RoadSegmentDetailResponse["quality_history"]) {
