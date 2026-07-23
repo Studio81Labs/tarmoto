@@ -899,8 +899,8 @@ export const common = {
   "Up to": "Up to",
   "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).":
     "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",
-  "Up to {count} · JPEG, PNG, or WebP · max {sizeMb} MB each":
-    "Up to {count} \u00b7 JPEG, PNG, or WebP \u00b7 max {sizeMb} MB each",
+  "Up to {count, plural, one {# photo} other {# photos}} · JPEG, PNG, or WebP · max {sizeMb} MB each":
+    "Up to {count, plural, one {# photo} other {# photos}} \u00b7 JPEG, PNG, or WebP \u00b7 max {sizeMb} MB each",
   "Updated weekly": "Updated weekly",
   "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today.":
     "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today.",
@@ -1080,6 +1080,14 @@ export const common = {
     "{count, plural, one {# unknown pass} other {# unknown passes}}",
   "{count, plural, one {# waypoint} other {# waypoints}}":
     "{count, plural, one {# waypoint} other {# waypoints}}",
+  "{count, plural, one {# advisory} other {# advisories}}":
+    "{count, plural, one {# advisory} other {# advisories}}",
+  "{count, plural, one {# person} other {# people}}":
+    "{count, plural, one {# person} other {# people}}",
+  "{count, plural, one {# STOP} other {# STOPS}}":
+    "{count, plural, one {# STOP} other {# STOPS}}",
+  "{count, plural, one {Flagged section · #} other {Flagged sections · #}}":
+    "{count, plural, one {Flagged section \u00b7 #} other {Flagged sections \u00b7 #}}",
   "{count, plural, one {DAY} other {DAYS}}":
     "{count, plural, one {DAY} other {DAYS}}",
   "{count, plural, one {PASS} other {PASSES}}":
@@ -1088,10 +1096,12 @@ export const common = {
     "{count, plural, one {pass} other {passes}}",
   "{count, plural, one {{n} ride} other {{n} rides}}":
     "{count, plural, one {{n} ride} other {{n} rides}}",
+  "{count, plural, one {{n} public ride} other {{n} public rides}}":
+    "{count, plural, one {{n} public ride} other {{n} public rides}}",
+  "{count, plural, one {{n} total view} other {{n} total views}}":
+    "{count, plural, one {{n} total view} other {{n} total views}}",
   "{count, plural, one {{n} view} other {{n} views}}":
     "{count, plural, one {{n} view} other {{n} views}}",
-  "{count} STOPS": "{count} STOPS",
-  "{count} advisory": "{count} advisory",
   "{count} closed": "{count} closed",
   "{count} days left": "{count} days left",
   "{count} folder": "{count} folder",
@@ -1099,15 +1109,11 @@ export const common = {
   "{count} full": "{count} full",
   "{count} open": "{count} open",
   "{count} partial": "{count} partial",
-  "{count} people": "{count} people",
-  "{count} public rides": "{count} public rides",
   "{count} rider": "{count} rider",
   "{count} riders": "{count} riders",
-  "{count} rides": "{count} rides",
   "{count} segment to discover": "{count} segment to discover",
   "{count} segments highlighted": "{count} segments highlighted",
   "{count} segments to discover": "{count} segments to discover",
-  "{count} total views": "{count} total views",
   "{count} trip": "{count} trip",
   "{count} trips": "{count} trips",
   "{count} unknown": "{count} unknown",
@@ -1187,7 +1193,6 @@ export const common = {
   "Day {day}": "Day {day}",
   "Detour available · approx. {distance}":
     "Detour available · approx. {distance}",
-  "Flagged sections · {count}": "Flagged sections · {count}",
   "In {month}:": "In {month}:",
   "Inspecting Day {day} · {start} → {end}":
     "Inspecting Day {day} · {start} → {end}",

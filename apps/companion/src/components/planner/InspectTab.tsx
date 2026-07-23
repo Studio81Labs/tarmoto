@@ -289,7 +289,10 @@ export function InspectTab({
       {/* flagged sections */}
       <div>
         <SectionStamp n="03">
-          {t("Flagged sections · {count}", { count: flagged.length })}
+          {t(
+            "{count, plural, one {Flagged section · #} other {Flagged sections · #}}",
+            { count: flagged.length },
+          )}
         </SectionStamp>
         {flagged.length === 0 ? (
           <p className="text-[11.5px] leading-relaxed text-fg-mute">

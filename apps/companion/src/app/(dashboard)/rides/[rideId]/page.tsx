@@ -211,7 +211,7 @@ export default function RideDetailPage() {
 
   const rideName = ride.name?.trim()
     ? ride.name
-    : `Ride on ${format.date(ride.started_at)}`;
+    : t("Ride on {date}", { date: format.date(ride.started_at) });
   const avgTier = scoreToQualityTier(ride.avg_road_quality);
   // Weekday dropped — `format.date` has no weekday slot (accepted change,
   // migration recipe §Global Constraints).
@@ -764,7 +764,13 @@ function RoadSegments({
           <div>
             <Stamp>{t("Road segments")}</Stamp>
             <div className="mt-0.5 text-[15px] font-extrabold text-ink">
-              {t("{count} roads ridden", { count: segments.length })}
+              {t(
+                "{count, plural, one {{n} road ridden} other {{n} roads ridden}}",
+                {
+                  count: segments.length,
+                  n: format.integer(segments.length),
+                },
+              )}
             </div>
           </div>
           {total != null && (

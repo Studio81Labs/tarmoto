@@ -558,9 +558,12 @@ function RoadMapPageInner() {
               partial map read as the rider's whole history. */}
           {mapView === "routes" && !tracksError && rideTracksTruncated && (
             <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-paper/85 px-3 py-1.5 text-[11px] font-semibold text-fg-dim backdrop-blur">
-              {t("Showing your {count} most recent rides", {
-                count: rideTracks.length,
-              })}
+              {t(
+                "Showing your {count, plural, one {# most recent ride} other {# most recent rides}}",
+                {
+                  count: rideTracks.length,
+                },
+              )}
             </div>
           )}
           <SegmentDetailSidebar
@@ -975,9 +978,13 @@ function MapLegend({ riddenCount, format }: MapLegendProps) {
     <div className="absolute top-[60px] left-4 z-10 rounded-xl bg-paper/80 border border-line backdrop-blur px-4 py-3 text-xs text-ink space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-accent" />
-        {t("Ridden ({count} segments)", {
-          count: format.integer(riddenCount),
-        })}
+        {t(
+          "{count, plural, one {Ridden ({n} segment)} other {Ridden ({n} segments)}}",
+          {
+            count: riddenCount,
+            n: format.integer(riddenCount),
+          },
+        )}
       </div>
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-fg-mute" />

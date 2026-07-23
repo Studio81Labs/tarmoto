@@ -17,6 +17,7 @@ describe("mobile i18n", () => {
 
   it("translates registered copy and ICU values", () => {
     expect(translate("Home")).toBe("Home");
+    expect(translate("Edit contact")).toBe("Edit contact");
     expect(translate("Code: {code}", { code: "ABC123" })).toBe("Code: ABC123");
     expect(translate("e.g. 8f3d0c1e-...")).toBe("e.g. 8f3d0c1e-...");
     expect(translate("Day {day}", { day: 2 })).toBe("Day 2");

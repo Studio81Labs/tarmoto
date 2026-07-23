@@ -351,6 +351,21 @@ const restrictedSyntaxSelectors = [
     message:
       "Replace conditional rider-facing copy templates with one ICU catalog message.",
   },
+  // Display copy is sometimes assigned to a descriptive local before JSX
+  // renders it. Cover the common semantic names without matching protocol
+  // names such as iconName, filename, route layer IDs, or CSS class tokens.
+  {
+    selector:
+      "VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > Literal[value=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > :matches(ConditionalExpression, LogicalExpression) > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Translate rider-facing display variables before rendering them.",
+  },
+  {
+    selector:
+      "VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > :matches(ConditionalExpression, LogicalExpression) > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+    message:
+      "Compose rider-facing display-variable templates through one ICU catalog message.",
+  },
 ];
 
 export default [

@@ -398,9 +398,12 @@ export default function StatsPage() {
           <SectionHeading
             className="mb-[18px]"
             stamp={t("Year-over-year")}
-            title={`${t("Monthly distance")} · ${t("last {count} years", {
-              count: yoyYears.length,
-            })}`}
+            title={`${t("Monthly distance")} · ${t(
+              "{count, plural, one {last # year} other {last # years}}",
+              {
+                count: yoyYears.length,
+              },
+            )}`}
             caption={t("{unit} / month", { unit: distanceUnit })}
           />
           <div className="h-72">

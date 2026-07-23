@@ -1086,9 +1086,12 @@ function ExplorerPageInner() {
           {showMyRides && rideTracksTruncated && (
             <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-cream/90 px-3 py-1.5 text-[11px] font-semibold text-fg-dim shadow-[0_4px_12px_rgba(14,14,16,0.12)] backdrop-blur-sm">
               <Info size={13} className="shrink-0 text-accent" aria-hidden />
-              {t("Showing your {count} most recent routes", {
-                count: rideTracks.length,
-              })}
+              {t(
+                "Showing your {count, plural, one {# most recent route} other {# most recent routes}}",
+                {
+                  count: rideTracks.length,
+                },
+              )}
             </div>
           )}
           <SegmentDetailSidebar
@@ -1351,7 +1354,10 @@ function FunZonesBlock({
                       </span>
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] text-fg-dim">
-                      {t("{count} roads", { count: zone.road_count })}
+                      {t("{count, plural, one {{n} road} other {{n} roads}}", {
+                        count: zone.road_count,
+                        n: format.integer(zone.road_count),
+                      })}
                       {zone.total_curve_km != null
                         ? ` · ${format.distanceKm(zone.total_curve_km)} ${t("curves")}`
                         : ""}

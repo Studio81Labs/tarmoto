@@ -345,7 +345,9 @@ function ClosuresPanelBody({
             </span>
             {" • "}
             <span className="text-sky-700">
-              {t("{count} advisory", { count: counts.advisory })}
+              {t("{count, plural, one {# advisory} other {# advisories}}", {
+                count: counts.advisory,
+              })}
             </span>
           </p>
 

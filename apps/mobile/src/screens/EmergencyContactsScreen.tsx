@@ -266,7 +266,10 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
   }, [mode, name, phone, isEmergency, onSaved]);
 
   const visible = mode !== null;
-  const title = mode?.kind === "create" ? "Add contact" : "Edit contact";
+  const title =
+    mode?.kind === "create"
+      ? translate("Add contact")
+      : translate("Edit contact");
 
   return (
     <Modal

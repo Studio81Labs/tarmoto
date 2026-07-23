@@ -422,6 +422,7 @@ export const en = {
   "Earned ({value0})": "Earned ({value0})",
   "Edit {value0}": "Edit {value0}",
   "Edit / delete": "Edit / delete",
+  "Edit contact": "Edit contact",
   "Edit or delete your review": "Edit or delete your review",
   "Edit profile": "Edit profile",
   "Edit your review": "Edit your review",

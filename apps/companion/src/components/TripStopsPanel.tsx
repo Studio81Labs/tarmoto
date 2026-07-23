@@ -349,7 +349,9 @@ export function TripStopsPanel({
           </div>
           {routeLines.length > 0 ? (
             <span className="font-mono text-[10px] text-fg-mute">
-              {t("{count} STOPS", { count: stops.length })}
+              {t("{count, plural, one {# STOP} other {# STOPS}}", {
+                count: stops.length,
+              })}
             </span>
           ) : null}
         </div>
