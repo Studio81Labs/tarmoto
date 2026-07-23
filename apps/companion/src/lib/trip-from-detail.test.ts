@@ -236,12 +236,17 @@ describe("tripFromDetail", () => {
         {
           ...day,
           waypoints: day.waypoints.map((w) =>
-            w.waypoint_type === "hotel" ? { ...w, name: null } : w,
+            w.waypoint_type === "hotel"
+              ? { ...w, name: null, poi_category: "campground" as const }
+              : w,
           ),
         },
       ],
     });
-    expect(trip.days[0]!.overnightStop?.name).toBe("");
+    expect(trip.days[0]!.overnightStop).toMatchObject({
+      name: "",
+      poiCategory: "campground",
+    });
   });
 
   it("leaves overnightStop undefined when the day has no hotel waypoint", () => {

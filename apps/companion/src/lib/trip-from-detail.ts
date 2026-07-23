@@ -226,6 +226,9 @@ function mapDay(day: TripDetailDay, isFinalDay: boolean): TripDay {
         id: overnightSource.id,
         name: overnightSource.name?.trim() ?? "",
         type: "accommodation",
+        ...(overnightSource.poi_category
+          ? { poiCategory: overnightSource.poi_category }
+          : {}),
         location: { lat: overnightSource.lat, lng: overnightSource.lng },
       }
     : undefined;

@@ -368,6 +368,8 @@ export interface POI {
   id: string;
   name: string;
   type: "accommodation" | "fuel" | "restaurant" | "viewpoint" | "cafe";
+  /** Semantic planner category used when the source has no custom place name. */
+  poiCategory?: import("@/lib/planner/types").PoiCategory;
   location: { lng: number; lat: number };
   rating?: number;
   priceLevel?: number;
