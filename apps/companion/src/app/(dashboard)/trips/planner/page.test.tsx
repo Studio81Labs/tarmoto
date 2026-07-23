@@ -1949,12 +1949,12 @@ describe("TripPlannerPage", () => {
             {
               ...activeTrip.days[0]!.waypoints[0]!,
               id: "imp-wp-start",
-              name: "Trailhead",
+              name: "Start",
             },
             {
               ...activeTrip.days[0]!.waypoints[1]!,
               id: "imp-wp-end",
-              name: "Summit",
+              name: "End",
             },
           ],
         },
@@ -1994,8 +1994,8 @@ describe("TripPlannerPage", () => {
           ]),
           // Edited labels ride along.
           waypoints: expect.arrayContaining([
-            expect.objectContaining({ name: "Trailhead" }),
-            expect.objectContaining({ name: "Summit" }),
+            expect.objectContaining({ name: "Start" }),
+            expect.objectContaining({ name: "End" }),
           ]),
         }),
       ),

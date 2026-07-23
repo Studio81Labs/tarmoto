@@ -81,7 +81,6 @@ import { fetchOvernightTowns } from "@/lib/planner/api";
 import { aggregateInspectDay } from "@/lib/planner/inspect-day";
 import { plannerApi } from "@/lib/planner/api";
 import {
-  hasCustomWaypointName,
   isLegacyGeneratedWaypointName,
   waypointDisplayName,
 } from "@/lib/planner/labels";
@@ -4171,7 +4170,10 @@ function buildImportedRoutePayload(trip: Trip, t: Translate) {
         lat: waypoint.location.lat,
         lng: waypoint.location.lng,
       };
-      if (hasCustomWaypointName(waypoint.name)) payload.name = waypoint.name;
+      // Every non-blank imported label is source data. Do not run the legacy
+      // generated-role matcher here: a GPX/KML place may genuinely be named
+      // "Start", "End", "Via 1", or another former planner placeholder.
+      if (waypoint.name?.trim()) payload.name = waypoint.name;
       if (IMPORTABLE_WAYPOINT_TYPES.has(waypoint.type)) {
         payload.type = waypoint.type as "via" | "fuel" | "rest" | "photo";
       }

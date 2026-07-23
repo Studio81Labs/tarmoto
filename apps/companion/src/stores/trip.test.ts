@@ -576,6 +576,109 @@ describe("useTripStore server-driven route geometry (Task 9)", () => {
     expect(saved[3]!.type).toBe("end");
   });
 
+  it("preserves imported labels even when they resemble legacy generated roles", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 4, lat: 4 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    const trip = useTripStore.getState().activeTrip!;
+    useTripStore.setState({
+      activeTrip: {
+        ...trip,
+        importSourceFormat: "gpx",
+        days: [
+          {
+            ...trip.days[0]!,
+            waypoints: trip.days[0]!.waypoints.map((waypoint, index) => ({
+              ...waypoint,
+              name: ["Start", "Via 1", "End"][index],
+            })),
+          },
+        ],
+      },
+    });
+
+    expect(
+      useTripStore
+        .getState()
+        .saveWaypoints()
+        .map((waypoint) => waypoint.name),
+    ).toEqual(["Start", "Via 1", "End"]);
+  });
+
+  it("only migrates legacy labels that match the waypoint role and routing index", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 5, lat: 5 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    s.appendPlannerWaypoint(0, { lng: 3, lat: 3 });
+    const trip = useTripStore.getState().activeTrip!;
+    useTripStore.setState({
+      activeTrip: {
+        ...trip,
+        days: [
+          {
+            ...trip.days[0]!,
+            waypoints: trip.days[0]!.waypoints.map((waypoint, index) => ({
+              ...waypoint,
+              // The first via is routing order 1, so "Via 2" is real/source
+              // data there; the second via is order 2 and is a legacy sentinel.
+              name: ["Start", "Via 2", "Via 2", "Finish"][index],
+            })),
+          },
+        ],
+      },
+    });
+
+    expect(
+      useTripStore
+        .getState()
+        .saveWaypoints()
+        .map((waypoint) => waypoint.name),
+    ).toEqual([null, "Via 2", null, null]);
+  });
+
+  it("preserves an explicitly renamed label that resembles a legacy role", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    const startId =
+      useTripStore.getState().activeTrip!.days[0]!.waypoints[0]!.id;
+
+    useTripStore.getState().renameWaypoint(startId, "Start");
+
+    expect(useTripStore.getState().saveWaypoints()[0]!.name).toBe("Start");
+  });
+
+  it("preserves an ambiguous legacy-like name loaded from the server baseline", () => {
+    const s = useTripStore.getState();
+    s.appendPlannerWaypoint(0, { lng: 1, lat: 1 });
+    s.appendPlannerWaypoint(0, { lng: 2, lat: 2 });
+    const trip = useTripStore.getState().activeTrip!;
+    const loaded = {
+      ...trip,
+      id: "server-trip",
+      days: [
+        {
+          ...trip.days[0]!,
+          waypoints: trip.days[0]!.waypoints.map((waypoint, index) => ({
+            ...waypoint,
+            name: index === 0 ? "Start" : "End",
+          })),
+        },
+      ],
+    };
+
+    useTripStore.getState().setActiveTrip(loaded);
+
+    expect(
+      useTripStore
+        .getState()
+        .saveWaypoints()
+        .map((waypoint) => waypoint.name),
+    ).toEqual(["Start", "End"]);
+  });
+
   it("saveDays drops empty days, renumbers, and maps waypoint types", () => {
     const s = useTripStore.getState();
     // Build a 3-day trip: day 1 has waypoints, day 2 is empty, day 3 has waypoints.

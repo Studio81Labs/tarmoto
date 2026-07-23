@@ -5,10 +5,7 @@ export const MAX_TRIP_DAYS = 14;
 import type { Position as GeoJSONPosition } from "geojson";
 import { haversineKm } from "@tarmoto/shared";
 import { filterRoutingWaypoints, isRoutingWaypoint } from "@/lib/trip-routing";
-import {
-  hasCustomWaypointName,
-  isLegacyGeneratedWaypointName,
-} from "@/lib/planner/labels";
+import { isLegacyGeneratedWaypointName } from "@/lib/planner/labels";
 import type { RouteResponse } from "@/lib/api";
 import type {
   DayPlan,
@@ -500,23 +497,104 @@ const LOCAL_TO_BACKEND_WAYPOINT_TYPE: Record<
   accommodation: "hotel",
 };
 
-function activePlannerSaveWaypoints(waypoints: Waypoint[]): {
+type PlannerWaypointNameContext = {
+  /** GPX/KML waypoint labels are source data, even when they resemble roles. */
+  preserveLegacyLikeNames: boolean;
+  /** Names explicitly changed since load are user data, not migration sentinels. */
+  renamedWaypointIds: ReadonlySet<string>;
+};
+
+function isRoleMatchedLegacyGeneratedName(
+  waypoint: Waypoint,
+  routingOrder: number | undefined,
+  routingCount: number,
+): boolean {
+  const name = waypoint.name?.trim();
+  if (
+    !name ||
+    waypoint.poiCategory ||
+    !isLegacyGeneratedWaypointName(name) ||
+    routingOrder === undefined
+  ) {
+    return false;
+  }
+  if (name === "Start") {
+    return waypoint.type === "start" && routingOrder === 0;
+  }
+  if (name === "Finish" || name === "End") {
+    return (
+      waypoint.type === "end" && routingOrder === Math.max(0, routingCount - 1)
+    );
+  }
+  if (name === "Reroute via") return waypoint.type === "via";
+  const viaNumber = /^Via (\d+)$/.exec(name);
+  return (
+    waypoint.type === "via" &&
+    viaNumber !== null &&
+    Number(viaNumber[1]) === routingOrder
+  );
+}
+
+function activePlannerSaveWaypoints(
+  waypoints: Waypoint[],
+  nameContext: PlannerWaypointNameContext,
+): {
   lat: number;
   lng: number;
   name?: string | null;
   poi_category?: PoiCategory | null;
   type: BackendWaypointType;
 }[] {
-  return waypoints.map((w) => ({
-    lat: w.location.lat,
-    lng: w.location.lng,
-    // Always emit the `name` key (null for an unnamed via) — the save-route
-    // contract (SaveRouteBody) types it `string | null` and the store test
-    // asserts the key's presence on every waypoint.
-    name: hasCustomWaypointName(w.name) ? w.name : null,
-    poi_category: w.poiCategory ?? null,
-    type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
-  }));
+  const routingWaypoints = waypoints.filter(isRoutingWaypoint);
+  const routingOrder = new Map(
+    routingWaypoints.map((waypoint, order) => [waypoint, order] as const),
+  );
+  return waypoints.map((w) => {
+    const persistedName =
+      typeof w.name === "string" && w.name.trim() ? w.name : null;
+    const preserveLegacyLikeName =
+      nameContext.preserveLegacyLikeNames ||
+      nameContext.renamedWaypointIds.has(w.id) ||
+      Boolean(w.poiCategory);
+    const generatedLegacyName =
+      !preserveLegacyLikeName &&
+      isRoleMatchedLegacyGeneratedName(
+        w,
+        routingOrder.get(w),
+        routingWaypoints.length,
+      );
+    return {
+      lat: w.location.lat,
+      lng: w.location.lng,
+      // Always emit the `name` key (null for an unnamed/generated role) — the
+      // save-route contract types it `string | null`. Legacy cleanup is
+      // deliberately contextual so a real source label named "Start"/"End"
+      // is never destroyed merely because it resembles old generated copy.
+      name:
+        persistedName !== null && !generatedLegacyName ? persistedName : null,
+      poi_category: w.poiCategory ?? null,
+      type: LOCAL_TO_BACKEND_WAYPOINT_TYPE[w.type] ?? "via",
+    };
+  });
+}
+
+function plannerWaypointNameContext(
+  trip: Pick<Trip, "importSourceFormat">,
+  renamedWaypointIds: readonly string[],
+  savedWaypointNames: Readonly<Record<string, string | null>>,
+): PlannerWaypointNameContext {
+  const sourceNameWaypointIds = new Set(renamedWaypointIds);
+  // With no historical provenance column, a non-blank server baseline is
+  // ambiguous: it may be an old generated role or a genuine rider/source
+  // label with the same spelling. Preserve it rather than destructively
+  // guessing. Presentation still recognizes legacy roles semantically.
+  for (const [waypointId, name] of Object.entries(savedWaypointNames)) {
+    if (name?.trim()) sourceNameWaypointIds.add(waypointId);
+  }
+  return {
+    preserveLegacyLikeNames: Boolean(trip.importSourceFormat),
+    renamedWaypointIds: sourceNameWaypointIds,
+  };
 }
 
 /**
@@ -1691,17 +1769,34 @@ export const useTripStore = create<TripState & TripStoreHistory>(
     },
 
     saveWaypoints: () => {
-      const { activeTrip, selectedDayIndex } = get();
+      const {
+        activeTrip,
+        selectedDayIndex,
+        renamedWaypointIds,
+        savedWaypointNames,
+      } = get();
       if (!activeTrip) return [];
       const day = activeTrip.days[selectedDayIndex];
       if (!day) return [];
-      return activePlannerSaveWaypoints(day.waypoints);
+      return activePlannerSaveWaypoints(
+        day.waypoints,
+        plannerWaypointNameContext(
+          activeTrip,
+          renamedWaypointIds,
+          savedWaypointNames,
+        ),
+      );
     },
 
     saveDays: () => {
-      const { activeTrip } = get();
+      const { activeTrip, renamedWaypointIds, savedWaypointNames } = get();
       if (!activeTrip) return [];
       const days = activeTrip.days;
+      const nameContext = plannerWaypointNameContext(
+        activeTrip,
+        renamedWaypointIds,
+        savedWaypointNames,
+      );
       const result: {
         dayNumber: number;
         title: string | null;
@@ -1731,6 +1826,7 @@ export const useTripStore = create<TripState & TripStoreHistory>(
           startLinked: predecessorSurvived ? (d.startLinked ?? false) : false,
           waypoints: activePlannerSaveWaypoints(
             normalizeDayFinish(d.waypoints),
+            nameContext,
           ),
         });
       }
