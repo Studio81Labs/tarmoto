@@ -132,8 +132,8 @@ import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
-import { useEntitlements, useLimit } from "@/hooks";
-import { isFeatureLimitError, tierLabel } from "@/lib/entitlements";
+import { useEntitlements } from "@/hooks";
+import { parseFeatureLimitError, tierLabel } from "@/lib/entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError, roadsApi, tripsApi } from "@/lib/api";
@@ -286,8 +286,12 @@ export default function TripPlannerPage() {
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const { tier } = useEntitlements();
-  const { limit: maxActiveTrips } = useLimit("max_active_trips");
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  // The cap the server enforced on the mint 403 — authoritative for the modal's
+  // CTA (the planner modal only ever opens from a limit rejection).
+  const [upgradeModalLimit, setUpgradeModalLimit] = useState<number | null>(
+    null,
+  );
   const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState<number>(
     PLANNER_DEFAULTS.dailyKmTarget,
@@ -1694,7 +1698,9 @@ export default function TripPlannerPage() {
           // The unsaved-import branch mints a trip (importRoute) and can hit
           // the max_active_trips 403 — route it to the upgrade modal like the
           // full-save path, not a generic toast.
-          if (isFeatureLimitError(err) && tier) {
+          const limitError = parseFeatureLimitError(err);
+          if (limitError && tier) {
+            setUpgradeModalLimit(limitError.limit);
             setUpgradeModalOpen(true);
           } else {
             toast.error(t("Couldn't save the names. Try again."));
@@ -1839,7 +1845,9 @@ export default function TripPlannerPage() {
       // with a 403 FEATURE_LIMIT_EXCEEDED — this IS the planner's primary
       // mint path (create-on-first-save), so it needs the same upgrade-modal
       // safety net as the /trips list's mint entry points.
-      if (isFeatureLimitError(err) && tier) {
+      const limitError = parseFeatureLimitError(err);
+      if (limitError && tier) {
+        setUpgradeModalLimit(limitError.limit);
         setUpgradeModalOpen(true);
       } else {
         toast.error(t("Could not save the route. Please try again."));
@@ -2471,7 +2479,9 @@ export default function TripPlannerPage() {
         }
         // Regenerating a completed trip re-mints it (assertCanMintOpenTrip) and
         // can hit the max_active_trips 403 — surface the upgrade modal.
-        if (isFeatureLimitError(err) && tier) {
+        const limitError = parseFeatureLimitError(err);
+        if (limitError && tier) {
+          setUpgradeModalLimit(limitError.limit);
           setUpgradeModalOpen(true);
         } else {
           toast.error(
@@ -3806,7 +3816,7 @@ export default function TripPlannerPage() {
           variant="modal"
           capability={{
             limit: "max_active_trips",
-            resolvedLimit: maxActiveTrips,
+            resolvedLimit: upgradeModalLimit,
           }}
           currentTier={tier}
           message={t("You've reached your trip limit on the {tier} plan.", {

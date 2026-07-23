@@ -44,7 +44,7 @@ import {
   type TripSortKey,
   type TripStatus,
 } from "@/lib/trip-filters";
-import { isFeatureLimitError, tierLabel } from "@/lib/entitlements";
+import { parseFeatureLimitError, tierLabel } from "@/lib/entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import {
   migrateLegacyFolders,
@@ -139,6 +139,11 @@ export default function TripListPage() {
   // minted a trip, or the count just hasn't refetched yet) can still let the
   // request through — the backend is the actual source of truth.
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  // The cap the server actually enforced on the mint 403 — authoritative for
+  // the modal's CTA even when the cached `maxActiveTrips` is stale.
+  const [upgradeModalLimit, setUpgradeModalLimit] = useState<number | null>(
+    null,
+  );
   // Deletes confirm through the app dialog — system dialogs are disallowed.
   const [confirmDelete, setConfirmDelete] = useState<
     | { kind: "folder"; folder: TripFolder }
@@ -404,7 +409,9 @@ export default function TripListPage() {
       }
       void invalidateTripsCache();
     } catch (err) {
-      if (isFeatureLimitError(err) && tier) {
+      const limitError = parseFeatureLimitError(err);
+      if (limitError && tier) {
+        setUpgradeModalLimit(limitError.limit);
         setUpgradeModalOpen(true);
       } else {
         setErrorBanner(t("Couldn't duplicate the trip. Try again."));
@@ -610,7 +617,7 @@ export default function TripListPage() {
             body={t(
               "Plan your first ride with the trip planner. Pick a region, tune the curves and asphalt, push it to your phone.",
             )}
-            {...(atTripLimit
+            {...(mintBlocked
               ? {}
               : {
                   action: {
@@ -705,7 +712,7 @@ export default function TripListPage() {
           variant="modal"
           capability={{
             limit: "max_active_trips",
-            resolvedLimit: maxActiveTrips,
+            resolvedLimit: upgradeModalLimit,
           }}
           currentTier={tier}
           message={t("You've reached your trip limit on the {tier} plan.", {

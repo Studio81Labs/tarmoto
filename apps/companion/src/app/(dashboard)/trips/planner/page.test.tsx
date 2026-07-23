@@ -2649,6 +2649,9 @@ describe("TripPlannerPage", () => {
     tripsApiCreateMock.mockRejectedValueOnce(
       new ApiError("Feature limit exceeded", 403, {
         code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_active_trips",
+        limit: 1,
+        current: 1,
       }),
     );
 

@@ -166,6 +166,9 @@ describe("trips page — max_active_trips gate", () => {
     tripsApiDuplicateMock.mockRejectedValue(
       new ApiError("Feature limit exceeded", 403, {
         code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_active_trips",
+        limit: 1,
+        current: 1,
       }),
     );
 
@@ -177,6 +180,11 @@ describe("trips page — max_active_trips gate", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(
       screen.getByText("You've reached your trip limit on the Free plan."),
+    ).toBeInTheDocument();
+    // The client cache said unlimited (null), but the modal's CTA derives from
+    // the 403's AUTHORITATIVE limit (1) — a Free rider still gets Upgrade to Pro.
+    expect(
+      screen.getByRole("button", { name: /Upgrade to Pro/i }),
     ).toBeInTheDocument();
   });
 
@@ -190,6 +198,9 @@ describe("trips page — max_active_trips gate", () => {
     tripsApiDuplicateMock.mockRejectedValue(
       new ApiError("Feature limit exceeded", 403, {
         code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_active_trips",
+        limit: 1,
+        current: 1,
       }),
     );
 
