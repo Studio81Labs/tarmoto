@@ -19,6 +19,7 @@ import {
   WARNING_NEAR_M,
 } from "../navigation";
 import type { LatLng } from "@/types";
+import { setActiveFormatContext } from "@/format";
 
 describe("bearingDeg + headingDelta", () => {
   it("bearings match cardinal directions", () => {
@@ -458,6 +459,33 @@ describe("phraseForAnnouncement", () => {
         { locale: "de" },
       ),
     ).toBe("In 300 Metern halten Sie sich leicht links.");
+  });
+
+  it("formats spoken distance digits with the voice locale, not the display locale", () => {
+    setActiveFormatContext({
+      locale: "ar-EG",
+      timeZone: "Africa/Cairo",
+      units: "metric",
+    });
+
+    try {
+      expect(
+        phraseForAnnouncement(
+          {
+            type: "warning-far",
+            maneuver: sampleManeuver,
+            distanceM: 287,
+          },
+          { locale: "de" },
+        ),
+      ).toBe("In 300 Metern links abbiegen auf Hlavní.");
+    } finally {
+      setActiveFormatContext({
+        locale: "en-US",
+        timeZone: "UTC",
+        units: "metric",
+      });
+    }
   });
 
   it("appends a 'stay left' hint on a sharp left turn in verbose mode", () => {

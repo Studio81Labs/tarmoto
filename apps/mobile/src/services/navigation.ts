@@ -19,7 +19,7 @@
  */
 import type { LatLng } from "@/types";
 import type { EnglishMessageKey } from "@/i18n";
-import { getFormatters } from "@/format";
+import { formatIntegerForLocale } from "@/format";
 
 // ── Maneuvers ─────────────────────────────────────────────────────────────
 
@@ -865,14 +865,18 @@ function ontoPhrase(
 function formatWarningDistance(
   distanceM: number,
   unit: DistanceUnit,
+  locale: VoiceLocale,
   strings: PhraseStrings,
 ): string {
+  const formatDistance = (distance: number) =>
+    formatIntegerForLocale(distance, TTS_BCP47_BY_LOCALE[locale]);
+
   if (unit === "imperial") {
     const yd = Math.round((distanceM * 1.0936133) / 50) * 50;
-    return strings.yards.replace("{distance}", getFormatters().integer(yd));
+    return strings.yards.replace("{distance}", formatDistance(yd));
   }
   const m = Math.round(distanceM / 50) * 50;
-  return strings.meters.replace("{distance}", getFormatters().integer(m));
+  return strings.meters.replace("{distance}", formatDistance(m));
 }
 
 /**
@@ -930,7 +934,12 @@ export function phraseForAnnouncement(
     case "warning-far": {
       if (!a.maneuver) return null;
       const base = maneuverPhrase(a.maneuver, strings);
-      const distance = formatWarningDistance(a.distanceM ?? 0, unit, strings);
+      const distance = formatWarningDistance(
+        a.distanceM ?? 0,
+        unit,
+        locale,
+        strings,
+      );
       const onto = verbose
         ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings)
         : "";
