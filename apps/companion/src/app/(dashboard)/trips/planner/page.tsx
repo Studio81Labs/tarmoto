@@ -861,20 +861,23 @@ export default function TripPlannerPage() {
         : [];
     });
   }, [splitStatus, dayPlans, displayedTrip]);
-  // Unnamed semantic pins and legacy auto-generated names are reverse-geocoded
-  // to a real place name once per placement (addendum §2).
+  // Unnamed non-POI pins and legacy auto-generated names are reverse-geocoded
+  // to a real place name once per placement (addendum §2). POI pins keep their
+  // semantic category fallback instead of turning a generated address into a
+  // custom name.
   const reverseGeocodedRef = useRef(new Set<string>());
   useEffect(() => {
     const seen = reverseGeocodedRef.current;
     const waypoints = selectedDay?.waypoints ?? [];
-    const needsPlaceName = (name: string | undefined) =>
-      !name?.trim() || isLegacyGeneratedWaypointName(name);
+    const needsPlaceName = (waypoint: Pick<Waypoint, "name" | "poiCategory">) =>
+      !waypoint.poiCategory &&
+      (!waypoint.name?.trim() || isLegacyGeneratedWaypointName(waypoint.name));
     const keyFor = (w: {
       id: string;
       location: { lat: number; lng: number };
     }) => `${w.id}:${w.location.lat.toFixed(4)}:${w.location.lng.toFixed(4)}`;
     for (const waypoint of waypoints) {
-      if (!needsPlaceName(waypoint.name)) continue;
+      if (!needsPlaceName(waypoint)) continue;
       const key = keyFor(waypoint);
       // Fire once per (waypoint, position) ever. We deliberately do NOT abort +
       // re-issue on cleanup: with several default-named waypoints, the first
@@ -897,11 +900,7 @@ export default function TripPlannerPage() {
             .getState()
             .activeTrip?.days.flatMap((d) => d.waypoints)
             .find((w) => w.id === waypoint.id);
-          if (
-            current &&
-            keyFor(current) === key &&
-            needsPlaceName(current.name)
-          ) {
+          if (current && keyFor(current) === key && needsPlaceName(current)) {
             renameWaypoint(waypoint.id, placeName);
           }
         })

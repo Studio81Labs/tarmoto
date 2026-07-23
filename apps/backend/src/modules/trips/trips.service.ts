@@ -273,6 +273,7 @@ export class TripsService {
               sequence: wp.sequence,
               name: wp.name,
               waypoint_type: wp.waypoint_type,
+              poi_category: wp.poi_category,
               road_segment_id: wp.road_segment_id,
               notes: wp.notes,
               duration_min: wp.duration_min,

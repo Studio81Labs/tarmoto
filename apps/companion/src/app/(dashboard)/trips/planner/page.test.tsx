@@ -643,6 +643,52 @@ describe("TripPlannerPage", () => {
     expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
   });
 
+  it("keeps unnamed POI category fallbacks instead of reverse-geocoding them", async () => {
+    const reverseGeocode = vi
+      .spyOn(plannerApi, "reverseGeocode")
+      .mockResolvedValue("Generated address");
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [
+            activeTrip.days[0]!.waypoints[0]!,
+            {
+              id: "generic-via",
+              type: "via",
+              location: { lng: 10.45, lat: 46.52 },
+            },
+            {
+              id: "poi-via",
+              type: "via",
+              poiCategory: "cafe",
+              location: { lng: 10.5, lat: 46.56 },
+            },
+            activeTrip.days[0]!.waypoints[1]!,
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() => expect(reverseGeocode).toHaveBeenCalledTimes(1));
+    expect(reverseGeocode).toHaveBeenCalledWith(46.52, 10.45, {
+      format: expect.any(Object),
+    });
+    await waitFor(() =>
+      expect(storeState.renameWaypoint).toHaveBeenCalledWith(
+        "generic-via",
+        "Generated address",
+      ),
+    );
+    expect(storeState.renameWaypoint).not.toHaveBeenCalledWith(
+      "poi-via",
+      expect.any(String),
+    );
+  });
+
   it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
 
