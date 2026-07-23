@@ -398,7 +398,7 @@ export default function TripListPage() {
       }
       void invalidateTripsCache();
     } catch (err) {
-      if (isFeatureLimitError(err)) {
+      if (isFeatureLimitError(err) && tier) {
         setUpgradeModalOpen(true);
       } else {
         setErrorBanner(t("Couldn't duplicate the trip. Try again."));

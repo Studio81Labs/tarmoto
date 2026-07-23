@@ -1831,7 +1831,7 @@ export default function TripPlannerPage() {
       // with a 403 FEATURE_LIMIT_EXCEEDED — this IS the planner's primary
       // mint path (create-on-first-save), so it needs the same upgrade-modal
       // safety net as the /trips list's mint entry points.
-      if (isFeatureLimitError(err)) {
+      if (isFeatureLimitError(err) && tier) {
         setUpgradeModalOpen(true);
       } else {
         toast.error(t("Could not save the route. Please try again."));
@@ -1851,6 +1851,7 @@ export default function TripPlannerPage() {
     routeOptions,
     setActiveTrip,
     handlePromotedToServer,
+    tier,
   ]);
   const handleFitRoute = useCallback(() => {
     mapRef.current?.fitRoute();

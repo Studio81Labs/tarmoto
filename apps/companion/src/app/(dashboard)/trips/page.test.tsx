@@ -10,9 +10,10 @@ import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 // --- entitlement mocks (add alongside the existing page mocks) ---
 const useLimitMock = vi.fn();
+const useEntitlementsMock = vi.fn();
 vi.mock("@/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks")>()),
-  useEntitlements: () => ({ tier: "free" }),
+  useEntitlements: () => useEntitlementsMock(),
   useLimit: (key: string) => useLimitMock(key),
 }));
 
@@ -67,6 +68,8 @@ describe("trips page — max_active_trips gate", () => {
 
   beforeEach(() => {
     useLimitMock.mockReset();
+    useEntitlementsMock.mockReset();
+    useEntitlementsMock.mockReturnValue({ tier: "free" });
     tripsApiListMock.mockReset();
     tripFoldersListMock.mockReset();
     tripsApiDuplicateMock.mockReset();
@@ -140,6 +143,30 @@ describe("trips page — max_active_trips gate", () => {
     expect(
       screen.getByText("You've reached your trip limit on the Free plan."),
     ).toBeInTheDocument();
+  });
+
+  it("falls back to the generic error banner (no modal) when tier hasn't resolved yet for a limit-error duplicate", async () => {
+    // Mirrors the 403-with-tier test above, but `useEntitlements` hasn't
+    // resolved a tier yet. The upgrade modal requires `tier` to render its
+    // message, so without this fallback the rider would get no feedback at
+    // all after the click — a silent no-op.
+    useEntitlementsMock.mockReturnValue({ tier: null });
+    useLimitMock.mockReturnValue({ limit: null, isLoading: false });
+    tripsApiDuplicateMock.mockRejectedValue(
+      new ApiError("Feature limit exceeded", 403, {
+        code: FEATURE_LIMIT_EXCEEDED,
+      }),
+    );
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+    await screen.findByText("Alpine loop");
+
+    await duplicateActiveTrip();
+
+    expect(
+      await screen.findByText("Couldn't duplicate the trip. Try again."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("falls back to the generic error banner (no modal) for a non-limit duplicate failure", async () => {
