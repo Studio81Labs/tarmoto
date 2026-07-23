@@ -10,6 +10,7 @@ import CommunityFeedPage from "./page";
 import { api, communityApi, type CommunityRidePage } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { FormatProvider } from "@/format/FormatProvider";
+import { fetchSuggestedRiders } from "@/lib/community-sidebar";
 
 vi.mock("next/navigation", async () => {
   const actual =
@@ -24,6 +25,21 @@ vi.mock("next/navigation", async () => {
 vi.mock("../_useCommunityTotals", () => ({
   useCommunityFeedTotal: () => 1,
   useCommunityCollectionsTotal: () => 0,
+}));
+
+// The feed mounts CommunitySidebar; stub its independent data fetchers so
+// the rail's follow/challenge widgets are deterministic (empty by default,
+// overridden per-test). Keeps the sidebar reachable in the empty-feed case
+// without pulling live gamification/suggestion calls into these tests.
+vi.mock("@/lib/community-sidebar", () => ({
+  fetchActiveChallengeCard: vi.fn(async () => null),
+  fetchSuggestedRiders: vi.fn(async () => []),
+}));
+vi.mock("@/lib/gamification-fetch", () => ({
+  fetchRegionalLeaderboards: vi.fn(async () => null),
+}));
+vi.mock("@/lib/rider-profile", () => ({
+  followRider: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -77,10 +93,13 @@ function pageData(): CommunityRidePage {
 describe("CommunityFeedPage", () => {
   const geocodeMock = vi.mocked(api.GET);
   const listMock = vi.mocked(communityApi.list);
+  const suggestedRidersMock = vi.mocked(fetchSuggestedRiders);
 
   beforeEach(() => {
     geocodeMock.mockReset();
     listMock.mockReset();
+    suggestedRidersMock.mockReset();
+    suggestedRidersMock.mockResolvedValue([]);
     // The feed gates its fetch on a hydrated access token (so it doesn't race
     // AuthSync into an anonymous request); seed one for the test.
     useAuthStore.setState({
@@ -104,6 +123,31 @@ describe("CommunityFeedPage", () => {
     );
 
     expect(await screen.findByText("John Rider")).toBeInTheDocument();
+  });
+
+  it("shows the empty-feed card and keeps the follow-suggestions rail reachable", async () => {
+    // Pristine-empty feed (no filters, nothing shared yet) but sidebar data
+    // still exists — the empty copy tells riders to follow others, so the
+    // sidebar's Follow affordance must remain mounted alongside the card.
+    listMock.mockResolvedValueOnce({
+      data: { items: [], total: 0, limit: 9, offset: 0 },
+    });
+    suggestedRidersMock.mockResolvedValue([
+      {
+        id: "rider-9",
+        display_name: "Jane Rider",
+        avatar_url: null,
+        home_region: "Bormio",
+        ride_count: 12,
+      },
+    ]);
+
+    render(<CommunityFeedPage />);
+
+    expect(await screen.findByText("Quiet on the feed")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Follow" }),
+    ).toBeInTheDocument();
   });
 
   it("waits for the access token before fetching, then loads once it arrives", async () => {
