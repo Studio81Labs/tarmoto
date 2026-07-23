@@ -1566,12 +1566,8 @@ export default function TripPlannerPage() {
       }
       router.push(`/trips/${tripId}`);
     } catch (err) {
-      if (isFeatureLimitError(err)) {
-        setUpgradeModalOpen(true);
-      } else {
-        toast.error(t("Could not save this trip. Please try again."));
-        console.warn("Failed to save trip", err);
-      }
+      toast.error(t("Could not save this trip. Please try again."));
+      console.warn("Failed to save trip", err);
       setSaving(false);
     }
   }, [
