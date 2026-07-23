@@ -289,16 +289,24 @@ export default function CommunityFeedPage() {
       )}
 
       {isPristineEmpty ? (
-        // A pristine-empty feed has nothing to sit beside, so the card spans
-        // the full content width (matching the filter bar above) instead of
-        // being pinned into the narrow `1fr` feed column next to the rail.
-        <CommunityEmptyState
-          icon={<Users size={18} strokeWidth={2} />}
-          title={t("Quiet on the feed")}
-          body={t(
-            "Once you follow other riders or land in a busy region, their shared routes will appear here.",
-          )}
-        />
+        // A pristine-empty feed has no ride list for the rail to sit beside,
+        // so the card spans the full content width (matching the filter bar
+        // above) instead of being pinned into the narrow `1fr` feed column.
+        // The sidebar stays mounted below it — its "follow suggestions" and
+        // challenge widgets are exactly the CTA the empty copy points to.
+        <div className="flex flex-col gap-[18px]">
+          <CommunityEmptyState
+            icon={<Users size={18} strokeWidth={2} />}
+            title={t("Quiet on the feed")}
+            body={t(
+              "Once you follow other riders or land in a busy region, their shared routes will appear here.",
+            )}
+          />
+          <div className="lg:grid lg:grid-cols-[1fr_320px] lg:gap-[18px]">
+            <div className="hidden lg:block" aria-hidden />
+            <CommunitySidebar />
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1fr_320px]">
           <div className="flex min-w-0 flex-col gap-[14px]">
