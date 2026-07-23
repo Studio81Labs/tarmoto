@@ -984,6 +984,7 @@ const TripPlannerMapContent = forwardRef<
         // Unnamed POIs carry an empty name — fall back to the category so the
         // saved waypoint isn't blank (the same label the card shows).
         name: place.name || place.category,
+        ...(place.name ? { nameIsSource: true } : {}),
         location: { lat: place.lat, lng: place.lng },
         type,
       });
