@@ -2,7 +2,10 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { ExternalLink, MapPin, Plus, TriangleAlert, X } from "lucide-react";
-import type { BasemapPlace } from "@/lib/basemap-poi";
+import {
+  basemapPlaceCategoryDisplay,
+  type BasemapPlace,
+} from "@/lib/basemap-poi";
 import { poiCategoryMeta } from "@/components/planner/MapToolbar";
 import { PoiDetails } from "@/components/planner/PoiDetails";
 import { HAZARD_CONFIG } from "@/lib/utils";
@@ -315,9 +318,7 @@ function PlaceBody({
   // title, so we don't repeat it as the subtitle. A recognised category is
   // translated via its catalog key; an unrecognised OSM subclass keeps the
   // title-cased English fallback.
-  const categoryLabel = place.categoryKey
-    ? t(place.categoryKey)
-    : place.category;
+  const categoryLabel = basemapPlaceCategoryDisplay(place, t);
   const title = place.name || categoryLabel;
   const subtitle = place.name ? categoryLabel : undefined;
   return (

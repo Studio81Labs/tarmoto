@@ -9,7 +9,7 @@
  */
 
 import type { Map as MapLibreMap, MapGeoJSONFeature } from "maplibre-gl";
-import type { EnglishMessageKey } from "@/i18n";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 
 /** The OpenMapTiles source-layer the basemap POI symbols read from. */
 const POI_SOURCE_LAYER = "poi";
@@ -129,6 +129,19 @@ export function basemapPlaceCategoryKey(
     LABEL_OVERRIDES[klass ?? ""] ??
     (key ? null : "Place")
   );
+}
+
+/**
+ * The rider-facing category label for a basemap place — the translated catalog
+ * label when the OSM subclass is recognised, else the title-cased English
+ * fallback. The single source of truth for both the popover and the planner
+ * consumers that persist a waypoint name, so a saved stop matches the card.
+ */
+export function basemapPlaceCategoryDisplay(
+  place: BasemapPlace,
+  t: Translate,
+): string {
+  return place.categoryKey ? t(place.categoryKey) : place.category;
 }
 
 /**
