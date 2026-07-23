@@ -20,7 +20,7 @@ export function CommunityEmptyState({
   body: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-[14px] border border-line bg-cream px-6 py-20 text-center">
+    <div className="flex w-full flex-col items-center gap-3 rounded-[14px] border border-line bg-cream px-6 py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-paper text-fg-mute">
         {icon}
       </div>
