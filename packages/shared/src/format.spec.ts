@@ -143,6 +143,17 @@ describe("createFormatters — numbers", () => {
     expect(norm(cs.percent(0.42))).toBe("42 %");
   });
 
+  it("can localize identifier digits without grouping", () => {
+    const en = createFormatters({ locale: "en-US", units: "metric" });
+    const ar = createFormatters({ locale: "ar-EG", units: "metric" });
+    const options: Intl.NumberFormatOptions = {
+      useGrouping: false,
+      maximumFractionDigits: 0,
+    };
+    expect(en.number(2026, options)).toBe("2026");
+    expect(ar.number(2026, options)).toBe("٢٠٢٦");
+  });
+
   it("falls back to en/UTC/metric on invalid context (cookies are untrusted)", () => {
     const f = createFormatters({
       locale: "!!nope!!",

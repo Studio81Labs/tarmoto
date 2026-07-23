@@ -227,7 +227,12 @@ export default function StatsPage() {
   const chartTitle =
     filters.window === "all" ? t("Last 12 months") : windowLabel;
   // The heatmap is always the focus calendar year (window-independent).
-  const heatmapLabel = format.integer(focusYear);
+  // A year is an identifier, not a count: localize its digits without
+  // inserting a thousands separator ("2026", never "2,026").
+  const heatmapLabel = format.number(focusYear, {
+    useGrouping: false,
+    maximumFractionDigits: 0,
+  });
   // `key` is unique per bar, so the axis tick + tooltip both resolve their
   // human labels through this map rather than the (ambiguous) display string.
   const seriesByKey = new Map(series.map((point) => [point.key, point]));
