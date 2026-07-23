@@ -52,6 +52,32 @@ describe("companion i18n barrel", () => {
     ).toBe(expected);
   });
 
+  it("pluralizes the remaining count-bearing companion labels", () => {
+    expect(
+      translate(
+        "{count, plural, one {{n} public ride} other {{n} public rides}}",
+        { count: 1, n: "1" },
+      ),
+    ).toBe("1 public ride");
+    expect(
+      translate(
+        "{count, plural, one {{n} public ride} other {{n} public rides}}",
+        { count: 2, n: "2" },
+      ),
+    ).toBe("2 public rides");
+    expect(
+      translate("{count, plural, one {# advisory} other {# advisories}}", {
+        count: 2,
+      }),
+    ).toBe("2 advisories");
+    expect(
+      translate(
+        "{count, plural, one {Ridden ({n} segment)} other {Ridden ({n} segments)}}",
+        { count: 1, n: "1" },
+      ),
+    ).toBe("Ridden (1 segment)");
+  });
+
   it("renders whole-sentence ICU select variants for ride types", () => {
     const key =
       "{rideType, select, free {{riderName}'s free ride} commute {{riderName}'s commute ride} trip {{riderName}'s trip ride} tracked {{riderName}'s tracked ride} other {{riderName}'s ride}}";

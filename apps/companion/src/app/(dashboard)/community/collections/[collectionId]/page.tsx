@@ -800,7 +800,8 @@ function RideRow({
 }) {
   const t = useTranslation();
   const format = useFormat();
-  const displayName = ride.name ?? `Ride on ${format.date(ride.started_at)}`;
+  const displayName =
+    ride.name ?? t("Ride on {date}", { date: format.date(ride.started_at) });
   return (
     <div className="flex items-center gap-3">
       <Link
@@ -905,11 +906,13 @@ function RoutePickerModal({
     const needle = search.trim().toLowerCase();
     if (!needle) return rides;
     return rides.filter((r) => {
-      const fallbackName = `Ride on ${format.date(r.started_at)}`;
+      const fallbackName = t("Ride on {date}", {
+        date: format.date(r.started_at),
+      });
       const haystack = `${r.name ?? fallbackName} ${r.ride_type}`.toLowerCase();
       return haystack.includes(needle);
     });
-  }, [rides, search, format]);
+  }, [rides, search, format, t]);
   const toggle = (id: string) => {
     setSelectedRides((prev) => {
       const next = new Set(prev);
@@ -1129,7 +1132,8 @@ function RidePickerList({
     <ul className="flex flex-col gap-2 pb-1">
       {visibleRides.map((ride) => {
         const displayName =
-          ride.name ?? `Ride on ${format.date(ride.started_at)}`;
+          ride.name ??
+          t("Ride on {date}", { date: format.date(ride.started_at) });
         const date = format.date(ride.started_at);
         const meta =
           ride.distance_km != null

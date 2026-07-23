@@ -94,15 +94,25 @@ export function SharedRidesSection({
           <div>
             <Stamp as="h2">{t("Shared rides")}</Stamp>
             <div className="mt-0.5 text-[18px] font-extrabold tracking-[-0.3px] text-ink">
-              {t("{count} public rides", { count: total })}
+              {t(
+                "{count, plural, one {{n} public ride} other {{n} public rides}}",
+                {
+                  count: total,
+                  n: formatCount(total, format.locale),
+                },
+              )}
             </div>
           </div>
         </div>
         {phase === "ready" && total > 0 && (
           <Mono className="shrink-0 text-[11px] text-fg-dim">
-            {t("{count} total views", {
-              count: formatCount(totalViews, format.locale),
-            })}
+            {t(
+              "{count, plural, one {{n} total view} other {{n} total views}}",
+              {
+                count: totalViews,
+                n: formatCount(totalViews, format.locale),
+              },
+            )}
           </Mono>
         )}
       </header>

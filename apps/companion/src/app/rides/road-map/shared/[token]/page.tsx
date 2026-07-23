@@ -274,9 +274,10 @@ function SnapshotLegend({
       <div className="flex items-center gap-2">
         <span className="inline-block h-1 w-[22px] rounded-sm bg-accent" />
         {t(
-          "Ridden ({count} segments)",
+          "{count, plural, one {Ridden ({n} segment)} other {Ridden ({n} segments)}}",
           {
-            count: format.integer(snapshot.segments.length),
+            count: snapshot.segments.length,
+            n: format.integer(snapshot.segments.length),
           },
           locale,
         )}

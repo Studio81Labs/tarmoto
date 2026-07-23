@@ -230,6 +230,7 @@ function SuggestionsCard({ riders }: { riders: SuggestedRider[] }) {
 
 function SuggestionRow({ rider }: { rider: SuggestedRider }) {
   const t = useTranslation();
+  const format = useFormat();
   const [following, setFollowing] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -260,7 +261,10 @@ function SuggestionRow({ rider }: { rider: SuggestedRider }) {
           </div>
           <Mono className="text-[10px] uppercase text-fg-mute">
             {rider.home_region ? `${rider.home_region} · ` : ""}
-            {t("{count} rides", { count: rider.ride_count })}
+            {t("{count, plural, one {{n} ride} other {{n} rides}}", {
+              count: rider.ride_count,
+              n: format.integer(rider.ride_count),
+            })}
           </Mono>
         </div>
       </Link>

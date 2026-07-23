@@ -68,7 +68,7 @@ describe("SharedRidesSection", () => {
       ),
     );
     expect(screen.getByText("Sunday switchbacks")).toBeInTheDocument();
-    expect(screen.getByText("1 public rides")).toBeInTheDocument();
+    expect(screen.getByText("1 public ride")).toBeInTheDocument();
     expect(screen.getByText("7 total views")).toBeInTheDocument();
     expect(screen.getByText("42.5 km")).toBeInTheDocument();
     expect(screen.getByText("1h 30m")).toBeInTheDocument();

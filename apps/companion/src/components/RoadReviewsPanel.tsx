@@ -825,10 +825,13 @@ function ReviewEditor({
             {t("Upload photos")}
           </span>
           <span className={`text-[11px] ${tc.textMute}`}>
-            {t("Up to {count} · JPEG, PNG, or WebP · max {sizeMb} MB each", {
-              count: MAX_REVIEW_PHOTOS,
-              sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
-            })}
+            {t(
+              "Up to {count, plural, one {# photo} other {# photos}} · JPEG, PNG, or WebP · max {sizeMb} MB each",
+              {
+                count: MAX_REVIEW_PHOTOS,
+                sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
+              },
+            )}
           </span>
         </button>
         {uploadError && (

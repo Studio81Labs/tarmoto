@@ -109,7 +109,8 @@ export const rides = {
   "Region coverage": "Region coverage",
   "Rename ride": "Rename ride",
   "Reset filters": "Reset filters",
-  "Ridden ({count} segments)": "Ridden ({count} segments)",
+  "{count, plural, one {Ridden ({n} segment)} other {Ridden ({n} segments)}}":
+    "{count, plural, one {Ridden ({n} segment)} other {Ridden ({n} segments)}}",
   "Ride A": "Ride A",
   "Ride B": "Ride B",
   "Ride History": "Ride History",
@@ -118,6 +119,7 @@ export const rides = {
   "Ride history": "Ride history",
   "Ride history sections": "Ride history sections",
   "Ride name": "Ride name",
+  "Ride on {date}": "Ride on {date}",
   "Ride route map": "Ride route map",
   "Ride some roads to share your coverage map":
     "Ride some roads to share your coverage map",
@@ -145,8 +147,8 @@ export const rides = {
   "Shared ride — Tarmoto": "Shared ride \u2014 Tarmoto",
   "Shared road map": "Shared road map",
   "Shared road map — Tarmoto": "Shared road map \u2014 Tarmoto",
-  "Showing your {count} most recent rides":
-    "Showing your {count} most recent rides",
+  "Showing your {count, plural, one {# most recent ride} other {# most recent rides}}":
+    "Showing your {count, plural, one {# most recent ride} other {# most recent rides}}",
   "Speed profile": "Speed profile",
   "Start a ride from the Tarmoto mobile app — it will appear here within seconds of finishing.":
     "Start a ride from the Tarmoto mobile app \u2014 it will appear here within seconds of finishing.",
@@ -182,12 +184,14 @@ export const rides = {
   "brighter = longer ride": "brighter = longer ride",
   "by {name}": "by {name}",
   "couldn't load — try again": "couldn't load \u2014 try again",
-  "last {count} years": "last {count} years",
+  "{count, plural, one {last # year} other {last # years}}":
+    "{count, plural, one {last # year} other {last # years}}",
   "of {total} in region": "of {total} in region",
   "ridden all-time": "ridden all-time",
   total: "total",
   "with a recorded route": "with a recorded route",
-  "{count} roads ridden": "{count} roads ridden",
+  "{count, plural, one {{n} road ridden} other {{n} roads ridden}}":
+    "{count, plural, one {{n} road ridden} other {{n} roads ridden}}",
   "{date}: no rides": "{date}: no rides",
   "{date}: {count, plural, one {# ride} other {# rides}}, {distance}":
     "{date}: {count, plural, one {# ride} other {# rides}}, {distance}",

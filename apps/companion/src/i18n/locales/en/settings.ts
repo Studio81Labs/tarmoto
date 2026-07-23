@@ -165,6 +165,7 @@ export const settings = {
   "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices.":
     "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices.",
   "Sign-in email": "Sign-in email",
+  Subscribe: "Subscribe",
   Subscription: "Subscription",
   "Summary of your riding stats and community activity.":
     "Summary of your riding stats and community activity.",

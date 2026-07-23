@@ -733,7 +733,9 @@ function PeopleTab({
               {t("On this trip")}
             </span>
             <span className="font-mono text-[9.5px] uppercase text-fg-mute">
-              {t("{count} people", { count: total })}
+              {t("{count, plural, one {# person} other {# people}}", {
+                count: total,
+              })}
             </span>
           </div>
           <ul className="flex flex-col gap-1">

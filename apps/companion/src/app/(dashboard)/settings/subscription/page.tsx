@@ -476,7 +476,7 @@ function PlanCard({
   // no subscription for the portal's cancel flow to act on).
   const actionLabel =
     paidPlanNeedsCheckout && isCurrent
-      ? "Subscribe"
+      ? t("Subscribe")
       : planActionLabel(plan.tier, currentTier, t);
   const disabled =
     busy ||

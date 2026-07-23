@@ -72,8 +72,8 @@ export const map = {
   "Set as start": "Set as start",
   "Set end here": "Set end here",
   "Set start here": "Set start here",
-  "Showing your {count} most recent routes":
-    "Showing your {count} most recent routes",
+  "Showing your {count, plural, one {# most recent route} other {# most recent routes}}":
+    "Showing your {count, plural, one {# most recent route} other {# most recent routes}}",
   "Sub-regions": "Sub-regions",
   "This region needs more rides before we can rank its roads. Take a ride through and help build the map.":
     "This region needs more rides before we can rank its roads. Take a ride through and help build the map.",
@@ -90,7 +90,8 @@ export const map = {
   "{count, plural, one {# region} other {# regions}}":
     "{count, plural, one {# region} other {# regions}}",
   "{count} in {scope}": "{count} in {scope}",
-  "{count} roads": "{count} roads",
+  "{count, plural, one {{n} road} other {{n} roads}}":
+    "{count, plural, one {{n} road} other {{n} roads}}",
   "{date} onward": "{date} onward",
   "{distance} · no rider passes yet": "{distance} · no rider passes yet",
   "Couldn't load zone details.": "Couldn't load zone details.",
