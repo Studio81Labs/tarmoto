@@ -601,6 +601,7 @@ export const common = {
   "Pick two rides to see stats, route, and road quality side-by-side.":
     "Pick two rides to see stats, route, and road quality side-by-side.",
   "Place waypoint": "Place waypoint",
+  Plan: "Plan",
   "Plan & inspect": "Plan & inspect",
   "Plan a route to see stops along it — the corridor needs a route line to measure from. The map's category pins work anytime.":
     "Plan a route to see stops along it — the corridor needs a route line to measure from. The map's category pins work anytime.",
