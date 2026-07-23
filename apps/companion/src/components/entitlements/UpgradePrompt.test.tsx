@@ -53,4 +53,21 @@ describe("UpgradePrompt", () => {
     // premium is already unlimited for max_active_trips → no upgrade target
     expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
   });
+
+  it("shows no CTA when the current tier already grants a toggle that resolved off (override, not tier)", () => {
+    render(
+      <UpgradePrompt
+        variant="inline"
+        capability={{ feature: "offline_maps" }}
+        currentTier="pro"
+        message="Offline maps are unavailable right now."
+      />,
+    );
+    expect(
+      screen.getByText("Offline maps are unavailable right now."),
+    ).toBeTruthy();
+    // offline_maps is granted on pro → a force_off/revoke, not a tier gap;
+    // upgrading can't restore it, so no dead-end "Upgrade to Pro" CTA.
+    expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+  });
 });

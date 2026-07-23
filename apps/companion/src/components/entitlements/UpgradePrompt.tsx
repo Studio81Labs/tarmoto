@@ -31,7 +31,7 @@ function resolveTarget(
   currentTier: SubscriptionTier,
 ): SubscriptionTier | null {
   return "feature" in capability
-    ? upgradeTierForFeature(capability.feature)
+    ? upgradeTierForFeature(capability.feature, currentTier)
     : upgradeTierForLimit(capability.limit, currentTier);
 }
 

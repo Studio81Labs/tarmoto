@@ -426,10 +426,21 @@ describe("upgrade-tier derivation", () => {
     expect(FEATURE_LIMIT_EXCEEDED).toBe("FEATURE_LIMIT_EXCEEDED");
   });
 
-  it("finds the lowest tier that grants a toggle", () => {
-    expect(upgradeTierForFeature("basic_navigation")).toBe("free"); // all tiers
-    expect(upgradeTierForFeature("offline_maps")).toBe("pro"); // pro-and-up
-    expect(upgradeTierForFeature("group_rides")).toBe("premium"); // premium-only
+  it("finds the lowest tier ABOVE the current one that grants a toggle", () => {
+    // free rider missing the toggle → the granting tier above them
+    expect(upgradeTierForFeature("offline_maps", "free")).toBe("pro"); // pro-and-up
+    expect(upgradeTierForFeature("group_rides", "free")).toBe("premium"); // premium-only
+    // pro rider still lacking a premium-only toggle → premium
+    expect(upgradeTierForFeature("group_rides", "pro")).toBe("premium");
+  });
+
+  it("returns null when the current tier already grants the toggle (off by override, not tier)", () => {
+    // free already grants an all-tiers toggle → no dead-end "Upgrade to Free"
+    expect(upgradeTierForFeature("basic_navigation", "free")).toBeNull();
+    // pro grants a pro-and-up toggle → a force_off/revoke, not tier; no upgrade helps
+    expect(upgradeTierForFeature("offline_maps", "pro")).toBeNull();
+    // premium grants a premium-only toggle → no higher tier to offer
+    expect(upgradeTierForFeature("group_rides", "premium")).toBeNull();
   });
 
   it("finds the lowest tier that raises a numeric limit", () => {

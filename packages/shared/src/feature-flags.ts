@@ -604,10 +604,15 @@ export function isWithinLimit(
  *  backend `featureLimitExceeded`). Single source of truth for the wire code. */
 export const FEATURE_LIMIT_EXCEEDED = "FEATURE_LIMIT_EXCEEDED";
 
-/** Lowest tier (in SUBSCRIPTION_TIERS order) that grants a toggle feature,
- *  or null when no tier grants it / the key is not a toggle. */
+/** Lowest tier ABOVE `currentTier` that grants a toggle feature, or null when
+ *  no higher tier would grant it. Returns null when `currentTier` (or below)
+ *  already grants the toggle: a granted toggle that resolved OFF is disabled by
+ *  a global `force_off` or a per-user revoke, not by tier, so no upgrade
+ *  restores it — offering "Upgrade to {currentTier}" (or a lower tier) would be
+ *  a dead-end CTA. Symmetric with `upgradeTierForLimit`. */
 export function upgradeTierForFeature(
   key: ToggleFeatureKey,
+  currentTier: SubscriptionTier,
 ): SubscriptionTier | null {
   const def = FEATURE_DEFINITIONS[key];
   if (!def || def.kind !== "toggle") return null;
@@ -616,7 +621,14 @@ export function upgradeTierForFeature(
   // `as const satisfies`, which `Array.prototype.includes` can't accept a
   // broader `SubscriptionTier` argument against across the key union.
   const grantTiers: readonly SubscriptionTier[] = def.tiers;
-  return SUBSCRIPTION_TIERS.find((tier) => grantTiers.includes(tier)) ?? null;
+  // Already granted at the current tier → off by override, not tier.
+  if (grantTiers.includes(currentTier)) return null;
+  const currentIdx = SUBSCRIPTION_TIERS.indexOf(currentTier);
+  for (let i = currentIdx + 1; i < SUBSCRIPTION_TIERS.length; i++) {
+    const tier = SUBSCRIPTION_TIERS[i]!;
+    if (grantTiers.includes(tier)) return tier;
+  }
+  return null;
 }
 
 /** `null` = unlimited (most generous); otherwise a larger number is more
