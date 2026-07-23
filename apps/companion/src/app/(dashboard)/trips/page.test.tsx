@@ -157,9 +157,10 @@ describe("trips page — max_active_trips gate", () => {
     );
   });
 
-  it("blocks minting when the trip list fails to load (unknown count, fail closed)", async () => {
+  it("blocks minting under a FINITE cap when the trip list fails to load (unknown count)", async () => {
+    // Finite cap → the count matters, so an unknown count must fail closed.
     useLimitMock.mockReturnValue({
-      limit: null,
+      limit: 1,
       isLoading: false,
       isError: false,
     });
@@ -173,6 +174,22 @@ describe("trips page — max_active_trips gate", () => {
       "disabled",
       true,
     );
+  });
+
+  it("leaves minting enabled for UNLIMITED riders even when the trip list fails to load", async () => {
+    // Cap resolved to null (unlimited) → the count is irrelevant; a /trips
+    // outage must not regress an unlimited rider's New trip / Import controls.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+    });
+    tripsApiListMock.mockRejectedValue(new Error("network"));
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+
+    await screen.findByText("Couldn't load your trips. Check your connection.");
+    expect(screen.getByRole("link", { name: /New trip/i })).toBeTruthy();
   });
 
   it("leaves minting enabled when the limit is unlimited", async () => {

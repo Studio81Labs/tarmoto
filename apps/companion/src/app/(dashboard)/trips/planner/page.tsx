@@ -3819,9 +3819,18 @@ export default function TripPlannerPage() {
             resolvedLimit: upgradeModalLimit,
           }}
           currentTier={tier}
-          message={t("You've reached your trip limit on the {tier} plan.", {
-            tier: tierLabel(tier),
-          })}
+          // Saving/regenerating someone else's trip is gated by the OWNER's cap
+          // (assertCanMintOpenTrip runs on the trip owner). Upgrading the
+          // editor's own plan can't free the owner's slot, so suppress the CTA
+          // and speak to the owner's limit when the caller isn't the owner.
+          suppressUpgrade={!isTripOwner}
+          message={
+            isTripOwner
+              ? t("You've reached your trip limit on the {tier} plan.", {
+                  tier: tierLabel(tier),
+                })
+              : t("The trip owner has reached their trip limit.")
+          }
           onClose={() => setUpgradeModalOpen(false)}
         />
       ) : null}

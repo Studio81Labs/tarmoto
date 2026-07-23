@@ -116,13 +116,15 @@ export default function TripListPage() {
   const [loading, setLoading] = useState(true);
   // True when the trip list fetch failed — the count is unknown, not "zero".
   const [tripsLoadError, setTripsLoadError] = useState(false);
-  // Block mint entry points unless BOTH inputs have SUCCESSFULLY resolved. While
-  // either is loading OR errored, `atTripLimit` reads an empty count / unresolved
-  // `null` and would let an already-capped rider slip into the planner. A
-  // transient list or entitlement failure must fail closed (block), not reopen
-  // minting — the backend would reject the save anyway.
+  // Block mint entry points unless we can prove the rider is under a FINITE
+  // cap. The open-trip COUNT only matters for a finite cap, so only then does an
+  // unknown count (list loading/error) fail closed — an unlimited (null) cap
+  // never gates on the count, so a /trips outage mustn't disable minting for
+  // unlimited riders. An unresolved/errored CAP always blocks (unknown cap).
+  const capResolved = !limitLoading && !limitError;
+  const countUnknown = loading || tripsLoadError;
   const mintBlocked =
-    atTripLimit || loading || tripsLoadError || limitLoading || limitError;
+    !capResolved || (maxActiveTrips !== null && (atTripLimit || countUnknown));
   const [folders, setFolders] = useState<TripFolder[]>([]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
     ...DEFAULT_TRIP_FILTERS,

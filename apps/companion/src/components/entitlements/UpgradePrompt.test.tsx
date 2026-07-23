@@ -62,6 +62,23 @@ describe("UpgradePrompt", () => {
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
   });
 
+  it("suppresses the CTA and titles neutrally when suppressUpgrade is set (owner-scoped cap)", () => {
+    // A Free editor would normally get an Upgrade CTA, but the cap belongs to
+    // the trip OWNER — upgrading the editor's plan can't lift it.
+    render(
+      <UpgradePrompt
+        variant="modal"
+        capability={{ limit: "max_active_trips", resolvedLimit: 1 }}
+        currentTier="free"
+        message="The trip owner has reached their trip limit."
+        suppressUpgrade
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Limit reached" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Upgrade to/i })).toBeNull();
+  });
+
   it("renders the message without a CTA when the target tier is null", () => {
     render(
       <UpgradePrompt

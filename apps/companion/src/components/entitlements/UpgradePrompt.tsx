@@ -22,6 +22,10 @@ interface UpgradePromptProps {
   message: string;
   variant: "inline" | "modal";
   onClose?: () => void;
+  /** Force the neutral, no-CTA state even if the caller's tier has an upgrade
+   *  target — e.g. an owner-scoped cap hit by a collaborator, where upgrading
+   *  the CALLER's plan can't lift the OWNER's limit. */
+  suppressUpgrade?: boolean;
 }
 
 const SUBSCRIPTION_ROUTE = "/settings/subscription";
@@ -45,10 +49,13 @@ export function UpgradePrompt({
   message,
   variant,
   onClose,
+  suppressUpgrade = false,
 }: UpgradePromptProps) {
   const router = useRouter();
   const t = useTranslation();
-  const target = resolveTarget(capability, currentTier);
+  const target = suppressUpgrade
+    ? null
+    : resolveTarget(capability, currentTier);
 
   // With no higher tier to offer (an override-clamped cap, or already the top
   // tier) a paid upgrade can't lift the restriction — title the modal neutrally
