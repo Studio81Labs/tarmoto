@@ -231,6 +231,11 @@ export const trips = {
   rest: "rest",
   "waypoint {n}": "waypoint {n}",
   "Twisty highlight": "Twisty highlight",
+  Cafe: "Cafe",
+  Viewpoint: "Viewpoint",
+  Campground: "Campground",
+  "Biker hotel": "Biker hotel",
+  "Mountain pass": "Mountain pass",
   "Day {day} — {title}": "Day {day} — {title}",
   "{count, plural, one {# member} other {# members}}":
     "{count, plural, one {# member} other {# members}}",

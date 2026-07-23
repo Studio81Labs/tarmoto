@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { PLANNER_POI_CATEGORIES } from "@tarmoto/shared";
 import type { Translate } from "@/i18n";
 import {
   hasCustomWaypointName,
   isLegacyGeneratedWaypointName,
+  poiCategoryDisplayName,
   poiDisplayName,
   waypointDisplayName,
 } from "./labels";
@@ -45,10 +47,27 @@ describe("planner display labels", () => {
       poiDisplayName({ category: "twisty_highlight", name: "" }, translated),
     ).toBe("xx:Twisty highlight");
     expect(poiDisplayName({ category: "fuel", name: "" }, translated)).toBe(
-      "xx:Unnamed",
+      "xx:Fuel",
     );
     expect(
       poiDisplayName({ category: "fuel", name: "Shell" }, translated),
     ).toBe("Shell");
+  });
+
+  it("catalogs every persisted semantic POI category", () => {
+    expect(
+      PLANNER_POI_CATEGORIES.map((category) =>
+        poiCategoryDisplayName(category, translated),
+      ),
+    ).toEqual([
+      "xx:Fuel",
+      "xx:Food & drinks",
+      "xx:Cafe",
+      "xx:Viewpoint",
+      "xx:Campground",
+      "xx:Biker hotel",
+      "xx:Mountain pass",
+      "xx:Twisty highlight",
+    ]);
   });
 });

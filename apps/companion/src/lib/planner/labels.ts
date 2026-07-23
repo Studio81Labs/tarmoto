@@ -1,5 +1,5 @@
 import type { EnglishMessageKey, Translate } from "@/i18n";
-import type { Poi } from "@/lib/planner/types";
+import type { Poi, PoiCategory } from "@/lib/planner/types";
 import type { Waypoint } from "@/lib/types";
 
 /**
@@ -19,6 +19,24 @@ const WAYPOINT_TYPE_LABELS = {
   photo: "Photo",
   accommodation: "Accommodation",
 } satisfies Record<Waypoint["type"], EnglishMessageKey>;
+
+const POI_CATEGORY_LABELS = {
+  fuel: "Fuel",
+  food: "Food & drinks",
+  cafe: "Cafe",
+  viewpoint: "Viewpoint",
+  campground: "Campground",
+  biker_hotel: "Biker hotel",
+  mountain_pass: "Mountain pass",
+  twisty_highlight: "Twisty highlight",
+} satisfies Record<PoiCategory, EnglishMessageKey>;
+
+export function poiCategoryDisplayName(
+  category: PoiCategory,
+  t: Translate,
+): string {
+  return t(POI_CATEGORY_LABELS[category]);
+}
 
 export function isLegacyGeneratedWaypointName(
   name: string | null | undefined,
@@ -41,8 +59,8 @@ export function waypointDisplayName(
 ): string {
   const label = WAYPOINT_TYPE_LABELS[waypoint.type] ?? "Waypoint";
   if (hasCustomWaypointName(waypoint.name)) return waypoint.name;
-  return waypoint.poiCategory === "twisty_highlight"
-    ? t("Twisty highlight")
+  return waypoint.poiCategory
+    ? poiCategoryDisplayName(waypoint.poiCategory, t)
     : t(label);
 }
 
@@ -52,7 +70,5 @@ export function poiDisplayName(
   t: Translate,
 ): string {
   if (poi.name.trim()) return poi.name;
-  return poi.category === "twisty_highlight"
-    ? t("Twisty highlight")
-    : t("Unnamed");
+  return poiCategoryDisplayName(poi.category, t);
 }
