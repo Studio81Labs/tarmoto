@@ -75,6 +75,17 @@ describe("useEntitlements", () => {
     expect(result.current.limit).toBeNull(); // present + null = unlimited
   });
 
+  it("useLimit reports isError with a null limit when the entitlement query fails", async () => {
+    getMock.mockResolvedValue({ data: undefined, error: { message: "boom" } });
+    const { result } = renderHook(() => useLimit("max_active_trips"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    // Errored ≠ unlimited — the cap is unknown; callers must fail closed.
+    expect(result.current.limit).toBeNull();
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it("useLimit fails closed (0) when the key is missing from a resolved snapshot", async () => {
     // Partial deploy / stale shape: `limits` resolved but lacks the key. Must
     // NOT read as unlimited — fall back to the restrictive shared default.

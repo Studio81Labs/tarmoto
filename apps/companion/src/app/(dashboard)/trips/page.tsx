@@ -94,8 +94,11 @@ export default function TripListPage() {
   // dark under a seeded-unlimited limit, so `atTripLimit` is inert until an
   // admin sets a finite limit. `null` means unlimited — never treat it as 0.
   const { tier } = useEntitlements();
-  const { limit: maxActiveTrips, isLoading: limitLoading } =
-    useLimit("max_active_trips");
+  const {
+    limit: maxActiveTrips,
+    isLoading: limitLoading,
+    isError: limitError,
+  } = useLimit("max_active_trips");
   const openTripCount = countOpenOwnedTrips(trips, userId);
   const atTripLimit =
     maxActiveTrips !== null && openTripCount >= maxActiveTrips;
@@ -111,11 +114,15 @@ export default function TripListPage() {
       queryKey: USER_TRIPS_QUERY_KEY(userId),
     });
   const [loading, setLoading] = useState(true);
-  // Block mint entry points until BOTH inputs are known: while the trip list or
-  // the resolved limit is still loading, `atTripLimit` reads an empty count /
-  // unresolved `null` and would let an already-capped rider slip into the
-  // planner during the load window. Treat "unknown" as blocked.
-  const mintBlocked = atTripLimit || loading || limitLoading;
+  // True when the trip list fetch failed — the count is unknown, not "zero".
+  const [tripsLoadError, setTripsLoadError] = useState(false);
+  // Block mint entry points unless BOTH inputs have SUCCESSFULLY resolved. While
+  // either is loading OR errored, `atTripLimit` reads an empty count / unresolved
+  // `null` and would let an already-capped rider slip into the planner. A
+  // transient list or entitlement failure must fail closed (block), not reopen
+  // minting — the backend would reject the save anyway.
+  const mintBlocked =
+    atTripLimit || loading || tripsLoadError || limitLoading || limitError;
   const [folders, setFolders] = useState<TripFolder[]>([]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
     ...DEFAULT_TRIP_FILTERS,
@@ -172,6 +179,7 @@ export default function TripListPage() {
     let cancelled = false;
     setTrips([]);
     setErrorBanner(null);
+    setTripsLoadError(false);
     if (!userId) {
       setLoading(false);
       return () => {
@@ -193,6 +201,7 @@ export default function TripListPage() {
       .catch(() => {
         if (cancelled) return;
         setTrips([]);
+        setTripsLoadError(true);
         setErrorBanner(t("Couldn't load your trips. Check your connection."));
       })
       .finally(() => {

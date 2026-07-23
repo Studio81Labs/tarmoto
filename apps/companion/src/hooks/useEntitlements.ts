@@ -25,6 +25,9 @@ export function useEntitlements(): {
   features: UserProfileResponse["features"] | null;
   limits: UserProfileResponse["limits"] | null;
   isLoading: boolean;
+  /** The entitlement query settled in error — the snapshot is unknown, not
+   *  "resolved to unlimited". Callers gating access must fail closed on this. */
+  isError: boolean;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const query = useQuery({
@@ -43,6 +46,7 @@ export function useEntitlements(): {
     features: data?.features ?? null,
     limits: data?.limits ?? null,
     isLoading: query.isLoading,
+    isError: query.isError,
   };
 }
 
@@ -69,10 +73,12 @@ export function useFeature(key: ToggleFeatureKey): {
 export function useLimit(key: LimitFeatureKey): {
   limit: number | null;
   isLoading: boolean;
+  isError: boolean;
 } {
-  const { limits, isLoading } = useEntitlements();
+  const { limits, isLoading, isError } = useEntitlements();
   return {
     limit: limits ? getFeatureLimit(limits, key) : null,
     isLoading,
+    isError,
   };
 }

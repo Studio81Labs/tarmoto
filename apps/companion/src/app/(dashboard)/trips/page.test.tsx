@@ -136,6 +136,45 @@ describe("trips page — max_active_trips gate", () => {
     );
   });
 
+  it("blocks minting when the entitlement query errors (unknown cap, fail closed)", async () => {
+    // A transient /users/me failure leaves the cap unknown — it must not read
+    // as unlimited and reopen mint controls for an already-capped rider.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: true,
+    });
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+
+    await waitFor(() =>
+      expect(screen.getByText("Alpine loop")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("link", { name: /New trip/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /New trip/i })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("blocks minting when the trip list fails to load (unknown count, fail closed)", async () => {
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+    });
+    tripsApiListMock.mockRejectedValue(new Error("network"));
+
+    render(<TripsPage />, { wrapper: withQueryClient() });
+
+    await screen.findByText("Couldn't load your trips. Check your connection.");
+    expect(screen.queryByRole("link", { name: /New trip/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /New trip/i })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
   it("leaves minting enabled when the limit is unlimited", async () => {
     useLimitMock.mockReturnValue({ limit: null, isLoading: false });
 
