@@ -62,4 +62,30 @@ describe("useEntitlements", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.limit).toBe(1);
   });
+
+  it("useLimit keeps an explicit null value as unlimited", async () => {
+    getMock.mockResolvedValue({
+      data: { ...ME, limits: { max_active_trips: null } },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useLimit("max_active_trips"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.limit).toBeNull(); // present + null = unlimited
+  });
+
+  it("useLimit fails closed (0) when the key is missing from a resolved snapshot", async () => {
+    // Partial deploy / stale shape: `limits` resolved but lacks the key. Must
+    // NOT read as unlimited — fall back to the restrictive shared default.
+    getMock.mockResolvedValue({
+      data: { ...ME, limits: { max_trip_collaborators: 0 } },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useLimit("max_active_trips"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.limit).toBe(0);
+  });
 });

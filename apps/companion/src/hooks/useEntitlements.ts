@@ -60,15 +60,19 @@ export function useFeature(key: ToggleFeatureKey): {
   };
 }
 
-/** The resolved numeric limit (`null` = unlimited; also `null` while
- *  unresolved — callers gate on `isLoading`). */
+/** The resolved numeric limit. `null` means unlimited ONLY when the whole
+ *  snapshot is still unresolved (callers gate on `isLoading`) or the key is
+ *  present with an explicit `null` value. A key MISSING from a resolved
+ *  snapshot (partial deploy, stale cached shape, a limit consumed before the
+ *  DTO ships it) falls back to the shared restrictive default (`0`) rather than
+ *  unlimited — fail closed on an unknown cap, since the backend will reject. */
 export function useLimit(key: LimitFeatureKey): {
   limit: number | null;
   isLoading: boolean;
 } {
   const { limits, isLoading } = useEntitlements();
   return {
-    limit: limits ? getFeatureLimit(limits, key, null) : null,
+    limit: limits ? getFeatureLimit(limits, key) : null,
     isLoading,
   };
 }
