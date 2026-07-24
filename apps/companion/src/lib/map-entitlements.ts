@@ -1,6 +1,7 @@
 /** Free-tier `road_quality_max_zoom` cap — the max zoom LEVEL a free rider is
- *  entitled to see the quality overlay at (inclusive). Also the fail-closed cap
- *  while entitlements are unresolved. */
+ *  entitled to see the quality overlay at (inclusive). Also the fail-closed
+ *  CEILING while entitlements are unresolved — a stricter cap already known
+ *  (e.g. a per-user override from a resolved `/users/me`) still wins. */
 export const QUALITY_OVERLAY_FREE_CAP_ZOOM = 12;
 /** MapLibre's practical zoom ceiling. An unlimited (pro/premium) rider's quality
  *  layers render up to here so the overlay is never hidden by the entitlement
@@ -14,13 +15,24 @@ export const QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM = 24;
  * maxzoom is ONE level above the entitlement cap:
  *  - finite cap `N` (e.g. free 12) → `N + 1` (level N renders, N+1 does not),
  *  - `null` (pro/premium unlimited) → the render ceiling (never hidden),
- *  - unresolved (loading / error / pre-auth) → fail closed to the free cap + 1.
+ *  - unresolved (loading / error / pre-auth) → fail closed WITHOUT widening a
+ *    stricter cap we already know: clamp any finite limit already in hand (e.g.
+ *    `/users/me` resolved but `/config/limits` is failing, or a signed-in rider
+ *    mid-hydration) to the stricter of it and the free cap; a still-unknown
+ *    (`null`) limit falls back to the free cap — never unlimited — for the
+ *    outage. This can only lower, never raise, the visible ceiling.
  */
 export function resolveQualityLayerMaxZoom(
   limit: number | null,
   isResolved: boolean,
 ): number {
-  if (!isResolved) return QUALITY_OVERLAY_FREE_CAP_ZOOM + 1;
+  if (!isResolved) {
+    const known =
+      limit === null
+        ? QUALITY_OVERLAY_FREE_CAP_ZOOM
+        : Math.min(limit, QUALITY_OVERLAY_FREE_CAP_ZOOM);
+    return Math.min(known + 1, QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM);
+  }
   if (limit === null) return QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM;
   // `limit + 1` for the exclusive bound, but MapLibre `maxzoom` only accepts
   // [0, 24] — an operator can set the cap to 24+ (the admin limit DTO allows

@@ -7,12 +7,27 @@ import {
 } from "./map-entitlements";
 
 describe("resolveQualityLayerMaxZoom", () => {
-  it("fails closed to the free cap + 1 while unresolved (level 12 still visible)", () => {
+  it("fails closed to the free cap + 1 while unresolved with no known cap (level 12 still visible)", () => {
     // MapLibre maxzoom is exclusive → cap+1 keeps the entitled level rendering.
     expect(resolveQualityLayerMaxZoom(null, false)).toBe(
       QUALITY_OVERLAY_FREE_CAP_ZOOM + 1,
     );
     expect(resolveQualityLayerMaxZoom(12, false)).toBe(
+      QUALITY_OVERLAY_FREE_CAP_ZOOM + 1,
+    );
+  });
+
+  it("preserves a STRICTER known cap while unresolved (does not widen to the free cap)", () => {
+    // /users/me supplied a below-free cap but /config/limits is failing (or the
+    // rider is mid-hydration): keep the stricter finite value, never widen to 12.
+    expect(resolveQualityLayerMaxZoom(5, false)).toBe(6);
+    expect(resolveQualityLayerMaxZoom(0, false)).toBe(1); // cap 0 → only level 0
+  });
+
+  it("does not RAISE above the free cap while unresolved even if a higher limit is known", () => {
+    // A known cap above the free tier can't be trusted until fully resolved —
+    // clamp to the free cap during the outage (fail closed, never widen).
+    expect(resolveQualityLayerMaxZoom(20, false)).toBe(
       QUALITY_OVERLAY_FREE_CAP_ZOOM + 1,
     );
   });
