@@ -9,6 +9,7 @@ import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { TripSharesService } from './trip-shares.service.js';
 
 describe('TripSharesService', () => {
@@ -19,6 +20,9 @@ describe('TripSharesService', () => {
   let inviteRepo: Partial<jest.Mocked<Repository<TripInvite>>>;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
+  let featureResolver: jest.Mocked<
+    Pick<FeatureResolver, 'resolveLimitsForUser'>
+  >;
 
   const mockShare = {
     id: 'share-1',
@@ -55,6 +59,7 @@ describe('TripSharesService', () => {
     };
     inviteRepo = {
       findOne: jest.fn().mockResolvedValue(null),
+      count: jest.fn().mockResolvedValue(0),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     userRepo = {
@@ -66,11 +71,20 @@ describe('TripSharesService', () => {
         user_id: 'user-1',
         role: 'owner',
       }),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockImplementation((data) => data as TripMember),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
     activity = {
       recordSafe: jest.fn().mockResolvedValue(undefined),
+    };
+    // Unlimited by default so every pre-existing join test short-circuits the
+    // collaborator-cap check; only the cap tests override it.
+    featureResolver = {
+      resolveLimitsForUser: jest.fn().mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: null,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -82,6 +96,7 @@ describe('TripSharesService', () => {
         { provide: getRepositoryToken(TripInvite), useValue: inviteRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: TripActivityService, useValue: activity },
+        { provide: FeatureResolver, useValue: featureResolver },
       ],
     }).compile();
 
@@ -178,6 +193,67 @@ describe('TripSharesService', () => {
       expect(memberRepo.save).not.toHaveBeenCalled();
       expect(activity.recordSafe).not.toHaveBeenCalled();
       expect(result.planner_url).toBe('/trips/planner?tripId=trip-1');
+    });
+
+    it('403s (feature-limit) when an anonymous link-joiner would exceed the owner cap', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (tripRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'trip-1',
+        owner_id: 'owner-1',
+      });
+      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null); // not yet a member
+      // No account + no pending invite → an anonymous NEW collaborator.
+      (userRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      (inviteRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      (memberRepo.count as jest.Mock).mockResolvedValue(1); // one non-owner member already
+      (inviteRepo.count as jest.Mock).mockResolvedValue(0);
+
+      await expect(
+        service.joinByToken('user-2', 'a'.repeat(32)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      // Cap is the OWNER's, enforced before the member is inserted.
+      expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
+        'owner-1',
+      );
+      expect(memberRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('allows a joiner consuming their pending invite even at the cap (net-zero)', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (tripRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'trip-1',
+        owner_id: 'owner-1',
+      });
+      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      // The joiner has a pending invite (already counted) → cap check skipped.
+      (userRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'user-2',
+        email: 'joiner@example.com',
+      });
+      (inviteRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'inv-1',
+        role: 'editor',
+      });
+
+      await expect(
+        service.joinByToken('user-2', 'a'.repeat(32)),
+      ).resolves.toBeDefined();
+      expect(memberRepo.save).toHaveBeenCalled();
+      expect(memberRepo.count).not.toHaveBeenCalled(); // invite consumed → no cap count
     });
   });
 

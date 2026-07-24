@@ -36,6 +36,13 @@ export const TARMOTO_ROADS_SOURCE = "tarmoto-roads";
 export const TARMOTO_SURFACE_SOURCE = "tarmoto-road-surfaces";
 export const TARMOTO_QUALITY_LAYER = "tarmoto-quality";
 export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
+// An INVISIBLE, UNCAPPED copy of the road geometry used purely as a hit target
+// for pointer interactions (waypoint snapping, tap-for-detail, hover cursor).
+// The visible quality overlay is zoom-capped by the `road_quality_max_zoom`
+// entitlement, but road INTERACTION must not be — snapping a waypoint to a
+// road is a routing affordance, not gated quality detail. Querying this layer
+// instead of the capped overlay keeps interaction working past the cap.
+export const TARMOTO_ROAD_HIT_LAYER = "tarmoto-road-hit";
 // Individual road segments are not visually useful below neighbourhood scale,
 // and country-scale z6-z8 tiles can contain tens of megabytes of features.
 // Routed lines still render at every zoom; this only gates the all-roads
@@ -379,6 +386,29 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         },
       });
 
+      // Invisible, UNCAPPED hit target (see TARMOTO_ROAD_HIT_LAYER). Same road
+      // geometry + promoted `id`/`quality_score` as the overlay, but no
+      // `maxzoom` and zero opacity — kept queryable for snapping / tap / hover
+      // at every zoom while the visible overlay stays entitlement-capped. A
+      // fat, transparent line gives a comfortable snap radius.
+      map.addLayer({
+        id: TARMOTO_ROAD_HIT_LAYER,
+        type: "line",
+        source: TARMOTO_ROADS_SOURCE,
+        "source-layer": "quality",
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          visibility: showQuality ? "visible" : "none",
+        },
+        paint: {
+          "line-color": "#000000",
+          "line-width": 12,
+          "line-opacity": 0,
+        },
+      });
+
       map.addLayer({
         id: TARMOTO_SURFACE_LAYER,
         type: "line",
@@ -537,6 +567,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     const map = mapRef.current;
     if (!map || !ready) return;
     setVisibility(map, TARMOTO_QUALITY_LAYER, showQuality);
+    // The hit target shadows the quality overlay's ON/OFF state (but not its
+    // zoom cap) so pointer interaction is available exactly when the roads are.
+    setVisibility(map, TARMOTO_ROAD_HIT_LAYER, showQuality);
     setVisibility(map, TARMOTO_SURFACE_LAYER, showSurface);
   }, [ready, showQuality, showSurface]);
 

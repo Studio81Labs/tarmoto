@@ -24,6 +24,7 @@ import {
   MapCanvas,
   SURFACE_COLORS,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROAD_HIT_LAYER,
   TARMOTO_SURFACE_LAYER,
   type MapCanvasHandle,
 } from "@/components/map/MapCanvas";
@@ -1296,8 +1297,10 @@ const TripPlannerMapContent = forwardRef<
       ) {
         return;
       }
+      // Query the UNCAPPED hit layer (not the entitlement-capped quality
+      // overlay) so tap-for-detail keeps working past the free zoom cap.
       const overlayLayers = [
-        TARMOTO_QUALITY_LAYER,
+        TARMOTO_ROAD_HIT_LAYER,
         TARMOTO_SURFACE_LAYER,
       ].filter((id) => map.getLayer(id));
       if (overlayLayers.length === 0) return;
@@ -1313,7 +1316,7 @@ const TripPlannerMapContent = forwardRef<
     // Pointer cursor over the ambient mapped segments (like /explore), so the
     // off-route tap-for-detail affordance is discoverable. Only meaningful when
     // the drawer opener is wired.
-    for (const overlay of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
+    for (const overlay of [TARMOTO_ROAD_HIT_LAYER, TARMOTO_SURFACE_LAYER]) {
       map.on("mouseenter", overlay, () => {
         if (drawRef.current?.getMode() !== "idle") return;
         if (!onOpenSegmentDetailRef.current) return;
@@ -3106,7 +3109,9 @@ function snapPointerToRoad(
         [point.x + 12, point.y + 12],
       ],
       {
-        layers: ["tarmoto-quality", "tarmoto-surface"],
+        // Snap against the UNCAPPED hit layer so waypoint placement/drag keeps
+        // snapping to roads past the free `road_quality_max_zoom` cap.
+        layers: [TARMOTO_ROAD_HIT_LAYER, TARMOTO_SURFACE_LAYER],
       },
     )
     .map((feature) => ({

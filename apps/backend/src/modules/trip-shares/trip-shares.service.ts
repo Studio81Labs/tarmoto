@@ -6,13 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
+import { isWithinLimit } from '@tarmoto/shared';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
+import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { featureLimitExceeded } from '../features/feature-limit.error.js';
 import {
   CreateTripShareDto,
   TripShareJoinResponseDto,
@@ -37,7 +40,39 @@ export class TripSharesService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly activity: TripActivityService,
+    private readonly featureResolver: FeatureResolver,
   ) {}
+
+  /**
+   * Owner-scoped `max_trip_collaborators` cap for the group-link JOIN path.
+   * A token visitor becoming a member grows the roster exactly like an email
+   * invite, so the same authoritative check applies (mirrors
+   * `TripsService.assertCanAddCollaborator` — duplicated here rather than
+   * injected because TripsModule imports TripSharesModule, so the reverse
+   * dependency would be circular). Counts the trip's current NON-owner
+   * collaborators (accepted members + pending invites) against the OWNER's
+   * limit and throws before the new member is inserted. Callers must invoke
+   * this ONLY when the join adds a NEW collaborator — a joiner consuming a
+   * pending invite was already counted (invite → member is net-zero).
+   */
+  private async assertCanAddCollaborator(
+    tripId: string,
+    ownerId: string,
+  ): Promise<void> {
+    const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
+    const limit = limits.max_trip_collaborators;
+    if (limit === null) return; // unlimited — skip the count entirely
+    const [nonOwnerMembers, pendingInvites] = await Promise.all([
+      this.memberRepo.count({
+        where: { trip_id: tripId, role: Not('owner') },
+      }),
+      this.inviteRepo.count({ where: { trip_id: tripId } }),
+    ]);
+    const current = nonOwnerMembers + pendingInvites;
+    if (!isWithinLimit(limit, current)) {
+      throw featureLimitExceeded('max_trip_collaborators', limit, current);
+    }
+  }
 
   async create(
     userId: string,
@@ -73,7 +108,7 @@ export class TripSharesService {
 
     const trip = await this.tripRepo.findOne({
       where: { id: share.trip_id },
-      select: { id: true },
+      select: { id: true, owner_id: true },
     });
     if (!trip) {
       throw new BadRequestException(
@@ -102,6 +137,12 @@ export class TripSharesService {
 
     let inserted = false;
     if (!existing) {
+      // A joiner consuming a pending invite was already counted against the
+      // owner's cap (invite → member is net-zero); an anonymous link-joiner
+      // with no invite is a NEW collaborator and must pass the cap first.
+      if (!invite) {
+        await this.assertCanAddCollaborator(share.trip_id, trip.owner_id);
+      }
       try {
         await this.memberRepo.save(
           this.memberRepo.create({

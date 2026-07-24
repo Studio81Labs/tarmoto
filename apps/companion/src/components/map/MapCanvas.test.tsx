@@ -298,4 +298,39 @@ describe("MapCanvas", () => {
       }),
     );
   });
+
+  it("adds an UNCAPPED invisible road-hit layer so interaction survives the cap", async () => {
+    // The hit target must NOT carry the entitlement maxzoom — snapping / tap /
+    // hover keep working past the free cap — and must be invisible.
+    useLimitMock.mockReturnValue({
+      limit: 12,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    const hitCall = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === "tarmoto-road-hit",
+    );
+    expect(hitCall).toBeDefined();
+    const hitLayer = hitCall![0] as {
+      maxzoom?: number;
+      paint?: Record<string, unknown>;
+    };
+    // No entitlement cap on the hit target.
+    expect(hitLayer.maxzoom).toBeUndefined();
+    // Invisible.
+    expect(hitLayer.paint?.["line-opacity"]).toBe(0);
+  });
 });
