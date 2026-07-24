@@ -27,14 +27,18 @@ export interface LanguagePreferenceSyncDeps {
 
 let monitorSubscription: { remove: () => void } | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let inFlight: { selection: PendingLanguageSelection; token: symbol } | null =
-  null;
+let activeMonitorToken: symbol | null = null;
+let inFlight: {
+  selection: PendingLanguageSelection;
+  promise: Promise<void>;
+} | null = null;
 
 export function startLanguagePreferenceSyncMonitor(
   deps: LanguagePreferenceSyncDeps,
 ): () => void {
   stopLanguagePreferenceSyncMonitor();
-  let active = true;
+  const monitorToken = Symbol("language-preference-monitor");
+  activeMonitorToken = monitorToken;
   let retryIndex = 0;
 
   const clearRetry = () => {
@@ -43,8 +47,18 @@ export function startLanguagePreferenceSyncMonitor(
   };
 
   const run = async (): Promise<void> => {
+    if (activeMonitorToken !== monitorToken) return;
     const outcome = await syncIfNeeded(deps);
-    if (!active) return;
+    if (activeMonitorToken !== monitorToken) return;
+    if (outcome === "superseded") {
+      retryIndex = 0;
+      clearRetry();
+      // The rider may have selected another locale while this serialized write
+      // was in flight. Re-read the live marker immediately instead of waiting
+      // for another foreground transition.
+      void run();
+      return;
+    }
     if (outcome !== "failed") {
       retryIndex = 0;
       clearRetry();
@@ -70,28 +84,41 @@ export function startLanguagePreferenceSyncMonitor(
   monitorSubscription = subscription;
 
   return () => {
-    active = false;
-    if (monitorSubscription === subscription) {
+    if (activeMonitorToken === monitorToken) {
       stopLanguagePreferenceSyncMonitor();
     } else {
       subscription.remove();
-      clearRetry();
     }
   };
 }
 
 export function stopLanguagePreferenceSyncMonitor(): void {
+  activeMonitorToken = null;
   monitorSubscription?.remove();
   monitorSubscription = null;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
-  inFlight = null;
+  // Do not clear an active write: a replacement monitor must wait for it
+  // before sending the newest selection, otherwise two PATCHes can race.
 }
 
 async function syncIfNeeded(
   deps: LanguagePreferenceSyncDeps,
-): Promise<"idle" | "synced" | "failed"> {
+): Promise<"idle" | "synced" | "superseded" | "failed"> {
   if (!deps.isAuthenticated()) return "idle";
+
+  // Serialize every language PATCH, including across monitor restarts caused
+  // by a rapid local selection. The waiter re-reads pendingSelection below
+  // after the previous request settles, guaranteeing server arrival order.
+  if (inFlight) {
+    try {
+      await inFlight.promise;
+    } catch {
+      // The request owner schedules its own retry. This waiter still needs to
+      // re-read the live selection, which may already supersede that failure.
+    }
+  }
+
   const currentUserId = deps.currentUserId();
   const selection = deps.pendingSelection();
   if (!currentUserId || !selection) return "idle";
@@ -108,21 +135,24 @@ async function syncIfNeeded(
     deps.onAlreadySynced(selection);
     return "synced";
   }
-  if (
-    inFlight?.selection.locale === selection.locale &&
-    inFlight.selection.ownerUserId === selection.ownerUserId
-  ) {
-    return "idle";
-  }
-
-  const token = Symbol("language-preference-sync");
-  inFlight = { selection, token };
+  const promise = deps.sync(selection);
+  inFlight = { selection, promise };
   try {
-    await deps.sync(selection);
-    return "synced";
+    await promise;
+    const latest = deps.pendingSelection();
+    return latest && !sameSelection(latest, selection)
+      ? "superseded"
+      : "synced";
   } catch {
     return "failed";
   } finally {
-    if (inFlight?.token === token) inFlight = null;
+    if (inFlight?.promise === promise) inFlight = null;
   }
+}
+
+function sameSelection(
+  left: PendingLanguageSelection,
+  right: PendingLanguageSelection,
+): boolean {
+  return left.locale === right.locale && left.ownerUserId === right.ownerUserId;
 }

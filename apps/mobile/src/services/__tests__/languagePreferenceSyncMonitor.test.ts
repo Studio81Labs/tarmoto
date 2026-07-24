@@ -97,6 +97,38 @@ describe("languagePreferenceSyncMonitor", () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  it("serializes a superseding selection across monitor restarts", async () => {
+    let resolveFirst!: () => void;
+    sync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    start();
+    await Promise.resolve();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    pending = {
+      locale: "de" as PendingLanguageSelection["locale"],
+      ownerUserId: "rider-a",
+    };
+    start();
+    await Promise.resolve();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    resolveFirst();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(sync).toHaveBeenLastCalledWith({
+      locale: "de",
+      ownerUserId: "rider-a",
+    });
+  });
+
   it("rechecks the marker whenever the app becomes active", async () => {
     pending = null;
     start();
