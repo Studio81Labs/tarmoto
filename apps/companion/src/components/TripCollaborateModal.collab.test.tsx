@@ -1226,11 +1226,73 @@ describe("TripCollaborateModal — collab tabs", () => {
     expect(
       await screen.findByText(/0 of 0 collaborators/i),
     ).toBeInTheDocument();
+    // Fill a valid email first — otherwise this assertion would pass even
+    // if `atCollaboratorCap` were broken, since an empty email disables the
+    // button on its own (`!email.trim()`). Filling it attributes the
+    // disable specifically to the collaborator-cap gate.
+    fireEvent.change(screen.getByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
     const invite = screen.getByRole("button", { name: /^invite$/i });
     expect(invite).toBeDisabled();
     expect(
       screen.getByRole("button", { name: /Upgrade to Pro/i }),
     ).toBeInTheDocument();
+  });
+
+  it("fails closed: an unresolved cap blocks the OWNER even with an empty roster and a filled email", async () => {
+    // isSuccess: false means the limit query hasn't resolved (e.g. still
+    // loading, or errored) — NOT "resolved to unlimited". The gate must
+    // treat this as blocking for the owner (`atCollaboratorCap` includes
+    // `!limitResolved`), independent of the roster count or limit value.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+      isSuccess: false,
+    });
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "owner-1",
+            display_name: "Owner",
+            email: "o@example.com",
+            avatar_url: null,
+            role: "owner",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    // Zero non-owner collaborators — the ONLY reason to block here is the
+    // unresolved cap, not the roster count.
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    const invite = screen.getByRole("button", { name: /^invite$/i });
+    expect(invite).toBeDisabled();
+    // Fail-closed blocks the action but doesn't claim a specific limit —
+    // no counter or upgrade CTA should render for an unresolved cap.
+    expect(screen.queryByText(/collaborators$/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Upgrade to Pro/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not proactively block an EDITOR inviting (owner-scoped cap), relies on the 403", async () => {
