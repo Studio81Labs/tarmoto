@@ -2,7 +2,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import type { Trip } from "@/lib/types";
-import type { TripActivityEntry, TripSuggestion } from "@/lib/api";
+import {
+  ApiError,
+  type TripActivityEntry,
+  type TripSuggestion,
+} from "@/lib/api";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 const makeTrip = (overrides: Partial<Trip> = {}): Trip => ({
   id: "trip-1",
@@ -84,6 +89,22 @@ vi.mock("@/lib/socket", async (importActual) => {
   };
 });
 
+const useLimitMock = vi.fn(() => ({
+  limit: null as number | null,
+  isLoading: false,
+  isError: false,
+  isSuccess: true,
+}));
+const useEntitlementsMock = vi.fn(() => ({ tier: "free" }));
+vi.mock("@/hooks", () => ({
+  useLimit: () => useLimitMock(),
+  useEntitlements: () => useEntitlementsMock(),
+}));
+
+// UpgradePrompt (rendered by the at-cap counter / 403 modal) calls
+// useRouter() for its CTA — the test tree has no app router mounted.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 const baseSuggestion: TripSuggestion = {
   id: "sug-1",
   trip_id: "server-trip-1",
@@ -141,6 +162,13 @@ describe("TripCollaborateModal — collab tabs", () => {
     hoisted.subscribeTrip.mockReset();
     hoisted.unsubscribeTrip.mockReset();
     hoisted.onTripActivity.mockReset().mockReturnValue(() => {});
+    useLimitMock.mockReset().mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    useEntitlementsMock.mockReset().mockReturnValue({ tier: "free" });
   });
 
   afterEach(() => {
@@ -1150,5 +1178,140 @@ describe("TripCollaborateModal — collab tabs", () => {
     expect(
       screen.queryByRole("button", { name: /^accept/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("blocks the invite and shows the counter when the OWNER is at the collaborator cap", async () => {
+    // Free tier's real max_trip_collaborators default is 0 (see
+    // packages/shared/src/feature-flags.ts) — `upgradeTierForLimit` only
+    // resolves a CTA target when the resolved limit matches the current
+    // tier's static default (a mismatch reads as an override, which
+    // suppresses the CTA), so the cap here must be the real free default
+    // for the "Upgrade to Pro" assertion below to hold.
+    useLimitMock.mockReturnValue({
+      limit: 0,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "owner-1",
+            display_name: "Owner",
+            email: "o@example.com",
+            avatar_url: null,
+            role: "owner",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    // 0 non-owner collaborators, cap 0 (free tier) → already at limit.
+    expect(
+      await screen.findByText(/0 of 0 collaborators/i),
+    ).toBeInTheDocument();
+    const invite = screen.getByRole("button", { name: /^invite$/i });
+    expect(invite).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Upgrade to Pro/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not proactively block an EDITOR inviting (owner-scoped cap), relies on the 403", async () => {
+    useLimitMock.mockReturnValue({
+      limit: 0,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            email: "eve@example.com",
+            avatar_url: null,
+            role: "editor",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    // The editor's own tier isn't the cap's — invite stays enabled proactively.
+    const invite = screen.getByRole("button", { name: /^invite$/i });
+    expect(invite).not.toBeDisabled();
+  });
+
+  it("routes a FEATURE_LIMIT_EXCEEDED invite 403 to the upgrade modal", async () => {
+    hoisted.invite.mockRejectedValueOnce(
+      new ApiError("limit", 403, {
+        code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_trip_collaborators",
+        limit: 5,
+        current: 5,
+      }),
+    );
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        canCreateInviteLink
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    // The outer TripCollaborateModal container is ALSO role="dialog"
+    // (aria-labelledby "Collaborate on this trip"), so target the inner
+    // upgrade dialog by its own accessible name — with resolvedLimit (5)
+    // not matching the free tier's static default (0), no upgrade target
+    // resolves, so UpgradePrompt's modal titles itself "Limit reached".
+    expect(
+      await screen.findByRole("dialog", { name: /limit reached/i }),
+    ).toBeInTheDocument();
   });
 });
