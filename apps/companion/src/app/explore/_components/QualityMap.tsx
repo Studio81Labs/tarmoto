@@ -114,6 +114,13 @@ import {
   pinnedConditionRetired,
   reconcileConditionMenu,
 } from "./conditionPopoverReconcile";
+import { useEntitlements, useLimit } from "@/hooks";
+import {
+  resolveQualityMaxZoom,
+  shouldPromptQualityZoom,
+} from "@/lib/map-entitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 // Stable empty route list — the explorer never checks conditions against a
 // route, so both hooks always fetch the viewport-only (regional) list.
@@ -262,6 +269,23 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     },
     ref,
   ) {
+    const t = useTranslation();
+    // Discovery nudge: a free rider zooming the overlay past the entitled
+    // cap gets a one-shot upgrade modal on THIS surface only (the primary
+    // interactive quality map — other quality consumers keep the silent
+    // clamp from `resolveQualityMaxZoom`/`MapCanvas`). `qualityCapFinite`
+    // is false while the cap is unresolved OR for an unlimited (pro/premium)
+    // rider — fail closed, never nag in either case.
+    const { tier } = useEntitlements();
+    const { limit: qualityZoomLimit, isSuccess: qualityZoomResolved } =
+      useLimit("road_quality_max_zoom");
+    const qualityCapFinite = qualityZoomResolved && qualityZoomLimit !== null;
+    const qualityCap = resolveQualityMaxZoom(
+      qualityZoomLimit,
+      qualityZoomResolved,
+    );
+    const [zoomUpgradeOpen, setZoomUpgradeOpen] = useState(false);
+    const [zoomUpgradeDismissed, setZoomUpgradeDismissed] = useState(false);
     const handleRef = useRef<MapCanvasHandle>(null);
     // Fun Zone draw-region control (installed once at ready). `drawnRegionCbRef`
     // keeps the latest `onDrawnRegionChange` so the once-run control closure
@@ -761,6 +785,17 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       onViewChange?.(view);
       // Refetch POIs for the new viewport (debounced in the effect below).
       setPoiViewportToken((token) => token + 1);
+      if (
+        shouldPromptQualityZoom({
+          showQuality,
+          capFinite: qualityCapFinite,
+          zoom: view.zoom,
+          cap: qualityCap,
+          dismissed: zoomUpgradeDismissed,
+        })
+      ) {
+        setZoomUpgradeOpen(true);
+      }
     };
 
     // ── category-POI viewport fetch ──
@@ -1184,32 +1219,51 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
 
     return (
-      <MapCanvas
-        ref={handleRef}
-        center={center}
-        zoom={zoom}
-        showQuality={showQuality}
-        showSurface={showSurface}
-        selectedSegmentId={selectedSegmentId ?? null}
-        qualityOpacityExpression={qualityOpacity}
-        surfaceOpacityExpression={surfaceOpacity}
-        onReady={handleReady}
-        onViewChange={handleViewChange}
-      >
-        {pointMenu ? (
-          <MapPointPopover
-            point={pointMenu.point}
-            x={pointMenu.x}
-            y={pointMenu.y}
+      <>
+        <MapCanvas
+          ref={handleRef}
+          center={center}
+          zoom={zoom}
+          showQuality={showQuality}
+          showSurface={showSurface}
+          selectedSegmentId={selectedSegmentId ?? null}
+          qualityOpacityExpression={qualityOpacity}
+          surfaceOpacityExpression={surfaceOpacity}
+          onReady={handleReady}
+          onViewChange={handleViewChange}
+        >
+          {pointMenu ? (
+            <MapPointPopover
+              point={pointMenu.point}
+              x={pointMenu.x}
+              y={pointMenu.y}
+              onClose={() => {
+                // Dismissing the card also drops any condition pin, so a later
+                // settle can't treat it as still-pinned.
+                pinnedConditionRef.current = null;
+                setPointMenu(null);
+              }}
+            />
+          ) : null}
+        </MapCanvas>
+        {zoomUpgradeOpen && tier ? (
+          <UpgradePrompt
+            variant="modal"
+            capability={{
+              limit: "road_quality_max_zoom",
+              resolvedLimit: qualityZoomLimit,
+            }}
+            currentTier={tier}
+            message={t(
+              "Zoom in further for full road-quality detail with Pro.",
+            )}
             onClose={() => {
-              // Dismissing the card also drops any condition pin, so a later
-              // settle can't treat it as still-pinned.
-              pinnedConditionRef.current = null;
-              setPointMenu(null);
+              setZoomUpgradeOpen(false);
+              setZoomUpgradeDismissed(true);
             }}
           />
         ) : null}
-      </MapCanvas>
+      </>
     );
   },
 );
