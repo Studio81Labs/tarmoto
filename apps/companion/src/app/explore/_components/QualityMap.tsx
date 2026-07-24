@@ -19,6 +19,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import {
   MapCanvas,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROAD_HIT_LAYER,
   TARMOTO_SURFACE_LAYER,
   type MapCanvasHandle,
   type MapCanvasViewChange,
@@ -627,8 +628,10 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
           onSegmentSelect: selectSegment,
         } = segmentSelectionRef.current;
         if (!selectSegment) return;
+        // Hit-test the UNCAPPED road layer (not the entitlement-capped quality
+        // overlay) so road selection survives past the free zoom cap.
         const layers = [
-          ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+          ...(canSelectQuality ? [TARMOTO_ROAD_HIT_LAYER] : []),
           ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
         ].filter((id) => map.getLayer(id));
         if (layers.length === 0) return;
@@ -697,7 +700,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
                 onSegmentSelect: selectSegment,
               } = segmentSelectionRef.current;
               const segmentLayers = [
-                ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+                ...(canSelectQuality ? [TARMOTO_ROAD_HIT_LAYER] : []),
                 ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
               ].filter((id) => map.getLayer(id));
               if (selectSegment && segmentLayers.length > 0) {
@@ -762,7 +765,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
-      for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
+      for (const id of [TARMOTO_ROAD_HIT_LAYER, TARMOTO_SURFACE_LAYER]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
