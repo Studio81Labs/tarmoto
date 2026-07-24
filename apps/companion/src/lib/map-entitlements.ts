@@ -21,7 +21,12 @@ export function resolveQualityLayerMaxZoom(
   isResolved: boolean,
 ): number {
   if (!isResolved) return QUALITY_OVERLAY_FREE_CAP_ZOOM + 1;
-  return limit === null ? QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM : limit + 1;
+  if (limit === null) return QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM;
+  // `limit + 1` for the exclusive bound, but MapLibre `maxzoom` only accepts
+  // [0, 24] — an operator can set the cap to 24+ (the admin limit DTO allows
+  // it), so clamp to the ceiling rather than emit an invalid value that fails
+  // the map load.
+  return Math.min(limit + 1, QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM);
 }
 
 /**

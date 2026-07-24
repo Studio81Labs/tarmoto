@@ -1240,6 +1240,71 @@ describe("TripCollaborateModal — collab tabs", () => {
     ).toBeInTheDocument();
   });
 
+  it("re-enables Invite for an already-pending address at the cap (net-zero re-invite)", async () => {
+    // At cap with one pending invite. A NEW address stays blocked, but
+    // re-inviting the already-pending address (case/space-insensitive) is
+    // net-zero — the backend exempts it, so the UI must too.
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "owner-1",
+            display_name: "Owner",
+            email: "o@example.com",
+            avatar_url: null,
+            role: "owner",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [
+          {
+            id: "inv-1",
+            email: "pending@example.com",
+            role: "editor",
+            created_at: "2026-07-03T10:00:00Z",
+            state: "invited",
+          },
+        ],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    // 1 pending invite, cap 1 → at cap.
+    expect(
+      await screen.findByText(/1 of 1 collaborators/i),
+    ).toBeInTheDocument();
+    const emailInput = screen.getByLabelText(/invite email address/i);
+    const invite = screen.getByRole("button", { name: /^invite$/i });
+
+    // A brand-new address is blocked by the cap.
+    fireEvent.change(emailInput, { target: { value: "new@example.com" } });
+    expect(invite).toBeDisabled();
+
+    // Re-inviting the already-pending address (padded + mixed case) is allowed.
+    fireEvent.change(emailInput, {
+      target: { value: "  PENDING@example.com  " },
+    });
+    expect(invite).not.toBeDisabled();
+  });
+
   it("fails closed: an unresolved cap blocks the OWNER even with an empty roster and a filled email", async () => {
     // isSuccess: false means the limit query hasn't resolved (e.g. still
     // loading, or errored) — NOT "resolved to unlimited". The gate must

@@ -25,6 +25,18 @@ describe("resolveQualityLayerMaxZoom", () => {
     expect(resolveQualityLayerMaxZoom(12, true)).toBe(13);
     expect(resolveQualityLayerMaxZoom(14, true)).toBe(15);
   });
+
+  it("clamps a finite cap at/above the MapLibre ceiling (24) so maxzoom stays valid", () => {
+    // MapLibre maxzoom is [0, 24]; the admin DTO allows caps ≥ 24, so cap+1
+    // must not exceed 24.
+    expect(resolveQualityLayerMaxZoom(23, true)).toBe(24);
+    expect(resolveQualityLayerMaxZoom(24, true)).toBe(
+      QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
+    );
+    expect(resolveQualityLayerMaxZoom(100, true)).toBe(
+      QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
+    );
+  });
 });
 
 describe("shouldPromptQualityZoom", () => {

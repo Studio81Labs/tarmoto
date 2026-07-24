@@ -705,6 +705,15 @@ function PeopleTab({
   const atCollaboratorCap =
     isOwner &&
     (!limitResolved || (collabLimit !== null && nonOwnerCount >= collabLimit));
+  // A re-invite of an already-pending address is net-zero (role change / code
+  // rotation) — the backend exempts it from the cap, so the UI must not block
+  // it even when the owner is at the limit.
+  const trimmedEmail = email.trim().toLowerCase();
+  const isReinviteOfPending =
+    collaborators?.invites.some(
+      (inv) => inv.email.toLowerCase() === trimmedEmail,
+    ) ?? false;
+  const inviteBlockedByCap = atCollaboratorCap && !isReinviteOfPending;
   // Editors can send email invites too (the backend treats them as
   // privileged senders); role management and removal stay owner-only.
   const canInvite = isOwner || callerRole === "editor";
@@ -742,7 +751,7 @@ function PeopleTab({
               size="md"
               uppercase
               loading={inviting}
-              disabled={inviting || !email.trim() || atCollaboratorCap}
+              disabled={inviting || !email.trim() || inviteBlockedByCap}
               onClick={handleInvite}
             >
               {t("Invite")}
