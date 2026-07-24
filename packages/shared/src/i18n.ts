@@ -147,6 +147,158 @@ export type LooseTranslate = (
   values?: TranslationValues,
 ) => string;
 
+type MessageAst = ReturnType<IntlMessageFormat["getAst"]>;
+
+const ICU_ARGUMENT_TYPES: Readonly<Record<number, string>> = {
+  1: "argument",
+  2: "number",
+  3: "date",
+  4: "time",
+};
+
+function collectIcuArgumentSchema(
+  elements: MessageAst,
+  schema = new Map<string, Set<string>>(),
+): Map<string, Set<string>> {
+  for (const element of elements) {
+    const node = element as unknown as {
+      type: number;
+      value?: string;
+      options?: Record<string, { value: MessageAst }>;
+      pluralType?: "cardinal" | "ordinal";
+      children?: MessageAst;
+    };
+    const selectOptions = Object.keys(node.options ?? {}).sort();
+    const argumentType =
+      node.type === 5
+        ? `select[${selectOptions.join("|")}]`
+        : node.type === 6
+          ? `plural:${node.pluralType ?? "cardinal"}[${selectOptions
+              .filter((option) => option.startsWith("="))
+              .join("|")}]`
+          : ICU_ARGUMENT_TYPES[node.type];
+    if (argumentType && node.value) {
+      const types = schema.get(node.value) ?? new Set<string>();
+      types.add(argumentType);
+      schema.set(node.value, types);
+    }
+    for (const option of Object.values(node.options ?? {})) {
+      collectIcuArgumentSchema(option.value, schema);
+    }
+    if (node.children) collectIcuArgumentSchema(node.children, schema);
+  }
+  return schema;
+}
+
+function serialiseIcuArgumentSchema(
+  schema: Map<string, Set<string>>,
+): string[] {
+  return [...schema]
+    .map(([name, types]) => `${name}:${[...types].sort().join("|")}`)
+    .sort();
+}
+
+function collectIcuBranchIssues(
+  elements: MessageAst,
+  locale: string,
+  path = "message",
+): string[] {
+  const issues: string[] = [];
+  for (const element of elements) {
+    const node = element as unknown as {
+      type: number;
+      value?: string;
+      options?: Record<string, { value: MessageAst }>;
+      pluralType?: "cardinal" | "ordinal";
+      children?: MessageAst;
+    };
+    if (node.options) {
+      const argumentPath = `${path}.${node.value ?? "argument"}`;
+      const optionNames = Object.keys(node.options);
+      if (!optionNames.includes("other")) {
+        issues.push(`${argumentPath} is missing the required "other" branch`);
+      }
+      if (node.type === 6) {
+        const pluralType = node.pluralType ?? "cardinal";
+        const required = new Intl.PluralRules(locale, {
+          type: pluralType,
+        }).resolvedOptions().pluralCategories;
+        const missing = required.filter(
+          (category) => !optionNames.includes(category),
+        );
+        if (missing.length > 0) {
+          issues.push(
+            `${argumentPath} is missing ${locale} ${pluralType} plural branches: ${missing.join(", ")}`,
+          );
+        }
+      }
+      for (const [option, branch] of Object.entries(node.options)) {
+        issues.push(
+          ...collectIcuBranchIssues(
+            branch.value,
+            locale,
+            `${argumentPath}.${option}`,
+          ),
+        );
+      }
+    }
+    if (node.children) {
+      issues.push(...collectIcuBranchIssues(node.children, locale, path));
+    }
+  }
+  return issues;
+}
+
+/**
+ * Validate one translated ICU message against its English source contract.
+ *
+ * Parsing alone does not catch a translator renaming an argument, changing a
+ * number into a plain string, or omitting plural categories required by the
+ * target language. Catalog tests in every UI call this helper so adding the
+ * next language fails close to the catalog edit instead of at runtime.
+ */
+export function validateIcuTranslation(
+  source: string,
+  translated: string,
+  locale: string,
+): string[] {
+  let sourceAst: MessageAst;
+  let translatedAst: MessageAst;
+  try {
+    sourceAst = new IntlMessageFormat(source, DEFAULT_LOCALE, undefined, {
+      ignoreTag: true,
+    }).getAst();
+  } catch (error) {
+    return [
+      `English source is invalid ICU: ${error instanceof Error ? error.message : String(error)}`,
+    ];
+  }
+  try {
+    translatedAst = new IntlMessageFormat(translated, locale, undefined, {
+      ignoreTag: true,
+    }).getAst();
+  } catch (error) {
+    return [
+      `Translation is invalid ICU: ${error instanceof Error ? error.message : String(error)}`,
+    ];
+  }
+
+  const sourceSchema = serialiseIcuArgumentSchema(
+    collectIcuArgumentSchema(sourceAst),
+  );
+  const translatedSchema = serialiseIcuArgumentSchema(
+    collectIcuArgumentSchema(translatedAst),
+  );
+  const issues =
+    JSON.stringify(sourceSchema) === JSON.stringify(translatedSchema)
+      ? []
+      : [
+          `ICU argument schema differs (expected ${sourceSchema.join(", ") || "none"}; received ${translatedSchema.join(", ") || "none"})`,
+        ];
+  issues.push(...collectIcuBranchIssues(translatedAst, locale));
+  return issues;
+}
+
 // Parsed-message cache shared by every translator. Keyed by source locale +
 // template so the same English fallback text can coexist with a translated
 // variant under different plural rules. `null` negative-caches templates

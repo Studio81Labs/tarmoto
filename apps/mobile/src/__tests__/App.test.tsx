@@ -9,6 +9,7 @@ import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
 import {
   detectDeviceFormatLocale,
+  detectDeviceLocale,
   detectDeviceTimeZone,
 } from "@/i18n/deviceLocale";
 import type { User } from "@/types";
@@ -97,6 +98,7 @@ describe("App auth locale hydration", () => {
     mockMonitorLocales.length = 0;
     mockProviderLocale = undefined;
     jest.mocked(detectDeviceFormatLocale).mockReturnValue("en-GB");
+    jest.mocked(detectDeviceLocale).mockReturnValue("en-GB");
     jest.mocked(detectDeviceTimeZone).mockReturnValue("Europe/Prague");
     useAuthStore.setState({
       user: null,
@@ -232,6 +234,7 @@ describe("App auth locale hydration", () => {
       .mock.calls.at(-1)?.[0];
     const detected = monitor?.currentDevicePreferences();
     expect(detected).toEqual({
+      uiLocale: "en-GB",
       formatLocale: "ar-EG",
       timeZone: "Africa/Cairo",
     });
@@ -242,6 +245,26 @@ describe("App auth locale hydration", () => {
 
     expect(getFormatters().locale).toBe("ar-EG");
     expect(getFormatters().timeZone).toBe("Africa/Cairo");
+  });
+
+  it("refreshes signed-out UI locale from the device on foreground", async () => {
+    useAuthStore.setState({ isLoading: false });
+    await render(<App />);
+    await waitFor(() =>
+      expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalled(),
+    );
+
+    jest.mocked(detectDeviceLocale).mockReturnValue("de-DE");
+    const monitor = jest
+      .mocked(startDisplayPreferencesSyncMonitor)
+      .mock.calls.at(-1)?.[0];
+    const detected = monitor?.currentDevicePreferences();
+
+    await act(() => {
+      if (detected) monitor?.onDevicePreferencesDetected?.(detected);
+    });
+
+    expect(mockProviderLocale).toBe("de-DE");
   });
 
   it("defaults an authenticated unit-less profile to metric", async () => {

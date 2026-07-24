@@ -109,6 +109,8 @@ export interface SplitValueUnit {
   unit: string;
 }
 
+export type DisplayUnitKind = "distance" | "speed" | "elevation";
+
 export interface Formatters {
   /** Resolved (post-fallback) context, for callers that need to introspect. */
   locale: string;
@@ -165,6 +167,12 @@ export interface Formatters {
    * digits. Non-finite and non-positive input renders the localized `0:00`.
    */
   durationClock(totalSeconds: number): string;
+  /**
+   * Stable uppercase measurement abbreviation for compact labels and
+   * headings. Unit symbols are protocol-like tokens: their casing must not
+   * change with the display locale (for example, Turkish `mi` → `Mİ`).
+   */
+  unitLabel(kind: DisplayUnitKind): string;
   distanceKm(km: number): string;
   distanceM(m: number): string;
   speed(kmh: number): string;
@@ -271,6 +279,22 @@ function toDate(value: DateInput): Date | null {
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
+
+const DISPLAY_UNIT_LABELS: Record<
+  UnitSystem,
+  Record<DisplayUnitKind, string>
+> = {
+  metric: {
+    distance: "KM",
+    speed: "KM/H",
+    elevation: "M",
+  },
+  imperial: {
+    distance: "MI",
+    speed: "MPH",
+    elevation: "FT",
+  },
+};
 
 export function createFormatters(ctx: FormatContext): Formatters {
   const locale = canonicalizeFormatLocale(ctx.locale) ?? DEFAULT_FORMAT_LOCALE;
@@ -456,6 +480,7 @@ export function createFormatters(ctx: FormatContext): Formatters {
         ? `${unpadded(hours)}:${padded(minutes)}:${padded(seconds)}`
         : `${unpadded(minutes)}:${padded(seconds)}`;
     },
+    unitLabel: (kind) => DISPLAY_UNIT_LABELS[units][kind],
     distanceKm: (km) =>
       units === "imperial"
         ? unitNumber(kmToMiles(km), "mile", { maximumFractionDigits: 1 })

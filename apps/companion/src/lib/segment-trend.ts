@@ -57,6 +57,13 @@ export const TREND_RANGE_LABEL: Record<TrendRange, EnglishMessageKey> = {
   all: "All time",
 };
 
+export const TREND_RANGE_SHORT_LABEL: Record<TrendRange, EnglishMessageKey> = {
+  "3m": "3M",
+  "6m": "6M",
+  "1y": "1Y",
+  all: "All",
+};
+
 /**
  * A ±0.5 jump across a single reading is roughly a full quality tier shift,
  * which is the point at which riders would perceive "this road feels

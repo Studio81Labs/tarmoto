@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n } from "@/i18n/I18nProvider";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, ZoomIn } from "lucide-react";
 import { Select } from "@tarmoto/ui";
@@ -65,7 +65,7 @@ export function TripStopsPanel({
   onFocusStop,
   month,
 }: TripStopsPanelProps) {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const format = useFormat();
   const activePoiCategories = useTripStore((s) => s.activePoiCategories);
   const togglePoiCategory = useTripStore((s) => s.togglePoiCategory);
@@ -176,7 +176,7 @@ export function TripStopsPanel({
 
   const activeLabels = categories
     .map((category) =>
-      t(poiCategoryMeta(category).label).toLocaleLowerCase(format.locale),
+      t(poiCategoryMeta(category).label).toLocaleLowerCase(locale),
     )
     .join(", ");
 

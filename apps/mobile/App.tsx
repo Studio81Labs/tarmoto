@@ -3,7 +3,7 @@
  * React Native App Entry Point
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { StatusBar, LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -40,6 +40,7 @@ function readDeviceDisplayPreferences(): DeviceDisplayPreferences {
   const detectedLocale = canonicalizeFormatLocale(detectDeviceFormatLocale());
   const detectedZone = detectDeviceTimeZone();
   return {
+    uiLocale: detectDeviceLocale(),
     formatLocale: detectedLocale,
     timeZone:
       detectedZone && isValidTimeZone(detectedZone) ? detectedZone : null,
@@ -66,10 +67,10 @@ export default function App() {
   const adoptAccountUiLocale = usePreferencesStore(
     (state) => state.adoptAccountUiLocale,
   );
-  const deviceLocale = useMemo(detectDeviceLocale, []);
   const [deviceDisplayPreferences, setDeviceDisplayPreferences] = useState(
     readDeviceDisplayPreferences,
   );
+  const deviceLocale = deviceDisplayPreferences.uiLocale;
   const locale = uiLocaleOverride ?? user?.language ?? deviceLocale;
   const formatLocale =
     deviceDisplayPreferences.formatLocale ??
@@ -157,7 +158,8 @@ export default function App() {
       onDevicePreferencesDetected: (detected) => {
         setDeviceDisplayPreferences((current) =>
           current.formatLocale === detected.formatLocale &&
-          current.timeZone === detected.timeZone
+          current.timeZone === detected.timeZone &&
+          current.uiLocale === detected.uiLocale
             ? current
             : detected,
         );

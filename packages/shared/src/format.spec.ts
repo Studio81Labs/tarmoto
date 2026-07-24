@@ -378,6 +378,24 @@ describe("createFormatters — unit-aware measurements", () => {
       unit: "m",
     });
   });
+
+  it("keeps compact unit labels invariant across regional locales", () => {
+    const turkishImperial = createFormatters({
+      locale: "tr-TR",
+      units: "imperial",
+    });
+    const turkishMetric = createFormatters({
+      locale: "tr-TR",
+      units: "metric",
+    });
+
+    expect(turkishImperial.unitLabel("distance")).toBe("MI");
+    expect(turkishImperial.unitLabel("speed")).toBe("MPH");
+    expect(turkishImperial.unitLabel("elevation")).toBe("FT");
+    expect(turkishMetric.unitLabel("distance")).toBe("KM");
+    expect(turkishMetric.unitLabel("speed")).toBe("KM/H");
+    expect(turkishMetric.unitLabel("elevation")).toBe("M");
+  });
 });
 
 describe("createFormatters — Intl memo cache cap", () => {

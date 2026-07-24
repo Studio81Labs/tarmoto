@@ -40,6 +40,7 @@ import {
   tierRank,
 } from "./AchievementsScreen.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { useI18n } from "@/i18n/I18nProvider";
 import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
@@ -186,6 +187,7 @@ function Section({
 }
 
 function BadgeRow({ badge }: { badge: UserBadge }) {
+  const { locale } = useI18n();
   const copy = badgeCopy(badge.key);
   const format = getFormatters();
   const next = nextMilestone(badge);
@@ -234,7 +236,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               ]}
             >
               <Text style={styles.tierLabel}>
-                {tierLabel(badge.tier ?? "").toLocaleUpperCase()}
+                {tierLabel(badge.tier ?? "").toLocaleUpperCase(locale)}
               </Text>
             </View>
           ) : null}
@@ -257,7 +259,7 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               {format.integer(badge.progress.current)} /{" "}
               {format.integer(next.target)} →{" "}
               <Text style={styles.progressTier}>
-                {tierLabel(next.tier).toLocaleUpperCase()}
+                {tierLabel(next.tier).toLocaleUpperCase(locale)}
               </Text>
             </Text>
           </>

@@ -18,6 +18,7 @@ import type { Formatters } from "@tarmoto/shared";
 import {
   TREND_RANGES,
   TREND_RANGE_LABEL,
+  TREND_RANGE_SHORT_LABEL,
   clampScore,
   type QualityPoint,
   type TrendRange,
@@ -197,6 +198,7 @@ export function SegmentTrendChart({
                   tickLine={false}
                   axisLine={false}
                   width={24}
+                  tickFormatter={(value: number) => format.integer(value)}
                 />
                 <Tooltip
                   contentStyle={{
@@ -222,7 +224,7 @@ export function SegmentTrendChart({
                   dot={{ r: 2, fill: TREND_PALETTE.line }}
                   activeDot={{ r: 4 }}
                   isAnimationActive={false}
-                  name="This segment"
+                  name={t("This segment")}
                 />
                 {filteredRegional.length > 0 && (
                   <Line
@@ -233,7 +235,7 @@ export function SegmentTrendChart({
                     strokeDasharray="4 4"
                     dot={false}
                     isAnimationActive={false}
-                    name="Regional avg"
+                    name={t("Regional avg")}
                   />
                 )}
                 {events.map((event) => (
@@ -293,7 +295,7 @@ function RangeSelector({
                 : "text-fg-mute hover:bg-paper hover:text-ink"
             }`}
           >
-            {option === "all" ? t("All") : option.toUpperCase()}
+            {t(TREND_RANGE_SHORT_LABEL[option])}
           </button>
         );
       })}

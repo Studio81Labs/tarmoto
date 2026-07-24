@@ -372,15 +372,18 @@ function SegmentDetailContent({
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-fg-dim">
-                      {t("{reporter} · {time} · {n} confirmations", {
-                        reporter: hazard.reporter ?? t("Unknown rider"),
-                        time: formatRelativeTimeLabel(
-                          hazard.created_at,
-                          { format },
-                          t,
-                        ),
-                        n: hazard.confirmations,
-                      })}
+                      {t(
+                        "{reporter} · {time} · {count, plural, one {# confirmation} other {# confirmations}}",
+                        {
+                          reporter: hazard.reporter ?? t("Unknown rider"),
+                          time: formatRelativeTimeLabel(
+                            hazard.created_at,
+                            { format },
+                            t,
+                          ),
+                          count: hazard.confirmations,
+                        },
+                      )}
                     </p>
                   </div>
                 </li>

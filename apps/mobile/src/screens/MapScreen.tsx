@@ -104,6 +104,7 @@ import {
 } from "./MapScreen.helpers";
 import { formatKm } from "./TripScreens.helpers";
 import { t as translate } from "@/i18n";
+import { useI18n } from "@/i18n/I18nProvider";
 import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
@@ -659,6 +660,7 @@ function ToggleFab({
   active: boolean;
   onPress: () => void;
 }) {
+  const { locale } = useI18n();
   return (
     <TouchableOpacity
       style={[styles.toggleFab, active ? styles.toggleFabActive : null]}
@@ -666,8 +668,12 @@ function ToggleFab({
       accessibilityRole="button"
       accessibilityLabel={
         active
-          ? translate("Hide {label} overlay", { label: label.toLowerCase() })
-          : translate("Show {label} overlay", { label: label.toLowerCase() })
+          ? translate("Hide {label} overlay", {
+              label: label.toLocaleLowerCase(locale),
+            })
+          : translate("Show {label} overlay", {
+              label: label.toLocaleLowerCase(locale),
+            })
       }
       accessibilityState={{ selected: active }}
     >
