@@ -53,6 +53,7 @@ import {
   rankChallenges,
 } from "./AchievementsScreen.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
 
@@ -374,14 +375,17 @@ function Leaderboard({
             key={e.user_id}
             style={[styles.lbRow, isMe ? styles.lbRowMe : null]}
           >
-            <Text style={styles.lbRank}>#{e.rank}</Text>
+            <Text style={styles.lbRank}>
+              #{getFormatters().integer(e.rank)}
+            </Text>
             <Text style={[styles.lbName, isMe ? styles.lbNameMe : null]}>
               {isMe
                 ? translate("{name} (you)", { name: e.display_name })
                 : e.display_name}
             </Text>
             <Text style={styles.lbProgress}>
-              {formatChallengeMetric(e.progress, metric)} · {percent}%
+              {formatChallengeMetric(e.progress, metric)} ·{" "}
+              {getFormatters().percent(percent / 100)}
               {e.completed ? " ✓" : ""}
             </Text>
           </View>

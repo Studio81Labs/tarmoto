@@ -11,6 +11,9 @@ const authMock = vi.hoisted(() => vi.fn());
 const headersMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({ auth: authMock }));
+vi.mock("@/format/server", () => ({
+  getServerFormatLocale: () => "ar-EG",
+}));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: (name: string) => {
@@ -21,7 +24,7 @@ vi.mock("next/headers", () => ({
   headers: headersMock,
 }));
 
-import { readLocale } from "./server";
+import { readLocale, t } from "./server";
 
 // Mirrors ACCOUNT_LOCALE_LOOKUP_TIMEOUT_MS without exporting an internal
 // implementation detail from the server locale module.
@@ -90,5 +93,11 @@ describe("server locale resolution", () => {
 
     await expect(localePromise).resolves.toBe("en");
     expect(headersMock).toHaveBeenCalledOnce();
+  });
+
+  it("uses the request format locale for ICU digits without changing UI plural rules", () => {
+    expect(t("{count, plural, one {# day} other {# days}}", { count: 2 })).toBe(
+      "٢ days",
+    );
   });
 });

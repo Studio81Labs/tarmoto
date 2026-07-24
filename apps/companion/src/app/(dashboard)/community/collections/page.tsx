@@ -40,6 +40,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 import {
   COLLECTION_VISIBILITY_LABELS,
   RouteCollectionVisibilityPill,
@@ -162,7 +163,9 @@ export default function RouteCollectionsPage() {
     <CommunityScaffold
       collectionsBadge={
         status === "loading" && collections.length === 0 ? null : (
-          <Mono className="text-[11px]">{collections.length}</Mono>
+          <Mono className="text-[11px]">
+            {t("{count, number}", { count: collections.length })}
+          </Mono>
         )
       }
       headerRight={
@@ -246,7 +249,7 @@ export default function RouteCollectionsPage() {
             <Bookmark size={14} className="text-accent" />
             <Stamp as="h2">{t("Followed collections")}</Stamp>
             <span className="text-xs text-fg-dim">
-              · {visibleFollowed.length}
+              · {t("{count, number}", { count: visibleFollowed.length })}
               {needle && visibleFollowed.length !== followed.length
                 ? ` ${t("of {total}", { total: followed.length })}`
                 : ""}
@@ -395,7 +398,7 @@ function CollectionCard({
 
         <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
-          {format.relativeTime(collection.updatedAt)}
+          {formatRelativeTimeLabel(collection.updatedAt, { format }, t)}
         </p>
       </Link>
 
@@ -491,7 +494,7 @@ function FollowedCollectionCard({
 
         <p className="mt-3 text-[11px] text-fg-mute">
           {t("Updated")}
-          {format.relativeTime(collection.updatedAt)}
+          {formatRelativeTimeLabel(collection.updatedAt, { format }, t)}
         </p>
       </Link>
 
@@ -620,7 +623,10 @@ function CollectionModal({
               placeholder={t("What makes this collection special?")}
             />
             <p className="mt-1 text-[11px] text-fg-mute">
-              {description.length}/{MAX_COLLECTION_DESCRIPTION_LENGTH}
+              {t("{current, number}/{max, number}", {
+                current: description.length,
+                max: MAX_COLLECTION_DESCRIPTION_LENGTH,
+              })}
             </p>
           </div>
 

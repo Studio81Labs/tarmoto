@@ -31,6 +31,7 @@ import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import { useFormat } from "@/format/FormatProvider";
 import { useAuthStore } from "@/stores/auth";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 const MAX_REVIEW_PHOTOS = 5;
 const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_PHOTO_MIME_TYPES = [
@@ -643,6 +644,7 @@ function ReviewEditor({
   onSubmit: () => void;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const tc = TC;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
@@ -722,7 +724,7 @@ function ReviewEditor({
                   size={13}
                   className={active ? "fill-accent text-accent" : ""}
                 />
-                <span>{rating}</span>
+                <span>{format.integer(rating)}</span>
               </button>
             );
           })}
@@ -747,7 +749,10 @@ function ReviewEditor({
           className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${tc.input}`}
         />
         <span className={`mt-1 block text-right text-[11px] ${tc.textMute}`}>
-          {draft.comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
+          {t("{current, number}/{max, number}", {
+            current: draft.comment.length,
+            max: REVIEW_COMMENT_MAX_LENGTH,
+          })}
         </span>
       </label>
 
@@ -958,7 +963,7 @@ function ReviewCard({
             </p>
           )}
           <p className={`text-xs ${tc.textMute}`}>
-            {format.relativeTime(review.created_at)}
+            {formatRelativeTimeLabel(review.created_at, { format }, t)}
           </p>
         </div>
         <div
@@ -1032,7 +1037,7 @@ function ReviewCard({
                 ? t("Remove helpful vote")
                 : t("Mark this review as helpful")
             }
-            count={review.helpful_count}
+            count={format.integer(review.helpful_count)}
             active={review.my_vote === true}
             pending={pendingVote === "up"}
             inactiveClass={tc.chipInactive}
@@ -1045,7 +1050,7 @@ function ReviewCard({
                 ? t("Remove not-helpful vote")
                 : t("Mark this review as not helpful")
             }
-            count={review.not_helpful_count}
+            count={format.integer(review.not_helpful_count)}
             active={review.my_vote === false}
             pending={pendingVote === "down"}
             inactiveClass={tc.chipInactive}
@@ -1067,7 +1072,7 @@ function VoteButton({
   onClick,
 }: {
   label: string;
-  count: number;
+  count: string;
   active: boolean;
   pending: boolean;
   inactiveClass: string;

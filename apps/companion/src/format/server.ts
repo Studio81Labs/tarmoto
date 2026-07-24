@@ -57,14 +57,29 @@ async function resolveFromRequest(): Promise<FormatPrefs> {
   };
 }
 
+const requestFormatPrefsRef = cache((): { current: FormatPrefs } => ({
+  current: {
+    formatLocale: DEFAULT_FORMAT_LOCALE,
+    timeZone: "UTC",
+    units: "metric",
+  },
+}));
+
 /**
  * Server-side format-preference resolution, memoized per request via
  * react `cache()` (same idiom as i18n/server.ts). Precedence per value:
  * valid cookie > Accept-Language (format locale only) > en/UTC/metric.
  */
-export const readFormatPrefs = cache(
-  async (): Promise<FormatPrefs> => resolveFromRequest(),
-);
+export const readFormatPrefs = cache(async (): Promise<FormatPrefs> => {
+  const prefs = await resolveFromRequest();
+  requestFormatPrefsRef().current = prefs;
+  return prefs;
+});
+
+/** Format locale already resolved for the current server render. */
+export function getServerFormatLocale(): string {
+  return requestFormatPrefsRef().current.formatLocale;
+}
 
 /** Formatters bound to this request's prefs, for server components and route handlers. */
 export async function getServerFormatters(): Promise<Formatters> {

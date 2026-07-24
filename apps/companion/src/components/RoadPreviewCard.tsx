@@ -16,6 +16,7 @@ import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
 import { useFormat } from "@/format/FormatProvider";
 import { MiniRouteSvg, QualityBars } from "@tarmoto/ui";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 import {
   HAZARD_RISK_LABELS,
   HAZARD_SEVERITY_LABELS,
@@ -118,7 +119,7 @@ export function RoadPreviewCard({
             title={severityLabel}
           >
             <AlertTriangle size={12} />
-            {segment.activeHazards.length}
+            {format.integer(segment.activeHazards.length)}
           </span>
         )}
         <QualityBars
@@ -239,7 +240,12 @@ export function RoadPreviewCard({
                         )}
                         <p className="mt-0.5 text-[10px] text-fg-mute">
                           {hazard.reporterName} ·{" "}
-                          {format.relativeTime(hazard.createdAt)} ·{" "}
+                          {formatRelativeTimeLabel(
+                            hazard.createdAt,
+                            { format },
+                            t,
+                          )}{" "}
+                          ·{" "}
                           {t(
                             "{count, plural, one {# confirmation} other {# confirmations}}",
                             { count: hazard.confirmations },
@@ -265,7 +271,11 @@ export function RoadPreviewCard({
                   <div
                     key={photo.id}
                     className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md border border-line bg-paper p-1 text-center text-[10px] text-fg-mute"
-                    title={`${photo.riderName} · ${format.relativeTime(photo.createdAt)}`}
+                    title={`${photo.riderName} · ${formatRelativeTimeLabel(
+                      photo.createdAt,
+                      { format },
+                      t,
+                    )}`}
                   >
                     {photo.riderName}
                   </div>

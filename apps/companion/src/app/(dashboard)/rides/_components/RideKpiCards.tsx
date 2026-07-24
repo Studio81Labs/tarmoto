@@ -88,7 +88,7 @@ export function RideKpiCards({
         has && stats.avg_quality != null
           ? format.decimal(stats.avg_quality, 1)
           : DASH,
-      unit: "/ 5",
+      unit: t("/ {max}", { max: format.integer(5) }),
     },
   ];
 

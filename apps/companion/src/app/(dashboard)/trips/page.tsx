@@ -46,6 +46,7 @@ import {
 } from "@/lib/trip-filters";
 import { parseFeatureLimitError, tierLabel } from "@/lib/entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 import {
   migrateLegacyFolders,
   sortFoldersForDisplay,
@@ -833,6 +834,7 @@ function FolderChip({
   onDelete?: () => void;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const [open, setOpen] = useState(false);
   // Chip menus need to flip alignment based on where the chip
   // lands on the wrapping row. A leftmost wrapped chip with the
@@ -894,7 +896,7 @@ function FolderChip({
         <span
           className={`font-mono text-[11px] tabular-nums ${active ? "text-ink" : "text-fg-mute"}`}
         >
-          {count}
+          {format.integer(count)}
         </span>
       </button>
       {hasActions && (
@@ -1145,7 +1147,7 @@ function TripCard({
               trip.warnings_count > 0 && (
                 <span className="inline-flex items-center gap-1 text-accent">
                   <AlertTriangle size={11} strokeWidth={2.4} />
-                  {trip.warnings_count}
+                  {format.integer(trip.warnings_count)}
                 </span>
               )}
           </div>
@@ -1153,7 +1155,7 @@ function TripCard({
           <div className="mt-3 flex items-center justify-between border-t border-line pt-3 font-mono text-[11px] text-fg-mute">
             <span>
               {trip.updatedAt ? t("UPDATED") : t("CREATED")}{" "}
-              {format.relativeTime(updatedIso).toUpperCase()}
+              {formatRelativeTimeLabel(updatedIso, { format }, t)}
             </span>
             {currentFolder && (
               <span className="uppercase truncate max-w-[12ch]">

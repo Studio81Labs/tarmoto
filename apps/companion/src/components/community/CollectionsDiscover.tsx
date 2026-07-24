@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Mono, Stamp } from "@tarmoto/ui";
@@ -80,6 +81,7 @@ export function CollectionsDiscover({ search }: { search: string }) {
 
 function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
   const t = useTranslation();
+  const format = useFormat();
   const [lines, setLines] = useState<number[][][]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -145,12 +147,14 @@ function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
 
         <div className="mt-3 flex justify-between border-t border-line pt-3 text-[11px] text-fg-dim">
           <Mono>
-            <span className="font-bold text-ink">{collection.item_count}</span>{" "}
+            <span className="font-bold text-ink">
+              {format.integer(collection.item_count)}
+            </span>{" "}
             {t("ROUTES")}
           </Mono>
           <Mono>
             <span className="font-bold text-ink">
-              {collection.follower_count}
+              {format.integer(collection.follower_count)}
             </span>{" "}
             {t("FOLLOWS")}
           </Mono>

@@ -7,7 +7,56 @@
  * Zero platform-specific dependencies; only `Date` and string APIs.
  */
 
+import type { Formatters } from "./format";
 import type { TranslationValues } from "./i18n";
+
+export type RelativeTimeLabelKey =
+  | "just now"
+  | "{count}m ago"
+  | "{count}h ago"
+  | "{count}d ago"
+  | "{count}mo ago"
+  | "{count}y ago";
+
+export type RelativeTimeLabelTranslate = (
+  key: RelativeTimeLabelKey,
+  values?: TranslationValues,
+) => string;
+
+/**
+ * Compact relative time whose words follow the UI catalog while its digits
+ * follow the rider's independent regional number locale.
+ */
+export function formatRelativeTimeLabel(
+  iso: string,
+  options: {
+    format: Pick<Formatters, "integer">;
+    now?: Date | number;
+  },
+  t: RelativeTimeLabelTranslate,
+): string {
+  const timestamp = Date.parse(iso);
+  if (Number.isNaN(timestamp)) return "";
+
+  const now =
+    options.now instanceof Date
+      ? options.now.getTime()
+      : (options.now ?? Date.now());
+  const diffSeconds = Math.max(0, Math.floor((now - timestamp) / 1000));
+  const withCount = (key: RelativeTimeLabelKey, count: number) =>
+    t(key, { count: options.format.integer(count) });
+
+  if (diffSeconds < 60) return t("just now");
+  const minutes = Math.floor(diffSeconds / 60);
+  if (minutes < 60) return withCount("{count}m ago", minutes);
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return withCount("{count}h ago", hours);
+  const days = Math.floor(hours / 24);
+  if (days < 30) return withCount("{count}d ago", days);
+  const months = Math.floor(days / 30);
+  if (months < 12) return withCount("{count}mo ago", months);
+  return withCount("{count}y ago", Math.floor(months / 12));
+}
 
 export type JoinedLabelKey =
   | "Joined recently"

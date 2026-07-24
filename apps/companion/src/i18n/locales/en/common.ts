@@ -3,6 +3,14 @@ export const common = {
     "An account with that email already exists",
   mo: "mo",
   yr: "yr",
+  "{count}d ago": "{count}d ago",
+  "{count}h ago": "{count}h ago",
+  "{count}m ago": "{count}m ago",
+  "{count}mo ago": "{count}mo ago",
+  "{count}y ago": "{count}y ago",
+  "{count, number}": "{count, number}",
+  "{current, number}/{max, number}": "{current, number}/{max, number}",
+  "{score} / {max}": "{score} / {max}",
   "{hours} vs last month": "{hours} vs last month",
   "{percent} vs last month": "{percent} vs last month",
   "Check your connection and try again.":
@@ -21,6 +29,8 @@ export const common = {
     "Your session has expired. Sign in again.",
   "image URL from your CDN, photo host, or social profile.":
     "image URL from your CDN, photo host, or social profile.",
+  "just now": "just now",
+  "/ {max}": "/ {max}",
   '"{name}" and all its days, waypoints, and collaboration history are permanently removed. This cannot be undone.':
     '"{name}" and all its days, waypoints, and collaboration history are permanently removed. This cannot be undone.',
   '"{name}" is deleted for good. This cannot be undone.':
@@ -760,7 +770,8 @@ export const common = {
   "Seasonal passes": "Seasonal passes",
   "Seasonal ·": "Seasonal ·",
   "Seasonal · {season}": "Seasonal \u00b7 {season}",
-  "Segment quality (": "Segment quality (",
+  "Segment quality ({count, number})": "Segment quality ({count, number})",
+  "{earned} of {total} earned": "{earned} of {total} earned",
   "Segment {n}": "Segment {n}",
   Segments: "Segments",
   "Select review photos": "Select review photos",
@@ -939,7 +950,7 @@ export const common = {
   Waypoint: "Waypoint",
   "Waypoint details": "Waypoint details",
   "Waypoint {n}": "Waypoint {n}",
-  "Waypoints (": "Waypoints (",
+  "Waypoints ({count, number})": "Waypoints ({count, number})",
   "We hit a network hiccup loading your drafts. Refresh to try again — your trips are safe.":
     "We hit a network hiccup loading your drafts. Refresh to try again \u2014 your trips are safe.",
   "We hit a network hiccup loading your rides. Refresh to try again.":

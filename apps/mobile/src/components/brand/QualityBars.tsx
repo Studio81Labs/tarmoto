@@ -7,6 +7,7 @@ import {
   qualityIndex,
 } from "@/theme/brand";
 import { translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 interface QualityBarsProps {
   /**
@@ -70,7 +71,9 @@ export default function QualityBars({
   const emptyColor =
     empty ?? (onDark ? brandColorsDark.qEmpty : brandColorsLight.qEmpty);
   const defaultLabel = scored
-    ? translate("Quality {score} of 5", { score: filled })
+    ? translate("Quality {score} of 5", {
+        score: getFormatters().integer(filled),
+      })
     : translate("Quality unscored");
   return (
     <View

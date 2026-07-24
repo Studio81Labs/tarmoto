@@ -148,6 +148,11 @@ describe("i18n / makeTranslator (ICU)", () => {
     expect(icuT("views", { count: 1234 })).toBe("1,234 views");
   });
 
+  it("keeps UI plural rules while using the independent number locale", () => {
+    expect(icuT("rides", { count: 2 }, "en", "ar-EG")).toBe("٢ rides");
+    expect(icuT("views", { count: 1234 }, "en", "de-DE")).toBe("1.234 views");
+  });
+
   it("falls back to legacy interpolation for malformed messages and missing values", () => {
     // Unbalanced brace — ICU parse fails; legacy regex leaves it untouched.
     expect(icuT("Hi {name", { name: "R" })).toBe("Hi {name");
@@ -168,6 +173,7 @@ describe("i18n / makeTranslator (ICU)", () => {
     expect(cs("left", { count: 1 }, csLocale)).toBe("Zbývá 1 den");
     expect(cs("left", { count: 2 }, csLocale)).toBe("Zbývají 2 dny");
     expect(cs("left", { count: 5 }, csLocale)).toBe("Zbývá 5 dní");
+    expect(cs("left", { count: 2 }, csLocale, "ar-EG")).toBe("Zbývají ٢ dny");
   });
 
   it("applies the plural rules of the catalog that supplied the template", () => {
@@ -178,6 +184,6 @@ describe("i18n / makeTranslator (ICU)", () => {
     } as unknown as CatalogsByLocale<string>);
     const csLocale = "cs" as SupportedLocale;
     expect(cs("left", { count: 2 }, csLocale)).toBe("2 days left");
-    expect(cs("left", { count: 1234 }, csLocale)).toBe("1,234 days left");
+    expect(cs("left", { count: 1234 }, csLocale)).toBe("1 234 days left");
   });
 });

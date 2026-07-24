@@ -3,6 +3,7 @@ import { render, waitFor, act } from "@testing-library/react";
 import { PreferencesSync } from "./PreferencesSync";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi } from "@/lib/api/users";
+import { LOCALE_COOKIE } from "@/i18n";
 
 let sessionStatus = "authenticated";
 vi.mock("next-auth/react", () => ({
@@ -19,11 +20,14 @@ const updateMe = vi.mocked(usersApi.updateMe);
 // locale and read the jsdom timezone so assertions hold on any host.
 const DEVICE_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-function meWithPreferences(preferences: Record<string, unknown>) {
+function meWithPreferences(
+  preferences: Record<string, unknown>,
+  language?: string,
+) {
   // usersApi.getMe() resolves to `{ data: UserProfileResponse }` (see
   // openApiData in lib/api/client.ts) — nest under `data` so the mock
   // matches the real contract the component destructures against.
-  return { data: { preferences } } as unknown as Awaited<
+  return { data: { preferences, language } } as unknown as Awaited<
     ReturnType<typeof usersApi.getMe>
   >;
 }
@@ -44,6 +48,7 @@ describe("PreferencesSync", () => {
       configurable: true,
     });
     window.localStorage.clear();
+    document.cookie = `${LOCALE_COOKIE}=; path=/; max-age=0`;
     act(() => {
       usePreferencesStore.setState({ unitSystem: "metric", hydrated: false });
     });
@@ -93,6 +98,33 @@ describe("PreferencesSync", () => {
     expect(updateMe).toHaveBeenCalledWith({
       preferences: { format_locale: "cs-CZ", timezone: DEVICE_TZ },
     });
+  });
+
+  it("retries a locale cookie that did not reach the account record", async () => {
+    document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    getMe.mockResolvedValueOnce(
+      meWithPreferences(convergedPreferences({ units: "metric" })),
+    );
+    window.localStorage.setItem("tarmoto:preferences:unit-system", "metric");
+
+    render(<PreferencesSync />);
+
+    await waitFor(() => expect(updateMe).toHaveBeenCalledTimes(1));
+    expect(updateMe).toHaveBeenCalledWith({ language: "en" });
+  });
+
+  it("does not rewrite an account language that matches the locale cookie", async () => {
+    document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    getMe.mockResolvedValueOnce(
+      meWithPreferences(convergedPreferences({ units: "metric" }), "en"),
+    );
+    window.localStorage.setItem("tarmoto:preferences:unit-system", "metric");
+
+    render(<PreferencesSync />);
+
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(updateMe).not.toHaveBeenCalled();
   });
 
   it("writes nothing when the record already mirrors the device", async () => {

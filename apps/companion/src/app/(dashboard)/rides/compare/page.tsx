@@ -777,7 +777,7 @@ function QualityDiffSection({
                     />
                   </div>
                   <span className="w-10 text-right tabular-nums">
-                    {row.percent}%
+                    {format.percent(row.percent / 100)}
                   </span>
                 </div>
                 <div className="col-span-4 flex items-center gap-2 text-xs text-fg-dim">
@@ -792,7 +792,7 @@ function QualityDiffSection({
                     />
                   </div>
                   <span className="w-10 text-right tabular-nums">
-                    {row.bPercent}%
+                    {format.percent(row.bPercent / 100)}
                   </span>
                 </div>
                 <div
@@ -801,7 +801,9 @@ function QualityDiffSection({
                   {arrow}
                   {row.deltaPercent === 0
                     ? ""
-                    : ` ${Math.abs(Math.round(row.deltaPercent))}`}
+                    : ` ${format.integer(
+                        Math.abs(Math.round(row.deltaPercent)),
+                      )}`}
                 </div>
               </li>
             );

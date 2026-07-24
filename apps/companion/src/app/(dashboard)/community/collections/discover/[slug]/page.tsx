@@ -24,6 +24,7 @@ import { CollectionRouteRow } from "@/components/community/collection-route-atom
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
 import { COLLECTIONS_LIBRARY_QUERY_PREFIX } from "@/hooks/useCollections";
 import { useFormat } from "@/format/FormatProvider";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 type LoadState =
   | { phase: "loading" }
@@ -201,7 +202,11 @@ export default function DiscoverCollectionPage() {
             <span className="text-fg-mute">·</span>
             <Mono className="text-[11px] text-fg-mute">
               {t("Updated {time}", {
-                time: format.relativeTime(detail!.updated_at),
+                time: formatRelativeTimeLabel(
+                  detail!.updated_at,
+                  { format },
+                  t,
+                ),
               })}
             </Mono>
           </div>
