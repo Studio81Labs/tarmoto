@@ -158,6 +158,8 @@ describe('TripsService', () => {
     findOne: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+    query: jest.Mock;
+    getRepository: jest.Mock;
   };
   // Pulled out alongside `manager` so tests can call `mockImplementation`
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
@@ -207,6 +209,16 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      // The invite path takes a per-trip advisory lock and counts/writes
+      // through the txn manager. Route those repo lookups back to the same
+      // mocks the assertions target.
+      query: jest.fn().mockResolvedValue(undefined),
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === TripMember) return memberRepo;
+        if (entity === TripInvite) return inviteRepo;
+        if (entity === Trip) return tripRepo;
+        return undefined;
+      }),
     };
 
     transactionMock = jest
@@ -2262,6 +2274,32 @@ describe('TripsService', () => {
       };
       // The emailed code must be the one that actually landed in the DB.
       expect(mailCtx.inviteCode).toBe(persistedCode);
+    });
+
+    it('serialises the cap check + invite write under the shared per-trip advisory lock', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+
+      await service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT });
+
+      // The invite write ran inside tripRepo.manager.transaction, whose first
+      // statement took the advisory lock on the SAME key the group-link join
+      // uses (`trip:collaborators:<tripId>`) — so an invite and a link join
+      // with one slot left serialise against EACH OTHER, not just internally.
+      expect(transactionMock).toHaveBeenCalled();
+      expect(manager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip:collaborators:${TRIP_ID}`],
+      );
+      expect(inviteRepo.insert).toHaveBeenCalled();
     });
 
     it('404s viewers and non-members without sending mail', async () => {

@@ -16,6 +16,7 @@ import { User } from '../../entities/user.entity.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
+import { tripCollaboratorLockKey } from '../features/collaborator-cap-lock.js';
 import {
   CreateTripShareDto,
   TripShareJoinResponseDto,
@@ -156,7 +157,7 @@ export class TripSharesService {
       // prior committed insert.
       inserted = await this.dataSource.transaction(async (manager) => {
         await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-          `trip_shares:collaborators:${tripId}`,
+          tripCollaboratorLockKey(tripId),
         ]);
         // A joiner consuming a pending invite was already counted against the
         // owner's cap (invite → member is net-zero); an anonymous link-joiner

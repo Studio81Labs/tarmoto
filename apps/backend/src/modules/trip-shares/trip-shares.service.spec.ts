@@ -231,7 +231,7 @@ describe('TripSharesService', () => {
       expect(dataSource.transaction).toHaveBeenCalledTimes(1);
       expect(managerQuery).toHaveBeenCalledWith(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
-        ['trip_shares:collaborators:trip-1'],
+        ['trip:collaborators:trip-1'],
       );
       expect(memberRepo.save).toHaveBeenCalled();
     });

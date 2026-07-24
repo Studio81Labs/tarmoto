@@ -32,6 +32,7 @@ import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
+import { tripCollaboratorLockKey } from '../features/collaborator-cap-lock.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import {
@@ -324,11 +325,15 @@ export class TripsService {
    * NON-OWNER collaborators (accepted members + pending invites) against it,
    * throwing before a NEW invitee is persisted. Callers must invoke this ONLY
    * when adding a new collaborator — a re-invite of an already-pending address
-   * (role change / code rotation) adds nobody and must not be blocked. Mirrors
-   * `assertCanMintOpenTrip`'s count-then-throw (same small concurrency-race
-   * tolerance; the client gate + this check cover the realistic paths).
+   * (role change / code rotation) adds nobody and must not be blocked.
+   *
+   * Counts through the caller's `manager` so the read runs inside the same
+   * advisory-locked transaction as the write (see `invite`). Without that
+   * serialisation, concurrent invites/joins for one trip would each observe the
+   * same pre-write count, pass the cap, and collectively overflow it.
    */
   async assertCanAddCollaborator(
+    manager: EntityManager,
     tripId: string,
     ownerId: string,
   ): Promise<void> {
@@ -336,10 +341,10 @@ export class TripsService {
     const limit = limits.max_trip_collaborators;
     if (limit === null) return; // unlimited — skip the count entirely
     const [nonOwnerMembers, pendingInvites] = await Promise.all([
-      this.memberRepo.count({
+      manager.getRepository(TripMember).count({
         where: { trip_id: tripId, role: Not('owner') },
       }),
-      this.inviteRepo.count({ where: { trip_id: tripId } }),
+      manager.getRepository(TripInvite).count({ where: { trip_id: tripId } }),
     ]);
     const current = nonOwnerMembers + pendingInvites;
     if (!isWithinLimit(limit, current)) {
@@ -813,48 +818,51 @@ export class TripsService {
     // link — so revoking this invite invalidates exactly this link.
     // Re-inviting the same address updates role + rotates the code.
     //
-    // Two unique constraints can fire here: (trip, email) from a
-    // concurrent invite to the same address, and the table-wide
-    // invite_code from an (astronomically rare) generated-code
-    // collision. Both converge on the same recovery — refetch the row
-    // and retry with a fresh code — so the loop doesn't need to
-    // disambiguate the constraint. What matters is that the code in
-    // the email is ALWAYS the code that actually got persisted.
-    // Owner-scoped collaborator cap. Only a NEW invitee counts against it — a
-    // re-invite of an already-pending address (handled by the update branch
-    // below) adds no collaborator. The existing-MEMBER case already returned
-    // above, so a missing invite row here means this invite grows the roster.
-    const priorInvite = await this.inviteRepo.findOne({
-      where: { trip_id: tripId, email: dto.email },
-    });
-    if (!priorInvite) {
-      await this.assertCanAddCollaborator(tripId, trip.owner_id);
-    }
-
+    // The cap check and the invite write run inside ONE advisory-locked
+    // transaction so concurrent invites (and the separately-triggered
+    // group-link join) can't each observe the same roster, pass the cap, and
+    // collectively overflow the owner's paid limit. Only a NEW invitee counts —
+    // a re-invite of an already-pending address (the update branch) adds no
+    // collaborator; the existing-MEMBER case already returned above.
+    //
+    // A unique violation rolls the txn back. Under the per-trip lock a
+    // concurrent (trip, email) insert is serialised away, leaving only the rare
+    // table-wide `invite_code` collision — so the outer loop retries with a
+    // fresh code (re-acquiring the lock). What matters is that the code in the
+    // email is ALWAYS the code that actually got persisted.
     const role = dto.role ?? 'editor';
-    let personalCode: string;
+    let personalCode = '';
     for (let attempt = 0; ; attempt++) {
       personalCode = generateInviteCode();
-      const existingInvite = await this.inviteRepo.findOne({
-        where: { trip_id: tripId, email: dto.email },
-      });
       try {
-        if (existingInvite) {
-          await this.inviteRepo.update(
-            { id: existingInvite.id },
-            { role, invite_code: personalCode, invited_by: userId },
-          );
-        } else {
-          await this.inviteRepo.insert({
-            trip_id: tripId,
-            email: dto.email,
-            role,
-            invite_code: personalCode,
-            invited_by: userId,
+        await this.tripRepo.manager.transaction(async (manager) => {
+          await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+            tripCollaboratorLockKey(tripId),
+          ]);
+          const inviteRepo = manager.getRepository(TripInvite);
+          const existingInvite = await inviteRepo.findOne({
+            where: { trip_id: tripId, email: dto.email },
           });
-        }
+          if (existingInvite) {
+            await inviteRepo.update(
+              { id: existingInvite.id },
+              { role, invite_code: personalCode, invited_by: userId },
+            );
+          } else {
+            await this.assertCanAddCollaborator(manager, tripId, trip.owner_id);
+            await inviteRepo.insert({
+              trip_id: tripId,
+              email: dto.email,
+              role,
+              invite_code: personalCode,
+              invited_by: userId,
+            });
+          }
+        });
         break;
       } catch (err: unknown) {
+        // A ForbiddenException (cap exceeded) is not a unique violation, so it
+        // propagates immediately rather than looping.
         if (!isUniqueViolation(err) || attempt >= 4) throw err;
       }
     }
