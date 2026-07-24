@@ -651,10 +651,11 @@ function RoadMapPageInner() {
             <>
               <MetricTile
                 accentNumber
-                formatValue={format.integer}
                 label={t("Region coverage")}
-                value={stats.percent_explored}
-                unit="%"
+                value={format.number(stats.percent_explored / 100, {
+                  style: "percent",
+                  maximumFractionDigits: 0,
+                })}
               />
 
               <Card

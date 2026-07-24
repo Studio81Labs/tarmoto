@@ -45,7 +45,10 @@ export async function BestRoadsList({ roads }: Props) {
             className="flex items-center gap-4 p-4"
           >
             <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-ink text-sm font-bold text-cream">
-              {i + 1}
+              {format.number(i + 1, {
+                useGrouping: false,
+                maximumFractionDigits: 0,
+              })}
             </span>
             <div className="min-w-0 flex-1">
               <h3 className="truncate font-semibold">

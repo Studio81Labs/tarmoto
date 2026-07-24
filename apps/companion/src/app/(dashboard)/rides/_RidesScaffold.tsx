@@ -6,6 +6,7 @@ import { Activity } from "lucide-react";
 import { PageHeader, Mono } from "@tarmoto/ui";
 import { RidesTabsBar } from "./_RidesTabsBar";
 import { useRidesTotal } from "./_useRidesTotal";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Shared chrome for the three Ride History pages (`/rides`,
@@ -50,12 +51,13 @@ export function RidesScaffold({
   children: ReactNode;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const fallbackTotal = useRidesTotal();
   const badge =
     allRidesBadge !== undefined ? (
       allRidesBadge
     ) : fallbackTotal !== null ? (
-      <Mono className="text-[11px]">{fallbackTotal}</Mono>
+      <Mono className="text-[11px]">{format.integer(fallbackTotal)}</Mono>
     ) : null;
   return (
     <div

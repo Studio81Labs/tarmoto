@@ -266,8 +266,8 @@ export function formatQualityDetail(
     ? qualityLabel(score)
     : translate("Unknown");
   if (confidence == null || !Number.isFinite(confidence)) return label;
-  const pct = Math.round(Math.max(0, Math.min(1, confidence)) * 100);
-  return translate("{label} · {percent}% conf", { label, percent: pct });
+  const percent = getFormatters().percent(Math.max(0, Math.min(1, confidence)));
+  return translate("{label} · {percent} conf", { label, percent });
 }
 
 /**

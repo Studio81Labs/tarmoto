@@ -28,6 +28,7 @@ import {
   brandSpacing,
   qualityBrandColor,
 } from "@/theme/brand";
+import { getFormatters } from "@/format";
 import { t as translate } from "@/i18n";
 
 interface Props {
@@ -104,7 +105,10 @@ export default function QualityThresholdSlider({
               <Text
                 style={[styles.pillText, selected && styles.pillTextSelected]}
               >
-                {step}
+                {getFormatters().number(step, {
+                  useGrouping: false,
+                  maximumFractionDigits: 0,
+                })}
               </Text>
             </TouchableOpacity>
           );

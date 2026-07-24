@@ -3694,7 +3694,10 @@ export default function TripPlannerPage() {
                             : "border-line bg-cream text-fg-dim hover:text-ink"
                         }`}
                       >
-                        {n}
+                        {format.number(n, {
+                          useGrouping: false,
+                          maximumFractionDigits: 0,
+                        })}
                       </button>
                     ))}
                   </div>

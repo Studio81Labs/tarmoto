@@ -26,6 +26,7 @@ export interface DisplayPreferencesPatch {
 export interface DisplayPreferencesSyncDeps {
   isAuthenticated: () => boolean;
   currentDevicePreferences: () => DeviceDisplayPreferences;
+  onDevicePreferencesDetected?: (preferences: DeviceDisplayPreferences) => void;
   currentAccountPreferences: () => AccountDisplayPreferences | null;
   sync: (userId: string, patch: DisplayPreferencesPatch) => Promise<void>;
 }
@@ -61,6 +62,12 @@ export function stopDisplayPreferencesSyncMonitor(): void {
 }
 
 async function syncIfNeeded(deps: DisplayPreferencesSyncDeps): Promise<void> {
+  // Detection also drives the live provider state. Do it before the auth gate
+  // so signed-out riders and failed backend syncs still pick up a region or
+  // timezone change immediately on foreground.
+  const device = deps.currentDevicePreferences();
+  deps.onDevicePreferencesDetected?.(device);
+
   if (!deps.isAuthenticated()) {
     inFlightKey = null;
     return;
@@ -68,7 +75,6 @@ async function syncIfNeeded(deps: DisplayPreferencesSyncDeps): Promise<void> {
 
   const account = deps.currentAccountPreferences();
   if (!account) return;
-  const device = deps.currentDevicePreferences();
   const patch: DisplayPreferencesPatch = {};
   if (device.formatLocale && device.formatLocale !== account.formatLocale) {
     patch.format_locale = device.formatLocale;

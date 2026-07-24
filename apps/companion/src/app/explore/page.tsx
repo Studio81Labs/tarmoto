@@ -1346,7 +1346,10 @@ function FunZonesBlock({
                   }`}
                 >
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[11px] font-bold tabular-nums text-accent">
-                    {index + 1}
+                    {format.number(index + 1, {
+                      useGrouping: false,
+                      maximumFractionDigits: 0,
+                    })}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">

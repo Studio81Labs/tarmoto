@@ -381,7 +381,10 @@ export default function TripCreateScreen() {
                       selected && styles.pillTextSelected,
                     ]}
                   >
-                    {d}
+                    {getFormatters().number(d, {
+                      useGrouping: false,
+                      maximumFractionDigits: 0,
+                    })}
                   </Text>
                 </TouchableOpacity>
               );

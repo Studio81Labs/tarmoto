@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { isSupportedLocale, LOCALE_COOKIE, type SupportedLocale } from "@/i18n";
+import {
+  isSupportedLocale,
+  LOCALE_COOKIE,
+  LOCALE_SYNC_PENDING_COOKIE,
+  type SupportedLocale,
+} from "@/i18n";
 import { auth } from "@/lib/auth";
 import { apiServer } from "@/lib/api/server";
 
@@ -25,6 +30,9 @@ const LOCALE_SYNC_TIMEOUT_MS = 3000;
  * one server-side caller that actually has an authenticated session to hand
  * it — see the docstring on `apiServer`.
  *
+ * Returns true only when an authenticated record accepted the locale. The
+ * caller uses false to retain a separate pending-sync cookie.
+ *
  * `signal` comes from the `AbortController` `POST` creates: once its deadline
  * fires, the signal aborts an in-flight PATCH, and the `signal.aborted` guard
  * below blocks a PATCH that hasn't started yet from firing at all. Without
@@ -35,10 +43,10 @@ const LOCALE_SYNC_TIMEOUT_MS = 3000;
 async function syncLanguageToUserRecord(
   locale: SupportedLocale,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const session = await auth();
-    if (!session?.user || signal.aborted) return;
+    if (!session?.user || signal.aborted) return false;
 
     const { error, response } = await apiServer.PATCH("/api/v1/users/me", {
       body: { language: locale },
@@ -47,9 +55,12 @@ async function syncLanguageToUserRecord(
     });
     if (!response.ok) {
       console.error("Failed to persist language to user record", error);
+      return false;
     }
+    return true;
   } catch (error) {
     console.error("Failed to persist language to user record", error);
+    return false;
   }
 }
 
@@ -77,6 +88,16 @@ export async function POST(request: Request) {
     sameSite: "lax",
     httpOnly: false,
   });
+  // Set before the bounded sync starts. A successful authenticated PATCH
+  // clears it below; timeout, offline, and signed-out paths deliberately keep
+  // it so PreferencesSync can distinguish an explicit browser choice from an
+  // ordinary (possibly stale) locale cookie.
+  response.cookies.set(LOCALE_SYNC_PENDING_COOKIE, locale, {
+    path: "/",
+    maxAge: ONE_YEAR_SECONDS,
+    sameSite: "lax",
+    httpOnly: false,
+  });
 
   // Bound the whole best-effort user-record sync so NO backend latency inside
   // it (auth()'s token refresh, or the PATCH itself) can delay the cookie
@@ -91,16 +112,19 @@ export async function POST(request: Request) {
   // locale after this response has already gone out.
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([
+  const synced = await Promise.race([
     syncLanguageToUserRecord(locale, controller.signal),
-    new Promise<void>((resolve) => {
+    new Promise<boolean>((resolve) => {
       timer = setTimeout(() => {
         controller.abort(); // cancel in-flight PATCH AND block a post-deadline stale PATCH
-        resolve(); // stop gating the cookie response on backend latency
+        resolve(false); // stop gating the cookie response on backend latency
       }, LOCALE_SYNC_TIMEOUT_MS);
     }),
   ]);
   if (timer) clearTimeout(timer);
+  if (synced) {
+    response.cookies.delete(LOCALE_SYNC_PENDING_COOKIE);
+  }
 
   return response;
 }

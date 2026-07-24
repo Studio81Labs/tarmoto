@@ -10,6 +10,7 @@ import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { formatRoadQualityColor } from "@/lib/best-roads-format";
 import type { BestRoad } from "@/lib/bestRoads";
 import type { FeatureCollection, LineString } from "geojson";
+import { useFormat } from "@/format/FormatProvider";
 
 type Road = Pick<BestRoad, "id" | "road_name" | "quality_score" | "geometry">;
 
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
+  const format = useFormat();
   const mapRef = useRef<MapRef | null>(null);
   const [ready, setReady] = useState(false);
   const colorScheme = useMapColorScheme();
@@ -119,7 +121,10 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
               href={`#road-${m.id}`}
               className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-xs font-bold text-cream ring-2 ring-accent"
             >
-              {m.rank}
+              {format.number(m.rank, {
+                useGrouping: false,
+                maximumFractionDigits: 0,
+              })}
             </a>
           </Marker>
         ))}

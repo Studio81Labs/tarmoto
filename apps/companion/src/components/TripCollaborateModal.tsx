@@ -123,6 +123,7 @@ export function TripCollaborateModal({
   onClose,
 }: TripCollaborateModalProps) {
   const t = useTranslation();
+  const format = useFormat();
   const suggestionsOnly = mode === "suggestions";
   const [tab, setTab] = useState<Tab>(
     suggestionsOnly ? "suggestions" : "invite",
@@ -376,7 +377,7 @@ export function TripCollaborateModal({
                   {t(label)}
                   {badge != null && badge > 0 && (
                     <span className="rounded-full bg-accent px-1.5 py-px font-mono text-[9px] font-bold text-cream">
-                      {badge}
+                      {format.integer(badge)}
                     </span>
                   )}
                   {tab === id && (
@@ -1513,6 +1514,7 @@ function VoteButton({
   ariaLabel: string;
   onClick: () => void;
 }) {
+  const format = useFormat();
   return (
     <button
       type="button"
@@ -1531,7 +1533,7 @@ function VoteButton({
       }
     >
       {icon}
-      {count}
+      {format.integer(count)}
     </button>
   );
 }

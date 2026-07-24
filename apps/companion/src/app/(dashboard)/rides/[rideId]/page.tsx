@@ -649,6 +649,7 @@ function LeanHistogram({
   distribution: LeanDistribution | null;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   if (!distribution) {
     return (
       <div className="mt-[18px] flex h-[150px] items-center justify-center rounded-xl border border-dashed border-line text-center text-sm text-fg-dim">
@@ -671,7 +672,12 @@ function LeanHistogram({
           key={bucket.key}
           className="flex flex-1 flex-col items-center justify-end gap-1.5"
         >
-          <Mono className="text-[10px] text-fg-mute">{pcts[i]}%</Mono>
+          <Mono className="text-[10px] text-fg-mute">
+            {format.number((pcts[i] ?? 0) / 100, {
+              style: "percent",
+              maximumFractionDigits: 0,
+            })}
+          </Mono>
           <div
             className={`w-full rounded-t ${
               i === peakIdx ? "bg-accent" : "bg-ink/[0.82]"
@@ -910,6 +916,7 @@ function SpeedLineChart({
   unit: string;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const all = [...points, ...secondaryPoints];
   const minX = Math.min(...all.map((p) => p.x));
   const maxX = Math.max(...all.map((p) => p.x));
@@ -975,10 +982,10 @@ function SpeedLineChart({
         <span>1</span>
         {lastY != null && (
           <Mono>
-            {Math.round(lastY)} {unit}
+            {format.integer(Math.round(lastY))} {unit}
           </Mono>
         )}
-        <span>{maxX}</span>
+        <span>{format.integer(maxX)}</span>
       </div>
     </div>
   );

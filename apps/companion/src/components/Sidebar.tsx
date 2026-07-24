@@ -420,8 +420,11 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
             />
           </div>
           <Mono className="mt-1.5 block text-[9px] text-cream/50">
-            {t("Top {percentile}% of riders in {region}", {
-              percentile,
+            {t("Top {percentile} of riders in {region}", {
+              percentile: format.number(percentile / 100, {
+                style: "percent",
+                maximumFractionDigits: 0,
+              }),
               region: home_region,
             })}
           </Mono>

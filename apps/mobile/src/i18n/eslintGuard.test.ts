@@ -64,4 +64,24 @@ describe("mobile indirect display-copy lint guard", () => {
       guardMessages('const next = { message: "Could not save" };'),
     ).not.toHaveLength(0);
   });
+
+  it.each([
+    'setError(error.message || "Could not save");',
+    'const subtitle = active ? "Live now" : "Offline";',
+    'const helpText = active ? `Showing ${count}` : "Nothing to show";',
+  ])("rejects companion-parity copy bypasses: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
+  it("rejects directly rendered numeric display values", () => {
+    expect(
+      guardMessages("const view = <Text>{item.count}</Text>;"),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects raw copy in companion-parity component props", () => {
+    expect(
+      guardMessages('const view = <Banner headline="Ride saved" />;'),
+    ).not.toHaveLength(0);
+  });
 });

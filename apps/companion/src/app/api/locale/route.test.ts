@@ -66,6 +66,9 @@ describe("POST /api/locale", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ locale: "en" });
     expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+    expect(
+      response.cookies.get("tarmoto-locale-sync-pending")?.value ?? "",
+    ).toBe("");
 
     expect(patch).toHaveBeenCalledTimes(1);
     expect(patch).toHaveBeenCalledWith("/api/v1/users/me", {
@@ -109,6 +112,9 @@ describe("POST /api/locale", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ locale: "en" });
     expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+    expect(response.cookies.get("tarmoto-locale-sync-pending")?.value).toBe(
+      "en",
+    );
     expect(patch).not.toHaveBeenCalled();
   });
 
@@ -133,6 +139,9 @@ describe("POST /api/locale", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ locale: "en" });
     expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+    expect(response.cookies.get("tarmoto-locale-sync-pending")?.value).toBe(
+      "en",
+    );
 
     // Only now does the stalled auth() resolve — after the deadline already
     // aborted the controller. The `signal.aborted` guard must stop the PATCH.
@@ -142,7 +151,7 @@ describe("POST /api/locale", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it("does not call the backend when unauthenticated, but still sets the cookie", async () => {
+  it("keeps an explicit pending marker when unauthenticated so login can persist the choice", async () => {
     mockedAuth.mockResolvedValueOnce(null);
 
     const response = await POST(postRequest("en"));
@@ -150,6 +159,9 @@ describe("POST /api/locale", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ locale: "en" });
     expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+    expect(response.cookies.get("tarmoto-locale-sync-pending")?.value).toBe(
+      "en",
+    );
 
     expect(patch).not.toHaveBeenCalled();
   });
@@ -164,6 +176,9 @@ describe("POST /api/locale", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ locale: "en" });
     expect(response.cookies.get("tarmoto-locale")?.value).toBe("en");
+    expect(response.cookies.get("tarmoto-locale-sync-pending")?.value).toBe(
+      "en",
+    );
     expect(errorSpy).toHaveBeenCalledWith(
       "Failed to persist language to user record",
       expect.any(Error),

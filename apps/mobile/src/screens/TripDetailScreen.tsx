@@ -378,7 +378,12 @@ function DayCard({
     >
       <View style={styles.dayHeaderRow}>
         <View style={styles.dayNumberBubble}>
-          <Text style={styles.dayNumber}>{day.day_number}</Text>
+          <Text style={styles.dayNumber}>
+            {getFormatters().number(day.day_number, {
+              useGrouping: false,
+              maximumFractionDigits: 0,
+            })}
+          </Text>
         </View>
         <View style={styles.dayHeaderText}>
           <Text style={styles.dayTitle}>

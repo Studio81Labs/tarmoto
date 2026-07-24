@@ -40,6 +40,7 @@ import { api } from "@/services/api";
 import { CRASH_DEFAULTS } from "@/services/crashDetector";
 import { ttsService } from "@/services/tts";
 import { t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 const t = brandColorsLight;
 /**
@@ -357,7 +358,7 @@ export default function CrashAlertOverlay({
               {translate("We'll alert your emergency contacts in")}
             </Text>
             <Text style={styles.countdown} accessibilityLiveRegion="assertive">
-              {seconds}
+              {getFormatters().integer(seconds)}
             </Text>
             <Text style={styles.subhead}>
               {translate("{seconds, plural, one {second} other {seconds}}", {

@@ -3,12 +3,25 @@ import { render, waitFor, act } from "@testing-library/react";
 import { PreferencesSync } from "./PreferencesSync";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi } from "@/lib/api/users";
-import { LOCALE_COOKIE } from "@/i18n";
+import { LOCALE_COOKIE, LOCALE_SYNC_PENDING_COOKIE } from "@/i18n";
 
 let sessionStatus = "authenticated";
+const refresh = vi.fn();
 vi.mock("next-auth/react", () => ({
   useSession: () => ({ status: sessionStatus }),
 }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh }),
+}));
+vi.mock("@/i18n", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/i18n")>();
+  return {
+    ...actual,
+    // Exercise the future-locale reconciliation path while production still
+    // intentionally exposes English only.
+    isSupportedLocale: (locale: string) => locale === "en" || locale === "cs",
+  };
+});
 vi.mock("@/lib/api/users", () => ({
   usersApi: { getMe: vi.fn(), updateMe: vi.fn() },
 }));
@@ -42,6 +55,7 @@ describe("PreferencesSync", () => {
     sessionStatus = "authenticated";
     getMe.mockReset();
     updateMe.mockReset();
+    refresh.mockReset();
     updateMe.mockResolvedValue(meWithPreferences({}));
     Object.defineProperty(window.navigator, "language", {
       value: "cs-CZ",
@@ -49,12 +63,14 @@ describe("PreferencesSync", () => {
     });
     window.localStorage.clear();
     document.cookie = `${LOCALE_COOKIE}=; path=/; max-age=0`;
+    document.cookie = `${LOCALE_SYNC_PENDING_COOKIE}=; path=/; max-age=0`;
     act(() => {
       usePreferencesStore.setState({ unitSystem: "metric", hydrated: false });
     });
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     window.localStorage.clear();
   });
 
@@ -100,8 +116,9 @@ describe("PreferencesSync", () => {
     });
   });
 
-  it("retries a locale cookie that did not reach the account record", async () => {
+  it("retries an explicitly pending locale that did not reach the account record", async () => {
     document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    document.cookie = `${LOCALE_SYNC_PENDING_COOKIE}=en; path=/`;
     getMe.mockResolvedValueOnce(
       meWithPreferences(convergedPreferences({ units: "metric" })),
     );
@@ -111,10 +128,27 @@ describe("PreferencesSync", () => {
 
     await waitFor(() => expect(updateMe).toHaveBeenCalledTimes(1));
     expect(updateMe).toHaveBeenCalledWith({ language: "en" });
+    expect(document.cookie).not.toContain(`${LOCALE_SYNC_PENDING_COOKIE}=`);
   });
 
-  it("does not rewrite an account language that matches the locale cookie", async () => {
+  it("does not let an ordinary stale cookie overwrite a newer account language", async () => {
     document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    getMe.mockResolvedValueOnce(
+      meWithPreferences(convergedPreferences({ units: "metric" }), "cs"),
+    );
+    window.localStorage.setItem("tarmoto:preferences:unit-system", "metric");
+
+    render(<PreferencesSync />);
+
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
+    expect(updateMe).not.toHaveBeenCalled();
+    expect(document.cookie).toContain(`${LOCALE_COOKIE}=cs`);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a pending marker when the account already matches it", async () => {
+    document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    document.cookie = `${LOCALE_SYNC_PENDING_COOKIE}=en; path=/`;
     getMe.mockResolvedValueOnce(
       meWithPreferences(convergedPreferences({ units: "metric" }), "en"),
     );
@@ -123,8 +157,8 @@ describe("PreferencesSync", () => {
     render(<PreferencesSync />);
 
     await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(updateMe).not.toHaveBeenCalled();
+    expect(document.cookie).not.toContain(`${LOCALE_SYNC_PENDING_COOKIE}=`);
   });
 
   it("writes nothing when the record already mirrors the device", async () => {
@@ -172,6 +206,48 @@ describe("PreferencesSync", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(getMe).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a fresh reconciliation after a real logout and new login", async () => {
+    getMe.mockResolvedValue(
+      meWithPreferences(convergedPreferences({ units: "metric" })),
+    );
+    window.localStorage.setItem("tarmoto:preferences:unit-system", "metric");
+
+    const view = await render(<PreferencesSync />);
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
+
+    sessionStatus = "unauthenticated";
+    await view.rerender(<PreferencesSync />);
+    sessionStatus = "authenticated";
+    await view.rerender(<PreferencesSync />);
+
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(2));
+  });
+
+  it("retries transient synchronization failures while the component stays mounted", async () => {
+    vi.useFakeTimers();
+    document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    document.cookie = `${LOCALE_SYNC_PENDING_COOKIE}=en; path=/`;
+    getMe.mockResolvedValue(
+      meWithPreferences(convergedPreferences({ units: "metric" })),
+    );
+    window.localStorage.setItem("tarmoto:preferences:unit-system", "metric");
+    updateMe
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(meWithPreferences({}));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(<PreferencesSync />);
+
+    await vi.waitFor(() => expect(updateMe).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    await vi.waitFor(() => expect(updateMe).toHaveBeenCalledTimes(2));
+    expect(document.cookie).not.toContain(`${LOCALE_SYNC_PENDING_COOKIE}=`);
+
+    errorSpy.mockRestore();
   });
 
   it("ignores a stale account read when a local unit change raced it", async () => {

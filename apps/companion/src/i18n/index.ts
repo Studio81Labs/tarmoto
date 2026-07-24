@@ -15,7 +15,7 @@ import {
   type EnglishMessageKey,
   type TranslationCatalog,
 } from "./locales";
-export { LOCALE_COOKIE } from "./constants";
+export { LOCALE_COOKIE, LOCALE_SYNC_PENDING_COOKIE } from "./constants";
 
 export {
   DEFAULT_LOCALE,
