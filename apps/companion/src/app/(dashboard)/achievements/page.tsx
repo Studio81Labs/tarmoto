@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n, useTranslation } from "@/i18n/I18nProvider";
 import {
   getUserFacingErrorMessage,
   type EnglishMessageKey,
@@ -718,7 +718,7 @@ function BadgeCard({
   const earned = Boolean(badge.earnedAt);
   const earnedLabel =
     earned && badge.earnedAt
-      ? format.shortDate(badge.earnedAt).toUpperCase()
+      ? format.shortDate(badge.earnedAt).toLocaleUpperCase(format.locale)
       : null;
   return (
     <div
@@ -926,7 +926,7 @@ type LeaderboardLoad =
  * ranking so the section is never blank.
  */
 function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const [homeRegion, setHomeRegion] = useState<string | null>(null);
   const [scope, setScope] = useState<RegionScope>("global");
   const [dimension, setDimension] =
@@ -1014,10 +1014,14 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           scope === "region" && homeRegion
             ? t("Top riders in {region}, ranked by {dimension}.", {
                 region: homeRegion,
-                dimension: labelForDimension(dimension, t).toLowerCase(),
+                dimension: labelForDimension(dimension, t).toLocaleLowerCase(
+                  locale,
+                ),
               })
             : t("Top riders worldwide, ranked by {dimension}.", {
-                dimension: labelForDimension(dimension, t).toLowerCase(),
+                dimension: labelForDimension(dimension, t).toLocaleLowerCase(
+                  locale,
+                ),
               })
         }
       />

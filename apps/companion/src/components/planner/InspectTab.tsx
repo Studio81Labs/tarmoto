@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n } from "@/i18n/I18nProvider";
 import {
   dayPlanBoundaryDisplayName,
   waypointDisplayName,
@@ -91,7 +91,7 @@ export function InspectTab({
   onInspectSegment,
   onRerouteSegment,
 }: InspectTabProps) {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const format = useFormat();
   const allSegments = useMemo(
     () => (day ? deriveDayQualitySegments(day) : []),
@@ -216,7 +216,7 @@ export function InspectTab({
                   style={{ background: ROLE_COLORS[role] }}
                 />
                 <Mono className="w-11 shrink-0 text-[9.5px] text-fg-mute">
-                  {roleLabel.toLocaleUpperCase()}
+                  {roleLabel.toLocaleUpperCase(locale)}
                 </Mono>
                 <span className="truncate text-[13.5px] font-bold tracking-[-0.2px] text-ink">
                   {waypointDisplayName(waypoint, t)}
@@ -229,14 +229,22 @@ export function InspectTab({
           {(
             [
               {
-                key: "DISTANCE",
+                key: "distance",
+                label: t("Distance"),
                 value: metrics.distance,
                 unit: distanceUnit,
                 accent: false,
               },
-              { key: "TIME", value: metrics.time, unit: "", accent: false },
               {
-                key: "QUALITY",
+                key: "duration",
+                label: t("Duration"),
+                value: metrics.time,
+                unit: "",
+                accent: false,
+              },
+              {
+                key: "quality",
+                label: t("Quality"),
                 value: metrics.score,
                 unit: t("/ {max}", { max: format.integer(5) }),
                 accent: true,
@@ -248,7 +256,7 @@ export function InspectTab({
               className={`flex-1 px-3.5 py-3 ${index > 0 ? "border-l border-line" : ""}`}
             >
               <Mono className="text-[8.5px] tracking-[0.8px] text-fg-mute">
-                {stat.key}
+                {stat.label.toLocaleUpperCase(locale)}
               </Mono>
               <div className="mt-1 flex items-baseline gap-1">
                 <span

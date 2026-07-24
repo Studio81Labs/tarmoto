@@ -24,6 +24,7 @@ describe("displayPreferencesSyncMonitor", () => {
   let addEventListenerSpy: jest.SpiedFunction<typeof AppState.addEventListener>;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     stopDisplayPreferencesSyncMonitor();
     listeners = [];
     account = {
@@ -31,7 +32,11 @@ describe("displayPreferencesSyncMonitor", () => {
       formatLocale: "en-US",
       timeZone: "UTC",
     };
-    device = { formatLocale: "cs-CZ", timeZone: "Europe/Prague" };
+    device = {
+      uiLocale: "cs-CZ",
+      formatLocale: "cs-CZ",
+      timeZone: "Europe/Prague",
+    };
     sync = jest.fn().mockResolvedValue(undefined);
     onDevicePreferencesDetected = jest.fn();
     addEventListenerSpy = jest
@@ -49,9 +54,13 @@ describe("displayPreferencesSyncMonitor", () => {
   afterEach(() => {
     addEventListenerSpy.mockRestore();
     stopDisplayPreferencesSyncMonitor();
+    jest.useRealTimers();
   });
 
-  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const flush = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
 
   function start(isAuthenticated = true) {
     return startDisplayPreferencesSyncMonitor({
@@ -106,7 +115,11 @@ describe("displayPreferencesSyncMonitor", () => {
     expect(sync).not.toHaveBeenCalled();
     expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
 
-    device = { formatLocale: "de-DE", timeZone: "Europe/Berlin" };
+    device = {
+      uiLocale: "de-DE",
+      formatLocale: "de-DE",
+      timeZone: "Europe/Berlin",
+    };
     listeners.forEach((listener) => listener("active"));
     await flush();
     expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
@@ -121,7 +134,11 @@ describe("displayPreferencesSyncMonitor", () => {
     await flush();
     expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
 
-    device = { formatLocale: "de-DE", timeZone: "Europe/Berlin" };
+    device = {
+      uiLocale: "de-DE",
+      formatLocale: "de-DE",
+      timeZone: "Europe/Berlin",
+    };
     listeners.forEach((listener) => listener("active"));
     await flush();
 
@@ -148,16 +165,82 @@ describe("displayPreferencesSyncMonitor", () => {
     await flush();
   });
 
-  it("retries a failed sync on the next foreground", async () => {
+  it("serializes a newer device snapshot across monitor restarts", async () => {
+    let resolveFirst: (() => void) | undefined;
+    sync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    start();
+    await flush();
+
+    device = {
+      uiLocale: "de-DE",
+      formatLocale: "de-DE",
+      timeZone: "Europe/Berlin",
+    };
+    start();
+    await flush();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    resolveFirst?.();
+    await flush();
+    await flush();
+
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(sync).toHaveBeenLastCalledWith("user-1", {
+      format_locale: "de-DE",
+      timezone: "Europe/Berlin",
+    });
+  });
+
+  it("retries a failed sync with capped backoff", async () => {
     sync
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(undefined);
     start();
     await flush();
+    expect(sync).toHaveBeenCalledTimes(1);
 
-    listeners.forEach((listener) => listener("active"));
-    await flush();
+    await jest.advanceTimersByTimeAsync(1_000);
     expect(sync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a foreground waiter bypass retry backoff", async () => {
+    let rejectFirst: ((reason?: unknown) => void) | undefined;
+    sync
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    start();
+    await flush();
+    listeners.forEach((listener) => listener("active"));
+
+    rejectFirst?.(new Error("offline"));
+    await flush();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(999);
+    expect(sync).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a scheduled retry on cleanup", async () => {
+    sync.mockRejectedValue(new Error("offline"));
+    const stop = start();
+    await flush();
+
+    stop();
+    await jest.advanceTimersByTimeAsync(5 * 60_000);
+
+    expect(sync).toHaveBeenCalledTimes(1);
   });
 
   it("cleanup unsubscribes the foreground listener", async () => {

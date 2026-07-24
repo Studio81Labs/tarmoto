@@ -408,7 +408,9 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
       <div className="mt-1 text-[20px] font-extrabold tracking-[-0.5px] text-cream">
         {mapped.value}{" "}
         <Mono className="text-[10px] font-medium text-cream/60">
-          {t("{unit} MAPPED", { unit: mapped.unit.toUpperCase() })}
+          {t("{unit} MAPPED", {
+            unit: mapped.unit.toLocaleUpperCase(format.locale),
+          })}
         </Mono>
       </div>
       {ranked && (

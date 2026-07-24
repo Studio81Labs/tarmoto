@@ -64,4 +64,27 @@ describe("companion indirect display-copy lint guard", () => {
       guardMessages("const view = <span>{forcedDays ?? t('Auto')}</span>;"),
     ).not.toHaveLength(0);
   });
+
+  it.each([
+    'const view = <Line name="This segment" />;',
+    'const view = <Tooltip formatter={() => [value, "Distance"]} />;',
+    "const view = <YAxis tickFormatter={(value) => Math.round(value)} />;",
+    "const view = <span>{stat.key}</span>;",
+  ])("rejects chart/config display bypasses: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <span>{label.toUpperCase()}</span>;",
+    "const display = label.toLocaleLowerCase();",
+    "const unit = format.splitDistanceKm(1).unit.toUpperCase();",
+  ])("rejects display casing without an active locale: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
+  it("allows locale-bound display casing", () => {
+    expect(
+      guardMessages("const display = label.toLocaleUpperCase(locale);"),
+    ).toHaveLength(0);
+  });
 });

@@ -371,10 +371,11 @@ export function RoadPreviewPopover({
                     return (
                       <div className="mt-1.5 flex justify-between">
                         <Mono className="text-[9px] text-fg-mute">
-                          0 {scaleEnd.unit.toUpperCase()}
+                          0 {scaleEnd.unit.toLocaleUpperCase(format.locale)}
                         </Mono>
                         <Mono className="text-[9px] text-fg-mute">
-                          {scaleEnd.value} {scaleEnd.unit.toUpperCase()}
+                          {scaleEnd.value}{" "}
+                          {scaleEnd.unit.toLocaleUpperCase(format.locale)}
                         </Mono>
                       </div>
                     );

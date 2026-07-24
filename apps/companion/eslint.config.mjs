@@ -395,6 +395,48 @@ const restrictedSyntaxSelectors = [
     message:
       "Format directly rendered numeric properties with the active regional formatter.",
   },
+  {
+    selector:
+      "CallExpression[callee.property.name=/^(toLocaleUpperCase|toLocaleLowerCase)$/][arguments.length=0]",
+    message:
+      "Pass the active UI or format locale when changing rider-facing display case.",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer CallExpression[callee.property.name=/^(toUpperCase|toLowerCase)$/]",
+    message:
+      "Use locale-aware casing with the active UI or format locale for rider-facing display text.",
+  },
+  {
+    selector:
+      "CallExpression[callee.object.property.name='unit'][callee.property.name=/^(toUpperCase|toLowerCase)$/]",
+    message:
+      "Case display-unit labels with toLocaleUpperCase/toLocaleLowerCase and the active format locale.",
+  },
+  {
+    selector:
+      "JSXOpeningElement[name.name=/^(Area|Bar|Line)$/] JSXAttribute[name.name='name'] > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Translate chart series names before passing them to Recharts.",
+  },
+  {
+    selector:
+      "JSXOpeningElement[name.name='Tooltip'] JSXAttribute[name.name='formatter'] ArrayExpression > Literal[value=/[A-Za-z]{2,}/]",
+    message:
+      "Translate chart tooltip labels instead of returning raw display copy.",
+  },
+  {
+    selector:
+      "JSXOpeningElement[name.name=/^(XAxis|YAxis)$/] JSXAttribute[name.name='tickFormatter'] CallExpression[callee.object.name='Math'][callee.property.name='round']",
+    message:
+      "Format chart ticks with the active regional formatter instead of Math.round().",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][object.name=/^(metric|stat)$/][property.name='key']",
+    message:
+      "Render a translated display label, not a configuration or protocol key.",
+  },
 ];
 
 export default [

@@ -517,6 +517,7 @@ describe("ExplorerPage", () => {
     expect(
       screen.getByText(/loose gravel after the bend/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/3 confirmations$/i)).toBeInTheDocument();
     expect(
       screen.getByTestId(
         "segment-trend-chart-11111111-2222-4333-8444-555555555111",
@@ -527,6 +528,27 @@ describe("ExplorerPage", () => {
         "Reviews panel for 11111111-2222-4333-8444-555555555111",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("uses singular confirmation copy for one hazard confirmation", async () => {
+    const detail = segmentDetail();
+    vi.mocked(roadsApi.getSegmentDetail).mockResolvedValueOnce({
+      data: {
+        ...detail,
+        active_hazards: detail.active_hazards.map((hazard) => ({
+          ...hazard,
+          confirmations: 1,
+        })),
+      },
+    });
+
+    render(<ExplorerPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /select mock segment/i }),
+    );
+
+    expect(await screen.findByText(/1 confirmation$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/1 confirmations$/i)).toBeNull();
   });
 
   it("T27/T28: exposes regional closures and passes panels scoped to the explorer viewport", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n, useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage, type EnglishMessageKey } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -81,7 +81,7 @@ const YOY_COLORS = [
   "#047857", // emerald-700 (matches compare DeltaChip improved)
 ] as const;
 export default function StatsPage() {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   // Debounced: fast loads render content directly, no spinner flash.
@@ -257,7 +257,7 @@ export default function StatsPage() {
   const distanceTooltip = (value: TooltipValueType | undefined) => {
     const n =
       typeof value === "number" ? value : Number.parseFloat(String(value));
-    return Number.isFinite(n) ? `${Math.round(n)} ${distanceUnit}` : "—";
+    return Number.isFinite(n) ? `${format.integer(n)} ${distanceUnit}` : "—";
   };
   // YoY values are km on the wire; convert each year's series to the display
   // unit so the chart, axis and tooltip match the unit-aware KPIs/table.
@@ -319,7 +319,7 @@ export default function StatsPage() {
 
       <TotalsGrid
         totals={totals}
-        windowLabel={windowLabel.toLowerCase()}
+        windowLabel={windowLabel.toLocaleLowerCase(locale)}
         format={format}
       />
 
@@ -358,7 +358,7 @@ export default function StatsPage() {
                 tickLine={false}
                 axisLine={false}
                 width={48}
-                tickFormatter={(value: number) => `${Math.round(value)}`}
+                tickFormatter={(value: number) => format.integer(value)}
               />
               <Tooltip
                 contentStyle={{
@@ -369,7 +369,7 @@ export default function StatsPage() {
                 }}
                 labelStyle={{ color: "#0E0E10" }}
                 labelFormatter={(label) => tooltipLabel(String(label))}
-                formatter={(value) => [distanceTooltip(value), "Distance"]}
+                formatter={(value) => [distanceTooltip(value), t("Distance")]}
               />
               {/* Dark brand-orange #D44F00 ≈ 4.3:1 on cream; canonical
                   #FF6A1A is only ~2.5:1 and fails the WCAG 3:1
@@ -440,7 +440,7 @@ export default function StatsPage() {
                   tickLine={false}
                   axisLine={false}
                   width={48}
-                  tickFormatter={(value: number) => `${Math.round(value)}`}
+                  tickFormatter={(value: number) => format.integer(value)}
                 />
                 <Tooltip
                   contentStyle={{
@@ -888,6 +888,7 @@ function QualityTrendCard({
                 width={32}
                 domain={[0, 5]}
                 ticks={[0, 1, 2, 3, 4, 5]}
+                tickFormatter={(value: number) => format.integer(value)}
               />
               <Tooltip
                 contentStyle={{
@@ -902,7 +903,7 @@ function QualityTrendCard({
                 }
                 formatter={(value) => [
                   typeof value === "number" ? format.decimal(value, 2) : "—",
-                  "Avg quality",
+                  t("Avg quality"),
                 ]}
               />
               <Line

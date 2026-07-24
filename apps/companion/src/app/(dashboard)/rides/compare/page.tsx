@@ -238,7 +238,7 @@ function ABCard({
   const distanceSplit =
     distance != null ? format.splitDistanceKm(distance) : null;
   const distanceLabel = distanceSplit
-    ? `${distanceSplit.value} ${distanceSplit.unit.toUpperCase()}`
+    ? `${distanceSplit.value} ${distanceSplit.unit.toLocaleUpperCase(format.locale)}`
     : "—";
   return (
     <div className="rounded-[14px] border border-line bg-cream p-4">

@@ -402,7 +402,9 @@ function KpiTileRow({ stats }: { stats: MonthlyStats }) {
         accentNumber
         label={t("This month")}
         value={format.splitDistanceKm(stats.this_month_km).value}
-        unit={format.splitDistanceKm(stats.this_month_km).unit.toUpperCase()}
+        unit={format
+          .splitDistanceKm(stats.this_month_km)
+          .unit.toLocaleUpperCase(format.locale)}
         delta={kmDelta}
       />
       <MetricTile

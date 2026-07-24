@@ -185,7 +185,8 @@ export default async function SharedCollectionPage({
           <Stamp>{t("Routes")}</Stamp>
           {routes.length > 0 && (
             <Mono className="text-[11px] text-fg-mute">
-              {totalDistance.value} {totalDistance.unit.toUpperCase()}
+              {totalDistance.value}{" "}
+              {totalDistance.unit.toLocaleUpperCase(format.locale)}
             </Mono>
           )}
         </div>

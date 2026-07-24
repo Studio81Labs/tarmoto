@@ -99,4 +99,17 @@ describe("mobile indirect display-copy lint guard", () => {
       guardMessages('const view = <Banner headline="Ride saved" />;'),
     ).not.toHaveLength(0);
   });
+
+  it.each([
+    "const view = <Text>{label.toUpperCase()}</Text>;",
+    "const display = label.toLocaleLowerCase();",
+  ])("rejects display casing without an active locale: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
+  it("allows locale-bound display casing", () => {
+    expect(
+      guardMessages("const display = label.toLocaleUpperCase(locale);"),
+    ).toHaveLength(0);
+  });
 });
