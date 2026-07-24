@@ -28,6 +28,25 @@ function guardMessages(source: string) {
   );
 }
 
+function localizationMessages(source: string, rule: string) {
+  const result = spawnSync(
+    process.execPath,
+    [eslintBin, "--stdin", "--stdin-filename", fixturePath, "--format", "json"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      input: source,
+    },
+  );
+  if (result.error || result.status === null || result.status > 1) {
+    throw result.error ?? new Error(result.stderr);
+  }
+  const reports = JSON.parse(result.stdout) as Array<{
+    messages: Array<{ ruleId: string | null; message: string }>;
+  }>;
+  return (reports[0]?.messages ?? []).filter(({ ruleId }) => ruleId === rule);
+}
+
 describe("companion indirect display-copy lint guard", () => {
   it.each([
     'const actionLabel = active ? "Subscribe" : "Manage";',
@@ -100,5 +119,41 @@ describe("companion indirect display-copy lint guard", () => {
     expect(
       guardMessages('const unit = format.unitLabel("distance");'),
     ).toHaveLength(0);
+  });
+
+  it("rejects sentences assembled from translated fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <p>{t("Updated")} {formattedTime}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows independent translated atoms separated by a middle dot", () => {
+    expect(
+      localizationMessages(
+        'const view = <span>{t("Distance")} · {formattedDistance}</span>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects visible numeric JSX text", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>01</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects locale-insensitive rider search normalization", () => {
+    expect(
+      localizationMessages(
+        "function applySearch(value) { const needle = value.toLowerCase(); return needle; }",
+        "tarmoto-localization/no-locale-insensitive-search",
+      ),
+    ).not.toHaveLength(0);
   });
 });

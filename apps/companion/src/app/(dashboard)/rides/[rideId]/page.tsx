@@ -979,7 +979,7 @@ function SpeedLineChart({
         {renderSeries(secondaryPoints, "#f472b6", "2.5", "6 5")}
       </svg>
       <div className="flex items-center justify-between text-[11px] text-fg-mute">
-        <span>1</span>
+        <span>{format.integer(1)}</span>
         {lastY != null && (
           <Mono>
             {format.integer(Math.round(lastY))} {unit}

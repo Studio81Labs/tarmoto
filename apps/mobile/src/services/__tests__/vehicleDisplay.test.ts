@@ -70,6 +70,16 @@ describe("matchHazardTypeFromText", () => {
   it("returns null for an unrelated phrase", () => {
     expect(matchHazardTypeFromText("beautiful scenery")).toBeNull();
   });
+
+  it("matches localized Turkish casing with the active locale", () => {
+    const translate = (key: string) => (key === "Pothole" ? "Işık" : key);
+    expect(matchHazardTypeFromText("IŞIK", translate as never, "tr")).toBe(
+      "pothole",
+    );
+    expect(
+      buildHazardSearchItems("IŞIK", translate as never, "tr")[0]?.id,
+    ).toBe("pothole");
+  });
 });
 
 describe("buildHazardSearchItems", () => {

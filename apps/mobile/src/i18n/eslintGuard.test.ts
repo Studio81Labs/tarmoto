@@ -28,6 +28,25 @@ function guardMessages(source: string) {
   );
 }
 
+function localizationMessages(source: string, rule: string) {
+  const result = spawnSync(
+    process.execPath,
+    [eslintBin, "--stdin", "--stdin-filename", fixturePath, "--format", "json"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      input: source,
+    },
+  );
+  if (result.error || result.status === null || result.status > 1) {
+    throw result.error ?? new Error(result.stderr);
+  }
+  const reports = JSON.parse(result.stdout) as Array<{
+    messages: Array<{ ruleId: string | null; message: string }>;
+  }>;
+  return (reports[0]?.messages ?? []).filter(({ ruleId }) => ruleId === rule);
+}
+
 describe("mobile indirect display-copy lint guard", () => {
   it.each([
     'const title = active ? "Add contact" : "Edit contact";',
@@ -111,5 +130,32 @@ describe("mobile indirect display-copy lint guard", () => {
     expect(
       guardMessages("const display = label.toLocaleUpperCase(locale);"),
     ).toHaveLength(0);
+  });
+
+  it("rejects sentences assembled from translated fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text>{translate("Location")} {coordinates}</Text>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible numeric JSX text", () => {
+    expect(
+      localizationMessages(
+        "const view = <Text>01</Text>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects locale-insensitive rider search normalization", () => {
+    expect(
+      localizationMessages(
+        "function matchSearch(value) { return value.toLowerCase(); }",
+        "tarmoto-localization/no-locale-insensitive-search",
+      ),
+    ).not.toHaveLength(0);
   });
 });

@@ -100,6 +100,8 @@ const STATUS_LABELS = {
 } as const satisfies Record<CollectionRouteStatus, EnglishMessageKey>;
 
 export function StatusPill({ status, t }: { status: string; t: Translate }) {
+  // Collection statuses are canonical API enum tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   const s = status.toLowerCase();
   const tone =
     s === "completed"

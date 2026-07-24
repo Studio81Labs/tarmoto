@@ -357,14 +357,14 @@ function SegmentDetailContent({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">
-                      {t(config.label)}
-                      <span className="ml-2 text-[10px] uppercase tracking-wider text-fg-dim">
-                        {translateKnownLabel(
+                      {t("{hazard} {severity}", {
+                        hazard: t(config.label),
+                        severity: translateKnownLabel(
                           hazard.severity,
                           HAZARD_SEVERITY_LABELS,
                           t,
-                        )}
-                      </span>
+                        ),
+                      })}
                     </p>
                     {hazard.note && (
                       <p className="mt-0.5 text-xs text-fg-dim">

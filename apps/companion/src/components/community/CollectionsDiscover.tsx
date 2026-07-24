@@ -147,16 +147,16 @@ function DiscoverCard({ collection }: { collection: DiscoverCollection }) {
 
         <div className="mt-3 flex justify-between border-t border-line pt-3 text-[11px] text-fg-dim">
           <Mono>
-            <span className="font-bold text-ink">
-              {format.integer(collection.item_count)}
-            </span>{" "}
-            {t("ROUTES")}
+            {t("{count} {label}", {
+              count: format.integer(collection.item_count),
+              label: t("ROUTES"),
+            })}
           </Mono>
           <Mono>
-            <span className="font-bold text-ink">
-              {format.integer(collection.follower_count)}
-            </span>{" "}
-            {t("FOLLOWS")}
+            {t("{count} {label}", {
+              count: format.integer(collection.follower_count),
+              label: t("FOLLOWS"),
+            })}
           </Mono>
         </div>
       </div>

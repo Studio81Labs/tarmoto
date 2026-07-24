@@ -1361,16 +1361,28 @@ function FunZonesBlock({
                       </span>
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] text-fg-dim">
-                      {t("{count, plural, one {{n} road} other {{n} roads}}", {
-                        count: zone.road_count,
-                        n: format.integer(zone.road_count),
-                      })}
-                      {zone.total_curve_km != null
-                        ? ` · ${format.distanceKm(zone.total_curve_km)} ${t("curves")}`
-                        : ""}
-                      {zone.avg_quality != null
-                        ? ` · ${t("avg")} ${format.decimal(zone.avg_quality, 1)}★`
-                        : ""}
+                      {t(
+                        "{roads}{hasCurves, select, yes { · {curves} curves} other {}}{hasQuality, select, yes { · avg {quality}★} other {}}",
+                        {
+                          roads: t(
+                            "{count, plural, one {{n} road} other {{n} roads}}",
+                            {
+                              count: zone.road_count,
+                              n: format.integer(zone.road_count),
+                            },
+                          ),
+                          hasCurves: zone.total_curve_km != null ? "yes" : "no",
+                          curves:
+                            zone.total_curve_km != null
+                              ? format.distanceKm(zone.total_curve_km)
+                              : "",
+                          hasQuality: zone.avg_quality != null ? "yes" : "no",
+                          quality:
+                            zone.avg_quality != null
+                              ? format.decimal(zone.avg_quality, 1)
+                              : "",
+                        },
+                      )}
                     </span>
                     {zone.best_season ? (
                       <span className="mt-0.5 block truncate text-[10px] text-fg-mute">

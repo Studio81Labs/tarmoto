@@ -228,12 +228,12 @@ export function RoadPreviewCard({
                       <span aria-hidden="true">{cfg.emoji}</span>
                       <div className="flex-1">
                         <p className="text-ink">
-                          {t(cfg.label)}
-                          <span
-                            className={`ml-2 text-[10px] uppercase tracking-wider ${SEVERITY_COLOR[hazard.severity]}`}
-                          >
-                            {t(HAZARD_SEVERITY_LABELS[hazard.severity])}
-                          </span>
+                          {t("{hazard} {severity}", {
+                            hazard: t(cfg.label),
+                            severity: t(
+                              HAZARD_SEVERITY_LABELS[hazard.severity],
+                            ),
+                          })}
                         </p>
                         {hazard.note && (
                           <p className="text-fg-dim">{hazard.note}</p>

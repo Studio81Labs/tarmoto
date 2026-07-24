@@ -285,10 +285,10 @@ export default function CommunityFeedPage() {
 
       {location && (
         <p className="mb-6 text-sm text-fg-dim">
-          {t("Filtering within {distance} of", {
+          {t("Filtering within {distance} of {location}.", {
             distance: format.distanceKm(location.km),
-          })}{" "}
-          <span className="font-semibold text-ink">{location.label}</span>.
+            location: location.label,
+          })}
         </p>
       )}
 

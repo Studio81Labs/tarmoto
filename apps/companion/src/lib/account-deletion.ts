@@ -8,5 +8,7 @@ export function isDeletionConfirmed(
   email: string | null | undefined,
 ): boolean {
   if (!email) return false;
+  // Email identity comparison follows the existing locale-neutral auth rule.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return typed.trim().toLowerCase() === email.trim().toLowerCase();
 }

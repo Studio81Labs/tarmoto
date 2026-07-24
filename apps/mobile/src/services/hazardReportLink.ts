@@ -50,6 +50,8 @@ export function parseHazardTypeParam(
   value: string | undefined,
 ): HazardType | undefined {
   if (typeof value !== "string") return undefined;
+  // Hazard deep-link values are canonical API enum tokens.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   const normalised = value.trim().toLowerCase();
   if (normalised.length === 0) return undefined;
   return (HAZARD_TYPES as readonly string[]).includes(normalised)

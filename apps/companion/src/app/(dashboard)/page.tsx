@@ -635,20 +635,14 @@ function TripDraftCard({
           )}
           {trip.num_days > 0 && (
             <Mono className="uppercase">
-              <span className="font-bold text-ink">
-                {format.integer(trip.num_days)}
-              </span>{" "}
-              {t("{count, plural, one {DAY} other {DAYS}}", {
+              {t("{count, plural, one {# DAY} other {# DAYS}}", {
                 count: trip.num_days,
               })}
             </Mono>
           )}
           {trip.passes_count != null && trip.passes_count > 0 && (
             <Mono className="uppercase">
-              <span className="font-bold text-ink">
-                {format.integer(trip.passes_count)}
-              </span>{" "}
-              {t("{count, plural, one {PASS} other {PASSES}}", {
+              {t("{count, plural, one {# PASS} other {# PASSES}}", {
                 count: trip.passes_count,
               })}
             </Mono>

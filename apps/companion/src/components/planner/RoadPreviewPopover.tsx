@@ -371,7 +371,7 @@ export function RoadPreviewPopover({
                     return (
                       <div className="mt-1.5 flex justify-between">
                         <Mono className="text-[9px] text-fg-mute">
-                          0 {format.unitLabel("distance")}
+                          {format.integer(0)} {format.unitLabel("distance")}
                         </Mono>
                         <Mono className="text-[9px] text-fg-mute">
                           {scaleEnd.value} {format.unitLabel("distance")}
@@ -449,8 +449,7 @@ export function RoadPreviewPopover({
                 </div>
               ) : null}
               <p className="mt-3 text-[12.5px] leading-normal text-fg-dim">
-                {t("No one’s ridden this yet —")}
-                <b className="text-ink">{t("be the first to map it.")}</b>
+                {t("No one’s ridden this yet — be the first to map it.")}
               </p>
               <StreetViewLink segment={segment} />
               {onReroute ? (

@@ -220,6 +220,16 @@ describe("groupUnriddenByRegion", () => {
     expect(groups.map((g) => g.label)).toEqual(["Beta", "Chi", "Alpha"]);
   });
 
+  it("uses locale-aware casing when grouping region labels", () => {
+    const segments = [
+      segment({ id: "tr-1", road_name: "IŞIK yolu", length_m: 500 }),
+      segment({ id: "tr-2", road_name: "ışık geçidi", length_m: 750 }),
+    ];
+    const groups = groupUnriddenByRegion(segments, "tr");
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.segments).toHaveLength(2);
+  });
+
   it("returns an empty array for no segments", () => {
     expect(groupUnriddenByRegion([])).toEqual([]);
   });

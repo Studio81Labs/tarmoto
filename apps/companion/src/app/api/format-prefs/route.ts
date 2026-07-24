@@ -15,8 +15,7 @@ import { apiServer } from "@/lib/api/server";
 const FORMAT_PREFS_SYNC_TIMEOUT_MS = 3000;
 
 async function syncFormatPrefsToUserRecord(
-  formatLocale: string,
-  timezone: string,
+  preferences: { format_locale?: string; timezone?: string },
   signal: AbortSignal,
 ): Promise<void> {
   try {
@@ -24,7 +23,7 @@ async function syncFormatPrefsToUserRecord(
     if (!session?.user || signal.aborted) return;
 
     const { error, response } = await apiServer.PATCH("/api/v1/users/me", {
-      body: { preferences: { format_locale: formatLocale, timezone } },
+      body: { preferences },
       headers: { Authorization: `Bearer ${session.accessToken}` },
       signal,
     });
@@ -48,32 +47,52 @@ export async function POST(request: Request) {
   }
 
   const raw = (body ?? {}) as { format_locale?: unknown; timezone?: unknown };
-  const formatLocale = canonicalizeFormatLocale(raw.format_locale);
-  if (!formatLocale) {
+  const preferences: { format_locale?: string; timezone?: string } = {};
+  if (raw.format_locale !== undefined) {
+    const formatLocale = canonicalizeFormatLocale(raw.format_locale);
+    if (!formatLocale) {
+      return NextResponse.json(
+        { error: "Invalid format_locale" },
+        { status: 400 },
+      );
+    }
+    preferences.format_locale = formatLocale;
+  }
+  if (raw.timezone !== undefined) {
+    if (!isValidTimeZone(raw.timezone)) {
+      return NextResponse.json({ error: "Invalid timezone" }, { status: 400 });
+    }
+    preferences.timezone = raw.timezone;
+  }
+  if (Object.keys(preferences).length === 0) {
     return NextResponse.json(
-      { error: "Invalid format_locale" },
+      { error: "At least one format preference is required" },
       { status: 400 },
     );
   }
-  if (!isValidTimeZone(raw.timezone)) {
-    return NextResponse.json({ error: "Invalid timezone" }, { status: 400 });
-  }
-  const timezone = raw.timezone;
 
-  const response = NextResponse.json({ format_locale: formatLocale, timezone });
+  const response = NextResponse.json(preferences);
   const cookieOptions = {
     path: "/",
     maxAge: FORMAT_PREFS_COOKIE_MAX_AGE_SECONDS,
     sameSite: "lax",
     httpOnly: false,
   } as const;
-  response.cookies.set(FORMAT_LOCALE_COOKIE, formatLocale, cookieOptions);
-  response.cookies.set(TIMEZONE_COOKIE, timezone, cookieOptions);
+  if (preferences.format_locale) {
+    response.cookies.set(
+      FORMAT_LOCALE_COOKIE,
+      preferences.format_locale,
+      cookieOptions,
+    );
+  }
+  if (preferences.timezone) {
+    response.cookies.set(TIMEZONE_COOKIE, preferences.timezone, cookieOptions);
+  }
 
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
-    syncFormatPrefsToUserRecord(formatLocale, timezone, controller.signal),
+    syncFormatPrefsToUserRecord(preferences, controller.signal),
     new Promise<void>((resolve) => {
       timer = setTimeout(() => {
         controller.abort();

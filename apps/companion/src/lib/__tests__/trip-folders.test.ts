@@ -72,6 +72,13 @@ describe("validateFolderName", () => {
     );
   });
 
+  it("uses locale-aware casing for duplicate names", () => {
+    const existing = [makeFolder({ name: "Işık rotaları" })];
+    expect(
+      validateFolderName("IŞIK ROTALARI", existing, t, undefined, "tr"),
+    ).toMatch(/already exists/);
+  });
+
   it("allows re-saving the same folder when excludeId is set", () => {
     const existing = [makeFolder({ id: "id-1", name: "Alps 2026" })];
     expect(validateFolderName("alps 2026", existing, t, "id-1")).toBeNull();

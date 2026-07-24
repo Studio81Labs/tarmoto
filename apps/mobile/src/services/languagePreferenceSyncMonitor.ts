@@ -48,6 +48,9 @@ export function startLanguagePreferenceSyncMonitor(
 
   const run = async (): Promise<void> => {
     if (activeMonitorToken !== monitorToken) return;
+    // Foreground events must not turn the capped retry schedule into an
+    // immediate retry loop. The timer clears itself before invoking run().
+    if (retryTimer) return;
     const outcome = await syncIfNeeded(
       deps,
       () => activeMonitorToken === monitorToken,

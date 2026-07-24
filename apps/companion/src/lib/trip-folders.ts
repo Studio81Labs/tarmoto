@@ -9,7 +9,9 @@
  */
 
 import {
+  DEFAULT_LOCALE,
   MAX_TRIP_FOLDER_NAME_LENGTH,
+  normalizeForLocaleSearch,
   type TripFolder as SharedTripFolder,
 } from "@tarmoto/shared";
 import type { Translate } from "@/i18n";
@@ -58,6 +60,7 @@ export function validateFolderName(
   folders: readonly TripFolder[],
   t: Translate,
   excludeId?: string,
+  locale: string = DEFAULT_LOCALE,
 ): string | null {
   const trimmed = name.trim();
   if (!trimmed) return t("Folder name is required");
@@ -66,9 +69,11 @@ export function validateFolderName(
       max: MAX_FOLDER_NAME_LENGTH,
     });
   }
-  const lower = trimmed.toLowerCase();
+  const normalized = normalizeForLocaleSearch(trimmed, locale);
   const clash = folders.some(
-    (f) => f.id !== excludeId && f.name.trim().toLowerCase() === lower,
+    (folder) =>
+      folder.id !== excludeId &&
+      normalizeForLocaleSearch(folder.name, locale) === normalized,
   );
   if (clash) return t("A folder with that name already exists");
   return null;
@@ -144,6 +149,7 @@ export interface MigrationResult {
 export async function migrateLegacyFolders(
   userId: string,
   serverFolders: readonly TripFolder[],
+  locale: string = DEFAULT_LOCALE,
 ): Promise<MigrationResult | null> {
   if (!userId || hasRunMigration(userId)) return null;
   const legacy = readLegacyFolders(userId);
@@ -155,10 +161,12 @@ export async function migrateLegacyFolders(
   // with the same name on another device after this client cached the
   // legacy rows, don't post a duplicate.
   const serverNames = new Set(
-    serverFolders.map((f) => f.name.trim().toLowerCase()),
+    serverFolders.map((folder) =>
+      normalizeForLocaleSearch(folder.name, locale),
+    ),
   );
   const toMigrate = legacy.filter(
-    (f) => !serverNames.has(f.name.trim().toLowerCase()),
+    (folder) => !serverNames.has(normalizeForLocaleSearch(folder.name, locale)),
   );
   if (toMigrate.length === 0) {
     clearLegacyFolders(userId);

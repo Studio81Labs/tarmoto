@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n, useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -35,7 +35,10 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { formatRelativeTimeLabel } from "@tarmoto/shared";
+import {
+  formatRelativeTimeLabel,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 import {
   DndContext,
   KeyboardSensor,
@@ -892,7 +895,7 @@ function RoutePickerModal({
   onClose: () => void;
   onAdd: (input: { rideIds: string[] }) => void;
 }) {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const format = useFormat();
   const [selectedRides, setSelectedRides] = useState<Set<string>>(
     () => new Set(),
@@ -908,16 +911,19 @@ function RoutePickerModal({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const visibleRides = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+    const needle = normalizeForLocaleSearch(search, locale);
     if (!needle) return rides;
     return rides.filter((r) => {
       const fallbackName = t("Ride on {date}", {
         date: format.date(r.started_at),
       });
-      const haystack = `${r.name ?? fallbackName} ${r.ride_type}`.toLowerCase();
+      const haystack = normalizeForLocaleSearch(
+        `${r.name ?? fallbackName} ${r.ride_type}`,
+        locale,
+      );
       return haystack.includes(needle);
     });
-  }, [rides, search, format, t]);
+  }, [rides, search, format, locale, t]);
   const toggle = (id: string) => {
     setSelectedRides((prev) => {
       const next = new Set(prev);

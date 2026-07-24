@@ -30,6 +30,8 @@ export function qualityTierOf(score: number): 1 | 2 | 3 | 4 | 5 {
  */
 export function dayRouteLabel(day: TripDay): string | null {
   const title = day.title?.trim();
+  // "Day N" is the invariant persisted default, not display copy.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   if (title && title.toLowerCase() !== `day ${day.dayNumber}`) return title;
   const startWaypoint = day.waypoints[0];
   const endWaypoint = day.waypoints[day.waypoints.length - 1];

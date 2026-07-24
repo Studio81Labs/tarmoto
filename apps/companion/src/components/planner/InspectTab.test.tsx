@@ -115,8 +115,8 @@ describe("InspectTab", () => {
     expect(screen.getByText("80.4")).toBeInTheDocument();
     expect(screen.getByText("3.8")).toBeInTheDocument();
     // Real surface mix from the routing response: 71% / 29%.
-    expect(screen.getByText("71%")).toBeInTheDocument();
-    expect(screen.getByText("29%")).toBeInTheDocument();
+    expect(screen.getByText("71% Asphalt")).toBeInTheDocument();
+    expect(screen.getByText("29% Gravel")).toBeInTheDocument();
   });
 
   it("opens a section preview from the quality strip", () => {

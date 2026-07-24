@@ -7,6 +7,7 @@
  * `RouteCollectionView` shape consumed by the pages and hook.
  */
 
+import { DEFAULT_LOCALE, normalizeForLocaleSearch } from "@tarmoto/shared";
 import type { Translate } from "@/i18n";
 import {
   type RouteCollectionDetail,
@@ -65,6 +66,7 @@ export function validateCollectionName(
   collections: readonly { id: string; title: string }[],
   t: Translate,
   excludeId?: string,
+  locale: string = DEFAULT_LOCALE,
 ): string | null {
   const trimmed = name.trim();
   if (!trimmed) return t("Collection name is required");
@@ -73,9 +75,11 @@ export function validateCollectionName(
       max: MAX_COLLECTION_NAME_LENGTH,
     });
   }
-  const lower = trimmed.toLowerCase();
+  const normalized = normalizeForLocaleSearch(trimmed, locale);
   const clash = collections.some(
-    (c) => c.id !== excludeId && c.title.trim().toLowerCase() === lower,
+    (collection) =>
+      collection.id !== excludeId &&
+      normalizeForLocaleSearch(collection.title, locale) === normalized,
   );
   if (clash) return t("A collection with that name already exists");
   return null;

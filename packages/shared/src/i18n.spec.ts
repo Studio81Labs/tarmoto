@@ -7,6 +7,8 @@ import {
   isSupportedLocale,
   matchSupportedLocale,
   makeTranslator,
+  localeSearchIncludes,
+  normalizeForLocaleSearch,
   resolveLocale,
   type CatalogsByLocale,
   type SupportedLocale,
@@ -80,6 +82,25 @@ describe("i18n / matchSupportedLocale", () => {
     expect(matchSupportedLocale("EN")).toBe("en");
     expect(matchSupportedLocale("en-GB")).toBe("en");
     expect(matchSupportedLocale("xx-YY")).toBeUndefined();
+  });
+});
+
+describe("i18n / locale-aware search", () => {
+  it("matches Turkish title-case labels against uppercase rider input", () => {
+    expect(normalizeForLocaleSearch("Işık", "tr")).toBe(
+      normalizeForLocaleSearch("IŞIK", "tr"),
+    );
+    expect(localeSearchIncludes("Işık uyarısı", "IŞIK", "tr")).toBe(true);
+  });
+
+  it("normalizes canonically equivalent Unicode input", () => {
+    expect(localeSearchIncludes("Café route", "Cafe\u0301", "fr")).toBe(true);
+  });
+
+  it("falls back safely when a caller supplies an invalid locale", () => {
+    expect(localeSearchIncludes("Alps Loop", "ALPS", "not a locale!")).toBe(
+      true,
+    );
   });
 });
 

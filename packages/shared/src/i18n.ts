@@ -96,6 +96,35 @@ export function resolveLocale(input?: string | null): SupportedLocale {
   return DEFAULT_LOCALE;
 }
 
+/**
+ * Normalize rider-entered text and localized labels for case-insensitive
+ * search. The explicit locale avoids Turkish/Azeri I/İ/ı mismatches; the
+ * upper-then-lower fold also makes title-case and all-caps input converge.
+ */
+export function normalizeForLocaleSearch(
+  value: string,
+  locale: string,
+): string {
+  const normalized = value.normalize("NFC").trim();
+  try {
+    return normalized.toLocaleUpperCase(locale).toLocaleLowerCase(locale);
+  } catch {
+    // Locale strings ultimately come from validated providers, but pure
+    // helpers may be called with untrusted values in tests or import paths.
+    return normalized.toUpperCase().toLowerCase();
+  }
+}
+
+export function localeSearchIncludes(
+  value: string,
+  query: string,
+  locale: string,
+): boolean {
+  return normalizeForLocaleSearch(value, locale).includes(
+    normalizeForLocaleSearch(query, locale),
+  );
+}
+
 export type TranslationValues = Record<string, string | number>;
 
 /**

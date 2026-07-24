@@ -37,6 +37,7 @@ export function FormatPrefsSync() {
   const ran = useRef(false);
   const mounted = useRef(false);
   const inFlight = useRef(false);
+  const rerunRequested = useRef(false);
   const retryIndex = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -62,19 +63,33 @@ export function FormatPrefsSync() {
     };
 
     const sync = async (): Promise<void> => {
-      if (inFlight.current) return;
+      if (inFlight.current) {
+        // A device change can arrive while the previous snapshot is being
+        // persisted. Queue one re-read instead of dropping the focus event.
+        rerunRequested.current = true;
+        return;
+      }
+      // Focus/visibility events must respect a scheduled retry. The timer
+      // clears itself before calling sync().
+      if (retryTimer.current) return;
 
       const detectedLocale = canonicalizeFormatLocale(navigator.language);
       const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const timeZone = isValidTimeZone(detectedZone) ? detectedZone : null;
-      // An exotic environment that reports neither is left on the
-      // Accept-Language/UTC server fallbacks — nothing useful to persist.
-      if (!detectedLocale || !timeZone) return;
-
+      const patch: { format_locale?: string; timezone?: string } = {};
       if (
-        readCookie(FORMAT_LOCALE_COOKIE) === detectedLocale &&
-        readCookie(TIMEZONE_COOKIE) === timeZone
+        detectedLocale &&
+        readCookie(FORMAT_LOCALE_COOKIE) !== detectedLocale
       ) {
+        patch.format_locale = detectedLocale;
+      }
+      if (timeZone && readCookie(TIMEZONE_COOKIE) !== timeZone) {
+        patch.timezone = timeZone;
+      }
+
+      // Environments that expose only one preference still persist the useful
+      // half. If neither changed, there is no work to retry.
+      if (Object.keys(patch).length === 0) {
         retryIndex.current = 0;
         clearRetry();
         return;
@@ -85,10 +100,7 @@ export function FormatPrefsSync() {
         const response = await fetch("/api/format-prefs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            format_locale: detectedLocale,
-            timezone: timeZone,
-          }),
+          body: JSON.stringify(patch),
         });
         if (!response.ok) {
           console.error("Failed to sync format preferences", response.status);
@@ -103,6 +115,10 @@ export function FormatPrefsSync() {
         scheduleRetry(sync);
       } finally {
         inFlight.current = false;
+        if (rerunRequested.current && mounted.current) {
+          rerunRequested.current = false;
+          void sync();
+        }
       }
     };
 

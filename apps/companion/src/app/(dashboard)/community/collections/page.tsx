@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n, useTranslation } from "@/i18n/I18nProvider";
 import { getUserFacingErrorMessage } from "@/i18n";
 import {
   useEffect,
@@ -40,7 +40,10 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { CommunityScaffold } from "../_CommunityScaffold";
 import { CollectionsDiscover } from "@/components/community/CollectionsDiscover";
 import { CommunityEmptyState } from "../_CommunityEmptyState";
-import { formatRelativeTimeLabel } from "@tarmoto/shared";
+import {
+  formatRelativeTimeLabel,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 import {
   COLLECTION_VISIBILITY_LABELS,
   RouteCollectionVisibilityPill,
@@ -60,7 +63,7 @@ interface CollectionInputForm {
   visibility: RouteCollectionVisibility;
 }
 export default function RouteCollectionsPage() {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
     collections,
@@ -135,14 +138,17 @@ export default function RouteCollectionsPage() {
       );
     }
   };
-  const needle = search.trim().toLowerCase();
+  const needle = normalizeForLocaleSearch(search, locale);
   const visible = useMemo(() => {
     return collections.filter((c) => {
       if (!needle) return true;
-      const hay = `${c.title} ${c.description ?? ""}`.toLowerCase();
+      const hay = normalizeForLocaleSearch(
+        `${c.title} ${c.description ?? ""}`,
+        locale,
+      );
       return hay.includes(needle);
     });
-  }, [collections, needle]);
+  }, [collections, locale, needle]);
   // Apply the same search to followed collections so a search that hides the
   // owned grid doesn't leave unfiltered followed cards visible below it (the
   // search box label says "Search collections…" generically). Followed cards
@@ -152,11 +158,13 @@ export default function RouteCollectionsPage() {
   const visibleFollowed = useMemo(() => {
     return followed.filter((c) => {
       if (!needle) return true;
-      const hay =
-        `${c.title} ${c.description ?? ""} ${c.ownerName}`.toLowerCase();
+      const hay = normalizeForLocaleSearch(
+        `${c.title} ${c.description ?? ""} ${c.ownerName}`,
+        locale,
+      );
       return hay.includes(needle);
     });
-  }, [followed, needle]);
+  }, [followed, locale, needle]);
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
   return (
@@ -397,8 +405,9 @@ function CollectionCard({
         </div>
 
         <p className="mt-3 text-[11px] text-fg-mute">
-          {t("Updated")}
-          {formatRelativeTimeLabel(collection.updatedAt, { format }, t)}
+          {t("Updated {time}", {
+            time: formatRelativeTimeLabel(collection.updatedAt, { format }, t),
+          })}
         </p>
       </Link>
 
@@ -493,8 +502,9 @@ function FollowedCollectionCard({
         </div>
 
         <p className="mt-3 text-[11px] text-fg-mute">
-          {t("Updated")}
-          {formatRelativeTimeLabel(collection.updatedAt, { format }, t)}
+          {t("Updated {time}", {
+            time: formatRelativeTimeLabel(collection.updatedAt, { format }, t),
+          })}
         </p>
       </Link>
 
@@ -531,7 +541,7 @@ function CollectionModal({
   onClose: () => void;
   onSubmit: (input: CollectionInputForm) => Promise<void>;
 }) {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const [title, setTitle] = useState(initial.title);
   const [description, setDescription] = useState(initial.description);
   const [visibility, setVisibility] = useState<RouteCollectionVisibility>(
@@ -550,7 +560,13 @@ function CollectionModal({
   }, []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const nameError = validateCollectionName(title, collections, t, excludeId);
+    const nameError = validateCollectionName(
+      title,
+      collections,
+      t,
+      excludeId,
+      locale,
+    );
     if (nameError) {
       setError(nameError);
       return;
@@ -608,8 +624,7 @@ function CollectionModal({
           </div>
           <div>
             <FieldLabel htmlFor="collection-description">
-              {t("Description")}{" "}
-              <span className="text-fg-mute">{t("(optional)")}</span>
+              {t("Description (optional)")}
             </FieldLabel>
             <Textarea
               id="collection-description"

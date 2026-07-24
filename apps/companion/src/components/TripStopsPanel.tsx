@@ -185,7 +185,9 @@ export function TripStopsPanel({
       {/* §01 POI CATEGORIES — the SHARED set; toggling syncs the map bar. */}
       <div>
         <div className="mb-1.5 flex items-center gap-2 font-mono text-[10px] font-bold">
-          <span className="tracking-[1px] text-accent">§ 01</span>
+          <span className="tracking-[1px] text-accent">
+            {t("§ {number}", { number: 1 })}
+          </span>
           <span className="tracking-[1.4px] text-fg-mute">
             {t("POI CATEGORIES")}
           </span>
@@ -342,7 +344,9 @@ export function TripStopsPanel({
       <div>
         <div className="mb-2.5 flex items-baseline justify-between">
           <div className="flex items-center gap-2 font-mono text-[10px] font-bold">
-            <span className="tracking-[1px] text-accent">§ 02</span>
+            <span className="tracking-[1px] text-accent">
+              {t("§ {number}", { number: 2 })}
+            </span>
             <span className="tracking-[1.4px] text-fg-mute">
               {t("ALONG YOUR ROUTE")}
             </span>

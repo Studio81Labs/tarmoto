@@ -45,10 +45,10 @@ export function SurfaceMixBar({
               }}
             />
             <span className="text-[11.5px] text-fg-dim">
-              <b className="font-bold text-ink">
-                {format.percent(entry.pct / 100)}
-              </b>{" "}
-              {t(SURFACE_LABELS[entry.surface])}
+              {t("{percent} {surface}", {
+                percent: format.percent(entry.pct / 100),
+                surface: t(SURFACE_LABELS[entry.surface]),
+              })}
             </span>
           </span>
         ))}

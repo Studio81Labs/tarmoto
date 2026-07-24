@@ -1162,6 +1162,8 @@ export const en = {
   "Your Tarmoto password": "Your Tarmoto password",
   "Your usual route looks like the best option right now.":
     "Your usual route looks like the best option right now.",
+  "{location} · {latitude}, {longitude}":
+    "{location} · {latitude}, {longitude}",
   "Δ distance": "Δ distance",
   "Δ time": "Δ time",
 } as const;

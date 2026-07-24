@@ -114,7 +114,6 @@ export function LoginForm({
       <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
 
       <p className="mt-6 text-center text-sm text-ink/65">
-        {t("Don't have an account?")}{" "}
         <Link
           href={
             // Forward the post-auth destination to /register so an
@@ -129,9 +128,10 @@ export function LoginForm({
               ? `/register?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
               : "/register"
           }
+          aria-label={t("Create one")}
           className="font-semibold text-ink hover:text-accent hover:underline"
         >
-          {t("Create one")}
+          {t("Don't have an account? Create one")}
         </Link>
       </p>
     </div>

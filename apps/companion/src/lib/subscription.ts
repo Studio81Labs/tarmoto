@@ -408,6 +408,8 @@ function sortPlans(
 
 function titleCase(value: string, t: Translate): string {
   if (!value) return t("Card");
+  // Payment-card brands are provider-owned ASCII identifiers.
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 

@@ -97,6 +97,25 @@ describe("languagePreferenceSyncMonitor", () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  it("does not let foreground events bypass retry backoff", async () => {
+    sync
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined);
+    start();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    listener?.("active");
+    await Promise.resolve();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(999);
+    expect(sync).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
   it("serializes a superseding selection across monitor restarts", async () => {
     let resolveFirst!: () => void;
     sync.mockImplementationOnce(

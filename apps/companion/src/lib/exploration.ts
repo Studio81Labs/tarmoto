@@ -20,6 +20,7 @@ import {
 } from "./ride-stats";
 import type { UnriddenSegment } from "./api";
 import type { EnglishMessageKey } from "@/i18n";
+import { DEFAULT_LOCALE, normalizeForLocaleSearch } from "@tarmoto/shared";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
 export type TimePeriod = (typeof TIME_PERIODS)[number];
@@ -114,11 +115,12 @@ export function computePeriodStats(
  */
 export function groupUnriddenByRegion(
   segments: readonly UnriddenSegment[],
+  locale: string = DEFAULT_LOCALE,
 ): RegionBucket[] {
   const buckets = new Map<string, RegionBucket>();
   for (const seg of segments) {
-    const label = regionLabelFor(seg.road_name);
-    const key = label.toLowerCase();
+    const label = regionLabelFor(seg.road_name, locale);
+    const key = normalizeForLocaleSearch(label, locale);
     const bucket = buckets.get(key) ?? {
       key,
       label,
@@ -137,7 +139,10 @@ export function groupUnriddenByRegion(
   });
 }
 
-function regionLabelFor(roadName: string | null | undefined): string {
+function regionLabelFor(
+  roadName: string | null | undefined,
+  locale: string,
+): string {
   if (!roadName) return "Unnamed";
   const trimmed = roadName.trim();
   if (!trimmed) return "Unnamed";
@@ -145,5 +150,5 @@ function regionLabelFor(roadName: string | null | undefined): string {
   // Upper-case the first character so buckets render with consistent casing
   // regardless of whichever variant the backend returned first ("Beskydy"
   // and "beskydy" both surface as "Beskydy").
-  return first.charAt(0).toUpperCase() + first.slice(1);
+  return first.charAt(0).toLocaleUpperCase(locale) + first.slice(1);
 }

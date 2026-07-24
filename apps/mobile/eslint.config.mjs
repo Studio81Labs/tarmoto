@@ -11,6 +11,7 @@
 
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import { localizationPlugin } from "../../scripts/eslint/localization-rules.mjs";
 
 export default [
   {
@@ -30,6 +31,9 @@ export default [
   ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
+    plugins: {
+      "tarmoto-localization": localizationPlugin,
+    },
     languageOptions: {
       parserOptions: {
         ecmaFeatures: { jsx: true },
@@ -50,6 +54,9 @@ export default [
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-deprecated": "error",
+      "tarmoto-localization/no-locale-insensitive-search": "error",
+      "tarmoto-localization/no-translated-fragments": "error",
+      "tarmoto-localization/no-visible-numeric-jsx-text": "error",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
@@ -485,6 +492,9 @@ export default [
             "Don't call fetch() directly. Use the generated client — `client` from `@/services/typedClient` (via `@/services/api`). (Raw fetch is confined to services/typedClient.ts, the auth-refresh middleware.)",
         },
       ],
+      "tarmoto-localization/no-locale-insensitive-search": "off",
+      "tarmoto-localization/no-translated-fragments": "off",
+      "tarmoto-localization/no-visible-numeric-jsx-text": "off",
     },
   },
   {

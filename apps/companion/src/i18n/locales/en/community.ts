@@ -46,6 +46,8 @@ export const community = {
   "Failed to unfollow collection": "Failed to unfollow collection",
   Feed: "Feed",
   "Filtering within {distance} of": "Filtering within {distance} of",
+  "Filtering within {distance} of {location}.":
+    "Filtering within {distance} of {location}.",
   Followers: "Followers",
   "Follows you": "Follows you",
   "Listed publicly — other riders can follow it.":

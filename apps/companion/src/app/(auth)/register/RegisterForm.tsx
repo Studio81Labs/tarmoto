@@ -110,7 +110,6 @@ export function RegisterForm({
       <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
 
       <p className="mt-6 text-center text-sm text-ink/65">
-        {t("Already have an account?")}{" "}
         <Link
           href={
             // Mirror of LoginForm — preserves the post-auth
@@ -120,9 +119,10 @@ export function RegisterForm({
               ? `/login?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
               : "/login"
           }
+          aria-label={t("Sign in")}
           className="font-semibold text-ink hover:text-accent hover:underline"
         >
-          {t("Sign in")}
+          {t("Already have an account? Sign in")}
         </Link>
       </p>
     </div>

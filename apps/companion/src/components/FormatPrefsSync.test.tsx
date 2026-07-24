@@ -39,6 +39,7 @@ describe("FormatPrefsSync", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -93,7 +94,6 @@ describe("FormatPrefsSync", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({
       format_locale: "de-DE",
-      timezone: DEVICE_TZ,
     });
   });
 
@@ -110,6 +110,78 @@ describe("FormatPrefsSync", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     errorSpy.mockRestore();
+  });
+
+  it("does not let focus events bypass retry backoff", async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+
+    render(<FormatPrefsSync />);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    errorSpy.mockRestore();
+  });
+
+  it("queues a fresh device snapshot while a request is in flight", async () => {
+    let releaseFirst!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+
+    render(<FormatPrefsSync />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    Object.defineProperty(window.navigator, "language", {
+      value: "de-DE",
+      configurable: true,
+    });
+    window.dispatchEvent(new Event("focus"));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    releaseFirst(new Response(null, { status: 200 }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      format_locale: "de-DE",
+      timezone: DEVICE_TZ,
+    });
+  });
+
+  it("persists a valid timezone when the device locale is unusable", async () => {
+    Object.defineProperty(window.navigator, "language", {
+      value: "not a locale!",
+      configurable: true,
+    });
+
+    render(<FormatPrefsSync />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ timezone: DEVICE_TZ });
+  });
+
+  it("persists a valid locale when timezone detection is unusable", async () => {
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...resolved,
+      timeZone: "Mars/Olympus",
+    });
+
+    render(<FormatPrefsSync />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ format_locale: "cs-CZ" });
   });
 
   it("does not refresh when the POST fails", async () => {
