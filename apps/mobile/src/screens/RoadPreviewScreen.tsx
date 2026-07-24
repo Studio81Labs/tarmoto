@@ -266,8 +266,8 @@ function HeaderCard({
         />
         <MetaPill
           icon="shield-check"
-          label={translate("{value0}% confidence", {
-            value0: Math.round(segment.confidence),
+          label={translate("{value0} confidence", {
+            value0: getFormatters().percent(segment.confidence / 100),
           })}
         />
       </View>
@@ -381,9 +381,9 @@ function QualityBreakdownBar({
                 style={[styles.legendDot, { backgroundColor: bucket.color }]}
               />
               <Text style={styles.legendLabel}>
-                {translate("{label} {percent}%", {
+                {translate("{label} {percent}", {
                   label: translate(bucket.label),
-                  percent: Math.round(s.pct * 100),
+                  percent: getFormatters().percent(s.pct),
                 })}
               </Text>
             </View>

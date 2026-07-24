@@ -340,7 +340,11 @@ export function summarizeExploration(
   return {
     riddenCount: stats.ridden_segments,
     totalCount: stats.total_segments,
-    percentLabel: `${getFormatters().decimal(stats.percent_explored, 1)}%`,
+    percentLabel: getFormatters().number(stats.percent_explored / 100, {
+      style: "percent",
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }),
     distanceKmLabel: getFormatters().distanceKm(stats.total_distance_km),
   };
 }

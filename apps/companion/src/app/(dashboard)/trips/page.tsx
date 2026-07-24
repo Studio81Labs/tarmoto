@@ -949,6 +949,7 @@ function TripToolbar({
   onChange: (next: TripFilters) => void;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const toggleStatus = (status: TripStatus) => {
     const next = new Set(filters.statuses);
     if (next.has(status)) next.delete(status);
@@ -987,7 +988,7 @@ function TripToolbar({
           >
             {t(TRIP_STATUS_FILTER_LABELS[status])}
             <span className="font-mono text-[11px] tabular-nums opacity-70">
-              {statusCounts[status]}
+              {format.integer(statusCounts[status])}
             </span>
           </button>
         );

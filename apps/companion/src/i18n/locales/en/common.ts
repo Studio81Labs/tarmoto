@@ -881,8 +881,8 @@ export const common = {
     "Too few passes to be sure — treat this as provisional and check the section yourself.",
   "Top roads": "Top roads",
   "Top speed": "Top speed",
-  "Top {percentile}% of riders in {region}":
-    "Top {percentile}% of riders in {region}",
+  "Top {percentile} of riders in {region}":
+    "Top {percentile} of riders in {region}",
   "Top-ranked roads in this region, colour-coded by surface quality.":
     "Top-ranked roads in this region, colour-coded by surface quality.",
   "Total distance": "Total distance",
@@ -1153,7 +1153,6 @@ export const common = {
   "{label} route preview": "{label} route preview",
   "{name} hasn't shared any rides yet.": "{name} hasn't shared any rides yet.",
   "{name} review photo {n}": "{name} review photo {n}",
-  "{percent}% explored": "{percent}% explored",
   "{rating} out of 5": "{rating} out of 5",
   "{rating} ★ average": "{rating} \u2605 average",
   "{reporter} · {time} · {n} confirmations":
@@ -1238,7 +1237,7 @@ export const common = {
   "{value} {unit} PEAK": "{value} {unit} PEAK",
   "{value} {unit} TOTAL": "{value} {unit} TOTAL",
   "{value} {unit} total": "{value} {unit} total",
-  "% explored": "% explored",
+  "{percent} explored": "{percent} explored",
   Active: "Active",
   "Add routes": "Add routes",
   "All your rides are already in this collection":

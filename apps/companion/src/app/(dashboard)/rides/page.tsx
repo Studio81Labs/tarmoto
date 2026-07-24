@@ -18,6 +18,7 @@ import {
   type SortField,
 } from "./_components/useRidesQuery";
 import { useTimeWindow } from "./_components/TimeWindowPills";
+import { useFormat } from "@/format/FormatProvider";
 export default function RidesPage() {
   // useSearchParams needs a Suspense boundary for Next.js static optimization.
   return (
@@ -28,6 +29,7 @@ export default function RidesPage() {
 }
 function RidesPageInner() {
   const t = useTranslation();
+  const format = useFormat();
   const { state, list, update, reset, pageSize } = useRidesQuery();
   const window = useTimeWindow();
 
@@ -71,7 +73,9 @@ function RidesPageInner() {
   return (
     <RidesScaffold
       allRidesBadge={
-        list.loading ? null : <Mono className="text-[11px]">{list.total}</Mono>
+        list.loading ? null : (
+          <Mono className="text-[11px]">{format.integer(list.total)}</Mono>
+        )
       }
       headerRight={
         // The export menu hides only on the truly-empty account state.

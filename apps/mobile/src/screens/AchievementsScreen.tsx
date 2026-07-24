@@ -207,13 +207,19 @@ export default function AchievementsScreen() {
         body={
           snapshot?.exploration
             ? translate(
-                "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
+                "{percent} explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
                 {
-                  percent: getFormatters().decimal(
-                    snapshot.exploration.percent_explored,
-                    1,
+                  percent: getFormatters().number(
+                    snapshot.exploration.percent_explored / 100,
+                    {
+                      style: "percent",
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    },
                   ),
-                  ridden: snapshot.exploration.ridden_segments,
+                  ridden: getFormatters().integer(
+                    snapshot.exploration.ridden_segments,
+                  ),
                   total: snapshot.exploration.total_segments,
                 },
               )

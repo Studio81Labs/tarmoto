@@ -153,6 +153,16 @@ describe("i18n / makeTranslator (ICU)", () => {
     expect(icuT("views", { count: 1234 }, "en", "de-DE")).toBe("1.234 views");
   });
 
+  it("localizes finite numbers in plain placeholders without grouping identifiers", () => {
+    expect(icuT("Day {day}", { day: 12 }, "en", "ar-EG")).toBe("Day ١٢");
+    expect(icuT("Rank {rank}", { rank: 1234 }, "en", "ar-EG")).toBe(
+      "Rank ١٢٣٤",
+    );
+    expect(icuT("Card {suffix}", { suffix: "1234" }, "en", "ar-EG")).toBe(
+      "Card 1234",
+    );
+  });
+
   it("falls back to legacy interpolation for malformed messages and missing values", () => {
     // Unbalanced brace — ICU parse fails; legacy regex leaves it untouched.
     expect(icuT("Hi {name", { name: "R" })).toBe("Hi {name");
