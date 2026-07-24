@@ -34,6 +34,14 @@ vi.mock("@/hooks/useRideStats", () => ({
   useRideStats: () => ({ stats: null }),
 }));
 
+// RideExportMenu (rendered via headerRight) now calls useFeature/useEntitlements,
+// which hit react-query — mock the barrel so it doesn't need a QueryClient.
+// gpx_export enabled keeps the pre-gate export-menu assertions unchanged.
+vi.mock("@/hooks", () => ({
+  useFeature: () => ({ enabled: true, isLoading: false }),
+  useEntitlements: () => ({ tier: "free" }),
+}));
+
 // Render the scaffold inline so the header CTA slot is in the DOM, but skip
 // its own data-fetching chrome (tabs bar, totals fetch).
 vi.mock("./_RidesScaffold", () => ({
