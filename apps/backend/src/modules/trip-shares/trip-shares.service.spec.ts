@@ -2,7 +2,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripInvite } from '../../entities/trip-invite.entity.js';
@@ -23,6 +23,13 @@ describe('TripSharesService', () => {
   let featureResolver: jest.Mocked<
     Pick<FeatureResolver, 'resolveLimitsForUser'>
   >;
+  // The join path serialises its cap-check + insert inside
+  // `dataSource.transaction`, taking a per-trip advisory lock. The mock runs
+  // the callback with a manager whose `getRepository` returns the same repo
+  // mocks the assertions already target, and records the `pg_advisory_xact_lock`
+  // call so a test can prove the lock is taken.
+  let managerQuery: jest.Mock;
+  let dataSource: { transaction: jest.Mock };
 
   const mockShare = {
     id: 'share-1',
@@ -87,6 +94,19 @@ describe('TripSharesService', () => {
       }),
     };
 
+    managerQuery = jest.fn().mockResolvedValue(undefined);
+    const manager = {
+      query: managerQuery,
+      getRepository: jest.fn((entity) => {
+        if (entity === TripMember) return memberRepo;
+        if (entity === TripInvite) return inviteRepo;
+        return undefined;
+      }),
+    };
+    dataSource = {
+      transaction: jest.fn((cb: (m: typeof manager) => unknown) => cb(manager)),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripSharesService,
@@ -97,6 +117,7 @@ describe('TripSharesService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: TripActivityService, useValue: activity },
         { provide: FeatureResolver, useValue: featureResolver },
+        { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
 
@@ -193,6 +214,26 @@ describe('TripSharesService', () => {
       expect(memberRepo.save).not.toHaveBeenCalled();
       expect(activity.recordSafe).not.toHaveBeenCalled();
       expect(result.planner_url).toBe('/trips/planner?tripId=trip-1');
+    });
+
+    it('serialises the cap check + insert under a per-trip advisory lock', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+
+      await service.joinByToken('user-2', 'a'.repeat(32));
+
+      // The insert ran inside dataSource.transaction, and the first thing that
+      // transaction did was take the per-trip advisory lock — so concurrent
+      // joins on the same link can't both pass the cap and overflow it.
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(managerQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['trip_shares:collaborators:trip-1'],
+      );
+      expect(memberRepo.save).toHaveBeenCalled();
     });
 
     it('403s (feature-limit) when an anonymous link-joiner would exceed the owner cap', async () => {

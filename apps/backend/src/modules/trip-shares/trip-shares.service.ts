@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 import { isWithinLimit } from '@tarmoto/shared';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
@@ -41,6 +41,7 @@ export class TripSharesService {
     private readonly userRepo: Repository<User>,
     private readonly activity: TripActivityService,
     private readonly featureResolver: FeatureResolver,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -54,8 +55,14 @@ export class TripSharesService {
    * limit and throws before the new member is inserted. Callers must invoke
    * this ONLY when the join adds a NEW collaborator — a joiner consuming a
    * pending invite was already counted (invite → member is net-zero).
+   *
+   * Counts through the caller's `manager` so the read runs inside the same
+   * serialised transaction as the insert — see `joinByToken`. Without that,
+   * concurrent joins on the same public link would each observe the same
+   * pre-insert count and collectively overflow the owner's paid cap.
    */
   private async assertCanAddCollaborator(
+    manager: EntityManager,
     tripId: string,
     ownerId: string,
   ): Promise<void> {
@@ -63,10 +70,10 @@ export class TripSharesService {
     const limit = limits.max_trip_collaborators;
     if (limit === null) return; // unlimited — skip the count entirely
     const [nonOwnerMembers, pendingInvites] = await Promise.all([
-      this.memberRepo.count({
+      manager.getRepository(TripMember).count({
         where: { trip_id: tripId, role: Not('owner') },
       }),
-      this.inviteRepo.count({ where: { trip_id: tripId } }),
+      manager.getRepository(TripInvite).count({ where: { trip_id: tripId } }),
     ]);
     const current = nonOwnerMembers + pendingInvites;
     if (!isWithinLimit(limit, current)) {
@@ -137,24 +144,37 @@ export class TripSharesService {
 
     let inserted = false;
     if (!existing) {
-      // A joiner consuming a pending invite was already counted against the
-      // owner's cap (invite → member is net-zero); an anonymous link-joiner
-      // with no invite is a NEW collaborator and must pass the cap first.
-      if (!invite) {
-        await this.assertCanAddCollaborator(share.trip_id, trip.owner_id);
-      }
-      try {
-        await this.memberRepo.save(
-          this.memberRepo.create({
-            trip_id: share.trip_id,
-            user_id: userId,
-            role: invite?.role ?? 'viewer',
-          }),
-        );
-        inserted = true;
-      } catch (err: unknown) {
-        if (!isUniqueViolation(err)) throw err;
-      }
+      const tripId = share.trip_id;
+      const role = invite?.role ?? 'viewer';
+      // The cap check and the member insert must be atomic. Unlike the owner
+      // invite UI (single actor, proactive gate), the public group link can be
+      // opened by many strangers at once: without serialisation each request
+      // reads the same pre-insert count, passes the cap, and inserts a
+      // different member — overflowing the owner's paid limit by an arbitrary
+      // amount. Take a per-trip advisory lock (auto-released at txn end) so the
+      // count + insert run one join at a time; the recount then sees every
+      // prior committed insert.
+      inserted = await this.dataSource.transaction(async (manager) => {
+        await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          `trip_shares:collaborators:${tripId}`,
+        ]);
+        // A joiner consuming a pending invite was already counted against the
+        // owner's cap (invite → member is net-zero); an anonymous link-joiner
+        // with no invite is a NEW collaborator and must pass the cap first.
+        if (!invite) {
+          await this.assertCanAddCollaborator(manager, tripId, trip.owner_id);
+        }
+        const memberRepo = manager.getRepository(TripMember);
+        try {
+          await memberRepo.save(
+            memberRepo.create({ trip_id: tripId, user_id: userId, role }),
+          );
+          return true;
+        } catch (err: unknown) {
+          if (!isUniqueViolation(err)) throw err;
+          return false;
+        }
+      });
     }
 
     if (invite) {

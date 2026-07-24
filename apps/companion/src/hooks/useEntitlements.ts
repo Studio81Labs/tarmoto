@@ -34,6 +34,15 @@ function useGlobalLimit(key: LimitFeatureKey): {
   const query = useQuery({
     queryKey: CONFIG_LIMITS_QUERY_KEY,
     staleTime: 60_000,
+    // This map is the ENFORCEMENT source for anonymous/public surfaces (the
+    // `/explore` overlay), so a long-lived logged-out session must pick up an
+    // operator activating or tightening a cap without a reload. `staleTime`
+    // alone can't: the app-wide client disables refetch-on-focus and nothing
+    // else invalidates this key. Poll while the tab is active (default:
+    // `refetchIntervalInBackground` false → no background wakeups) and refetch
+    // when the visitor returns to the tab, overriding the app default.
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
     queryFn: async ({ signal }) => {
       const { data, error } = await api.GET("/api/v1/config/limits", {
         signal,
