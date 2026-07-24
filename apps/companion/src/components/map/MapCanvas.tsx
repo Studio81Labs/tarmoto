@@ -430,6 +430,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         "source-layer": "quality",
         filter: NO_SEGMENT_FILTER,
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        // The selection highlight is quality-GRADED (QUALITY_LINE_COLOR), so it
+        // carries the same entitlement zoom cap as the overlay — otherwise a
+        // free rider could read a segment's quality colour past the cap by
+        // selecting it. See the runtime clamp effect below.
+        maxzoom: qualityMaxZoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -461,6 +466,8 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         "source-layer": "quality",
         filter: NO_SEGMENT_FILTER,
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        // Quality-graded selection highlight — same entitlement cap as above.
+        maxzoom: qualityMaxZoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -531,16 +538,23 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   }, [ready, showQuality, showSurface]);
 
   // ── quality overlay maxzoom from the road_quality_max_zoom entitlement ──
-  // The cap can resolve (or change, e.g. a tier upgrade) after the layer's
-  // already been added with the ref-captured value above; apply changes live.
+  // The cap can resolve (or change, e.g. a tier upgrade) after the layers were
+  // already added with the ref-captured value above; apply changes live. Every
+  // layer that renders the quality-GRADED colour (the overlay + both selection
+  // highlights) carries the cap, so selecting a segment can't leak its quality
+  // colour past the cap.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.getLayer(TARMOTO_QUALITY_LAYER)) return;
-    map.setLayerZoomRange(
+    if (!map) return;
+    for (const layerId of [
       TARMOTO_QUALITY_LAYER,
-      TARMOTO_ROADS_MIN_ZOOM,
-      qualityMaxZoom,
-    );
+      SEGMENT_SELECTED_GLOW_LAYER,
+      SEGMENT_SELECTED_LINE_LAYER,
+    ]) {
+      if (map.getLayer(layerId)) {
+        map.setLayerZoomRange(layerId, TARMOTO_ROADS_MIN_ZOOM, qualityMaxZoom);
+      }
+    }
   }, [qualityMaxZoom]);
 
   // ── selected-segment highlight filter ──

@@ -262,4 +262,40 @@ describe("MapCanvas", () => {
       expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 18 }),
     );
   });
+
+  it("caps the quality-graded selection highlight layers at the same limit", async () => {
+    // The selection glow/line render QUALITY_LINE_COLOR from source-layer
+    // "quality", so a free rider selecting a segment could otherwise read its
+    // quality colour past the cap. Both must carry the same maxzoom.
+    useLimitMock.mockReturnValue({
+      limit: 12,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "tarmoto-segment-selected-glow",
+        maxzoom: 12,
+      }),
+    );
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "tarmoto-segment-selected-line",
+        maxzoom: 12,
+      }),
+    );
+  });
 });
