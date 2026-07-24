@@ -90,6 +90,11 @@ export function useLimit(key: LimitFeatureKey): {
     limit: limits ? getFeatureLimit(limits, key) : null,
     isLoading,
     isError,
-    isSuccess,
+    // A successful response that OMITS the whole `limits` object (a rolling
+    // deploy where the profile pod still serves the pre-limits DTO while
+    // mint endpoints already enforce caps) is an UNKNOWN cap, not "resolved
+    // unlimited". Report not-resolved so gate callers fail closed rather than
+    // reading the absent snapshot as null/unlimited.
+    isSuccess: isSuccess && limits !== null,
   };
 }

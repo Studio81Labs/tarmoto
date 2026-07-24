@@ -106,6 +106,21 @@ describe("useEntitlements", () => {
     expect(result.current.isLoading).toBe(false);
   });
 
+  it("useLimit is not resolved when a successful response omits the whole limits object", async () => {
+    // Rolling deploy: profile pod still on the pre-limits DTO. The query
+    // succeeds but carries no cap — treat it as unknown, not unlimited.
+    getMock.mockResolvedValue({
+      data: { ...ME, limits: undefined },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useLimit("max_active_trips"), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isSuccess).toBe(false); // query ok, but cap unknown
+    expect(result.current.limit).toBeNull();
+  });
+
   it("useLimit fails closed (0) when the key is missing from a resolved snapshot", async () => {
     // Partial deploy / stale shape: `limits` resolved but lacks the key. Must
     // NOT read as unlimited — fall back to the restrictive shared default.
