@@ -10,17 +10,25 @@ import type { SupportedLocale } from "@tarmoto/shared";
 
 const SYNC_RETRY_DELAYS_MS = [1_000, 5_000, 30_000, 5 * 60_000] as const;
 
+export interface PendingLanguageSelection {
+  locale: SupportedLocale;
+  ownerUserId: string | null;
+}
+
 export interface LanguagePreferenceSyncDeps {
   isAuthenticated: () => boolean;
-  pendingLocale: () => SupportedLocale | null;
+  currentUserId: () => string | null;
+  pendingSelection: () => PendingLanguageSelection | null;
   accountLocale: () => string | null | undefined;
-  sync: (locale: SupportedLocale) => Promise<void>;
-  onAlreadySynced: (locale: SupportedLocale) => void;
+  sync: (selection: PendingLanguageSelection) => Promise<void>;
+  onAlreadySynced: (selection: PendingLanguageSelection) => void;
+  onOwnerMismatch: (selection: PendingLanguageSelection) => void;
 }
 
 let monitorSubscription: { remove: () => void } | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let inFlight: { locale: SupportedLocale; token: symbol } | null = null;
+let inFlight: { selection: PendingLanguageSelection; token: symbol } | null =
+  null;
 
 export function startLanguagePreferenceSyncMonitor(
   deps: LanguagePreferenceSyncDeps,
@@ -84,19 +92,33 @@ async function syncIfNeeded(
   deps: LanguagePreferenceSyncDeps,
 ): Promise<"idle" | "synced" | "failed"> {
   if (!deps.isAuthenticated()) return "idle";
-  const locale = deps.pendingLocale();
-  if (!locale) return "idle";
+  const currentUserId = deps.currentUserId();
+  const selection = deps.pendingSelection();
+  if (!currentUserId || !selection) return "idle";
 
-  if (deps.accountLocale() === locale) {
-    deps.onAlreadySynced(locale);
+  if (
+    selection.ownerUserId !== null &&
+    selection.ownerUserId !== currentUserId
+  ) {
+    deps.onOwnerMismatch(selection);
     return "synced";
   }
-  if (inFlight?.locale === locale) return "idle";
+
+  if (deps.accountLocale() === selection.locale) {
+    deps.onAlreadySynced(selection);
+    return "synced";
+  }
+  if (
+    inFlight?.selection.locale === selection.locale &&
+    inFlight.selection.ownerUserId === selection.ownerUserId
+  ) {
+    return "idle";
+  }
 
   const token = Symbol("language-preference-sync");
-  inFlight = { locale, token };
+  inFlight = { selection, token };
   try {
-    await deps.sync(locale);
+    await deps.sync(selection);
     return "synced";
   } catch {
     return "failed";

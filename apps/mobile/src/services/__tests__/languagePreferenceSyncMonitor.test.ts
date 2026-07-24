@@ -2,24 +2,28 @@ import { AppState } from "react-native";
 import {
   startLanguagePreferenceSyncMonitor,
   stopLanguagePreferenceSyncMonitor,
+  type PendingLanguageSelection,
 } from "../languagePreferenceSyncMonitor";
-import type { SupportedLocale } from "@tarmoto/shared";
 
 type AppStateListener = (state: "active" | "background") => void;
 
 describe("languagePreferenceSyncMonitor", () => {
   let listener: AppStateListener | undefined;
-  let pending: SupportedLocale | null;
+  let pending: PendingLanguageSelection | null;
+  let currentUserId: string;
   let accountLocale: string | null;
-  const sync = jest.fn<Promise<void>, [SupportedLocale]>();
+  const sync = jest.fn<Promise<void>, [PendingLanguageSelection]>();
   const onAlreadySynced = jest.fn();
+  const onOwnerMismatch = jest.fn();
 
   beforeEach(() => {
     jest.useFakeTimers();
-    pending = "en";
+    pending = { locale: "en", ownerUserId: "rider-a" };
+    currentUserId = "rider-a";
     accountLocale = null;
     sync.mockReset().mockResolvedValue(undefined);
     onAlreadySynced.mockReset();
+    onOwnerMismatch.mockReset();
     listener = undefined;
     jest.spyOn(AppState, "addEventListener").mockImplementation((_, next) => {
       listener = next as AppStateListener;
@@ -36,10 +40,12 @@ describe("languagePreferenceSyncMonitor", () => {
   function start() {
     return startLanguagePreferenceSyncMonitor({
       isAuthenticated: () => true,
-      pendingLocale: () => pending,
+      currentUserId: () => currentUserId,
+      pendingSelection: () => pending,
       accountLocale: () => accountLocale,
       sync,
       onAlreadySynced,
+      onOwnerMismatch,
     });
   }
 
@@ -47,7 +53,10 @@ describe("languagePreferenceSyncMonitor", () => {
     start();
     await jest.runAllTimersAsync();
 
-    expect(sync).toHaveBeenCalledWith("en");
+    expect(sync).toHaveBeenCalledWith({
+      locale: "en",
+      ownerUserId: "rider-a",
+    });
   });
 
   it("clears a marker whose language already reached the account", async () => {
@@ -56,7 +65,22 @@ describe("languagePreferenceSyncMonitor", () => {
     await jest.runAllTimersAsync();
 
     expect(sync).not.toHaveBeenCalled();
-    expect(onAlreadySynced).toHaveBeenCalledWith("en");
+    expect(onAlreadySynced).toHaveBeenCalledWith({
+      locale: "en",
+      ownerUserId: "rider-a",
+    });
+  });
+
+  it("discards a marker owned by a different signed-in rider", async () => {
+    currentUserId = "rider-b";
+    start();
+    await jest.runAllTimersAsync();
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(onOwnerMismatch).toHaveBeenCalledWith({
+      locale: "en",
+      ownerUserId: "rider-a",
+    });
   });
 
   it("retries a transient failure with capped backoff", async () => {
@@ -77,11 +101,14 @@ describe("languagePreferenceSyncMonitor", () => {
     pending = null;
     start();
     await Promise.resolve();
-    pending = "en";
+    pending = { locale: "en", ownerUserId: "rider-a" };
 
     listener?.("active");
     await Promise.resolve();
 
-    expect(sync).toHaveBeenCalledWith("en");
+    expect(sync).toHaveBeenCalledWith({
+      locale: "en",
+      ownerUserId: "rider-a",
+    });
   });
 });

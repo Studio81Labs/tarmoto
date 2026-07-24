@@ -150,6 +150,7 @@ export default function SettingsScreen() {
 /** Hidden for the English-only MVP; activates automatically with locale #2. */
 function LocaleCard() {
   const { locale, t: localize } = useI18n();
+  const userId = useAuthStore((state) => state.user?.id ?? null);
   const pendingLocale = usePreferencesStore(
     (state) => state.pendingUiLocaleSync,
   );
@@ -159,7 +160,7 @@ function LocaleCard() {
 
   const handleChange = (next: SupportedLocale) => {
     if (next === locale) return;
-    selectUiLocale(next);
+    selectUiLocale(next, userId);
   };
 
   return (

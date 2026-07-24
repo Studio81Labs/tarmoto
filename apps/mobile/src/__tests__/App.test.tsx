@@ -147,7 +147,7 @@ describe("App auth locale hydration", () => {
         language: null,
         preferences: { units: "imperial" },
       } as unknown as User);
-      usePreferencesStore.getState().selectUiLocale("en");
+      usePreferencesStore.getState().selectUiLocale("en", "language-user");
     });
     await waitFor(() =>
       expect(startLanguagePreferenceSyncMonitor).toHaveBeenCalled(),
@@ -157,7 +157,10 @@ describe("App auth locale hydration", () => {
       .mocked(startLanguagePreferenceSyncMonitor)
       .mock.calls.at(-1)?.[0];
     await act(async () => {
-      await monitor?.sync("en");
+      await monitor?.sync({
+        locale: "en",
+        ownerUserId: "language-user",
+      });
     });
 
     expect(api.updateProfile).toHaveBeenCalledWith({ language: "en" });

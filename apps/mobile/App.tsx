@@ -215,9 +215,12 @@ export default function App() {
     return startLanguagePreferenceSyncMonitor({
       isAuthenticated: () =>
         api.isAuthenticated() && !!useAuthStore.getState().user?.id,
-      pendingLocale: () => usePreferencesStore.getState().pendingUiLocaleSync,
+      currentUserId: () => useAuthStore.getState().user?.id ?? null,
+      pendingSelection: () =>
+        usePreferencesStore.getState().pendingUiLocaleSync,
       accountLocale: () => useAuthStore.getState().user?.language,
-      sync: async (pendingLocale) => {
+      sync: async (selection) => {
+        const { locale: pendingLocale, ownerUserId } = selection;
         const userId = useAuthStore.getState().user?.id;
         if (!userId) return;
         await api.updateProfile({ language: pendingLocale });
@@ -226,7 +229,8 @@ export default function App() {
         const preferences = usePreferencesStore.getState();
         if (
           current?.id !== userId ||
-          preferences.pendingUiLocaleSync !== pendingLocale
+          preferences.pendingUiLocaleSync?.locale !== pendingLocale ||
+          preferences.pendingUiLocaleSync.ownerUserId !== ownerUserId
         ) {
           return;
         }
@@ -234,10 +238,17 @@ export default function App() {
         const merged = { ...current, language: pendingLocale };
         api.cacheProfile(merged);
         auth.setUser(merged);
-        preferences.completeUiLocaleSync(pendingLocale);
+        preferences.completeUiLocaleSync(pendingLocale, ownerUserId);
       },
-      onAlreadySynced: (pendingLocale) => {
-        usePreferencesStore.getState().completeUiLocaleSync(pendingLocale);
+      onAlreadySynced: ({ locale: pendingLocale, ownerUserId }) => {
+        usePreferencesStore
+          .getState()
+          .completeUiLocaleSync(pendingLocale, ownerUserId);
+      },
+      onOwnerMismatch: ({ locale: pendingLocale, ownerUserId }) => {
+        usePreferencesStore
+          .getState()
+          .discardUiLocaleSync(pendingLocale, ownerUserId);
       },
     });
   }, [

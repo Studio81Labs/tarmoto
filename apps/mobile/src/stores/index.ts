@@ -452,6 +452,7 @@ const VOICE_NAV_LANGUAGE_KEY = "voiceNavLanguage";
 const DISTANCE_UNIT_KEY = "distanceUnit";
 const UI_LOCALE_OVERRIDE_KEY = "uiLocaleOverride";
 const PENDING_UI_LOCALE_SYNC_KEY = "pendingUiLocaleSync";
+const PENDING_UI_LOCALE_SYNC_OWNER_KEY = "pendingUiLocaleSyncOwner";
 
 /**
  * Voice-navigation locale preference. `auto` resolves at announcement
@@ -591,13 +592,15 @@ function loadPersistedDistanceUnit(): DistanceUnitPref {
 
 function loadPersistedUiLocalePreference(): {
   override: SupportedLocale | null;
-  pending: SupportedLocale | null;
+  pending: PendingUiLocaleSync | null;
 } {
   const overrideRaw = prefsStorage.getString(UI_LOCALE_OVERRIDE_KEY);
   const pendingRaw = prefsStorage.getString(PENDING_UI_LOCALE_SYNC_KEY);
+  const pendingOwner =
+    prefsStorage.getString(PENDING_UI_LOCALE_SYNC_OWNER_KEY) ?? null;
   const override =
     overrideRaw && isSupportedLocale(overrideRaw) ? overrideRaw : null;
-  const pending =
+  const pendingLocale =
     pendingRaw && isSupportedLocale(pendingRaw) ? pendingRaw : null;
 
   // The marker and override are written as one action. Treat a partial or
@@ -605,11 +608,20 @@ function loadPersistedUiLocalePreference(): {
   // that is no longer driving the UI.
   return {
     override,
-    pending: pending === override ? pending : null,
+    pending:
+      pendingLocale && pendingLocale === override
+        ? { locale: pendingLocale, ownerUserId: pendingOwner }
+        : null,
   };
 }
 
 const persistedUiLocalePreference = loadPersistedUiLocalePreference();
+
+export interface PendingUiLocaleSync {
+  locale: SupportedLocale;
+  /** Null only when a future signed-out selector creates the choice. */
+  ownerUserId: string | null;
+}
 
 interface PreferencesState {
   /** Minimum road quality (1..5) the rider wants to see in planning. */
@@ -651,9 +663,19 @@ interface PreferencesState {
    * that choice still needs to reach the account.
    */
   uiLocaleOverride: SupportedLocale | null;
-  pendingUiLocaleSync: SupportedLocale | null;
-  selectUiLocale: (locale: SupportedLocale) => void;
-  completeUiLocaleSync: (locale: SupportedLocale) => void;
+  pendingUiLocaleSync: PendingUiLocaleSync | null;
+  selectUiLocale: (
+    locale: SupportedLocale,
+    ownerUserId?: string | null,
+  ) => void;
+  completeUiLocaleSync: (
+    locale: SupportedLocale,
+    ownerUserId?: string | null,
+  ) => void;
+  discardUiLocaleSync: (
+    locale: SupportedLocale,
+    ownerUserId?: string | null,
+  ) => void;
   adoptAccountUiLocale: (locale: SupportedLocale) => void;
   resetPreferences: () => void;
 }
@@ -713,17 +735,44 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
   },
   uiLocaleOverride: persistedUiLocalePreference.override,
   pendingUiLocaleSync: persistedUiLocalePreference.pending,
-  selectUiLocale: (locale) => {
+  selectUiLocale: (locale, ownerUserId = null) => {
     prefsStorage.setString(UI_LOCALE_OVERRIDE_KEY, locale);
     prefsStorage.setString(PENDING_UI_LOCALE_SYNC_KEY, locale);
-    set({ uiLocaleOverride: locale, pendingUiLocaleSync: locale });
+    if (ownerUserId) {
+      prefsStorage.setString(PENDING_UI_LOCALE_SYNC_OWNER_KEY, ownerUserId);
+    } else {
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_OWNER_KEY);
+    }
+    set({
+      uiLocaleOverride: locale,
+      pendingUiLocaleSync: { locale, ownerUserId },
+    });
   },
-  completeUiLocaleSync: (locale) => {
+  completeUiLocaleSync: (locale, ownerUserId = null) => {
     set((state) => {
       // A slower response for a superseded choice must not clear the newer
       // override or make the UI fall back to the stale account response.
-      if (state.pendingUiLocaleSync !== locale) return state;
+      if (
+        state.pendingUiLocaleSync?.locale !== locale ||
+        state.pendingUiLocaleSync.ownerUserId !== ownerUserId
+      ) {
+        return state;
+      }
       prefsStorage.remove(PENDING_UI_LOCALE_SYNC_KEY);
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_OWNER_KEY);
+      return { pendingUiLocaleSync: null };
+    });
+  },
+  discardUiLocaleSync: (locale, ownerUserId = null) => {
+    set((state) => {
+      if (
+        state.pendingUiLocaleSync?.locale !== locale ||
+        state.pendingUiLocaleSync.ownerUserId !== ownerUserId
+      ) {
+        return state;
+      }
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_KEY);
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_OWNER_KEY);
       return { pendingUiLocaleSync: null };
     });
   },
