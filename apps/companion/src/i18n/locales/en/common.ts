@@ -429,6 +429,7 @@ export const common = {
   Like: "Like",
   "Link copied": "Link copied",
   "Link sharing is off": "Link sharing is off",
+  "Limit reached": "Limit reached",
   List: "List",
   "Live preview": "Live preview",
   "Load demo trip": "Load demo trip",
@@ -917,6 +918,8 @@ export const common = {
   "Up to {count, plural, one {# photo} other {# photos}} · JPEG, PNG, or WebP · max {sizeMb} MB each":
     "Up to {count, plural, one {# photo} other {# photos}} \u00b7 JPEG, PNG, or WebP \u00b7 max {sizeMb} MB each",
   "Updated weekly": "Updated weekly",
+  "Upgrade required": "Upgrade required",
+  "Upgrade to {tier}": "Upgrade to {tier}",
   "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today.":
     "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today.",
   "Upload avatar": "Upload avatar",
@@ -1339,4 +1342,5 @@ export const common = {
     "Check out the roads I've ridden on Tarmoto.",
   "My Tarmoto road map": "My Tarmoto road map",
   End: "End",
+  "This feature isn't on your plan.": "This feature isn't on your plan.",
 } as const;

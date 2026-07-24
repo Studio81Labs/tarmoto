@@ -192,6 +192,8 @@ export const trips = {
     "That's over 400 km per day — long days in the saddle. Consider more days or a shorter route.",
   "The route is removed and a saved trip is deleted for good. This cannot be undone.":
     "The route is removed and a saved trip is deleted for good. This cannot be undone.",
+  "The trip owner has reached their trip limit.":
+    "The trip owner has reached their trip limit.",
   "The trip-wide road character is set by the trip owner — use per-leg overrides for your edits.":
     "The trip-wide road character is set by the trip owner — use per-leg overrides for your edits.",
   "This clears the current route from the planner.":
@@ -363,4 +365,8 @@ export const trips = {
   "Date created": "Date created",
   "Name (A→Z)": "Name (A→Z)",
   "{title}, {status}": "{title}, {status}",
+  "{used} of {max} trips used on the {tier} plan.":
+    "{used} of {max} trips used on the {tier} plan.",
+  "You've reached your trip limit on the {tier} plan.":
+    "You've reached your trip limit on the {tier} plan.",
 } as const;

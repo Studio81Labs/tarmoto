@@ -1,6 +1,7 @@
 import {
   FEATURE_DEFINITIONS,
   FEATURE_KEYS,
+  FEATURE_LIMIT_EXCEEDED,
   LIMIT_FEATURE_KEYS,
   SYSTEM_FEATURE_KEYS,
   TOGGLE_FEATURE_KEYS,
@@ -18,6 +19,8 @@ import {
   resolveFeature,
   resolveLimit,
   resolveSystemSwitch,
+  upgradeTierForFeature,
+  upgradeTierForLimit,
 } from "./feature-flags";
 import { SUBSCRIPTION_TIERS } from "./constants";
 
@@ -415,5 +418,51 @@ describe("isWithinLimit", () => {
     expect(isWithinLimit(1, 1)).toBe(false);
     expect(isWithinLimit(1, 2)).toBe(false);
     expect(isWithinLimit(0, 0)).toBe(false);
+  });
+});
+
+describe("upgrade-tier derivation", () => {
+  it("exposes the limit-exceeded wire code", () => {
+    expect(FEATURE_LIMIT_EXCEEDED).toBe("FEATURE_LIMIT_EXCEEDED");
+  });
+
+  it("finds the lowest tier ABOVE the current one that grants a toggle", () => {
+    // free rider missing the toggle → the granting tier above them
+    expect(upgradeTierForFeature("offline_maps", "free")).toBe("pro"); // pro-and-up
+    expect(upgradeTierForFeature("group_rides", "free")).toBe("premium"); // premium-only
+    // pro rider still lacking a premium-only toggle → premium
+    expect(upgradeTierForFeature("group_rides", "pro")).toBe("premium");
+  });
+
+  it("returns null when the current tier already grants the toggle (off by override, not tier)", () => {
+    // free already grants an all-tiers toggle → no dead-end "Upgrade to Free"
+    expect(upgradeTierForFeature("basic_navigation", "free")).toBeNull();
+    // pro grants a pro-and-up toggle → a force_off/revoke, not tier; no upgrade helps
+    expect(upgradeTierForFeature("offline_maps", "pro")).toBeNull();
+    // premium grants a premium-only toggle → no higher tier to offer
+    expect(upgradeTierForFeature("group_rides", "premium")).toBeNull();
+  });
+
+  it("finds the lowest tier that raises a numeric limit (no override binding)", () => {
+    // max_active_trips: free=1, pro=null (unlimited), premium=null.
+    // resolvedLimit === the tier default → no override, upgrade is meaningful.
+    expect(upgradeTierForLimit("max_active_trips", "free", 1)).toBe("pro");
+    // already unlimited on pro → nothing more generous
+    expect(upgradeTierForLimit("max_active_trips", "pro", null)).toBeNull();
+    // max_trip_collaborators: free=0, pro=5, premium=null
+    expect(upgradeTierForLimit("max_trip_collaborators", "free", 0)).toBe(
+      "pro",
+    );
+    expect(upgradeTierForLimit("max_trip_collaborators", "pro", 5)).toBe(
+      "premium",
+    );
+  });
+
+  it("returns null when an override clamps the limit below the tier default (upgrade can't lift it)", () => {
+    // Pro's default is unlimited (null); a resolved cap of 1 means a per-user or
+    // global override replaced it → upgrading to Premium wouldn't help.
+    expect(upgradeTierForLimit("max_active_trips", "pro", 1)).toBeNull();
+    // Free's default is 1; a resolved cap of 0 is an override → no dead-end CTA.
+    expect(upgradeTierForLimit("max_active_trips", "free", 0)).toBeNull();
   });
 });

@@ -14,10 +14,44 @@ import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore, type BackendWaypointType } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
-import { tripsApi } from "@/lib/api";
+import { ApiError, tripsApi } from "@/lib/api";
 import { plannerApi } from "@/lib/planner/api";
 import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
+import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+
+// Entitlements: a fixed free tier is enough for the upgrade-modal safety-net
+// test below — the tier/limit resolution itself is covered by useEntitlements'
+// own tests and the /trips list suite (Task 6). useLimit + useUserTrips are
+// controllable so the proactive-cap-gate test can drive an at-limit state;
+// their defaults (unlimited + no trips) leave every other test ungated.
+const { useLimitMock, useUserTripsMock } = vi.hoisted(() => ({
+  useLimitMock: vi.fn(() => ({
+    limit: null as number | null,
+    isLoading: false,
+    isSuccess: true,
+  })),
+  useUserTripsMock: vi.fn((_opts?: { enabled?: boolean }) => ({
+    trips: [] as unknown[],
+    loading: false,
+    error: false,
+    tripById: new Map(),
+  })),
+}));
+vi.mock("@/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks")>()),
+  useEntitlements: () => ({
+    tier: "free",
+    features: null,
+    limits: null,
+    isLoading: false,
+  }),
+  useLimit: () => useLimitMock(),
+}));
+vi.mock("@/hooks/useUserTrips", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useUserTrips")>()),
+  useUserTrips: (opts?: { enabled?: boolean }) => useUserTripsMock(opts),
+}));
 
 const { mockPush } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -517,6 +551,22 @@ describe("TripPlannerPage", () => {
     tripsApiSaveRouteMock.mockResolvedValue({
       data: buildTripDetail("Saved route"),
     } as never);
+    // Reset the entitlement/trips gate mocks (call history AND return) to their
+    // ungated defaults (resolved-unlimited cap, no trips) so only the
+    // proactive-gate tests opt in and per-test call assertions start clean.
+    useLimitMock.mockReset();
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReset();
+    useUserTripsMock.mockReturnValue({
+      trips: [],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
     usePlannerRoutingMock.mockReturnValue({ routing: false });
     setActiveTrip.mockImplementation((trip) => {
       storeState.activeTrip = trip;
@@ -721,9 +771,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByTestId("trip-planner-map")).toBeInTheDocument();
     // Two hook instances: whole-route for the map, day-scoped for the sidebar.
     // With no day selected both request the same routes, so react-query serves
-    // them from a single cache entry (no double fetch).
-    expect(useClosuresMock).toHaveBeenCalledTimes(2);
-    expect(usePassesMock).toHaveBeenCalledTimes(2);
+    // them from a single cache entry (no double fetch). Two instances across the
+    // initial render + the post-mount session-kind reconcile render = 4 calls.
+    expect(useClosuresMock).toHaveBeenCalledTimes(4);
+    expect(usePassesMock).toHaveBeenCalledTimes(4);
 
     expect(mockedTripPlannerMap).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2621,6 +2672,319 @@ describe("TripPlannerPage", () => {
     expect(
       await screen.findByText("Could not save the route. Please try again."),
     ).toBeInTheDocument();
+  });
+
+  // Task 7: the planner's Save route button is the primary mint path — a
+  // brand-new trip is created (tripsApi.create) as part of the same save.
+  // The client-side gate (Task 6) can be stale, so the backend's real
+  // featureLimitExceeded 403 must still surface as the upgrade modal
+  // instead of the generic error toast.
+  it("shows the upgrade modal when the create call hits the server's feature-limit 403", async () => {
+    storeState.activeTrip = activeTrip;
+    storeState.routeDirty = true;
+    tripsApiCreateMock.mockRejectedValueOnce(
+      new ApiError("Feature limit exceeded", 403, {
+        code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_active_trips",
+        limit: 1,
+        current: 1,
+      }),
+    );
+
+    render(
+      <>
+        <TripPlannerPage />
+        <ToastHost />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save route" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("You've reached your trip limit on the Free plan."),
+    ).toBeInTheDocument();
+    // The generic failure toast must NOT also fire for this rejection.
+    expect(
+      screen.queryByText("Could not save the route. Please try again."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("proactively opens the upgrade modal when a capped rider opens a fresh planner directly", async () => {
+    // Direct /trips/planner load (bookmark/address bar) bypasses the /trips
+    // header block. A new trip WOULD mint against the rider's own cap, which is
+    // already met — surface the prompt before they build/import a route.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("You've reached your trip limit on the Free plan."),
+    ).toBeInTheDocument();
+    // Owner in a new-trip context → a real Upgrade CTA (not the suppressed one).
+    expect(
+      screen.getByRole("button", { name: /Upgrade to Pro/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("fails closed on a fresh planner while the trip count is still loading (finite cap)", async () => {
+    // Count unknown (trips query pending) under a finite cap → must not wave a
+    // possibly-capped rider through on an empty count. Fail closed by DISABLING
+    // the mint controls (neutral — we don't claim a limit we can't verify, so
+    // no "limit reached" modal here).
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [],
+      loading: true,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /Save route/i })).toBeDisabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("fails closed (disabled mint controls) on a fresh planner when the trip count query errors (finite cap)", async () => {
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [],
+      loading: false,
+      error: true,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /Save route/i })).toBeDisabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("fails closed (disabled mint controls) on a cold planner load before the cap resolves", async () => {
+    // Auth-hydration delay / entitlement error → capResolved false. No tier to
+    // render a modal, so we must DISABLE the mint controls, not wave through.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: false,
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /Save route/i })).toBeDisabled();
+  });
+
+  it("does NOT proactively gate when EDITING an existing trip at the cap (editing doesn't mint)", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    // Give the trip-detail fetch a tick to bind serverTripId, then confirm the
+    // proactive modal never appeared — an existing trip mints nothing on save.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Discard" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Import (gated ONLY by the mint gate) stays enabled — an open-trip edit is
+    // not a mint context.
+    expect(
+      screen.getByRole("button", { name: "Import GPX" }),
+    ).not.toBeDisabled();
+  });
+
+  it("gates an owner reopening their COMPLETED trip at the cap (save promotes it → mints)", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Done", { id: serverTripId, status: "completed" }),
+    } as never);
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+    // Saving a completed trip promotes it (completed→planned) → mints against
+    // the owner's cap, so it IS gated even though it's a saved trip.
+    storeState.activeTrip = { ...activeTrip, status: "completed" };
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Save route/i }),
+      ).toBeDisabled(),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("keeps mint controls blocked while a saved trip's role/status are still loading (capped owner)", async () => {
+    // A completed-trip reopen by the owner mints (completed→planned). Until the
+    // caller role/status load we can't tell completed from open, so a saved trip
+    // must fail closed rather than briefly enabling the import/drop paths.
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    // Never resolves → serverTripCallerRole stays null (role/status unknown).
+    tripsApiGetMock.mockReturnValue(new Promise<never>(() => {}) as never);
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+  });
+
+  it("does not open the import dialog from ?import=1 when the rider is at their cap", async () => {
+    // A direct import URL must not bypass the disabled toolbar button.
+    window.history.replaceState({}, "", "/trips/planner?import=1");
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
+  });
+
+  it("does not fetch the (unpaginated) trips list when the cap is unlimited", () => {
+    // Unlimited cap in a fresh mint session → the count is irrelevant, so the
+    // geospatial /trips list query stays disabled.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+
+    render(<TripPlannerPage />);
+
+    expect(useUserTripsMock).toHaveBeenCalledWith({ enabled: false });
+    expect(useUserTripsMock).not.toHaveBeenCalledWith({ enabled: true });
   });
 
   // ── Live routing gate (per-day stale gate) ──────────────────────────
