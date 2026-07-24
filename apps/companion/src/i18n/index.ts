@@ -45,8 +45,9 @@ export function translate(
   key: EnglishMessageKey,
   values?: TranslationValues,
   locale: SupportedLocale = DEFAULT_LOCALE,
+  numberLocale: string = locale,
 ): string {
-  return baseTranslate(key, values, locale);
+  return baseTranslate(key, values, locale, numberLocale);
 }
 
 export const t = translate;
@@ -83,6 +84,7 @@ export function tDynamic(
   key: string,
   values?: TranslationValues,
   locale: SupportedLocale = DEFAULT_LOCALE,
+  numberLocale: string = locale,
 ): string {
-  return baseTranslate(key as EnglishMessageKey, values, locale);
+  return baseTranslate(key as EnglishMessageKey, values, locale, numberLocale);
 }

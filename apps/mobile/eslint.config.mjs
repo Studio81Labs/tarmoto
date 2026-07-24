@@ -70,6 +70,66 @@ export default [
         "error",
         {
           selector:
+            "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing error state with translate()/tDynamic before passing it to the setter.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Compose rider-facing error state through one ICU catalog message.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap every rider-facing error-state branch with translate()/tDynamic.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^set[A-Z][A-Za-z]*(Error|Message|Banner|Notice|Toast)[A-Za-z]*$/] MemberExpression[computed=false][property.name='message']",
+          message:
+            "Do not expose arbitrary Error.message text. Use getUserFacingErrorMessage(error, translate(…)) so only cataloged API errors pass through.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^set[A-Z]/] Property[key.name=/^(error|message|description)$/] > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing copy nested in state objects with translate()/tDynamic before passing it to the setter.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name=/^set[A-Z]/] Property[key.name=/^(error|message|description)$/] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Compose rider-facing copy nested in state objects through one ICU catalog message.",
+        },
+        {
+          selector:
+            "Property[key.name='message'] > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Route rider-facing message properties through translate()/tDynamic. Document a scoped exception for non-display protocol data.",
+        },
+        {
+          selector:
+            "Property[key.name='message'] > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Compose rider-facing message properties through one ICU catalog message.",
+        },
+        {
+          selector:
+            "Property[key.name='message'] > ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap every rider-facing message-property branch with translate()/tDynamic.",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='onError'] > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing onError() copy with translate()/tDynamic.",
+        },
+        {
+          selector:
             "FunctionDeclaration[id.name=/(Label|Message|Copy|Text|Title|Description|Unit|Short)$/]:not(:has(TSTypeReference[typeName.name='EnglishMessageKey'])) ReturnStatement > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Display helpers must return translate()-cataloged copy, not raw prose. Return an EnglishMessageKey for translation at the caller, or document a non-display token.",

@@ -4,7 +4,24 @@ import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { canonicalizeFormatLocale, isValidTimeZone } from "@tarmoto/shared";
 import { getStoredUnitSystem, usePreferencesStore } from "@/stores/preferences";
-import { usersApi } from "@/lib/api/users";
+import { isSupportedLocale, LOCALE_COOKIE, type SupportedLocale } from "@/i18n";
+import { usersApi, type UpdateProfileInput } from "@/lib/api/users";
+
+function readLocaleCookie(): SupportedLocale | undefined {
+  const prefix = `${LOCALE_COOKIE}=`;
+  const raw = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length);
+  if (!raw) return undefined;
+  try {
+    const locale = decodeURIComponent(raw);
+    return isSupportedLocale(locale) ? locale : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Hydrates the unit preference and reconciles display preferences with the
@@ -88,8 +105,22 @@ export function PreferencesSync() {
           prefsPatch.timezone = deviceZone;
         }
 
+        const update: UpdateProfileInput = {};
         if (Object.keys(prefsPatch).length > 0) {
-          await usersApi.updateMe({ preferences: prefsPatch });
+          update.preferences = prefsPatch;
+        }
+
+        // `/api/locale` intentionally returns after a bounded best-effort
+        // account PATCH. Its durable cookie is therefore also a retry marker:
+        // every authenticated mount compares it with `/me`, and retries until
+        // backend/mobile/email language state converges.
+        const cookieLocale = readLocaleCookie();
+        if (cookieLocale && me.language !== cookieLocale) {
+          update.language = cookieLocale;
+        }
+
+        if (Object.keys(update).length > 0) {
+          await usersApi.updateMe(update);
         }
       } catch (error) {
         console.error("Failed to sync display preferences with account", error);

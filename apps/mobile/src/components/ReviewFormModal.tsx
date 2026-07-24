@@ -666,7 +666,10 @@ export default function ReviewFormModal({
               textAlignVertical="top"
             />
             <Text style={styles.fieldHint}>
-              {comment.length}/{MAX_REVIEW_COMMENT_LENGTH}
+              {translate("{current, number}/{max, number}", {
+                current: comment.length,
+                max: MAX_REVIEW_COMMENT_LENGTH,
+              })}
             </Text>
           </View>
 

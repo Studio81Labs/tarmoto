@@ -50,4 +50,18 @@ describe("mobile indirect display-copy lint guard", () => {
       guardMessages('setStatusBanner(active ? "Queued for upload" : null);'),
     ).not.toHaveLength(0);
   });
+
+  it("rejects uncataloged copy nested in state objects", () => {
+    expect(
+      guardMessages(
+        'setList((state) => ({ ...state, error: "Load failed" }));',
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects uncataloged generic message properties", () => {
+    expect(
+      guardMessages('const next = { message: "Could not save" };'),
+    ).not.toHaveLength(0);
+  });
 });

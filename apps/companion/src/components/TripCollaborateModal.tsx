@@ -38,6 +38,7 @@ import {
 } from "@/lib/api";
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 import { tripSnapshotForSharing } from "@/lib/trip-snapshot";
 import {
   Button,
@@ -987,6 +988,7 @@ function SuggestionsTab({
   onPromoted?: ((id: string) => void) | undefined;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const [localSuggestions, setLocalSuggestions] = useState<TripSuggestion[]>(
     [],
   );
@@ -1240,7 +1242,7 @@ function SuggestionsTab({
               {canModerate ? t("Open · needs a decision") : t("Open")}
             </span>
             <span className="font-mono text-[9.5px] text-fg-mute">
-              {openSuggestions.length}
+              {format.integer(openSuggestions.length)}
             </span>
           </div>
           <ul className="space-y-2.5">
@@ -1593,7 +1595,11 @@ function ActivityTab({
                           yesterday entry as the same "yesterday", losing
                           intra-day ordering. Earlier rows show the date. */}
                       {bucket === "today"
-                        ? format.relativeTime(entry.created_at)
+                        ? formatRelativeTimeLabel(
+                            entry.created_at,
+                            { format },
+                            t,
+                          )
                         : bucket === "yesterday"
                           ? format.time(entry.created_at)
                           : format.shortDate(entry.created_at)}

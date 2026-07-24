@@ -395,7 +395,10 @@ function Dashboard({
           title={t("Badges")}
           counter={
             snapshot.badges.length > 0
-              ? `${earnedBadgeCount} of ${snapshot.badges.length} earned`
+              ? t("{earned} of {total} earned", {
+                  earned: format.integer(earnedBadgeCount),
+                  total: format.integer(snapshot.badges.length),
+                })
               : undefined
           }
         />
@@ -419,7 +422,7 @@ function Dashboard({
           title={t("Active challenges")}
           counter={
             visibleChallenges.length > 0
-              ? `${visibleChallenges.length}`
+              ? format.integer(visibleChallenges.length)
               : undefined
           }
         />

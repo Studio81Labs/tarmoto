@@ -35,6 +35,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 import {
   DndContext,
   KeyboardSensor,
@@ -368,7 +369,11 @@ export default function CollectionDetailPage() {
             <span className="text-fg-mute">·</span>
             <Mono className="text-[11px] text-fg-mute">
               {t("Updated {time}", {
-                time: format.relativeTime(collection!.updatedAt),
+                time: formatRelativeTimeLabel(
+                  collection!.updatedAt,
+                  { format },
+                  t,
+                ),
               })}
             </Mono>
           </div>
