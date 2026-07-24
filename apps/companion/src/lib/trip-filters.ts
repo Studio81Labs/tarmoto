@@ -146,3 +146,24 @@ export function countByStatus(
   for (const t of trips) counts[t.status] += 1;
   return counts;
 }
+
+/**
+ * Trips that count against `max_active_trips`, mirroring the backend rule
+ * (`apps/backend/src/modules/trips/trips.service.ts` OPEN_TRIP_STATUSES):
+ * owner-held trips in draft/planned/active — NOT completed.
+ */
+const OPEN_TRIP_STATUSES: readonly TripStatus[] = [
+  "draft",
+  "planned",
+  "active",
+];
+
+export function countOpenOwnedTrips(
+  trips: readonly TripSummary[],
+  userId: string | null,
+): number {
+  if (!userId) return 0;
+  return trips.filter(
+    (t) => t.owner_id === userId && OPEN_TRIP_STATUSES.includes(t.status),
+  ).length;
+}

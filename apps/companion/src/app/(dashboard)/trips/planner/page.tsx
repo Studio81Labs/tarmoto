@@ -132,6 +132,11 @@ import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
+import { useEntitlements, useLimit } from "@/hooks";
+import { useUserTrips } from "@/hooks/useUserTrips";
+import { countOpenOwnedTrips } from "@/lib/trip-filters";
+import { parseFeatureLimitError, tierLabel } from "@/lib/entitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError, roadsApi, tripsApi } from "@/lib/api";
 import {
@@ -241,6 +246,9 @@ export default function TripPlannerPage() {
   const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
+  // A `?import=1` deep-link request, held until the own-cap gate resolves so the
+  // import opens only once we've confirmed the rider isn't (or no longer) capped.
+  const [importRequestedFromUrl, setImportRequestedFromUrl] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
   // Controlled "Plan as multi-day trip" disclosure — collapsed by default
   // (revision 2 §D: splitting is an optional layer most riders never
@@ -282,6 +290,21 @@ export default function TripPlannerPage() {
   // so later `setDays(params.days)` etc. with arbitrary numbers compile.
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
+  const { tier } = useEntitlements();
+  // The resolved own cap. The trip-count query + full mint gate are computed
+  // lower down (they depend on `isTripOwner`/`displayedTrip`); see `mintGateBlocked`.
+  const { limit: maxActiveTrips, isSuccess: capResolved } =
+    useLimit("max_active_trips");
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  // A proactively-shown cap prompt the rider dismissed — don't re-show it for
+  // the rest of this planner session (the save-path 403 still enforces).
+  const [proactiveUpgradeDismissed, setProactiveUpgradeDismissed] =
+    useState(false);
+  // The cap the server enforced on the mint 403 — authoritative for the modal's
+  // CTA (the planner modal only ever opens from a limit rejection).
+  const [upgradeModalLimit, setUpgradeModalLimit] = useState<number | null>(
+    null,
+  );
   const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState<number>(
     PLANNER_DEFAULTS.dailyKmTarget,
@@ -1005,6 +1028,17 @@ export default function TripPlannerPage() {
   // socket joins `trip:<id>`, cursors + suggestions + activity start
   // flowing, and the Suggestions / Activity tabs in the modal light up.
   const [serverTripId, setServerTripId] = useState<string | null>(null);
+  // New-trip session (create/import) vs an existing-trip edit, decided from the
+  // URL's `?tripId=`. Starts "unknown" — the SAME value on the server prerender
+  // and the first client render, so it can't cause a hydration mismatch on the
+  // gated `disabled` attributes — and is reconciled AFTER mount by the `?tripId`
+  // effect below (reading the URL there keeps the page prerenderable). "unknown"
+  // fails closed (treated as a mint context) so the first paint blocks minting
+  // rather than briefly enabling it for a capped rider.
+  const [sessionKind, setSessionKind] = useState<
+    "unknown" | "new" | "existing"
+  >("unknown");
+  const isNewTripSession = sessionKind === "new";
   const [serverTripOwnerId, setServerTripOwnerId] = useState<string | null>(
     null,
   );
@@ -1044,6 +1078,59 @@ export default function TripPlannerPage() {
   const isCollaborator =
     isSavedTrip &&
     (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");
+  // Proactive own-cap gate for a planner session reached DIRECTLY (bookmark,
+  // address bar, stale tab) — bypassing the /trips header block. A save mints
+  // against the rider's OWN cap in two contexts: a brand-new trip, and an OWNER
+  // reopening their own COMPLETED trip (the backend treats saving a route onto
+  // a completed trip as a completed→planned promotion → assertCanMintOpenTrip).
+  // Ordinary open-trip edits mint nothing and are never gated; a collaborator
+  // editing someone else's trip can't know the owner's count, so it's left to
+  // the save-path 403.
+  // For a saved trip we can only decide the mint context once the caller ROLE
+  // has loaded (it resolves together with the trip's status from tripsApi.get);
+  // until then, fail closed — a completed-trip reopen by the owner would mint.
+  const savedTripResolved = serverTripCallerRole !== null;
+  const isOwnMintContext =
+    // Session kind not yet reconciled (first paint) → fail closed: treat it as a
+    // possible mint context so minting stays blocked until we know otherwise.
+    sessionKind === "unknown" ||
+    (isNewTripSession && !isSavedTrip) ||
+    // Saved trip whose role/status hasn't loaded → unknown, fail closed.
+    (isSavedTrip && !savedTripResolved) ||
+    // Owner reopening their own COMPLETED trip → save promotes it → mints.
+    (isSavedTrip && isTripOwner && displayedTrip?.status === "completed");
+  // Only fetch the (unpaginated, geospatial) trips list when the COUNT is
+  // actually needed: a mint context under a resolved FINITE cap. Cap-unknown
+  // fails closed without the count; an unlimited cap needs no count; a
+  // non-mint/edit context needs none either.
+  const needsTripCount =
+    isOwnMintContext && capResolved && maxActiveTrips !== null;
+  const {
+    trips: ownedTrips,
+    loading: ownedTripsLoading,
+    error: ownedTripsError,
+  } = useUserTrips({ enabled: needsTripCount });
+  const atFiniteTripCap =
+    needsTripCount &&
+    maxActiveTrips !== null &&
+    !ownedTripsLoading &&
+    !ownedTripsError &&
+    countOpenOwnedTrips(ownedTrips, currentUserId) >= maxActiveTrips;
+  // The mint gate is ACTIVE — block the mint controls, fail closed — whenever,
+  // in an own-mint context, we cannot PROVE the rider is under a finite cap:
+  //  - cap not yet resolved (auth-hydration delay / entitlement error) → unknown
+  //  - finite cap but the count is unknown (trips query loading/errored)
+  //  - finite cap and the count is at/over it
+  // This mirrors the /trips header's fail-closed behaviour with a neutral
+  // disabled state (no tier is needed to disable, unlike the modal below).
+  const mintGateBlocked =
+    isOwnMintContext &&
+    (!capResolved ||
+      (needsTripCount && (ownedTripsLoading || ownedTripsError)) ||
+      atFiniteTripCap);
+  // The informative upgrade modal shows only when we CONFIRM a finite cap is
+  // met (never on a mere unknown — that would claim a limit we can't verify).
+  const showProactiveUpgrade = atFiniteTripCap && !proactiveUpgradeDismissed;
   // A viewer opening the edit URL for a saved trip has no business here —
   // the backend 403s their writes. Show an access screen once the role
   // resolves rather than a functional-looking editor.
@@ -1140,7 +1227,10 @@ export default function TripPlannerPage() {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("import") !== "1") return;
-    setImportOpen(true);
+    // Defer opening until the cap gate resolves (see the effect near
+    // `openImport`) instead of opening unconditionally — a direct import URL
+    // must not bypass the mint block for a capped/unknown-cap rider.
+    setImportRequestedFromUrl(true);
     url.searchParams.delete("import");
     window.history.replaceState(window.history.state, "", url);
   }, []);
@@ -1151,6 +1241,9 @@ export default function TripPlannerPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("tripId");
+    // Reconcile the new-vs-existing session kind now that we can read the URL
+    // (see `sessionKind` above) — resolves the fail-closed "unknown" first paint.
+    setSessionKind(fromUrl ? "existing" : "new");
     if (fromUrl) {
       // Skip the no-op null→null setState path so we don't burn an extra
       // render cycle through the planner's downstream data hooks
@@ -1368,10 +1461,26 @@ export default function TripPlannerPage() {
     [selectedTripDay, displayedTrip],
   );
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
-  const openImport = useCallback((file: File | null = null) => {
-    setPendingImportFile(file);
-    setImportOpen(true);
-  }, []);
+  const openImport = useCallback(
+    (file: File | null = null) => {
+      // An imported route mints on save — block EVERY entry (toolbar button,
+      // drag/drop, and the ?import deep-link below) while the own-cap gate is
+      // active, so a capped rider can't adopt/edit an import ahead of the 403.
+      if (mintGateBlocked) return;
+      setPendingImportFile(file);
+      setImportOpen(true);
+    },
+    [mintGateBlocked],
+  );
+  useEffect(() => {
+    // Honour a held `?import=1` request once the gate is confirmed NOT blocking
+    // (rider under cap / unlimited). While blocked (loading, unknown, or at cap)
+    // it stays held; an at-cap rider's request is simply never opened.
+    if (importRequestedFromUrl && !mintGateBlocked) {
+      openImport();
+      setImportRequestedFromUrl(false);
+    }
+  }, [importRequestedFromUrl, mintGateBlocked, openImport]);
   // Reset / Discard confirm through the app-styled ConfirmDialog —
   // system dialogs are disallowed (they block the tab and ignore the
   // design system).
@@ -1684,8 +1793,17 @@ export default function TripPlannerPage() {
             handlePromotedToServer(hydrated.id);
           }
           toast.success(t("Names saved"));
-        } catch {
-          toast.error(t("Couldn't save the names. Try again."));
+        } catch (err) {
+          // The unsaved-import branch mints a trip (importRoute) and can hit
+          // the max_active_trips 403 — route it to the upgrade modal like the
+          // full-save path, not a generic toast.
+          const limitError = parseFeatureLimitError(err);
+          if (limitError && tier) {
+            setUpgradeModalLimit(limitError.limit);
+            setUpgradeModalOpen(true);
+          } else {
+            toast.error(t("Couldn't save the names. Try again."));
+          }
         } finally {
           setSavingRoute(false);
         }
@@ -1815,14 +1933,24 @@ export default function TripPlannerPage() {
         handlePromotedToServer(tripId);
       }
       toast.success(t("Route saved"));
-    } catch {
+    } catch (err) {
       // If we just created a new server trip but the route save failed,
       // delete the empty trip so it doesn't linger in the rider's library.
       // Mirrors the cleanup pattern in handleSave.
       if (createdTripId) {
         await cleanupCreatedTrip(createdTripId);
       }
-      toast.error(t("Could not save the route. Please try again."));
+      // The backend's max_active_trips gate rejects the create call above
+      // with a 403 FEATURE_LIMIT_EXCEEDED — this IS the planner's primary
+      // mint path (create-on-first-save), so it needs the same upgrade-modal
+      // safety net as the /trips list's mint entry points.
+      const limitError = parseFeatureLimitError(err);
+      if (limitError && tier) {
+        setUpgradeModalLimit(limitError.limit);
+        setUpgradeModalOpen(true);
+      } else {
+        toast.error(t("Could not save the route. Please try again."));
+      }
     } finally {
       setSavingRoute(false);
     }
@@ -1838,6 +1966,7 @@ export default function TripPlannerPage() {
     routeOptions,
     setActiveTrip,
     handlePromotedToServer,
+    tier,
   ]);
   const handleFitRoute = useCallback(() => {
     mapRef.current?.fitRoute();
@@ -2443,11 +2572,21 @@ export default function TripPlannerPage() {
         setSelectedOptionId(selected?.id ?? option.id);
         setActiveTrip(selected?.trip ?? option.trip);
         setFitRouteToken((t) => t + 1);
-      } catch {
+      } catch (err) {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
-        toast.error(t("Could not select this route option. Please try again."));
+        // Regenerating a completed trip re-mints it (assertCanMintOpenTrip) and
+        // can hit the max_active_trips 403 — surface the upgrade modal.
+        const limitError = parseFeatureLimitError(err);
+        if (limitError && tier) {
+          setUpgradeModalLimit(limitError.limit);
+          setUpgradeModalOpen(true);
+        } else {
+          toast.error(
+            t("Could not select this route option. Please try again."),
+          );
+        }
       } finally {
         if (requestTokenRef.current === requestToken) {
           generationLockRef.current = false;
@@ -2464,6 +2603,7 @@ export default function TripPlannerPage() {
       serverTripId,
       setActiveTrip,
       setGenerating,
+      tier,
     ],
   );
   const totalDistanceKm = useMemo(() => {
@@ -2729,6 +2869,9 @@ export default function TripPlannerPage() {
               variant="secondary"
               size="sm"
               aria-label={t("Import GPX")}
+              // Importing mints on save — block it while the own-cap gate is
+              // active (at cap, or the cap/count can't be confirmed).
+              disabled={mintGateBlocked}
               onClick={() => openImport()}
             >
               <Upload size={15} />
@@ -2798,7 +2941,9 @@ export default function TripPlannerPage() {
             collapseLabel
             loading={savingRoute}
             leftIcon={<Save size={14} />}
-            disabled={!canSaveRoute || savingRoute || routing}
+            disabled={
+              !canSaveRoute || savingRoute || routing || mintGateBlocked
+            }
             onClick={handleSaveRoute}
           >
             {savingRoute ? t("Saving…") : t("Save route")}
@@ -3345,7 +3490,9 @@ export default function TripPlannerPage() {
                       size="md"
                       block
                       loading={isGenerating}
-                      disabled={isGenerating}
+                      // Drafting a route is wasted effort if the save can't mint
+                      // — block it while the own-cap gate is active.
+                      disabled={isGenerating || mintGateBlocked}
                       onClick={() => void handleGenerate()}
                     >
                       {isGenerating
@@ -3769,6 +3916,37 @@ export default function TripPlannerPage() {
           else if (action === "discard") void performDiscard();
         }}
       />
+
+      {(upgradeModalOpen || showProactiveUpgrade) && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{
+            limit: "max_active_trips",
+            // A save-path 403 carries the server's authoritative cap; the
+            // proactive prompt uses the resolved cap it gated on.
+            resolvedLimit: upgradeModalOpen
+              ? upgradeModalLimit
+              : maxActiveTrips,
+          }}
+          currentTier={tier}
+          // Saving/regenerating someone else's trip is gated by the OWNER's cap
+          // (assertCanMintOpenTrip runs on the trip owner). Upgrading the
+          // editor's own plan can't free the owner's slot, so suppress the CTA
+          // and speak to the owner's limit when the caller isn't the owner.
+          suppressUpgrade={!isTripOwner}
+          message={
+            isTripOwner
+              ? t("You've reached your trip limit on the {tier} plan.", {
+                  tier: tierLabel(tier),
+                })
+              : t("The trip owner has reached their trip limit.")
+          }
+          onClose={() => {
+            setUpgradeModalOpen(false);
+            setProactiveUpgradeDismissed(true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

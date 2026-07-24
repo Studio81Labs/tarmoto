@@ -1,8 +1,8 @@
 import { ForbiddenException } from '@nestjs/common';
-import type { LimitFeatureKey } from '@tarmoto/shared';
+import { FEATURE_LIMIT_EXCEEDED, type LimitFeatureKey } from '@tarmoto/shared';
 
-/** Machine-readable code carried on limit-rejection 403 bodies. */
-export const FEATURE_LIMIT_EXCEEDED = 'FEATURE_LIMIT_EXCEEDED';
+/** Re-exported so existing importers of this module keep working. */
+export { FEATURE_LIMIT_EXCEEDED };
 
 /**
  * 403 for "you are at your numeric entitlement cap". The body carries

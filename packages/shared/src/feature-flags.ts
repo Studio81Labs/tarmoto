@@ -599,3 +599,73 @@ export function isWithinLimit(
 ): boolean {
   return limit === null || currentCount < limit;
 }
+
+/** Machine-readable code carried on limit-rejection 403 bodies (see the
+ *  backend `featureLimitExceeded`). Single source of truth for the wire code. */
+export const FEATURE_LIMIT_EXCEEDED = "FEATURE_LIMIT_EXCEEDED";
+
+/** Lowest tier ABOVE `currentTier` that grants a toggle feature, or null when
+ *  no higher tier would grant it. Returns null when `currentTier` (or below)
+ *  already grants the toggle: a granted toggle that resolved OFF is disabled by
+ *  a global `force_off` or a per-user revoke, not by tier, so no upgrade
+ *  restores it — offering "Upgrade to {currentTier}" (or a lower tier) would be
+ *  a dead-end CTA. Symmetric with `upgradeTierForLimit`. */
+export function upgradeTierForFeature(
+  key: ToggleFeatureKey,
+  currentTier: SubscriptionTier,
+): SubscriptionTier | null {
+  const def = FEATURE_DEFINITIONS[key];
+  if (!def || def.kind !== "toggle") return null;
+  // Widened the same way as `resolveFeature`'s `grantTiers`: per-key, `def.tiers`
+  // infers as a narrow literal tuple (e.g. `readonly ["premium"]`) under
+  // `as const satisfies`, which `Array.prototype.includes` can't accept a
+  // broader `SubscriptionTier` argument against across the key union.
+  const grantTiers: readonly SubscriptionTier[] = def.tiers;
+  // Already granted at the current tier → off by override, not tier.
+  if (grantTiers.includes(currentTier)) return null;
+  const currentIdx = SUBSCRIPTION_TIERS.indexOf(currentTier);
+  for (let i = currentIdx + 1; i < SUBSCRIPTION_TIERS.length; i++) {
+    const tier = SUBSCRIPTION_TIERS[i]!;
+    if (grantTiers.includes(tier)) return tier;
+  }
+  return null;
+}
+
+/** `null` = unlimited (most generous); otherwise a larger number is more
+ *  generous. */
+function isMoreGenerousLimit(
+  current: number | null,
+  candidate: number | null,
+): boolean {
+  if (candidate === null) return current !== null;
+  if (current === null) return false;
+  return candidate > current;
+}
+
+/** Lowest tier ABOVE `currentTier` whose `key` limit is strictly more generous
+ *  than the current tier's default, or null when no higher tier improves it.
+ *
+ *  `resolvedLimit` is the rider's ACTUAL cap from `/users/me` (already through
+ *  `resolveLimit`). When it differs from the current tier's static default, a
+ *  per-user or global override REPLACED the tier value (see `resolveLimit`) —
+ *  overrides are tier-independent, so a paid upgrade would not reliably lift
+ *  the cap. In that case return null so the caller shows no dead-end upgrade
+ *  CTA. (Residual: a global override numerically equal to the current tier's
+ *  default is indistinguishable from "no override" client-side and is not
+ *  caught here — it needs the operator override map, out of scope.) */
+export function upgradeTierForLimit(
+  key: LimitFeatureKey,
+  currentTier: SubscriptionTier,
+  resolvedLimit: number | null,
+): SubscriptionTier | null {
+  const def = FEATURE_DEFINITIONS[key];
+  if (!def || def.kind !== "limit") return null;
+  const tierDefault = def.tiers[currentTier];
+  if (resolvedLimit !== tierDefault) return null;
+  const currentIdx = SUBSCRIPTION_TIERS.indexOf(currentTier);
+  for (let i = currentIdx + 1; i < SUBSCRIPTION_TIERS.length; i++) {
+    const tier = SUBSCRIPTION_TIERS[i]!;
+    if (isMoreGenerousLimit(tierDefault, def.tiers[tier])) return tier;
+  }
+  return null;
+}

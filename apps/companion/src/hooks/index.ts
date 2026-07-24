@@ -6,6 +6,13 @@ import {
   useSyncExternalStore,
 } from "react";
 
+export {
+  useEntitlements,
+  useFeature,
+  useLimit,
+  USERS_ME_QUERY_KEY,
+} from "./useEntitlements";
+
 /**
  * Debounced value hook — useful for search inputs
  */

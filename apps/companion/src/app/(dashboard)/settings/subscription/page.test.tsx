@@ -9,6 +9,16 @@ import SubscriptionPage from "./page";
 import { ApiError, accountApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
+// Entitlement refresh wiring (Task 7): the page calls useQueryClient()
+// directly to invalidate the cached `users-me` entitlement snapshot on
+// mount, so it needs a QueryClient in scope even though this suite never
+// renders through a real QueryClientProvider.
+const invalidateQueriesMock = vi.fn();
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
+  useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
+}));
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -32,6 +42,7 @@ describe("SubscriptionPage", () => {
     createCheckoutSessionMock.mockReset();
     createPortalSessionMock.mockReset();
     assignMock.mockReset();
+    invalidateQueriesMock.mockReset();
     Object.defineProperty(window, "location", {
       configurable: true,
       value: {
@@ -59,6 +70,33 @@ describe("SubscriptionPage", () => {
       isAuthenticated: false,
       accessToken: null,
     });
+  });
+
+  // Task 7: a tier change from a Stripe checkout/portal round-trip is
+  // reflected as soon as the rider lands back on /settings/subscription.
+  it("invalidates the users-me entitlement cache on mount", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "free",
+          status: "canceled",
+          renews_at: null,
+          cancel_at_period_end: false,
+        },
+        plans: [{ tier: "free" }, { tier: "premium" }, { tier: "pro" }],
+        payment_method: null,
+        billing_history: [],
+        portal_available: false,
+      },
+    });
+
+    render(<SubscriptionPage />);
+
+    await waitFor(() =>
+      expect(invalidateQueriesMock).toHaveBeenCalledWith({
+        queryKey: ["users-me"],
+      }),
+    );
   });
 
   it("loads the current plan, billing history, and payment method from the API", async () => {
