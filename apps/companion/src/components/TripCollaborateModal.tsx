@@ -889,14 +889,19 @@ function PeopleTab({
 
       {error && <ErrorAlert className="mt-3">{error}</ErrorAlert>}
 
-      {upgradeErr !== null && tier ? (
+      {upgradeErr !== null ? (
         <UpgradePrompt
           variant="modal"
           capability={{
             limit: "max_trip_collaborators",
             resolvedLimit: upgradeErr,
           }}
-          currentTier={tier}
+          // An editor's own tier may be unavailable (the cap is the OWNER's, so
+          // an editor can invite without a resolved /users/me). The CTA is
+          // suppressed for non-owners anyway, so `free` is a harmless fallback
+          // that still shows the neutral owner-limit message rather than
+          // swallowing the 403 with no feedback.
+          currentTier={tier ?? "free"}
           suppressUpgrade={!isOwner}
           message={
             isOwner

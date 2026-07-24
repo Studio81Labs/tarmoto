@@ -70,4 +70,18 @@ describe("shouldPromptQualityZoom", () => {
   it("does not re-prompt once dismissed this session", () => {
     expect(shouldPromptQualityZoom({ ...base, dismissed: true })).toBe(false);
   });
+
+  // The QualityMap effect re-evaluates this predicate against the CURRENT zoom
+  // whenever `showQuality`/`capFinite`/`cap` change — not just on `moveend`.
+  // These two transitions are the ones a move-only check misses.
+  it("prompts when the overlay is toggled ON while the map already sits above the cap", () => {
+    // showQuality flips false→true at zoom 14, cap 12 — no map move occurs.
+    expect(shouldPromptQualityZoom({ ...base, showQuality: true })).toBe(true);
+  });
+
+  it("prompts when the cap RESOLVES finite while the map is already above it", () => {
+    // capFinite flips false→true (async entitlement settles) at zoom 14 with no
+    // move — the layer would clamp silently without this re-evaluation.
+    expect(shouldPromptQualityZoom({ ...base, capFinite: true })).toBe(true);
+  });
 });

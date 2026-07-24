@@ -490,6 +490,34 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       };
     }, [showQuality, showSurface, onSegmentSelect]);
 
+    // The `moveend` handler only re-checks the zoom prompt when the rider moves
+    // the map. But the quality layer can also cross above the cap without a
+    // move: the overlay is toggled on while already zoomed in, or the async
+    // entitlement request resolves to a finite cap after the last `moveend`. In
+    // those transitions the layer clamps silently. Re-evaluate the CURRENT zoom
+    // whenever the inputs change so the upgrade prompt opens without a nudge.
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!ready || !map) return;
+      if (
+        shouldPromptQualityZoom({
+          showQuality,
+          capFinite: qualityCapFinite,
+          zoom: readMapView(map).zoom,
+          cap: qualityCap,
+          dismissed: zoomUpgradeDismissed,
+        })
+      ) {
+        setZoomUpgradeOpen(true);
+      }
+    }, [
+      ready,
+      showQuality,
+      qualityCapFinite,
+      qualityCap,
+      zoomUpgradeDismissed,
+    ]);
+
     const handleReady = (map: MapLibreMap) => {
       // Capture the base style's first symbol layer BEFORE we append our own
       // symbol layers below — otherwise, on a style with no base symbols,

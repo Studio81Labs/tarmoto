@@ -95,7 +95,9 @@ const useLimitMock = vi.fn(() => ({
   isError: false,
   isSuccess: true,
 }));
-const useEntitlementsMock = vi.fn(() => ({ tier: "free" }));
+const useEntitlementsMock = vi.fn(() => ({
+  tier: "free" as string | null,
+}));
 vi.mock("@/hooks", () => ({
   useLimit: () => useLimitMock(),
   useEntitlements: () => useEntitlementsMock(),
@@ -1439,6 +1441,60 @@ describe("TripCollaborateModal — collab tabs", () => {
     // resolves, so UpgradePrompt's modal titles itself "Limit reached".
     expect(
       await screen.findByRole("dialog", { name: /limit reached/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("still surfaces the 403 owner-limit message to an EDITOR whose own tier is unavailable", async () => {
+    // The editor invites on the OWNER's cap, so /users/me can be unresolved
+    // (tier null). A prior `&& tier` render guard swallowed the modal, leaving
+    // the failed invite with no feedback — the message must render regardless.
+    useEntitlementsMock.mockReturnValue({ tier: null });
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            email: "eve@example.com",
+            avatar_url: null,
+            role: "editor",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+    hoisted.invite.mockRejectedValueOnce(
+      new ApiError("limit", 403, {
+        code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_trip_collaborators",
+        limit: 5,
+        current: 5,
+      }),
+    );
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+    expect(
+      await screen.findByText(
+        /the trip owner has reached their collaborator limit/i,
+      ),
     ).toBeInTheDocument();
   });
 });
