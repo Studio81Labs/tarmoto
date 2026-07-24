@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getFeatureLimit,
   isFeatureEnabled,
+  minLimit,
   resolveLimit,
   type LimitFeatureKey,
   type SubscriptionTier,
@@ -70,7 +71,17 @@ export function useRoadQualityZoomCap(): {
   const { override, isSuccess: globalResolved } = useGlobalLimit(
     "road_quality_max_zoom",
   );
-  if (authed) return { limit: userLimit, isResolved: userResolved };
+  if (authed) {
+    // Apply the PUBLIC global override as a downward clamp over the cached
+    // /users/me limit (never raises), so an operator's finite clamp takes
+    // effect immediately rather than waiting for /users/me to refetch. A
+    // null/absent override, or an override still loading, leaves it unchanged.
+    const limit =
+      userResolved && globalResolved && override !== undefined
+        ? minLimit(userLimit, override)
+        : userLimit;
+    return { limit, isResolved: userResolved };
+  }
   if (!globalResolved) return { limit: null, isResolved: false };
   // Anonymous: no tier → the registry free/default value, then the global
   // operator override replaces it (undefined = no override → free default).

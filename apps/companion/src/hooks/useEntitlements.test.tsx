@@ -149,15 +149,64 @@ describe("useRoadQualityZoomCap", () => {
 
   it("uses the authenticated /users/me cap when signed in", async () => {
     authState.user = { id: "u1" };
-    getMock.mockResolvedValue({
-      data: { ...ME, limits: { road_quality_max_zoom: 12 } },
-      error: undefined,
-    });
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({ data: {}, error: undefined })
+        : Promise.resolve({
+            data: { ...ME, limits: { road_quality_max_zoom: 12 } },
+            error: undefined,
+          }),
+    );
     const { result } = renderHook(() => useRoadQualityZoomCap(), {
       wrapper: withQueryClient(),
     });
     await waitFor(() => expect(result.current.isResolved).toBe(true));
     expect(result.current.limit).toBe(12);
+  });
+
+  it("clamps a signed-in rider DOWN with a finite public override the cached snapshot missed", async () => {
+    // Rider's /users/me still says unlimited (null), but the operator has since
+    // set a finite global override — apply it as a downward clamp immediately.
+    authState.user = { id: "u1" };
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: 8 },
+            error: undefined,
+          })
+        : Promise.resolve({
+            data: { ...ME, limits: { road_quality_max_zoom: null } },
+            error: undefined,
+          }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBe(8); // clamped down from unlimited
+  });
+
+  it("never RAISES a signed-in rider's cap via the public override", async () => {
+    // /users/me says 12 (free), a null global override (launch mode) must not
+    // lift it here (min only lowers) — the authenticated snapshot already folded
+    // the override in, so this branch just guards against raising.
+    authState.user = { id: "u1" };
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: null },
+            error: undefined,
+          })
+        : Promise.resolve({
+            data: { ...ME, limits: { road_quality_max_zoom: 12 } },
+            error: undefined,
+          }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBe(12); // unchanged — a null override can't raise
   });
 
   it("resolves anonymous viewers to UNLIMITED under the launch-mode global override (null)", async () => {
