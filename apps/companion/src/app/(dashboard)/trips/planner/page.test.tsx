@@ -771,9 +771,10 @@ describe("TripPlannerPage", () => {
     expect(screen.getByTestId("trip-planner-map")).toBeInTheDocument();
     // Two hook instances: whole-route for the map, day-scoped for the sidebar.
     // With no day selected both request the same routes, so react-query serves
-    // them from a single cache entry (no double fetch).
-    expect(useClosuresMock).toHaveBeenCalledTimes(2);
-    expect(usePassesMock).toHaveBeenCalledTimes(2);
+    // them from a single cache entry (no double fetch). Two instances across the
+    // initial render + the post-mount session-kind reconcile render = 4 calls.
+    expect(useClosuresMock).toHaveBeenCalledTimes(4);
+    expect(usePassesMock).toHaveBeenCalledTimes(4);
 
     expect(mockedTripPlannerMap).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2905,6 +2906,34 @@ describe("TripPlannerPage", () => {
       ).toBeDisabled(),
     );
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("does not open the import dialog from ?import=1 when the rider is at their cap", async () => {
+    // A direct import URL must not bypass the disabled toolbar button.
+    window.history.replaceState({}, "", "/trips/planner?import=1");
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.queryByTestId("import-dialog-open")).not.toBeInTheDocument();
   });
 
   it("does not fetch the (unpaginated) trips list when the cap is unlimited", () => {

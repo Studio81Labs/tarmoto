@@ -246,6 +246,9 @@ export default function TripPlannerPage() {
   const t = useTranslation();
   const format = useFormat();
   const [importOpen, setImportOpen] = useState(false);
+  // A `?import=1` deep-link request, held until the own-cap gate resolves so the
+  // import opens only once we've confirmed the rider isn't (or no longer) capped.
+  const [importRequestedFromUrl, setImportRequestedFromUrl] = useState(false);
   const [collaborateOpen, setCollaborateOpen] = useState(false);
   // Controlled "Plan as multi-day trip" disclosure — collapsed by default
   // (revision 2 §D: splitting is an optional layer most riders never
@@ -1025,16 +1028,17 @@ export default function TripPlannerPage() {
   // socket joins `trip:<id>`, cursors + suggestions + activity start
   // flowing, and the Suggestions / Activity tabs in the modal light up.
   const [serverTripId, setServerTripId] = useState<string | null>(null);
-  // Whether the URL carries no `?tripId=` — a genuine new-trip session (create
-  // or import) vs an edit. Computed synchronously from the URL (initializer, so
-  // no extra render; SSR-guarded to stay prerenderable like the `?tripId=`
-  // effect below) so the proactive cap gate can't fire during the async window
-  // before an edit's `serverTripId` binds.
-  const [isNewTripSession] = useState<boolean>(() =>
-    typeof window === "undefined"
-      ? false
-      : !new URLSearchParams(window.location.search).get("tripId"),
-  );
+  // New-trip session (create/import) vs an existing-trip edit, decided from the
+  // URL's `?tripId=`. Starts "unknown" — the SAME value on the server prerender
+  // and the first client render, so it can't cause a hydration mismatch on the
+  // gated `disabled` attributes — and is reconciled AFTER mount by the `?tripId`
+  // effect below (reading the URL there keeps the page prerenderable). "unknown"
+  // fails closed (treated as a mint context) so the first paint blocks minting
+  // rather than briefly enabling it for a capped rider.
+  const [sessionKind, setSessionKind] = useState<
+    "unknown" | "new" | "existing"
+  >("unknown");
+  const isNewTripSession = sessionKind === "new";
   const [serverTripOwnerId, setServerTripOwnerId] = useState<string | null>(
     null,
   );
@@ -1083,6 +1087,9 @@ export default function TripPlannerPage() {
   // editing someone else's trip can't know the owner's count, so it's left to
   // the save-path 403.
   const isOwnMintContext =
+    // Session kind not yet reconciled (first paint) → fail closed: treat it as a
+    // possible mint context so minting stays blocked until we know otherwise.
+    sessionKind === "unknown" ||
     (isNewTripSession && !isSavedTrip) ||
     (isSavedTrip && isTripOwner && displayedTrip?.status === "completed");
   // Only fetch the (unpaginated, geospatial) trips list when the COUNT is
@@ -1213,7 +1220,10 @@ export default function TripPlannerPage() {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("import") !== "1") return;
-    setImportOpen(true);
+    // Defer opening until the cap gate resolves (see the effect near
+    // `openImport`) instead of opening unconditionally — a direct import URL
+    // must not bypass the mint block for a capped/unknown-cap rider.
+    setImportRequestedFromUrl(true);
     url.searchParams.delete("import");
     window.history.replaceState(window.history.state, "", url);
   }, []);
@@ -1224,6 +1234,9 @@ export default function TripPlannerPage() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("tripId");
+    // Reconcile the new-vs-existing session kind now that we can read the URL
+    // (see `sessionKind` above) — resolves the fail-closed "unknown" first paint.
+    setSessionKind(fromUrl ? "existing" : "new");
     if (fromUrl) {
       // Skip the no-op null→null setState path so we don't burn an extra
       // render cycle through the planner's downstream data hooks
@@ -1441,10 +1454,26 @@ export default function TripPlannerPage() {
     [selectedTripDay, displayedTrip],
   );
   // selectedDay / selectedDayIndex are derived ~line 264 (routing section above)
-  const openImport = useCallback((file: File | null = null) => {
-    setPendingImportFile(file);
-    setImportOpen(true);
-  }, []);
+  const openImport = useCallback(
+    (file: File | null = null) => {
+      // An imported route mints on save — block EVERY entry (toolbar button,
+      // drag/drop, and the ?import deep-link below) while the own-cap gate is
+      // active, so a capped rider can't adopt/edit an import ahead of the 403.
+      if (mintGateBlocked) return;
+      setPendingImportFile(file);
+      setImportOpen(true);
+    },
+    [mintGateBlocked],
+  );
+  useEffect(() => {
+    // Honour a held `?import=1` request once the gate is confirmed NOT blocking
+    // (rider under cap / unlimited). While blocked (loading, unknown, or at cap)
+    // it stays held; an at-cap rider's request is simply never opened.
+    if (importRequestedFromUrl && !mintGateBlocked) {
+      openImport();
+      setImportRequestedFromUrl(false);
+    }
+  }, [importRequestedFromUrl, mintGateBlocked, openImport]);
   // Reset / Discard confirm through the app-styled ConfirmDialog —
   // system dialogs are disallowed (they block the tab and ignore the
   // design system).
