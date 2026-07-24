@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getFeatureLimit,
   isFeatureEnabled,
+  resolveLimit,
   type LimitFeatureKey,
   type SubscriptionTier,
   type ToggleFeatureKey,
@@ -12,6 +13,72 @@ import { useAuthStore } from "@/stores/auth";
 
 export const USERS_ME_QUERY_KEY = (userId: string | null) =>
   ["users-me", userId] as const;
+
+/** Public global limit-override map (`GET /config/limits`) — served without
+ *  auth, so it's the launch-mode source for anonymous / public surfaces where
+ *  the auth-scoped `/users/me` snapshot never resolves. */
+export const CONFIG_LIMITS_QUERY_KEY = ["config-limits"] as const;
+
+/**
+ * The operator's global override for a limit key, from the PUBLIC
+ * `/config/limits` map. `undefined` = the key is ABSENT (no override → the
+ * limit resolves normally); `null` = an explicit unlimited override; a number =
+ * an explicit cap. Needs no auth, so it resolves for logged-out visitors.
+ */
+function useGlobalLimit(key: LimitFeatureKey): {
+  override: number | null | undefined;
+  isSuccess: boolean;
+} {
+  const query = useQuery({
+    queryKey: CONFIG_LIMITS_QUERY_KEY,
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET("/api/v1/config/limits", {
+        signal,
+      });
+      if (error || !data) throw new Error("Failed to load global limits");
+      return data;
+    },
+  });
+  const map = query.data ?? null;
+  return {
+    override: map && Object.hasOwn(map, key) ? (map[key] ?? null) : undefined,
+    isSuccess: query.isSuccess,
+  };
+}
+
+/**
+ * The resolved `road_quality_max_zoom` cap for BOTH authenticated riders and
+ * anonymous public viewers (the road-quality overlay renders on the public
+ * `/explore` showcase). Authenticated → the `/users/me` snapshot, which already
+ * folds in the global override. Anonymous → the auth-scoped query is disabled
+ * and never resolves, so resolve from scratch against the PUBLIC global
+ * override: the free-tier default replaced by the operator override. That keeps
+ * the launch-mode `NULL` seed UNLIMITED (dark) for logged-out viewers instead
+ * of fail-closing them to the free cap, and post-launch an anonymous viewer
+ * resolves to the free-tier cap like any free user.
+ */
+export function useRoadQualityZoomCap(): {
+  limit: number | null;
+  isResolved: boolean;
+} {
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const authed = userId != null;
+  const { limit: userLimit, isSuccess: userResolved } = useLimit(
+    "road_quality_max_zoom",
+  );
+  const { override, isSuccess: globalResolved } = useGlobalLimit(
+    "road_quality_max_zoom",
+  );
+  if (authed) return { limit: userLimit, isResolved: userResolved };
+  if (!globalResolved) return { limit: null, isResolved: false };
+  // Anonymous: no tier → the registry free/default value, then the global
+  // operator override replaces it (undefined = no override → free default).
+  return {
+    limit: resolveLimit("road_quality_max_zoom", null, undefined, override),
+    isResolved: true,
+  };
+}
 
 /**
  * Single source of truth for the rider's resolved entitlements. Reads the

@@ -21,7 +21,7 @@ import {
   loadCuratedMapStyle,
 } from "./attribution";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
-import { useLimit } from "@/hooks";
+import { useRoadQualityZoomCap } from "@/hooks";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
@@ -200,10 +200,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
 
   // road_quality_max_zoom entitlement: caps how far the quality overlay layer
-  // renders. Fails closed to the free floor until the cap resolves.
-  const { limit: qualityZoomLimit, isSuccess: qualityZoomResolved } = useLimit(
-    "road_quality_max_zoom",
-  );
+  // renders. Resolves for BOTH authenticated riders (/users/me) and anonymous
+  // public viewers (the global launch-mode override) — see useRoadQualityZoomCap
+  // — and fails closed to the free floor until it resolves.
+  const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
+    useRoadQualityZoomCap();
   // MapLibre layer maxzoom is EXCLUSIVE (hidden at zoom >= maxzoom), so this is
   // one level above the entitlement cap — a free rider still sees the overlay
   // AT their capped level, and an unlimited rider is never hidden.

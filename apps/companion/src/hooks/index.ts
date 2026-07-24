@@ -10,6 +10,7 @@ export {
   useEntitlements,
   useFeature,
   useLimit,
+  useRoadQualityZoomCap,
   USERS_ME_QUERY_KEY,
 } from "./useEntitlements";
 

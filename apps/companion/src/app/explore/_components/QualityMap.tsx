@@ -115,7 +115,7 @@ import {
   pinnedConditionRetired,
   reconcileConditionMenu,
 } from "./conditionPopoverReconcile";
-import { useEntitlements, useLimit } from "@/hooks";
+import { useEntitlements, useRoadQualityZoomCap } from "@/hooks";
 import { shouldPromptQualityZoom } from "@/lib/map-entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useTranslation } from "@/i18n/I18nProvider";
@@ -277,8 +277,8 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // the RAW entitlement cap level (finite when `qualityCapFinite`), not the
     // exclusive layer maxzoom.
     const { tier } = useEntitlements();
-    const { limit: qualityZoomLimit, isSuccess: qualityZoomResolved } =
-      useLimit("road_quality_max_zoom");
+    const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
+      useRoadQualityZoomCap();
     const qualityCapFinite = qualityZoomResolved && qualityZoomLimit !== null;
     const qualityCap = qualityZoomLimit ?? 0;
     const [zoomUpgradeOpen, setZoomUpgradeOpen] = useState(false);

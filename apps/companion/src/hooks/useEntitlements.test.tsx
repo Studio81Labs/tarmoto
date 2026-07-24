@@ -14,7 +14,12 @@ vi.mock("@/stores/auth", () => ({
     sel(authState),
 }));
 
-import { useEntitlements, useFeature, useLimit } from "./useEntitlements";
+import {
+  useEntitlements,
+  useFeature,
+  useLimit,
+  useRoadQualityZoomCap,
+} from "./useEntitlements";
 
 const ME = {
   id: "u1",
@@ -133,5 +138,71 @@ describe("useEntitlements", () => {
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.limit).toBe(0);
+  });
+});
+
+describe("useRoadQualityZoomCap", () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    authState.user = { id: "u1" };
+  });
+
+  it("uses the authenticated /users/me cap when signed in", async () => {
+    authState.user = { id: "u1" };
+    getMock.mockResolvedValue({
+      data: { ...ME, limits: { road_quality_max_zoom: 12 } },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBe(12);
+  });
+
+  it("resolves anonymous viewers to UNLIMITED under the launch-mode global override (null)", async () => {
+    // Logged out: /users/me is disabled; the public /config/limits map carries
+    // the launch seed (road_quality_max_zoom → null = unlimited).
+    authState.user = null;
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: null },
+            error: undefined,
+          })
+        : Promise.resolve({ data: undefined, error: { message: "no auth" } }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBeNull(); // unlimited → overlay never clamped
+  });
+
+  it("resolves anonymous viewers to the free cap when no global override (post-launch)", async () => {
+    authState.user = null;
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({ data: {}, error: undefined })
+        : Promise.resolve({ data: undefined, error: { message: "no auth" } }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBe(12); // free-tier default
+  });
+
+  it("is unresolved for an anonymous viewer while the global map errors", async () => {
+    authState.user = null;
+    getMock.mockResolvedValue({
+      data: undefined,
+      error: { message: "boom" },
+    });
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(false));
+    expect(result.current.limit).toBeNull();
   });
 });
