@@ -164,6 +164,28 @@ describe("useRoadQualityZoomCap", () => {
     expect(result.current.limit).toBe(12);
   });
 
+  it("is UNRESOLVED for a signed-in rider until the public override loads (fail closed)", async () => {
+    // /users/me resolves but /config/limits errors — must NOT report resolved
+    // using only the stale profile, or the map could render above an operator
+    // clamp the profile hasn't caught up to yet.
+    authState.user = { id: "u1" };
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({ data: undefined, error: { message: "down" } })
+        : Promise.resolve({
+            data: { ...ME, limits: { road_quality_max_zoom: null } },
+            error: undefined,
+          }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    // The public query settles in error; the cap stays unresolved (fail closed).
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(result.current.isResolved).toBe(false);
+  });
+
   it("clamps a signed-in rider DOWN with a finite public override the cached snapshot missed", async () => {
     // Rider's /users/me still says unlimited (null), but the operator has since
     // set a finite global override — apply it as a downward clamp immediately.

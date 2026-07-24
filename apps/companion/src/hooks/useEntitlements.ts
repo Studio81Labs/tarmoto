@@ -72,15 +72,20 @@ export function useRoadQualityZoomCap(): {
     "road_quality_max_zoom",
   );
   if (authed) {
+    // The companion is the enforcement point for this overlay, so treat the cap
+    // as resolved only once BOTH the profile AND the public override have
+    // loaded — otherwise a stale /users/me (null / higher cap) that resolves
+    // first would render quality detail ABOVE an operator's finite clamp until
+    // /config/limits arrives. Fail closed (unresolved) until both.
+    const bothResolved = userResolved && globalResolved;
     // Apply the PUBLIC global override as a downward clamp over the cached
     // /users/me limit (never raises), so an operator's finite clamp takes
-    // effect immediately rather than waiting for /users/me to refetch. A
-    // null/absent override, or an override still loading, leaves it unchanged.
+    // effect immediately rather than waiting for /users/me to refetch.
     const limit =
-      userResolved && globalResolved && override !== undefined
+      bothResolved && override !== undefined
         ? minLimit(userLimit, override)
         : userLimit;
-    return { limit, isResolved: userResolved };
+    return { limit, isResolved: bothResolved };
   }
   if (!globalResolved) return { limit: null, isResolved: false };
   // Anonymous: no tier → the registry free/default value, then the global
