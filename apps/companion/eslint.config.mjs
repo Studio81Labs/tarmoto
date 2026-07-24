@@ -409,9 +409,9 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
-      "CallExpression[callee.object.property.name='unit'][callee.property.name=/^(toUpperCase|toLowerCase)$/]",
+      "CallExpression[callee.object.property.name='unit'][callee.property.name=/^(toUpperCase|toLowerCase|toLocaleUpperCase|toLocaleLowerCase)$/]",
     message:
-      "Case display-unit labels with toLocaleUpperCase/toLocaleLowerCase and the active format locale.",
+      "Render compact measurement abbreviations with format.unitLabel() so locale-sensitive casing cannot corrupt unit symbols.",
   },
   {
     selector:

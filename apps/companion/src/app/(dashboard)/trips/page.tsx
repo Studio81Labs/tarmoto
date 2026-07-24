@@ -1129,9 +1129,7 @@ function TripCard({
                 <span className="font-bold text-ink">
                   {format.splitDistanceKm(distance).value}
                 </span>{" "}
-                {format
-                  .splitDistanceKm(distance)
-                  .unit.toLocaleUpperCase(format.locale)}
+                {format.unitLabel("distance")}
               </span>
             )}
             <span>

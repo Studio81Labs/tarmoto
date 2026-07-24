@@ -47,7 +47,7 @@ function buildColumns(
       key: "km",
       // Header speaks the same unit as the converting cells below —
       // same derivation as the ride-history table.
-      label: format.splitDistanceKm(1).unit.toLocaleUpperCase(format.locale),
+      label: format.unitLabel("distance"),
       size: "80px",
       render: (r) => (
         <Mono className="font-bold text-ink">
@@ -74,7 +74,7 @@ function buildColumns(
       // Header carries the converting unit so the bare cell numbers can't
       // be read in the wrong speed system — same as the ride-history table.
       label: t("AVG {unit}", {
-        unit: format.splitSpeed(1).unit.toLocaleUpperCase(format.locale),
+        unit: format.unitLabel("speed"),
       }),
       size: "84px",
       render: (r) => (

@@ -409,7 +409,7 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
         {mapped.value}{" "}
         <Mono className="text-[10px] font-medium text-cream/60">
           {t("{unit} MAPPED", {
-            unit: mapped.unit.toLocaleUpperCase(format.locale),
+            unit: format.unitLabel("distance"),
           })}
         </Mono>
       </div>

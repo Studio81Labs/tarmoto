@@ -44,9 +44,7 @@ function buildColumns(
   // `splitDistanceKm`, so the header must too — a static "KM" would lie to
   // imperial riders. The magnitude passed here is arbitrary (unit short-forms
   // don't vary with it); this just reads off the same formatter the cells use.
-  const distanceUnitLabel = format
-    .splitDistanceKm(1)
-    .unit.toLocaleUpperCase(format.locale);
+  const distanceUnitLabel = format.unitLabel("distance");
   return [
     {
       key: "started_at",
@@ -106,7 +104,7 @@ function buildColumns(
       // Header carries the converting unit ("AVG KM/H" / "AVG MPH") so the
       // bare cell numbers can't be read in the wrong speed system.
       label: t("AVG {unit}", {
-        unit: format.splitSpeed(1).unit.toLocaleUpperCase(format.locale),
+        unit: format.unitLabel("speed"),
       }),
       size: "84px",
       render: (r) => (

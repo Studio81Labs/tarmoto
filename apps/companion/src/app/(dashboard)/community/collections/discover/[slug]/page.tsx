@@ -273,8 +273,7 @@ export default function DiscoverCollectionPage() {
         <Stamp>{t("Routes")}</Stamp>
         {routes.length > 0 && (
           <Mono className="text-[11px] text-fg-mute">
-            {totalDistance.value}{" "}
-            {totalDistance.unit.toLocaleUpperCase(format.locale)}
+            {totalDistance.value} {format.unitLabel("distance")}
           </Mono>
         )}
       </div>

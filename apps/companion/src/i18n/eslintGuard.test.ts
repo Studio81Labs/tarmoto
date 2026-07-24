@@ -87,4 +87,18 @@ describe("companion indirect display-copy lint guard", () => {
       guardMessages("const display = label.toLocaleUpperCase(locale);"),
     ).toHaveLength(0);
   });
+
+  it("rejects locale-sensitive casing for measurement-unit tokens", () => {
+    expect(
+      guardMessages(
+        "const unit = format.splitDistanceKm(1).unit.toLocaleUpperCase(locale);",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows the invariant measurement-unit label helper", () => {
+    expect(
+      guardMessages('const unit = format.unitLabel("distance");'),
+    ).toHaveLength(0);
+  });
 });
