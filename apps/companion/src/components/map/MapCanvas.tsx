@@ -21,7 +21,9 @@ import {
   loadCuratedMapStyle,
 } from "./attribution";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
+import { useLimit } from "@/hooks";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
+import { resolveQualityMaxZoom } from "@/lib/map-entitlements";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
 
@@ -190,6 +192,22 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const colorSchemeRef = useRef(colorScheme);
   const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
 
+  // road_quality_max_zoom entitlement: caps how far the quality overlay layer
+  // renders. Fails closed to the free floor until the cap resolves.
+  const { limit: qualityZoomLimit, isSuccess: qualityZoomResolved } = useLimit(
+    "road_quality_max_zoom",
+  );
+  const qualityMaxZoom = resolveQualityMaxZoom(
+    qualityZoomLimit,
+    qualityZoomResolved,
+  );
+  // The quality layer is added inside the `load` handler below, a closure
+  // captured once at map-init time — bounce the latest cap through a ref so
+  // that closure reads the current value rather than the one from first
+  // render.
+  const qualityMaxZoomRef = useRef(qualityMaxZoom);
+  qualityMaxZoomRef.current = qualityMaxZoom;
+
   useEffect(() => {
     colorSchemeRef.current = colorScheme;
   }, [colorScheme]);
@@ -335,6 +353,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        maxzoom: qualityMaxZoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
@@ -510,6 +529,19 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     setVisibility(map, TARMOTO_QUALITY_LAYER, showQuality);
     setVisibility(map, TARMOTO_SURFACE_LAYER, showSurface);
   }, [ready, showQuality, showSurface]);
+
+  // ── quality overlay maxzoom from the road_quality_max_zoom entitlement ──
+  // The cap can resolve (or change, e.g. a tier upgrade) after the layer's
+  // already been added with the ref-captured value above; apply changes live.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(TARMOTO_QUALITY_LAYER)) return;
+    map.setLayerZoomRange(
+      TARMOTO_QUALITY_LAYER,
+      TARMOTO_ROADS_MIN_ZOOM,
+      qualityMaxZoom,
+    );
+  }, [qualityMaxZoom]);
 
   // ── selected-segment highlight filter ──
   useEffect(() => {

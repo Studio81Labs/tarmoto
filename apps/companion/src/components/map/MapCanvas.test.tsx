@@ -19,6 +19,7 @@ const mapStub = {
   setLayoutProperty: vi.fn(),
   setPaintProperty: vi.fn(),
   setFilter: vi.fn(),
+  setLayerZoomRange: vi.fn(),
   getCenter: vi.fn(() => ({ lng: 14.5, lat: 50.1 })),
   getBounds: vi.fn(() => ({
     getWest: () => 14.1,
@@ -32,6 +33,14 @@ const mapStub = {
 };
 
 const loadHandlers: Array<() => void> = [];
+
+const useLimitMock = vi.fn(() => ({
+  limit: null as number | null,
+  isLoading: false,
+  isError: false,
+  isSuccess: true,
+}));
+vi.mock("@/hooks", () => ({ useLimit: () => useLimitMock() }));
 
 vi.mock("@/lib/map-style", async () => {
   const actual =
@@ -118,9 +127,17 @@ describe("MapCanvas", () => {
     mapStub.getLayer.mockReturnValue({ id: "mock-layer" });
     mapStub.setLayoutProperty.mockReset();
     mapStub.setPaintProperty.mockReset();
+    mapStub.setLayerZoomRange.mockReset();
     mapStub.resize.mockReset();
     mapStub.remove.mockReset();
     vi.mocked(applyTarmotoMapTheme).mockReset();
+    useLimitMock.mockReset();
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
   });
 
   it("always applies the light theme and ignores the OS dark-mode preference", async () => {
@@ -195,6 +212,54 @@ describe("MapCanvas", () => {
         source: TARMOTO_SURFACE_SOURCE,
         minzoom: 10,
       }),
+    );
+  });
+
+  it("adds the quality overlay layer with the free maxzoom cap when limited", async () => {
+    useLimitMock.mockReturnValue({
+      limit: 12,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 12 }),
+    );
+  });
+
+  it("lifts the quality overlay cap for an unlimited (pro/premium) rider", async () => {
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+    });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 18 }),
     );
   });
 });
