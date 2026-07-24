@@ -58,4 +58,10 @@ describe("companion indirect display-copy lint guard", () => {
       guardMessages("const view = <span>{entry.rank}</span>;"),
     ).not.toHaveLength(0);
   });
+
+  it("rejects numeric branches hidden inside a rendered fallback", () => {
+    expect(
+      guardMessages("const view = <span>{forcedDays ?? t('Auto')}</span>;"),
+    ).not.toHaveLength(0);
+  });
 });

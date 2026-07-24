@@ -150,26 +150,16 @@ export default function SettingsScreen() {
 /** Hidden for the English-only MVP; activates automatically with locale #2. */
 function LocaleCard() {
   const { locale, t: localize } = useI18n();
-  const user = useAuthStore((state) => state.user);
-  const setUser = useAuthStore((state) => state.setUser);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const pendingLocale = usePreferencesStore(
+    (state) => state.pendingUiLocaleSync,
+  );
+  const selectUiLocale = usePreferencesStore((state) => state.selectUiLocale);
 
   if (SUPPORTED_LOCALES.length <= 1) return null;
 
-  const handleChange = async (next: SupportedLocale) => {
-    if (pending || next === locale) return;
-    setError(null);
-    setPending(true);
-    try {
-      if (!user) return;
-      const updated = await api.updateProfile({ language: next });
-      setUser(updated);
-    } catch {
-      setError(localize("Could not save your language."));
-    } finally {
-      setPending(false);
-    }
+  const handleChange = (next: SupportedLocale) => {
+    if (next === locale) return;
+    selectUiLocale(next);
   };
 
   return (
@@ -181,11 +171,19 @@ function LocaleCard() {
           label: LOCALES[value].label,
         }))}
         value={locale}
-        onChange={(next) => void handleChange(next)}
+        onChange={handleChange}
         ariaLabel={localize("Language")}
       />
-      {pending ? <ActivityIndicator color={t.accent} size="small" /> : null}
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {pendingLocale ? (
+        <>
+          <ActivityIndicator color={t.accent} size="small" />
+          <Text style={styles.sectionBody}>
+            {localize(
+              "Language saved on this device. Account sync is pending.",
+            )}
+          </Text>
+        </>
+      ) : null}
     </Card>
   );
 }

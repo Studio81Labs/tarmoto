@@ -24,6 +24,7 @@ import {
   MIN_QUALITY_BOUNDS,
   clampFuelRangeKm,
 } from "@/theme";
+import { isSupportedLocale, type SupportedLocale } from "@tarmoto/shared";
 
 // ── Auth Store ──
 
@@ -449,6 +450,8 @@ const VOICE_NAV_VERBOSE_KEY = "voiceNavVerbose";
 const DEFAULT_VOICE_NAV_VERBOSE = true;
 const VOICE_NAV_LANGUAGE_KEY = "voiceNavLanguage";
 const DISTANCE_UNIT_KEY = "distanceUnit";
+const UI_LOCALE_OVERRIDE_KEY = "uiLocaleOverride";
+const PENDING_UI_LOCALE_SYNC_KEY = "pendingUiLocaleSync";
 
 /**
  * Voice-navigation locale preference. `auto` resolves at announcement
@@ -479,6 +482,7 @@ interface PrefsStorage {
   set(key: string, value: number): void;
   getString(key: string): string | undefined;
   setString(key: string, value: string): void;
+  remove(key: string): void;
 }
 
 function createPrefsStorage(): PrefsStorage {
@@ -494,6 +498,7 @@ function createPrefsStorage(): PrefsStorage {
       set: (key, value) => mmkv.set(key, value),
       getString: (key) => mmkv.getString(key),
       setString: (key, value) => mmkv.set(key, value),
+      remove: (key) => mmkv.remove(key),
     };
   } catch {
     const numbers = new Map<string, number>();
@@ -506,6 +511,10 @@ function createPrefsStorage(): PrefsStorage {
       getString: (key) => strings.get(key),
       setString: (key, value) => {
         strings.set(key, value);
+      },
+      remove: (key) => {
+        numbers.delete(key);
+        strings.delete(key);
       },
     };
   }
@@ -580,6 +589,28 @@ function loadPersistedDistanceUnit(): DistanceUnitPref {
   return DEFAULT_DISTANCE_UNIT;
 }
 
+function loadPersistedUiLocalePreference(): {
+  override: SupportedLocale | null;
+  pending: SupportedLocale | null;
+} {
+  const overrideRaw = prefsStorage.getString(UI_LOCALE_OVERRIDE_KEY);
+  const pendingRaw = prefsStorage.getString(PENDING_UI_LOCALE_SYNC_KEY);
+  const override =
+    overrideRaw && isSupportedLocale(overrideRaw) ? overrideRaw : null;
+  const pending =
+    pendingRaw && isSupportedLocale(pendingRaw) ? pendingRaw : null;
+
+  // The marker and override are written as one action. Treat a partial or
+  // hand-corrupted pair as a local-only override rather than syncing a locale
+  // that is no longer driving the UI.
+  return {
+    override,
+    pending: pending === override ? pending : null,
+  };
+}
+
+const persistedUiLocalePreference = loadPersistedUiLocalePreference();
+
 interface PreferencesState {
   /** Minimum road quality (1..5) the rider wants to see in planning. */
   minQuality: number;
@@ -614,6 +645,16 @@ interface PreferencesState {
    */
   distanceUnit: DistanceUnitPref;
   setDistanceUnit: (value: DistanceUnitPref) => void;
+  /**
+   * Explicit UI language stored on this device. The override is the immediate
+   * source of truth and survives sign-out; the separate marker tracks whether
+   * that choice still needs to reach the account.
+   */
+  uiLocaleOverride: SupportedLocale | null;
+  pendingUiLocaleSync: SupportedLocale | null;
+  selectUiLocale: (locale: SupportedLocale) => void;
+  completeUiLocaleSync: (locale: SupportedLocale) => void;
+  adoptAccountUiLocale: (locale: SupportedLocale) => void;
   resetPreferences: () => void;
 }
 
@@ -669,6 +710,31 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
   setDistanceUnit: (value) => {
     prefsStorage.setString(DISTANCE_UNIT_KEY, value);
     set({ distanceUnit: value });
+  },
+  uiLocaleOverride: persistedUiLocalePreference.override,
+  pendingUiLocaleSync: persistedUiLocalePreference.pending,
+  selectUiLocale: (locale) => {
+    prefsStorage.setString(UI_LOCALE_OVERRIDE_KEY, locale);
+    prefsStorage.setString(PENDING_UI_LOCALE_SYNC_KEY, locale);
+    set({ uiLocaleOverride: locale, pendingUiLocaleSync: locale });
+  },
+  completeUiLocaleSync: (locale) => {
+    set((state) => {
+      // A slower response for a superseded choice must not clear the newer
+      // override or make the UI fall back to the stale account response.
+      if (state.pendingUiLocaleSync !== locale) return state;
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_KEY);
+      return { pendingUiLocaleSync: null };
+    });
+  },
+  adoptAccountUiLocale: (locale) => {
+    set((state) => {
+      // An explicit unsynced device choice has authority until its PATCH
+      // settles; a profile refresh from another device must not overwrite it.
+      if (state.pendingUiLocaleSync) return state;
+      prefsStorage.setString(UI_LOCALE_OVERRIDE_KEY, locale);
+      return { uiLocaleOverride: locale };
+    });
   },
   resetPreferences: () => {
     prefsStorage.set(MIN_QUALITY_KEY, DEFAULT_MIN_QUALITY);

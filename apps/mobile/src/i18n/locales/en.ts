@@ -328,7 +328,8 @@ export const en = {
   "Route needs at least two points.": "Route needs at least two points.",
   "Unsupported file format. Upload a GPX or KML file.":
     "Unsupported file format. Upload a GPX or KML file.",
-  "Could not save your language.": "Could not save your language.",
+  "Language saved on this device. Account sync is pending.":
+    "Language saved on this device. Account sync is pending.",
   "Could not save profile.": "Could not save profile.",
   "Could not update follow.": "Could not update follow.",
   "Could not upload avatar.": "Could not upload avatar.",

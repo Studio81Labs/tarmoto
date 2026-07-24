@@ -1,7 +1,7 @@
 import React from "react";
 import { Text } from "react-native";
 import { render } from "@testing-library/react-native";
-import { FormatProvider } from "./FormatProvider";
+import { FormatProvider, useFormat } from "./FormatProvider";
 import { getFormatters, setActiveFormatContext } from ".";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getActiveLocale, setActiveLocale, type SupportedLocale } from "@/i18n";
@@ -13,6 +13,12 @@ function GlobalFormatConsumer() {
 function GlobalLocaleConsumer() {
   return <Text testID="global-locale">{getActiveLocale()}</Text>;
 }
+
+const MemoizedContextFormatConsumer = React.memo(
+  function MemoizedContextFormatConsumer() {
+    return <Text testID="context-format">{useFormat().units}</Text>;
+  },
+);
 
 function SuspendForever(): React.JSX.Element {
   throw new Promise<never>(() => {});
@@ -49,6 +55,22 @@ describe("FormatProvider", () => {
     );
 
     expect(view.getByTestId("global-format").props.children).toBe("imperial");
+  });
+
+  it("updates context-bound consumers across a memo boundary", async () => {
+    const view = await render(
+      <FormatProvider locale="en" timeZone="UTC" units="metric">
+        <MemoizedContextFormatConsumer />
+      </FormatProvider>,
+    );
+
+    await view.rerender(
+      <FormatProvider locale="en" timeZone="UTC" units="imperial">
+        <MemoizedContextFormatConsumer />
+      </FormatProvider>,
+    );
+
+    expect(view.getByTestId("context-format").props.children).toBe("imperial");
   });
 
   it("does not publish formatter state from a suspended render", async () => {

@@ -3660,7 +3660,9 @@ export default function TripPlannerPage() {
                       {t("Days")}
                     </span>
                     <span className="font-mono text-[10px] font-bold uppercase tracking-[1.6px] text-accent">
-                      {forcedDays ?? t("Auto")}
+                      {forcedDays === null
+                        ? t("Auto")
+                        : format.integer(forcedDays)}
                     </span>
                   </div>
                   <button
