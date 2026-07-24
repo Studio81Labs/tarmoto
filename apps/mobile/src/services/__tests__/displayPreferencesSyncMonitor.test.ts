@@ -18,6 +18,9 @@ describe("displayPreferencesSyncMonitor", () => {
       patch: { format_locale?: string; timezone?: string },
     ) => Promise<void>
   >;
+  let onDevicePreferencesDetected: jest.MockedFunction<
+    (preferences: DeviceDisplayPreferences) => void
+  >;
   let addEventListenerSpy: jest.SpiedFunction<typeof AppState.addEventListener>;
 
   beforeEach(() => {
@@ -30,6 +33,7 @@ describe("displayPreferencesSyncMonitor", () => {
     };
     device = { formatLocale: "cs-CZ", timeZone: "Europe/Prague" };
     sync = jest.fn().mockResolvedValue(undefined);
+    onDevicePreferencesDetected = jest.fn();
     addEventListenerSpy = jest
       .spyOn(AppState, "addEventListener")
       .mockImplementation((event: string, listener: Listener) => {
@@ -53,6 +57,7 @@ describe("displayPreferencesSyncMonitor", () => {
     return startDisplayPreferencesSyncMonitor({
       isAuthenticated: () => isAuthenticated,
       currentDevicePreferences: () => device,
+      onDevicePreferencesDetected,
       currentAccountPreferences: () => account,
       sync,
     });
@@ -99,14 +104,29 @@ describe("displayPreferencesSyncMonitor", () => {
     start();
     await flush();
     expect(sync).not.toHaveBeenCalled();
+    expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
 
     device = { formatLocale: "de-DE", timeZone: "Europe/Berlin" };
     listeners.forEach((listener) => listener("active"));
     await flush();
+    expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
     expect(sync).toHaveBeenCalledWith("user-1", {
       format_locale: "de-DE",
       timezone: "Europe/Berlin",
     });
+  });
+
+  it("publishes foreground device changes even while signed out", async () => {
+    start(false);
+    await flush();
+    expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
+
+    device = { formatLocale: "de-DE", timeZone: "Europe/Berlin" };
+    listeners.forEach((listener) => listener("active"));
+    await flush();
+
+    expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
+    expect(sync).not.toHaveBeenCalled();
   });
 
   it("does not duplicate an in-flight write", async () => {

@@ -6,6 +6,10 @@ import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreference
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
+import {
+  detectDeviceFormatLocale,
+  detectDeviceTimeZone,
+} from "@/i18n/deviceLocale";
 import type { User } from "@/types";
 
 let mockProviderLocale: string | null | undefined;
@@ -85,6 +89,8 @@ describe("App auth locale hydration", () => {
     jest.mocked(api.cacheProfile).mockReset();
     mockMonitorLocales.length = 0;
     mockProviderLocale = undefined;
+    jest.mocked(detectDeviceFormatLocale).mockReturnValue("en-GB");
+    jest.mocked(detectDeviceTimeZone).mockReturnValue("Europe/Prague");
     useAuthStore.setState({
       user: null,
       isAuthenticated: false,
@@ -151,6 +157,41 @@ describe("App auth locale hydration", () => {
 
     expect(getFormatters().locale).toBe("en-GB");
     expect(getFormatters().timeZone).toBe("Europe/Prague");
+  });
+
+  it("refreshes provider formatting when foreground detection changes", async () => {
+    await render(<App />);
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "travelling-user",
+        language: "en",
+        preferences: {
+          format_locale: "en-GB",
+          timezone: "Europe/Prague",
+        },
+      } as unknown as User);
+    });
+    await waitFor(() =>
+      expect(startDisplayPreferencesSyncMonitor).toHaveBeenCalled(),
+    );
+
+    jest.mocked(detectDeviceFormatLocale).mockReturnValue("ar-EG");
+    jest.mocked(detectDeviceTimeZone).mockReturnValue("Africa/Cairo");
+    const monitor = jest
+      .mocked(startDisplayPreferencesSyncMonitor)
+      .mock.calls.at(-1)?.[0];
+    const detected = monitor?.currentDevicePreferences();
+    expect(detected).toEqual({
+      formatLocale: "ar-EG",
+      timeZone: "Africa/Cairo",
+    });
+
+    await act(() => {
+      if (detected) monitor?.onDevicePreferencesDetected?.(detected);
+    });
+
+    expect(getFormatters().locale).toBe("ar-EG");
+    expect(getFormatters().timeZone).toBe("Africa/Cairo");
   });
 
   it("defaults an authenticated unit-less profile to metric", async () => {

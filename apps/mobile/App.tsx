@@ -3,7 +3,7 @@
  * React Native App Entry Point
  */
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StatusBar, LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -13,6 +13,7 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
+import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -30,6 +31,16 @@ LogBox.ignoreLogs([
   "Non-serializable values were found in the navigation state",
 ]);
 
+function readDeviceDisplayPreferences(): DeviceDisplayPreferences {
+  const detectedLocale = canonicalizeFormatLocale(detectDeviceFormatLocale());
+  const detectedZone = detectDeviceTimeZone();
+  return {
+    formatLocale: detectedLocale,
+    timeZone:
+      detectedZone && isValidTimeZone(detectedZone) ? detectedZone : null,
+  };
+}
+
 export default function App() {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
@@ -39,12 +50,16 @@ export default function App() {
   const units = usePreferencesStore((state) => state.distanceUnit);
   const setDistanceUnit = usePreferencesStore((state) => state.setDistanceUnit);
   const deviceLocale = useMemo(detectDeviceLocale, []);
-  const deviceFormatLocale = useMemo(detectDeviceFormatLocale, []);
-  const deviceTimeZone = useMemo(detectDeviceTimeZone, []);
+  const [deviceDisplayPreferences, setDeviceDisplayPreferences] = useState(
+    readDeviceDisplayPreferences,
+  );
   const locale = user?.language ?? deviceLocale;
   const formatLocale =
-    deviceFormatLocale ?? deviceLocale ?? user?.preferences?.format_locale;
-  const timeZone = deviceTimeZone ?? user?.preferences?.timezone;
+    deviceDisplayPreferences.formatLocale ??
+    deviceLocale ??
+    user?.preferences?.format_locale;
+  const timeZone =
+    deviceDisplayPreferences.timeZone ?? user?.preferences?.timezone;
 
   // The account is the cross-device source of truth. Hydrate the synchronous
   // MMKV-backed store whenever auth resolves (or the profile changes), while
@@ -101,16 +116,14 @@ export default function App() {
     if (isAuthLoading) return;
     return startDisplayPreferencesSyncMonitor({
       isAuthenticated: () => api.isAuthenticated(),
-      currentDevicePreferences: () => {
-        const detectedLocale = canonicalizeFormatLocale(
-          detectDeviceFormatLocale(),
+      currentDevicePreferences: readDeviceDisplayPreferences,
+      onDevicePreferencesDetected: (detected) => {
+        setDeviceDisplayPreferences((current) =>
+          current.formatLocale === detected.formatLocale &&
+          current.timeZone === detected.timeZone
+            ? current
+            : detected,
         );
-        const detectedZone = detectDeviceTimeZone();
-        return {
-          formatLocale: detectedLocale,
-          timeZone:
-            detectedZone && isValidTimeZone(detectedZone) ? detectedZone : null,
-        };
       },
       currentAccountPreferences: () => {
         const current = useAuthStore.getState().user;
