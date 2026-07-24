@@ -39,14 +39,16 @@ import type {
 
 describe("formatFunZoneSeason", () => {
   it.each([
+    ["spring", "Spring"],
     ["summer", "Summer"],
+    ["autumn", "Autumn"],
     ["year_round", "Year-round"],
   ])("uses cataloged copy for %s", (season, expected) => {
     expect(formatFunZoneSeason(season)).toBe(expected);
   });
 
-  it("preserves unknown future values until the catalog supports them", () => {
-    expect(formatFunZoneSeason("monsoon")).toBe("monsoon");
+  it("uses cataloged fallback copy for unknown future values", () => {
+    expect(formatFunZoneSeason("monsoon")).toBe("Unknown");
   });
 });
 

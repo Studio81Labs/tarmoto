@@ -766,7 +766,9 @@ function ReviewsCard({
       setFormVisible(false);
       setStatusBanner(
         result.status === "queued"
-          ? "You're offline — your review is saved locally and will upload when you reconnect."
+          ? translate(
+              "You're offline — your review is saved locally and will upload when you reconnect.",
+            )
           : null,
       );
       await onSegmentChanged();

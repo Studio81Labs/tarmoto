@@ -1,5 +1,6 @@
 /** English source catalog for the mobile app. Keep key === value. */
 export const en = {
+  "+new": "+new",
   "{count, plural, one {Complete # ride} other {Complete # rides}}":
     "{count, plural, one {Complete # ride} other {Complete # rides}}",
   "{count, plural, one {Discover # road} other {Discover # roads}}":
@@ -105,8 +106,10 @@ export const en = {
   "{distance} · on {roadName} · {note}": "{distance} · on {roadName} · {note}",
   "{distance} · on {roadName}": "{distance} · on {roadName}",
   "{distance} km": "{distance} km",
-  "{distance} · {duration} min": "{distance} · {duration} min",
+  "{distance} · {duration}": "{distance} · {duration}",
   "{min}–{max} per day": "{min}–{max} per day",
+  "{label}, {min} to {max} per day": "{label}, {min} to {max} per day",
+  "{elevation} · {country}": "{elevation} · {country}",
   "{distance} · Quality {quality}": "{distance} · Quality {quality}",
   "{distance} ahead": "{distance} ahead",
   "{downloaded} / {total} downloaded": "{downloaded} / {total} downloaded",
@@ -127,7 +130,6 @@ export const en = {
   "{label}, {count, plural, one {# trip} other {# trips}}":
     "{label}, {count, plural, one {# trip} other {# trips}}",
   "{length} · {distance} from you": "{length} · {distance} from you",
-  "{min}–{max} km / day": "{min}–{max} km / day",
   "{relation} since {date}": "{relation} since {date}",
   "{name} · {distance}": "{name} · {distance}",
   "{name} (you)": "{name} (you)",
@@ -176,7 +178,6 @@ export const en = {
   "{value0} will no longer be alerted in a crash.":
     "{value0} will no longer be alerted in a crash.",
   "{label}, {distance} away": "{label}, {distance} away",
-  "{value0}, {value1} to {value2} km": "{value0}, {value1} to {value2} km",
   "{value0}: {value1}": "{value0}: {value1}",
   "{value0}% confidence": "{value0}% confidence",
   "{value0}°": "{value0}°",
@@ -316,6 +317,15 @@ export const en = {
   "Could not load shared rides.": "Could not load shared rides.",
   "Could not open file picker.": "Could not open file picker.",
   "Could not read the file.": "Could not read the file.",
+  "File is empty.": "File is empty.",
+  "File is not valid XML.": "File is not valid XML.",
+  "GPX file has no track or route points.":
+    "GPX file has no track or route points.",
+  "KML file has no LineString coordinates.":
+    "KML file has no LineString coordinates.",
+  "Route needs at least two points.": "Route needs at least two points.",
+  "Unsupported file format. Upload a GPX or KML file.":
+    "Unsupported file format. Upload a GPX or KML file.",
   "Could not save your language.": "Could not save your language.",
   "Could not save profile.": "Could not save profile.",
   "Could not update follow.": "Could not update follow.",
@@ -848,7 +858,7 @@ export const en = {
   "Save an area to your device so the road-quality overlay keeps working when you lose cell service. Tiles live in the app's storage — delete a region anytime to reclaim space.":
     "Save an area to your device so the road-quality overlay keeps working when you lose cell service. Tiles live in the app's storage — delete a region anytime to reclaim space.",
   "Save contact": "Save contact",
-  "Save current area ({distance} km)": "Save current area ({distance} km)",
+  "Save current area ({distance})": "Save current area ({distance})",
   "Save current map area for offline use":
     "Save current map area for offline use",
   "Save map areas so the road-quality overlay keeps working without cell service.":
@@ -924,8 +934,8 @@ export const en = {
   "Start a ride to broadcast your position to the group.":
     "Start a ride to broadcast your position to the group.",
   "Start commute": "Start commute",
-  "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}":
-    "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
+  "Start commute on alternative route, {distance}, {duration}, {count, plural, one {# hazard} other {# hazards}}":
+    "Start commute on alternative route, {distance}, {duration}, {count, plural, one {# hazard} other {# hazards}}",
   "Start commute ride to {value0}": "Start commute ride to {value0}",
   "Start commute to {value0}": "Start commute to {value0}",
   "Start location": "Start location",
@@ -947,6 +957,8 @@ export const en = {
   "Submit review": "Submit review",
   "Suggested stay": "Suggested stay",
   Summer: "Summer",
+  Spring: "Spring",
+  Autumn: "Autumn",
   Surface: "Surface",
   "Surface quality": "Surface quality",
   "Surface storms, ice, wet roads, and high wind ahead while navigating. Critical alerts (storm, ice) are also read aloud.":
@@ -1134,6 +1146,8 @@ export const en = {
     "You'll need to sign back in next time.",
   "You're offline — we'll send the report once you're back on a connection.":
     "You're offline — we'll send the report once you're back on a connection.",
+  "You're offline — your review is saved locally and will upload when you reconnect.":
+    "You're offline — your review is saved locally and will upload when you reconnect.",
   "You've ridden every nearby road we know about.":
     "You've ridden every nearby road we know about.",
   "Your current location": "Your current location",

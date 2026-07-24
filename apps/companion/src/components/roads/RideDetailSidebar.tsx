@@ -152,7 +152,12 @@ function RideBody({ ride }: { ride: RideDetail }) {
       label: t("Max lean"),
       value:
         ride.max_lean_angle != null
-          ? `${Math.round(ride.max_lean_angle)}°`
+          ? format.number(ride.max_lean_angle, {
+              style: "unit",
+              unit: "degree",
+              unitDisplay: "narrow",
+              maximumFractionDigits: 0,
+            })
           : "—",
     },
     {

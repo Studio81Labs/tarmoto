@@ -100,7 +100,7 @@ describe("parseImportedRoute (mobile entry)", () => {
   it("rejects empty input", () => {
     const result = parseImportedRoute("   ", "empty.gpx");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/empty/i);
+    if (!result.ok) expect(result.error).toBe("empty_file");
   });
 
   it("rejects unrecognised file types", () => {
@@ -118,7 +118,7 @@ describe("parseImportedRoute (mobile entry)", () => {
       "empty.gpx",
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/no track or route/i);
+    if (!result.ok) expect(result.error).toBe("gpx_without_route");
   });
 
   it("skips trkpt elements with out-of-range coordinates", () => {

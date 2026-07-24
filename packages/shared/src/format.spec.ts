@@ -143,6 +143,17 @@ describe("createFormatters — numbers", () => {
     expect(norm(cs.percent(0.42))).toBe("42 %");
   });
 
+  it("can localize identifier digits without grouping", () => {
+    const en = createFormatters({ locale: "en-US", units: "metric" });
+    const ar = createFormatters({ locale: "ar-EG", units: "metric" });
+    const options: Intl.NumberFormatOptions = {
+      useGrouping: false,
+      maximumFractionDigits: 0,
+    };
+    expect(en.number(2026, options)).toBe("2026");
+    expect(ar.number(2026, options)).toBe("٢٠٢٦");
+  });
+
   it("falls back to en/UTC/metric on invalid context (cookies are untrusted)", () => {
     const f = createFormatters({
       locale: "!!nope!!",
@@ -310,6 +321,24 @@ describe("createFormatters — durationCompact", () => {
     const ar = createFormatters({ locale: "ar-EG", units: "metric" });
     expect(ar.durationCompact(52)).toContain("٥٢");
     expect(ar.durationCompact(52)).not.toBe("52m");
+  });
+});
+
+describe("createFormatters — durationClock", () => {
+  const en = createFormatters({ locale: "en-US", units: "metric" });
+
+  it("formats active timers without rounding into the next second", () => {
+    expect(en.durationClock(0)).toBe("0:00");
+    expect(en.durationClock(65.9)).toBe("1:05");
+    expect(en.durationClock(3661)).toBe("1:01:01");
+    expect(en.durationClock(Number.NaN)).toBe("0:00");
+    expect(en.durationClock(-5)).toBe("0:00");
+  });
+
+  it("localizes every numeral, including padded fields", () => {
+    const ar = createFormatters({ locale: "ar-EG", units: "metric" });
+    expect(ar.durationClock(3661)).toBe("١:٠١:٠١");
+    expect(ar.durationClock(0)).toBe("٠:٠٠");
   });
 });
 

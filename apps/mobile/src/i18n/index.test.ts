@@ -43,7 +43,7 @@ describe("mobile i18n", () => {
     );
     expect(translate("Members ({count})", { count: 4 })).toBe("Members (4)");
     expect(
-      translate("Save current area ({distance} km)", { distance: 25 }),
+      translate("Save current area ({distance})", { distance: "25 km" }),
     ).toBe("Save current area (25 km)");
     expect(
       translate("Below your minimum ({quality})", { quality: "Fair" }),
@@ -65,9 +65,9 @@ describe("mobile i18n", () => {
       }),
     ).toBe("2.5 km · 800 m from you");
     expect(translate("{count} NEW", { count: 3 })).toBe("3 NEW");
-    expect(translate("{min}–{max} km / day", { min: 180, max: 250 })).toBe(
-      "180–250 km / day",
-    );
+    expect(
+      translate("{min}–{max} per day", { min: "180 km", max: "250 km" }),
+    ).toBe("180 km–250 km per day");
     expect(
       translate("{distance} from the planned path — return when it's safe.", {
         distance: "120 m",

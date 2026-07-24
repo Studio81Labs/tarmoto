@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  importErrorMessage,
   importedRouteToTrip,
   parseImportedRoute,
   pointsDistanceKm,
@@ -111,7 +112,7 @@ describe("parseImportedRoute", () => {
   it("rejects empty input", () => {
     const result = parseImportedRoute("   ", "empty.gpx");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/empty/i);
+    if (!result.ok) expect(result.error).toBe("empty_file");
   });
 
   it("rejects unsupported formats", () => {
@@ -130,7 +131,13 @@ describe("parseImportedRoute", () => {
       "empty.gpx",
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/no track or route/i);
+    if (!result.ok) expect(result.error).toBe("gpx_without_route");
+  });
+
+  it("translates parser error codes at the display boundary", () => {
+    expect(importErrorMessage("invalid_xml", (key) => `XX ${key}`)).toBe(
+      "XX File is not valid XML.",
+    );
   });
 
   it("skips trkpt elements with invalid coordinates", () => {

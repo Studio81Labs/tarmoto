@@ -645,19 +645,19 @@ function AlternativeRow({
         onPress={onStart}
         accessibilityRole="button"
         accessibilityLabel={translate(
-          "Start commute on alternative route, {distance}, {duration, plural, one {# minute} other {# minutes}}, {count, plural, one {# hazard} other {# hazards}}",
+          "Start commute on alternative route, {distance}, {duration}, {count, plural, one {# hazard} other {# hazards}}",
           {
             distance: getFormatters().distanceKm(alt.distance_km),
-            duration: alt.duration_min,
+            duration: getFormatters().duration(alt.duration_min),
             count: alt.hazard_count,
           },
         )}
       >
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
-            {translate("{distance} · {duration} min", {
+            {translate("{distance} · {duration}", {
               distance: getFormatters().distanceKm(alt.distance_km),
-              duration: alt.duration_min,
+              duration: getFormatters().duration(alt.duration_min),
             })}
           </Text>
           {alt.hazard_count === 0 ? (
@@ -891,7 +891,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
       <View style={styles.weeklyGrid}>
         <TrendCell
           label={translate("Rides")}
-          value={String(stats.total_rides)}
+          value={getFormatters().integer(stats.total_rides)}
           delta={stats.total_rides - prev.total_rides}
           positiveIsGood
           // Ride count is a whole number; without this the cell would
@@ -1113,24 +1113,35 @@ function formatAbsDelta(
   delta: number,
   options: { integer?: boolean | undefined } = {},
 ): string {
-  if (Math.abs(delta) < 0.05) return "±0";
+  const format = getFormatters();
+  if (Math.abs(delta) < 0.05) return `±${format.integer(0)}`;
   if (options.integer) {
-    const rounded = Math.round(delta);
-    return rounded > 0 ? `+${rounded}` : String(rounded);
+    return format.number(Math.round(delta), {
+      signDisplay: "exceptZero",
+      maximumFractionDigits: 0,
+    });
   }
-  const value = getFormatters().decimal(delta, 1);
-  return delta > 0 ? `+${value}` : value;
+  return format.number(delta, {
+    signDisplay: "exceptZero",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
 }
 
 function trendPercent(current: number, previous: number): string {
+  const format = getFormatters();
   if (previous === 0) {
-    if (current === 0) return "±0%";
+    if (current === 0) return `±${format.percent(0)}`;
     // No prior baseline to divide against — just signal direction.
-    return current > 0 ? "+new" : "—";
+    return current > 0 ? translate("+new") : "—";
   }
-  const pct = ((current - previous) / previous) * 100;
-  if (Math.abs(pct) < 0.5) return "±0%";
-  return pct > 0 ? `+${Math.round(pct)}%` : `${Math.round(pct)}%`;
+  const fraction = (current - previous) / previous;
+  if (Math.abs(fraction) < 0.005) return `±${format.percent(0)}`;
+  return format.number(fraction, {
+    style: "percent",
+    signDisplay: "exceptZero",
+    maximumFractionDigits: 0,
+  });
 }
 
 // Re-exported so the spec can assert against the formatter without

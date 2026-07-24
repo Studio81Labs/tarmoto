@@ -255,7 +255,7 @@ export function useRidesQuery() {
             rides: [],
             total: 0,
             loading: false,
-            error: "Failed to load rides",
+            error: t("Failed to load rides"),
           });
           return;
         }

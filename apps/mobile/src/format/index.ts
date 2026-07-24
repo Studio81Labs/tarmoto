@@ -20,4 +20,15 @@ export function getFormatters(): Formatters {
   return activeFormatters;
 }
 
+/**
+ * Format a whole number for content rendered by a locale-specific surface
+ * (such as TTS) without inheriting the rider's independent display locale.
+ */
+export function formatIntegerForLocale(value: number, locale: string): string {
+  return createFormatters({ locale, units: "metric" }).number(value, {
+    maximumFractionDigits: 0,
+    useGrouping: false,
+  });
+}
+
 export type { FormatContext, Formatters } from "@tarmoto/shared";

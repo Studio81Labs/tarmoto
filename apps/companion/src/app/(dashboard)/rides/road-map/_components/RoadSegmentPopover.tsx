@@ -115,7 +115,7 @@ export function RoadSegmentPopover({
         </div>
 
         <div className="mt-3.5 grid grid-cols-3 gap-2">
-          <Tile label={t("Rides")} value={String(segment.ride_count)} />
+          <Tile label={t("Rides")} value={format.integer(segment.ride_count)} />
           <Tile label={t("Distance")} value={distance} />
           <Tile
             label={t("Last ridden")}

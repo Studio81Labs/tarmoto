@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Loader2, MapPin, X } from "lucide-react";
 import { Button } from "@tarmoto/ui";
 import {
+  importErrorMessage,
   importedRouteToTrip,
   parseImportedRoute,
   type ImportedRoute,
@@ -56,7 +57,7 @@ export function TripImportDialog({
         const result = parseImportedRoute(text, file.name);
         if (parseTokenRef.current !== token) return;
         if (!result.ok) {
-          setError(result.error);
+          setError(importErrorMessage(result.error, t));
           setStatus("error");
           return;
         }
@@ -244,7 +245,10 @@ function RoutePreview({
             label={t("Distance")}
             value={format.distanceKm(route.totalDistanceKm)}
           />
-          <Stat label={t("Points")} value={String(route.points.length)} />
+          <Stat
+            label={t("Points")}
+            value={format.integer(route.points.length)}
+          />
           <Stat
             label={t("Avg quality")}
             value={firstDay ? format.decimal(firstDay.avgQuality, 1) : "—"}

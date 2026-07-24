@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n/I18nProvider";
-import { getUserFacingErrorMessage } from "@/i18n";
+import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 import Link from "next/link";
 import {
   useEffect,
@@ -304,7 +304,7 @@ export function RoadReviewsPanel({
     ) {
       return;
     }
-    const normalized = normalizeDraft(draft);
+    const normalized = normalizeDraft(draft, t);
     if (!normalized.ok) {
       setSubmitError(normalized.error);
       return;
@@ -662,7 +662,7 @@ function ReviewEditor({
     // retry after a validation failure.
     input.value = "";
     if (selected.length === 0) return;
-    const validation = validateSelectedPhotos(selected, remainingPhotoSlots);
+    const validation = validateSelectedPhotos(selected, remainingPhotoSlots, t);
     if ("error" in validation) {
       setUploadError(validation.error);
       return;
@@ -875,6 +875,7 @@ function ReviewEditor({
 function validateSelectedPhotos(
   files: File[],
   remainingSlots: number,
+  t: Translate,
 ):
   | {
       files: File[];
@@ -884,18 +885,23 @@ function validateSelectedPhotos(
     } {
   if (files.length > remainingSlots) {
     return {
-      error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos in total.`,
+      error: t(
+        "You can attach up to {count, plural, one {# photo} other {# photos}} in total.",
+        { count: MAX_REVIEW_PHOTOS },
+      ),
     };
   }
   for (const file of files) {
     if (!(ACCEPTED_PHOTO_MIME_TYPES as readonly string[]).includes(file.type)) {
       return {
-        error: "Photos must be JPEG, PNG, or WebP images.",
+        error: t("Photos must be JPEG, PNG, or WebP images."),
       };
     }
     if (file.size > MAX_REVIEW_PHOTO_BYTES) {
       return {
-        error: `Each photo must be smaller than ${Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024))} MB.`,
+        error: t("Each photo must be smaller than {sizeMb, number} MB.", {
+          sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
+        }),
       };
     }
   }
@@ -1100,7 +1106,10 @@ function applyVoteDelta(
     my_vote: nextVote,
   };
 }
-function normalizeDraft(draft: ReviewDraft):
+function normalizeDraft(
+  draft: ReviewDraft,
+  t: Translate,
+):
   | {
       ok: true;
       data: UpsertRoadReviewInput;
@@ -1110,12 +1119,18 @@ function normalizeDraft(draft: ReviewDraft):
       error: string;
     } {
   if (draft.rating < 1 || draft.rating > 5) {
-    return { ok: false, error: "Choose a star rating before you submit." };
+    return {
+      ok: false,
+      error: t("Choose a star rating before you submit."),
+    };
   }
   if (draft.photoUrls.length > MAX_REVIEW_PHOTOS) {
     return {
       ok: false,
-      error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos.`,
+      error: t(
+        "You can attach up to {count, plural, one {# photo} other {# photos}}.",
+        { count: MAX_REVIEW_PHOTOS },
+      ),
     };
   }
   const comment = draft.comment.trim();

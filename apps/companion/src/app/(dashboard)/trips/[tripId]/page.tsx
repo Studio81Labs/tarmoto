@@ -897,7 +897,7 @@ function TripSummaryCard({
           label={t("Ride time")}
           value={totalDuration > 0 ? format.duration(totalDuration) : "—"}
         />
-        <TileStat label={t("Days")} value={String(trip.days.length)} />
+        <TileStat label={t("Days")} value={format.integer(trip.days.length)} />
         <TileStat
           label={t("Elevation")}
           value={totalElevation > 0 ? format.elevation(totalElevation) : "—"}
