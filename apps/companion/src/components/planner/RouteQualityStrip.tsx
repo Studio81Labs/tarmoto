@@ -1,6 +1,6 @@
 "use client";
 
-import { useTranslation } from "@/i18n/I18nProvider";
+import { useI18n } from "@/i18n/I18nProvider";
 import { Mono } from "@tarmoto/ui";
 import {
   coalesceQualityRuns,
@@ -29,7 +29,7 @@ export function RouteQualityStrip({
   endLabel,
   onSegmentClick,
 }: RouteQualityStripProps) {
-  const t = useTranslation();
+  const { locale, t } = useI18n();
   const format = useFormat();
   if (segments.length === 0) return null;
   const totalKm = segments.reduce((sum, s) => sum + s.lengthKm, 0);
@@ -61,10 +61,11 @@ export function RouteQualityStrip({
       </div>
       <div className="mt-1.5 flex justify-between">
         <Mono className="text-[9.5px] text-fg-mute">
-          {(startLabel ?? t("START")).toUpperCase()} · {format.distanceKm(0)}
+          {(startLabel ?? t("START")).toLocaleUpperCase(locale)} ·{" "}
+          {format.distanceKm(0)}
         </Mono>
         <Mono className="text-[9.5px] text-fg-mute">
-          {(endLabel ?? t("FINISH")).toUpperCase()} ·{" "}
+          {(endLabel ?? t("FINISH")).toLocaleUpperCase(locale)} ·{" "}
           {format.distanceKm(totalKm)}
         </Mono>
       </div>

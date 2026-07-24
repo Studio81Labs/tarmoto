@@ -421,6 +421,18 @@ export default [
             "Format directly rendered numeric properties with the active regional formatter.",
         },
         {
+          selector:
+            "CallExpression[callee.property.name=/^(toLocaleUpperCase|toLocaleLowerCase)$/][arguments.length=0]",
+          message:
+            "Pass the active UI or format locale when changing rider-facing display case.",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer CallExpression[callee.property.name=/^(toUpperCase|toLowerCase)$/]",
+          message:
+            "Use locale-aware casing with the active UI or format locale for rider-facing display text.",
+        },
+        {
           selector: "CallExpression[callee.property.name='toLocaleString']",
           message:
             "Use getFormatters()/useFormat() instead of toLocaleString so mobile locale preferences are applied.",

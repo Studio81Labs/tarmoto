@@ -56,6 +56,7 @@ import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
 import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { useI18n } from "@/i18n/I18nProvider";
 
 const t = brandColorsLight;
 
@@ -886,11 +887,12 @@ function PhotoButton({
   onPress(): void;
   disabled?: boolean;
 }) {
+  const { locale } = useI18n();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={translate("Add photo from {value0}", {
-        value0: label.toLowerCase(),
+        value0: label.toLocaleLowerCase(locale),
       })}
       onPress={onPress}
       disabled={disabled}

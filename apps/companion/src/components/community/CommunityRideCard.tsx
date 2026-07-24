@@ -140,7 +140,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
               <span className="font-bold text-ink">
                 {distanceSplit ? distanceSplit.value : "—"}
               </span>{" "}
-              {distanceSplit ? distanceSplit.unit.toUpperCase() : t("KM")}
+              {distanceSplit ? format.unitLabel("distance") : t("KM")}
             </span>
             <button
               type="button"

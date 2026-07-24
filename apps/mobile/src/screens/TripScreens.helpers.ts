@@ -139,11 +139,6 @@ export function formatMemberRole(
   return t(labels[role]);
 }
 
-export function capitalize(s: string): string {
-  if (!s) return s;
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 export function formatStatus(status: TripStatus): string {
   const labels: Record<TripStatus, EnglishMessageKey> = {
     draft: "Draft",

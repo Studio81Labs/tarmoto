@@ -45,12 +45,15 @@ export const common = {
   ". You can view this trip without a Tarmoto account.":
     ". You can view this trip without a Tarmoto account.",
   "1 day": "1 day",
+  "1Y": "1Y",
   "1 year": "1 year",
   "2 years": "2 years",
+  "3M": "3M",
   "3 months": "3 months",
   "3 stars or better": "3 stars or better",
   "4 stars or better": "4 stars or better",
   "5 stars only": "5 stars only",
+  "6M": "6M",
   "6 months": "6 months",
   "A collection with that name already exists":
     "A collection with that name already exists",
@@ -1155,8 +1158,8 @@ export const common = {
   "{name} review photo {n}": "{name} review photo {n}",
   "{rating} out of 5": "{rating} out of 5",
   "{rating} ★ average": "{rating} \u2605 average",
-  "{reporter} · {time} · {n} confirmations":
-    "{reporter} \u00b7 {time} \u00b7 {n} confirmations",
+  "{reporter} · {time} · {count, plural, one {# confirmation} other {# confirmations}}":
+    "{reporter} \u00b7 {time} \u00b7 {count, plural, one {# confirmation} other {# confirmations}}",
   "{resolved} resolved · {accepted} accepted":
     "{resolved} resolved \u00b7 {accepted} accepted",
   "{rideType} ride": "{rideType} ride",

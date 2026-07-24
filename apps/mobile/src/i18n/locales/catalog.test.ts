@@ -1,4 +1,5 @@
 import { IntlMessageFormat } from "intl-messageformat";
+import { validateIcuTranslation } from "@tarmoto/shared";
 import { en } from "./en";
 import { mobileCatalogs } from ".";
 
@@ -53,6 +54,16 @@ describe("mobile catalog validity", () => {
       .map(({ locale, key }) => `${locale}:${key}`);
 
     expect(offenders).toEqual([]);
+  });
+
+  it("preserves ICU argument contracts and target-locale plural rules", () => {
+    const failures = localizedEntries.flatMap(({ locale, key, message }) =>
+      validateIcuTranslation(key, message, locale).map(
+        (issue) => `${locale}:${key}: ${issue}`,
+      ),
+    );
+
+    expect(failures).toEqual([]);
   });
 
   it("keeps English source keys and values identical", () => {

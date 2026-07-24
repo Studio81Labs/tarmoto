@@ -371,10 +371,10 @@ export function RoadPreviewPopover({
                     return (
                       <div className="mt-1.5 flex justify-between">
                         <Mono className="text-[9px] text-fg-mute">
-                          0 {scaleEnd.unit.toUpperCase()}
+                          0 {format.unitLabel("distance")}
                         </Mono>
                         <Mono className="text-[9px] text-fg-mute">
-                          {scaleEnd.value} {scaleEnd.unit.toUpperCase()}
+                          {scaleEnd.value} {format.unitLabel("distance")}
                         </Mono>
                       </div>
                     );
