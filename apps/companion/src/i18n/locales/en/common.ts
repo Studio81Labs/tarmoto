@@ -340,6 +340,7 @@ export const common = {
   "Full closure": "Full closure",
   "Full history & reviews": "Full history & reviews",
   "GPX downloaded": "GPX downloaded",
+  "GPX export is a Pro feature.": "GPX export is a Pro feature.",
   "Generate itinerary": "Generate itinerary",
   "Generate or load a trip first to create an invite link.":
     "Generate or load a trip first to create an invite link.",

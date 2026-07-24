@@ -2,10 +2,13 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { Download } from "lucide-react";
+import { useState } from "react";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
 import { tripFileName, tripToGpx } from "@/lib/trip-export";
 import { Button, Tooltip } from "@tarmoto/ui";
+import { useFeature, useEntitlements } from "@/hooks";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 interface TripExportButtonProps {
   trip: Trip | null;
 }
@@ -20,8 +23,15 @@ interface TripExportButtonProps {
  */
 export function TripExportButton({ trip }: TripExportButtonProps) {
   const t = useTranslation();
+  const { enabled: gpxEnabled } = useFeature("gpx_export");
+  const { tier } = useEntitlements();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const disabled = !trip;
   function handleGpx() {
+    if (!gpxEnabled) {
+      setUpgradeOpen(true);
+      return;
+    }
     if (!trip) return;
     try {
       const xml = tripToGpx(trip, new Date(), t);
@@ -40,17 +50,28 @@ export function TripExportButton({ trip }: TripExportButtonProps) {
     }
   }
   return (
-    <Tooltip content={t("Export GPX")} placement="below">
-      <Button
-        iconOnly
-        variant="secondary"
-        size="sm"
-        onClick={handleGpx}
-        disabled={disabled}
-        aria-label={t("Export GPX")}
-      >
-        <Download size={15} />
-      </Button>
-    </Tooltip>
+    <>
+      <Tooltip content={t("Export GPX")} placement="below">
+        <Button
+          iconOnly
+          variant="secondary"
+          size="sm"
+          onClick={handleGpx}
+          disabled={disabled}
+          aria-label={t("Export GPX")}
+        >
+          <Download size={15} />
+        </Button>
+      </Tooltip>
+      {upgradeOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "gpx_export" }}
+          currentTier={tier}
+          message={t("GPX export is a Pro feature.")}
+          onClose={() => setUpgradeOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }

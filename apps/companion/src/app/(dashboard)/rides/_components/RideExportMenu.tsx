@@ -7,6 +7,8 @@ import { ArrowUpRight } from "lucide-react";
 import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import type { RideExportFormat } from "@/lib/ride-export";
+import { useFeature, useEntitlements } from "@/hooks";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 
 /**
  * "Export" trigger + CSV/GPX dropdown, shared by the All-rides header
@@ -20,6 +22,9 @@ export function RideExportMenu({
   onExport: (format: RideExportFormat) => Promise<void>;
 }) {
   const t = useTranslation();
+  const { enabled: gpxEnabled } = useFeature("gpx_export");
+  const { tier } = useEntitlements();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<RideExportFormat | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,7 +87,14 @@ export function RideExportMenu({
           <button
             type="button"
             role="menuitem"
-            onClick={() => handleExport("gpx")}
+            onClick={() => {
+              if (!gpxEnabled) {
+                setOpen(false);
+                setUpgradeOpen(true);
+                return;
+              }
+              void handleExport("gpx");
+            }}
             disabled={busy !== null}
             className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -90,6 +102,16 @@ export function RideExportMenu({
           </button>
         </div>
       )}
+
+      {upgradeOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "gpx_export" }}
+          currentTier={tier}
+          message={t("GPX export is a Pro feature.")}
+          onClose={() => setUpgradeOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

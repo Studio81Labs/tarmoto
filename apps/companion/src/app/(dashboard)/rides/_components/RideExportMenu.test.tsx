@@ -1,0 +1,53 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+const useFeatureMock = vi.fn();
+const useEntitlementsMock = vi.fn();
+vi.mock("@/hooks", () => ({
+  useFeature: (k: string) => useFeatureMock(k),
+  useEntitlements: () => useEntitlementsMock(),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
+import { RideExportMenu } from "./RideExportMenu";
+
+describe("RideExportMenu — gpx_export gate", () => {
+  beforeEach(() => {
+    useFeatureMock.mockReset();
+    useEntitlementsMock.mockReset();
+    useEntitlementsMock.mockReturnValue({ tier: "free" });
+  });
+
+  it("exports GPX normally when the feature is enabled", async () => {
+    useFeatureMock.mockReturnValue({ enabled: true, isLoading: false });
+    const onExport = vi.fn().mockResolvedValue(undefined);
+    render(<RideExportMenu onExport={onExport} />);
+    await userEvent.click(screen.getByRole("button", { name: /Export/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /GPX/i }));
+    expect(onExport).toHaveBeenCalledWith("gpx");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("opens the upgrade modal and does NOT export GPX when the feature is off", async () => {
+    useFeatureMock.mockReturnValue({ enabled: false, isLoading: false });
+    const onExport = vi.fn().mockResolvedValue(undefined);
+    render(<RideExportMenu onExport={onExport} />);
+    await userEvent.click(screen.getByRole("button", { name: /Export/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /GPX/i }));
+    expect(onExport).not.toHaveBeenCalled();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Upgrade to Pro/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps CSV export free regardless of the GPX gate", async () => {
+    useFeatureMock.mockReturnValue({ enabled: false, isLoading: false });
+    const onExport = vi.fn().mockResolvedValue(undefined);
+    render(<RideExportMenu onExport={onExport} />);
+    await userEvent.click(screen.getByRole("button", { name: /Export/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /CSV/i }));
+    expect(onExport).toHaveBeenCalledWith("csv");
+  });
+});
