@@ -9,10 +9,15 @@ const router = {
 
 const hoisted = vi.hoisted(() => ({
   joinByToken: vi.fn(),
+  toastError: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
+}));
+
+vi.mock("@/lib/toast", () => ({
+  toast: { error: hoisted.toastError },
 }));
 
 vi.mock("@/lib/api", async (importActual) => {
@@ -30,6 +35,7 @@ describe("SharedTripJoinCta", () => {
   beforeEach(() => {
     router.push.mockReset();
     hoisted.joinByToken.mockReset();
+    hoisted.toastError.mockReset();
     useAuthStore.setState({
       user: null,
       isAuthenticated: false,
@@ -96,6 +102,47 @@ describe("SharedTripJoinCta", () => {
       expect(hoisted.joinByToken).toHaveBeenCalledWith("share-token");
       expect(router.push).toHaveBeenCalledWith("/trips/trip-1");
     });
+  });
+
+  it("shows the owner-cap message (not 'fresh link') on a FEATURE_LIMIT_EXCEEDED join 403", async () => {
+    const { ApiError } = await import("@/lib/api");
+    const { FEATURE_LIMIT_EXCEEDED } = await import("@tarmoto/shared");
+    useAuthStore.setState({
+      user: {
+        id: "user-2",
+        email: "member@example.com",
+        displayName: "Group Member",
+      },
+      isAuthenticated: true,
+      accessToken: "access-token",
+    });
+    hoisted.joinByToken.mockRejectedValueOnce(
+      new ApiError("limit", 403, {
+        code: FEATURE_LIMIT_EXCEEDED,
+        feature: "max_trip_collaborators",
+        limit: 5,
+        current: 5,
+      }),
+    );
+
+    render(
+      <SharedTripJoinCta
+        token="share-token"
+        /* eslint-disable-next-line no-restricted-syntax -- dynamic share title */
+        title="Dolomites weekend"
+        tripId="trip-1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /join trip/i }));
+
+    await waitFor(() =>
+      expect(hoisted.toastError).toHaveBeenCalledWith(
+        "The trip owner has reached their collaborator limit.",
+        expect.anything(),
+      ),
+    );
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("keeps legacy snapshot-only shares as read-only previews", () => {

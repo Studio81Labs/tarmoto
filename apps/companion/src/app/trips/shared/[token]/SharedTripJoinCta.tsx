@@ -9,6 +9,7 @@ import { Route } from "lucide-react";
 import { Button } from "@tarmoto/ui";
 import { getUserFacingErrorMessage } from "@/i18n";
 import { tripSharesApi } from "@/lib/api";
+import { isFeatureLimitError } from "@/lib/entitlements";
 import { toast } from "@/lib/toast";
 import { useAuthStore } from "@/stores/auth";
 
@@ -101,15 +102,20 @@ export function SharedTripJoinCta({
       // if their role allows it, or leave suggestions if it doesn't.
       router.push(`/trips/${data.trip_id}`);
     } catch (err) {
+      // The owner's collaborator cap (max_trip_collaborators) rejects the join
+      // with a FEATURE_LIMIT_EXCEEDED 403 — a fresh link won't help, so give
+      // the accurate recovery instead of the generic "ask for a new link".
+      const message = isFeatureLimitError(err)
+        ? t("The trip owner has reached their collaborator limit.")
+        : getUserFacingErrorMessage(
+            err,
+            t(
+              "Could not join this shared trip. Ask the owner for a fresh link.",
+            ),
+          );
       // Persist (no auto-dismiss): the guidance asks the user to take an
-      // out-of-band action (get a fresh link), so it shouldn't time out.
-      toast.error(
-        getUserFacingErrorMessage(
-          err,
-          t("Could not join this shared trip. Ask the owner for a fresh link."),
-        ),
-        { durationMs: null },
-      );
+      // out-of-band action, so it shouldn't time out.
+      toast.error(message, { durationMs: null });
     } finally {
       setJoining(false);
     }

@@ -27,9 +27,16 @@ export class SeedLaunchModeCollaboratorAndZoomLimits1818000000000 implements Mig
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // `up()` uses ON CONFLICT DO NOTHING, so it only ever inserted the specific
+    // launch-mode rows (value NULL + this reason) and left any pre-existing
+    // operator override untouched. Delete only what this migration could have
+    // inserted — matching value + reason — so a rollback can't erase a
+    // pre-existing finite/null override it never created.
     await queryRunner.query(`
       DELETE FROM limit_states
-      WHERE feature IN ('max_trip_collaborators', 'road_quality_max_zoom');
+      WHERE feature IN ('max_trip_collaborators', 'road_quality_max_zoom')
+        AND value IS NULL
+        AND reason = 'Launch mode: unlimited for everyone until tier enforcement goes live.';
     `);
   }
 }
