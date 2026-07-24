@@ -129,6 +129,43 @@ describe("languagePreferenceSyncMonitor", () => {
     });
   });
 
+  it("keeps multiple waiters behind each replacement write", async () => {
+    let resolveFirst!: () => void;
+    sync
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(async () => {
+        pending = null;
+      });
+    start();
+    await Promise.resolve();
+    pending = {
+      locale: "de" as PendingLanguageSelection["locale"],
+      ownerUserId: "rider-a",
+    };
+
+    listener?.("active");
+    listener?.("active");
+    await Promise.resolve();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    resolveFirst();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(sync).toHaveBeenLastCalledWith({
+      locale: "de",
+      ownerUserId: "rider-a",
+    });
+  });
+
   it("rechecks the marker whenever the app becomes active", async () => {
     pending = null;
     start();

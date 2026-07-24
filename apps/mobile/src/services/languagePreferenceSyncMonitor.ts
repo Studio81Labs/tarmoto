@@ -48,7 +48,10 @@ export function startLanguagePreferenceSyncMonitor(
 
   const run = async (): Promise<void> => {
     if (activeMonitorToken !== monitorToken) return;
-    const outcome = await syncIfNeeded(deps);
+    const outcome = await syncIfNeeded(
+      deps,
+      () => activeMonitorToken === monitorToken,
+    );
     if (activeMonitorToken !== monitorToken) return;
     if (outcome === "superseded") {
       retryIndex = 0;
@@ -104,19 +107,24 @@ export function stopLanguagePreferenceSyncMonitor(): void {
 
 async function syncIfNeeded(
   deps: LanguagePreferenceSyncDeps,
+  isActive: () => boolean,
 ): Promise<"idle" | "synced" | "superseded" | "failed"> {
-  if (!deps.isAuthenticated()) return "idle";
+  if (!isActive() || !deps.isAuthenticated()) return "idle";
 
   // Serialize every language PATCH, including across monitor restarts caused
   // by a rapid local selection. The waiter re-reads pendingSelection below
   // after the previous request settles, guaranteeing server arrival order.
-  if (inFlight) {
+  while (inFlight) {
+    const activePromise = inFlight.promise;
     try {
-      await inFlight.promise;
+      await activePromise;
     } catch {
       // The request owner schedules its own retry. This waiter still needs to
       // re-read the live selection, which may already supersede that failure.
     }
+    // Another waiter may have acquired the mutex when the same promise
+    // settled. Loop so this caller waits for that replacement too.
+    if (!isActive()) return "idle";
   }
 
   const currentUserId = deps.currentUserId();
