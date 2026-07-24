@@ -2739,6 +2739,57 @@ describe("TripPlannerPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("fails closed on a fresh planner while the trip count is still loading (finite cap)", async () => {
+    // Count unknown (trips query pending) under a finite cap → must not wave a
+    // possibly-capped rider through on an empty count; show the prompt.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [],
+      loading: true,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("You've reached your trip limit on the Free plan."),
+    ).toBeInTheDocument();
+  });
+
+  it("fails closed on a fresh planner when the trip count query errors (finite cap)", async () => {
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [],
+      loading: false,
+      error: true,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
   it("does NOT proactively gate when EDITING an existing trip at the cap (editing doesn't mint)", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
     window.history.replaceState(

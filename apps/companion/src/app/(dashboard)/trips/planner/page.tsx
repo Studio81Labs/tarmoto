@@ -288,11 +288,19 @@ export default function TripPlannerPage() {
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const { tier } = useEntitlements();
-  // Proactive cap gate inputs (see `atOwnTripLimit` below).
+  // Proactive cap gate inputs (see `proactiveAtTripLimit` below).
   const { limit: maxActiveTrips, isSuccess: capResolved } =
     useLimit("max_active_trips");
-  const { trips: ownedTrips } = useUserTrips();
+  const {
+    trips: ownedTrips,
+    loading: ownedTripsLoading,
+    error: ownedTripsError,
+  } = useUserTrips();
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  // A proactively-shown cap prompt the rider dismissed — don't re-show it for
+  // the rest of this planner session (the save-path 403 still enforces).
+  const [proactiveUpgradeDismissed, setProactiveUpgradeDismissed] =
+    useState(false);
   // The cap the server enforced on the mint 403 — authoritative for the modal's
   // CTA (the planner modal only ever opens from a limit rejection).
   const [upgradeModalLimit, setUpgradeModalLimit] = useState<number | null>(
@@ -1073,23 +1081,23 @@ export default function TripPlannerPage() {
   // Proactive cap gate for a brand-new planner session reached DIRECTLY
   // (bookmark, address bar, stale tab) — bypassing the /trips header block.
   // Only a NEW trip mints against the rider's OWN cap; editing an existing trip
-  // doesn't, so gate solely when there's no server trip yet and the resolved
-  // finite cap is already met. The save-path 403 remains the hard enforcement.
-  const atOwnTripLimit =
+  // doesn't, so gate solely when there's no server trip yet under a resolved
+  // FINITE cap. Fail closed while the open-trip COUNT is unknown (the trips
+  // query loading or errored) — mirroring the /trips header — so a capped rider
+  // isn't waved through on an empty count. Rendered declaratively (not an
+  // imperative open) so it auto-hides the instant the count resolves UNDER the
+  // cap instead of flashing open and sticking. The save-path 403 stays the hard
+  // enforcement.
+  const proactiveAtTripLimit =
     isNewTripSession &&
     !isSavedTrip &&
     capResolved &&
     maxActiveTrips !== null &&
-    countOpenOwnedTrips(ownedTrips, currentUserId) >= maxActiveTrips;
-  // Surface the upgrade prompt BEFORE the rider invests effort building or
-  // importing a route they can't save. Fires once when the gate resolves true
-  // (deps don't change on dismiss, so a dismissed prompt stays closed).
-  useEffect(() => {
-    if (atOwnTripLimit) {
-      setUpgradeModalLimit(maxActiveTrips);
-      setUpgradeModalOpen(true);
-    }
-  }, [atOwnTripLimit, maxActiveTrips]);
+    (ownedTripsLoading ||
+      ownedTripsError ||
+      countOpenOwnedTrips(ownedTrips, currentUserId) >= maxActiveTrips);
+  const showProactiveUpgrade =
+    proactiveAtTripLimit && !proactiveUpgradeDismissed;
   // A viewer opening the edit URL for a saved trip has no business here —
   // the backend 403s their writes. Show an access screen once the role
   // resolves rather than a functional-looking editor.
@@ -3847,12 +3855,16 @@ export default function TripPlannerPage() {
         }}
       />
 
-      {upgradeModalOpen && tier ? (
+      {(upgradeModalOpen || showProactiveUpgrade) && tier ? (
         <UpgradePrompt
           variant="modal"
           capability={{
             limit: "max_active_trips",
-            resolvedLimit: upgradeModalLimit,
+            // A save-path 403 carries the server's authoritative cap; the
+            // proactive prompt uses the resolved cap it gated on.
+            resolvedLimit: upgradeModalOpen
+              ? upgradeModalLimit
+              : maxActiveTrips,
           }}
           currentTier={tier}
           // Saving/regenerating someone else's trip is gated by the OWNER's cap
@@ -3867,7 +3879,10 @@ export default function TripPlannerPage() {
                 })
               : t("The trip owner has reached their trip limit.")
           }
-          onClose={() => setUpgradeModalOpen(false)}
+          onClose={() => {
+            setUpgradeModalOpen(false);
+            setProactiveUpgradeDismissed(true);
+          }}
         />
       ) : null}
     </div>
