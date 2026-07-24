@@ -6,6 +6,14 @@ import { getFormatters, setActiveFormatContext } from ".";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { getActiveLocale, setActiveLocale, type SupportedLocale } from "@/i18n";
 
+function GlobalFormatConsumer() {
+  return <Text testID="global-format">{getFormatters().units}</Text>;
+}
+
+function GlobalLocaleConsumer() {
+  return <Text testID="global-locale">{getActiveLocale()}</Text>;
+}
+
 function SuspendForever(): React.JSX.Element {
   throw new Promise<never>(() => {});
 }
@@ -25,6 +33,22 @@ describe("FormatProvider", () => {
     expect(getFormatters().locale).toBe("ar-EG");
     expect(getFormatters().timeZone).toBe("Africa/Cairo");
     expect(getFormatters().units).toBe("imperial");
+  });
+
+  it("re-renders global formatter consumers after publishing new units", async () => {
+    const view = await render(
+      <FormatProvider locale="en" timeZone="UTC" units="metric">
+        <GlobalFormatConsumer />
+      </FormatProvider>,
+    );
+
+    await view.rerender(
+      <FormatProvider locale="en" timeZone="UTC" units="imperial">
+        <GlobalFormatConsumer />
+      </FormatProvider>,
+    );
+
+    expect(view.getByTestId("global-format").props.children).toBe("imperial");
   });
 
   it("does not publish formatter state from a suspended render", async () => {
@@ -49,6 +73,18 @@ describe("I18nProvider", () => {
 
   afterEach(() => {
     setActiveLocale("en");
+  });
+
+  it("re-renders global translation consumers after publishing the locale", async () => {
+    setActiveLocale("test-locale" as SupportedLocale);
+
+    const view = await render(
+      <I18nProvider locale="en">
+        <GlobalLocaleConsumer />
+      </I18nProvider>,
+    );
+
+    expect(view.getByTestId("global-locale").props.children).toBe("en");
   });
 
   it("does not publish locale state from a suspended render", async () => {

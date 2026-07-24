@@ -3,6 +3,7 @@ import React, {
   useContext,
   useLayoutEffect,
   useMemo,
+  useReducer,
 } from "react";
 import {
   DEFAULT_LOCALE,
@@ -35,12 +36,20 @@ export function I18nProvider({
   locale?: string | null;
 }) {
   const resolvedLocale = resolveLocale(locale);
+  const [, rerenderAfterPublish] = useReducer(
+    (revision: number) => revision + 1,
+    0,
+  );
   // Publish to non-React services only after React commits this locale. A
   // render may be suspended, abandoned, or throw; mutating the module-global
   // seam during render would let notifications/vehicle surfaces observe a
   // locale the UI never committed.
   useLayoutEffect(() => {
     setActiveLocale(resolvedLocale);
+    // Module-level translate()/t() remains the intentional seam for native
+    // surfaces and legacy render paths. Re-render descendants after publishing
+    // so their committed copy cannot stay on the previous global locale.
+    rerenderAfterPublish();
   }, [resolvedLocale]);
   const value = useMemo<I18nContextValue>(
     () => ({
@@ -51,7 +60,18 @@ export function I18nProvider({
     [resolvedLocale],
   );
 
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+  // The post-publication update must traverse module-level translate()/t()
+  // consumers even when the caller passed the same child element objects.
+  // Cloning preserves their type, key, props, refs, and mounted state.
+  const refreshedChildren = React.Children.map(children, (child) =>
+    React.isValidElement(child) ? React.cloneElement(child) : child,
+  );
+
+  return (
+    <I18nContext.Provider value={value}>
+      {refreshedChildren}
+    </I18nContext.Provider>
+  );
 }
 
 export function useI18n(): I18nContextValue {
