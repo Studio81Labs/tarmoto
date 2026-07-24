@@ -132,7 +132,9 @@ import { usePasses } from "@/hooks/usePasses";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { useRouteQualityHydration } from "@/hooks/useRouteQualityHydration";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
-import { useEntitlements } from "@/hooks";
+import { useEntitlements, useLimit } from "@/hooks";
+import { useUserTrips } from "@/hooks/useUserTrips";
+import { countOpenOwnedTrips } from "@/lib/trip-filters";
 import { parseFeatureLimitError, tierLabel } from "@/lib/entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useAuthStore } from "@/stores/auth";
@@ -286,6 +288,10 @@ export default function TripPlannerPage() {
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const { tier } = useEntitlements();
+  // Proactive cap gate inputs (see `atOwnTripLimit` below).
+  const { limit: maxActiveTrips, isSuccess: capResolved } =
+    useLimit("max_active_trips");
+  const { trips: ownedTrips } = useUserTrips();
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   // The cap the server enforced on the mint 403 — authoritative for the modal's
   // CTA (the planner modal only ever opens from a limit rejection).
@@ -1015,6 +1021,16 @@ export default function TripPlannerPage() {
   // socket joins `trip:<id>`, cursors + suggestions + activity start
   // flowing, and the Suggestions / Activity tabs in the modal light up.
   const [serverTripId, setServerTripId] = useState<string | null>(null);
+  // Whether the URL carries no `?tripId=` — a genuine new-trip session (create
+  // or import) vs an edit. Computed synchronously from the URL (initializer, so
+  // no extra render; SSR-guarded to stay prerenderable like the `?tripId=`
+  // effect below) so the proactive cap gate can't fire during the async window
+  // before an edit's `serverTripId` binds.
+  const [isNewTripSession] = useState<boolean>(() =>
+    typeof window === "undefined"
+      ? false
+      : !new URLSearchParams(window.location.search).get("tripId"),
+  );
   const [serverTripOwnerId, setServerTripOwnerId] = useState<string | null>(
     null,
   );
@@ -1054,6 +1070,26 @@ export default function TripPlannerPage() {
   const isCollaborator =
     isSavedTrip &&
     (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");
+  // Proactive cap gate for a brand-new planner session reached DIRECTLY
+  // (bookmark, address bar, stale tab) — bypassing the /trips header block.
+  // Only a NEW trip mints against the rider's OWN cap; editing an existing trip
+  // doesn't, so gate solely when there's no server trip yet and the resolved
+  // finite cap is already met. The save-path 403 remains the hard enforcement.
+  const atOwnTripLimit =
+    isNewTripSession &&
+    !isSavedTrip &&
+    capResolved &&
+    maxActiveTrips !== null &&
+    countOpenOwnedTrips(ownedTrips, currentUserId) >= maxActiveTrips;
+  // Surface the upgrade prompt BEFORE the rider invests effort building or
+  // importing a route they can't save. Fires once when the gate resolves true
+  // (deps don't change on dismiss, so a dismissed prompt stays closed).
+  useEffect(() => {
+    if (atOwnTripLimit) {
+      setUpgradeModalLimit(maxActiveTrips);
+      setUpgradeModalOpen(true);
+    }
+  }, [atOwnTripLimit, maxActiveTrips]);
   // A viewer opening the edit URL for a saved trip has no business here —
   // the backend 403s their writes. Show an access screen once the role
   // resolves rather than a functional-looking editor.

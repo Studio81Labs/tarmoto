@@ -22,7 +22,22 @@ import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
 
 // Entitlements: a fixed free tier is enough for the upgrade-modal safety-net
 // test below — the tier/limit resolution itself is covered by useEntitlements'
-// own tests and the /trips list suite (Task 6).
+// own tests and the /trips list suite (Task 6). useLimit + useUserTrips are
+// controllable so the proactive-cap-gate test can drive an at-limit state;
+// their defaults (unlimited + no trips) leave every other test ungated.
+const { useLimitMock, useUserTripsMock } = vi.hoisted(() => ({
+  useLimitMock: vi.fn(() => ({
+    limit: null as number | null,
+    isLoading: false,
+    isSuccess: true,
+  })),
+  useUserTripsMock: vi.fn(() => ({
+    trips: [] as unknown[],
+    loading: false,
+    error: false,
+    tripById: new Map(),
+  })),
+}));
 vi.mock("@/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks")>()),
   useEntitlements: () => ({
@@ -31,7 +46,11 @@ vi.mock("@/hooks", async (importOriginal) => ({
     limits: null,
     isLoading: false,
   }),
-  useLimit: () => ({ limit: null, isLoading: false }),
+  useLimit: () => useLimitMock(),
+}));
+vi.mock("@/hooks/useUserTrips", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useUserTrips")>()),
+  useUserTrips: () => useUserTripsMock(),
 }));
 
 const { mockPush } = vi.hoisted(() => ({
@@ -532,6 +551,19 @@ describe("TripPlannerPage", () => {
     tripsApiSaveRouteMock.mockResolvedValue({
       data: buildTripDetail("Saved route"),
     } as never);
+    // Reset the entitlement/trips gate mocks to their ungated defaults
+    // (resolved-unlimited cap, no trips) so only the proactive-gate test opts in.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
     usePlannerRoutingMock.mockReturnValue({ routing: false });
     setActiveTrip.mockImplementation((trip) => {
       storeState.activeTrip = trip;
@@ -2672,6 +2704,79 @@ describe("TripPlannerPage", () => {
     expect(
       screen.queryByText("Could not save the route. Please try again."),
     ).not.toBeInTheDocument();
+  });
+
+  it("proactively opens the upgrade modal when a capped rider opens a fresh planner directly", async () => {
+    // Direct /trips/planner load (bookmark/address bar) bypasses the /trips
+    // header block. A new trip WOULD mint against the rider's own cap, which is
+    // already met — surface the prompt before they build/import a route.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("You've reached your trip limit on the Free plan."),
+    ).toBeInTheDocument();
+    // Owner in a new-trip context → a real Upgrade CTA (not the suppressed one).
+    expect(
+      screen.getByRole("button", { name: /Upgrade to Pro/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT proactively gate when EDITING an existing trip at the cap (editing doesn't mint)", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Persisted", { id: serverTripId }),
+    } as never);
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    // Give the trip-detail fetch a tick to bind serverTripId, then confirm the
+    // proactive modal never appeared — an existing trip mints nothing on save.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Discard" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   // ── Live routing gate (per-day stale gate) ──────────────────────────
