@@ -263,8 +263,7 @@ function RoutePreview({
 
       <div>
         <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
-          {t("Segment quality (")}
-          {segmentCount})
+          {t("Segment quality ({count, number})", { count: segmentCount })}
         </p>
         <div className="space-y-1">
           {firstDay?.segments?.map((seg) => {
@@ -304,8 +303,9 @@ function RoutePreview({
       {route.waypoints.length > 0 && (
         <div>
           <p className="mb-2 text-xs uppercase tracking-wider text-fg-dim">
-            {t("Waypoints (")}
-            {route.waypoints.length})
+            {t("Waypoints ({count, number})", {
+              count: route.waypoints.length,
+            })}
           </p>
           <ul className="max-h-28 space-y-1 overflow-y-auto pr-1 text-xs text-fg-dim">
             {route.waypoints.map((wp, i) => (

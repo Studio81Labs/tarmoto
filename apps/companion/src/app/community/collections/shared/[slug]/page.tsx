@@ -20,6 +20,7 @@ import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta"
 import { CollectionRouteRow } from "@/components/community/collection-route-atoms";
 import { getServerFormatters } from "@/format/server";
 import { CollectionPreviewMap } from "@/components/community/CollectionPreviewMap";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 /** Product wordmark; names are intentionally locale-independent. */
 const WORDMARK = "TARMOTO";
@@ -167,7 +168,7 @@ export default async function SharedCollectionPage({
             <MetaChip>
               <Calendar size={13} className="text-fg-mute" aria-hidden="true" />
               {t("Updated {time}", {
-                time: format.relativeTime(detail.updated_at),
+                time: formatRelativeTimeLabel(detail.updated_at, { format }, t),
               })}
             </MetaChip>
           </div>

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatCount, formatJoinedLabel } from "./rider-format";
+import {
+  formatCount,
+  formatJoinedLabel,
+  formatRelativeTimeLabel,
+} from "./rider-format";
 import { makeTranslator } from "./i18n";
 
 describe("formatJoinedLabel", () => {
@@ -66,5 +70,49 @@ describe("formatCount", () => {
   });
   it("keeps the legacy period form for the compact decimal when locale is omitted (mobile contract)", () => {
     expect(formatCount(1500)).toBe("1.5k");
+  });
+});
+
+describe("formatRelativeTimeLabel", () => {
+  const t = makeTranslator<string>({
+    en: {
+      "just now": "just now",
+      "{count}m ago": "{count}m ago",
+      "{count}h ago": "{count}h ago",
+      "{count}d ago": "{count}d ago",
+      "{count}mo ago": "{count}mo ago",
+      "{count}y ago": "{count}y ago",
+    },
+  });
+  const now = new Date("2026-07-15T12:00:00Z");
+
+  it("keeps relative words cataloged and delegates digits to format prefs", () => {
+    const format = { integer: (value: number) => `#${value}` };
+    expect(
+      formatRelativeTimeLabel("2026-07-15T11:55:00Z", { format, now }, t),
+    ).toBe("#5m ago");
+  });
+
+  it("handles every bucket, future timestamps, and invalid input", () => {
+    const format = { integer: (value: number) => String(value) };
+    expect(
+      formatRelativeTimeLabel("2026-07-15T11:59:30Z", { format, now }, t),
+    ).toBe("just now");
+    expect(
+      formatRelativeTimeLabel("2026-07-15T09:00:00Z", { format, now }, t),
+    ).toBe("3h ago");
+    expect(
+      formatRelativeTimeLabel("2026-07-13T12:00:00Z", { format, now }, t),
+    ).toBe("2d ago");
+    expect(
+      formatRelativeTimeLabel("2026-05-16T12:00:00Z", { format, now }, t),
+    ).toBe("2mo ago");
+    expect(
+      formatRelativeTimeLabel("2024-07-15T12:00:00Z", { format, now }, t),
+    ).toBe("2y ago");
+    expect(
+      formatRelativeTimeLabel("2026-07-16T12:00:00Z", { format, now }, t),
+    ).toBe("just now");
+    expect(formatRelativeTimeLabel("invalid", { format, now }, t)).toBe("");
   });
 });

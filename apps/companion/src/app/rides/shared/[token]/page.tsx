@@ -13,6 +13,7 @@ import {
 } from "@/components/public-share";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { fetchSharedRide } from "@/lib/shared-rides";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export default async function SharedRidePage({
           </p>
           <div className="mt-[18px] flex flex-wrap gap-2.5">
             <SharePill icon={<CalendarDays size={13} />}>
-              {format.relativeTime(ride.started_at)}
+              {formatRelativeTimeLabel(ride.started_at, { format }, t)}
             </SharePill>
             <SharePill icon={<Activity size={13} />}>
               {t("{count, plural, one {{n} view} other {{n} views}}", {

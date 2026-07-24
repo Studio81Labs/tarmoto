@@ -1,4 +1,5 @@
 import { getFormatters, setActiveFormatContext } from ".";
+import { translate } from "@/i18n";
 
 describe("mobile active formatters", () => {
   afterEach(() => {
@@ -30,5 +31,17 @@ describe("mobile active formatters", () => {
 
     expect(format.distanceKm(1.609344)).toBe("1 mi");
     expect(format.units).toBe("imperial");
+  });
+
+  it("applies the regional locale to ICU count digits", () => {
+    setActiveFormatContext({
+      locale: "ar-EG",
+      timeZone: "UTC",
+      units: "metric",
+    });
+
+    expect(
+      translate("{count, plural, one {# day} other {# days}}", { count: 2 }),
+    ).toBe("٢ days");
   });
 });

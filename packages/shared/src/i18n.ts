@@ -5,7 +5,10 @@
  * translator over it via `makeTranslator`.
  */
 
-import { IntlMessageFormat } from "intl-messageformat";
+import {
+  IntlMessageFormat,
+  type Formatters as MessageFormatters,
+} from "intl-messageformat";
 
 export const DEFAULT_LOCALE = "en" as const;
 
@@ -131,6 +134,7 @@ export type Translator<K extends string> = (
   key: K,
   values?: TranslationValues,
   locale?: SupportedLocale,
+  numberLocale?: string,
 ) => string;
 
 /**
@@ -150,12 +154,63 @@ export type LooseTranslate = (
 // Capped and cleared wholesale like the Formatters caches in format.ts.
 const MESSAGE_CACHE_MAX = 256;
 const messageFormats = new Map<string, IntlMessageFormat | null>();
+const messageNumberFormats = new Map<string, Intl.NumberFormat>();
+const messageDateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+const messagePluralRules = new Map<string, Intl.PluralRules>();
+
+function boundedFormatter<T>(
+  cache: Map<string, T>,
+  key: string,
+  create: () => T,
+): T {
+  let formatter = cache.get(key);
+  if (!formatter) {
+    if (cache.size >= MESSAGE_CACHE_MAX) cache.clear();
+    formatter = create();
+    cache.set(key, formatter);
+  }
+  return formatter;
+}
+
+function messageFormatters(numberLocale: string): MessageFormatters {
+  return {
+    // Number glyphs/grouping are a display preference independent from the
+    // UI language. IntlMessageFormat still receives the UI locale below for
+    // plural-rule selection; only number rendering is redirected here.
+    getNumberFormat: (_locales, options) => {
+      const key = `${numberLocale}|${JSON.stringify(options ?? {})}`;
+      return boundedFormatter(messageNumberFormats, key, () => {
+        return new Intl.NumberFormat(
+          numberLocale,
+          options as Intl.NumberFormatOptions,
+        );
+      });
+    },
+    getDateTimeFormat: (...args) => {
+      const key = JSON.stringify(args);
+      return boundedFormatter(
+        messageDateTimeFormats,
+        key,
+        () => new Intl.DateTimeFormat(...args),
+      );
+    },
+    getPluralRules: (...args) => {
+      const key = JSON.stringify(args);
+      return boundedFormatter(
+        messagePluralRules,
+        key,
+        () => new Intl.PluralRules(...args),
+      );
+    },
+  };
+}
 
 function getMessageFormat(
   template: string,
   locale: SupportedLocale,
+  numberLocale: string,
 ): IntlMessageFormat | null {
-  const cacheKey = `${locale}\u0000${template}`;
+  const cacheKey = `${locale}\u0000${numberLocale}\u0000${template}`;
   const cached = messageFormats.get(cacheKey);
   if (cached !== undefined) return cached;
   if (messageFormats.size >= MESSAGE_CACHE_MAX) messageFormats.clear();
@@ -165,6 +220,7 @@ function getMessageFormat(
     // literal text instead of ICU rich-text tags demanding render functions.
     parsed = new IntlMessageFormat(template, locale, undefined, {
       ignoreTag: true,
+      formatters: messageFormatters(numberLocale),
     });
   } catch {
     parsed = null;
@@ -205,7 +261,7 @@ export function makeTranslator<K extends string>(
     return catalog?.[key];
   };
 
-  return (key, values, locale = DEFAULT_LOCALE) => {
+  return (key, values, locale = DEFAULT_LOCALE, numberLocale = locale) => {
     let template = read(locale, key);
     let sourceLocale = locale;
     if (template === undefined && locale !== DEFAULT_LOCALE) {
@@ -219,7 +275,7 @@ export function makeTranslator<K extends string>(
 
     if (!values) return template;
 
-    const parsed = getMessageFormat(template, sourceLocale);
+    const parsed = getMessageFormat(template, sourceLocale, numberLocale);
     if (parsed === null) return interpolateLegacy(template, values);
     try {
       return parsed.format(values) as string;

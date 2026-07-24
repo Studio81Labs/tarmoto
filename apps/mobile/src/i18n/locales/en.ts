@@ -98,6 +98,7 @@ export const en = {
   "{count}m ago": "{count}m ago",
   "{count}mo ago": "{count}mo ago",
   "{count}y ago": "{count}y ago",
+  "{current, number}/{max, number}": "{current, number}/{max, number}",
   "{distance} from start": "{distance} from start",
   "{distance} from path": "{distance} from path",
   "{distance} from the planned path — return when it's safe.":
@@ -108,6 +109,7 @@ export const en = {
   "{distance} km": "{distance} km",
   "{distance} · {duration}": "{distance} · {duration}",
   "{min}–{max} per day": "{min}–{max} per day",
+  "/ {max}": "/ {max}",
   "{label}, {min} to {max} per day": "{label}, {min} to {max} per day",
   "{elevation} · {country}": "{elevation} · {country}",
   "{distance} · Quality {quality}": "{distance} · Quality {quality}",

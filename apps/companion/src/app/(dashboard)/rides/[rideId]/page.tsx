@@ -530,7 +530,10 @@ export default function RideDetailPage() {
               label={t("Avg road quality")}
               value={
                 ride.avg_road_quality != null
-                  ? `${formatNumber(ride.avg_road_quality, 1, format)} / 5`
+                  ? t("{score} / {max}", {
+                      score: formatNumber(ride.avg_road_quality, 1, format),
+                      max: format.integer(5),
+                    })
                   : "—"
               }
             />

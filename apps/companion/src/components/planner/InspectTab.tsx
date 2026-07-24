@@ -238,7 +238,7 @@ export function InspectTab({
               {
                 key: "QUALITY",
                 value: metrics.score,
-                unit: "/ 5",
+                unit: t("/ {max}", { max: format.integer(5) }),
                 accent: true,
               },
             ] as const

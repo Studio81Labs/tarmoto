@@ -22,7 +22,7 @@ import {
 } from "@/lib/conditions-visual";
 import type { Poi } from "@/lib/planner/types";
 import { poiDisplayName } from "@/lib/planner/labels";
-import type { HazardType } from "@tarmoto/shared";
+import { formatRelativeTimeLabel, type HazardType } from "@tarmoto/shared";
 import { useFormat } from "@/format/FormatProvider";
 import {
   CLOSURE_REASON_LABELS,
@@ -410,7 +410,7 @@ function HazardBody({
         <div className="flex items-center justify-between gap-2 text-[11px] text-fg-dim">
           <span className="truncate">
             {hazard.reporter ?? t("Unknown rider")} ·{" "}
-            {format.relativeTime(hazard.created_at)}
+            {formatRelativeTimeLabel(hazard.created_at, { format }, t)}
           </span>
           <span className="shrink-0">
             ✓ {format.integer(hazard.confirmations)}

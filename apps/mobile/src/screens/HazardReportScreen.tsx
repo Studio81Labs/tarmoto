@@ -508,7 +508,9 @@ export default function HazardReportScreen() {
             returnKeyType="done"
             accessibilityLabel={translate("Note")}
           />
-          <Text style={styles.noteCounter}>{noteCharsLeft}</Text>
+          <Text style={styles.noteCounter}>
+            {getFormatters().integer(noteCharsLeft)}
+          </Text>
         </View>
 
         <View style={styles.section}>

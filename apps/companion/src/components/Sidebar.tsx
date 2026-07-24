@@ -24,7 +24,10 @@ import {
 } from "lucide-react";
 
 import { useEffect, useState, type ReactNode } from "react";
-import type { InAppNotification } from "@tarmoto/shared";
+import {
+  formatRelativeTimeLabel,
+  type InAppNotification,
+} from "@tarmoto/shared";
 import { Mono, Stamp, TarmotoMark } from "@tarmoto/ui";
 import { useFormat } from "@/format/FormatProvider";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -736,7 +739,8 @@ function NotificationsDropdown({
                   {note.title}
                 </div>
                 <div className="mt-1 text-[11px] text-fg-dim">
-                  {note.body} · {format.relativeTime(note.created_at)}
+                  {note.body} ·{" "}
+                  {formatRelativeTimeLabel(note.created_at, { format }, t)}
                 </div>
               </div>
             </Link>

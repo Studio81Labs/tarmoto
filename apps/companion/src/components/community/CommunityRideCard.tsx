@@ -153,11 +153,11 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
                 size={12}
                 className={liked ? "fill-accent text-accent" : ""}
               />
-              {likeCount}
+              {format.integer(likeCount)}
             </button>
             <span className="inline-flex items-center gap-1">
               <Plus size={12} />
-              {cloneCount}
+              {format.integer(cloneCount)}
             </span>
           </div>
 

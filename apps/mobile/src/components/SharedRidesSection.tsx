@@ -42,6 +42,7 @@ import {
   formatRideDate,
 } from "@/screens/RideScreens.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 interface SharedRidesSectionProps {
   userId: string;
@@ -189,7 +190,9 @@ function SharedRideRow({ ride, isSelf }: SharedRideRowProps) {
         />
         <RowMetric
           label={translate("Views")}
-          value={`${Math.max(0, Math.round(ride.view_count))}`}
+          value={getFormatters().integer(
+            Math.max(0, Math.round(ride.view_count)),
+          )}
         />
       </View>
     </View>

@@ -4,6 +4,7 @@ import {
   type FormatContext,
   type Formatters,
 } from "@tarmoto/shared";
+import { setActiveNumberLocale } from "@/i18n";
 
 let activeFormatters = createFormatters({
   locale: DEFAULT_FORMAT_LOCALE,
@@ -12,6 +13,7 @@ let activeFormatters = createFormatters({
 
 export function setActiveFormatContext(context: FormatContext): Formatters {
   activeFormatters = createFormatters(context);
+  setActiveNumberLocale(activeFormatters.locale);
   return activeFormatters;
 }
 

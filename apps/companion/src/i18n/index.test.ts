@@ -52,6 +52,20 @@ describe("companion i18n barrel", () => {
     ).toBe(expected);
   });
 
+  it("keeps English plural rules while applying the regional number locale", () => {
+    expect(
+      translate(
+        "{count, plural, one {# day} other {# days}}",
+        { count: 2 },
+        "en",
+        "ar-EG",
+      ),
+    ).toBe("٢ days");
+    expect(translate("{count, number}", { count: 1234 }, "en", "de-DE")).toBe(
+      "1.234",
+    );
+  });
+
   it("pluralizes the remaining count-bearing companion labels", () => {
     expect(
       translate(

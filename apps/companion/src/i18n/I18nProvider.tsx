@@ -32,18 +32,22 @@ const I18nContext = createContext<I18nContextValue>({
 export function I18nProvider({
   children,
   locale,
+  numberLocale,
 }: {
   children: React.ReactNode;
   locale?: string | null;
+  numberLocale?: string | null;
 }) {
   const resolvedLocale = resolveLocale(locale);
+  const resolvedNumberLocale = numberLocale || resolvedLocale;
   const value = useMemo<I18nContextValue>(
     () => ({
       locale: resolvedLocale,
       localeLabel: LOCALES[resolvedLocale].label,
-      t: (key, values) => tDynamic(key, values, resolvedLocale),
+      t: (key, values) =>
+        tDynamic(key, values, resolvedLocale, resolvedNumberLocale),
     }),
-    [resolvedLocale],
+    [resolvedLocale, resolvedNumberLocale],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

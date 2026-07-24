@@ -59,6 +59,7 @@ import {
 } from "./AchievementsScreen.helpers";
 import { surfaceLabel } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 // Default camera centre when we don't have a fix yet — Brno, the
 // reference city for the design + early-access community. This matches
@@ -250,7 +251,9 @@ function StatsCard({
           <Text style={styles.statLabel}>{translate("Explored")}</Text>
         </View>
         <View style={styles.statCell}>
-          <Text style={styles.statValue}>{summary.riddenCount}</Text>
+          <Text style={styles.statValue}>
+            {getFormatters().integer(summary.riddenCount)}
+          </Text>
           <Text style={styles.statLabel}>
             {translate(
               "of {count, plural, one {# segment} other {# segments}}",

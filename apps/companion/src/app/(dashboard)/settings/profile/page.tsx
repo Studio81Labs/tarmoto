@@ -421,7 +421,10 @@ export default function ProfilePage() {
             )}
           />
           <p className="mt-1 font-mono text-xs text-fg-mute tabular-nums">
-            {bio.length}/500
+            {t("{current, number}/{max, number}", {
+              current: bio.length,
+              max: 500,
+            })}
           </p>
         </div>
 

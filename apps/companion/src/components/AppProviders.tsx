@@ -30,7 +30,7 @@ export function AppProviders({
   };
 
   return (
-    <I18nProvider {...localeProp}>
+    <I18nProvider {...localeProp} numberLocale={formatPrefs.formatLocale}>
       <FormatProvider {...formatProps}>
         <NetworkStatusProvider />
         <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>

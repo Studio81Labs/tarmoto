@@ -32,6 +32,7 @@ import {
   HAZARD_SEVERITY_LABELS,
   translateKnownLabel,
 } from "@/i18n/domainLabels";
+import { formatRelativeTimeLabel } from "@tarmoto/shared";
 
 export type SegmentDetailPanelState =
   | { status: "idle" }
@@ -255,8 +256,8 @@ function SegmentDetailContent({
         <div className="mb-[7px] flex items-baseline justify-between gap-3">
           <Stamp>{t("Confidence")}</Stamp>
           <Mono className="text-[11px] text-fg-dim">
-            {format.percent(confidence / 100)} · {segment.reading_count}{" "}
-            {passLabel}
+            {format.percent(confidence / 100)} ·{" "}
+            {format.integer(segment.reading_count)} {passLabel}
           </Mono>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-paper-2">
@@ -332,7 +333,7 @@ function SegmentDetailContent({
         <div className="flex items-center justify-between gap-3">
           <Stamp>{t("Active hazards")}</Stamp>
           <Mono className="text-[13px] font-bold text-fg-mute">
-            {segment.active_hazard_count}
+            {format.integer(segment.active_hazard_count)}
           </Mono>
         </div>
         {segment.active_hazards.length === 0 ? (
@@ -373,7 +374,11 @@ function SegmentDetailContent({
                     <p className="mt-1 text-[11px] text-fg-dim">
                       {t("{reporter} · {time} · {n} confirmations", {
                         reporter: hazard.reporter ?? t("Unknown rider"),
-                        time: format.relativeTime(hazard.created_at),
+                        time: formatRelativeTimeLabel(
+                          hazard.created_at,
+                          { format },
+                          t,
+                        ),
                         n: hazard.confirmations,
                       })}
                     </p>

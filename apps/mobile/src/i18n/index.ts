@@ -34,6 +34,7 @@ export type {
 
 const baseTranslate = makeTranslator<EnglishMessageKey>(mobileCatalogs);
 let activeLocale: SupportedLocale = DEFAULT_LOCALE;
+let activeNumberLocale: string = DEFAULT_LOCALE;
 
 export function setActiveLocale(locale: SupportedLocale): void {
   activeLocale = locale;
@@ -43,13 +44,18 @@ export function getActiveLocale(): SupportedLocale {
   return activeLocale;
 }
 
+/** Keep ICU-rendered digits aligned with the rider's regional preference. */
+export function setActiveNumberLocale(locale: string): void {
+  activeNumberLocale = locale;
+}
+
 /** Translate registered mobile UI copy using the active app locale. */
 export function translate(
   key: EnglishMessageKey,
   values?: TranslationValues,
   locale: SupportedLocale = activeLocale,
 ): string {
-  return baseTranslate(key, values, locale);
+  return baseTranslate(key, values, locale, activeNumberLocale);
 }
 
 export const t = translate;
@@ -66,5 +72,10 @@ export function tDynamic(
   values?: TranslationValues,
   locale: SupportedLocale = activeLocale,
 ): string {
-  return baseTranslate(key as EnglishMessageKey, values, locale);
+  return baseTranslate(
+    key as EnglishMessageKey,
+    values,
+    locale,
+    activeNumberLocale,
+  );
 }

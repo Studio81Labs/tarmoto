@@ -9,6 +9,7 @@ import {
   type SupportedLocale,
   type Translate,
 } from ".";
+import { getServerFormatLocale } from "@/format/server";
 
 // Locale detection runs before the root layout and metadata can render. Auth
 // may refresh an expired token, so bound this best-effort preference lookup
@@ -110,5 +111,10 @@ export function getServerLocale(): SupportedLocale {
  * `@/i18n`) in server components that render text after an `await`.
  */
 export const t: Translate = (key, values, locale) =>
-  isomorphicTranslate(key, values, locale ?? getServerLocale());
+  isomorphicTranslate(
+    key,
+    values,
+    locale ?? getServerLocale(),
+    getServerFormatLocale(),
+  );
 export const translate = t;

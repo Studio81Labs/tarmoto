@@ -319,7 +319,9 @@ function QualityCard({
           ) : null}
         </View>
         <View style={styles.qualityScoreMax}>
-          <Text style={styles.qualityScoreMaxText}>/ 5.0</Text>
+          <Text style={styles.qualityScoreMaxText}>
+            {translate("/ {max}", { max: getFormatters().decimal(5, 1) })}
+          </Text>
         </View>
       </View>
       {belowThreshold ? (
@@ -556,7 +558,9 @@ function HazardsCard({
       <SectionTitle
         icon="alert"
         title={translate("Active hazards")}
-        rightLabel={badgeCount ? `${badgeCount}` : undefined}
+        rightLabel={
+          badgeCount ? getFormatters().integer(badgeCount) : undefined
+        }
       />
       {badgeCount === 0 ? (
         <Text style={styles.empty}>
@@ -1050,7 +1054,7 @@ function ReviewHelpfulRow({
             helpfulActive && styles.reviewHelpfulCountActive,
           ]}
         >
-          {review.helpful_count}
+          {getFormatters().integer(review.helpful_count)}
         </Text>
       </TouchableOpacity>
       <TouchableOpacity
@@ -1079,7 +1083,7 @@ function ReviewHelpfulRow({
             notHelpfulActive && styles.reviewHelpfulCountActive,
           ]}
         >
-          {review.not_helpful_count}
+          {getFormatters().integer(review.not_helpful_count)}
         </Text>
       </TouchableOpacity>
     </View>

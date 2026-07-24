@@ -295,7 +295,9 @@ export function RoadPreviewPopover({
                     ? format.decimal(preview.score, 1)
                     : undefined}
                 </span>
-                <span className="text-xs font-semibold text-fg-mute">/ 5</span>
+                <span className="text-xs font-semibold text-fg-mute">
+                  {t("/ {max}", { max: format.integer(5) })}
+                </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {preview.surface ? (
