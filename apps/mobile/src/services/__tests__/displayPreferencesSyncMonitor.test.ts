@@ -232,6 +232,33 @@ describe("displayPreferencesSyncMonitor", () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps foreground detection live without bypassing a scheduled retry", async () => {
+    sync
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined);
+    start();
+    await flush();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    device = {
+      uiLocale: "de-DE",
+      formatLocale: "de-DE",
+      timeZone: "Europe/Berlin",
+    };
+    listeners.forEach((listener) => listener("active"));
+    await flush();
+
+    expect(onDevicePreferencesDetected).toHaveBeenLastCalledWith(device);
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(sync).toHaveBeenLastCalledWith("user-1", {
+      format_locale: "de-DE",
+      timezone: "Europe/Berlin",
+    });
+  });
+
   it("cancels a scheduled retry on cleanup", async () => {
     sync.mockRejectedValue(new Error("offline"));
     const stop = start();

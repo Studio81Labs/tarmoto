@@ -54,6 +54,13 @@ export function startDisplayPreferencesSyncMonitor(
 
   const run = async (): Promise<void> => {
     if (activeMonitorToken !== monitorToken) return;
+    if (retryTimer) {
+      // Foreground detection must remain live while the account PATCH backs
+      // off, but foreground events must not bypass that delay with another
+      // write. The timer callback clears retryTimer before calling run().
+      deps.onDevicePreferencesDetected?.(deps.currentDevicePreferences());
+      return;
+    }
     const outcome = await syncIfNeeded(
       deps,
       () => activeMonitorToken === monitorToken,
