@@ -3,8 +3,11 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { withQueryClient } from "./test-utils";
 
 const getMock = vi.fn();
-const { authState } = vi.hoisted(() => ({
+const { authState, sessionState } = vi.hoisted(() => ({
   authState: { user: { id: "u1" } as { id: string } | null },
+  sessionState: {
+    status: "authenticated" as "loading" | "authenticated" | "unauthenticated",
+  },
 }));
 vi.mock("@/lib/api", () => ({
   api: { GET: (...a: unknown[]) => getMock(...a) },
@@ -12,6 +15,9 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } | null }) => unknown) =>
     sel(authState),
+}));
+vi.mock("next-auth/react", () => ({
+  useSession: () => ({ data: null, status: sessionState.status }),
 }));
 
 import {
@@ -32,6 +38,7 @@ describe("useEntitlements", () => {
   beforeEach(() => {
     getMock.mockReset();
     authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
   });
 
   it("exposes the resolved tier/features/limits from /users/me", async () => {
@@ -145,6 +152,7 @@ describe("useRoadQualityZoomCap", () => {
   beforeEach(() => {
     getMock.mockReset();
     authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
   });
 
   it("uses the authenticated /users/me cap when signed in", async () => {
@@ -235,6 +243,7 @@ describe("useRoadQualityZoomCap", () => {
     // Logged out: /users/me is disabled; the public /config/limits map carries
     // the launch seed (road_quality_max_zoom → null = unlimited).
     authState.user = null;
+    sessionState.status = "unauthenticated";
     getMock.mockImplementation((path: string) =>
       path === "/api/v1/config/limits"
         ? Promise.resolve({
@@ -252,6 +261,7 @@ describe("useRoadQualityZoomCap", () => {
 
   it("resolves anonymous viewers to the free cap when no global override (post-launch)", async () => {
     authState.user = null;
+    sessionState.status = "unauthenticated";
     getMock.mockImplementation((path: string) =>
       path === "/api/v1/config/limits"
         ? Promise.resolve({ data: {}, error: undefined })
@@ -266,6 +276,7 @@ describe("useRoadQualityZoomCap", () => {
 
   it("is unresolved for an anonymous viewer while the global map errors", async () => {
     authState.user = null;
+    sessionState.status = "unauthenticated";
     getMock.mockResolvedValue({
       data: undefined,
       error: { message: "boom" },
@@ -274,6 +285,53 @@ describe("useRoadQualityZoomCap", () => {
       wrapper: withQueryClient(),
     });
     await waitFor(() => expect(result.current.isResolved).toBe(false));
+    expect(result.current.limit).toBeNull();
+  });
+
+  it("stays fail-closed for a signed-in rider whose auth is still hydrating (userId null, status loading)", async () => {
+    // Hard navigation: AuthSync hasn't copied the session into the store yet, so
+    // userId is null while the session is still resolving. Resolving the
+    // anonymous cap here could render quality above the rider's per-user cap —
+    // even if the public override map has already loaded. Must stay unresolved.
+    authState.user = null;
+    sessionState.status = "loading";
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: null }, // permissive launch seed
+            error: undefined,
+          })
+        : Promise.resolve({ data: undefined, error: { message: "no auth" } }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    // Let the public query settle so this can't pass merely because it's slow.
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(result.current.isResolved).toBe(false);
+    expect(result.current.limit).toBeNull();
+  });
+
+  it("stays fail-closed when the session is authenticated but the store hasn't hydrated yet", async () => {
+    // The narrow gap where NextAuth reports "authenticated" but AuthSync's
+    // effect hasn't run — userId still null. Treated like loading, not anonymous.
+    authState.user = null;
+    sessionState.status = "authenticated";
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: null },
+            error: undefined,
+          })
+        : Promise.resolve({ data: undefined, error: { message: "no auth" } }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(result.current.isResolved).toBe(false);
     expect(result.current.limit).toBeNull();
   });
 });

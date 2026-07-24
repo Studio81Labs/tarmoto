@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import {
   getFeatureLimit,
   isFeatureEnabled,
@@ -65,6 +66,15 @@ export function useRoadQualityZoomCap(): {
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const authed = userId != null;
+  // NextAuth's session status distinguishes a CONFIRMED anonymous visitor
+  // ("unauthenticated") from the pre-auth hydration window ("loading" — and the
+  // brief gap where the session is "authenticated" but `AuthSync` hasn't copied
+  // the user into the store yet, so `userId` is still null). During that window
+  // a signed-in rider transiently looks anonymous; resolving the anonymous cap
+  // then could render quality ABOVE their per-user override until `/users/me`
+  // hydrates. Only the store-backed `authed` state or a settled "unauthenticated"
+  // status is trustworthy here.
+  const { status } = useSession();
   const { limit: userLimit, isSuccess: userResolved } = useLimit(
     "road_quality_max_zoom",
   );
@@ -87,9 +97,14 @@ export function useRoadQualityZoomCap(): {
         : userLimit;
     return { limit, isResolved: bothResolved };
   }
+  // Not (yet) authed. Until the session settles as unauthenticated, stay
+  // fail-closed rather than resolve a permissive anonymous cap for a rider
+  // whose auth is still hydrating.
+  if (status !== "unauthenticated") return { limit: null, isResolved: false };
   if (!globalResolved) return { limit: null, isResolved: false };
-  // Anonymous: no tier → the registry free/default value, then the global
-  // operator override replaces it (undefined = no override → free default).
+  // Confirmed anonymous: no tier → the registry free/default value, then the
+  // global operator override replaces it (undefined = no override → free
+  // default).
   return {
     limit: resolveLimit("road_quality_max_zoom", null, undefined, override),
     isResolved: true,

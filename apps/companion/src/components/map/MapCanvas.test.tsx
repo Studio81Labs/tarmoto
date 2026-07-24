@@ -277,6 +277,38 @@ describe("MapCanvas", () => {
     );
   });
 
+  it("adds an UNCAPPED neutral selection outline so selection stays visible past the cap", async () => {
+    // The neutral casing carries no quality colour, so it must NOT inherit the
+    // entitlement cap — otherwise selecting a road above the cap (or on a
+    // surface-only / PersonalRoadMap surface, showQuality=false) opens the
+    // detail drawer with no highlight on the map.
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality={false}
+        showSurface
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    const outlineCall = mapStub.addLayer.mock.calls.find(
+      (c) =>
+        (c[0] as { id?: string }).id === "tarmoto-segment-selected-outline",
+    );
+    expect(outlineCall).toBeDefined();
+    const outlineLayer = outlineCall![0] as {
+      maxzoom?: number;
+      paint?: Record<string, unknown>;
+    };
+    expect(outlineLayer.maxzoom).toBeUndefined();
+    // Neutral colour — not the quality-graded expression.
+    expect(outlineLayer.paint?.["line-color"]).toBe("#334155");
+  });
+
   it("adds an UNCAPPED invisible road-hit layer so interaction survives the cap", async () => {
     // The hit target must NOT carry the entitlement maxzoom — snapping / tap /
     // hover keep working past the free cap — and must be invisible.

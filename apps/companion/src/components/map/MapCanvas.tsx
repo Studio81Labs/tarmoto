@@ -58,8 +58,19 @@ const TARMOTO_ROADS_SOURCE_MIN_ZOOM = 6;
 // so every MapCanvas surface — /explore and the trip planner — highlights the
 // same way. Match the `id` *property* (via `get`), not the promoted feature
 // id (`["id"]`), which doesn't resolve reliably inside a filter expression.
+// Neutral casing UNDER the quality-graded highlight, uncapped: it conveys no
+// quality colour, so it stays visible past the entitlement zoom cap and on
+// surfaces that never show the quality overlay (PersonalRoadMap, surface-only
+// Explore/planner). Below the cap the same-width quality line covers it, so the
+// selected road still glows in its own colour; above the cap it's the only
+// selection feedback, so a selected road never opens its detail drawer with no
+// highlight on the map.
+const SEGMENT_SELECTED_OUTLINE_LAYER = "tarmoto-segment-selected-outline";
 const SEGMENT_SELECTED_GLOW_LAYER = "tarmoto-segment-selected-glow";
 const SEGMENT_SELECTED_LINE_LAYER = "tarmoto-segment-selected-line";
+// Slate casing colour for the neutral selection outline — reads as "selected"
+// without encoding any quality grade.
+const SEGMENT_SELECTED_NEUTRAL_COLOR = "#334155";
 // A value that never matches a real UUID: hides the highlight when nothing's
 // selected.
 const NO_SEGMENT_FILTER: FilterSpecification = ["==", ["get", "id"], ""];
@@ -457,6 +468,40 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // until a segment is selected. Added last so it sits above the coloured
       // overlays; consumers add their own markers/route in `onReady`, i.e. on
       // top of this.
+      // Neutral casing (uncapped) — added first so it sits BELOW the quality
+      // glow/line. Same crisp width as SEGMENT_SELECTED_LINE_LAYER, so below the
+      // cap the opaque quality line covers it exactly (look unchanged); above
+      // the cap it's the surviving selection outline.
+      map.addLayer({
+        id: SEGMENT_SELECTED_OUTLINE_LAYER,
+        type: "line",
+        source: TARMOTO_ROADS_SOURCE,
+        "source-layer": "quality",
+        filter: NO_SEGMENT_FILTER,
+        minzoom: TARMOTO_ROADS_MIN_ZOOM,
+        // No maxzoom: it encodes no quality grade, so it must NOT be clamped —
+        // that is exactly what keeps selection feedback alive past the cap.
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          visibility: selectedSegmentId ? "visible" : "none",
+        },
+        paint: {
+          "line-color": SEGMENT_SELECTED_NEUTRAL_COLOR,
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            2.5,
+            12,
+            4,
+            16,
+            7,
+          ] as ExpressionSpecification,
+          "line-opacity": 1,
+        },
+      });
       map.addLayer({
         id: SEGMENT_SELECTED_GLOW_LAYER,
         type: "line",
@@ -464,16 +509,17 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         "source-layer": "quality",
         filter: NO_SEGMENT_FILTER,
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
-        // The selection highlight is quality-GRADED (QUALITY_LINE_COLOR), so it
+        // The glow/line highlight is quality-GRADED (QUALITY_LINE_COLOR), so it
         // carries the same entitlement zoom cap as the overlay — otherwise a
         // free rider could read a segment's quality colour past the cap by
-        // selecting it. See the runtime clamp effect below.
+        // selecting it. The neutral outline above stays uncapped for feedback.
+        // See the runtime clamp effect below.
         maxzoom: qualityMaxZoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
           // A filtered-but-visible layer still makes MapLibre fetch its source.
-          // Keep both selected-road layers hidden until a segment is selected.
+          // Keep the selected-road layers hidden until a segment is selected.
           visibility: selectedSegmentId ? "visible" : "none",
         },
         paint: {
@@ -602,6 +648,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       ? ["==", ["get", "id"], selectedSegmentId]
       : NO_SEGMENT_FILTER;
     for (const layer of [
+      SEGMENT_SELECTED_OUTLINE_LAYER,
       SEGMENT_SELECTED_GLOW_LAYER,
       SEGMENT_SELECTED_LINE_LAYER,
     ]) {
