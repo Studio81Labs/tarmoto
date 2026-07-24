@@ -293,7 +293,7 @@ describe("CommuteScreen", () => {
 
     expect(
       screen.getByLabelText(
-        "Start commute on alternative route, 1.2 km, 1 minute, 0 hazards",
+        "Start commute on alternative route, 1.2 km, 1 min, 0 hazards",
       ),
     ).toBeTruthy();
   });
@@ -555,7 +555,7 @@ describe("CommuteScreen", () => {
     expect(screen.getByText("Road: Dry · Wind 5 mph")).toBeTruthy();
     expect(
       screen.getByLabelText(
-        "Start commute on alternative route, 9.1 mi, 28 minutes, 0 hazards",
+        "Start commute on alternative route, 9.1 mi, 28 min, 0 hazards",
       ),
     ).toBeTruthy();
     const navigateAlternative = screen.getByLabelText(

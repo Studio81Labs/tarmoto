@@ -7,6 +7,7 @@
  */
 
 import type { LatLng, RoadReview } from "@/types";
+import { setActiveFormatContext } from "@/format";
 import {
   applyVoteDelta,
   buildElevationChartPaths,
@@ -48,13 +49,23 @@ describe("formatRelativeTime", () => {
 
   beforeEach(() => {
     jest.spyOn(Date, "now").mockReturnValue(NOW);
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "metric",
+    });
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    setActiveFormatContext({
+      locale: "en-US",
+      timeZone: "UTC",
+      units: "metric",
+    });
   });
 
-  it('returns "just now" for very recent timestamps', () => {
+  it('returns the cataloged "just now" label for recent timestamps', () => {
     expect(formatRelativeTime(new Date(NOW - 10_000).toISOString())).toBe(
       "just now",
     );
@@ -84,6 +95,24 @@ describe("formatRelativeTime", () => {
     expect(
       formatRelativeTime(new Date(NOW - 36 * 3_600_000).toISOString()),
     ).toBe("1d ago");
+  });
+
+  it("keeps words in the UI locale while formatting digits regionally", () => {
+    const fiveMinutesAgo = new Date(NOW - 5 * 60_000).toISOString();
+
+    setActiveFormatContext({
+      locale: "cs-CZ",
+      timeZone: "Europe/Prague",
+      units: "metric",
+    });
+    expect(formatRelativeTime(fiveMinutesAgo)).toBe("5m ago");
+
+    setActiveFormatContext({
+      locale: "ar-EG",
+      timeZone: "Africa/Cairo",
+      units: "metric",
+    });
+    expect(formatRelativeTime(fiveMinutesAgo)).toBe("٥m ago");
   });
 
   it("returns empty string for unparseable input", () => {

@@ -310,6 +310,15 @@ export const trips = {
   'voted on "{title}"': 'voted on "{title}"',
   "Could not read the file. Try again or pick a different file.":
     "Could not read the file. Try again or pick a different file.",
+  "File is empty.": "File is empty.",
+  "File is not valid XML.": "File is not valid XML.",
+  "GPX file has no track or route points.":
+    "GPX file has no track or route points.",
+  "KML file has no LineString coordinates.":
+    "KML file has no LineString coordinates.",
+  "Route needs at least two points.": "Route needs at least two points.",
+  "Unsupported file format. Upload a GPX or KML file.":
+    "Unsupported file format. Upload a GPX or KML file.",
   "Couldn't load this trip. Check your connection.":
     "Couldn't load this trip. Check your connection.",
   CREATED: "CREATED",

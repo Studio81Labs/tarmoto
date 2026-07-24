@@ -12,9 +12,17 @@
 
 import { haversineKm } from "./geo";
 
+export type ImportErrorCode =
+  | "empty_file"
+  | "unsupported_format"
+  | "invalid_xml"
+  | "gpx_without_route"
+  | "kml_without_linestring"
+  | "too_few_points";
+
 export type ImportResult =
   | { ok: true; route: ImportedRoute }
-  | { ok: false; error: string };
+  | { ok: false; error: ImportErrorCode };
 
 export interface ImportedRoute {
   name: string;
@@ -38,19 +46,19 @@ export function parseImportedRoute(
   filename: string,
 ): ImportResult {
   const trimmed = text.trim();
-  if (!trimmed) return { ok: false, error: "File is empty." };
+  if (!trimmed) return { ok: false, error: "empty_file" };
 
   const stripped = stripCommentsAndCdata(trimmed);
   const format = detectFormat(stripped, filename);
   if (!format) {
     return {
       ok: false,
-      error: "Unsupported file format. Upload a GPX or KML file.",
+      error: "unsupported_format",
     };
   }
 
   if (!isWellFormedEnough(stripped, format)) {
-    return { ok: false, error: "File is not valid XML." };
+    return { ok: false, error: "invalid_xml" };
   }
 
   const route =
@@ -60,14 +68,11 @@ export function parseImportedRoute(
   if (!route) {
     return {
       ok: false,
-      error:
-        format === "gpx"
-          ? "GPX file has no track or route points."
-          : "KML file has no LineString coordinates.",
+      error: format === "gpx" ? "gpx_without_route" : "kml_without_linestring",
     };
   }
   if (route.points.length < MIN_POINTS) {
-    return { ok: false, error: "Route needs at least two points." };
+    return { ok: false, error: "too_few_points" };
   }
 
   return { ok: true, route };

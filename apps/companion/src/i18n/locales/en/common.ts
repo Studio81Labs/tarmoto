@@ -4,6 +4,7 @@ export const common = {
   mo: "mo",
   yr: "yr",
   "{hours} vs last month": "{hours} vs last month",
+  "{percent} vs last month": "{percent} vs last month",
   "Check your connection and try again.":
     "Check your connection and try again.",
   "Some information is invalid. Check it and try again.":
@@ -51,8 +52,10 @@ export const common = {
     "A problem on our end interrupted the request. We\u2019ve logged it \u2014 give it another go in a moment.",
   ACCOUNT: "ACCOUNT",
   "ALONG YOUR ROUTE": "ALONG YOUR ROUTE",
+  DISCOVERED: "DISCOVERED",
   "API access": "API access",
   "AVG {unit}": "AVG {unit}",
+  MAX: "MAX",
   Accept: "Accept",
   "Account menu": "Account menu",
   "Active challenge": "Active challenge",

@@ -94,7 +94,12 @@ export function formatElevation(
 /** Lean angle in whole degrees. */
 export function formatLeanAngle(deg: number | null | undefined): string {
   const value = deg == null || !Number.isFinite(deg) || deg <= 0 ? 0 : deg;
-  return `${getFormatters().integer(value)}°`;
+  return getFormatters().number(value, {
+    style: "unit",
+    unit: "degree",
+    unitDisplay: "narrow",
+    maximumFractionDigits: 0,
+  });
 }
 
 /** Fuel estimate. Liters with one decimal — fuel pumps round to 0.01 L. */

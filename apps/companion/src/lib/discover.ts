@@ -1,4 +1,5 @@
 import type { paths } from "@tarmoto/openapi-client";
+import type { EnglishMessageKey } from "@/i18n";
 import { api } from "./api";
 
 export type FunZoneListItem =
@@ -6,6 +7,21 @@ export type FunZoneListItem =
 
 export type FunZoneDetail =
   paths["/api/v1/roads/fun-zones/{id}"]["get"]["responses"]["200"]["content"]["application/json"];
+
+const FUN_ZONE_SEASON_LABELS = {
+  spring: "Spring",
+  summer: "Summer",
+  autumn: "Autumn",
+  year_round: "Year-round",
+} as const satisfies Record<string, EnglishMessageKey>;
+
+/** Catalog key for every season identifier emitted by the backend. */
+export function funZoneSeasonLabel(season: string): EnglishMessageKey {
+  return (
+    FUN_ZONE_SEASON_LABELS[season as keyof typeof FUN_ZONE_SEASON_LABELS] ??
+    "Unknown"
+  );
+}
 
 /**
  * Client-side fetch for zones in a bbox. The endpoint is public, so no

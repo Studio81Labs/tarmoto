@@ -6,12 +6,13 @@ import {
   pointsDistanceKm as sharedPointsDistanceKm,
   type ImportedRoute,
   type ImportedWaypoint,
+  type ImportErrorCode,
   type ImportResult,
   type Formatters,
 } from "@tarmoto/shared";
 import type { RoutePreviewSegment, Trip, Waypoint } from "@/lib/types";
 import { scoreToTier } from "@/lib/utils";
-import { t as translate, type Translate } from "@/i18n";
+import { t as translate, type EnglishMessageKey, type Translate } from "@/i18n";
 
 /**
  * GPX/KML import (US-38 / US-20). Parses files exported from Garmin,
@@ -41,6 +42,22 @@ export function parseImportedRoute(
   filename: string,
 ): ImportResult {
   return sharedParseImportedRoute(text, filename);
+}
+
+const IMPORT_ERROR_MESSAGES = {
+  empty_file: "File is empty.",
+  unsupported_format: "Unsupported file format. Upload a GPX or KML file.",
+  invalid_xml: "File is not valid XML.",
+  gpx_without_route: "GPX file has no track or route points.",
+  kml_without_linestring: "KML file has no LineString coordinates.",
+  too_few_points: "Route needs at least two points.",
+} as const satisfies Record<ImportErrorCode, EnglishMessageKey>;
+
+export function importErrorMessage(
+  error: ImportErrorCode,
+  t: Translate,
+): string {
+  return t(IMPORT_ERROR_MESSAGES[error]);
 }
 
 export function pointsDistanceKm(points: Array<[number, number]>): number {

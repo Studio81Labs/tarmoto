@@ -264,7 +264,12 @@ export default function RideDetailPage() {
       label: t("Max lean"),
       value:
         ride.max_lean_angle != null
-          ? `${Math.round(ride.max_lean_angle)}°`
+          ? format.number(ride.max_lean_angle, {
+              style: "unit",
+              unit: "degree",
+              unitDisplay: "narrow",
+              maximumFractionDigits: 0,
+            })
           : "—",
     },
     {
@@ -499,7 +504,14 @@ export default function RideDetailPage() {
             <div className="text-right">
               <Stamp>{t("Avg lean")}</Stamp>
               <div className="mt-0.5 text-[18px] font-extrabold text-accent">
-                {avgLean != null ? `${Math.round(avgLean)}°` : "—"}
+                {avgLean != null
+                  ? format.number(avgLean, {
+                      style: "unit",
+                      unit: "degree",
+                      unitDisplay: "narrow",
+                      maximumFractionDigits: 0,
+                    })
+                  : "—"}
               </div>
             </div>
           </div>
@@ -694,7 +706,11 @@ function RoadSegments({
       size: "40px",
       render: (s) => (
         <Mono className="font-bold text-fg-mute">
-          {String(s.idx + 1).padStart(2, "0")}
+          {format.number(s.idx + 1, {
+            useGrouping: false,
+            minimumIntegerDigits: 2,
+            maximumFractionDigits: 0,
+          })}
         </Mono>
       ),
     },
@@ -734,7 +750,14 @@ function RoadSegments({
       size: "70px",
       render: (s) => (
         <Mono className="text-ink">
-          {s.lean_angle_max != null ? `${Math.round(s.lean_angle_max)}°` : "—"}
+          {s.lean_angle_max != null
+            ? format.number(s.lean_angle_max, {
+                style: "unit",
+                unit: "degree",
+                unitDisplay: "narrow",
+                maximumFractionDigits: 0,
+              })
+            : "—"}
         </Mono>
       ),
     },

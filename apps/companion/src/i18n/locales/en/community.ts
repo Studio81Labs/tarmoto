@@ -127,6 +127,16 @@ export const community = {
   "Could not load rides.": "Could not load rides.",
   "Could not load reviews.": "Could not load reviews.",
   "Could not upload photos.": "Could not upload photos.",
+  "Choose a star rating before you submit.":
+    "Choose a star rating before you submit.",
+  "Each photo must be smaller than {sizeMb, number} MB.":
+    "Each photo must be smaller than {sizeMb, number} MB.",
+  "Photos must be JPEG, PNG, or WebP images.":
+    "Photos must be JPEG, PNG, or WebP images.",
+  "You can attach up to {count, plural, one {# photo} other {# photos}}.":
+    "You can attach up to {count, plural, one {# photo} other {# photos}}.",
+  "You can attach up to {count, plural, one {# photo} other {# photos}} in total.":
+    "You can attach up to {count, plural, one {# photo} other {# photos}} in total.",
   "Could not save your review.": "Could not save your review.",
   "Could not delete your review.": "Could not delete your review.",
   "Could not load shared rides.": "Could not load shared rides.",

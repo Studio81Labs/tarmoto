@@ -56,7 +56,10 @@ export default function HomeScreen() {
   // Cap the displayed count at 99+ so the badge stays visually compact,
   // and reuse the same string in the accessibility label so VoiceOver
   // announces the same value a sighted rider sees.
-  const displayCount = newHazardCount > 99 ? "99+" : String(newHazardCount);
+  const displayCount =
+    newHazardCount > 99
+      ? `${getFormatters().integer(99)}+`
+      : getFormatters().integer(newHazardCount);
 
   // US-21 AC #1: only surface the one-tap CTA when there's actually a
   // primary commute saved. The hook reports `phase === "learning"`

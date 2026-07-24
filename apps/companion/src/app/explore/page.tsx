@@ -53,7 +53,11 @@ import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRideTracks } from "@/hooks/useUserRideTracks";
 import { useFormat } from "@/format/FormatProvider";
 import { FunZonePanel } from "./_components/FunZonePanel";
-import { fetchFunZonesInBbox, type FunZoneListItem } from "@/lib/discover";
+import {
+  fetchFunZonesInBbox,
+  funZoneSeasonLabel,
+  type FunZoneListItem,
+} from "@/lib/discover";
 import { tripFromDetail } from "@/lib/trip-from-detail";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
@@ -1367,7 +1371,7 @@ function FunZonesBlock({
                     </span>
                     {zone.best_season ? (
                       <span className="mt-0.5 block truncate text-[10px] text-fg-mute">
-                        {zone.best_season}
+                        {t(funZoneSeasonLabel(zone.best_season))}
                       </span>
                     ) : null}
                   </span>

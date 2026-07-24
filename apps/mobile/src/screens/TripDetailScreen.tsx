@@ -72,6 +72,7 @@ import {
   tripToGpxInput,
 } from "./TripScreens.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
 type DetailNav = NativeStackNavigationProp<TripsStackParamList, "TripDetail">;
@@ -640,7 +641,10 @@ function ClosedPassesWarning({
             {p.name}
           </Text>
           <Text style={styles.warningPassMeta}>
-            {p.elevation_m} m · {p.country_code}
+            {translate("{elevation} · {country}", {
+              elevation: getFormatters().elevation(p.elevation_m),
+              country: p.country_code,
+            })}
           </Text>
         </View>
       ))}
