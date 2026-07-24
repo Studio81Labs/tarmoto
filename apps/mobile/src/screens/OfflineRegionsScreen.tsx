@@ -42,8 +42,10 @@ import {
   brandSpacing,
   statusFg,
 } from "@/theme/brand";
-import { t as translate, type EnglishMessageKey } from "@/i18n";
-import { getFormatters } from "@/format";
+import type { EnglishMessageKey } from "@/i18n";
+import { useTranslation } from "@/i18n/I18nProvider";
+import { useFormat } from "@/format/FormatProvider";
+import type { Formatters } from "@tarmoto/shared";
 
 const t = brandColorsLight;
 const INK = "#0E0E10";
@@ -97,6 +99,8 @@ const STATUS_FILL: Record<OfflineRegion["status"], string> = {
 };
 
 export default function OfflineRegionsScreen() {
+  const localize = useTranslation();
+  const format = useFormat();
   const center = useMapStore((s) => s.center);
   const { regions, saveRegion, retryRegion, cancelDownload, deleteRegion } =
     useOfflineRegions();
@@ -110,7 +114,7 @@ export default function OfflineRegionsScreen() {
 
   const onSaveCurrent = useCallback(async () => {
     const bbox = bboxAroundPoint(center, DEFAULT_SAVE_RADIUS_KM);
-    const name = defaultRegionName(center.lat, center.lng);
+    const name = defaultRegionName(center.lat, center.lng, localize, format);
     const outcome = await saveRegion(
       name,
       bbox,
@@ -120,20 +124,20 @@ export default function OfflineRegionsScreen() {
     if (!outcome.ok) {
       const message =
         outcome.reason === "too-many-tiles"
-          ? translate(
+          ? localize(
               "This area would need {count, plural, one {# tile} other {# tiles}}, which is over the offline cache limit. Zoom in before saving.",
               { count: outcome.tileCount },
             )
           : outcome.reason === "busy"
-            ? translate(
+            ? localize(
                 "Another region is still downloading. Wait for it to finish (or pause it) before saving a new one.",
               )
-            : translate(
+            : localize(
                 "The map bounds looked invalid. Move the map and try again.",
               );
-      Alert.alert(translate("Couldn't save this area"), message);
+      Alert.alert(localize("Couldn't save this area"), message);
     }
-  }, [center, saveRegion]);
+  }, [center, format, localize, saveRegion]);
 
   const onRetry = useCallback(
     (regionId: string) => {
@@ -152,15 +156,15 @@ export default function OfflineRegionsScreen() {
   const onDelete = useCallback(
     (region: OfflineRegion) => {
       Alert.alert(
-        translate("Delete offline region"),
-        translate(
+        localize("Delete offline region"),
+        localize(
           '"{value0}" will be removed from your device. You can re-save it later.',
           { value0: region.name },
         ),
         [
-          { text: translate("Cancel"), style: "cancel" },
+          { text: localize("Cancel"), style: "cancel" },
           {
-            text: translate("Delete"),
+            text: localize("Delete"),
             style: "destructive",
             onPress: () => {
               void deleteRegion(region.id);
@@ -169,7 +173,7 @@ export default function OfflineRegionsScreen() {
         ],
       );
     },
-    [deleteRegion],
+    [deleteRegion, localize],
   );
 
   return (
@@ -181,10 +185,10 @@ export default function OfflineRegionsScreen() {
         ListHeaderComponent={
           <View style={styles.headerCard}>
             <Text style={styles.sectionTitle}>
-              {translate("Offline map regions")}
+              {localize("Offline map regions")}
             </Text>
             <Text style={styles.sectionBody}>
-              {translate(
+              {localize(
                 "Save an area to your device so the road-quality overlay keeps working when you lose cell service. Tiles live in the app's storage — delete a region anytime to reclaim space.",
               )}
             </Text>
@@ -192,14 +196,14 @@ export default function OfflineRegionsScreen() {
               style={styles.primaryBtn}
               onPress={onSaveCurrent}
               accessibilityRole="button"
-              accessibilityLabel={translate(
+              accessibilityLabel={localize(
                 "Save current map area for offline use",
               )}
             >
               <Icon name="map-marker-plus-outline" size={20} color={INK} />
               <Text style={styles.primaryBtnLabel}>
-                {translate("Save current area ({distance})", {
-                  distance: getFormatters().distanceKm(DEFAULT_SAVE_RADIUS_KM),
+                {localize("Save current area ({distance})", {
+                  distance: format.distanceKm(DEFAULT_SAVE_RADIUS_KM),
                 })}
               </Text>
             </TouchableOpacity>
@@ -217,10 +221,10 @@ export default function OfflineRegionsScreen() {
           <View style={styles.emptyCard}>
             <Icon name="cloud-off-outline" size={28} color={t.dim} />
             <Text style={styles.emptyTitle}>
-              {translate("No offline regions yet")}
+              {localize("No offline regions yet")}
             </Text>
             <Text style={styles.emptyBody}>
-              {translate(
+              {localize(
                 'Pan the map to the area you want to cache and tap "Save current area" above.',
               )}
             </Text>
@@ -250,7 +254,9 @@ function RegionRowImpl({
   onCancel,
   onDelete,
 }: RegionRowProps) {
-  const statusLabel = translate(STATUS_LABELS[region.status]);
+  const localize = useTranslation();
+  const format = useFormat();
+  const statusLabel = localize(STATUS_LABELS[region.status]);
   const statusIcon = STATUS_ICONS[region.status];
   const statusTextColor = STATUS_TEXT[region.status];
   const statusFillColor = STATUS_FILL[region.status];
@@ -274,11 +280,11 @@ function RegionRowImpl({
       </View>
 
       <Text style={styles.cardDetails}>
-        {translate("{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}", {
+        {localize("{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}", {
           tiles: region.totalTiles,
           minZoom: region.minZoom,
           maxZoom: region.maxZoom,
-          size: formatBytes(region.bytesOnDisk),
+          size: formatBytes(region.bytesOnDisk, format),
         })}
       </Text>
 
@@ -295,12 +301,12 @@ function RegionRowImpl({
       </View>
       <Text style={styles.progressText}>
         {region.failedTiles > 0
-          ? translate("{downloaded} / {total} downloaded · {failed} failed", {
+          ? localize("{downloaded} / {total} downloaded · {failed} failed", {
               downloaded: region.downloadedTiles,
               total: region.totalTiles,
               failed: region.failedTiles,
             })
-          : translate("{downloaded} / {total} downloaded", {
+          : localize("{downloaded} / {total} downloaded", {
               downloaded: region.downloadedTiles,
               total: region.totalTiles,
             })}
@@ -318,12 +324,12 @@ function RegionRowImpl({
             style={styles.secondaryBtn}
             onPress={() => onCancel(region.id)}
             accessibilityRole="button"
-            accessibilityLabel={translate("Pause download of {value0}", {
+            accessibilityLabel={localize("Pause download of {value0}", {
               value0: region.name,
             })}
           >
             <Icon name="pause" size={18} color={t.fg} />
-            <Text style={styles.secondaryBtnLabel}>{translate("Pause")}</Text>
+            <Text style={styles.secondaryBtnLabel}>{localize("Pause")}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -332,12 +338,12 @@ function RegionRowImpl({
             style={styles.secondaryBtn}
             onPress={() => onRetry(region.id)}
             accessibilityRole="button"
-            accessibilityLabel={translate("Retry download of {value0}", {
+            accessibilityLabel={localize("Retry download of {value0}", {
               value0: region.name,
             })}
           >
             <Icon name="refresh" size={18} color={t.fg} />
-            <Text style={styles.secondaryBtnLabel}>{translate("Retry")}</Text>
+            <Text style={styles.secondaryBtnLabel}>{localize("Retry")}</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -345,13 +351,13 @@ function RegionRowImpl({
           style={[styles.secondaryBtn, styles.dangerBtn]}
           onPress={() => onDelete(region)}
           accessibilityRole="button"
-          accessibilityLabel={translate("Delete {value0}", {
+          accessibilityLabel={localize("Delete {value0}", {
             value0: region.name,
           })}
         >
           <Icon name="trash-can-outline" size={18} color={statusFg.danger} />
           <Text style={[styles.secondaryBtnLabel, { color: statusFg.danger }]}>
-            {translate("Delete")}
+            {localize("Delete")}
           </Text>
         </TouchableOpacity>
       </View>
@@ -359,9 +365,13 @@ function RegionRowImpl({
   );
 }
 
-function defaultRegionName(lat: number, lng: number): string {
-  const format = getFormatters();
-  return translate("Area near {lat}, {lng}", {
+function defaultRegionName(
+  lat: number,
+  lng: number,
+  localize: ReturnType<typeof useTranslation>,
+  format: Formatters,
+): string {
+  return localize("Area near {lat}, {lng}", {
     lat: format.decimal(lat, 2),
     lng: format.decimal(lng, 2),
   });
@@ -372,12 +382,12 @@ function defaultRegionName(lat: number, lng: number): string {
  * in iOS/Android storage settings. Zero renders as "—" so empty regions
  * don't scream "0 B" at the rider.
  */
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number, format: Formatters): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "—";
   const mb = bytes / (1024 * 1024);
-  if (mb >= 1) return `${getFormatters().decimal(mb, 1)} MB`;
+  if (mb >= 1) return `${format.decimal(mb, 1)} MB`;
   const kb = bytes / 1024;
-  return `${getFormatters().integer(kb)} KB`;
+  return `${format.integer(kb)} KB`;
 }
 
 const styles = StyleSheet.create({

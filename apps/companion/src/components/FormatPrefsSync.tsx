@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { canonicalizeFormatLocale, isValidTimeZone } from "@tarmoto/shared";
 import { FORMAT_LOCALE_COOKIE, TIMEZONE_COOKIE } from "@/format";
 
+const SYNC_RETRY_DELAYS_MS = [1_000, 5_000, 30_000, 5 * 60_000] as const;
+
 function readCookie(name: string): string | null {
   const match = document.cookie
     .split("; ")
@@ -25,51 +27,105 @@ function readCookie(name: string): string | null {
  * regional format locale + IANA timezone against the format-prefs cookies
  * and, on divergence, POSTs /api/format-prefs — which sets the cookies and
  * best-effort mirrors the values to the user record — then refreshes once
- * so server components re-render with the new cookies. Steady state (and
- * every mount after the first sync) is a pure no-op: no POST, no refresh.
- * Headless: renders nothing.
+ * so server components re-render with the new cookies. Re-checks when the tab
+ * becomes visible/focused and retries transient failures with capped backoff.
+ * Matching cookies remain a pure no-op: no POST, no refresh. Headless: renders
+ * nothing.
  */
 export function FormatPrefsSync() {
   const router = useRouter();
   const ran = useRef(false);
+  const mounted = useRef(false);
+  const inFlight = useRef(false);
+  const retryIndex = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Guard against strict-mode double-mount firing two POSTs.
-    if (ran.current) return;
-    ran.current = true;
+    mounted.current = true;
 
-    const detectedLocale = canonicalizeFormatLocale(navigator.language);
-    const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const timeZone = isValidTimeZone(detectedZone) ? detectedZone : null;
-    // An exotic environment that reports neither is left on the
-    // Accept-Language/UTC server fallbacks — nothing useful to persist.
-    if (!detectedLocale || !timeZone) return;
+    const clearRetry = () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    };
 
-    if (
-      readCookie(FORMAT_LOCALE_COOKIE) === detectedLocale &&
-      readCookie(TIMEZONE_COOKIE) === timeZone
-    ) {
-      return;
+    const scheduleRetry = (sync: () => Promise<void>) => {
+      if (!mounted.current || retryTimer.current) return;
+      const delay =
+        SYNC_RETRY_DELAYS_MS[
+          Math.min(retryIndex.current, SYNC_RETRY_DELAYS_MS.length - 1)
+        ];
+      retryIndex.current += 1;
+      retryTimer.current = setTimeout(() => {
+        retryTimer.current = null;
+        void sync();
+      }, delay);
+    };
+
+    const sync = async (): Promise<void> => {
+      if (inFlight.current) return;
+
+      const detectedLocale = canonicalizeFormatLocale(navigator.language);
+      const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const timeZone = isValidTimeZone(detectedZone) ? detectedZone : null;
+      // An exotic environment that reports neither is left on the
+      // Accept-Language/UTC server fallbacks — nothing useful to persist.
+      if (!detectedLocale || !timeZone) return;
+
+      if (
+        readCookie(FORMAT_LOCALE_COOKIE) === detectedLocale &&
+        readCookie(TIMEZONE_COOKIE) === timeZone
+      ) {
+        retryIndex.current = 0;
+        clearRetry();
+        return;
+      }
+
+      inFlight.current = true;
+      try {
+        const response = await fetch("/api/format-prefs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            format_locale: detectedLocale,
+            timezone: timeZone,
+          }),
+        });
+        if (!response.ok) {
+          console.error("Failed to sync format preferences", response.status);
+          scheduleRetry(sync);
+          return;
+        }
+        retryIndex.current = 0;
+        clearRetry();
+        if (mounted.current) router.refresh();
+      } catch (error) {
+        console.error("Failed to sync format preferences", error);
+        scheduleRetry(sync);
+      } finally {
+        inFlight.current = false;
+      }
+    };
+
+    // Guard the initial request against strict-mode's effect replay while still
+    // installing fresh foreground listeners on the replayed effect.
+    if (!ran.current) {
+      ran.current = true;
+      void sync();
     }
 
-    void fetch("/api/format-prefs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        format_locale: detectedLocale,
-        timezone: timeZone,
-      }),
-    })
-      .then((response) => {
-        if (response.ok) {
-          router.refresh();
-        } else {
-          console.error("Failed to sync format preferences", response.status);
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to sync format preferences", error);
-      });
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    const syncOnFocus = () => void sync();
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    window.addEventListener("focus", syncOnFocus);
+
+    return () => {
+      mounted.current = false;
+      clearRetry();
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+      window.removeEventListener("focus", syncOnFocus);
+    };
   }, [router]);
 
   return null;

@@ -385,6 +385,12 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
+      "JSXElement > JSXExpressionContainer > LogicalExpression > Identifier[name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|days|Days|page|Page|rating|Rating|score|Score|percent|Percent|index|Index)$/]",
+    message:
+      "Format numeric branches of directly rendered expressions with the active regional formatter.",
+  },
+  {
+    selector:
       "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][property.name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|page|Page|rating|Rating|score|Score|percent|Percent|index|Index|length)$/]",
     message:
       "Format directly rendered numeric properties with the active regional formatter.",

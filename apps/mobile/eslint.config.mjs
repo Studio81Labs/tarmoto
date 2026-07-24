@@ -398,6 +398,18 @@ export default [
         },
         {
           selector:
+            "Program:has(ImportDeclaration[source.value='@/i18n'] ImportSpecifier[imported.name=/^(t|translate|tDynamic)$/]) CallExpression[callee.object.name='React'][callee.property.name='memo'], Program:has(ImportDeclaration[source.value='@/i18n'] ImportSpecifier[imported.name=/^(t|translate|tDynamic)$/]) CallExpression[callee.name='memo']",
+          message:
+            "Memoized React render paths must use useTranslation() so locale context changes bypass the props memoization boundary.",
+        },
+        {
+          selector:
+            "Program:has(ImportDeclaration[source.value='@/format'] ImportSpecifier[imported.name='getFormatters']) CallExpression[callee.object.name='React'][callee.property.name='memo'], Program:has(ImportDeclaration[source.value='@/format'] ImportSpecifier[imported.name='getFormatters']) CallExpression[callee.name='memo']",
+          message:
+            "Memoized React render paths must use useFormat() so format-context changes bypass the props memoization boundary.",
+        },
+        {
+          selector:
             "JSXElement > JSXExpressionContainer > Identifier[name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|page|Page|rating|Rating|score|Score|percent|Percent|index|Index)$/]",
           message:
             "Format directly rendered numeric values with the active regional formatter.",
