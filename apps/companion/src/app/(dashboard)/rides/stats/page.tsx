@@ -277,7 +277,14 @@ export default function StatsPage() {
       key: "year",
       label: t("Year"),
       primary: true,
-      render: (row) => <span className="font-bold text-ink">{row.year}</span>,
+      render: (row) => (
+        <span className="font-bold text-ink">
+          {format.number(row.year, {
+            useGrouping: false,
+            maximumFractionDigits: 0,
+          })}
+        </span>
+      ),
     },
     {
       key: "rides",
@@ -724,7 +731,14 @@ function SurfaceBreakdownCard({
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${t(rideBreakdownLabel(s.key))} · ${format.decimal(s.pct, 1)}%`}
+                  title={`${t(rideBreakdownLabel(s.key))} · ${format.number(
+                    s.pct / 100,
+                    {
+                      style: "percent",
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    },
+                  )}`}
                 />
               ))}
             </div>
@@ -744,7 +758,11 @@ function SurfaceBreakdownCard({
                     </span>
                   </span>
                   <Mono className="text-fg-dim">
-                    {`${format.decimal(s.pct, 1)}%`}
+                    {format.number(s.pct / 100, {
+                      style: "percent",
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    })}
                   </Mono>
                 </li>
               ))}
@@ -792,7 +810,11 @@ function CurvinessMixCard({ breakdown, error, format }: BreakdownCardProps) {
                         {t(rideBreakdownLabel(s.key))}
                       </span>
                       <Mono className="text-fg-dim">
-                        {`${format.decimal(s.pct, 1)}%`}
+                        {format.number(s.pct / 100, {
+                          style: "percent",
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        })}
                       </Mono>
                     </div>
                     <div

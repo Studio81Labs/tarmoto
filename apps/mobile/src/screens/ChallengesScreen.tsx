@@ -267,21 +267,21 @@ function ChallengeCard({
             </View>
             <Text style={styles.progressLabel}>
               {detail.my_completed
-                ? translate("{progress} · {percent}% · COMPLETE", {
+                ? translate("{progress} · {percent} · COMPLETE", {
                     progress: formatChallengeProgress(
                       detail.my_progress ?? 0,
                       challenge.target,
                       challenge.metric,
                     ),
-                    percent,
+                    percent: getFormatters().percent(percent / 100),
                   })
-                : translate("{progress} · {percent}%", {
+                : translate("{progress} · {percent}", {
                     progress: formatChallengeProgress(
                       detail.my_progress ?? 0,
                       challenge.target,
                       challenge.metric,
                     ),
-                    percent,
+                    percent: getFormatters().percent(percent / 100),
                   })}
             </Text>
           </>

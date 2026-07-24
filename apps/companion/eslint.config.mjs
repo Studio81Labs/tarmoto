@@ -377,6 +377,18 @@ const restrictedSyntaxSelectors = [
     message:
       "Compose rider-facing display-variable templates through one ICU catalog message.",
   },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > Identifier[name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|page|Page|rating|Rating|score|Score|percent|Percent|index|Index)$/]",
+    message:
+      "Format directly rendered numeric values with the active regional formatter.",
+  },
+  {
+    selector:
+      "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][property.name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|page|Page|rating|Rating|score|Score|percent|Percent|index|Index|length)$/]",
+    message:
+      "Format directly rendered numeric properties with the active regional formatter.",
+  },
 ];
 
 export default [

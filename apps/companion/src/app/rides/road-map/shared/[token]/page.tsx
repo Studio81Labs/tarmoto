@@ -101,8 +101,15 @@ export default async function SharedRoadMapPage({
             </div>
             {snapshot && (
               <span className="shrink-0 rounded-full bg-accent px-2.5 py-1.5 text-[11px] font-bold tracking-[0.2px] text-ink">
-                {format.integer(snapshot.stats.percent_explored)}
-                {t("% explored")}
+                {t("{percent} explored", {
+                  percent: format.number(
+                    snapshot.stats.percent_explored / 100,
+                    {
+                      style: "percent",
+                      maximumFractionDigits: 0,
+                    },
+                  ),
+                })}
               </span>
             )}
           </div>
@@ -191,8 +198,10 @@ export default async function SharedRoadMapPage({
               />
               <MetricTile
                 label={t("Coverage")}
-                value={format.integer(snapshot.stats.percent_explored)}
-                unit="%"
+                value={format.number(snapshot.stats.percent_explored / 100, {
+                  style: "percent",
+                  maximumFractionDigits: 0,
+                })}
                 delta={snapshot.period === "all" ? undefined : t("All-time")}
               />
             </section>

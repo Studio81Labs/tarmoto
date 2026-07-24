@@ -229,6 +229,59 @@ function getMessageFormat(
   return parsed;
 }
 
+/**
+ * ICU deliberately renders plain `{value}` arguments as raw strings. Preserve
+ * that behavior for identifiers supplied as strings, while localizing finite
+ * numeric arguments without grouping. This gives day numbers, ranks, counts,
+ * years, and accessibility values the requested numeral glyphs/decimal
+ * separator without turning identifier-like values into grouped prose.
+ *
+ * Arguments that drive a typed ICU construct remain numeric so plural/select
+ * semantics are unchanged. Authors that want grouping still use
+ * `{value, number}` or plural `#`.
+ */
+function localizePlainNumericValues(
+  template: string,
+  values: TranslationValues,
+  numberLocale: string,
+): TranslationValues {
+  const plainNames = new Set<string>();
+  for (const match of template.matchAll(/\{(\w+)\}/g)) {
+    if (match[1]) plainNames.add(match[1]);
+  }
+  if (plainNames.size === 0) return values;
+
+  const typedNames = new Set<string>();
+  for (const match of template.matchAll(
+    /\{(\w+)\s*,\s*(?:plural|selectordinal|select|number|date|time)\b/g,
+  )) {
+    if (match[1]) typedNames.add(match[1]);
+  }
+
+  let localized: TranslationValues | undefined;
+  const formatter = boundedFormatter(
+    messageNumberFormats,
+    `${numberLocale}|plain`,
+    () =>
+      new Intl.NumberFormat(numberLocale, {
+        useGrouping: false,
+        maximumFractionDigits: 20,
+      }),
+  );
+  for (const name of plainNames) {
+    const value = values[name];
+    if (
+      !typedNames.has(name) &&
+      typeof value === "number" &&
+      Number.isFinite(value)
+    ) {
+      localized ??= { ...values };
+      localized[name] = formatter.format(value);
+    }
+  }
+  return localized ?? values;
+}
+
 // The pre-ICU engine, retained as the compatibility fallback: it never
 // throws, leaves unmatched placeholders in place, and renders malformed
 // templates verbatim — the contract the legacy tests pin.
@@ -278,7 +331,9 @@ export function makeTranslator<K extends string>(
     const parsed = getMessageFormat(template, sourceLocale, numberLocale);
     if (parsed === null) return interpolateLegacy(template, values);
     try {
-      return parsed.format(values) as string;
+      return parsed.format(
+        localizePlainNumericValues(template, values, numberLocale),
+      ) as string;
     } catch {
       return interpolateLegacy(template, values);
     }

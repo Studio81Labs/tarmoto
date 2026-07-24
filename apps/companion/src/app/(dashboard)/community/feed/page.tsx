@@ -147,7 +147,11 @@ export default function CommunityFeedPage() {
     !loading && !error && items.length === 0 && !hasActiveFilter;
   return (
     <CommunityScaffold
-      feedBadge={loading ? null : <Mono className="text-[11px]">{total}</Mono>}
+      feedBadge={
+        loading ? null : (
+          <Mono className="text-[11px]">{format.integer(total)}</Mono>
+        )
+      }
     >
       <Card
         padded={false}

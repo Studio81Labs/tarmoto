@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useMemo } from "react";
+import React, {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 import {
   DEFAULT_LOCALE,
   LOCALES,
@@ -30,7 +35,13 @@ export function I18nProvider({
   locale?: string | null;
 }) {
   const resolvedLocale = resolveLocale(locale);
-  setActiveLocale(resolvedLocale);
+  // Publish to non-React services only after React commits this locale. A
+  // render may be suspended, abandoned, or throw; mutating the module-global
+  // seam during render would let notifications/vehicle surfaces observe a
+  // locale the UI never committed.
+  useLayoutEffect(() => {
+    setActiveLocale(resolvedLocale);
+  }, [resolvedLocale]);
   const value = useMemo<I18nContextValue>(
     () => ({
       locale: resolvedLocale,

@@ -200,9 +200,9 @@ function BadgeRow({ badge }: { badge: UserBadge }) {
               name: copy.name,
               tier: tierLabel(badge.tier ?? ""),
             })
-          : translate("{name}, locked, {progress}% to {nextTier}", {
+          : translate("{name}, locked, {progress} to {nextTier}", {
               name: copy.name,
-              progress: Math.round(ratio * 100),
+              progress: format.percent(ratio),
               nextTier: tierLabel(next?.tier ?? ""),
             })
       }

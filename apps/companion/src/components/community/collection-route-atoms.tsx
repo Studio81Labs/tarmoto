@@ -160,7 +160,10 @@ export function CollectionRouteRow({
   const cells = (
     <>
       <Mono className="text-center text-[16px] font-extrabold text-fg-mute">
-        {index}
+        {format.number(index, {
+          useGrouping: false,
+          maximumFractionDigits: 0,
+        })}
       </Mono>
       <RouteThumb
         lines={route.lines}

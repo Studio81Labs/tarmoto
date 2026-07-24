@@ -180,7 +180,11 @@ function LeaderboardCard({
                 e.isMe ? "text-accent" : "text-fg-mute"
               }`}
             >
-              #{e.rank}
+              #
+              {format.number(e.rank, {
+                useGrouping: false,
+                maximumFractionDigits: 0,
+              })}
             </Mono>
             <UserAvatar
               name={e.displayName}

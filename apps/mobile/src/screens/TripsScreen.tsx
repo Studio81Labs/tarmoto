@@ -42,6 +42,7 @@ import { formatStatus } from "./TripScreens.helpers";
 import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { useTranslation } from "@/i18n/I18nProvider";
+import { getFormatters } from "@/format";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
@@ -262,7 +263,9 @@ function FolderHeader({
       <Text style={styles.folderHeaderLabel} numberOfLines={1}>
         {displayLabel}
       </Text>
-      <Text style={styles.folderHeaderCount}>{count}</Text>
+      <Text style={styles.folderHeaderCount}>
+        {getFormatters().integer(count)}
+      </Text>
     </View>
   );
 }

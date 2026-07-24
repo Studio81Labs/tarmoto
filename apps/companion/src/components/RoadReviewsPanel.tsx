@@ -1064,7 +1064,7 @@ function ReviewCard({
 }
 function VoteButton({
   label,
-  count,
+  count: formattedValue,
   active,
   pending,
   inactiveClass,
@@ -1091,7 +1091,7 @@ function VoteButton({
       }`}
     >
       {icon}
-      <span>{count}</span>
+      <span>{formattedValue}</span>
     </button>
   );
 }

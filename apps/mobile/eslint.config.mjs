@@ -258,6 +258,41 @@ export default [
         },
         {
           selector:
+            "JSXAttribute[name.name=/^(body|headline|text)$/] > Literal[value=/[A-Za-z]{2,}/]",
+          message: "Wrap rider-facing component props with translate().",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(body|headline|text)$/] > JSXExpressionContainer > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing component prop literals with translate().",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(body|headline|text)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Replace rider-facing component prop templates with one translate() ICU message.",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(body|headline|text)$/] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap conditional rider-facing component props with translate().",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(body|headline|text)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Replace conditional rider-facing component prop templates with one translate() ICU message.",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(body|headline|text)$/] > JSXExpressionContainer > BinaryExpression :matches(Literal[value=/[A-Za-z]{2,}/], TemplateElement[value.raw=/[A-Za-z]{2,}/])",
+          message:
+            "Replace concatenated rider-facing component props with one translate() ICU message.",
+        },
+        {
+          selector:
             "CallExpression[callee.object.name='Alert'][callee.property.name='alert'] > Literal[value=/[A-Za-z]{2,}/]",
           message: "Wrap Alert.alert title/body literals with translate().",
         },
@@ -292,6 +327,12 @@ export default [
         },
         {
           selector:
+            "CallExpression[callee.name=/^set.*(Error|Message|Notice|Validation|Warning)$/] LogicalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap rider-facing logical fallback messages with translate().",
+        },
+        {
+          selector:
             "CallExpression[callee.name=/^set.*(Banner|Error|Message|Notice|Validation|Warning)$/] MemberExpression[computed=false][property.name='message']",
           message:
             "Do not expose arbitrary Error.message text. Use getUserFacingErrorMessage(error, translate(…)) so only cataloged API errors pass through.",
@@ -322,6 +363,18 @@ export default [
         },
         {
           selector:
+            "VariableDeclarator[id.name=/^(description|emptyText|headline|helpText|label|message|subtitle|title)$/] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+          message:
+            "Wrap conditional rider-facing copy variables with translate().",
+        },
+        {
+          selector:
+            "VariableDeclarator[id.name=/^(description|emptyText|headline|helpText|label|message|subtitle|title)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+          message:
+            "Replace conditional rider-facing copy templates with one ICU catalog message.",
+        },
+        {
+          selector:
             "VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > Literal[value=/[A-Za-z]{2,}/], VariableDeclarator[id.name=/(^title$|Title$|Label$|displayName$|fallbackName$|rideName$)/] > :matches(ConditionalExpression, LogicalExpression) > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Translate rider-facing display variables before rendering them.",
@@ -342,6 +395,18 @@ export default [
             "CallExpression[callee.name='markFailed'] > ConditionalExpression:first-child > Literal[value=/[A-Za-z]{2,}/]",
           message:
             "Wrap every rider-facing conditional failure message with translate().",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer > Identifier[name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|page|Page|rating|Rating|score|Score|percent|Percent|index|Index)$/]",
+          message:
+            "Format directly rendered numeric values with the active regional formatter.",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer > MemberExpression[computed=false][property.name=/(count|Count|total|Total|rank|Rank|year|Year|day|Day|page|Page|rating|Rating|score|Score|percent|Percent|index|Index|length)$/]",
+          message:
+            "Format directly rendered numeric properties with the active regional formatter.",
         },
         {
           selector: "CallExpression[callee.property.name='toLocaleString']",

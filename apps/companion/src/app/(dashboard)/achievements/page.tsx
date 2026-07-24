@@ -1168,7 +1168,11 @@ function RegionalLeaderboardRow({
           isMe ? "text-accent" : topThree ? "text-ink" : "text-fg-mute",
         )}
       >
-        #{entry.rank}
+        #
+        {format.number(entry.rank, {
+          useGrouping: false,
+          maximumFractionDigits: 0,
+        })}
       </span>
       <div role="cell" className="flex items-center gap-2.5 min-w-0">
         <UserAvatar

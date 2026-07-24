@@ -127,8 +127,8 @@ export const en = {
   "{kind} · {distance} km · {detail}": "{kind} · {distance} km · {detail}",
   "{kind} · {distance}": "{kind} · {distance}",
   "{kind} · {distance} · {detail}": "{kind} · {distance} · {detail}",
-  "{label} · {percent}% conf": "{label} · {percent}% conf",
-  "{label} {percent}%": "{label} {percent}%",
+  "{label} · {percent} conf": "{label} · {percent} conf",
+  "{label} {percent}": "{label} {percent}",
   "{label}, {count, plural, one {# trip} other {# trips}}":
     "{label}, {count, plural, one {# trip} other {# trips}}",
   "{length} · {distance} from you": "{length} · {distance} from you",
@@ -138,12 +138,12 @@ export const en = {
   "{name} hasn't earned any badges yet.":
     "{name} hasn't earned any badges yet.",
   "{name}, {tier} tier earned": "{name}, {tier} tier earned",
-  "{name}, locked, {progress}% to {nextTier}":
-    "{name}, locked, {progress}% to {nextTier}",
-  "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden":
-    "{percent}% explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
-  "{progress} · {percent}%": "{progress} · {percent}%",
-  "{progress} · {percent}% · COMPLETE": "{progress} · {percent}% · COMPLETE",
+  "{name}, locked, {progress} to {nextTier}":
+    "{name}, locked, {progress} to {nextTier}",
+  "{percent} explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden":
+    "{percent} explored · {ridden} of {total, plural, one {# segment} other {# segments}} ridden",
+  "{progress} · {percent}": "{progress} · {percent}",
+  "{progress} · {percent} · COMPLETE": "{progress} · {percent} · COMPLETE",
   "{progress} / {target} {unit}": "{progress} / {target} {unit}",
   "{quality} · {surface}": "{quality} · {surface}",
   "{ready} of {count, plural, one {# region} other {# regions}} ready offline.":
@@ -181,7 +181,7 @@ export const en = {
     "{value0} will no longer be alerted in a crash.",
   "{label}, {distance} away": "{label}, {distance} away",
   "{value0}: {value1}": "{value0}: {value1}",
-  "{value0}% confidence": "{value0}% confidence",
+  "{value0} confidence": "{value0} confidence",
   "{value0}°": "{value0}°",
   "6-character code": "6-character code",
   "A few words about your riding": "A few words about your riding",

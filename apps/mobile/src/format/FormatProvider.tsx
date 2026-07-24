@@ -1,4 +1,9 @@
-import React, { createContext, useContext, useMemo } from "react";
+import React, {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 import {
   createFormatters,
   type FormatContext as SharedFormatContext,
@@ -39,7 +44,11 @@ export function FormatProvider({
     return timeZone ? { ...base, timeZone } : base;
   }, [locale, timeZone, units]);
   const value = useMemo(() => createFormatters(context), [context]);
-  setActiveFormatContext(context);
+  // Keep the synchronous native/background seam aligned with committed UI.
+  // Render-phase publication can leak an abandoned concurrent render.
+  useLayoutEffect(() => {
+    setActiveFormatContext(context);
+  }, [context]);
 
   return (
     <FormatContext.Provider value={value}>{children}</FormatContext.Provider>

@@ -52,4 +52,10 @@ describe("companion indirect display-copy lint guard", () => {
       ),
     ).not.toHaveLength(0);
   });
+
+  it("rejects directly rendered numeric display values", () => {
+    expect(
+      guardMessages("const view = <span>{entry.rank}</span>;"),
+    ).not.toHaveLength(0);
+  });
 });

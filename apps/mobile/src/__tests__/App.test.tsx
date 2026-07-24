@@ -71,6 +71,12 @@ jest.mock("@/services/displayPreferencesSyncMonitor", () => ({
   startDisplayPreferencesSyncMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/i18n/deviceLocale", () => ({
+  detectDeviceLocale: jest.fn(() => "en-GB"),
+  detectDeviceFormatLocale: jest.fn(() => "en-GB"),
+  detectDeviceTimeZone: jest.fn(() => "Europe/Prague"),
+}));
+
 describe("App auth locale hydration", () => {
   beforeEach(() => {
     jest.mocked(startCommuteHazardMonitor).mockClear();
@@ -128,6 +134,23 @@ describe("App auth locale hydration", () => {
       expect(usePreferencesStore.getState().distanceUnit).toBe("imperial");
       expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
     });
+  });
+
+  it("keeps regional formatting device-owned when the account was mirrored by another device", async () => {
+    await render(<App />);
+
+    await act(() => {
+      useAuthStore.getState().setUser({
+        language: "en",
+        preferences: {
+          format_locale: "ar-EG",
+          timezone: "America/New_York",
+        },
+      } as unknown as User);
+    });
+
+    expect(getFormatters().locale).toBe("en-GB");
+    expect(getFormatters().timeZone).toBe("Europe/Prague");
   });
 
   it("defaults an authenticated unit-less profile to metric", async () => {

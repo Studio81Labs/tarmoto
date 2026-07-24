@@ -9,6 +9,7 @@ import {
   useCommunityFeedTotal,
   useCommunityCollectionsTotal,
 } from "./_useCommunityTotals";
+import { useFormat } from "@/format/FormatProvider";
 
 /**
  * Shared chrome for the two Community section roots (`/community/feed`,
@@ -37,19 +38,20 @@ export function CommunityScaffold({
   children: ReactNode;
 }) {
   const t = useTranslation();
+  const format = useFormat();
   const fallbackFeed = useCommunityFeedTotal();
   const fallbackCollections = useCommunityCollectionsTotal();
   const feed =
     feedBadge !== undefined ? (
       feedBadge
     ) : fallbackFeed !== null ? (
-      <Mono className="text-[11px]">{fallbackFeed}</Mono>
+      <Mono className="text-[11px]">{format.integer(fallbackFeed)}</Mono>
     ) : null;
   const collections =
     collectionsBadge !== undefined ? (
       collectionsBadge
     ) : fallbackCollections !== null ? (
-      <Mono className="text-[11px]">{fallbackCollections}</Mono>
+      <Mono className="text-[11px]">{format.integer(fallbackCollections)}</Mono>
     ) : null;
   return (
     // Grows with content so the page scrolls through the AppShell scroller and

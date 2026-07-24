@@ -43,8 +43,8 @@ export default function App() {
   const deviceTimeZone = useMemo(detectDeviceTimeZone, []);
   const locale = user?.language ?? deviceLocale;
   const formatLocale =
-    user?.preferences?.format_locale ?? deviceFormatLocale ?? deviceLocale;
-  const timeZone = user?.preferences?.timezone ?? deviceTimeZone;
+    deviceFormatLocale ?? deviceLocale ?? user?.preferences?.format_locale;
+  const timeZone = deviceTimeZone ?? user?.preferences?.timezone;
 
   // The account is the cross-device source of truth. Hydrate the synchronous
   // MMKV-backed store whenever auth resolves (or the profile changes), while
@@ -175,7 +175,7 @@ export default function App() {
       <SafeAreaProvider>
         <I18nProvider locale={locale ?? null}>
           <FormatProvider
-            locale={formatLocale}
+            locale={formatLocale ?? null}
             timeZone={timeZone ?? null}
             units={units}
           >

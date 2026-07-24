@@ -80,6 +80,7 @@ import {
   type LeanHistogramRow,
 } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { getFormatters } from "@/format";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -422,7 +423,7 @@ function LeanHistogramRowView({
   maxRatio: number;
 }) {
   const widthPct = `${Math.max(row.ratio * (100 / maxRatio), row.count > 0 ? 6 : 0)}%`;
-  const percentLabel = `${Math.round(row.ratio * 100)}%`;
+  const percentLabel = getFormatters().percent(row.ratio);
   return (
     <View
       style={styles.histRow}
@@ -535,7 +536,7 @@ function HistogramRow({
           ]}
         />
       </View>
-      <Text style={styles.histCount}>{count}</Text>
+      <Text style={styles.histCount}>{getFormatters().integer(count)}</Text>
     </View>
   );
 }
