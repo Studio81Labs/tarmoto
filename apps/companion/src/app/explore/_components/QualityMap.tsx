@@ -1245,14 +1245,18 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             />
           ) : null}
         </MapCanvas>
-        {zoomUpgradeOpen && tier ? (
+        {zoomUpgradeOpen ? (
           <UpgradePrompt
             variant="modal"
             capability={{
               limit: "road_quality_max_zoom",
               resolvedLimit: qualityZoomLimit,
             }}
-            currentTier={tier}
+            // Anonymous public viewers have no `/users/me` tier, but the modal
+            // only opens on a FINITE cap (free — see `qualityCapFinite`), so
+            // fall back to `free`: the CTA then routes to sign-in/upgrade rather
+            // than leaving a capped logged-out viewer with no path forward.
+            currentTier={tier ?? "free"}
             message={t(
               "Zoom in further for full road-quality detail with Pro.",
             )}
