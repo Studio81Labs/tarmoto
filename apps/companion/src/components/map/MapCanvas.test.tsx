@@ -34,13 +34,11 @@ const mapStub = {
 
 const loadHandlers: Array<() => void> = [];
 
-const useLimitMock = vi.fn(() => ({
+const useCapMock = vi.fn(() => ({
   limit: null as number | null,
-  isLoading: false,
-  isError: false,
-  isSuccess: true,
+  isResolved: true,
 }));
-vi.mock("@/hooks", () => ({ useLimit: () => useLimitMock() }));
+vi.mock("@/hooks", () => ({ useRoadQualityZoomCap: () => useCapMock() }));
 
 vi.mock("@/lib/map-style", async () => {
   const actual =
@@ -131,13 +129,8 @@ describe("MapCanvas", () => {
     mapStub.resize.mockReset();
     mapStub.remove.mockReset();
     vi.mocked(applyTarmotoMapTheme).mockReset();
-    useLimitMock.mockReset();
-    useLimitMock.mockReturnValue({
-      limit: null,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-    });
+    useCapMock.mockReset();
+    useCapMock.mockReturnValue({ limit: null, isResolved: true });
   });
 
   it("always applies the light theme and ignores the OS dark-mode preference", async () => {
@@ -216,12 +209,7 @@ describe("MapCanvas", () => {
   });
 
   it("adds the quality overlay layer with the free maxzoom cap when limited", async () => {
-    useLimitMock.mockReturnValue({
-      limit: 12,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-    });
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
     render(
       <MapCanvas
         center={{ lng: 0, lat: 0 }}
@@ -240,12 +228,7 @@ describe("MapCanvas", () => {
   });
 
   it("lifts the quality overlay cap for an unlimited (pro/premium) rider", async () => {
-    useLimitMock.mockReturnValue({
-      limit: null,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-    });
+    useCapMock.mockReturnValue({ limit: null, isResolved: true });
     render(
       <MapCanvas
         center={{ lng: 0, lat: 0 }}
@@ -267,12 +250,7 @@ describe("MapCanvas", () => {
     // The selection glow/line render QUALITY_LINE_COLOR from source-layer
     // "quality", so a free rider selecting a segment could otherwise read its
     // quality colour past the cap. Both must carry the same maxzoom.
-    useLimitMock.mockReturnValue({
-      limit: 12,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-    });
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
     render(
       <MapCanvas
         center={{ lng: 0, lat: 0 }}
@@ -302,12 +280,7 @@ describe("MapCanvas", () => {
   it("adds an UNCAPPED invisible road-hit layer so interaction survives the cap", async () => {
     // The hit target must NOT carry the entitlement maxzoom — snapping / tap /
     // hover keep working past the free cap — and must be invisible.
-    useLimitMock.mockReturnValue({
-      limit: 12,
-      isLoading: false,
-      isError: false,
-      isSuccess: true,
-    });
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
     render(
       <MapCanvas
         center={{ lng: 0, lat: 0 }}
