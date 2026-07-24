@@ -115,10 +115,7 @@ import {
   reconcileConditionMenu,
 } from "./conditionPopoverReconcile";
 import { useEntitlements, useLimit } from "@/hooks";
-import {
-  resolveQualityMaxZoom,
-  shouldPromptQualityZoom,
-} from "@/lib/map-entitlements";
+import { shouldPromptQualityZoom } from "@/lib/map-entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useTranslation } from "@/i18n/I18nProvider";
 
@@ -273,17 +270,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // Discovery nudge: a free rider zooming the overlay past the entitled
     // cap gets a one-shot upgrade modal on THIS surface only (the primary
     // interactive quality map — other quality consumers keep the silent
-    // clamp from `resolveQualityMaxZoom`/`MapCanvas`). `qualityCapFinite`
+    // clamp from `resolveQualityLayerMaxZoom`/`MapCanvas`). `qualityCapFinite`
     // is false while the cap is unresolved OR for an unlimited (pro/premium)
-    // rider — fail closed, never nag in either case.
+    // rider — fail closed, never nag in either case. The prompt threshold is
+    // the RAW entitlement cap level (finite when `qualityCapFinite`), not the
+    // exclusive layer maxzoom.
     const { tier } = useEntitlements();
     const { limit: qualityZoomLimit, isSuccess: qualityZoomResolved } =
       useLimit("road_quality_max_zoom");
     const qualityCapFinite = qualityZoomResolved && qualityZoomLimit !== null;
-    const qualityCap = resolveQualityMaxZoom(
-      qualityZoomLimit,
-      qualityZoomResolved,
-    );
+    const qualityCap = qualityZoomLimit ?? 0;
     const [zoomUpgradeOpen, setZoomUpgradeOpen] = useState(false);
     const [zoomUpgradeDismissed, setZoomUpgradeDismissed] = useState(false);
     const handleRef = useRef<MapCanvasHandle>(null);

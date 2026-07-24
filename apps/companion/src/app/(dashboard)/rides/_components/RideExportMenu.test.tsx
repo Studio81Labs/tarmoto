@@ -50,4 +50,21 @@ describe("RideExportMenu — gpx_export gate", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: /CSV/i }));
     expect(onExport).toHaveBeenCalledWith("csv");
   });
+
+  it("disables the GPX item (but not CSV) while entitlements are unresolved", async () => {
+    // Hydration window: enabled:false + loading. GPX must be disabled so an
+    // early click can't mis-fire the upgrade modal; CSV stays free.
+    useFeatureMock.mockReturnValue({ enabled: false, isLoading: true });
+    useEntitlementsMock.mockReturnValue({ tier: null });
+    const onExport = vi.fn().mockResolvedValue(undefined);
+    render(<RideExportMenu onExport={onExport} />);
+    await userEvent.click(screen.getByRole("button", { name: /Export/i }));
+    const gpxItem = screen.getByRole("menuitem", { name: /GPX/i });
+    expect(gpxItem).toBeDisabled();
+    await userEvent.click(gpxItem);
+    expect(onExport).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // CSV is unaffected by the gate.
+    expect(screen.getByRole("menuitem", { name: /CSV/i })).not.toBeDisabled();
+  });
 });

@@ -23,7 +23,7 @@ import {
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
 import { useLimit } from "@/hooks";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
-import { resolveQualityMaxZoom } from "@/lib/map-entitlements";
+import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
 
@@ -197,7 +197,10 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const { limit: qualityZoomLimit, isSuccess: qualityZoomResolved } = useLimit(
     "road_quality_max_zoom",
   );
-  const qualityMaxZoom = resolveQualityMaxZoom(
+  // MapLibre layer maxzoom is EXCLUSIVE (hidden at zoom >= maxzoom), so this is
+  // one level above the entitlement cap — a free rider still sees the overlay
+  // AT their capped level, and an unlimited rider is never hidden.
+  const qualityMaxZoom = resolveQualityLayerMaxZoom(
     qualityZoomLimit,
     qualityZoomResolved,
   );

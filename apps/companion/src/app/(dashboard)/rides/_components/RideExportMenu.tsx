@@ -22,7 +22,8 @@ export function RideExportMenu({
   onExport: (format: RideExportFormat) => Promise<void>;
 }) {
   const t = useTranslation();
-  const { enabled: gpxEnabled } = useFeature("gpx_export");
+  const { enabled: gpxEnabled, isLoading: gpxLoading } =
+    useFeature("gpx_export");
   const { tier } = useEntitlements();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [open, setOpen] = useState(false);
@@ -95,7 +96,10 @@ export function RideExportMenu({
               }
               void handleExport("gpx");
             }}
-            disabled={busy !== null}
+            // Disabled while the entitlement snapshot is unresolved: we can't
+            // yet tell a Pro rider (export) from a free one (upgrade), so don't
+            // let a click in that window mis-fire the upgrade modal.
+            disabled={busy !== null || gpxLoading}
             className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("GPX (tracks)")}

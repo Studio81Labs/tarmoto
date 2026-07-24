@@ -23,10 +23,14 @@ interface TripExportButtonProps {
  */
 export function TripExportButton({ trip }: TripExportButtonProps) {
   const t = useTranslation();
-  const { enabled: gpxEnabled } = useFeature("gpx_export");
+  const { enabled: gpxEnabled, isLoading: gpxLoading } =
+    useFeature("gpx_export");
   const { tier } = useEntitlements();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const disabled = !trip;
+  // Disabled until a trip loads AND the entitlement snapshot resolves — while
+  // unresolved we can't tell a Pro rider (export) from a free one (upgrade), so
+  // a click in that window must not mis-fire the upgrade modal.
+  const disabled = !trip || gpxLoading;
   function handleGpx() {
     if (!gpxEnabled) {
       setUpgradeOpen(true);

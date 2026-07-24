@@ -44,4 +44,17 @@ describe("TripExportButton — gpx_export gate", () => {
     await userEvent.click(screen.getByRole("button", { name: /Export GPX/i }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("is disabled while entitlements are unresolved (no mis-fired upgrade modal)", async () => {
+    // During auth/profile hydration useFeature reports enabled:false + loading;
+    // the button must be disabled so a Pro rider's early click doesn't set the
+    // upgrade modal that then renders stale once the tier resolves.
+    useFeatureMock.mockReturnValue({ enabled: false, isLoading: true });
+    useEntitlementsMock.mockReturnValue({ tier: null });
+    render(<TripExportButton trip={trip} />);
+    const button = screen.getByRole("button", { name: /Export GPX/i });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
