@@ -288,14 +288,10 @@ export default function TripPlannerPage() {
   const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const { tier } = useEntitlements();
-  // Proactive cap gate inputs (see `proactiveAtTripLimit` below).
+  // The resolved own cap. The trip-count query + full mint gate are computed
+  // lower down (they depend on `isTripOwner`/`displayedTrip`); see `mintGateBlocked`.
   const { limit: maxActiveTrips, isSuccess: capResolved } =
     useLimit("max_active_trips");
-  const {
-    trips: ownedTrips,
-    loading: ownedTripsLoading,
-    error: ownedTripsError,
-  } = useUserTrips();
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   // A proactively-shown cap prompt the rider dismissed — don't re-show it for
   // the rest of this planner session (the save-path 403 still enforces).
@@ -1078,26 +1074,49 @@ export default function TripPlannerPage() {
   const isCollaborator =
     isSavedTrip &&
     (serverTripCallerRole === "editor" || serverTripCallerRole === "viewer");
-  // Proactive cap gate for a brand-new planner session reached DIRECTLY
-  // (bookmark, address bar, stale tab) — bypassing the /trips header block.
-  // Only a NEW trip mints against the rider's OWN cap; editing an existing trip
-  // doesn't, so gate solely when there's no server trip yet under a resolved
-  // FINITE cap. Fail closed while the open-trip COUNT is unknown (the trips
-  // query loading or errored) — mirroring the /trips header — so a capped rider
-  // isn't waved through on an empty count. Rendered declaratively (not an
-  // imperative open) so it auto-hides the instant the count resolves UNDER the
-  // cap instead of flashing open and sticking. The save-path 403 stays the hard
-  // enforcement.
-  const proactiveAtTripLimit =
-    isNewTripSession &&
-    !isSavedTrip &&
-    capResolved &&
+  // Proactive own-cap gate for a planner session reached DIRECTLY (bookmark,
+  // address bar, stale tab) — bypassing the /trips header block. A save mints
+  // against the rider's OWN cap in two contexts: a brand-new trip, and an OWNER
+  // reopening their own COMPLETED trip (the backend treats saving a route onto
+  // a completed trip as a completed→planned promotion → assertCanMintOpenTrip).
+  // Ordinary open-trip edits mint nothing and are never gated; a collaborator
+  // editing someone else's trip can't know the owner's count, so it's left to
+  // the save-path 403.
+  const isOwnMintContext =
+    (isNewTripSession && !isSavedTrip) ||
+    (isSavedTrip && isTripOwner && displayedTrip?.status === "completed");
+  // Only fetch the (unpaginated, geospatial) trips list when the COUNT is
+  // actually needed: a mint context under a resolved FINITE cap. Cap-unknown
+  // fails closed without the count; an unlimited cap needs no count; a
+  // non-mint/edit context needs none either.
+  const needsTripCount =
+    isOwnMintContext && capResolved && maxActiveTrips !== null;
+  const {
+    trips: ownedTrips,
+    loading: ownedTripsLoading,
+    error: ownedTripsError,
+  } = useUserTrips({ enabled: needsTripCount });
+  const atFiniteTripCap =
+    needsTripCount &&
     maxActiveTrips !== null &&
-    (ownedTripsLoading ||
-      ownedTripsError ||
-      countOpenOwnedTrips(ownedTrips, currentUserId) >= maxActiveTrips);
-  const showProactiveUpgrade =
-    proactiveAtTripLimit && !proactiveUpgradeDismissed;
+    !ownedTripsLoading &&
+    !ownedTripsError &&
+    countOpenOwnedTrips(ownedTrips, currentUserId) >= maxActiveTrips;
+  // The mint gate is ACTIVE — block the mint controls, fail closed — whenever,
+  // in an own-mint context, we cannot PROVE the rider is under a finite cap:
+  //  - cap not yet resolved (auth-hydration delay / entitlement error) → unknown
+  //  - finite cap but the count is unknown (trips query loading/errored)
+  //  - finite cap and the count is at/over it
+  // This mirrors the /trips header's fail-closed behaviour with a neutral
+  // disabled state (no tier is needed to disable, unlike the modal below).
+  const mintGateBlocked =
+    isOwnMintContext &&
+    (!capResolved ||
+      (needsTripCount && (ownedTripsLoading || ownedTripsError)) ||
+      atFiniteTripCap);
+  // The informative upgrade modal shows only when we CONFIRM a finite cap is
+  // met (never on a mere unknown — that would claim a limit we can't verify).
+  const showProactiveUpgrade = atFiniteTripCap && !proactiveUpgradeDismissed;
   // A viewer opening the edit URL for a saved trip has no business here —
   // the backend 403s their writes. Show an access screen once the role
   // resolves rather than a functional-looking editor.
@@ -2814,6 +2833,9 @@ export default function TripPlannerPage() {
               variant="secondary"
               size="sm"
               aria-label={t("Import GPX")}
+              // Importing mints on save — block it while the own-cap gate is
+              // active (at cap, or the cap/count can't be confirmed).
+              disabled={mintGateBlocked}
               onClick={() => openImport()}
             >
               <Upload size={15} />
@@ -2883,7 +2905,9 @@ export default function TripPlannerPage() {
             collapseLabel
             loading={savingRoute}
             leftIcon={<Save size={14} />}
-            disabled={!canSaveRoute || savingRoute || routing}
+            disabled={
+              !canSaveRoute || savingRoute || routing || mintGateBlocked
+            }
             onClick={handleSaveRoute}
           >
             {savingRoute ? t("Saving…") : t("Save route")}
@@ -3430,7 +3454,9 @@ export default function TripPlannerPage() {
                       size="md"
                       block
                       loading={isGenerating}
-                      disabled={isGenerating}
+                      // Drafting a route is wasted effort if the save can't mint
+                      // — block it while the own-cap gate is active.
+                      disabled={isGenerating || mintGateBlocked}
                       onClick={() => void handleGenerate()}
                     >
                       {isGenerating

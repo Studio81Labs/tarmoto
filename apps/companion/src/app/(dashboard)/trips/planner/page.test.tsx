@@ -31,7 +31,7 @@ const { useLimitMock, useUserTripsMock } = vi.hoisted(() => ({
     isLoading: false,
     isSuccess: true,
   })),
-  useUserTripsMock: vi.fn(() => ({
+  useUserTripsMock: vi.fn((_opts?: { enabled?: boolean }) => ({
     trips: [] as unknown[],
     loading: false,
     error: false,
@@ -50,7 +50,7 @@ vi.mock("@/hooks", async (importOriginal) => ({
 }));
 vi.mock("@/hooks/useUserTrips", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useUserTrips")>()),
-  useUserTrips: () => useUserTripsMock(),
+  useUserTrips: (opts?: { enabled?: boolean }) => useUserTripsMock(opts),
 }));
 
 const { mockPush } = vi.hoisted(() => ({
@@ -551,13 +551,16 @@ describe("TripPlannerPage", () => {
     tripsApiSaveRouteMock.mockResolvedValue({
       data: buildTripDetail("Saved route"),
     } as never);
-    // Reset the entitlement/trips gate mocks to their ungated defaults
-    // (resolved-unlimited cap, no trips) so only the proactive-gate test opts in.
+    // Reset the entitlement/trips gate mocks (call history AND return) to their
+    // ungated defaults (resolved-unlimited cap, no trips) so only the
+    // proactive-gate tests opt in and per-test call assertions start clean.
+    useLimitMock.mockReset();
     useLimitMock.mockReturnValue({
       limit: null,
       isLoading: false,
       isSuccess: true,
     });
+    useUserTripsMock.mockReset();
     useUserTripsMock.mockReturnValue({
       trips: [],
       loading: false,
@@ -2741,7 +2744,9 @@ describe("TripPlannerPage", () => {
 
   it("fails closed on a fresh planner while the trip count is still loading (finite cap)", async () => {
     // Count unknown (trips query pending) under a finite cap → must not wave a
-    // possibly-capped rider through on an empty count; show the prompt.
+    // possibly-capped rider through on an empty count. Fail closed by DISABLING
+    // the mint controls (neutral — we don't claim a limit we can't verify, so
+    // no "limit reached" modal here).
     useAuthStore.setState({
       user: { id: "u-owner", email: "o@example.com", displayName: "O" },
       isAuthenticated: true,
@@ -2761,13 +2766,14 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(
-      screen.getByText("You've reached your trip limit on the Free plan."),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /Save route/i })).toBeDisabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("fails closed on a fresh planner when the trip count query errors (finite cap)", async () => {
+  it("fails closed (disabled mint controls) on a fresh planner when the trip count query errors (finite cap)", async () => {
     useAuthStore.setState({
       user: { id: "u-owner", email: "o@example.com", displayName: "O" },
       isAuthenticated: true,
@@ -2787,7 +2793,33 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /Save route/i })).toBeDisabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("fails closed (disabled mint controls) on a cold planner load before the cap resolves", async () => {
+    // Auth-hydration delay / entitlement error → capResolved false. No tier to
+    // render a modal, so we must DISABLE the mint controls, not wave through.
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: false,
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+    expect(screen.getByRole("button", { name: /Save route/i })).toBeDisabled();
   });
 
   it("does NOT proactively gate when EDITING an existing trip at the cap (editing doesn't mint)", async () => {
@@ -2828,6 +2860,66 @@ describe("TripPlannerPage", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Import (gated ONLY by the mint gate) stays enabled — an open-trip edit is
+    // not a mint context.
+    expect(
+      screen.getByRole("button", { name: "Import GPX" }),
+    ).not.toBeDisabled();
+  });
+
+  it("gates an owner reopening their COMPLETED trip at the cap (save promotes it → mints)", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValue({
+      data: buildTripDetail("Done", { id: serverTripId, status: "completed" }),
+    } as never);
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+    // Saving a completed trip promotes it (completed→planned) → mints against
+    // the owner's cap, so it IS gated even though it's a saved trip.
+    storeState.activeTrip = { ...activeTrip, status: "completed" };
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Save route/i }),
+      ).toBeDisabled(),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("does not fetch the (unpaginated) trips list when the cap is unlimited", () => {
+    // Unlimited cap in a fresh mint session → the count is irrelevant, so the
+    // geospatial /trips list query stays disabled.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isSuccess: true,
+    });
+
+    render(<TripPlannerPage />);
+
+    expect(useUserTripsMock).toHaveBeenCalledWith({ enabled: false });
+    expect(useUserTripsMock).not.toHaveBeenCalledWith({ enabled: true });
   });
 
   // ── Live routing gate (per-day stale gate) ──────────────────────────
