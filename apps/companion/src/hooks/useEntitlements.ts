@@ -59,15 +59,19 @@ export function useEntitlements(): {
 
 /** Whether a tier-locked toggle is granted. `enabled` is false while loading
  *  or unknown — callers that must avoid a locked-state flash should gate on
- *  `isLoading`. */
+ *  `isLoading`, and those that must fail closed on an unresolved snapshot
+ *  (e.g. the auth-hydration window where the query is disabled: `isLoading`
+ *  false but `isSuccess` false) should gate on `isSuccess`. */
 export function useFeature(key: ToggleFeatureKey): {
   enabled: boolean;
   isLoading: boolean;
+  isSuccess: boolean;
 } {
-  const { features, isLoading } = useEntitlements();
+  const { features, isLoading, isSuccess } = useEntitlements();
   return {
     enabled: features ? isFeatureEnabled(features, key) : false,
     isLoading,
+    isSuccess,
   };
 }
 

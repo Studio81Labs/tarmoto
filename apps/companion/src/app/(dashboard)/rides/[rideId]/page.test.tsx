@@ -43,7 +43,7 @@ vi.mock("../_components/RideRouteMap", () => ({
 // doesn't need a QueryClient. gpx_export enabled keeps the pre-gate
 // export-menu assertions unchanged.
 vi.mock("@/hooks", () => ({
-  useFeature: () => ({ enabled: true, isLoading: false }),
+  useFeature: () => ({ enabled: true, isLoading: false, isSuccess: true }),
   useEntitlements: () => ({ tier: "free" }),
 }));
 

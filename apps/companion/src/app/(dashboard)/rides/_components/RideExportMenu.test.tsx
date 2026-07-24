@@ -20,7 +20,11 @@ describe("RideExportMenu — gpx_export gate", () => {
   });
 
   it("exports GPX normally when the feature is enabled", async () => {
-    useFeatureMock.mockReturnValue({ enabled: true, isLoading: false });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isSuccess: true,
+    });
     const onExport = vi.fn().mockResolvedValue(undefined);
     render(<RideExportMenu onExport={onExport} />);
     await userEvent.click(screen.getByRole("button", { name: /Export/i }));
@@ -30,7 +34,11 @@ describe("RideExportMenu — gpx_export gate", () => {
   });
 
   it("opens the upgrade modal and does NOT export GPX when the feature is off", async () => {
-    useFeatureMock.mockReturnValue({ enabled: false, isLoading: false });
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isSuccess: true,
+    });
     const onExport = vi.fn().mockResolvedValue(undefined);
     render(<RideExportMenu onExport={onExport} />);
     await userEvent.click(screen.getByRole("button", { name: /Export/i }));
@@ -43,7 +51,11 @@ describe("RideExportMenu — gpx_export gate", () => {
   });
 
   it("keeps CSV export free regardless of the GPX gate", async () => {
-    useFeatureMock.mockReturnValue({ enabled: false, isLoading: false });
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isSuccess: true,
+    });
     const onExport = vi.fn().mockResolvedValue(undefined);
     render(<RideExportMenu onExport={onExport} />);
     await userEvent.click(screen.getByRole("button", { name: /Export/i }));
@@ -51,10 +63,15 @@ describe("RideExportMenu — gpx_export gate", () => {
     expect(onExport).toHaveBeenCalledWith("csv");
   });
 
-  it("disables the GPX item (but not CSV) while entitlements are unresolved", async () => {
-    // Hydration window: enabled:false + loading. GPX must be disabled so an
-    // early click can't mis-fire the upgrade modal; CSV stays free.
-    useFeatureMock.mockReturnValue({ enabled: false, isLoading: true });
+  it("disables the GPX item (but not CSV) in the cold-load window", async () => {
+    // Pre-auth: the query is disabled → isLoading false, isSuccess false. GPX
+    // must still be disabled (an early click can't mis-fire the modal); CSV
+    // stays free.
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isSuccess: false,
+    });
     useEntitlementsMock.mockReturnValue({ tier: null });
     const onExport = vi.fn().mockResolvedValue(undefined);
     render(<RideExportMenu onExport={onExport} />);

@@ -29,7 +29,11 @@ describe("TripExportButton — gpx_export gate", () => {
   });
 
   it("opens the upgrade modal instead of exporting when gpx_export is off", async () => {
-    useFeatureMock.mockReturnValue({ enabled: false, isLoading: false });
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isSuccess: true,
+    });
     render(<TripExportButton trip={trip} />);
     await userEvent.click(screen.getByRole("button", { name: /Export GPX/i }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
@@ -39,17 +43,25 @@ describe("TripExportButton — gpx_export gate", () => {
   });
 
   it("exports normally when gpx_export is enabled", async () => {
-    useFeatureMock.mockReturnValue({ enabled: true, isLoading: false });
+    useFeatureMock.mockReturnValue({
+      enabled: true,
+      isLoading: false,
+      isSuccess: true,
+    });
     render(<TripExportButton trip={trip} />);
     await userEvent.click(screen.getByRole("button", { name: /Export GPX/i }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("is disabled while entitlements are unresolved (no mis-fired upgrade modal)", async () => {
-    // During auth/profile hydration useFeature reports enabled:false + loading;
-    // the button must be disabled so a Pro rider's early click doesn't set the
-    // upgrade modal that then renders stale once the tier resolves.
-    useFeatureMock.mockReturnValue({ enabled: false, isLoading: true });
+  it("stays disabled in the cold-load window (query disabled: isLoading false, isSuccess false)", async () => {
+    // Pre-auth: the /users/me query is disabled, so isLoading is false yet the
+    // snapshot hasn't resolved. A Pro rider clicking here must NOT set a stale
+    // upgrade modal — the button must remain disabled until isSuccess.
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isSuccess: false,
+    });
     useEntitlementsMock.mockReturnValue({ tier: null });
     render(<TripExportButton trip={trip} />);
     const button = screen.getByRole("button", { name: /Export GPX/i });

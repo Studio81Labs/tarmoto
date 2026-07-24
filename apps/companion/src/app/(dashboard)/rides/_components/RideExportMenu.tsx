@@ -22,7 +22,7 @@ export function RideExportMenu({
   onExport: (format: RideExportFormat) => Promise<void>;
 }) {
   const t = useTranslation();
-  const { enabled: gpxEnabled, isLoading: gpxLoading } =
+  const { enabled: gpxEnabled, isSuccess: gpxResolved } =
     useFeature("gpx_export");
   const { tier } = useEntitlements();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -96,10 +96,12 @@ export function RideExportMenu({
               }
               void handleExport("gpx");
             }}
-            // Disabled while the entitlement snapshot is unresolved: we can't
-            // yet tell a Pro rider (export) from a free one (upgrade), so don't
-            // let a click in that window mis-fire the upgrade modal.
-            disabled={busy !== null || gpxLoading}
+            // Disabled until the entitlement snapshot has RESOLVED (isSuccess,
+            // not merely !isLoading — the pre-auth window has the query
+            // disabled: isLoading false, isSuccess false). We can't yet tell a
+            // Pro rider (export) from a free one (upgrade), so a click in that
+            // window must not mis-fire the upgrade modal.
+            disabled={busy !== null || !gpxResolved}
             className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("GPX (tracks)")}
