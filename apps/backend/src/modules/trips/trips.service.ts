@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Repository } from 'typeorm';
+import { EntityManager, In, Not, Repository } from 'typeorm';
 import {
   DEFAULT_LOCALE,
   haversineKm,
@@ -314,6 +314,36 @@ export class TripsService {
     });
     if (!isWithinLimit(limit, current)) {
       throw featureLimitExceeded('max_active_trips', limit, current);
+    }
+  }
+
+  /**
+   * Owner-scoped `max_trip_collaborators` cap for the invite endpoint. The
+   * limit belongs to the trip OWNER (not the inviter — an editor can invite),
+   * so it resolves the owner's entitlement and counts the trip's current
+   * NON-OWNER collaborators (accepted members + pending invites) against it,
+   * throwing before a NEW invitee is persisted. Callers must invoke this ONLY
+   * when adding a new collaborator — a re-invite of an already-pending address
+   * (role change / code rotation) adds nobody and must not be blocked. Mirrors
+   * `assertCanMintOpenTrip`'s count-then-throw (same small concurrency-race
+   * tolerance; the client gate + this check cover the realistic paths).
+   */
+  async assertCanAddCollaborator(
+    tripId: string,
+    ownerId: string,
+  ): Promise<void> {
+    const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
+    const limit = limits.max_trip_collaborators;
+    if (limit === null) return; // unlimited — skip the count entirely
+    const [nonOwnerMembers, pendingInvites] = await Promise.all([
+      this.memberRepo.count({
+        where: { trip_id: tripId, role: Not('owner') },
+      }),
+      this.inviteRepo.count({ where: { trip_id: tripId } }),
+    ]);
+    const current = nonOwnerMembers + pendingInvites;
+    if (!isWithinLimit(limit, current)) {
+      throw featureLimitExceeded('max_trip_collaborators', limit, current);
     }
   }
 
@@ -790,6 +820,17 @@ export class TripsService {
     // and retry with a fresh code — so the loop doesn't need to
     // disambiguate the constraint. What matters is that the code in
     // the email is ALWAYS the code that actually got persisted.
+    // Owner-scoped collaborator cap. Only a NEW invitee counts against it — a
+    // re-invite of an already-pending address (handled by the update branch
+    // below) adds no collaborator. The existing-MEMBER case already returned
+    // above, so a missing invite row here means this invite grows the roster.
+    const priorInvite = await this.inviteRepo.findOne({
+      where: { trip_id: tripId, email: dto.email },
+    });
+    if (!priorInvite) {
+      await this.assertCanAddCollaborator(tripId, trip.owner_id);
+    }
+
     const role = dto.role ?? 'editor';
     let personalCode: string;
     for (let attempt = 0; ; attempt++) {

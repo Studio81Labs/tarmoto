@@ -262,6 +262,7 @@ describe('TripsService', () => {
         ),
       findOne: jest.fn().mockResolvedValue(null),
       find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     } as unknown as jest.Mocked<Repository<TripMember>>;
@@ -273,6 +274,7 @@ describe('TripsService', () => {
     inviteRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
+      count: jest.fn().mockResolvedValue(0),
       insert: jest.fn().mockResolvedValue({ identifiers: [{ id: 'inv-1' }] }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -319,15 +321,17 @@ describe('TripsService', () => {
       }),
     };
 
-    // Unlimited by default so every pre-existing test in this file (none
-    // of which know about `max_active_trips`) keeps passing unchanged —
-    // `assertCanMintOpenTrip` short-circuits before ever touching
-    // `tripRepo.count`. Only the enforcement tests below override this
-    // with a finite limit.
+    // Unlimited by default so every pre-existing test in this file (none of
+    // which know about the numeric limits) keeps passing unchanged — both
+    // `assertCanMintOpenTrip` and `assertCanAddCollaborator` short-circuit
+    // before touching their count queries. Only the enforcement tests below
+    // override this with a finite limit. Mirrors production's full snapshot
+    // (every limit key present).
     featureResolver = {
-      resolveLimitsForUser: jest
-        .fn()
-        .mockResolvedValue({ max_active_trips: null }),
+      resolveLimitsForUser: jest.fn().mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: null,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -2378,6 +2382,104 @@ describe('TripsService', () => {
         throw new Error('expected sendTripInvite to have been called');
       const [, , locale] = inviteCall;
       expect(locale).toBe('en');
+    });
+
+    it('403s with FEATURE_LIMIT_EXCEEDED when the owner is at their max_trip_collaborators cap', async () => {
+      // Owner-scoped cap: the limit belongs to the trip owner, resolved for
+      // OWNER_ID (not the inviter). One non-owner member already + a finite
+      // cap of 1 → a NEW invite would exceed it.
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember); // caller privileged-role check
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User) // inviter
+        .mockResolvedValueOnce(null); // recipient has no account
+      inviteRepo.findOne.mockResolvedValue(null); // no prior invite → a NEW collaborator
+      memberRepo.count.mockResolvedValue(1); // one non-owner member already
+      inviteRepo.count.mockResolvedValue(0);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      // Enforced BEFORE persisting the invite or sending the email.
+      expect(inviteRepo.insert).not.toHaveBeenCalled();
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
+        OWNER_ID,
+      );
+    });
+
+    it('carries the feature/limit/current context on the collaborator-cap 403', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 5,
+      });
+      memberRepo.findOne.mockResolvedValueOnce({ role: 'owner' } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+      inviteRepo.findOne.mockResolvedValue(null);
+      memberRepo.count.mockResolvedValue(3); // 3 members
+      inviteRepo.count.mockResolvedValue(2); // + 2 pending = 5, at cap
+
+      await service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }).then(
+        () => {
+          throw new Error('expected the invite to be rejected');
+        },
+        (err: unknown) => {
+          expect(err).toBeInstanceOf(ForbiddenException);
+          const body = (err as ForbiddenException).getResponse();
+          expect(body).toMatchObject({
+            code: 'FEATURE_LIMIT_EXCEEDED',
+            feature: 'max_trip_collaborators',
+            limit: 5,
+            current: 5,
+          });
+        },
+      );
+    });
+
+    it('does NOT re-count against the cap when re-inviting an already-pending address', async () => {
+      // A re-invite (existing pending row) adds no collaborator, so it must be
+      // allowed even at/over the cap — role change / code rotation only.
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      memberRepo.findOne.mockResolvedValueOnce({ role: 'owner' } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+      // A prior invite for this address already exists → the cap check is skipped.
+      inviteRepo.findOne.mockResolvedValue({
+        id: 'inv-existing',
+        role: 'editor',
+      } as TripInvite);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+
+      // Re-invite path updates the existing row + still emails — never blocked.
+      expect(inviteRepo.update).toHaveBeenCalled();
+      expect(email.sendTripInvite).toHaveBeenCalledTimes(1);
     });
   });
 
