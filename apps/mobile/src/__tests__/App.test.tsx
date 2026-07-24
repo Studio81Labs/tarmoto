@@ -3,6 +3,7 @@ import { act, render, waitFor } from "@testing-library/react-native";
 import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
+import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
@@ -75,6 +76,10 @@ jest.mock("@/services/displayPreferencesSyncMonitor", () => ({
   startDisplayPreferencesSyncMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/services/languagePreferenceSyncMonitor", () => ({
+  startLanguagePreferenceSyncMonitor: jest.fn(() => jest.fn()),
+}));
+
 jest.mock("@/i18n/deviceLocale", () => ({
   detectDeviceLocale: jest.fn(() => "en-GB"),
   detectDeviceFormatLocale: jest.fn(() => "en-GB"),
@@ -85,8 +90,10 @@ describe("App auth locale hydration", () => {
   beforeEach(() => {
     jest.mocked(startCommuteHazardMonitor).mockClear();
     jest.mocked(startDisplayPreferencesSyncMonitor).mockClear();
+    jest.mocked(startLanguagePreferenceSyncMonitor).mockClear();
     jest.mocked(api.updateProfile).mockReset();
     jest.mocked(api.cacheProfile).mockReset();
+    jest.mocked(api.isAuthenticated).mockReset().mockReturnValue(false);
     mockMonitorLocales.length = 0;
     mockProviderLocale = undefined;
     jest.mocked(detectDeviceFormatLocale).mockReturnValue("en-GB");
@@ -97,6 +104,10 @@ describe("App auth locale hydration", () => {
       isLoading: true,
     });
     usePreferencesStore.getState().setDistanceUnit("metric");
+    usePreferencesStore.setState({
+      uiLocaleOverride: null,
+      pendingUiLocaleSync: null,
+    });
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {
@@ -124,6 +135,45 @@ describe("App auth locale hydration", () => {
     });
 
     expect(getFormatters().distanceKm(10)).toBe("6.2 mi");
+  });
+
+  it("syncs a device-local language without reverting newer profile fields", async () => {
+    jest.mocked(api.isAuthenticated).mockReturnValue(true);
+    jest.mocked(api.updateProfile).mockResolvedValue({} as User);
+    await render(<App />);
+    await act(() => {
+      useAuthStore.getState().setUser({
+        id: "language-user",
+        language: null,
+        preferences: { units: "imperial" },
+      } as unknown as User);
+      usePreferencesStore.getState().selectUiLocale("en", "language-user");
+    });
+    await waitFor(() =>
+      expect(startLanguagePreferenceSyncMonitor).toHaveBeenCalled(),
+    );
+
+    const monitor = jest
+      .mocked(startLanguagePreferenceSyncMonitor)
+      .mock.calls.at(-1)?.[0];
+    await act(async () => {
+      await monitor?.sync({
+        locale: "en",
+        ownerUserId: "language-user",
+      });
+    });
+
+    expect(api.updateProfile).toHaveBeenCalledWith({ language: "en" });
+    expect(useAuthStore.getState().user).toMatchObject({
+      id: "language-user",
+      language: "en",
+      preferences: { units: "imperial" },
+    });
+    expect(usePreferencesStore.getState()).toMatchObject({
+      uiLocaleOverride: "en",
+      pendingUiLocaleSync: null,
+    });
+    expect(api.cacheProfile).toHaveBeenCalledWith(useAuthStore.getState().user);
   });
 
   it("hydrates formatter units from the authenticated profile", async () => {

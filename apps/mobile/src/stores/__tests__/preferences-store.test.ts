@@ -116,6 +116,57 @@ describe("usePreferencesStore", () => {
       );
     });
   });
+
+  describe("device-local UI language", () => {
+    it("publishes an immediate override and pending account marker", () => {
+      usePreferencesStore.getState().selectUiLocale("en", "rider-a");
+
+      expect(usePreferencesStore.getState()).toMatchObject({
+        uiLocaleOverride: "en",
+        pendingUiLocaleSync: {
+          locale: "en",
+          ownerUserId: "rider-a",
+        },
+      });
+    });
+
+    it("keeps the durable override after clearing its pending marker", () => {
+      usePreferencesStore.getState().selectUiLocale("en");
+      usePreferencesStore.getState().completeUiLocaleSync("en");
+
+      expect(usePreferencesStore.getState()).toMatchObject({
+        uiLocaleOverride: "en",
+        pendingUiLocaleSync: null,
+      });
+    });
+
+    it("adopts an account locale only when no local write is pending", () => {
+      usePreferencesStore.getState().selectUiLocale("en");
+      usePreferencesStore.getState().adoptAccountUiLocale("en");
+      expect(usePreferencesStore.getState().pendingUiLocaleSync).toEqual({
+        locale: "en",
+        ownerUserId: null,
+      });
+
+      usePreferencesStore.getState().completeUiLocaleSync("en");
+      usePreferencesStore.getState().adoptAccountUiLocale("en");
+      expect(usePreferencesStore.getState()).toMatchObject({
+        uiLocaleOverride: "en",
+        pendingUiLocaleSync: null,
+      });
+    });
+
+    it("does not clear another rider's pending selection", () => {
+      usePreferencesStore.getState().selectUiLocale("en", "rider-a");
+
+      usePreferencesStore.getState().completeUiLocaleSync("en", "rider-b");
+
+      expect(usePreferencesStore.getState().pendingUiLocaleSync).toEqual({
+        locale: "en",
+        ownerUserId: "rider-a",
+      });
+    });
+  });
 });
 
 function useStoreReset() {
@@ -123,5 +174,7 @@ function useStoreReset() {
     minQuality: PREFERENCES_DEFAULTS.minQuality,
     fuelRangeKm: PREFERENCES_DEFAULTS.fuelRangeKm,
     weatherAlertsEnabled: PREFERENCES_DEFAULTS.weatherAlertsEnabled,
+    uiLocaleOverride: null,
+    pendingUiLocaleSync: null,
   });
 }

@@ -14,6 +14,7 @@ import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
+import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
 import { bootstrapAuth } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
@@ -24,7 +25,11 @@ import {
   detectDeviceTimeZone,
 } from "@/i18n/deviceLocale";
 import { FormatProvider } from "@/format/FormatProvider";
-import { canonicalizeFormatLocale, isValidTimeZone } from "@tarmoto/shared";
+import {
+  canonicalizeFormatLocale,
+  isSupportedLocale,
+  isValidTimeZone,
+} from "@tarmoto/shared";
 
 // Suppress specific warnings in dev
 LogBox.ignoreLogs([
@@ -49,11 +54,23 @@ export default function App() {
   const user = useAuthStore((state) => state.user);
   const units = usePreferencesStore((state) => state.distanceUnit);
   const setDistanceUnit = usePreferencesStore((state) => state.setDistanceUnit);
+  const uiLocaleOverride = usePreferencesStore(
+    (state) => state.uiLocaleOverride,
+  );
+  const pendingUiLocaleSync = usePreferencesStore(
+    (state) => state.pendingUiLocaleSync,
+  );
+  const completeUiLocaleSync = usePreferencesStore(
+    (state) => state.completeUiLocaleSync,
+  );
+  const adoptAccountUiLocale = usePreferencesStore(
+    (state) => state.adoptAccountUiLocale,
+  );
   const deviceLocale = useMemo(detectDeviceLocale, []);
   const [deviceDisplayPreferences, setDeviceDisplayPreferences] = useState(
     readDeviceDisplayPreferences,
   );
-  const locale = user?.language ?? deviceLocale;
+  const locale = uiLocaleOverride ?? user?.language ?? deviceLocale;
   const formatLocale =
     deviceDisplayPreferences.formatLocale ??
     deviceLocale ??
@@ -69,6 +86,26 @@ export default function App() {
   useEffect(() => {
     if (user) setDistanceUnit(user.preferences?.units ?? "metric");
   }, [user, setDistanceUnit]);
+
+  // Mirror companion's ordinary locale cookie behavior: once no explicit
+  // device write is pending, a valid cross-device account change becomes the
+  // durable local choice too. Keeping it locally means sign-out does not
+  // unexpectedly snap the UI back to the device language.
+  useEffect(() => {
+    if (
+      !pendingUiLocaleSync &&
+      user?.language &&
+      isSupportedLocale(user.language) &&
+      user.language !== uiLocaleOverride
+    ) {
+      adoptAccountUiLocale(user.language);
+    }
+  }, [
+    adoptAccountUiLocale,
+    pendingUiLocaleSync,
+    uiLocaleOverride,
+    user?.language,
+  ]);
 
   useEffect(() => {
     void bootstrapAuth({
@@ -167,6 +204,60 @@ export default function App() {
     user?.id,
     user?.preferences?.format_locale,
     user?.preferences?.timezone,
+  ]);
+
+  // An explicit language choice is device-local first so it updates the UI
+  // immediately and survives offline restarts. Reconcile the pending marker
+  // with the account in the background; only the still-current choice may
+  // publish into auth state, so a slow response cannot revert a newer choice.
+  useEffect(() => {
+    if (isAuthLoading) return;
+    return startLanguagePreferenceSyncMonitor({
+      isAuthenticated: () =>
+        api.isAuthenticated() && !!useAuthStore.getState().user?.id,
+      currentUserId: () => useAuthStore.getState().user?.id ?? null,
+      pendingSelection: () =>
+        usePreferencesStore.getState().pendingUiLocaleSync,
+      accountLocale: () => useAuthStore.getState().user?.language,
+      sync: async (selection) => {
+        const { locale: pendingLocale, ownerUserId } = selection;
+        const userId = useAuthStore.getState().user?.id;
+        if (!userId) return;
+        await api.updateProfile({ language: pendingLocale });
+        const auth = useAuthStore.getState();
+        const current = auth.user;
+        const preferences = usePreferencesStore.getState();
+        if (
+          current?.id !== userId ||
+          preferences.pendingUiLocaleSync?.locale !== pendingLocale ||
+          preferences.pendingUiLocaleSync.ownerUserId !== ownerUserId
+        ) {
+          return;
+        }
+
+        const merged = { ...current, language: pendingLocale };
+        api.cacheProfile(merged);
+        auth.setUser(merged);
+        preferences.completeUiLocaleSync(pendingLocale, ownerUserId);
+      },
+      onAlreadySynced: ({ locale: pendingLocale, ownerUserId }) => {
+        usePreferencesStore
+          .getState()
+          .completeUiLocaleSync(pendingLocale, ownerUserId);
+      },
+      onOwnerMismatch: ({ locale: pendingLocale, ownerUserId }) => {
+        usePreferencesStore
+          .getState()
+          .discardUiLocaleSync(pendingLocale, ownerUserId);
+      },
+    });
+  }, [
+    completeUiLocaleSync,
+    isAuthLoading,
+    isAuthenticated,
+    pendingUiLocaleSync,
+    user?.id,
+    user?.language,
   ]);
 
   // #866 — persist the rider's device timezone so the weekly digest sends at

@@ -79,6 +79,21 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'import React from "react"; import { t as translate } from "@/i18n"; const Row = React.memo(() => <Text>{translate("Ready")}</Text>);',
+    'import React from "react"; import { getFormatters } from "@/format"; const Row = React.memo(() => <Text>{getFormatters().integer(1)}</Text>);',
+  ])("rejects global locale seams across memo boundaries", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
+  it("allows context-bound locale hooks across memo boundaries", () => {
+    expect(
+      guardMessages(
+        'import React from "react"; import { useTranslation } from "@/i18n/I18nProvider"; const Row = React.memo(() => { const t = useTranslation(); return <Text>{t("Ready")}</Text>; });',
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects raw copy in companion-parity component props", () => {
     expect(
       guardMessages('const view = <Banner headline="Ride saved" />;'),

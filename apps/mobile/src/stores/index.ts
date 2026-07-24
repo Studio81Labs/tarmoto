@@ -24,6 +24,7 @@ import {
   MIN_QUALITY_BOUNDS,
   clampFuelRangeKm,
 } from "@/theme";
+import { isSupportedLocale, type SupportedLocale } from "@tarmoto/shared";
 
 // ── Auth Store ──
 
@@ -449,6 +450,9 @@ const VOICE_NAV_VERBOSE_KEY = "voiceNavVerbose";
 const DEFAULT_VOICE_NAV_VERBOSE = true;
 const VOICE_NAV_LANGUAGE_KEY = "voiceNavLanguage";
 const DISTANCE_UNIT_KEY = "distanceUnit";
+const UI_LOCALE_OVERRIDE_KEY = "uiLocaleOverride";
+const PENDING_UI_LOCALE_SYNC_KEY = "pendingUiLocaleSync";
+const PENDING_UI_LOCALE_SYNC_OWNER_KEY = "pendingUiLocaleSyncOwner";
 
 /**
  * Voice-navigation locale preference. `auto` resolves at announcement
@@ -479,6 +483,7 @@ interface PrefsStorage {
   set(key: string, value: number): void;
   getString(key: string): string | undefined;
   setString(key: string, value: string): void;
+  remove(key: string): void;
 }
 
 function createPrefsStorage(): PrefsStorage {
@@ -494,6 +499,7 @@ function createPrefsStorage(): PrefsStorage {
       set: (key, value) => mmkv.set(key, value),
       getString: (key) => mmkv.getString(key),
       setString: (key, value) => mmkv.set(key, value),
+      remove: (key) => mmkv.remove(key),
     };
   } catch {
     const numbers = new Map<string, number>();
@@ -506,6 +512,10 @@ function createPrefsStorage(): PrefsStorage {
       getString: (key) => strings.get(key),
       setString: (key, value) => {
         strings.set(key, value);
+      },
+      remove: (key) => {
+        numbers.delete(key);
+        strings.delete(key);
       },
     };
   }
@@ -580,6 +590,39 @@ function loadPersistedDistanceUnit(): DistanceUnitPref {
   return DEFAULT_DISTANCE_UNIT;
 }
 
+function loadPersistedUiLocalePreference(): {
+  override: SupportedLocale | null;
+  pending: PendingUiLocaleSync | null;
+} {
+  const overrideRaw = prefsStorage.getString(UI_LOCALE_OVERRIDE_KEY);
+  const pendingRaw = prefsStorage.getString(PENDING_UI_LOCALE_SYNC_KEY);
+  const pendingOwner =
+    prefsStorage.getString(PENDING_UI_LOCALE_SYNC_OWNER_KEY) ?? null;
+  const override =
+    overrideRaw && isSupportedLocale(overrideRaw) ? overrideRaw : null;
+  const pendingLocale =
+    pendingRaw && isSupportedLocale(pendingRaw) ? pendingRaw : null;
+
+  // The marker and override are written as one action. Treat a partial or
+  // hand-corrupted pair as a local-only override rather than syncing a locale
+  // that is no longer driving the UI.
+  return {
+    override,
+    pending:
+      pendingLocale && pendingLocale === override
+        ? { locale: pendingLocale, ownerUserId: pendingOwner }
+        : null,
+  };
+}
+
+const persistedUiLocalePreference = loadPersistedUiLocalePreference();
+
+export interface PendingUiLocaleSync {
+  locale: SupportedLocale;
+  /** Null only when a future signed-out selector creates the choice. */
+  ownerUserId: string | null;
+}
+
 interface PreferencesState {
   /** Minimum road quality (1..5) the rider wants to see in planning. */
   minQuality: number;
@@ -614,6 +657,26 @@ interface PreferencesState {
    */
   distanceUnit: DistanceUnitPref;
   setDistanceUnit: (value: DistanceUnitPref) => void;
+  /**
+   * Explicit UI language stored on this device. The override is the immediate
+   * source of truth and survives sign-out; the separate marker tracks whether
+   * that choice still needs to reach the account.
+   */
+  uiLocaleOverride: SupportedLocale | null;
+  pendingUiLocaleSync: PendingUiLocaleSync | null;
+  selectUiLocale: (
+    locale: SupportedLocale,
+    ownerUserId?: string | null,
+  ) => void;
+  completeUiLocaleSync: (
+    locale: SupportedLocale,
+    ownerUserId?: string | null,
+  ) => void;
+  discardUiLocaleSync: (
+    locale: SupportedLocale,
+    ownerUserId?: string | null,
+  ) => void;
+  adoptAccountUiLocale: (locale: SupportedLocale) => void;
   resetPreferences: () => void;
 }
 
@@ -669,6 +732,58 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
   setDistanceUnit: (value) => {
     prefsStorage.setString(DISTANCE_UNIT_KEY, value);
     set({ distanceUnit: value });
+  },
+  uiLocaleOverride: persistedUiLocalePreference.override,
+  pendingUiLocaleSync: persistedUiLocalePreference.pending,
+  selectUiLocale: (locale, ownerUserId = null) => {
+    prefsStorage.setString(UI_LOCALE_OVERRIDE_KEY, locale);
+    prefsStorage.setString(PENDING_UI_LOCALE_SYNC_KEY, locale);
+    if (ownerUserId) {
+      prefsStorage.setString(PENDING_UI_LOCALE_SYNC_OWNER_KEY, ownerUserId);
+    } else {
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_OWNER_KEY);
+    }
+    set({
+      uiLocaleOverride: locale,
+      pendingUiLocaleSync: { locale, ownerUserId },
+    });
+  },
+  completeUiLocaleSync: (locale, ownerUserId = null) => {
+    set((state) => {
+      // A slower response for a superseded choice must not clear the newer
+      // override or make the UI fall back to the stale account response.
+      if (
+        state.pendingUiLocaleSync?.locale !== locale ||
+        state.pendingUiLocaleSync.ownerUserId !== ownerUserId
+      ) {
+        return state;
+      }
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_KEY);
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_OWNER_KEY);
+      return { pendingUiLocaleSync: null };
+    });
+  },
+  discardUiLocaleSync: (locale, ownerUserId = null) => {
+    set((state) => {
+      if (
+        state.pendingUiLocaleSync?.locale !== locale ||
+        state.pendingUiLocaleSync.ownerUserId !== ownerUserId
+      ) {
+        return state;
+      }
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_KEY);
+      prefsStorage.remove(PENDING_UI_LOCALE_SYNC_OWNER_KEY);
+      return { pendingUiLocaleSync: null };
+    });
+  },
+  adoptAccountUiLocale: (locale) => {
+    set((state) => {
+      // An explicit unsynced device choice has authority until its PATCH
+      // settles; a profile refresh from another device must not overwrite it.
+      if (state.pendingUiLocaleSync) return state;
+      prefsStorage.setString(UI_LOCALE_OVERRIDE_KEY, locale);
+      return { uiLocaleOverride: locale };
+    });
   },
   resetPreferences: () => {
     prefsStorage.set(MIN_QUALITY_KEY, DEFAULT_MIN_QUALITY);
