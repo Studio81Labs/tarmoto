@@ -1086,11 +1086,18 @@ export default function TripPlannerPage() {
   // Ordinary open-trip edits mint nothing and are never gated; a collaborator
   // editing someone else's trip can't know the owner's count, so it's left to
   // the save-path 403.
+  // For a saved trip we can only decide the mint context once the caller ROLE
+  // has loaded (it resolves together with the trip's status from tripsApi.get);
+  // until then, fail closed — a completed-trip reopen by the owner would mint.
+  const savedTripResolved = serverTripCallerRole !== null;
   const isOwnMintContext =
     // Session kind not yet reconciled (first paint) → fail closed: treat it as a
     // possible mint context so minting stays blocked until we know otherwise.
     sessionKind === "unknown" ||
     (isNewTripSession && !isSavedTrip) ||
+    // Saved trip whose role/status hasn't loaded → unknown, fail closed.
+    (isSavedTrip && !savedTripResolved) ||
+    // Owner reopening their own COMPLETED trip → save promotes it → mints.
     (isSavedTrip && isTripOwner && displayedTrip?.status === "completed");
   // Only fetch the (unpaginated, geospatial) trips list when the COUNT is
   // actually needed: a mint context under a resolved FINITE cap. Cap-unknown

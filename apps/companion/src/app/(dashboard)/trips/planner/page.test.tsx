@@ -2908,6 +2908,42 @@ describe("TripPlannerPage", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
+  it("keeps mint controls blocked while a saved trip's role/status are still loading (capped owner)", async () => {
+    // A completed-trip reopen by the owner mints (completed→planned). Until the
+    // caller role/status load we can't tell completed from open, so a saved trip
+    // must fail closed rather than briefly enabling the import/drop paths.
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    window.history.replaceState(
+      {},
+      "",
+      `/trips/planner?tripId=${serverTripId}`,
+    );
+    useAuthStore.setState({
+      user: { id: "u-owner", email: "o@example.com", displayName: "O" },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    // Never resolves → serverTripCallerRole stays null (role/status unknown).
+    tripsApiGetMock.mockReturnValue(new Promise<never>(() => {}) as never);
+    useLimitMock.mockReturnValue({
+      limit: 1,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useUserTripsMock.mockReturnValue({
+      trips: [{ id: "t1", owner_id: "u-owner", status: "draft" }],
+      loading: false,
+      error: false,
+      tripById: new Map(),
+    });
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Import GPX" })).toBeDisabled(),
+    );
+  });
+
   it("does not open the import dialog from ?import=1 when the rider is at their cap", async () => {
     // A direct import URL must not bypass the disabled toolbar button.
     window.history.replaceState({}, "", "/trips/planner?import=1");
