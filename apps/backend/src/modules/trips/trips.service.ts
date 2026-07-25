@@ -1567,6 +1567,16 @@ export class TripsService {
     // the winner's delete commits.
     const { role, inserted } = await this.tripRepo.manager.transaction(
       async (manager) => {
+        // Take the shared per-trip collaborator advisory lock FIRST, so this
+        // personal-code acceptance serialises with the group-link join
+        // (`TripSharesService.joinByToken`). Both consume the same invite as
+        // "net-zero"; without a common lock the group link's plain invite read
+        // could see this invite still present while we consume it here, letting
+        // a bearer-code holder and the invited email BOTH insert from one
+        // invite and overflow the owner's cap.
+        await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          tripCollaboratorLockKey(tripId),
+        ]);
         const invite = await manager.findOne(TripInvite, {
           where: { trip_id: tripId, invite_code: normalized },
           lock: { mode: 'pessimistic_write' },

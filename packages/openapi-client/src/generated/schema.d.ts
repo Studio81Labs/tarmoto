@@ -5283,6 +5283,34 @@ export interface components {
             /** @description Always `queued`. The invite email is dispatched best-effort — a delivery failure is logged on the backend but does NOT fail the API call, so the response is the same whether the provider accepted the message or not. */
             status: string;
         };
+        FeatureLimitExceededDto: {
+            /** @example 403 */
+            statusCode: number;
+            /** @example Forbidden */
+            error: string;
+            /** @example Feature limit exceeded: max_trip_collaborators (limit 5, current 5) */
+            message: string;
+            /**
+             * @description Stable discriminator for cap rejections. Always "FEATURE_LIMIT_EXCEEDED".
+             * @example FEATURE_LIMIT_EXCEEDED
+             */
+            code: string;
+            /**
+             * @description The `LimitFeatureKey` that was exceeded.
+             * @example max_trip_collaborators
+             */
+            feature: string;
+            /**
+             * @description The resolved cap that was hit.
+             * @example 5
+             */
+            limit: number;
+            /**
+             * @description The current count that meets or exceeds the cap.
+             * @example 5
+             */
+            current: number;
+        };
         TripCollaboratorMemberDto: {
             user_id: string;
             display_name: string;
@@ -7073,6 +7101,7 @@ export type SchemaTripInvitePreviewDto = components['schemas']['TripInvitePrevie
 export type SchemaJoinTripDto = components['schemas']['JoinTripDto'];
 export type SchemaInviteTripDto = components['schemas']['InviteTripDto'];
 export type SchemaInviteTripResponseDto = components['schemas']['InviteTripResponseDto'];
+export type SchemaFeatureLimitExceededDto = components['schemas']['FeatureLimitExceededDto'];
 export type SchemaTripCollaboratorMemberDto = components['schemas']['TripCollaboratorMemberDto'];
 export type SchemaTripPendingInviteDto = components['schemas']['TripPendingInviteDto'];
 export type SchemaTripCollaboratorsDto = components['schemas']['TripCollaboratorsDto'];
@@ -9532,7 +9561,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                };
             };
             /** @description Trip not found or not owned */
             404: {
@@ -10178,7 +10209,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FeatureLimitExceededDto"];
+                };
             };
             /** @description Trip share not found */
             404: {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
-import { withQueryClient } from "./test-utils";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { createTestQueryClient, withQueryClient } from "./test-utils";
 
 const getMock = vi.fn();
 const { authState, sessionState } = vi.hoisted(() => ({
@@ -21,6 +21,7 @@ vi.mock("next-auth/react", () => ({
 }));
 
 import {
+  CONFIG_LIMITS_QUERY_KEY,
   useEntitlements,
   useFeature,
   useLimit,
@@ -311,6 +312,44 @@ describe("useRoadQualityZoomCap", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(result.current.isResolved).toBe(false);
     expect(result.current.limit).toBeNull();
+  });
+
+  it("refetches /users/me when the operator changes the global override (go-live)", async () => {
+    // Launch mode: both /users/me and /config/limits say unlimited. When the
+    // operator removes the launch override, the cached profile (which folded in
+    // the old override server-side) is stale — the override change must
+    // invalidate /users/me so an authed free rider re-resolves to the free cap.
+    authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
+    let zoomLimit: number | null = null;
+    let globalOverride: Record<string, number | null> = {
+      road_quality_max_zoom: null,
+    };
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({ data: globalOverride, error: undefined })
+        : Promise.resolve({
+            data: { ...ME, limits: { road_quality_max_zoom: zoomLimit } },
+            error: undefined,
+          }),
+    );
+    const client = createTestQueryClient();
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(client),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBeNull(); // unlimited under launch mode
+
+    // Operator deletes the launch override; the server now resolves the free
+    // cap. Refetching /config/limits flips `override` null → undefined.
+    globalOverride = {}; // road_quality_max_zoom absent
+    zoomLimit = 12;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: CONFIG_LIMITS_QUERY_KEY });
+    });
+
+    // The override change invalidated /users/me, which re-resolved to z12.
+    await waitFor(() => expect(result.current.limit).toBe(12));
   });
 
   it("stays fail-closed when the session is authenticated but the store hasn't hydrated yet", async () => {

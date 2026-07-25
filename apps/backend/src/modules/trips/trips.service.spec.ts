@@ -1443,6 +1443,30 @@ describe('TripsService', () => {
       });
     });
 
+    it('takes the shared collaborator advisory lock before consuming the invite', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce(null);
+      mockGetDetailReturns(makeJoinedTrip());
+
+      await service.join(OTHER_ID, TRIP_ID, 'abcdefgh');
+
+      // Serialises with the group-link join (TripSharesService.joinByToken) on
+      // the SAME per-trip key, so a bearer-code holder and the invited email
+      // can't both consume one invite and overflow the owner's cap.
+      expect(manager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip:collaborators:${TRIP_ID}`],
+      );
+    });
+
     it('is idempotent for an existing member (still consumes the invite)', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
       manager.findOne

@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import {
   getFeatureLimit,
@@ -90,6 +91,31 @@ export function useRoadQualityZoomCap(): {
   const { override, isSuccess: globalResolved } = useGlobalLimit(
     "road_quality_max_zoom",
   );
+
+  // The cached /users/me snapshot folded in the operator's global override
+  // SERVER-side, so when the operator changes/removes that override the profile
+  // is stale until it refetches. That's the whole monetization go-live
+  // transition: the launch-mode `null` override is deleted, polling flips
+  // `override` to `undefined`, and the authed branch below falls back to the
+  // cached `userLimit` — still unlimited — leaving a signed-in free rider on an
+  // active tab with unlimited detail indefinitely (anonymous viewers already
+  // clamp via /config/limits). Detecting the override CHANGE and invalidating
+  // /users/me forces the profile to re-resolve against the new operator state.
+  const queryClient = useQueryClient();
+  const lastOverrideRef = useRef<{ value: number | null | undefined } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!authed || !globalResolved) return;
+    const prev = lastOverrideRef.current;
+    lastOverrideRef.current = { value: override };
+    if (prev !== null && prev.value !== override) {
+      void queryClient.invalidateQueries({
+        queryKey: USERS_ME_QUERY_KEY(userId),
+      });
+    }
+  }, [authed, globalResolved, override, userId, queryClient]);
+
   if (authed) {
     // The companion is the enforcement point for this overlay, so treat the cap
     // as resolved only once BOTH the profile AND the public override have

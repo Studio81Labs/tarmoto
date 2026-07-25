@@ -28,6 +28,7 @@ import { CreateTripDto } from './dto/create-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { InviteTripDto, InviteTripResponseDto } from './dto/invite-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
+import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
 import {
   TripCollaboratorsDto,
   UpdateTripMemberRoleDto,
@@ -321,6 +322,7 @@ export class TripsController {
   })
   @ApiResponse({
     status: 403,
+    type: FeatureLimitExceededDto,
     description:
       'The trip owner is at their collaborator limit — body carries ' +
       '`code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, ' +
