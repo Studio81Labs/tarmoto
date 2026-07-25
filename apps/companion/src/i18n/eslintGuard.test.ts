@@ -187,6 +187,27 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'const view = <span>{"2026"}</span>;',
+    "const view = <span>{compact ? 1 : 2026}</span>;",
+  ])("rejects nested visible numeric JSX literals", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric arguments passed through a regional formatter", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{format.integer(2026)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects locale-insensitive rider search normalization", () => {
     expect(
       localizationMessages(

@@ -99,7 +99,8 @@ export function resolveLocale(input?: string | null): SupportedLocale {
 /**
  * Normalize rider-entered text and localized labels for case-insensitive
  * search. The explicit locale avoids Turkish/Azeri I/İ/ı mismatches; the
- * upper-then-lower fold also makes title-case and all-caps input converge.
+ * lower-upper-lower fold also makes title-case, all-caps input, and expanding
+ * uppercase mappings such as German ß/ẞ converge to one stable form.
  */
 export function normalizeForLocaleSearch(
   value: string,
@@ -107,11 +108,19 @@ export function normalizeForLocaleSearch(
 ): string {
   const normalized = value.normalize("NFC").trim();
   try {
-    return normalized.toLocaleUpperCase(locale).toLocaleLowerCase(locale);
+    return normalized
+      .toLocaleLowerCase(locale)
+      .toLocaleUpperCase(locale)
+      .toLocaleLowerCase(locale)
+      .normalize("NFC");
   } catch {
     // Locale strings ultimately come from validated providers, but pure
     // helpers may be called with untrusted values in tests or import paths.
-    return normalized.toUpperCase().toLowerCase();
+    return normalized
+      .toLowerCase()
+      .toUpperCase()
+      .toLowerCase()
+      .normalize("NFC");
   }
 }
 

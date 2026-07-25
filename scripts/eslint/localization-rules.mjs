@@ -284,6 +284,85 @@ const noVisibleNumericJsxText = {
     schema: [],
   },
   create(context) {
+    const containsUnformattedNumericLiteral = (node) => {
+      if (!node || node.type === "JSXEmptyExpression") return false;
+      if (node.type === "Literal") {
+        return (
+          typeof node.value === "number" ||
+          typeof node.value === "bigint" ||
+          (typeof node.value === "string" && /\d/.test(node.value))
+        );
+      }
+      if (
+        node.type === "UnaryExpression" &&
+        (node.operator === "+" || node.operator === "-")
+      ) {
+        return containsUnformattedNumericLiteral(node.argument);
+      }
+      if (node.type === "ConditionalExpression") {
+        return (
+          containsUnformattedNumericLiteral(node.consequent) ||
+          containsUnformattedNumericLiteral(node.alternate)
+        );
+      }
+      if (node.type === "LogicalExpression") {
+        // For `condition && value`, only the right-hand value is the intended
+        // rendered branch; literals inside the boolean condition are not
+        // display output. Fallback operators can render either side.
+        return node.operator === "&&"
+          ? containsUnformattedNumericLiteral(node.right)
+          : containsUnformattedNumericLiteral(node.left) ||
+              containsUnformattedNumericLiteral(node.right);
+      }
+      if (node.type === "BinaryExpression") {
+        if (
+          [
+            "==",
+            "!=",
+            "===",
+            "!==",
+            "<",
+            "<=",
+            ">",
+            ">=",
+            "in",
+            "instanceof",
+          ].includes(node.operator)
+        ) {
+          return false;
+        }
+        return (
+          containsUnformattedNumericLiteral(node.left) ||
+          containsUnformattedNumericLiteral(node.right)
+        );
+      }
+      if (node.type === "SequenceExpression") {
+        return node.expressions.some(containsUnformattedNumericLiteral);
+      }
+      if (node.type === "ArrayExpression") {
+        return node.elements.some(containsUnformattedNumericLiteral);
+      }
+      if (node.type === "TemplateLiteral") {
+        return (
+          node.quasis.some((quasi) =>
+            /\d/.test(quasi.value.cooked ?? quasi.value.raw),
+          ) ||
+          node.expressions.some(containsUnformattedNumericLiteral)
+        );
+      }
+      if (
+        node.type === "ChainExpression" ||
+        node.type === "TSAsExpression" ||
+        node.type === "TSTypeAssertion" ||
+        node.type === "TSNonNullExpression"
+      ) {
+        return containsUnformattedNumericLiteral(node.expression);
+      }
+      // Do not descend into formatter/catalog calls: numeric arguments there
+      // are inputs to a locale-aware display function, not raw JSX output.
+      return false;
+    };
+
     return {
       JSXText(node) {
         if (/\d/.test(node.value)) {
@@ -297,17 +376,7 @@ const noVisibleNumericJsxText = {
         ) {
           return;
         }
-        const expression = node.expression;
-        const isNumericLiteral =
-          expression.type === "Literal" &&
-          (typeof expression.value === "number" ||
-            typeof expression.value === "bigint");
-        const isSignedNumericLiteral =
-          expression.type === "UnaryExpression" &&
-          (expression.operator === "+" || expression.operator === "-") &&
-          expression.argument.type === "Literal" &&
-          typeof expression.argument.value === "number";
-        if (isNumericLiteral || isSignedNumericLiteral) {
+        if (containsUnformattedNumericLiteral(node.expression)) {
           context.report({ node, messageId: "numeric" });
         }
       },

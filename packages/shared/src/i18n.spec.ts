@@ -97,6 +97,13 @@ describe("i18n / locale-aware search", () => {
     expect(localeSearchIncludes("Café route", "Cafe\u0301", "fr")).toBe(true);
   });
 
+  it("stably folds German sharp S in title-case and uppercase input", () => {
+    const folded = normalizeForLocaleSearch("STRAẞE", "de");
+    expect(normalizeForLocaleSearch("Straße", "de")).toBe(folded);
+    expect(normalizeForLocaleSearch(folded, "de")).toBe(folded);
+    expect(localeSearchIncludes("Straße route", "STRAẞE", "de")).toBe(true);
+  });
+
   it("falls back safely when a caller supplies an invalid locale", () => {
     expect(localeSearchIncludes("Alps Loop", "ALPS", "not a locale!")).toBe(
       true,
