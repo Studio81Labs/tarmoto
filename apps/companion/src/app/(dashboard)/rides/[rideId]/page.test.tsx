@@ -38,6 +38,15 @@ vi.mock("../_components/RideRouteMap", () => ({
   RideRouteMap: (props: { label?: string }) => mockedRideRouteMap(props),
 }));
 
+// RideExportMenu (rendered in this page's header) now calls
+// useFeature/useEntitlements, which hit react-query — mock the barrel so it
+// doesn't need a QueryClient. gpx_export enabled keeps the pre-gate
+// export-menu assertions unchanged.
+vi.mock("@/hooks", () => ({
+  useFeature: () => ({ enabled: true, isLoading: false, isSuccess: true }),
+  useEntitlements: () => ({ tier: "free" }),
+}));
+
 function ride(overrides: Record<string, unknown> = {}) {
   return {
     id: "ride-1",

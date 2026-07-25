@@ -19,6 +19,7 @@ const mapStub = {
   setLayoutProperty: vi.fn(),
   setPaintProperty: vi.fn(),
   setFilter: vi.fn(),
+  setLayerZoomRange: vi.fn(),
   getCenter: vi.fn(() => ({ lng: 14.5, lat: 50.1 })),
   getBounds: vi.fn(() => ({
     getWest: () => 14.1,
@@ -32,6 +33,12 @@ const mapStub = {
 };
 
 const loadHandlers: Array<() => void> = [];
+
+const useCapMock = vi.fn(() => ({
+  limit: null as number | null,
+  isResolved: true,
+}));
+vi.mock("@/hooks", () => ({ useRoadQualityZoomCap: () => useCapMock() }));
 
 vi.mock("@/lib/map-style", async () => {
   const actual =
@@ -118,9 +125,12 @@ describe("MapCanvas", () => {
     mapStub.getLayer.mockReturnValue({ id: "mock-layer" });
     mapStub.setLayoutProperty.mockReset();
     mapStub.setPaintProperty.mockReset();
+    mapStub.setLayerZoomRange.mockReset();
     mapStub.resize.mockReset();
     mapStub.remove.mockReset();
     vi.mocked(applyTarmotoMapTheme).mockReset();
+    useCapMock.mockReset();
+    useCapMock.mockReturnValue({ limit: null, isResolved: true });
   });
 
   it("always applies the light theme and ignores the OS dark-mode preference", async () => {
@@ -196,5 +206,187 @@ describe("MapCanvas", () => {
         minzoom: 10,
       }),
     );
+  });
+
+  it("adds the quality overlay layer with the free maxzoom cap when limited", async () => {
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 12 }),
+    );
+  });
+
+  it("lifts the quality overlay cap for an unlimited (pro/premium) rider", async () => {
+    useCapMock.mockReturnValue({ limit: null, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 18 }),
+    );
+  });
+
+  it("caps the quality-graded selection highlight layers at the same limit", async () => {
+    // The selection glow/line render QUALITY_LINE_COLOR from source-layer
+    // "quality", so a free rider selecting a segment could otherwise read its
+    // quality colour past the cap. Both must carry the same maxzoom.
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "tarmoto-segment-selected-glow",
+        maxzoom: 12,
+      }),
+    );
+    expect(mapStub.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "tarmoto-segment-selected-line",
+        maxzoom: 12,
+      }),
+    );
+  });
+
+  it("hides the quality-graded layers (no invalid range) when the cap is at/below the layer floor", async () => {
+    // A resolved cap of 5 is below TARMOTO_ROADS_MIN_ZOOM (10). setLayerZoomRange
+    // (10, 5) is invalid and MapLibre would reject it, leaving the previous cap
+    // active and leaking quality past 5. The layers must instead be added with a
+    // VALID placeholder maxzoom (min + 1 = 11) and hidden.
+    useCapMock.mockReturnValue({ limit: 5, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+
+    // Every quality-graded layer is added with a valid placeholder maxzoom (11),
+    // never the invalid 5, and hidden.
+    for (const id of [
+      TARMOTO_QUALITY_LAYER,
+      "tarmoto-segment-selected-glow",
+      "tarmoto-segment-selected-line",
+    ]) {
+      const add = mapStub.addLayer.mock.calls.find(
+        (c) => (c[0] as { id?: string }).id === id,
+      );
+      const layer = add?.[0] as {
+        maxzoom?: number;
+        layout?: { visibility?: string };
+      };
+      expect(layer.maxzoom).toBe(11);
+      expect(layer.layout?.visibility).toBe("none");
+    }
+
+    // The clamp effect must NOT push an invalid (minzoom >= maxzoom) range.
+    for (const call of mapStub.setLayerZoomRange.mock.calls) {
+      const [, minz, maxz] = call as [string, number, number];
+      expect(maxz).toBeGreaterThan(minz);
+    }
+
+    // And the quality overlay is toggled hidden by the visibility effect.
+    expect(mapStub.setLayoutProperty).toHaveBeenCalledWith(
+      TARMOTO_QUALITY_LAYER,
+      "visibility",
+      "none",
+    );
+  });
+
+  it("adds an UNCAPPED neutral selection outline so selection stays visible past the cap", async () => {
+    // The neutral casing carries no quality colour, so it must NOT inherit the
+    // entitlement cap — otherwise selecting a road above the cap (or on a
+    // surface-only / PersonalRoadMap surface, showQuality=false) opens the
+    // detail drawer with no highlight on the map.
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality={false}
+        showSurface
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    const outlineCall = mapStub.addLayer.mock.calls.find(
+      (c) =>
+        (c[0] as { id?: string }).id === "tarmoto-segment-selected-outline",
+    );
+    expect(outlineCall).toBeDefined();
+    const outlineLayer = outlineCall![0] as {
+      maxzoom?: number;
+      paint?: Record<string, unknown>;
+    };
+    expect(outlineLayer.maxzoom).toBeUndefined();
+    // Neutral colour — not the quality-graded expression.
+    expect(outlineLayer.paint?.["line-color"]).toBe("#334155");
+  });
+
+  it("adds an UNCAPPED invisible road-hit layer so interaction survives the cap", async () => {
+    // The hit target must NOT carry the entitlement maxzoom — snapping / tap /
+    // hover keep working past the free cap — and must be invisible.
+    useCapMock.mockReturnValue({ limit: 12, isResolved: true });
+    render(
+      <MapCanvas
+        center={{ lng: 0, lat: 0 }}
+        zoom={7}
+        showQuality
+        showSurface={false}
+      />,
+    );
+    await waitFor(() => expect(loadHandlers.length).toBeGreaterThan(0));
+    act(() => {
+      for (const h of loadHandlers) h();
+    });
+    const hitCall = mapStub.addLayer.mock.calls.find(
+      (c) => (c[0] as { id?: string }).id === "tarmoto-road-hit",
+    );
+    expect(hitCall).toBeDefined();
+    const hitLayer = hitCall![0] as {
+      maxzoom?: number;
+      paint?: Record<string, unknown>;
+    };
+    // No entitlement cap on the hit target.
+    expect(hitLayer.maxzoom).toBeUndefined();
+    // Invisible.
+    expect(hitLayer.paint?.["line-opacity"]).toBe(0);
   });
 });

@@ -31,12 +31,15 @@ const mockCanvas = {
     toJSON: () => ({}),
   }),
 };
+// Current map zoom the tap-for-detail cap gate reads via `map.getZoom()`.
+let plannerZoom = 12;
 const mockMap = {
   addSource: vi.fn(),
   getSource: vi.fn(),
   addLayer: vi.fn(),
   getLayer: vi.fn(),
   getStyle: vi.fn(),
+  getZoom: vi.fn(() => plannerZoom),
   on: vi.fn(),
   off: vi.fn(),
   queryRenderedFeatures: vi.fn(),
@@ -77,6 +80,7 @@ let lastDrawOptions: {
 
 vi.mock("@/components/map/MapCanvas", () => ({
   TARMOTO_QUALITY_LAYER: "tarmoto-quality",
+  TARMOTO_ROAD_HIT_LAYER: "tarmoto-road-hit",
   TARMOTO_SURFACE_LAYER: "tarmoto-surface",
   SURFACE_COLORS: {
     asphalt: "#3B82F6",
@@ -119,6 +123,19 @@ vi.mock("@/components/map/RegionDrawControl", () => ({
   createRegionDrawControl: vi.fn((_map, options) => {
     lastDrawOptions = options;
     return drawControl;
+  }),
+}));
+
+// Controllable road-quality zoom cap for the tap-for-detail gate. Unlimited by
+// default (maxzoom 18) so pre-existing tap-for-detail tests are unaffected.
+const zoomCap = vi.hoisted(() => ({
+  limit: null as number | null,
+  isResolved: true,
+}));
+vi.mock("@/hooks", () => ({
+  useRoadQualityZoomCap: () => ({
+    limit: zoomCap.limit,
+    isResolved: zoomCap.isResolved,
   }),
 }));
 
@@ -305,6 +322,12 @@ describe("TripPlannerMap", () => {
     mockMap.getStyle.mockReturnValue({ layers: [] });
     mockMap.on.mockReset();
     mockMap.off.mockReset();
+    // Reset the tap-for-detail cap gate to its permissive default.
+    zoomCap.limit = null;
+    zoomCap.isResolved = true;
+    plannerZoom = 12;
+    mockMap.getZoom.mockReset();
+    mockMap.getZoom.mockImplementation(() => plannerZoom);
     mockMap.queryRenderedFeatures.mockReset();
     mockMap.querySourceFeatures.mockReset();
     mockMap.setPaintProperty.mockReset();
@@ -452,6 +475,115 @@ describe("TripPlannerMap", () => {
       "none",
     );
     expect(canvas).toHaveAttribute("data-show-quality", "true");
+  });
+
+  describe("tap-for-detail quality zoom cap gate", () => {
+    const tapEvent = {
+      point: { x: 100, y: 100 },
+      originalEvent: { clientX: 100, clientY: 100 },
+    };
+    // Passing closuresData + passesData routes through the direct
+    // TripPlannerMapContent branch, which forwards onOpenSegmentDetail (the
+    // fetched branch drops it).
+    const closuresData = {
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    } as never;
+    const passesData = {
+      passes: [],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+    } as never;
+    // Capture the MAP-LEVEL click handlers (second arg is a function, not a
+    // layer id). The tap-for-detail handler is the FIRST one registered.
+    function captureMapClick() {
+      const handlers: Array<(e: unknown) => void> = [];
+      mockMap.on.mockImplementation((event, layerOrHandler) => {
+        if (event === "click" && typeof layerOrHandler === "function") {
+          handlers.push(layerOrHandler as (e: unknown) => void);
+        }
+        return mockMap;
+      });
+      mockMap.off.mockImplementation(() => mockMap);
+      return () => handlers;
+    }
+
+    // handleReady must complete (so the region-draw control is created and the
+    // handler's `idle` guard passes) — hence getLayer truthy for all. The blocking
+    // query returns nothing; the overlay hit query returns one segment.
+    function primeSegmentHit() {
+      mockMap.getLayer.mockReturnValue({ id: "x" } as never);
+      mockMap.queryRenderedFeatures.mockImplementation(
+        (_pt: unknown, opts?: { layers?: string[] }) => {
+          const layers = opts?.layers ?? [];
+          return (
+            layers.includes("tarmoto-road-hit") ||
+            layers.includes("tarmoto-surface")
+              ? [
+                  {
+                    properties: { id: "seg-1" },
+                    geometry: { type: "LineString", coordinates: [] },
+                  },
+                ]
+              : []
+          ) as never;
+        },
+      );
+    }
+
+    it("does NOT open the segment detail drawer past the resolved quality cap", () => {
+      zoomCap.limit = 12; // finite → overlay maxzoom 12
+      plannerZoom = 14; // past the cap — overlay hidden
+      primeSegmentHit();
+      const onOpenSegmentDetail = vi.fn();
+      const getHandlers = captureMapClick();
+      render(
+        <TripPlannerMap
+          trip={trip()}
+          month={7}
+          closuresData={closuresData}
+          passesData={passesData}
+          onMoveWaypoint={vi.fn()}
+          onOpenSegmentDetail={onOpenSegmentDetail}
+        />,
+      );
+      act(() => getHandlers().forEach((h) => h(tapEvent)));
+      // Snapping still uses the uncapped layer, but the gated quality detail
+      // must not open past the cap (the gate returns before the overlay query).
+      expect(onOpenSegmentDetail).not.toHaveBeenCalled();
+    });
+
+    it("opens the segment detail drawer below the cap", () => {
+      zoomCap.limit = 12;
+      plannerZoom = 11; // below the cap — overlay visible
+      primeSegmentHit();
+      const onOpenSegmentDetail = vi.fn();
+      const getHandlers = captureMapClick();
+      render(
+        <TripPlannerMap
+          trip={trip()}
+          month={7}
+          closuresData={closuresData}
+          passesData={passesData}
+          onMoveWaypoint={vi.fn()}
+          onOpenSegmentDetail={onOpenSegmentDetail}
+        />,
+      );
+      act(() => getHandlers().forEach((h) => h(tapEvent)));
+      expect(onOpenSegmentDetail).toHaveBeenCalledWith("seg-1");
+    });
   });
 
   describe("basemap (OpenStreetMap) POIs", () => {

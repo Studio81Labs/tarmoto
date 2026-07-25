@@ -9,6 +9,7 @@ export const common = {
   "{count}mo ago": "{count}mo ago",
   "{count}y ago": "{count}y ago",
   "{count, number}": "{count, number}",
+  "{count} of {max} collaborators": "{count} of {max} collaborators",
   "{current, number}/{max, number}": "{current, number}/{max, number}",
   "{score} / {max}": "{score} / {max}",
   "{hours} vs last month": "{hours} vs last month",
@@ -219,6 +220,8 @@ export const common = {
   "Couldn't load your trips right now. Close this and try again in a moment.":
     "Couldn't load your trips right now. Close this and try again in a moment.",
   "Couldn't load zones.": "Couldn't load zones.",
+  "Couldn't verify your plan. Please try again.":
+    "Couldn't verify your plan. Please try again.",
   "Create invite link": "Create invite link",
   "Create your first trip to discover the best roads in your region.":
     "Create your first trip to discover the best roads in your region.",
@@ -343,6 +346,7 @@ export const common = {
   "Full closure": "Full closure",
   "Full history & reviews": "Full history & reviews",
   "GPX downloaded": "GPX downloaded",
+  "GPX export is a Pro feature.": "GPX export is a Pro feature.",
   "Generate itinerary": "Generate itinerary",
   "Generate or load a trip first to create an invite link.":
     "Generate or load a trip first to create an invite link.",
@@ -858,6 +862,8 @@ export const common = {
     "The route or page you\u2019re after has moved, ended, or never existed. Let\u2019s get you back on tarmac.",
   "The trip may have been deleted, or the link may be wrong.":
     "The trip may have been deleted, or the link may be wrong.",
+  "The trip owner has reached their collaborator limit.":
+    "The trip owner has reached their collaborator limit.",
   "These routes don't have map data attached.":
     "These routes don't have map data attached.",
   "This collection may have been deleted, or it's private and you don't own it.":
@@ -984,6 +990,8 @@ export const common = {
   'You\'ll lose access to "{name}" and return to your trips. The owner can re-invite you later.':
     'You\'ll lose access to "{name}" and return to your trips. The owner can re-invite you later.',
   "You're all caught up": "You're all caught up",
+  "You've reached the collaborator limit for this trip.":
+    "You've reached the collaborator limit for this trip.",
   "Your browser doesn't support sharing or clipboard access — try a different browser.":
     "Your browser doesn't support sharing or clipboard access \u2014 try a different browser.",
   "Your contribution": "Your contribution",

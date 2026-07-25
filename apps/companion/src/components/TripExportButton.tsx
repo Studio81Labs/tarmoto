@@ -2,10 +2,13 @@
 
 import { useTranslation } from "@/i18n/I18nProvider";
 import { Download } from "lucide-react";
+import { useState } from "react";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
 import { tripFileName, tripToGpx } from "@/lib/trip-export";
 import { Button, Tooltip } from "@tarmoto/ui";
+import { useFeature, useEntitlements } from "@/hooks";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 interface TripExportButtonProps {
   trip: Trip | null;
 }
@@ -20,8 +23,36 @@ interface TripExportButtonProps {
  */
 export function TripExportButton({ trip }: TripExportButtonProps) {
   const t = useTranslation();
-  const disabled = !trip;
+  const {
+    enabled: gpxEnabled,
+    isError: gpxError,
+    isSuccess: gpxResolved,
+  } = useFeature("gpx_export");
+  const { tier, refetch: refetchEntitlements } = useEntitlements();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  // Disabled until a trip loads AND the entitlement snapshot is either RESOLVED
+  // (isSuccess) or ERRORED. NOT merely "not loading": in the pre-auth window the
+  // /users/me query is disabled (isLoading false, isSuccess false), and we can't
+  // yet tell a Pro rider (export) from a free one (upgrade). On a genuine lookup
+  // ERROR the button stays clickable — but the click RETRIES rather than
+  // exporting (see below), so a paid rider isn't stranded while a Free rider
+  // still can't slip through.
+  const disabled = !trip || (!gpxResolved && !gpxError);
   function handleGpx() {
+    // This GPX is generated ENTIRELY in the browser — there is no server to
+    // enforce `gpx_export` on. So never export without a CONFIRMED entitlement:
+    // on a lookup error, surface the failure and retry instead of failing open.
+    if (gpxError) {
+      toast.error(t("Couldn't verify your plan. Please try again."));
+      refetchEntitlements();
+      return;
+    }
+    // Only steer to the upgrade modal once we've RESOLVED that the rider isn't
+    // entitled.
+    if (gpxResolved && !gpxEnabled) {
+      setUpgradeOpen(true);
+      return;
+    }
     if (!trip) return;
     try {
       const xml = tripToGpx(trip, new Date(), t);
@@ -40,17 +71,28 @@ export function TripExportButton({ trip }: TripExportButtonProps) {
     }
   }
   return (
-    <Tooltip content={t("Export GPX")} placement="below">
-      <Button
-        iconOnly
-        variant="secondary"
-        size="sm"
-        onClick={handleGpx}
-        disabled={disabled}
-        aria-label={t("Export GPX")}
-      >
-        <Download size={15} />
-      </Button>
-    </Tooltip>
+    <>
+      <Tooltip content={t("Export GPX")} placement="below">
+        <Button
+          iconOnly
+          variant="secondary"
+          size="sm"
+          onClick={handleGpx}
+          disabled={disabled}
+          aria-label={t("Export GPX")}
+        >
+          <Download size={15} />
+        </Button>
+      </Tooltip>
+      {upgradeOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "gpx_export" }}
+          currentTier={tier}
+          message={t("GPX export is a Pro feature.")}
+          onClose={() => setUpgradeOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }

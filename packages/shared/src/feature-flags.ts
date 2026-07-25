@@ -497,7 +497,9 @@ export function isFeatureEnabled(
 export type GlobalLimitOverrides = Partial<Record<string, number | null>>;
 
 /** min() with `null` = unlimited (∞). */
-function minLimit(a: number | null, b: number | null): number | null {
+/** The more restrictive of two numeric limits (`null` = unlimited = least
+ *  restrictive). Never raises: `minLimit(x, unlimited) === x`. */
+export function minLimit(a: number | null, b: number | null): number | null {
   if (a === null) return b;
   if (b === null) return a;
   return Math.min(a, b);
