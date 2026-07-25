@@ -98,6 +98,7 @@ export const map = {
   "{count} in {scope}": "{count} in {scope}",
   "{count, plural, one {{n} road} other {{n} roads}}":
     "{count, plural, one {{n} road} other {{n} roads}}",
+  "curviness {score}": "curviness {score}",
   "{date} onward": "{date} onward",
   "{distance} · no rider passes yet": "{distance} · no rider passes yet",
   "Couldn't load zone details.": "Couldn't load zone details.",

@@ -257,10 +257,17 @@ export default function RouteCollectionsPage() {
             <Bookmark size={14} className="text-accent" />
             <Stamp as="h2">{t("Followed collections")}</Stamp>
             <span className="text-xs text-fg-dim">
-              · {t("{count, number}", { count: visibleFollowed.length })}
-              {needle && visibleFollowed.length !== followed.length
-                ? ` ${t("of {total}", { total: followed.length })}`
-                : ""}
+              {t(
+                "· {visible, number}{filtered, select, yes { of {total, number}} other {}}",
+                {
+                  filtered:
+                    needle && visibleFollowed.length !== followed.length
+                      ? "yes"
+                      : "no",
+                  total: followed.length,
+                  visible: visibleFollowed.length,
+                },
+              )}
             </span>
           </div>
           <p className="text-xs text-fg-dim mb-3">

@@ -201,6 +201,24 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("allows independent translated atoms separated by a middle dot", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text>{translate("Distance")} · {formattedDistance}</Text>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects translated fragments within separator-delimited atoms", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text>{translate("Updated")} {time} · {translate("by")} {author}</Text>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects visible numeric JSX text", () => {
     expect(
       localizationMessages(

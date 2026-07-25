@@ -208,6 +208,15 @@ describe("companion indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it("rejects translated fragments within separator-delimited atoms", () => {
+    expect(
+      localizationMessages(
+        'const view = <p>{t("Updated")} {time} · {t("by")} {author}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects visible numeric JSX text", () => {
     expect(
       localizationMessages(

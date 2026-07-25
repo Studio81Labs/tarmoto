@@ -163,9 +163,10 @@ export function FunZonePanel({ zoneId, summary, onClose }: Props) {
                       {road.quality_score != null
                         ? `★ ${format.decimal(road.quality_score, 1)} · `
                         : ""}
-                      {t("curviness")}
-                      {format.decimal(road.curviness_score, 1)} ·{" "}
-                      {format.distanceKm(road.length_m / 1000)} ·{" "}
+                      {t("curviness {score}", {
+                        score: format.decimal(road.curviness_score, 1),
+                      })}{" "}
+                      · {format.distanceKm(road.length_m / 1000)} ·{" "}
                       {t(surfaceTypeLabel(road.surface_type))}
                     </p>
                   </div>

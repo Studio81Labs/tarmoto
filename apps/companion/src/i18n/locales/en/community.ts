@@ -104,6 +104,8 @@ export const community = {
     "{count, plural, one {# curated route} other {# curated routes}} shared by {owner}",
   "{count, plural, one {# route} other {# routes}}":
     "{count, plural, one {# route} other {# routes}}",
+  "· {visible, number}{filtered, select, yes { of {total, number}} other {}}":
+    "· {visible, number}{filtered, select, yes { of {total, number}} other {}}",
   "{count} of {total}": "{count} of {total}",
   "{count} selected": "{count} selected",
   "{title} — Tarmoto collection": "{title} \u2014 Tarmoto collection",

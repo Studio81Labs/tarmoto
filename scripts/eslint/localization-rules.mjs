@@ -354,6 +354,43 @@ function isTranslatedComposition(node) {
   return false;
 }
 
+function separatorDelimitedChildGroups(children) {
+  const groups = [[]];
+  for (const child of children) {
+    if (
+      !isTranslatedChild(child) &&
+      containsIndependentSeparator(child)
+    ) {
+      groups.push([]);
+      continue;
+    }
+    groups[groups.length - 1].push(child);
+  }
+  return groups;
+}
+
+function translatedFragmentsInGroup(children) {
+  const translatedChildren = children.filter(isTranslatedChild);
+  if (translatedChildren.length === 0) return [];
+  const composedChildren = translatedChildren.filter(
+    (child) =>
+      child.type === "JSXExpressionContainer" &&
+      isTranslatedComposition(child.expression),
+  );
+  const hasAnotherTextPart = children.some(
+    (child) =>
+      !translatedChildren.includes(child) && isTextualSibling(child),
+  );
+  if (
+    composedChildren.length === 0 &&
+    !hasAnotherTextPart &&
+    translatedChildren.length === 1
+  ) {
+    return [];
+  }
+  return translatedChildren;
+}
+
 const noTranslatedFragments = {
   meta: {
     type: "problem",
@@ -378,40 +415,13 @@ const noTranslatedFragments = {
         ) {
           return;
         }
-        const translatedChildren = node.children.filter(isTranslatedChild);
-        if (translatedChildren.length === 0) return;
-        const composedChildren = translatedChildren.filter(
-          (child) =>
-            child.type === "JSXExpressionContainer" &&
-            isTranslatedComposition(child.expression),
-        );
-
-        const hasAnotherTextPart = node.children.some(
-          (child) =>
-            !translatedChildren.includes(child) && isTextualSibling(child),
-        );
-        if (
-          composedChildren.length === 0 &&
-          !hasAnotherTextPart &&
-          translatedChildren.length === 1
-        ) {
-          return;
-        }
-        // Compact metric/status rows are deliberately independent atoms. A
-        // middle-dot or em-dash separator makes that explicit and keeps the
-        // rule focused on grammatical fragments that must be reorderable.
-        if (
-          composedChildren.length === 0 &&
-          node.children.some(
-            (child) =>
-              !translatedChildren.includes(child) &&
-              containsIndependentSeparator(child),
-          )
-        ) {
-          return;
-        }
-
-        for (const child of translatedChildren) {
+        // Compact metric/status rows may contain independent atoms separated
+        // by a middle dot, bullet, or em dash. Validate each atom on its own
+        // so a separator cannot hide grammatical fragments on either side.
+        const fragments = separatorDelimitedChildGroups(
+          node.children,
+        ).flatMap(translatedFragmentsInGroup);
+        for (const child of fragments) {
           context.report({ node: child, messageId: "fragment" });
         }
       },
