@@ -28,6 +28,30 @@ const NUMERIC_RECEIVER_DISPLAY_METHODS = new Set([
   "toString",
   "valueOf",
 ]);
+// These operations can return values from their receiver unchanged. When the
+// result is rendered directly, display-copy and numeral checks must therefore
+// inspect the receiver as well as the call arguments. Transforming operations
+// such as `map` are intentionally excluded because their receiver values may
+// only be structural inputs to independently rendered output.
+const COLLECTION_VALUE_PRESERVING_METHODS = new Set([
+  "at",
+  "concat",
+  "copyWithin",
+  "filter",
+  "find",
+  "findLast",
+  "flat",
+  "pop",
+  "reverse",
+  "shift",
+  "slice",
+  "sort",
+  "splice",
+  "toReversed",
+  "toSorted",
+  "toSpliced",
+  "with",
+]);
 const INLINE_TEXT_ELEMENTS = new Set([
   "a",
   "b",
@@ -44,8 +68,13 @@ const TEXT_CONTAINER_ELEMENTS = new Set([
   "a",
   "b",
   "button",
+  "caption",
+  "dd",
+  "div",
+  "dt",
   "em",
   "FieldLabel",
+  "figcaption",
   "h1",
   "h2",
   "h3",
@@ -53,13 +82,22 @@ const TEXT_CONTAINER_ELEMENTS = new Set([
   "h5",
   "h6",
   "label",
+  "legend",
+  "li",
   "Link",
+  "mark",
   "Mono",
+  "option",
   "p",
+  "pre",
+  "small",
   "span",
   "Stamp",
   "strong",
+  "summary",
+  "td",
   "Text",
+  "th",
 ]);
 const TEXTUAL_JSX_ATTRIBUTES = new Set([
   "accessibilityHint",
@@ -319,15 +357,23 @@ function isTranslatedComposition(node) {
   ) {
     return isTranslatedComposition(node.expression ?? node.argument);
   }
-  if (
-    node.type === "SequenceExpression" ||
-    node.type === "ArrayExpression"
-  ) {
-    const expressions =
-      node.type === "SequenceExpression" ? node.expressions : node.elements;
-    return expressions.some(
-      (expression) =>
-        expression !== null && isTranslatedComposition(expression),
+  if (node.type === "SequenceExpression") {
+    return node.expressions.some(isTranslatedComposition);
+  }
+  if (node.type === "ArrayExpression") {
+    const renderableElements = node.elements.filter(
+      (element) =>
+        element !== null &&
+        element.type !== "SpreadElement" &&
+        !(
+          element.type === "Literal" &&
+          (element.value === null || typeof element.value === "boolean")
+        ),
+    );
+    return (
+      renderableElements.some(isTranslatedComposition) ||
+      (renderableElements.length > 1 &&
+        renderableElements.some(containsTranslatorCall))
     );
   }
   if (node.type === "CallExpression" && !isTranslatorCall(node)) {
@@ -342,6 +388,10 @@ function isTranslatedComposition(node) {
         methodName !== null &&
         TRANSLATED_COMPOSITION_METHODS.has(methodName) &&
         containsTranslatorCall(node.callee.object)) ||
+      (node.callee.type === "MemberExpression" &&
+        methodName !== null &&
+        COLLECTION_VALUE_PRESERVING_METHODS.has(methodName) &&
+        isTranslatedComposition(node.callee.object)) ||
       (renderableArguments.length > 1 &&
         renderableArguments.some(containsTranslatorCall)) ||
       node.arguments.some(
@@ -562,7 +612,8 @@ const noVisibleNumericJsxText = {
         return (
           (node.callee.type === "MemberExpression" &&
             methodName !== null &&
-            NUMERIC_RECEIVER_DISPLAY_METHODS.has(methodName) &&
+            (NUMERIC_RECEIVER_DISPLAY_METHODS.has(methodName) ||
+              COLLECTION_VALUE_PRESERVING_METHODS.has(methodName)) &&
             containsUnformattedNumericLiteral(node.callee.object)) ||
           node.arguments.some(
             (argument) =>

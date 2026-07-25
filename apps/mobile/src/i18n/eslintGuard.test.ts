@@ -165,6 +165,7 @@ describe("mobile indirect display-copy lint guard", () => {
   it.each([
     'const view = <Text>{translate("Updated").concat(time)}</Text>;',
     'const view = <Text>{[translate("Updated"), time].join(" ")}</Text>;',
+    'const view = <Text>{[translate("Updated"), " ", time].filter(Boolean)}</Text>;',
   ])("rejects translated composition in call receivers", (source) => {
     expect(
       localizationMessages(
@@ -271,6 +272,15 @@ describe("mobile indirect display-copy lint guard", () => {
     expect(
       localizationMessages(
         "const view = <Text>{(2026).toString()}</Text>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects numeric literals preserved by rendered collection calls", () => {
+    expect(
+      localizationMessages(
+        "const view = <Text>{[2026].filter(Boolean)}</Text>;",
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);

@@ -86,7 +86,9 @@ const STATUS_PILL: Record<TripStatus, string> = {
   completed: "bg-cream text-ink border border-line-strong",
 };
 export default function TripListPage() {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
+  const format = useFormat();
+  const searchLocale = format.locale;
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
@@ -242,7 +244,11 @@ export default function TripListPage() {
         // to the backend exactly once. We use the freshly fetched list
         // as the dedup source so re-running after a partial failure
         // doesn't duplicate names.
-        const result = await migrateLegacyFolders(userId, initial, locale);
+        const result = await migrateLegacyFolders(
+          userId,
+          initial,
+          searchLocale,
+        );
         if (cancelled) return;
         if (result && result.succeeded > 0) {
           // Re-fetch after migration so the newly-posted folders show up
@@ -267,10 +273,10 @@ export default function TripListPage() {
     return () => {
       cancelled = true;
     };
-  }, [locale, t, userId]);
+  }, [searchLocale, t, userId]);
   const visibleTrips = useMemo(
-    () => applyTripFilters(trips, filters, locale),
-    [trips, filters, locale],
+    () => applyTripFilters(trips, filters, searchLocale),
+    [trips, filters, searchLocale],
   );
   const statusCounts = useMemo(() => countByStatus(trips), [trips]);
   const unfiledCount = useMemo(
@@ -1338,7 +1344,8 @@ function FolderModal({
   onClose: () => void;
   onSubmit: (name: string) => void;
 }) {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
+  const format = useFormat();
   const [value, setValue] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   // Keep the latest onClose in a ref so the keydown effect doesn't re-add
@@ -1360,7 +1367,7 @@ function FolderModal({
       folders,
       t,
       excludeId,
-      locale,
+      format.locale,
     );
     if (validationError) {
       setError(validationError);

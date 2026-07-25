@@ -895,7 +895,7 @@ function RoutePickerModal({
   onClose: () => void;
   onAdd: (input: { rideIds: string[] }) => void;
 }) {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
   const format = useFormat();
   const [selectedRides, setSelectedRides] = useState<Set<string>>(
     () => new Set(),
@@ -911,7 +911,7 @@ function RoutePickerModal({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const visibleRides = useMemo(() => {
-    const needle = normalizeForLocaleSearch(search, locale);
+    const needle = normalizeForLocaleSearch(search, format.locale);
     if (!needle) return rides;
     return rides.filter((r) => {
       const fallbackName = t("Ride on {date}", {
@@ -919,11 +919,11 @@ function RoutePickerModal({
       });
       const haystack = normalizeForLocaleSearch(
         `${r.name ?? fallbackName} ${r.ride_type}`,
-        locale,
+        format.locale,
       );
       return haystack.includes(needle);
     });
-  }, [rides, search, format, locale, t]);
+  }, [rides, search, format, t]);
   const toggle = (id: string) => {
     setSelectedRides((prev) => {
       const next = new Set(prev);

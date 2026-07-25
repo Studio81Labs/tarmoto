@@ -63,7 +63,9 @@ interface CollectionInputForm {
   visibility: RouteCollectionVisibility;
 }
 export default function RouteCollectionsPage() {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
+  const format = useFormat();
+  const searchLocale = format.locale;
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
     collections,
@@ -138,17 +140,17 @@ export default function RouteCollectionsPage() {
       );
     }
   };
-  const needle = normalizeForLocaleSearch(search, locale);
+  const needle = normalizeForLocaleSearch(search, searchLocale);
   const visible = useMemo(() => {
     return collections.filter((c) => {
       if (!needle) return true;
       const hay = normalizeForLocaleSearch(
         `${c.title} ${c.description ?? ""}`,
-        locale,
+        searchLocale,
       );
       return hay.includes(needle);
     });
-  }, [collections, locale, needle]);
+  }, [collections, searchLocale, needle]);
   // Apply the same search to followed collections so a search that hides the
   // owned grid doesn't leave unfiltered followed cards visible below it (the
   // search box label says "Search collections…" generically). Followed cards
@@ -160,11 +162,11 @@ export default function RouteCollectionsPage() {
       if (!needle) return true;
       const hay = normalizeForLocaleSearch(
         `${c.title} ${c.description ?? ""} ${c.ownerName}`,
-        locale,
+        searchLocale,
       );
       return hay.includes(needle);
     });
-  }, [followed, locale, needle]);
+  }, [followed, searchLocale, needle]);
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
   return (
@@ -548,7 +550,8 @@ function CollectionModal({
   onClose: () => void;
   onSubmit: (input: CollectionInputForm) => Promise<void>;
 }) {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
+  const format = useFormat();
   const [title, setTitle] = useState(initial.title);
   const [description, setDescription] = useState(initial.description);
   const [visibility, setVisibility] = useState<RouteCollectionVisibility>(
@@ -572,7 +575,7 @@ function CollectionModal({
       collections,
       t,
       excludeId,
-      locale,
+      format.locale,
     );
     if (nameError) {
       setError(nameError);

@@ -405,8 +405,8 @@ function SidebarContributionBadge({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="mb-1.5 rounded-[10px] border border-cream/[0.08] bg-cream/[0.06] p-3">
       <Stamp tone="on-dark">{t("Your contribution")}</Stamp>
-      <div className="mt-1 text-[20px] font-extrabold tracking-[-0.5px] text-cream">
-        {mapped.value}{" "}
+      <div className="mt-1 flex items-baseline gap-1 text-[20px] font-extrabold tracking-[-0.5px] text-cream">
+        {mapped.value}
         <Mono className="text-[10px] font-medium text-cream/60">
           {t("{unit} MAPPED", {
             unit: format.unitLabel("distance"),

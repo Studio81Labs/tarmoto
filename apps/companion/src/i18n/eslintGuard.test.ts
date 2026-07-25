@@ -130,6 +130,18 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each(["div", "li", "td"])(
+    "rejects translated fragments in generic <%s> text containers",
+    (element) => {
+      expect(
+        localizationMessages(
+          `const view = <${element}>{t("Updated")} {formattedTime}</${element}>;`,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
   it.each([
     'const view = <p>{t("Updated") + formattedTime}</p>;',
     'const view = <p>{`${t("Updated")} ${formattedTime}`}</p>;',
@@ -154,6 +166,7 @@ describe("companion indirect display-copy lint guard", () => {
   it.each([
     'const view = <p>{t("Updated").concat(time)}</p>;',
     'const view = <p>{[t("Updated"), time].join(" ")}</p>;',
+    'const view = <p>{[t("Updated"), " ", time].filter(Boolean)}</p>;',
   ])("rejects translated composition in call receivers", (source) => {
     expect(
       localizationMessages(
@@ -269,6 +282,15 @@ describe("companion indirect display-copy lint guard", () => {
     expect(
       localizationMessages(
         "const view = <span>{(2026).toString()}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects numeric literals preserved by rendered collection calls", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{[2026].filter(Boolean)}</span>;",
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
