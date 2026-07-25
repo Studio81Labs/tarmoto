@@ -133,7 +133,7 @@ export function BikeFormModal({
             value={values.year}
             onChange={(v) => setField("year", v)}
             error={errors.year}
-            placeholder="2024"
+            placeholder={t("2024")}
             inputMode="numeric"
             maxLength={4}
           />

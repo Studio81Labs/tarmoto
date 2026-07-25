@@ -76,6 +76,8 @@ export const rides = {
   "Min km": "Min km",
   "Min quality": "Min quality",
   "Monthly distance": "Monthly distance",
+  "Monthly distance · {count, plural, one {last # year} other {last # years}}":
+    "Monthly distance · {count, plural, one {last # year} other {last # years}}",
   More: "More",
   "My location": "My location",
   "Nearby unridden": "Nearby unridden",

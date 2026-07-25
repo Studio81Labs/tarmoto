@@ -1,4 +1,10 @@
-const TRANSLATOR_NAMES = new Set(["t", "translate", "tDynamic"]);
+const TRANSLATOR_NAMES = new Set([
+  "localize",
+  "t",
+  "tDynamic",
+  "translate",
+  "translateHeader",
+]);
 const TRANSLATED_COMPOSITION_METHODS = new Set([
   "concat",
   "join",
@@ -49,10 +55,41 @@ const TEXT_CONTAINER_ELEMENTS = new Set([
   "strong",
   "Text",
 ]);
+const TEXTUAL_JSX_ATTRIBUTES = new Set([
+  "accessibilityHint",
+  "accessibilityLabel",
+  "actionLabel",
+  "alt",
+  "aria-label",
+  "ariaLabel",
+  "body",
+  "cancelText",
+  "confirmText",
+  "description",
+  "emptyText",
+  "headerTitle",
+  "headline",
+  "helpText",
+  "label",
+  "message",
+  "placeholder",
+  "subtitle",
+  "tabBarLabel",
+  "text",
+  "title",
+]);
 
 function jsxElementName(openingElement) {
   const { name } = openingElement;
   return name.type === "JSXIdentifier" ? name.name : null;
+}
+
+function isTextualJsxAttribute(node) {
+  return (
+    node?.type === "JSXAttribute" &&
+    node.name.type === "JSXIdentifier" &&
+    TEXTUAL_JSX_ATTRIBUTES.has(node.name.name)
+  );
 }
 
 function containsJsx(node) {
@@ -372,6 +409,16 @@ const noTranslatedFragments = {
           context.report({ node: child, messageId: "fragment" });
         }
       },
+      JSXAttribute(node) {
+        if (
+          !isTextualJsxAttribute(node) ||
+          node.value?.type !== "JSXExpressionContainer" ||
+          !isTranslatedComposition(node.value.expression)
+        ) {
+          return;
+        }
+        context.report({ node: node.value, messageId: "fragment" });
+      },
     };
   },
 };
@@ -520,12 +567,23 @@ const noVisibleNumericJsxText = {
       JSXExpressionContainer(node) {
         if (
           node.parent?.type !== "JSXElement" &&
-          node.parent?.type !== "JSXFragment"
+          node.parent?.type !== "JSXFragment" &&
+          !isTextualJsxAttribute(node.parent)
         ) {
           return;
         }
         if (containsUnformattedNumericLiteral(node.expression)) {
           context.report({ node, messageId: "numeric" });
+        }
+      },
+      JSXAttribute(node) {
+        if (
+          isTextualJsxAttribute(node) &&
+          node.value?.type === "Literal" &&
+          typeof node.value.value === "string" &&
+          /\d/.test(node.value.value)
+        ) {
+          context.report({ node: node.value, messageId: "numeric" });
         }
       },
     };

@@ -296,7 +296,7 @@ function ContactFormModal({ mode, onClose, onSaved }: ContactFormModalProps) {
         <TextInput
           value={phone}
           onChangeText={setPhone}
-          placeholder="+420 123 456 789"
+          placeholder={translate("+420 123 456 789")}
           placeholderTextColor={t.mute}
           style={styles.input}
           keyboardType="phone-pad"

@@ -1,6 +1,7 @@
 /** English source catalog for the mobile app. Keep key === value. */
 export const en = {
   "+new": "+new",
+  "+420 123 456 789": "+420 123 456 789",
   "{count, plural, one {Complete # ride} other {Complete # rides}}":
     "{count, plural, one {Complete # ride} other {Complete # rides}}",
   "{count, plural, one {Discover # road} other {Discover # roads}}":

@@ -410,12 +410,10 @@ export default function StatsPage() {
           <SectionHeading
             className="mb-[18px]"
             stamp={t("Year-over-year")}
-            title={`${t("Monthly distance")} · ${t(
-              "{count, plural, one {last # year} other {last # years}}",
-              {
-                count: yoyYears.length,
-              },
-            )}`}
+            title={t(
+              "Monthly distance · {count, plural, one {last # year} other {last # years}}",
+              { count: yoyYears.length },
+            )}
             caption={t("{unit} / month", { unit: distanceUnit })}
           />
           <div className="h-72">
@@ -731,14 +729,14 @@ function SurfaceBreakdownCard({
                     width: `${s.pct}%`,
                     backgroundColor: surfaceColor(s.key),
                   }}
-                  title={`${t(rideBreakdownLabel(s.key))} · ${format.number(
-                    s.pct / 100,
-                    {
+                  title={t("{label} · {percent}", {
+                    label: t(rideBreakdownLabel(s.key)),
+                    percent: format.number(s.pct / 100, {
                       style: "percent",
                       minimumFractionDigits: 1,
                       maximumFractionDigits: 1,
-                    },
-                  )}`}
+                    }),
+                  })}
                 />
               ))}
             </div>

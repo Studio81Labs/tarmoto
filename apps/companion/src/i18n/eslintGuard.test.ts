@@ -172,6 +172,15 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects translated composition in accessibility attributes", () => {
+    expect(
+      localizationMessages(
+        'const view = <button aria-label={`${t("Updated")} ${formattedTime}`} />;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects translated fragments nested in inline JSX", () => {
     expect(
       localizationMessages(
@@ -251,6 +260,19 @@ describe("companion indirect display-copy lint guard", () => {
     expect(
       localizationMessages(
         "const view = <span>{(2026).toString()}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <button aria-label={String(2026)} />;",
+    'const view = <button aria-label={"2026"} />;',
+    'const view = <button aria-label="2026" />;',
+  ])("rejects numeric accessibility attributes", (source) => {
+    expect(
+      localizationMessages(
+        source,
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
