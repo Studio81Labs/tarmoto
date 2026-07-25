@@ -25,6 +25,10 @@ export type TripFolder = SharedTripFolder;
 
 const LEGACY_STORAGE_PREFIX = "tarmoto:trip-folders:";
 const MIGRATED_STORAGE_PREFIX = "tarmoto:trip-folders-migrated:";
+const migrationInFlightByUser = new Map<
+  string,
+  Promise<MigrationResult | null>
+>();
 
 // Re-exported under the existing public name so call sites that still
 // reference `MAX_FOLDER_NAME_LENGTH` (the modal validator does) keep
@@ -136,6 +140,7 @@ export interface MigrationResult {
  * first load post-upgrade. The migration:
  *
  *  - skips when the rider has already run it (sticky flag);
+ *  - serializes concurrent attempts for the same rider;
  *  - skips when the rider already has folders on the server (a clean
  *    install with empty localStorage shouldn't post anything);
  *  - skips legacy names that already match a server folder (case-
@@ -146,7 +151,7 @@ export interface MigrationResult {
  *
  * Returns null when nothing was attempted (no work to do, or no user).
  */
-export async function migrateLegacyFolders(
+async function runLegacyFolderMigration(
   userId: string,
   serverFolders: readonly TripFolder[],
   locale: string = DEFAULT_LOCALE,
@@ -190,4 +195,23 @@ export async function migrateLegacyFolders(
   }
 
   return { attempted: toMigrate.length, succeeded };
+}
+
+export async function migrateLegacyFolders(
+  userId: string,
+  serverFolders: readonly TripFolder[],
+  locale: string = DEFAULT_LOCALE,
+): Promise<MigrationResult | null> {
+  const existing = migrationInFlightByUser.get(userId);
+  if (existing) return existing;
+
+  const migration = runLegacyFolderMigration(userId, serverFolders, locale);
+  migrationInFlightByUser.set(userId, migration);
+  try {
+    return await migration;
+  } finally {
+    if (migrationInFlightByUser.get(userId) === migration) {
+      migrationInFlightByUser.delete(userId);
+    }
+  }
 }

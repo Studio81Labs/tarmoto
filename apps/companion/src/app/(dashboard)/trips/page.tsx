@@ -89,6 +89,16 @@ export default function TripListPage() {
   const { t } = useI18n();
   const format = useFormat();
   const searchLocale = format.locale;
+  // Folder loading/migration is scoped to the signed-in user, not to display
+  // preferences. Keep the latest locale and translator available to that
+  // one-shot effect without restarting it while async migration work is in
+  // flight.
+  const folderMigrationLocaleRef = useRef(searchLocale);
+  const folderMigrationTranslatorRef = useRef(t);
+  useEffect(() => {
+    folderMigrationLocaleRef.current = searchLocale;
+    folderMigrationTranslatorRef.current = t;
+  }, [searchLocale, t]);
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
@@ -247,7 +257,7 @@ export default function TripListPage() {
         const result = await migrateLegacyFolders(
           userId,
           initial,
-          searchLocale,
+          folderMigrationLocaleRef.current,
         );
         if (cancelled) return;
         if (result && result.succeeded > 0) {
@@ -257,7 +267,7 @@ export default function TripListPage() {
           if (cancelled) return;
           setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
           toast.success(
-            t(
+            folderMigrationTranslatorRef.current(
               "{count, plural, one {Moved # folder} other {Moved # folders}} to your Tarmoto account.",
               { count: result.succeeded },
             ),
@@ -266,14 +276,16 @@ export default function TripListPage() {
       } catch {
         if (cancelled) return;
         setErrorBanner(
-          t("Couldn't load your folders. Try refreshing the page."),
+          folderMigrationTranslatorRef.current(
+            "Couldn't load your folders. Try refreshing the page.",
+          ),
         );
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [searchLocale, t, userId]);
+  }, [userId]);
   const visibleTrips = useMemo(
     () => applyTripFilters(trips, filters, searchLocale),
     [trips, filters, searchLocale],

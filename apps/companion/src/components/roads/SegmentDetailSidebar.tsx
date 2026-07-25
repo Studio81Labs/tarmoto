@@ -55,6 +55,44 @@ interface SegmentDetailSidebarProps {
   anchor?: "container" | "viewport";
 }
 
+const HAZARD_SEVERITY_TOKEN = "\uE000";
+
+export function HazardSeverityLabel({
+  hazard,
+  severity,
+  t,
+}: {
+  hazard: string;
+  severity: string;
+  t: Translate;
+}) {
+  // Format the complete catalog message first so translators retain control
+  // over order and punctuation. A private-use sentinel lets us decorate the
+  // severity after formatting without guessing where its translated text
+  // occurs (it may also be part of the hazard name).
+  const message = t("{hazard} {severity}", {
+    hazard,
+    severity: HAZARD_SEVERITY_TOKEN,
+  });
+  const severityIndex = message.indexOf(HAZARD_SEVERITY_TOKEN);
+  if (severityIndex < 0) {
+    return <>{t("{hazard} {severity}", { hazard, severity })}</>;
+  }
+  const beforeSeverity = message.slice(0, severityIndex);
+  const afterSeverity = message.slice(
+    severityIndex + HAZARD_SEVERITY_TOKEN.length,
+  );
+  return (
+    <>
+      {beforeSeverity}
+      <span className="text-[10px] uppercase tracking-wider text-fg-dim">
+        {severity}
+      </span>
+      {afterSeverity}
+    </>
+  );
+}
+
 export function SegmentDetailSidebar({
   state,
   onClose,
@@ -357,14 +395,15 @@ function SegmentDetailContent({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">
-                      {t("{hazard} {severity}", {
-                        hazard: t(config.label),
-                        severity: translateKnownLabel(
+                      <HazardSeverityLabel
+                        hazard={t(config.label)}
+                        severity={translateKnownLabel(
                           hazard.severity,
                           HAZARD_SEVERITY_LABELS,
                           t,
-                        ),
-                      })}
+                        )}
+                        t={t}
+                      />
                     </p>
                     {hazard.note && (
                       <p className="mt-0.5 text-xs text-fg-dim">
