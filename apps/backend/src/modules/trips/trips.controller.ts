@@ -319,6 +319,14 @@ export class TripsController {
       'Recipient is the caller themselves (already a member), or body ' +
       'failed validation (bad email, message > 500 chars).',
   })
+  @ApiResponse({
+    status: 403,
+    description:
+      'The trip owner is at their collaborator limit — body carries ' +
+      '`code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, ' +
+      '`limit`, and `current` so a client can distinguish the cap rejection ' +
+      'from other failures.',
+  })
   @ApiResponse({ status: 404, description: 'Trip not found or not owned' })
   async invite(
     @Req() req: express.Request,

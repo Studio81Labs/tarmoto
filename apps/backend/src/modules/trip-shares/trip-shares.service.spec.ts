@@ -229,7 +229,8 @@ describe('TripSharesService', () => {
         ...mockShare,
         trip_id: 'trip-1',
       });
-      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      // Not a member — both the pre-lock hint and the in-lock recheck.
+      (memberRepo.findOne as jest.Mock).mockResolvedValue(null);
 
       await service.joinByToken('user-2', 'a'.repeat(32));
 
@@ -257,7 +258,7 @@ describe('TripSharesService', () => {
         id: 'trip-1',
         owner_id: 'owner-1',
       });
-      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null); // not yet a member
+      (memberRepo.findOne as jest.Mock).mockResolvedValue(null); // not a member (hint + in-lock recheck)
       // No account + no pending invite → an anonymous NEW collaborator.
       (userRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
       (inviteRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
@@ -287,7 +288,7 @@ describe('TripSharesService', () => {
         id: 'trip-1',
         owner_id: 'owner-1',
       });
-      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      (memberRepo.findOne as jest.Mock).mockResolvedValue(null);
       (userRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
       (inviteRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
       collaboratorCount = 2; // under the cap of 5 → admitted
@@ -321,7 +322,7 @@ describe('TripSharesService', () => {
         id: 'trip-1',
         owner_id: 'owner-1',
       });
-      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      (memberRepo.findOne as jest.Mock).mockResolvedValue(null);
       // The joiner has a pending invite (already counted) → cap check skipped.
       (userRepo.findOne as jest.Mock).mockResolvedValueOnce({
         id: 'user-2',
@@ -335,9 +336,59 @@ describe('TripSharesService', () => {
       await expect(
         service.joinByToken('user-2', 'a'.repeat(32)),
       ).resolves.toBeDefined();
-      expect(memberRepo.save).toHaveBeenCalled();
-      // Invite consumed (net-zero) → the cap is never resolved OR counted.
-      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+      expect(memberRepo.save).toHaveBeenCalledWith({
+        trip_id: 'trip-1',
+        user_id: 'user-2',
+        role: 'editor', // honoured the invite's role, not the viewer default
+      });
+      // The invite is consumed atomically inside the same locked transaction.
+      expect(inviteRepo.delete).toHaveBeenCalledWith({ id: 'inv-1' });
+      // The limit is resolved outside the txn (pool-safety) but, with a valid
+      // invite (net-zero), the cap count SQL is never run.
+      expect(managerQuery).not.toHaveBeenCalledWith(
+        expect.stringContaining('COUNT(*)'),
+        expect.anything(),
+      );
+    });
+
+    it('is idempotent (no cap 403) when a concurrent join for the same user already landed', async () => {
+      // Roster full, but by the time we hold the lock the caller is ALREADY a
+      // member (a concurrent request for this same user committed first). The
+      // in-lock membership recheck must short-circuit to an idempotent success,
+      // never FEATURE_LIMIT_EXCEEDED.
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (tripRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'trip-1',
+        owner_id: 'owner-1',
+      });
+      // Pre-lock hint: not yet a member. In-lock recheck: now a member.
+      (memberRepo.findOne as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          trip_id: 'trip-1',
+          user_id: 'user-2',
+          role: 'viewer',
+        });
+      (userRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      collaboratorCount = 1; // roster already full
+
+      await expect(
+        service.joinByToken('user-2', 'a'.repeat(32)),
+      ).resolves.toEqual({
+        trip_id: 'trip-1',
+        planner_url: '/trips/planner?tripId=trip-1',
+      });
+      // No cap check, no insert, no member_joined activity — the lock recheck
+      // short-circuited to the idempotent result.
+      expect(memberRepo.save).not.toHaveBeenCalled();
+      expect(activity.recordSafe).not.toHaveBeenCalled();
       expect(managerQuery).not.toHaveBeenCalledWith(
         expect.stringContaining('COUNT(*)'),
         expect.anything(),

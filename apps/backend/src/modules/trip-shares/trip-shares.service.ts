@@ -102,77 +102,102 @@ export class TripSharesService {
       );
     }
 
-    const existing = await this.memberRepo.findOne({
-      where: { trip_id: share.trip_id, user_id: userId },
+    const tripId = share.trip_id;
+    // Fast-path idempotency: an already-joined caller re-hitting the link needs
+    // no work. This is only a hint — the authoritative membership re-check runs
+    // INSIDE the lock below, so a concurrent same-user join can't slip through.
+    const alreadyMember = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
     });
 
-    // A pending email invite for this user's address carries the role
-    // the owner picked — honour it even when they arrive through the
-    // group link instead of their personal invite link. Anonymous
-    // link-joiners start as read-and-comment `viewer`s.
-    let invite: TripInvite | null = null;
+    // The joiner's OWN email drives the pending-invite lookup (not racy); the
+    // invite ROW itself is re-read inside the lock so a revoke can't be missed.
     const joiner = await this.userRepo.findOne({
       where: { id: userId },
       select: { id: true, email: true },
     });
-    if (joiner?.email) {
-      invite = await this.inviteRepo.findOne({
-        where: { trip_id: share.trip_id, email: joiner.email.toLowerCase() },
-      });
-    }
+    const joinerEmail = joiner?.email?.toLowerCase() ?? null;
 
     let inserted = false;
-    if (!existing) {
-      const tripId = share.trip_id;
-      const role = invite?.role ?? 'viewer';
-      // A joiner consuming a pending invite was already counted against the
-      // owner's cap (invite → member is net-zero); only an anonymous
-      // link-joiner with no invite is a NEW collaborator that must pass the
-      // cap. Resolve the limit BEFORE the transaction (pool-safety — see
-      // resolveCollaboratorLimit).
-      const collaboratorLimit = invite
-        ? null
-        : await this.resolveCollaboratorLimit(trip.owner_id);
+    let joinedRole = 'viewer';
+    if (!alreadyMember) {
+      // Resolve the owner's cap BEFORE the transaction (pool-safety — see
+      // resolveCollaboratorLimit). Whether it's actually enforced is decided
+      // INSIDE the lock, once we know if a still-valid invite makes this join
+      // net-zero.
+      const collaboratorLimit = await this.resolveCollaboratorLimit(
+        trip.owner_id,
+      );
       // The cap check and the member insert must be atomic. Unlike the owner
       // invite UI (single actor, proactive gate), the public group link can be
       // opened by many strangers at once: without serialisation each request
       // reads the same pre-insert count, passes the cap, and inserts a
-      // different member — overflowing the owner's paid limit by an arbitrary
-      // amount. Take a per-trip advisory lock (auto-released at txn end) so the
-      // count + insert run one join at a time; the recount then sees every
-      // prior committed insert.
-      inserted = await this.dataSource.transaction(async (manager) => {
+      // different member — overflowing the owner's paid limit. Take a per-trip
+      // advisory lock (auto-released at txn end) and do EVERYTHING that decides
+      // the roster inside it: re-check membership, re-read the invite, enforce
+      // the cap, insert, and consume the invite.
+      const result = await this.dataSource.transaction(async (manager) => {
         await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
           tripCollaboratorLockKey(tripId),
         ]);
-        await assertWithinCollaboratorLimit(manager, tripId, collaboratorLimit);
         const memberRepo = manager.getRepository(TripMember);
+        const inviteRepo = manager.getRepository(TripInvite);
+
+        // Re-check membership under the lock: a concurrent join for THIS user
+        // may have committed. Treat that as the idempotent success it is —
+        // never a cap 403.
+        const member = await memberRepo.findOne({
+          where: { trip_id: tripId, user_id: userId },
+        });
+        if (member) return { inserted: false, role: member.role };
+
+        // Re-read the pending invite under the lock. A pending email invite for
+        // this address carries the role the owner picked (honoured even via the
+        // group link); anonymous joiners default to read-and-comment `viewer`.
+        // Reading it here — not before the lock — means a revoke between the
+        // pre-lock work and now can't let a stale invite bypass the cap.
+        const invite = joinerEmail
+          ? await inviteRepo.findOne({
+              where: { trip_id: tripId, email: joinerEmail },
+            })
+          : null;
+        const role = invite?.role ?? 'viewer';
+
+        // A joiner consuming a still-valid invite was already counted (invite →
+        // member is net-zero); only a NEW collaborator must pass the cap.
+        if (!invite) {
+          await assertWithinCollaboratorLimit(
+            manager,
+            tripId,
+            collaboratorLimit,
+          );
+        }
         try {
           await memberRepo.save(
             memberRepo.create({ trip_id: tripId, user_id: userId, role }),
           );
-          return true;
         } catch (err: unknown) {
           if (!isUniqueViolation(err)) throw err;
-          return false;
+          return { inserted: false, role };
         }
+        // Consume the invite atomically with the insert it authorised.
+        if (invite) await inviteRepo.delete({ id: invite.id });
+        return { inserted: true, role };
       });
-    }
-
-    if (invite) {
-      await this.inviteRepo.delete({ id: invite.id });
+      inserted = result.inserted;
+      joinedRole = result.role;
     }
 
     if (inserted) {
-      await this.activity.recordSafe(share.trip_id, userId, 'member_joined', {
+      await this.activity.recordSafe(tripId, userId, 'member_joined', {
         source: 'trip_share',
-        role: invite?.role ?? 'viewer',
+        role: joinedRole,
       });
     }
 
     return {
-      trip_id: share.trip_id,
-      planner_url: this.buildPlannerUrl(share.trip_id),
+      trip_id: tripId,
+      planner_url: this.buildPlannerUrl(tripId),
     };
   }
 
