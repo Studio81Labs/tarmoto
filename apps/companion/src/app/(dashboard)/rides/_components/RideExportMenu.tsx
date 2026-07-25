@@ -22,8 +22,11 @@ export function RideExportMenu({
   onExport: (format: RideExportFormat) => Promise<void>;
 }) {
   const t = useTranslation();
-  const { enabled: gpxEnabled, isSuccess: gpxResolved } =
-    useFeature("gpx_export");
+  const {
+    enabled: gpxEnabled,
+    isError: gpxError,
+    isSuccess: gpxResolved,
+  } = useFeature("gpx_export");
   const { tier } = useEntitlements();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [open, setOpen] = useState(false);
@@ -89,19 +92,24 @@ export function RideExportMenu({
             type="button"
             role="menuitem"
             onClick={() => {
-              if (!gpxEnabled) {
+              // Only steer to the upgrade modal once we've RESOLVED that the
+              // rider isn't entitled. On an entitlement-lookup ERROR we can't
+              // tell entitled from not, so defer to the backend — the ride GPX
+              // export is server-enforced and 403s a non-entitled rider.
+              if (gpxResolved && !gpxEnabled) {
                 setOpen(false);
                 setUpgradeOpen(true);
                 return;
               }
               void handleExport("gpx");
             }}
-            // Disabled until the entitlement snapshot has RESOLVED (isSuccess,
-            // not merely !isLoading — the pre-auth window has the query
-            // disabled: isLoading false, isSuccess false). We can't yet tell a
-            // Pro rider (export) from a free one (upgrade), so a click in that
-            // window must not mis-fire the upgrade modal.
-            disabled={busy !== null || !gpxResolved}
+            // Disabled while the entitlement snapshot is UNRESOLVED and not
+            // errored (still loading, or the pre-auth window where the query is
+            // disabled: isLoading false, isSuccess false) — a click then must
+            // not mis-fire the upgrade modal. But an ERROR must NOT disable
+            // indefinitely: it would block even paid riders for the whole
+            // failure window, so let the click through and defer to the backend.
+            disabled={busy !== null || (!gpxResolved && !gpxError)}
             className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("GPX (tracks)")}

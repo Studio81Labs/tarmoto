@@ -242,16 +242,21 @@ export function useEntitlements(): {
  *  or unknown — callers that must avoid a locked-state flash should gate on
  *  `isLoading`, and those that must fail closed on an unresolved snapshot
  *  (e.g. the auth-hydration window where the query is disabled: `isLoading`
- *  false but `isSuccess` false) should gate on `isSuccess`. */
+ *  false but `isSuccess` false) should gate on `isSuccess`. `isError` lets a
+ *  caller distinguish a genuine lookup FAILURE from "still loading" so it can
+ *  offer a retry / defer to a server-authoritative action instead of blocking
+ *  indefinitely. */
 export function useFeature(key: ToggleFeatureKey): {
   enabled: boolean;
   isLoading: boolean;
+  isError: boolean;
   isSuccess: boolean;
 } {
-  const { features, isLoading, isSuccess } = useEntitlements();
+  const { features, isLoading, isError, isSuccess } = useEntitlements();
   return {
     enabled: features ? isFeatureEnabled(features, key) : false,
     isLoading,
+    isError,
     isSuccess,
   };
 }

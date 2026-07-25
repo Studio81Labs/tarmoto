@@ -63,6 +63,27 @@ describe("RideExportMenu — gpx_export gate", () => {
     expect(onExport).toHaveBeenCalledWith("csv");
   });
 
+  it("lets the GPX export proceed on an entitlement lookup ERROR (defers to the backend)", async () => {
+    // /users/me failed with no cached snapshot. Blocking would strand even paid
+    // riders for the whole outage; the ride GPX export is server-enforced, so
+    // let the click through and let the backend 403 a non-entitled rider.
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+    });
+    const onExport = vi.fn().mockResolvedValue(undefined);
+    render(<RideExportMenu onExport={onExport} />);
+    await userEvent.click(screen.getByRole("button", { name: /Export/i }));
+    const gpxItem = screen.getByRole("menuitem", { name: /GPX/i });
+    expect(gpxItem).not.toBeDisabled();
+    await userEvent.click(gpxItem);
+    // Proceeds to the (server-enforced) export — no dead-end upgrade modal.
+    expect(onExport).toHaveBeenCalledWith("gpx");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("disables the GPX item (but not CSV) in the cold-load window", async () => {
     // Pre-auth: the query is disabled → isLoading false, isSuccess false. GPX
     // must still be disabled (an early click can't mis-fire the modal); CSV

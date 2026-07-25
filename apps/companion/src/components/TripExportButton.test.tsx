@@ -53,6 +53,23 @@ describe("TripExportButton — gpx_export gate", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("stays ENABLED and exports on an entitlement lookup ERROR (doesn't block paid riders)", async () => {
+    // /users/me exhausted its retries with no cached snapshot. Blocking here
+    // would strand even paid riders for the whole outage; the cap is unknown, so
+    // let the (locally generated) export proceed instead of the upgrade modal.
+    useFeatureMock.mockReturnValue({
+      enabled: false,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+    });
+    render(<TripExportButton trip={trip} />);
+    const button = screen.getByRole("button", { name: /Export GPX/i });
+    expect(button).not.toBeDisabled();
+    await userEvent.click(button);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("stays disabled in the cold-load window (query disabled: isLoading false, isSuccess false)", async () => {
     // Pre-auth: the /users/me query is disabled, so isLoading is false yet the
     // snapshot hasn't resolved. A Pro rider clicking here must NOT set a stale
