@@ -496,6 +496,7 @@ export const en = {
   "Biker hotel": "Biker hotel",
   "Mountain pass": "Mountain pass",
   "Twisty highlight": "Twisty highlight",
+  Free: "Free",
   "Free ride": "Free ride",
   "Future commute checks will use {value0} as your primary route.":
     "Future commute checks will use {value0} as your primary route.",
@@ -777,7 +778,9 @@ export const en = {
     "Police checkpoint or speed enforcement",
   Poor: "Poor",
   Pothole: "Pothole",
+  Premium: "Premium",
   Private: "Private",
+  Pro: "Pro",
   Profile: "Profile",
   Quality: "Quality",
   "Quality {score} of 5": "Quality {score} of 5",
