@@ -151,6 +151,18 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'const view = <p>{t("Updated").concat(time)}</p>;',
+    'const view = <p>{[t("Updated"), time].join(" ")}</p>;',
+  ])("rejects translated composition in call receivers", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects translated fragments nested in inline JSX", () => {
     expect(
       localizationMessages(
@@ -224,6 +236,24 @@ describe("companion indirect display-copy lint guard", () => {
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
+  });
+
+  it("rejects numeric literals in non-formatter call receivers", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{(2026).toString()}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric literals used only to build structural JSX", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{[1, 2, 3].map(renderItem)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
   });
 
   it("rejects locale-insensitive rider search normalization", () => {

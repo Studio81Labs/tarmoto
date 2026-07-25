@@ -104,6 +104,26 @@ describe("mobile i18n", () => {
         { title: "Alpine loop", count: 3, status: "Planned" },
       ),
     ).toBe("Alpine loop, 3 days, Planned");
+    const tripMetaMessage =
+      "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}" as const;
+    expect(
+      translate(tripMetaMessage, {
+        dayCount: 3,
+        hasMembers: "yes",
+        hasRegion: "yes",
+        memberCount: 2,
+        region: "Alps",
+      }),
+    ).toBe("Alps · 3 days · 2 riders");
+    expect(
+      translate(tripMetaMessage, {
+        dayCount: 1,
+        hasMembers: "no",
+        hasRegion: "no",
+        memberCount: 1,
+        region: "",
+      }),
+    ).toBe("1 day");
     expect(
       translate(
         "{count, plural, one {# segment highlighted} other {# segments highlighted}} for the selected period",

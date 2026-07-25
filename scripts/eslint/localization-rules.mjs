@@ -1,4 +1,21 @@
 const TRANSLATOR_NAMES = new Set(["t", "translate", "tDynamic"]);
+const TRANSLATED_COMPOSITION_METHODS = new Set([
+  "concat",
+  "join",
+  "padEnd",
+  "padStart",
+  "replace",
+  "replaceAll",
+]);
+const NUMERIC_RECEIVER_DISPLAY_METHODS = new Set([
+  "join",
+  "toExponential",
+  "toFixed",
+  "toLocaleString",
+  "toPrecision",
+  "toString",
+  "valueOf",
+]);
 const INLINE_TEXT_ELEMENTS = new Set([
   "a",
   "b",
@@ -81,6 +98,23 @@ function isTranslatorCall(node) {
     node.callee.type === "Identifier" &&
     TRANSLATOR_NAMES.has(node.callee.name)
   );
+}
+
+function memberCallName(node) {
+  if (node.type !== "CallExpression") return null;
+  const callee = node.callee;
+  if (callee.type !== "MemberExpression") return null;
+  if (!callee.computed && callee.property.type === "Identifier") {
+    return callee.property.name;
+  }
+  if (
+    callee.computed &&
+    callee.property.type === "Literal" &&
+    typeof callee.property.value === "string"
+  ) {
+    return callee.property.value;
+  }
+  return null;
 }
 
 function staticClassName(openingElement) {
@@ -246,10 +280,17 @@ function isTranslatedComposition(node) {
     );
   }
   if (node.type === "CallExpression" && !isTranslatorCall(node)) {
-    return node.arguments.some(
-      (argument) =>
-        argument.type !== "SpreadElement" &&
-        isTranslatedComposition(argument),
+    const methodName = memberCallName(node);
+    return (
+      (node.callee.type === "MemberExpression" &&
+        methodName !== null &&
+        TRANSLATED_COMPOSITION_METHODS.has(methodName) &&
+        containsTranslatorCall(node.callee.object)) ||
+      node.arguments.some(
+        (argument) =>
+          argument.type !== "SpreadElement" &&
+          isTranslatedComposition(argument),
+      )
     );
   }
   return false;
@@ -439,10 +480,17 @@ const noVisibleNumericJsxText = {
       }
       if (node.type === "CallExpression") {
         if (isKnownNumericDisplayCall(node)) return false;
-        return node.arguments.some(
-          (argument) =>
-            argument.type !== "SpreadElement" &&
-            containsUnformattedNumericLiteral(argument),
+        const methodName = memberCallName(node);
+        return (
+          (node.callee.type === "MemberExpression" &&
+            methodName !== null &&
+            NUMERIC_RECEIVER_DISPLAY_METHODS.has(methodName) &&
+            containsUnformattedNumericLiteral(node.callee.object)) ||
+          node.arguments.some(
+            (argument) =>
+              argument.type !== "SpreadElement" &&
+              containsUnformattedNumericLiteral(argument),
+          )
         );
       }
       return false;

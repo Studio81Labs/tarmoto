@@ -155,6 +155,8 @@ export const en = {
   "{temperature} · {condition}": "{temperature} · {condition}",
   "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}":
     "{tiles} tiles · zoom {minZoom}–{maxZoom} · {size}",
+  "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}":
+    "{hasRegion, select, yes {{region} · } other {}}{dayCount, plural, one {# day} other {# days}}{hasMembers, select, yes { · {memberCount, plural, one {# rider} other {# riders}}} other {}}",
   "{title}, {count, plural, one {# day} other {# days}}, {status}":
     "{title}, {count, plural, one {# day} other {# days}}, {status}",
   "{title}. {message}": "{title}. {message}",
