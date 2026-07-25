@@ -116,6 +116,20 @@ export function useRoadQualityZoomCap(): {
     }
   }, [authed, globalResolved, override, userId, queryClient]);
 
+  // The strictest FINITE cap already known from either source (or null if none
+  // is). Used while UNRESOLVED so hydration clamps to a known operator/user cap
+  // instead of widening to the free-tier fallback (`resolveQualityLayerMaxZoom`
+  // clamps it further to the free cap). `null`/`undefined` — unlimited / no
+  // override — are not finite caps, so they leave the value unknown.
+  const knownWhileUnresolved = ((): number | null => {
+    let cap: number | null = null;
+    if (userResolved && typeof userLimit === "number") cap = userLimit;
+    if (globalResolved && typeof override === "number") {
+      cap = cap === null ? override : Math.min(cap, override);
+    }
+    return cap;
+  })();
+
   if (authed) {
     // The companion is the enforcement point for this overlay, so treat the cap
     // as resolved only once BOTH the profile AND the public override have
@@ -123,19 +137,26 @@ export function useRoadQualityZoomCap(): {
     // first would render quality detail ABOVE an operator's finite clamp until
     // /config/limits arrives. Fail closed (unresolved) until both.
     const bothResolved = userResolved && globalResolved;
-    // Apply the PUBLIC global override as a downward clamp over the cached
-    // /users/me limit (never raises), so an operator's finite clamp takes
-    // effect immediately rather than waiting for /users/me to refetch.
-    const limit =
-      bothResolved && override !== undefined
-        ? minLimit(userLimit, override)
-        : userLimit;
-    return { limit, isResolved: bothResolved };
+    if (bothResolved) {
+      // Apply the PUBLIC global override as a downward clamp over the cached
+      // /users/me limit (never raises), so an operator's finite clamp takes
+      // effect immediately rather than waiting for /users/me to refetch.
+      const limit =
+        override !== undefined ? minLimit(userLimit, override) : userLimit;
+      return { limit, isResolved: true };
+    }
+    // Still hydrating one source: fail closed, but keep any restrictive cap
+    // already in hand rather than rendering at the free fallback until the
+    // other source loads.
+    return { limit: knownWhileUnresolved, isResolved: false };
   }
   // Not (yet) authed. Until the session settles as unauthenticated, stay
   // fail-closed rather than resolve a permissive anonymous cap for a rider
-  // whose auth is still hydrating.
-  if (status !== "unauthenticated") return { limit: null, isResolved: false };
+  // whose auth is still hydrating — but preserve a known finite operator clamp
+  // during that window instead of widening to the free default.
+  if (status !== "unauthenticated") {
+    return { limit: knownWhileUnresolved, isResolved: false };
+  }
   if (!globalResolved) return { limit: null, isResolved: false };
   // Confirmed anonymous: no tier → the registry free/default value, then the
   // global operator override replaces it (undefined = no override → free

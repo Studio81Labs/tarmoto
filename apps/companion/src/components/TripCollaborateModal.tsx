@@ -618,9 +618,11 @@ function PeopleTab({
   const [error, setError] = useState<string | null>(null);
   const [upgradeErr, setUpgradeErr] = useState<number | null>(null);
   const { tier } = useEntitlements();
-  const { limit: collabLimit, isSuccess: limitResolved } = useLimit(
-    "max_trip_collaborators",
-  );
+  const {
+    limit: collabLimit,
+    isError: limitError,
+    isSuccess: limitResolved,
+  } = useLimit("max_trip_collaborators");
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -701,10 +703,16 @@ function PeopleTab({
     : 0;
   // Proactive gate is authoritative only for the OWNER (the cap is the
   // owner's tier, and `useEntitlements` only reflects the CURRENT user).
-  // Fail closed: an unresolved cap blocks the owner too.
+  // Fail closed while the cap is UNRESOLVED (loading / rolling-deploy omission)
+  // and block when it has RESOLVED to an exceeded finite cap. But if the
+  // entitlement lookup ERRORED, do NOT block indefinitely with no feedback:
+  // let the invite hit the backend, which is the authority and returns a 403
+  // the modal surfaces below (an owner is otherwise stuck with a disabled
+  // button and no explanation or retry).
   const atCollaboratorCap =
     isOwner &&
-    (!limitResolved || (collabLimit !== null && nonOwnerCount >= collabLimit));
+    ((!limitResolved && !limitError) ||
+      (limitResolved && collabLimit !== null && nonOwnerCount >= collabLimit));
   // A re-invite of an already-pending address is net-zero (role change / code
   // rotation) — the backend exempts it from the cap, so the UI must not block
   // it even when the owner is at the limit.

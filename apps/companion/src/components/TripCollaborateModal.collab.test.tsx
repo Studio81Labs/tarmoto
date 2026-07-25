@@ -1308,13 +1308,13 @@ describe("TripCollaborateModal — collab tabs", () => {
   });
 
   it("fails closed: an unresolved cap blocks the OWNER even with an empty roster and a filled email", async () => {
-    // isSuccess: false means the limit query hasn't resolved (e.g. still
-    // loading, or errored) — NOT "resolved to unlimited". The gate must
-    // treat this as blocking for the owner (`atCollaboratorCap` includes
-    // `!limitResolved`), independent of the roster count or limit value.
+    // isSuccess: false + isError: false = still loading / rolling-deploy
+    // omission — NOT "resolved to unlimited". The gate fails closed for the
+    // owner here (`!limitResolved && !limitError`), independent of the roster
+    // count or limit value. (An ERRORED query is handled separately below.)
     useLimitMock.mockReturnValue({
       limit: null,
-      isLoading: false,
+      isLoading: true,
       isError: false,
       isSuccess: false,
     });
@@ -1360,6 +1360,54 @@ describe("TripCollaborateModal — collab tabs", () => {
     expect(
       screen.queryByRole("button", { name: /Upgrade to Pro/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("does NOT block the OWNER when the entitlement query ERRORED (defers to the backend)", async () => {
+    // A failed /users/me must not disable the invite button forever with no
+    // feedback: the cap is unknown, so let the authoritative request run — the
+    // backend enforces and returns a 403 the modal surfaces.
+    useLimitMock.mockReturnValue({
+      limit: null,
+      isLoading: false,
+      isError: true,
+      isSuccess: false,
+    });
+    hoisted.listMembers.mockReset().mockResolvedValue({
+      data: {
+        members: [
+          {
+            user_id: "owner-1",
+            display_name: "Owner",
+            email: "o@example.com",
+            avatar_url: null,
+            role: "owner",
+            joined_at: "2026-07-02T10:00:00Z",
+            state: "joined",
+          },
+        ],
+        invites: [],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="owner-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /people/i }));
+
+    fireEvent.change(await screen.findByLabelText(/invite email address/i), {
+      target: { value: "rider@example.com" },
+    });
+    // Not blocked — the entitlement error defers enforcement to the backend.
+    expect(
+      screen.getByRole("button", { name: /^invite$/i }),
+    ).not.toBeDisabled();
   });
 
   it("does not proactively block an EDITOR inviting (owner-scoped cap), relies on the 403", async () => {

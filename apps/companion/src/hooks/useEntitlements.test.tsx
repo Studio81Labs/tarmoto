@@ -352,6 +352,30 @@ describe("useRoadQualityZoomCap", () => {
     await waitFor(() => expect(result.current.limit).toBe(12));
   });
 
+  it("preserves a finite global override while auth is still hydrating (does not widen to free)", async () => {
+    // /config/limits already resolved a restrictive z5 override, but NextAuth is
+    // still loading. The cap must reflect z5 (clamped by
+    // resolveQualityLayerMaxZoom), not fall back to the free z12 default and
+    // render quality above the operator's cap during hydration.
+    authState.user = null; // store not hydrated yet
+    sessionState.status = "loading";
+    getMock.mockImplementation((path: string) =>
+      path === "/api/v1/config/limits"
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: 5 },
+            error: undefined,
+          })
+        : Promise.resolve({ data: undefined, error: { message: "no auth" } }),
+    );
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(),
+    });
+    // Wait for the public override to load; the cap stays unresolved (hydrating)
+    // but carries the known finite clamp rather than null.
+    await waitFor(() => expect(result.current.limit).toBe(5));
+    expect(result.current.isResolved).toBe(false);
+  });
+
   it("stays fail-closed when the session is authenticated but the store hasn't hydrated yet", async () => {
     // The narrow gap where NextAuth reports "authenticated" but AuthSync's
     // effect hasn't run — userId still null. Treated like loading, not anonymous.
