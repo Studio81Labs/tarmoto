@@ -226,6 +226,7 @@ describe('TripsService', () => {
         if (entity === TripMember) return memberRepo;
         if (entity === TripInvite) return inviteRepo;
         if (entity === Trip) return tripRepo;
+        if (entity === User) return userRepo;
         return undefined;
       }),
     };
@@ -2402,20 +2403,20 @@ describe('TripsService', () => {
       );
     });
 
-    it('re-checks recipient membership UNDER the lock (group-link join won the race)', async () => {
-      // Pre-lock the recipient is NOT a member, but a group-link join lands
-      // before this txn takes the lock. At the cap, a naive path would 403 a
-      // now-member; below the cap it would create a double-counting invite. The
-      // in-lock recheck must preserve the already-member no-op instead.
+    it('re-resolves the recipient BY EMAIL under the lock (registered + joined during the request)', async () => {
+      // Codex: no account at the PRE-LOCK lookup, but the rider registers AND
+      // joins via the group link before this txn takes the collaborator lock.
+      // Keying the recheck on the pre-lock (null) id would miss them; resolving
+      // by email under the lock catches the now-member and preserves the no-op
+      // (no cap 403, no double-counting invite).
       featureResolver.resolveLimitsForUser.mockResolvedValue({
         max_active_trips: null,
         max_trip_collaborators: 1,
       });
       memberRepo.findOne
         .mockResolvedValueOnce({ role: 'owner' } as TripMember) // caller
-        .mockResolvedValueOnce(null) // pre-lock recipient — not yet a member
         .mockResolvedValueOnce({
-          // in-lock recheck — the group-link join committed first
+          // in-lock membership recheck — the just-registered rider joined
           trip_id: TRIP_ID,
           user_id: OTHER_ID,
           role: 'viewer',
@@ -2425,16 +2426,17 @@ describe('TripsService', () => {
           id: OWNER_ID,
           display_name: 'Adam',
           email: 'adam@example.com',
-        } as User)
-        .mockResolvedValueOnce({ id: OTHER_ID, email: RECIPIENT } as User);
+        } as User) // inviter
+        .mockResolvedValueOnce(null) // pre-lock: recipient has no account yet
+        .mockResolvedValueOnce({ id: OTHER_ID, email: RECIPIENT } as User); // under-lock: now registered
       collaboratorCount = 1; // roster at the cap
 
       await expect(
         service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
       ).resolves.toBeUndefined();
 
-      // The recheck ran under the shared lock and short-circuited to the no-op:
-      // no cap 403, no invite write, no email — just the flagged activity.
+      // The under-lock email re-resolution + membership recheck short-circuited
+      // to the no-op: no cap 403, no invite write, no email — flagged activity.
       expect(manager.query).toHaveBeenCalledWith(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         [`trip:collaborators:${TRIP_ID}`],

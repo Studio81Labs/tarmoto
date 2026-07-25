@@ -822,7 +822,6 @@ export class TripsService {
     // fresh code (re-acquiring the lock). What matters is that the code in the
     // email is ALWAYS the code that actually got persisted.
     const role = dto.role ?? 'editor';
-    const recipientUserId = existingUser?.id ?? null;
     // Resolve the owner's cap OUTSIDE the transaction (pool-safety — see
     // resolveCollaboratorLimit). Harmless for a re-invite, which skips the
     // check inside the txn.
@@ -830,25 +829,33 @@ export class TripsService {
       trip.owner_id,
     );
     let personalCode = '';
-    let recipientAlreadyMember: boolean;
+    // The recipient's account id when they turn out to be a member (resolved
+    // under the lock), else null → proceed with the invite.
+    let alreadyMemberId: string | null;
     for (let attempt = 0; ; attempt++) {
       personalCode = generateInviteCode();
       try {
-        recipientAlreadyMember = await this.tripRepo.manager.transaction(
+        alreadyMemberId = await this.tripRepo.manager.transaction(
           async (manager) => {
             await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
               tripCollaboratorLockKey(tripId),
             ]);
-            // Re-check the recipient's membership UNDER the lock: a group-link
-            // join by this same registered recipient may have landed between
-            // the pre-lock check and now. Creating/refreshing an invite for a
-            // current member would 403 them at the cap and double-count them in
-            // later checks — preserve the pre-lock no-op instead.
-            if (recipientUserId) {
+            // Re-resolve the recipient BY EMAIL under the lock, then recheck
+            // membership. The pre-lock lookup can miss a rider who had no
+            // account then but registered AND joined via the group link before
+            // this transaction took the lock — so keying the recheck on the
+            // pre-lock `existingUser.id` (possibly null) would let it slip
+            // through. Creating/refreshing an invite for a current member would
+            // 403 them at the cap and double-count them in later checks;
+            // short-circuit to the no-op instead.
+            const recipient = await manager.getRepository(User).findOne({
+              where: { email: dto.email },
+            });
+            if (recipient) {
               const member = await manager.getRepository(TripMember).findOne({
-                where: { trip_id: tripId, user_id: recipientUserId },
+                where: { trip_id: tripId, user_id: recipient.id },
               });
-              if (member) return true;
+              if (member) return recipient.id;
             }
             const inviteRepo = manager.getRepository(TripInvite);
             const existingInvite = await inviteRepo.findOne({
@@ -873,7 +880,7 @@ export class TripsService {
                 invited_by: userId,
               });
             }
-            return false;
+            return null;
           },
         );
         break;
@@ -884,13 +891,13 @@ export class TripsService {
       }
     }
 
-    if (recipientAlreadyMember) {
+    if (alreadyMemberId !== null) {
       // Same no-op as the pre-lock already-member branch, but for a recipient
       // who joined (e.g. via the group link) during this request: skip the
       // email + invite, log, and record the flagged activity.
       this.logger.log(
         `Skipped trip-invite email — recipient is already a member ` +
-          `(trip=${tripId}, user=${recipientUserId})`,
+          `(trip=${tripId}, user=${alreadyMemberId})`,
       );
       await this.activity.recordSafe(tripId, userId, 'member_invited', {
         recipient_email_domain: emailDomain(dto.email),
