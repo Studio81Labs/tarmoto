@@ -30,6 +30,9 @@ describe('TripSharesService', () => {
   // call so a test can prove the lock is taken.
   let managerQuery: jest.Mock;
   let dataSource: { transaction: jest.Mock };
+  // Roster size the single-snapshot count SQL reports (non-owner members +
+  // pending invites). Cap tests set it; the lock query resolves to undefined.
+  let collaboratorCount: number;
 
   const mockShare = {
     id: 'share-1',
@@ -94,7 +97,12 @@ describe('TripSharesService', () => {
       }),
     };
 
-    managerQuery = jest.fn().mockResolvedValue(undefined);
+    collaboratorCount = 0;
+    managerQuery = jest.fn((sql: string) =>
+      typeof sql === 'string' && sql.includes('COUNT(*)')
+        ? Promise.resolve([{ current: collaboratorCount }])
+        : Promise.resolve(undefined),
+    );
     const manager = {
       query: managerQuery,
       getRepository: jest.fn((entity) => {
@@ -253,17 +261,51 @@ describe('TripSharesService', () => {
       // No account + no pending invite → an anonymous NEW collaborator.
       (userRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
       (inviteRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
-      (memberRepo.count as jest.Mock).mockResolvedValue(1); // one non-owner member already
-      (inviteRepo.count as jest.Mock).mockResolvedValue(0);
+      collaboratorCount = 1; // single-snapshot roster count already at the cap
 
       await expect(
         service.joinByToken('user-2', 'a'.repeat(32)),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      // Cap is the OWNER's, enforced before the member is inserted.
+      // Cap is the OWNER's, resolved BEFORE the transaction and enforced inside
+      // it (single-snapshot count) before the member is inserted.
       expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
         'owner-1',
       );
       expect(memberRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('counts the roster in a SINGLE snapshot statement (not split member/invite counts)', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 5,
+      });
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (tripRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'trip-1',
+        owner_id: 'owner-1',
+      });
+      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      (userRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      (inviteRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      collaboratorCount = 2; // under the cap of 5 → admitted
+
+      await service.joinByToken('user-2', 'a'.repeat(32));
+
+      // ONE combined COUNT over both tables — two separate counts could straddle
+      // a concurrent invite acceptance (member insert + invite delete) and
+      // undercount the roster, admitting a visitor past the cap.
+      const countCalls = managerQuery.mock.calls.filter(
+        ([sql]) => typeof sql === 'string' && sql.includes('COUNT(*)'),
+      );
+      expect(countCalls).toHaveLength(1);
+      expect(countCalls[0]?.[0]).toContain('trip_members');
+      expect(countCalls[0]?.[0]).toContain('trip_invites');
+      expect(memberRepo.count).not.toHaveBeenCalled();
+      expect(inviteRepo.count).not.toHaveBeenCalled();
+      expect(memberRepo.save).toHaveBeenCalled();
     });
 
     it('allows a joiner consuming their pending invite even at the cap (net-zero)', async () => {
@@ -294,7 +336,12 @@ describe('TripSharesService', () => {
         service.joinByToken('user-2', 'a'.repeat(32)),
       ).resolves.toBeDefined();
       expect(memberRepo.save).toHaveBeenCalled();
-      expect(memberRepo.count).not.toHaveBeenCalled(); // invite consumed → no cap count
+      // Invite consumed (net-zero) → the cap is never resolved OR counted.
+      expect(featureResolver.resolveLimitsForUser).not.toHaveBeenCalled();
+      expect(managerQuery).not.toHaveBeenCalledWith(
+        expect.stringContaining('COUNT(*)'),
+        expect.anything(),
+      );
     });
   });
 

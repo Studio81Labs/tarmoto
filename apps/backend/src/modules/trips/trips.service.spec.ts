@@ -165,6 +165,9 @@ describe('TripsService', () => {
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
+  // Roster size the invite path's single-snapshot COUNT statement reports.
+  // Cap tests set it; default 0 keeps ordinary invites under any cap.
+  let collaboratorCount = 0;
   let userRepo: jest.Mocked<Repository<User>>;
   let inviteRepo: jest.Mocked<Repository<TripInvite>>;
   let folderRepo: jest.Mocked<Repository<TripFolder>>;
@@ -190,6 +193,7 @@ describe('TripsService', () => {
     // and operates through that manager. Mock it as a callable that
     // immediately invokes the callback with a manager that mirrors the
     // repo create/save semantics.
+    collaboratorCount = 0;
     manager = {
       create: jest
         .fn()
@@ -209,10 +213,15 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
-      // The invite path takes a per-trip advisory lock and counts/writes
-      // through the txn manager. Route those repo lookups back to the same
-      // mocks the assertions target.
-      query: jest.fn().mockResolvedValue(undefined),
+      // The invite path takes a per-trip advisory lock, counts the roster in a
+      // single COUNT statement, and writes through the txn manager. The lock
+      // query resolves to undefined; the count query returns the configurable
+      // roster size; repo lookups route back to the mocks the assertions target.
+      query: jest.fn((sql: string) =>
+        typeof sql === 'string' && sql.includes('COUNT(*)')
+          ? Promise.resolve([{ current: collaboratorCount }])
+          : Promise.resolve(undefined),
+      ),
       getRepository: jest.fn((entity: unknown) => {
         if (entity === TripMember) return memberRepo;
         if (entity === TripInvite) return inviteRepo;
@@ -2441,8 +2450,7 @@ describe('TripsService', () => {
         } as User) // inviter
         .mockResolvedValueOnce(null); // recipient has no account
       inviteRepo.findOne.mockResolvedValue(null); // no prior invite → a NEW collaborator
-      memberRepo.count.mockResolvedValue(1); // one non-owner member already
-      inviteRepo.count.mockResolvedValue(0);
+      collaboratorCount = 1; // single-snapshot roster count already at the cap
 
       await expect(
         service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
@@ -2470,8 +2478,7 @@ describe('TripsService', () => {
         } as User)
         .mockResolvedValueOnce(null);
       inviteRepo.findOne.mockResolvedValue(null);
-      memberRepo.count.mockResolvedValue(3); // 3 members
-      inviteRepo.count.mockResolvedValue(2); // + 2 pending = 5, at cap
+      collaboratorCount = 5; // 3 members + 2 pending = 5, at the cap
 
       await service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }).then(
         () => {

@@ -6,8 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Not, Repository } from 'typeorm';
-import { isWithinLimit } from '@tarmoto/shared';
+import { DataSource, Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
@@ -15,8 +14,10 @@ import { TripInvite } from '../../entities/trip-invite.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
-import { featureLimitExceeded } from '../features/feature-limit.error.js';
-import { tripCollaboratorLockKey } from '../features/collaborator-cap-lock.js';
+import {
+  assertWithinCollaboratorLimit,
+  tripCollaboratorLockKey,
+} from '../features/collaborator-cap.js';
 import {
   CreateTripShareDto,
   TripShareJoinResponseDto,
@@ -46,40 +47,17 @@ export class TripSharesService {
   ) {}
 
   /**
-   * Owner-scoped `max_trip_collaborators` cap for the group-link JOIN path.
-   * A token visitor becoming a member grows the roster exactly like an email
-   * invite, so the same authoritative check applies (mirrors
-   * `TripsService.assertCanAddCollaborator` — duplicated here rather than
-   * injected because TripsModule imports TripSharesModule, so the reverse
-   * dependency would be circular). Counts the trip's current NON-owner
-   * collaborators (accepted members + pending invites) against the OWNER's
-   * limit and throws before the new member is inserted. Callers must invoke
-   * this ONLY when the join adds a NEW collaborator — a joiner consuming a
-   * pending invite was already counted (invite → member is net-zero).
-   *
-   * Counts through the caller's `manager` so the read runs inside the same
-   * serialised transaction as the insert — see `joinByToken`. Without that,
-   * concurrent joins on the same public link would each observe the same
-   * pre-insert count and collectively overflow the owner's paid cap.
+   * The OWNER's `max_trip_collaborators` value (`null` = unlimited). Resolved
+   * OUTSIDE the join transaction: `FeatureResolver` reads the global pool, so
+   * resolving it while the txn holds the per-trip advisory lock could exhaust
+   * the pool under concurrent joins and deadlock the lock-holder. The count +
+   * enforcement then run inside the txn via `assertWithinCollaboratorLimit`.
    */
-  private async assertCanAddCollaborator(
-    manager: EntityManager,
-    tripId: string,
+  private async resolveCollaboratorLimit(
     ownerId: string,
-  ): Promise<void> {
+  ): Promise<number | null> {
     const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
-    const limit = limits.max_trip_collaborators;
-    if (limit === null) return; // unlimited — skip the count entirely
-    const [nonOwnerMembers, pendingInvites] = await Promise.all([
-      manager.getRepository(TripMember).count({
-        where: { trip_id: tripId, role: Not('owner') },
-      }),
-      manager.getRepository(TripInvite).count({ where: { trip_id: tripId } }),
-    ]);
-    const current = nonOwnerMembers + pendingInvites;
-    if (!isWithinLimit(limit, current)) {
-      throw featureLimitExceeded('max_trip_collaborators', limit, current);
-    }
+    return limits.max_trip_collaborators;
   }
 
   async create(
@@ -147,6 +125,14 @@ export class TripSharesService {
     if (!existing) {
       const tripId = share.trip_id;
       const role = invite?.role ?? 'viewer';
+      // A joiner consuming a pending invite was already counted against the
+      // owner's cap (invite → member is net-zero); only an anonymous
+      // link-joiner with no invite is a NEW collaborator that must pass the
+      // cap. Resolve the limit BEFORE the transaction (pool-safety — see
+      // resolveCollaboratorLimit).
+      const collaboratorLimit = invite
+        ? null
+        : await this.resolveCollaboratorLimit(trip.owner_id);
       // The cap check and the member insert must be atomic. Unlike the owner
       // invite UI (single actor, proactive gate), the public group link can be
       // opened by many strangers at once: without serialisation each request
@@ -159,12 +145,7 @@ export class TripSharesService {
         await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
           tripCollaboratorLockKey(tripId),
         ]);
-        // A joiner consuming a pending invite was already counted against the
-        // owner's cap (invite → member is net-zero); an anonymous link-joiner
-        // with no invite is a NEW collaborator and must pass the cap first.
-        if (!invite) {
-          await this.assertCanAddCollaborator(manager, tripId, trip.owner_id);
-        }
+        await assertWithinCollaboratorLimit(manager, tripId, collaboratorLimit);
         const memberRepo = manager.getRepository(TripMember);
         try {
           await memberRepo.save(

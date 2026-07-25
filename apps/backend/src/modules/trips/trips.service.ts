@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Not, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import {
   DEFAULT_LOCALE,
   haversineKm,
@@ -32,7 +32,10 @@ import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
-import { tripCollaboratorLockKey } from '../features/collaborator-cap-lock.js';
+import {
+  assertWithinCollaboratorLimit,
+  tripCollaboratorLockKey,
+} from '../features/collaborator-cap.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import {
@@ -327,29 +330,17 @@ export class TripsService {
    * when adding a new collaborator — a re-invite of an already-pending address
    * (role change / code rotation) adds nobody and must not be blocked.
    *
-   * Counts through the caller's `manager` so the read runs inside the same
-   * advisory-locked transaction as the write (see `invite`). Without that
-   * serialisation, concurrent invites/joins for one trip would each observe the
-   * same pre-write count, pass the cap, and collectively overflow it.
+   * Resolved OUTSIDE the invite transaction: `FeatureResolver` reads the global
+   * pool, so resolving it while the txn holds the per-trip advisory lock could
+   * exhaust the pool under concurrent invites/joins and deadlock the
+   * lock-holder. The count + enforcement then run inside the txn via
+   * `assertWithinCollaboratorLimit`.
    */
-  async assertCanAddCollaborator(
-    manager: EntityManager,
-    tripId: string,
+  private async resolveCollaboratorLimit(
     ownerId: string,
-  ): Promise<void> {
+  ): Promise<number | null> {
     const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
-    const limit = limits.max_trip_collaborators;
-    if (limit === null) return; // unlimited — skip the count entirely
-    const [nonOwnerMembers, pendingInvites] = await Promise.all([
-      manager.getRepository(TripMember).count({
-        where: { trip_id: tripId, role: Not('owner') },
-      }),
-      manager.getRepository(TripInvite).count({ where: { trip_id: tripId } }),
-    ]);
-    const current = nonOwnerMembers + pendingInvites;
-    if (!isWithinLimit(limit, current)) {
-      throw featureLimitExceeded('max_trip_collaborators', limit, current);
-    }
+    return limits.max_trip_collaborators;
   }
 
   private async allocateAndPersistTrip(
@@ -831,6 +822,12 @@ export class TripsService {
     // fresh code (re-acquiring the lock). What matters is that the code in the
     // email is ALWAYS the code that actually got persisted.
     const role = dto.role ?? 'editor';
+    // Resolve the owner's cap OUTSIDE the transaction (pool-safety — see
+    // resolveCollaboratorLimit). Harmless for a re-invite, which skips the
+    // check inside the txn.
+    const collaboratorLimit = await this.resolveCollaboratorLimit(
+      trip.owner_id,
+    );
     let personalCode = '';
     for (let attempt = 0; ; attempt++) {
       personalCode = generateInviteCode();
@@ -849,7 +846,11 @@ export class TripsService {
               { role, invite_code: personalCode, invited_by: userId },
             );
           } else {
-            await this.assertCanAddCollaborator(manager, tripId, trip.owner_id);
+            await assertWithinCollaboratorLimit(
+              manager,
+              tripId,
+              collaboratorLimit,
+            );
             await inviteRepo.insert({
               trip_id: tripId,
               email: dto.email,

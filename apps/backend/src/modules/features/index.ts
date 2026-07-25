@@ -5,4 +5,7 @@ export {
   RequireFeature,
   REQUIRED_FEATURE_KEY,
 } from './require-feature.decorator.js';
-export { tripCollaboratorLockKey } from './collaborator-cap-lock.js';
+export {
+  tripCollaboratorLockKey,
+  assertWithinCollaboratorLimit,
+} from './collaborator-cap.js';
