@@ -117,6 +117,14 @@ function memberCallName(node) {
   return null;
 }
 
+function isPotentiallyRenderableCallArgument(node) {
+  return ![
+    "ArrowFunctionExpression",
+    "FunctionExpression",
+    "ObjectExpression",
+  ].includes(node.type);
+}
+
 function staticClassName(openingElement) {
   const attribute = openingElement.attributes.find(
     (candidate) =>
@@ -281,11 +289,18 @@ function isTranslatedComposition(node) {
   }
   if (node.type === "CallExpression" && !isTranslatorCall(node)) {
     const methodName = memberCallName(node);
+    const renderableArguments = node.arguments.filter(
+      (argument) =>
+        argument.type !== "SpreadElement" &&
+        isPotentiallyRenderableCallArgument(argument),
+    );
     return (
       (node.callee.type === "MemberExpression" &&
         methodName !== null &&
         TRANSLATED_COMPOSITION_METHODS.has(methodName) &&
         containsTranslatorCall(node.callee.object)) ||
+      (renderableArguments.length > 1 &&
+        renderableArguments.some(containsTranslatorCall)) ||
       node.arguments.some(
         (argument) =>
           argument.type !== "SpreadElement" &&
