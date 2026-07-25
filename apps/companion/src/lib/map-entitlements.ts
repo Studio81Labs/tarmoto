@@ -68,19 +68,20 @@ export function shouldPromptQualityZoom({
 }
 
 /**
- * Whether Explore may SELECT a quality road at the current zoom. The road hit
- * layer is uncapped (so planner snapping still works past the cap), but Explore
- * must not let a capped Free/anonymous visitor pull a road's gated quality
- * detail where the overlay is hidden. Allow selection only while the overlay
- * would render — below the resolved exclusive maxzoom (`qualityMaxZoom` from
- * `resolveQualityLayerMaxZoom`, which already folds in the cap, the free
- * fail-closed floor, and the at/below-floor case). Surface selection is not
- * gated and is handled separately by the caller.
+ * Whether Explore may SELECT a road (opening the detail drawer) via a given
+ * overlay at the current zoom. The road/surface hit layers are uncapped (so
+ * planner snapping still works past the cap), but the Explore detail drawer is
+ * road-QUALITY intelligence — exact score, provenance, history — so a selection
+ * through EITHER the quality or the surface overlay reveals the gated data.
+ * Allow it only while the quality overlay would render: below the resolved
+ * exclusive maxzoom (`qualityMaxZoom` from `resolveQualityLayerMaxZoom`, which
+ * already folds in the cap, the free fail-closed floor, and the at/below-floor
+ * case). `overlayEnabled` is that overlay's own toggle.
  */
-export function canSelectQualityAtZoom(
-  showQuality: boolean,
+export function canSelectRoadAtZoom(
+  overlayEnabled: boolean,
   zoom: number,
   qualityMaxZoom: number,
 ): boolean {
-  return showQuality && zoom < qualityMaxZoom;
+  return overlayEnabled && zoom < qualityMaxZoom;
 }

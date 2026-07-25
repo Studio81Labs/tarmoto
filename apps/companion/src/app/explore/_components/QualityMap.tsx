@@ -117,7 +117,7 @@ import {
 } from "./conditionPopoverReconcile";
 import { useEntitlements, useRoadQualityZoomCap } from "@/hooks";
 import {
-  canSelectQualityAtZoom,
+  canSelectRoadAtZoom,
   resolveQualityLayerMaxZoom,
   shouldPromptQualityZoom,
 } from "@/lib/map-entitlements";
@@ -683,18 +683,25 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         setPointMenu(null);
         const {
           showQuality,
-          showSurface: canSelectSurface,
+          showSurface,
           onSegmentSelect: selectSegment,
           qualityMaxZoom: capExclusiveZoom,
         } = segmentSelectionRef.current;
         if (!selectSegment) return;
-        // Quality selection is entitlement-gated: the hit layer is uncapped (so
-        // planner snapping still works past the cap), but Explore must not let a
-        // capped visitor pull a road's quality detail where the overlay is
-        // hidden. Surface selection is never gated.
-        const canSelectQuality = canSelectQualityAtZoom(
+        // The detail drawer is road-QUALITY intelligence, so selection through
+        // EITHER overlay is entitlement-gated: the hit layers are uncapped (so
+        // planner snapping survives the cap), but Explore must not let a capped
+        // visitor open the drawer where the quality overlay is hidden. Gate BOTH
+        // the quality and surface hit tests at the resolved cap.
+        const zoom = map.getZoom();
+        const canSelectQuality = canSelectRoadAtZoom(
           showQuality,
-          map.getZoom(),
+          zoom,
+          capExclusiveZoom,
+        );
+        const canSelectSurface = canSelectRoadAtZoom(
+          showSurface,
+          zoom,
           capExclusiveZoom,
         );
         const layers = [
@@ -763,15 +770,21 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             handle: (f, e) => {
               const {
                 showQuality,
-                showSurface: canSelectSurface,
+                showSurface,
                 onSegmentSelect: selectSegment,
                 qualityMaxZoom: capExclusiveZoom,
               } = segmentSelectionRef.current;
-              // Same entitlement gate as the road-miss path: quality selection
-              // only while the overlay renders at this zoom (below the cap).
-              const canSelectQuality = canSelectQualityAtZoom(
+              // Same entitlement gate as the road-miss path: road-detail
+              // selection through EITHER overlay only below the cap.
+              const zoom = map.getZoom();
+              const canSelectQuality = canSelectRoadAtZoom(
                 showQuality,
-                map.getZoom(),
+                zoom,
+                capExclusiveZoom,
+              );
+              const canSelectSurface = canSelectRoadAtZoom(
+                showSurface,
+                zoom,
                 capExclusiveZoom,
               );
               const segmentLayers = [
