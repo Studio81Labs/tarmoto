@@ -145,7 +145,7 @@ describe("companion indirect display-copy lint guard", () => {
   it("rejects translated fragments nested in inline JSX", () => {
     expect(
       localizationMessages(
-        'const view = <p><em><strong>{t("Updated")}</strong></em> {formattedTime}</p>;',
+        'const view = <p><span><strong>{t("Updated")}</strong></span> {formattedTime}</p>;',
         "tarmoto-localization/no-translated-fragments",
       ),
     ).not.toHaveLength(0);

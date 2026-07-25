@@ -10,13 +10,7 @@ const INLINE_TEXT_ELEMENTS = new Set([
   "strong",
   "Text",
 ]);
-const FORMATTING_INLINE_ELEMENTS = new Set([
-  "b",
-  "em",
-  "i",
-  "strong",
-  "Text",
-]);
+const FORMATTING_INLINE_ELEMENTS = INLINE_TEXT_ELEMENTS;
 const TEXT_CONTAINER_ELEMENTS = new Set([
   "a",
   "b",
@@ -128,7 +122,10 @@ function isFormattingInlineElement(node) {
 
 function containsTranslatorInInlineJsx(node) {
   if (node.type === "JSXExpressionContainer") {
-    return containsTranslatorCall(node.expression);
+    return (
+      !containsJsx(node.expression) &&
+      containsTranslatorCall(node.expression)
+    );
   }
   if (!isFormattingInlineElement(node)) {
     return false;
@@ -139,6 +136,7 @@ function containsTranslatorInInlineJsx(node) {
 function isTranslatedChild(child) {
   return (
     (child.type === "JSXExpressionContainer" &&
+      !containsJsx(child.expression) &&
       containsTranslatorCall(child.expression)) ||
     containsTranslatorInInlineJsx(child)
   );
@@ -171,12 +169,12 @@ function isTextualSibling(child) {
 function containsIndependentSeparator(node) {
   if (!node || typeof node !== "object") return false;
   if (
-    (node.type === "JSXText" && /[·—]/.test(node.value)) ||
+    (node.type === "JSXText" && /[·—•]/.test(node.value)) ||
     (node.type === "Literal" &&
       typeof node.value === "string" &&
-      /[·—]/.test(node.value)) ||
+      /[·—•]/.test(node.value)) ||
     (node.type === "TemplateElement" &&
-      /[·—]|\\u00[bB]7/.test(node.value.raw))
+      /[·—•]|\\u00[bB]7|\\u2022/.test(node.value.raw))
   ) {
     return true;
   }
@@ -226,7 +224,8 @@ const noTranslatedFragments = {
         if (
           !TEXT_CONTAINER_ELEMENTS.has(
             jsxElementName(node.openingElement),
-          )
+          ) ||
+          hasLayoutDisplayClass(node)
         ) {
           return;
         }
