@@ -10,7 +10,7 @@ import {
 } from "@/components/planner/MapToolbar";
 import { readPoiDetails } from "@/components/planner/PoiDetails";
 import { FSQ_BRAND_COLOR } from "@/components/map/attribution";
-import { haversineKm } from "@tarmoto/shared";
+import { formatDisplayLowerCase, haversineKm } from "@tarmoto/shared";
 import { plannerApi } from "@/lib/planner/api";
 import { poiDisplayName } from "@/lib/planner/labels";
 import type { RouteStop } from "@/lib/planner/types";
@@ -176,7 +176,7 @@ export function TripStopsPanel({
 
   const activeLabels = categories
     .map((category) =>
-      t(poiCategoryMeta(category).label).toLocaleLowerCase(locale),
+      formatDisplayLowerCase(t(poiCategoryMeta(category).label), locale),
     )
     .join(", ");
 

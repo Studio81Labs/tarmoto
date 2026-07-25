@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  formatDisplayLowerCase,
+  formatDisplayUpperCase,
   DEFAULT_LOCALE,
   LOCALES,
   SUPPORTED_LOCALES,
@@ -86,6 +88,11 @@ describe("i18n / matchSupportedLocale", () => {
 });
 
 describe("i18n / locale-aware search", () => {
+  it("keeps locale-aware display casing separate from search folding", () => {
+    expect(formatDisplayUpperCase("izmir", "tr")).toBe("İZMİR");
+    expect(formatDisplayLowerCase("İZMİR", "tr")).toBe("izmir");
+  });
+
   it("matches Turkish title-case labels against uppercase rider input", () => {
     expect(normalizeForLocaleSearch("Işık", "tr")).toBe(
       normalizeForLocaleSearch("IŞIK", "tr"),

@@ -22,6 +22,7 @@ import { FlaggedSectionCard } from "./FlaggedSectionCard";
 import { SectionStamp } from "./PlannerPanel";
 import { RouteQualityStrip } from "./RouteQualityStrip";
 import { SurfaceMixBar } from "./SurfaceMixBar";
+import { formatDisplayUpperCase } from "@tarmoto/shared";
 
 /**
  * INSPECT tab — the hero of Plan & inspect: route summary (real routing
@@ -216,7 +217,7 @@ export function InspectTab({
                   style={{ background: ROLE_COLORS[role] }}
                 />
                 <Mono className="w-11 shrink-0 text-[9.5px] text-fg-mute">
-                  {roleLabel.toLocaleUpperCase(locale)}
+                  {formatDisplayUpperCase(roleLabel, locale)}
                 </Mono>
                 <span className="truncate text-[13.5px] font-bold tracking-[-0.2px] text-ink">
                   {waypointDisplayName(waypoint, t)}
@@ -256,7 +257,7 @@ export function InspectTab({
               className={`flex-1 px-3.5 py-3 ${index > 0 ? "border-l border-line" : ""}`}
             >
               <Mono className="text-[8.5px] tracking-[0.8px] text-fg-mute">
-                {stat.label.toLocaleUpperCase(locale)}
+                {formatDisplayUpperCase(stat.label, locale)}
               </Mono>
               <div className="mt-1 flex items-baseline gap-1">
                 <span

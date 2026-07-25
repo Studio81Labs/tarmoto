@@ -20,7 +20,11 @@ import {
 } from "./ride-stats";
 import type { UnriddenSegment } from "./api";
 import type { EnglishMessageKey } from "@/i18n";
-import { DEFAULT_LOCALE, normalizeForLocaleSearch } from "@tarmoto/shared";
+import {
+  DEFAULT_LOCALE,
+  formatDisplayUpperCase,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
 export type TimePeriod = (typeof TIME_PERIODS)[number];
@@ -150,5 +154,5 @@ function regionLabelFor(
   // Upper-case the first character so buckets render with consistent casing
   // regardless of whichever variant the backend returned first ("Beskydy"
   // and "beskydy" both surface as "Beskydy").
-  return first.charAt(0).toLocaleUpperCase(locale) + first.slice(1);
+  return formatDisplayUpperCase(first.charAt(0), locale) + first.slice(1);
 }

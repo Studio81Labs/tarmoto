@@ -280,12 +280,17 @@ describe("mobile indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
-  it.each(["toLowerCase", "toUpperCase"])(
+  it.each([
+    "value.toLowerCase()",
+    "value.toUpperCase()",
+    "value.toLocaleLowerCase(locale)",
+    "value.toLocaleUpperCase(locale)",
+  ])(
     "rejects locale-insensitive rider search normalization via %s",
-    (method) => {
+    (normalization) => {
       expect(
         localizationMessages(
-          `function matchSearch(value) { return value.${method}(); }`,
+          `function matchSearch(value, locale) { return ${normalization}; }`,
           "tarmoto-localization/no-locale-insensitive-search",
         ),
       ).not.toHaveLength(0);

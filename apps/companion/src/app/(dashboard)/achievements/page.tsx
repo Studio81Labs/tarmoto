@@ -27,7 +27,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
-import type { Formatters } from "@tarmoto/shared";
+import {
+  formatDisplayLowerCase,
+  formatDisplayUpperCase,
+  type Formatters,
+} from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import type { Badge as BadgeType } from "@/lib/types";
@@ -718,7 +722,7 @@ function BadgeCard({
   const earned = Boolean(badge.earnedAt);
   const earnedLabel =
     earned && badge.earnedAt
-      ? format.shortDate(badge.earnedAt).toLocaleUpperCase(format.locale)
+      ? formatDisplayUpperCase(format.shortDate(badge.earnedAt), format.locale)
       : null;
   return (
     <div
@@ -1014,12 +1018,14 @@ function RegionalLeaderboardsSection({ format }: { format: Formatters }) {
           scope === "region" && homeRegion
             ? t("Top riders in {region}, ranked by {dimension}.", {
                 region: homeRegion,
-                dimension: labelForDimension(dimension, t).toLocaleLowerCase(
+                dimension: formatDisplayLowerCase(
+                  labelForDimension(dimension, t),
                   locale,
                 ),
               })
             : t("Top riders worldwide, ranked by {dimension}.", {
-                dimension: labelForDimension(dimension, t).toLocaleLowerCase(
+                dimension: formatDisplayLowerCase(
+                  labelForDimension(dimension, t),
                   locale,
                 ),
               })

@@ -20,7 +20,10 @@
 import type { LatLng } from "@/types";
 import type { EnglishMessageKey } from "@/i18n";
 import { formatIntegerForLocale } from "@/format";
-import { normalizeForLocaleSearch } from "@tarmoto/shared";
+import {
+  formatDisplayLowerCase,
+  normalizeForLocaleSearch,
+} from "@tarmoto/shared";
 
 // ── Maneuvers ─────────────────────────────────────────────────────────────
 
@@ -843,7 +846,9 @@ function maneuverPhrase(m: Maneuver, strings: PhraseStrings): string {
 function lowercaseFirstChar(s: string, locale: VoiceLocale): string {
   const first = s[0];
   if (first === undefined) return s;
-  return first.toLocaleLowerCase(TTS_BCP47_BY_LOCALE[locale]) + s.slice(1);
+  return (
+    formatDisplayLowerCase(first, TTS_BCP47_BY_LOCALE[locale]) + s.slice(1)
+  );
 }
 
 function ontoPhrase(

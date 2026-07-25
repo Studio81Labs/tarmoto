@@ -5,6 +5,12 @@ const TRANSLATOR_NAMES = new Set([
   "translate",
   "translateHeader",
 ]);
+const SEARCH_CASE_METHODS = new Set([
+  "toLocaleLowerCase",
+  "toLocaleUpperCase",
+  "toLowerCase",
+  "toUpperCase",
+]);
 const TRANSLATED_COMPOSITION_METHODS = new Set([
   "concat",
   "join",
@@ -610,9 +616,7 @@ const noLocaleInsensitiveSearch = {
           node.callee.type !== "MemberExpression" ||
           node.callee.computed ||
           node.callee.property.type !== "Identifier" ||
-          !["toLowerCase", "toUpperCase"].includes(
-            node.callee.property.name,
-          )
+          !SEARCH_CASE_METHODS.has(node.callee.property.name)
         ) {
           return;
         }

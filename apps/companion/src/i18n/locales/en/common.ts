@@ -1160,6 +1160,7 @@ export const common = {
   "{distance} off": "{distance} off",
   "{category} · {offset} · {along}": "{category} · {offset} · {along}",
   "{category} · {source}": "{category} · {source}",
+  "{label} · {distance}": "{label} · {distance}",
   "{label} · {percent}": "{label} · {percent}",
   "{quality} · {distance}": "{quality} · {distance}",
   "{quality} · {surface}, {distance}": "{quality} · {surface}, {distance}",

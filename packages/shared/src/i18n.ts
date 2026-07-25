@@ -124,6 +124,18 @@ export function normalizeForLocaleSearch(
   }
 }
 
+/**
+ * Apply locale-aware casing to display copy. Search and matching must use
+ * normalizeForLocaleSearch() instead so expanding folds such as ß/SS converge.
+ */
+export function formatDisplayLowerCase(value: string, locale: string): string {
+  return value.toLocaleLowerCase(locale);
+}
+
+export function formatDisplayUpperCase(value: string, locale: string): string {
+  return value.toLocaleUpperCase(locale);
+}
+
 export function localeSearchIncludes(
   value: string,
   query: string,

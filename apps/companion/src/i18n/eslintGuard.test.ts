@@ -287,12 +287,17 @@ describe("companion indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
-  it.each(["toLowerCase", "toUpperCase"])(
+  it.each([
+    "value.toLowerCase()",
+    "value.toUpperCase()",
+    "value.toLocaleLowerCase(locale)",
+    "value.toLocaleUpperCase(locale)",
+  ])(
     "rejects locale-insensitive rider search normalization via %s",
-    (method) => {
+    (normalization) => {
       expect(
         localizationMessages(
-          `function applySearch(value) { const needle = value.${method}(); return needle; }`,
+          `function applySearch(value, locale) { const needle = ${normalization}; return needle; }`,
           "tarmoto-localization/no-locale-insensitive-search",
         ),
       ).not.toHaveLength(0);

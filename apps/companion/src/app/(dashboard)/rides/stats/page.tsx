@@ -39,7 +39,11 @@ import {
 } from "@/lib/rides-breakdown";
 import { useAuthStore } from "@/stores/auth";
 import { useFormat } from "@/format/FormatProvider";
-import { kmToMiles, type Formatters } from "@tarmoto/shared";
+import {
+  formatDisplayLowerCase,
+  kmToMiles,
+  type Formatters,
+} from "@tarmoto/shared";
 import {
   availableYears,
   computeAllTimeTotals,
@@ -319,7 +323,7 @@ export default function StatsPage() {
 
       <TotalsGrid
         totals={totals}
-        windowLabel={windowLabel.toLocaleLowerCase(locale)}
+        windowLabel={formatDisplayLowerCase(windowLabel, locale)}
         format={format}
       />
 
