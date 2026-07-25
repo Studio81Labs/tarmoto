@@ -153,6 +153,15 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects translated composition nested in conditional branches", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text>{updated ? translate("Updated") + time : translate("Created") + time}</Text>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects translated fragments nested in inline JSX", () => {
     expect(
       localizationMessages(
@@ -199,6 +208,15 @@ describe("mobile indirect display-copy lint guard", () => {
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).toHaveLength(0);
+  });
+
+  it("rejects numeric literals passed to non-formatter calls", () => {
+    expect(
+      localizationMessages(
+        "const view = <Text>{String(2026)}</Text>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
   });
 
   it("rejects locale-insensitive rider search normalization", () => {

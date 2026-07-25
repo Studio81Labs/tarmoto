@@ -955,6 +955,16 @@ function SpeedLineChart({
     );
   };
   const lastY = all.at(-1)?.y;
+  // SVG stroke values are drawing parameters, not rider-visible numerals.
+  // Compute the nodes before JSX so the display-numeral guard only inspects
+  // expressions that can render text.
+  const primarySeries = renderSeries(points, "#FF6A1A", "3");
+  const comparisonSeries = renderSeries(
+    secondaryPoints,
+    "#f472b6",
+    "2.5",
+    "6 5",
+  );
   return (
     <div className="mt-4">
       <svg
@@ -975,8 +985,8 @@ function SpeedLineChart({
             strokeDasharray="3 4"
           />
         ))}
-        {renderSeries(points, "#FF6A1A", "3")}
-        {renderSeries(secondaryPoints, "#f472b6", "2.5", "6 5")}
+        {primarySeries}
+        {comparisonSeries}
       </svg>
       <div className="flex items-center justify-between text-[11px] text-fg-mute">
         <span>{format.integer(1)}</span>

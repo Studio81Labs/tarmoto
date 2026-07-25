@@ -75,6 +75,14 @@ function containsTranslatorCall(node) {
   return false;
 }
 
+function isTranslatorCall(node) {
+  return (
+    node.type === "CallExpression" &&
+    node.callee.type === "Identifier" &&
+    TRANSLATOR_NAMES.has(node.callee.name)
+  );
+}
+
 function staticClassName(openingElement) {
   const attribute = openingElement.attributes.find(
     (candidate) =>
@@ -194,15 +202,57 @@ function isTranslatedComposition(node) {
   if (node.type === "BinaryExpression" && node.operator === "+") {
     return true;
   }
-  if (node.type !== "TemplateLiteral") return false;
-  const translatedExpressions = node.expressions.filter(containsTranslatorCall);
-  return (
-    node.quasis.some((quasi) => quasi.value.raw.trim() !== "") ||
-    node.expressions.some(
-      (expression) => !containsTranslatorCall(expression),
-    ) ||
-    translatedExpressions.length > 1
-  );
+  if (node.type === "TemplateLiteral") {
+    const translatedExpressions =
+      node.expressions.filter(containsTranslatorCall);
+    return (
+      node.quasis.some((quasi) => quasi.value.raw.trim() !== "") ||
+      node.expressions.some(
+        (expression) => !containsTranslatorCall(expression),
+      ) ||
+      translatedExpressions.length > 1
+    );
+  }
+  if (node.type === "ConditionalExpression") {
+    return (
+      isTranslatedComposition(node.consequent) ||
+      isTranslatedComposition(node.alternate)
+    );
+  }
+  if (node.type === "LogicalExpression") {
+    return (
+      isTranslatedComposition(node.left) ||
+      isTranslatedComposition(node.right)
+    );
+  }
+  if (
+    node.type === "ChainExpression" ||
+    node.type === "TSAsExpression" ||
+    node.type === "TSTypeAssertion" ||
+    node.type === "TSNonNullExpression" ||
+    node.type === "AwaitExpression"
+  ) {
+    return isTranslatedComposition(node.expression ?? node.argument);
+  }
+  if (
+    node.type === "SequenceExpression" ||
+    node.type === "ArrayExpression"
+  ) {
+    const expressions =
+      node.type === "SequenceExpression" ? node.expressions : node.elements;
+    return expressions.some(
+      (expression) =>
+        expression !== null && isTranslatedComposition(expression),
+    );
+  }
+  if (node.type === "CallExpression" && !isTranslatorCall(node)) {
+    return node.arguments.some(
+      (argument) =>
+        argument.type !== "SpreadElement" &&
+        isTranslatedComposition(argument),
+    );
+  }
+  return false;
 }
 
 const noTranslatedFragments = {
@@ -284,6 +334,35 @@ const noVisibleNumericJsxText = {
     schema: [],
   },
   create(context) {
+    const isKnownNumericDisplayCall = (node) => {
+      if (isTranslatorCall(node)) return true;
+      const callee = node.callee;
+      if (
+        callee.type === "Identifier" &&
+        /^format[A-Z]/.test(callee.name)
+      ) {
+        return true;
+      }
+      if (callee.type !== "MemberExpression" || callee.computed) return false;
+      if (
+        callee.object.type === "Identifier" &&
+        ["format", "formatter", "formatters"].includes(callee.object.name)
+      ) {
+        return true;
+      }
+      if (
+        callee.object.type === "CallExpression" &&
+        callee.object.callee.type === "Identifier" &&
+        callee.object.callee.name === "getFormatters"
+      ) {
+        return true;
+      }
+      return (
+        callee.property.type === "Identifier" &&
+        callee.property.name === "format"
+      );
+    };
+
     const containsUnformattedNumericLiteral = (node) => {
       if (!node || node.type === "JSXEmptyExpression") return false;
       if (node.type === "Literal") {
@@ -358,8 +437,14 @@ const noVisibleNumericJsxText = {
       ) {
         return containsUnformattedNumericLiteral(node.expression);
       }
-      // Do not descend into formatter/catalog calls: numeric arguments there
-      // are inputs to a locale-aware display function, not raw JSX output.
+      if (node.type === "CallExpression") {
+        if (isKnownNumericDisplayCall(node)) return false;
+        return node.arguments.some(
+          (argument) =>
+            argument.type !== "SpreadElement" &&
+            containsUnformattedNumericLiteral(argument),
+        );
+      }
       return false;
     };
 

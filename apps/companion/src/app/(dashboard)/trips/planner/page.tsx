@@ -4627,7 +4627,12 @@ function WaypointEditor({
                         }`}
                       >
                         {value === "inherit"
-                          ? `${label} · ${t(ROAD_PREFERENCE_LABELS[tripPreference])}`
+                          ? t("{label} · {preference}", {
+                              label,
+                              preference: t(
+                                ROAD_PREFERENCE_LABELS[tripPreference],
+                              ),
+                            })
                           : label}
                       </button>
                     ))}
