@@ -32,6 +32,10 @@ import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { featureLimitExceeded } from '../features/feature-limit.error.js';
 import { FeatureResolver } from '../features/feature-resolver.service.js';
+import {
+  assertWithinCollaboratorLimit,
+  tripCollaboratorLockKey,
+} from '../features/collaborator-cap.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import {
@@ -315,6 +319,28 @@ export class TripsService {
     if (!isWithinLimit(limit, current)) {
       throw featureLimitExceeded('max_active_trips', limit, current);
     }
+  }
+
+  /**
+   * Owner-scoped `max_trip_collaborators` cap for the invite endpoint. The
+   * limit belongs to the trip OWNER (not the inviter — an editor can invite),
+   * so it resolves the owner's entitlement and counts the trip's current
+   * NON-OWNER collaborators (accepted members + pending invites) against it,
+   * throwing before a NEW invitee is persisted. Callers must invoke this ONLY
+   * when adding a new collaborator — a re-invite of an already-pending address
+   * (role change / code rotation) adds nobody and must not be blocked.
+   *
+   * Resolved OUTSIDE the invite transaction: `FeatureResolver` reads the global
+   * pool, so resolving it while the txn holds the per-trip advisory lock could
+   * exhaust the pool under concurrent invites/joins and deadlock the
+   * lock-holder. The count + enforcement then run inside the txn via
+   * `assertWithinCollaboratorLimit`.
+   */
+  private async resolveCollaboratorLimit(
+    ownerId: string,
+  ): Promise<number | null> {
+    const limits = await this.featureResolver.resolveLimitsForUser(ownerId);
+    return limits.max_trip_collaborators;
   }
 
   private async allocateAndPersistTrip(
@@ -783,39 +809,101 @@ export class TripsService {
     // link — so revoking this invite invalidates exactly this link.
     // Re-inviting the same address updates role + rotates the code.
     //
-    // Two unique constraints can fire here: (trip, email) from a
-    // concurrent invite to the same address, and the table-wide
-    // invite_code from an (astronomically rare) generated-code
-    // collision. Both converge on the same recovery — refetch the row
-    // and retry with a fresh code — so the loop doesn't need to
-    // disambiguate the constraint. What matters is that the code in
-    // the email is ALWAYS the code that actually got persisted.
+    // The cap check and the invite write run inside ONE advisory-locked
+    // transaction so concurrent invites (and the separately-triggered
+    // group-link join) can't each observe the same roster, pass the cap, and
+    // collectively overflow the owner's paid limit. Only a NEW invitee counts —
+    // a re-invite of an already-pending address (the update branch) adds no
+    // collaborator; the existing-MEMBER case already returned above.
+    //
+    // A unique violation rolls the txn back. Under the per-trip lock a
+    // concurrent (trip, email) insert is serialised away, leaving only the rare
+    // table-wide `invite_code` collision — so the outer loop retries with a
+    // fresh code (re-acquiring the lock). What matters is that the code in the
+    // email is ALWAYS the code that actually got persisted.
     const role = dto.role ?? 'editor';
-    let personalCode: string;
+    // Resolve the owner's cap OUTSIDE the transaction (pool-safety — see
+    // resolveCollaboratorLimit). Harmless for a re-invite, which skips the
+    // check inside the txn.
+    const collaboratorLimit = await this.resolveCollaboratorLimit(
+      trip.owner_id,
+    );
+    let personalCode = '';
+    // The recipient's account id when they turn out to be a member (resolved
+    // under the lock), else null → proceed with the invite.
+    let alreadyMemberId: string | null;
     for (let attempt = 0; ; attempt++) {
       personalCode = generateInviteCode();
-      const existingInvite = await this.inviteRepo.findOne({
-        where: { trip_id: tripId, email: dto.email },
-      });
       try {
-        if (existingInvite) {
-          await this.inviteRepo.update(
-            { id: existingInvite.id },
-            { role, invite_code: personalCode, invited_by: userId },
-          );
-        } else {
-          await this.inviteRepo.insert({
-            trip_id: tripId,
-            email: dto.email,
-            role,
-            invite_code: personalCode,
-            invited_by: userId,
-          });
-        }
+        alreadyMemberId = await this.tripRepo.manager.transaction(
+          async (manager) => {
+            await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+              tripCollaboratorLockKey(tripId),
+            ]);
+            // Re-resolve the recipient BY EMAIL under the lock, then recheck
+            // membership. The pre-lock lookup can miss a rider who had no
+            // account then but registered AND joined via the group link before
+            // this transaction took the lock — so keying the recheck on the
+            // pre-lock `existingUser.id` (possibly null) would let it slip
+            // through. Creating/refreshing an invite for a current member would
+            // 403 them at the cap and double-count them in later checks;
+            // short-circuit to the no-op instead.
+            const recipient = await manager.getRepository(User).findOne({
+              where: { email: dto.email },
+            });
+            if (recipient) {
+              const member = await manager.getRepository(TripMember).findOne({
+                where: { trip_id: tripId, user_id: recipient.id },
+              });
+              if (member) return recipient.id;
+            }
+            const inviteRepo = manager.getRepository(TripInvite);
+            const existingInvite = await inviteRepo.findOne({
+              where: { trip_id: tripId, email: dto.email },
+            });
+            if (existingInvite) {
+              await inviteRepo.update(
+                { id: existingInvite.id },
+                { role, invite_code: personalCode, invited_by: userId },
+              );
+            } else {
+              await assertWithinCollaboratorLimit(
+                manager,
+                tripId,
+                collaboratorLimit,
+              );
+              await inviteRepo.insert({
+                trip_id: tripId,
+                email: dto.email,
+                role,
+                invite_code: personalCode,
+                invited_by: userId,
+              });
+            }
+            return null;
+          },
+        );
         break;
       } catch (err: unknown) {
+        // A ForbiddenException (cap exceeded) is not a unique violation, so it
+        // propagates immediately rather than looping.
         if (!isUniqueViolation(err) || attempt >= 4) throw err;
       }
+    }
+
+    if (alreadyMemberId !== null) {
+      // Same no-op as the pre-lock already-member branch, but for a recipient
+      // who joined (e.g. via the group link) during this request: skip the
+      // email + invite, log, and record the flagged activity.
+      this.logger.log(
+        `Skipped trip-invite email — recipient is already a member ` +
+          `(trip=${tripId}, user=${alreadyMemberId})`,
+      );
+      await this.activity.recordSafe(tripId, userId, 'member_invited', {
+        recipient_email_domain: emailDomain(dto.email),
+        already_member: true,
+      });
+      return;
     }
 
     const joinUrl = this.buildInviteUrl(tripId, personalCode);
@@ -1517,6 +1605,16 @@ export class TripsService {
     // the winner's delete commits.
     const { role, inserted } = await this.tripRepo.manager.transaction(
       async (manager) => {
+        // Take the shared per-trip collaborator advisory lock FIRST, so this
+        // personal-code acceptance serialises with the group-link join
+        // (`TripSharesService.joinByToken`). Both consume the same invite as
+        // "net-zero"; without a common lock the group link's plain invite read
+        // could see this invite still present while we consume it here, letting
+        // a bearer-code holder and the invited email BOTH insert from one
+        // invite and overflow the owner's cap.
+        await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          tripCollaboratorLockKey(tripId),
+        ]);
         const invite = await manager.findOne(TripInvite, {
           where: { trip_id: tripId, invite_code: normalized },
           lock: { mode: 'pessimistic_write' },

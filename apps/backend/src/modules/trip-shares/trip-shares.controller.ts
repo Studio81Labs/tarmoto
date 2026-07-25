@@ -27,6 +27,7 @@ import {
   TripSharePublicDto,
   TripShareResponseDto,
 } from './dto/trip-share.dto.js';
+import { FeatureLimitExceededDto } from '../features/dto/feature-limit-exceeded.dto.js';
 
 @ApiTags('trip-shares')
 @Controller('trip-shares')
@@ -78,6 +79,15 @@ export class TripSharesController {
   @ApiResponse({
     status: 400,
     description: 'Share token resolves to a read-only snapshot only',
+  })
+  @ApiResponse({
+    status: 403,
+    type: FeatureLimitExceededDto,
+    description:
+      'The trip owner is at their collaborator limit — body carries ' +
+      '`code: "FEATURE_LIMIT_EXCEEDED"`, `feature: "max_trip_collaborators"`, ' +
+      '`limit`, and `current` so a client can distinguish the cap rejection ' +
+      'from other failures.',
   })
   @ApiResponse({ status: 404, description: 'Trip share not found' })
   async joinByToken(

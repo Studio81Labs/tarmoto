@@ -86,6 +86,8 @@ export const map = {
   "Unnamed zone": "Unnamed zone",
   "View on Google Maps": "View on Google Maps",
   "Zone near {lat}, {lng}": "Zone near {lat}, {lng}",
+  "Zoom in further for full road-quality detail with Pro.":
+    "Zoom in further for full road-quality detail with Pro.",
   avg: "avg",
   curves: "curves",
   curviness: "curviness",

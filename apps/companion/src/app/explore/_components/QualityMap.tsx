@@ -19,6 +19,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import {
   MapCanvas,
   TARMOTO_QUALITY_LAYER,
+  TARMOTO_ROAD_HIT_LAYER,
   TARMOTO_SURFACE_LAYER,
   type MapCanvasHandle,
   type MapCanvasViewChange,
@@ -49,7 +50,7 @@ import {
   mergeHazardsWithInFlightWsArrivals,
 } from "@/lib/hazard-merge";
 import { useRealtimeStore } from "@/stores/realtime";
-import { haversineMeters } from "@tarmoto/shared";
+import { haversineMeters, upgradeTierForLimit } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -114,6 +115,14 @@ import {
   pinnedConditionRetired,
   reconcileConditionMenu,
 } from "./conditionPopoverReconcile";
+import { useEntitlements, useRoadQualityZoomCap } from "@/hooks";
+import {
+  canSelectRoadAtZoom,
+  resolveQualityLayerMaxZoom,
+  shouldPromptQualityZoom,
+} from "@/lib/map-entitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { useTranslation } from "@/i18n/I18nProvider";
 
 // Stable empty route list — the explorer never checks conditions against a
 // route, so both hooks always fetch the viewport-only (regional) list.
@@ -262,6 +271,47 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     },
     ref,
   ) {
+    const t = useTranslation();
+    // Discovery nudge: a free rider zooming the overlay past the entitled
+    // cap gets a one-shot upgrade modal on THIS surface only (the primary
+    // interactive quality map — other quality consumers keep the silent
+    // clamp from `resolveQualityLayerMaxZoom`/`MapCanvas`). `qualityCapFinite`
+    // is false while the cap is unresolved OR for an unlimited (pro/premium)
+    // rider — fail closed, never nag in either case. The prompt threshold is
+    // the RAW entitlement cap level (finite when `qualityCapFinite`), not the
+    // exclusive layer maxzoom.
+    //
+    // The clamp applies to EVERYONE (via MapCanvas), but only PROMPT when an
+    // upgrade could actually raise the cap: `upgradeTierForLimit` returns null
+    // for an operator/per-user OVERRIDE (a cap that differs from the tier
+    // default) and for a rider already on the top qualifying tier. Without this
+    // gate a Pro/Premium rider under a finite override — or an anonymous viewer
+    // under an override like z5 — would hit a dead-end "Limit reached" modal
+    // whose copy wrongly claims Pro adds detail.
+    const { tier } = useEntitlements();
+    const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
+      useRoadQualityZoomCap();
+    const qualityCapFinite =
+      qualityZoomResolved &&
+      qualityZoomLimit !== null &&
+      upgradeTierForLimit(
+        "road_quality_max_zoom",
+        tier ?? "free",
+        qualityZoomLimit,
+      ) !== null;
+    const qualityCap = qualityZoomLimit ?? 0;
+    // The exclusive zoom above which the quality overlay is not rendered (the
+    // same clamp MapCanvas applies). Explore road SELECTION must respect it too:
+    // the hit layer is uncapped (for planner snapping), so without this a capped
+    // Free/anonymous visitor could click an invisible road past the cap and pull
+    // its exact quality_score/provenance/history via getSegmentDetail — the very
+    // data the hidden overlay gates.
+    const qualityMaxZoom = resolveQualityLayerMaxZoom(
+      qualityZoomLimit,
+      qualityZoomResolved,
+    );
+    const [zoomUpgradeOpen, setZoomUpgradeOpen] = useState(false);
+    const [zoomUpgradeDismissed, setZoomUpgradeDismissed] = useState(false);
     const handleRef = useRef<MapCanvasHandle>(null);
     // Fun Zone draw-region control (installed once at ready). `drawnRegionCbRef`
     // keeps the latest `onDrawnRegionChange` so the once-run control closure
@@ -418,6 +468,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showQuality,
       showSurface,
       onSegmentSelect,
+      qualityMaxZoom,
     });
 
     const rawHazardsRef = useRef<HazardResponse[]>([]);
@@ -466,8 +517,37 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         showQuality,
         showSurface,
         onSegmentSelect,
+        qualityMaxZoom,
       };
-    }, [showQuality, showSurface, onSegmentSelect]);
+    }, [showQuality, showSurface, onSegmentSelect, qualityMaxZoom]);
+
+    // The `moveend` handler only re-checks the zoom prompt when the rider moves
+    // the map. But the quality layer can also cross above the cap without a
+    // move: the overlay is toggled on while already zoomed in, or the async
+    // entitlement request resolves to a finite cap after the last `moveend`. In
+    // those transitions the layer clamps silently. Re-evaluate the CURRENT zoom
+    // whenever the inputs change so the upgrade prompt opens without a nudge.
+    useEffect(() => {
+      const map = handleRef.current?.map;
+      if (!ready || !map) return;
+      if (
+        shouldPromptQualityZoom({
+          showQuality,
+          capFinite: qualityCapFinite,
+          zoom: readMapView(map).zoom,
+          cap: qualityCap,
+          dismissed: zoomUpgradeDismissed,
+        })
+      ) {
+        setZoomUpgradeOpen(true);
+      }
+    }, [
+      ready,
+      showQuality,
+      qualityCapFinite,
+      qualityCap,
+      zoomUpgradeDismissed,
+    ]);
 
     const handleReady = (map: MapLibreMap) => {
       // Capture the base style's first symbol layer BEFORE we append our own
@@ -602,13 +682,30 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         // A non-marker click dismisses an open popover, then tries the road.
         setPointMenu(null);
         const {
-          showQuality: canSelectQuality,
-          showSurface: canSelectSurface,
+          showQuality,
+          showSurface,
           onSegmentSelect: selectSegment,
+          qualityMaxZoom: capExclusiveZoom,
         } = segmentSelectionRef.current;
         if (!selectSegment) return;
+        // The detail drawer is road-QUALITY intelligence, so selection through
+        // EITHER overlay is entitlement-gated: the hit layers are uncapped (so
+        // planner snapping survives the cap), but Explore must not let a capped
+        // visitor open the drawer where the quality overlay is hidden. Gate BOTH
+        // the quality and surface hit tests at the resolved cap.
+        const zoom = map.getZoom();
+        const canSelectQuality = canSelectRoadAtZoom(
+          showQuality,
+          zoom,
+          capExclusiveZoom,
+        );
+        const canSelectSurface = canSelectRoadAtZoom(
+          showSurface,
+          zoom,
+          capExclusiveZoom,
+        );
         const layers = [
-          ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+          ...(canSelectQuality ? [TARMOTO_ROAD_HIT_LAYER] : []),
           ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
         ].filter((id) => map.getLayer(id));
         if (layers.length === 0) return;
@@ -672,12 +769,26 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             layers: [FUN_ZONES_FILL],
             handle: (f, e) => {
               const {
-                showQuality: canSelectQuality,
-                showSurface: canSelectSurface,
+                showQuality,
+                showSurface,
                 onSegmentSelect: selectSegment,
+                qualityMaxZoom: capExclusiveZoom,
               } = segmentSelectionRef.current;
+              // Same entitlement gate as the road-miss path: road-detail
+              // selection through EITHER overlay only below the cap.
+              const zoom = map.getZoom();
+              const canSelectQuality = canSelectRoadAtZoom(
+                showQuality,
+                zoom,
+                capExclusiveZoom,
+              );
+              const canSelectSurface = canSelectRoadAtZoom(
+                showSurface,
+                zoom,
+                capExclusiveZoom,
+              );
               const segmentLayers = [
-                ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+                ...(canSelectQuality ? [TARMOTO_ROAD_HIT_LAYER] : []),
                 ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
               ].filter((id) => map.getLayer(id));
               if (selectSegment && segmentLayers.length > 0) {
@@ -742,7 +853,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
-      for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
+      for (const id of [TARMOTO_ROAD_HIT_LAYER, TARMOTO_SURFACE_LAYER]) {
         map.on("mouseenter", id, setPointer);
         map.on("mouseleave", id, unsetPointer);
       }
@@ -761,6 +872,17 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       onViewChange?.(view);
       // Refetch POIs for the new viewport (debounced in the effect below).
       setPoiViewportToken((token) => token + 1);
+      if (
+        shouldPromptQualityZoom({
+          showQuality,
+          capFinite: qualityCapFinite,
+          zoom: view.zoom,
+          cap: qualityCap,
+          dismissed: zoomUpgradeDismissed,
+        })
+      ) {
+        setZoomUpgradeOpen(true);
+      }
     };
 
     // ── category-POI viewport fetch ──
@@ -1184,32 +1306,55 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
 
     return (
-      <MapCanvas
-        ref={handleRef}
-        center={center}
-        zoom={zoom}
-        showQuality={showQuality}
-        showSurface={showSurface}
-        selectedSegmentId={selectedSegmentId ?? null}
-        qualityOpacityExpression={qualityOpacity}
-        surfaceOpacityExpression={surfaceOpacity}
-        onReady={handleReady}
-        onViewChange={handleViewChange}
-      >
-        {pointMenu ? (
-          <MapPointPopover
-            point={pointMenu.point}
-            x={pointMenu.x}
-            y={pointMenu.y}
+      <>
+        <MapCanvas
+          ref={handleRef}
+          center={center}
+          zoom={zoom}
+          showQuality={showQuality}
+          showSurface={showSurface}
+          selectedSegmentId={selectedSegmentId ?? null}
+          qualityOpacityExpression={qualityOpacity}
+          surfaceOpacityExpression={surfaceOpacity}
+          onReady={handleReady}
+          onViewChange={handleViewChange}
+        >
+          {pointMenu ? (
+            <MapPointPopover
+              point={pointMenu.point}
+              x={pointMenu.x}
+              y={pointMenu.y}
+              onClose={() => {
+                // Dismissing the card also drops any condition pin, so a later
+                // settle can't treat it as still-pinned.
+                pinnedConditionRef.current = null;
+                setPointMenu(null);
+              }}
+            />
+          ) : null}
+        </MapCanvas>
+        {zoomUpgradeOpen ? (
+          <UpgradePrompt
+            variant="modal"
+            capability={{
+              limit: "road_quality_max_zoom",
+              resolvedLimit: qualityZoomLimit,
+            }}
+            // Anonymous public viewers have no `/users/me` tier, but the modal
+            // only opens on a FINITE cap (free — see `qualityCapFinite`), so
+            // fall back to `free`: the CTA then routes to sign-in/upgrade rather
+            // than leaving a capped logged-out viewer with no path forward.
+            currentTier={tier ?? "free"}
+            message={t(
+              "Zoom in further for full road-quality detail with Pro.",
+            )}
             onClose={() => {
-              // Dismissing the card also drops any condition pin, so a later
-              // settle can't treat it as still-pinned.
-              pinnedConditionRef.current = null;
-              setPointMenu(null);
+              setZoomUpgradeOpen(false);
+              setZoomUpgradeDismissed(true);
             }}
           />
         ) : null}
-      </MapCanvas>
+      </>
     );
   },
 );

@@ -40,6 +40,9 @@ import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
 import { tripSnapshotForSharing } from "@/lib/trip-snapshot";
+import { useEntitlements, useLimit } from "@/hooks";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
+import { parseFeatureLimitError } from "@/lib/entitlements";
 import {
   Button,
   CopyField,
@@ -613,6 +616,13 @@ function PeopleTab({
   const [inviting, setInviting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeErr, setUpgradeErr] = useState<number | null>(null);
+  const { tier } = useEntitlements();
+  const {
+    limit: collabLimit,
+    isError: limitError,
+    isSuccess: limitResolved,
+  } = useLimit("max_trip_collaborators");
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -637,7 +647,12 @@ function PeopleTab({
       setNotice(t("Invite sent to {email}.", { email: recipient }));
       await onChanged();
     } catch (err) {
-      setError(describeError(err, t));
+      const limitError = parseFeatureLimitError(err);
+      if (limitError) {
+        setUpgradeErr(limitError.limit);
+      } else {
+        setError(describeError(err, t));
+      }
     } finally {
       setInviting(false);
     }
@@ -679,6 +694,34 @@ function PeopleTab({
   const total = collaborators
     ? collaborators.members.length + collaborators.invites.length
     : 0;
+  // Roster count EXCLUDES the owner — the backend cap is "collaborators
+  // per trip, excluding the owner", but `total` above (members + invites)
+  // includes the owner's own member row.
+  const nonOwnerCount = collaborators
+    ? collaborators.members.filter((m) => m.role !== "owner").length +
+      collaborators.invites.length
+    : 0;
+  // Proactive gate is authoritative only for the OWNER (the cap is the
+  // owner's tier, and `useEntitlements` only reflects the CURRENT user).
+  // Fail closed while the cap is UNRESOLVED (loading / rolling-deploy omission)
+  // and block when it has RESOLVED to an exceeded finite cap. But if the
+  // entitlement lookup ERRORED, do NOT block indefinitely with no feedback:
+  // let the invite hit the backend, which is the authority and returns a 403
+  // the modal surfaces below (an owner is otherwise stuck with a disabled
+  // button and no explanation or retry).
+  const atCollaboratorCap =
+    isOwner &&
+    ((!limitResolved && !limitError) ||
+      (limitResolved && collabLimit !== null && nonOwnerCount >= collabLimit));
+  // A re-invite of an already-pending address is net-zero (role change / code
+  // rotation) — the backend exempts it from the cap, so the UI must not block
+  // it even when the owner is at the limit.
+  const trimmedEmail = email.trim().toLowerCase();
+  const isReinviteOfPending =
+    collaborators?.invites.some(
+      (inv) => inv.email.toLowerCase() === trimmedEmail,
+    ) ?? false;
+  const inviteBlockedByCap = atCollaboratorCap && !isReinviteOfPending;
   // Editors can send email invites too (the backend treats them as
   // privileged senders); role management and removal stay owner-only.
   const canInvite = isOwner || callerRole === "editor";
@@ -716,7 +759,7 @@ function PeopleTab({
               size="md"
               uppercase
               loading={inviting}
-              disabled={inviting || !email.trim()}
+              disabled={inviting || !email.trim() || inviteBlockedByCap}
               onClick={handleInvite}
             >
               {t("Invite")}
@@ -725,6 +768,27 @@ function PeopleTab({
           {notice && (
             <p className="mt-2 text-[11.5px] text-[#1f8a5b]">{notice}</p>
           )}
+          {atCollaboratorCap && tier && collabLimit !== null ? (
+            <div className="mt-3">
+              <p className="mb-2 text-[12.5px] text-ink/70">
+                {t("{count} of {max} collaborators", {
+                  count: nonOwnerCount,
+                  max: collabLimit,
+                })}
+              </p>
+              <UpgradePrompt
+                variant="inline"
+                capability={{
+                  limit: "max_trip_collaborators",
+                  resolvedLimit: collabLimit,
+                }}
+                currentTier={tier}
+                message={t(
+                  "You've reached the collaborator limit for this trip.",
+                )}
+              />
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -832,6 +896,29 @@ function PeopleTab({
       )}
 
       {error && <ErrorAlert className="mt-3">{error}</ErrorAlert>}
+
+      {upgradeErr !== null ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{
+            limit: "max_trip_collaborators",
+            resolvedLimit: upgradeErr,
+          }}
+          // An editor's own tier may be unavailable (the cap is the OWNER's, so
+          // an editor can invite without a resolved /users/me). The CTA is
+          // suppressed for non-owners anyway, so `free` is a harmless fallback
+          // that still shows the neutral owner-limit message rather than
+          // swallowing the 403 with no feedback.
+          currentTier={tier ?? "free"}
+          suppressUpgrade={!isOwner}
+          message={
+            isOwner
+              ? t("You've reached the collaborator limit for this trip.")
+              : t("The trip owner has reached their collaborator limit.")
+          }
+          onClose={() => setUpgradeErr(null)}
+        />
+      ) : null}
     </div>
   );
 }

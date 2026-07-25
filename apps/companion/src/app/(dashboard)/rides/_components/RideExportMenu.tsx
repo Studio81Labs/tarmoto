@@ -7,6 +7,8 @@ import { ArrowUpRight } from "lucide-react";
 import { Button } from "@tarmoto/ui";
 import { toast } from "@/lib/toast";
 import type { RideExportFormat } from "@/lib/ride-export";
+import { useFeature, useEntitlements } from "@/hooks";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 
 /**
  * "Export" trigger + CSV/GPX dropdown, shared by the All-rides header
@@ -20,6 +22,13 @@ export function RideExportMenu({
   onExport: (format: RideExportFormat) => Promise<void>;
 }) {
   const t = useTranslation();
+  const {
+    enabled: gpxEnabled,
+    isError: gpxError,
+    isSuccess: gpxResolved,
+  } = useFeature("gpx_export");
+  const { tier } = useEntitlements();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<RideExportFormat | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,14 +91,41 @@ export function RideExportMenu({
           <button
             type="button"
             role="menuitem"
-            onClick={() => handleExport("gpx")}
-            disabled={busy !== null}
+            onClick={() => {
+              // Only steer to the upgrade modal once we've RESOLVED that the
+              // rider isn't entitled. On an entitlement-lookup ERROR we can't
+              // tell entitled from not, so defer to the backend — the ride GPX
+              // export is server-enforced and 403s a non-entitled rider.
+              if (gpxResolved && !gpxEnabled) {
+                setOpen(false);
+                setUpgradeOpen(true);
+                return;
+              }
+              void handleExport("gpx");
+            }}
+            // Disabled while the entitlement snapshot is UNRESOLVED and not
+            // errored (still loading, or the pre-auth window where the query is
+            // disabled: isLoading false, isSuccess false) — a click then must
+            // not mis-fire the upgrade modal. But an ERROR must NOT disable
+            // indefinitely: it would block even paid riders for the whole
+            // failure window, so let the click through and defer to the backend.
+            disabled={busy !== null || (!gpxResolved && !gpxError)}
             className="w-full border-t border-line px-3 py-2 text-left text-sm text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("GPX (tracks)")}
           </button>
         </div>
       )}
+
+      {upgradeOpen && tier ? (
+        <UpgradePrompt
+          variant="modal"
+          capability={{ feature: "gpx_export" }}
+          currentTier={tier}
+          message={t("GPX export is a Pro feature.")}
+          onClose={() => setUpgradeOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -158,11 +158,16 @@ describe('TripsService', () => {
     findOne: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
+    query: jest.Mock;
+    getRepository: jest.Mock;
   };
   // Pulled out alongside `manager` so tests can call `mockImplementation`
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
+  // Roster size the invite path's single-snapshot COUNT statement reports.
+  // Cap tests set it; default 0 keeps ordinary invites under any cap.
+  let collaboratorCount = 0;
   let userRepo: jest.Mocked<Repository<User>>;
   let inviteRepo: jest.Mocked<Repository<TripInvite>>;
   let folderRepo: jest.Mocked<Repository<TripFolder>>;
@@ -188,6 +193,7 @@ describe('TripsService', () => {
     // and operates through that manager. Mock it as a callable that
     // immediately invokes the callback with a manager that mirrors the
     // repo create/save semantics.
+    collaboratorCount = 0;
     manager = {
       create: jest
         .fn()
@@ -207,6 +213,22 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      // The invite path takes a per-trip advisory lock, counts the roster in a
+      // single COUNT statement, and writes through the txn manager. The lock
+      // query resolves to undefined; the count query returns the configurable
+      // roster size; repo lookups route back to the mocks the assertions target.
+      query: jest.fn((sql: string) =>
+        typeof sql === 'string' && sql.includes('COUNT(*)')
+          ? Promise.resolve([{ current: collaboratorCount }])
+          : Promise.resolve(undefined),
+      ),
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === TripMember) return memberRepo;
+        if (entity === TripInvite) return inviteRepo;
+        if (entity === Trip) return tripRepo;
+        if (entity === User) return userRepo;
+        return undefined;
+      }),
     };
 
     transactionMock = jest
@@ -262,6 +284,7 @@ describe('TripsService', () => {
         ),
       findOne: jest.fn().mockResolvedValue(null),
       find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     } as unknown as jest.Mocked<Repository<TripMember>>;
@@ -273,6 +296,7 @@ describe('TripsService', () => {
     inviteRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
+      count: jest.fn().mockResolvedValue(0),
       insert: jest.fn().mockResolvedValue({ identifiers: [{ id: 'inv-1' }] }),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -319,15 +343,17 @@ describe('TripsService', () => {
       }),
     };
 
-    // Unlimited by default so every pre-existing test in this file (none
-    // of which know about `max_active_trips`) keeps passing unchanged —
-    // `assertCanMintOpenTrip` short-circuits before ever touching
-    // `tripRepo.count`. Only the enforcement tests below override this
-    // with a finite limit.
+    // Unlimited by default so every pre-existing test in this file (none of
+    // which know about the numeric limits) keeps passing unchanged — both
+    // `assertCanMintOpenTrip` and `assertCanAddCollaborator` short-circuit
+    // before touching their count queries. Only the enforcement tests below
+    // override this with a finite limit. Mirrors production's full snapshot
+    // (every limit key present).
     featureResolver = {
-      resolveLimitsForUser: jest
-        .fn()
-        .mockResolvedValue({ max_active_trips: null }),
+      resolveLimitsForUser: jest.fn().mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: null,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -1418,6 +1444,30 @@ describe('TripsService', () => {
       });
     });
 
+    it('takes the shared collaborator advisory lock before consuming the invite', async () => {
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne
+        .mockResolvedValueOnce({
+          id: 'inv-1',
+          trip_id: TRIP_ID,
+          email: 'eve@example.com',
+          role: 'viewer',
+          invite_code: 'ABCDEFGH',
+        })
+        .mockResolvedValueOnce(null);
+      mockGetDetailReturns(makeJoinedTrip());
+
+      await service.join(OTHER_ID, TRIP_ID, 'abcdefgh');
+
+      // Serialises with the group-link join (TripSharesService.joinByToken) on
+      // the SAME per-trip key, so a bearer-code holder and the invited email
+      // can't both consume one invite and overflow the owner's cap.
+      expect(manager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip:collaborators:${TRIP_ID}`],
+      );
+    });
+
     it('is idempotent for an existing member (still consumes the invite)', async () => {
       tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
       manager.findOne
@@ -2260,6 +2310,32 @@ describe('TripsService', () => {
       expect(mailCtx.inviteCode).toBe(persistedCode);
     });
 
+    it('serialises the cap check + invite write under the shared per-trip advisory lock', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+
+      await service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT });
+
+      // The invite write ran inside tripRepo.manager.transaction, whose first
+      // statement took the advisory lock on the SAME key the group-link join
+      // uses (`trip:collaborators:<tripId>`) — so an invite and a link join
+      // with one slot left serialise against EACH OTHER, not just internally.
+      expect(transactionMock).toHaveBeenCalled();
+      expect(manager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip:collaborators:${TRIP_ID}`],
+      );
+      expect(inviteRepo.insert).toHaveBeenCalled();
+    });
+
     it('404s viewers and non-members without sending mail', async () => {
       // Viewer — non-privileged role.
       memberRepo.findOne.mockResolvedValueOnce({
@@ -2327,6 +2403,55 @@ describe('TripsService', () => {
       );
     });
 
+    it('re-resolves the recipient BY EMAIL under the lock (registered + joined during the request)', async () => {
+      // Codex: no account at the PRE-LOCK lookup, but the rider registers AND
+      // joins via the group link before this txn takes the collaborator lock.
+      // Keying the recheck on the pre-lock (null) id would miss them; resolving
+      // by email under the lock catches the now-member and preserves the no-op
+      // (no cap 403, no double-counting invite).
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      memberRepo.findOne
+        .mockResolvedValueOnce({ role: 'owner' } as TripMember) // caller
+        .mockResolvedValueOnce({
+          // in-lock membership recheck — the just-registered rider joined
+          trip_id: TRIP_ID,
+          user_id: OTHER_ID,
+          role: 'viewer',
+        } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User) // inviter
+        .mockResolvedValueOnce(null) // pre-lock: recipient has no account yet
+        .mockResolvedValueOnce({ id: OTHER_ID, email: RECIPIENT } as User); // under-lock: now registered
+      collaboratorCount = 1; // roster at the cap
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+
+      // The under-lock email re-resolution + membership recheck short-circuited
+      // to the no-op: no cap 403, no invite write, no email — flagged activity.
+      expect(manager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip:collaborators:${TRIP_ID}`],
+      );
+      expect(inviteRepo.insert).not.toHaveBeenCalled();
+      expect(inviteRepo.update).not.toHaveBeenCalled();
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'member_invited',
+        { recipient_email_domain: 'example.com', already_member: true },
+      );
+    });
+
     it('payload only carries the email domain — local-part is dropped to limit PII in the audit log', async () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
@@ -2378,6 +2503,102 @@ describe('TripsService', () => {
         throw new Error('expected sendTripInvite to have been called');
       const [, , locale] = inviteCall;
       expect(locale).toBe('en');
+    });
+
+    it('403s with FEATURE_LIMIT_EXCEEDED when the owner is at their max_trip_collaborators cap', async () => {
+      // Owner-scoped cap: the limit belongs to the trip owner, resolved for
+      // OWNER_ID (not the inviter). One non-owner member already + a finite
+      // cap of 1 → a NEW invite would exceed it.
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember); // caller privileged-role check
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User) // inviter
+        .mockResolvedValueOnce(null); // recipient has no account
+      inviteRepo.findOne.mockResolvedValue(null); // no prior invite → a NEW collaborator
+      collaboratorCount = 1; // single-snapshot roster count already at the cap
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      // Enforced BEFORE persisting the invite or sending the email.
+      expect(inviteRepo.insert).not.toHaveBeenCalled();
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(featureResolver.resolveLimitsForUser).toHaveBeenCalledWith(
+        OWNER_ID,
+      );
+    });
+
+    it('carries the feature/limit/current context on the collaborator-cap 403', async () => {
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 5,
+      });
+      memberRepo.findOne.mockResolvedValueOnce({ role: 'owner' } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+      inviteRepo.findOne.mockResolvedValue(null);
+      collaboratorCount = 5; // 3 members + 2 pending = 5, at the cap
+
+      await service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }).then(
+        () => {
+          throw new Error('expected the invite to be rejected');
+        },
+        (err: unknown) => {
+          expect(err).toBeInstanceOf(ForbiddenException);
+          const body = (err as ForbiddenException).getResponse();
+          expect(body).toMatchObject({
+            code: 'FEATURE_LIMIT_EXCEEDED',
+            feature: 'max_trip_collaborators',
+            limit: 5,
+            current: 5,
+          });
+        },
+      );
+    });
+
+    it('does NOT re-count against the cap when re-inviting an already-pending address', async () => {
+      // A re-invite (existing pending row) adds no collaborator, so it must be
+      // allowed even at/over the cap — role change / code rotation only.
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      memberRepo.findOne.mockResolvedValueOnce({ role: 'owner' } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+      // A prior invite for this address already exists → the cap check is skipped.
+      inviteRepo.findOne.mockResolvedValue({
+        id: 'inv-existing',
+        role: 'editor',
+      } as TripInvite);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+
+      // Re-invite path updates the existing row + still emails — never blocked.
+      expect(inviteRepo.update).toHaveBeenCalled();
+      expect(email.sendTripInvite).toHaveBeenCalledTimes(1);
     });
   });
 
