@@ -38,6 +38,7 @@ import {
 import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
+import { isFeatureLimitError } from "@/lib/entitlements";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
@@ -77,10 +78,12 @@ export default function JoinTripScreen() {
       // back target should be the list, not this form.
       navigation.replace("TripDetail", { tripId: trimmedId });
     } catch (err) {
-      const message = getUserFacingErrorMessage(
-        err,
-        translate("Unable to join trip"),
-      );
+      // The trip owner's max_trip_collaborators cap is enforced
+      // server-side on join and is invisible to the joiner, so there's no
+      // proactive gate — just a friendlier message on the resulting 403.
+      const message = isFeatureLimitError(err)
+        ? translate("The trip owner has reached their collaborator limit.")
+        : getUserFacingErrorMessage(err, translate("Unable to join trip"));
       setErrorMessage(message);
     } finally {
       setSubmitting(false);
