@@ -28,19 +28,27 @@ export function TripExportButton({ trip }: TripExportButtonProps) {
     isError: gpxError,
     isSuccess: gpxResolved,
   } = useFeature("gpx_export");
-  const { tier } = useEntitlements();
+  const { tier, refetch: refetchEntitlements } = useEntitlements();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   // Disabled until a trip loads AND the entitlement snapshot is either RESOLVED
   // (isSuccess) or ERRORED. NOT merely "not loading": in the pre-auth window the
   // /users/me query is disabled (isLoading false, isSuccess false), and we can't
-  // yet tell a Pro rider (export) from a free one (upgrade). But a genuine
-  // lookup ERROR must NOT disable the export indefinitely — that would block
-  // even paid riders for the whole failure window; the click proceeds instead.
+  // yet tell a Pro rider (export) from a free one (upgrade). On a genuine lookup
+  // ERROR the button stays clickable — but the click RETRIES rather than
+  // exporting (see below), so a paid rider isn't stranded while a Free rider
+  // still can't slip through.
   const disabled = !trip || (!gpxResolved && !gpxError);
   function handleGpx() {
+    // This GPX is generated ENTIRELY in the browser — there is no server to
+    // enforce `gpx_export` on. So never export without a CONFIRMED entitlement:
+    // on a lookup error, surface the failure and retry instead of failing open.
+    if (gpxError) {
+      toast.error(t("Couldn't verify your plan. Please try again."));
+      refetchEntitlements();
+      return;
+    }
     // Only steer to the upgrade modal once we've RESOLVED that the rider isn't
-    // entitled. On an entitlement-lookup ERROR we can't tell, so let the export
-    // proceed rather than block a paid rider (this GPX is generated locally).
+    // entitled.
     if (gpxResolved && !gpxEnabled) {
       setUpgradeOpen(true);
       return;

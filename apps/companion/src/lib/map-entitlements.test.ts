@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  canSelectQualityAtZoom,
   resolveQualityLayerMaxZoom,
   shouldPromptQualityZoom,
   QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
@@ -99,5 +100,32 @@ describe("shouldPromptQualityZoom", () => {
     // capFinite flips false→true (async entitlement settles) at zoom 14 with no
     // move — the layer would clamp silently without this re-evaluation.
     expect(shouldPromptQualityZoom({ ...base, capFinite: true })).toBe(true);
+  });
+});
+
+describe("canSelectQualityAtZoom", () => {
+  it("allows quality selection only below the overlay's exclusive maxzoom", () => {
+    // Free rider (maxzoom 12): selectable up to <12, blocked at/above the cap so
+    // a capped visitor can't pull gated quality detail past where the overlay
+    // renders.
+    expect(canSelectQualityAtZoom(true, 11.5, 12)).toBe(true);
+    expect(canSelectQualityAtZoom(true, 12, 12)).toBe(false);
+    expect(canSelectQualityAtZoom(true, 14, 12)).toBe(false);
+  });
+
+  it("blocks quality selection entirely for an at/below-floor cap (maxzoom 5)", () => {
+    // The hit layer only exists at zoom >= 10, and 10 is already past a maxzoom
+    // of 5 → never selectable (no leak on a low operator/per-user cap).
+    expect(canSelectQualityAtZoom(true, 10, 5)).toBe(false);
+    expect(canSelectQualityAtZoom(true, 12, 5)).toBe(false);
+  });
+
+  it("never selects when the quality overlay is off", () => {
+    expect(canSelectQualityAtZoom(false, 8, 18)).toBe(false);
+  });
+
+  it("allows an unlimited rider up to the source ceiling (18)", () => {
+    expect(canSelectQualityAtZoom(true, 16, 18)).toBe(true);
+    expect(canSelectQualityAtZoom(true, 18, 18)).toBe(false);
   });
 });

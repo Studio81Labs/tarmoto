@@ -9,6 +9,9 @@ vi.mock("@/hooks", () => ({
   useEntitlements: () => useEntitlementsMock(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/lib/toast", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
 
 // The GPX generator + download side effects — stub so the test asserts gating,
 // not file output. Match the real import in TripExportButton.tsx.
@@ -25,7 +28,7 @@ describe("TripExportButton — gpx_export gate", () => {
   beforeEach(() => {
     useFeatureMock.mockReset();
     useEntitlementsMock.mockReset();
-    useEntitlementsMock.mockReturnValue({ tier: "free" });
+    useEntitlementsMock.mockReturnValue({ tier: "free", refetch: vi.fn() });
   });
 
   it("opens the upgrade modal instead of exporting when gpx_export is off", async () => {
@@ -53,10 +56,18 @@ describe("TripExportButton — gpx_export gate", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("stays ENABLED and exports on an entitlement lookup ERROR (doesn't block paid riders)", async () => {
-    // /users/me exhausted its retries with no cached snapshot. Blocking here
-    // would strand even paid riders for the whole outage; the cap is unknown, so
-    // let the (locally generated) export proceed instead of the upgrade modal.
+  it("does NOT export on an entitlement lookup ERROR — retries instead (never fails open)", async () => {
+    // This GPX is generated locally with no server to enforce the entitlement,
+    // so a lookup error must NOT wave the export through. The button stays
+    // clickable (so a paid rider isn't stranded), but the click retries + warns
+    // rather than exporting or opening a stale upgrade modal.
+    const { tripToGpx } = await import("@/lib/trip-export");
+    const { toast } = await import("@/lib/toast");
+    // These module-level mocks aren't reset per-test; clear prior calls.
+    vi.mocked(tripToGpx).mockClear();
+    vi.mocked(toast.error).mockClear();
+    const refetch = vi.fn();
+    useEntitlementsMock.mockReturnValue({ tier: "free", refetch });
     useFeatureMock.mockReturnValue({
       enabled: false,
       isLoading: false,
@@ -67,7 +78,10 @@ describe("TripExportButton — gpx_export gate", () => {
     const button = screen.getByRole("button", { name: /Export GPX/i });
     expect(button).not.toBeDisabled();
     await userEvent.click(button);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(vi.mocked(tripToGpx)).not.toHaveBeenCalled(); // no fail-open export
+    expect(screen.queryByRole("dialog")).toBeNull(); // no stale upgrade modal
+    expect(refetch).toHaveBeenCalled(); // retries the entitlement lookup
+    expect(vi.mocked(toast.error)).toHaveBeenCalled();
   });
 
   it("stays disabled in the cold-load window (query disabled: isLoading false, isSuccess false)", async () => {

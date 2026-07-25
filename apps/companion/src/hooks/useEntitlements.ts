@@ -204,6 +204,10 @@ export function useEntitlements(): {
    *  `isError:false` yet is NOT resolved — treating that as "unlimited" would
    *  reopen mint controls during the auth-hydration window. */
   isSuccess: boolean;
+  /** Force a re-fetch of the entitlement snapshot — for a client-enforced gate
+   *  to offer an explicit RETRY after a lookup error, rather than failing open
+   *  or stranding the user until the poll/focus refetch. */
+  refetch: () => void;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const query = useQuery({
@@ -235,6 +239,7 @@ export function useEntitlements(): {
     isLoading: query.isLoading,
     isError: query.isError,
     isSuccess: query.isSuccess,
+    refetch: () => void query.refetch(),
   };
 }
 

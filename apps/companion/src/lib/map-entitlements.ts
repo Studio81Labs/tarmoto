@@ -66,3 +66,21 @@ export function shouldPromptQualityZoom({
 }): boolean {
   return showQuality && capFinite && zoom > cap && !dismissed;
 }
+
+/**
+ * Whether Explore may SELECT a quality road at the current zoom. The road hit
+ * layer is uncapped (so planner snapping still works past the cap), but Explore
+ * must not let a capped Free/anonymous visitor pull a road's gated quality
+ * detail where the overlay is hidden. Allow selection only while the overlay
+ * would render — below the resolved exclusive maxzoom (`qualityMaxZoom` from
+ * `resolveQualityLayerMaxZoom`, which already folds in the cap, the free
+ * fail-closed floor, and the at/below-floor case). Surface selection is not
+ * gated and is handled separately by the caller.
+ */
+export function canSelectQualityAtZoom(
+  showQuality: boolean,
+  zoom: number,
+  qualityMaxZoom: number,
+): boolean {
+  return showQuality && zoom < qualityMaxZoom;
+}

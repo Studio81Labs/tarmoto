@@ -116,7 +116,11 @@ import {
   reconcileConditionMenu,
 } from "./conditionPopoverReconcile";
 import { useEntitlements, useRoadQualityZoomCap } from "@/hooks";
-import { shouldPromptQualityZoom } from "@/lib/map-entitlements";
+import {
+  canSelectQualityAtZoom,
+  resolveQualityLayerMaxZoom,
+  shouldPromptQualityZoom,
+} from "@/lib/map-entitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 import { useTranslation } from "@/i18n/I18nProvider";
 
@@ -296,6 +300,16 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         qualityZoomLimit,
       ) !== null;
     const qualityCap = qualityZoomLimit ?? 0;
+    // The exclusive zoom above which the quality overlay is not rendered (the
+    // same clamp MapCanvas applies). Explore road SELECTION must respect it too:
+    // the hit layer is uncapped (for planner snapping), so without this a capped
+    // Free/anonymous visitor could click an invisible road past the cap and pull
+    // its exact quality_score/provenance/history via getSegmentDetail — the very
+    // data the hidden overlay gates.
+    const qualityMaxZoom = resolveQualityLayerMaxZoom(
+      qualityZoomLimit,
+      qualityZoomResolved,
+    );
     const [zoomUpgradeOpen, setZoomUpgradeOpen] = useState(false);
     const [zoomUpgradeDismissed, setZoomUpgradeDismissed] = useState(false);
     const handleRef = useRef<MapCanvasHandle>(null);
@@ -454,6 +468,7 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
       showQuality,
       showSurface,
       onSegmentSelect,
+      qualityMaxZoom,
     });
 
     const rawHazardsRef = useRef<HazardResponse[]>([]);
@@ -502,8 +517,9 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         showQuality,
         showSurface,
         onSegmentSelect,
+        qualityMaxZoom,
       };
-    }, [showQuality, showSurface, onSegmentSelect]);
+    }, [showQuality, showSurface, onSegmentSelect, qualityMaxZoom]);
 
     // The `moveend` handler only re-checks the zoom prompt when the rider moves
     // the map. But the quality layer can also cross above the cap without a
@@ -666,13 +682,21 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
         // A non-marker click dismisses an open popover, then tries the road.
         setPointMenu(null);
         const {
-          showQuality: canSelectQuality,
+          showQuality,
           showSurface: canSelectSurface,
           onSegmentSelect: selectSegment,
+          qualityMaxZoom: capExclusiveZoom,
         } = segmentSelectionRef.current;
         if (!selectSegment) return;
-        // Hit-test the UNCAPPED road layer (not the entitlement-capped quality
-        // overlay) so road selection survives past the free zoom cap.
+        // Quality selection is entitlement-gated: the hit layer is uncapped (so
+        // planner snapping still works past the cap), but Explore must not let a
+        // capped visitor pull a road's quality detail where the overlay is
+        // hidden. Surface selection is never gated.
+        const canSelectQuality = canSelectQualityAtZoom(
+          showQuality,
+          map.getZoom(),
+          capExclusiveZoom,
+        );
         const layers = [
           ...(canSelectQuality ? [TARMOTO_ROAD_HIT_LAYER] : []),
           ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
@@ -738,10 +762,18 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
             layers: [FUN_ZONES_FILL],
             handle: (f, e) => {
               const {
-                showQuality: canSelectQuality,
+                showQuality,
                 showSurface: canSelectSurface,
                 onSegmentSelect: selectSegment,
+                qualityMaxZoom: capExclusiveZoom,
               } = segmentSelectionRef.current;
+              // Same entitlement gate as the road-miss path: quality selection
+              // only while the overlay renders at this zoom (below the cap).
+              const canSelectQuality = canSelectQualityAtZoom(
+                showQuality,
+                map.getZoom(),
+                capExclusiveZoom,
+              );
               const segmentLayers = [
                 ...(canSelectQuality ? [TARMOTO_ROAD_HIT_LAYER] : []),
                 ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),

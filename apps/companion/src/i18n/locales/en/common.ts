@@ -220,6 +220,8 @@ export const common = {
   "Couldn't load your trips right now. Close this and try again in a moment.":
     "Couldn't load your trips right now. Close this and try again in a moment.",
   "Couldn't load zones.": "Couldn't load zones.",
+  "Couldn't verify your plan. Please try again.":
+    "Couldn't verify your plan. Please try again.",
   "Create invite link": "Create invite link",
   "Create your first trip to discover the best roads in your region.":
     "Create your first trip to discover the best roads in your region.",
