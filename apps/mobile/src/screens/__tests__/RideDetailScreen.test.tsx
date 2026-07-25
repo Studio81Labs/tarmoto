@@ -1,5 +1,7 @@
 import React from "react";
+import { Alert } from "react-native";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -29,7 +31,8 @@ jest.mock(
   },
 );
 import RideDetailScreen from "../RideDetailScreen";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
+import { useAuthStore } from "@/stores";
 import type { RideDetail } from "@/types";
 
 const mockGoBack = jest.fn();
@@ -83,6 +86,19 @@ jest.mock("@/services/api", () => ({
   api: {
     getRide: jest.fn(),
     exportRideGpx: jest.fn(),
+  },
+  // The screen narrows a stale-entitlement 403 with `err instanceof
+  // ApiError`; the mock must expose a real constructor so `instanceof`
+  // doesn't throw on the rejection built in the 403-net test below.
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
   },
 }));
 
@@ -141,6 +157,17 @@ const RIDE: RideDetail = {
   ],
 };
 
+// Entitled by default so the pre-existing export assertions keep holding
+// once `ShareActions` reads `useFeature("gpx_export")` /
+// `useEntitlements()` (both back onto this store) — see per-test
+// overrides below for the disabled/unresolved/403 gate cases.
+const ENTITLED_USER = {
+  id: "u1",
+  subscription_tier: "free",
+  features: { gpx_export: true },
+  limits: {},
+};
+
 describe("RideDetailScreen", () => {
   const getRideMock = api.getRide as jest.MockedFunction<typeof api.getRide>;
   const exportGpxMock = api.exportRideGpx as jest.MockedFunction<
@@ -158,7 +185,10 @@ describe("RideDetailScreen", () => {
     exportGpxMock.mockReset();
     writeFileMock.mockClear();
     shareOpenMock.mockClear();
+    useAuthStore.setState({ user: ENTITLED_USER as never });
   });
+
+  afterEach(() => act(() => useAuthStore.setState({ user: null })));
 
   it("renders ride stats after fetching the ride detail", async () => {
     getRideMock.mockResolvedValueOnce(RIDE);
@@ -264,5 +294,53 @@ describe("RideDetailScreen", () => {
         }),
       ),
     );
+  });
+
+  it("opens the upgrade prompt instead of exporting when gpx_export is disabled", async () => {
+    useAuthStore.setState({
+      user: {
+        ...ENTITLED_USER,
+        features: { gpx_export: false },
+      } as never,
+    });
+    getRideMock.mockResolvedValueOnce(RIDE);
+
+    await render(<RideDetailScreen />);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Export ride as GPX")).toBeTruthy(),
+    );
+
+    await fireEvent.press(screen.getByLabelText("Export ride as GPX"));
+
+    await waitFor(() =>
+      expect(screen.getByText("GPX export is a Pro feature.")).toBeTruthy(),
+    );
+    expect(exportGpxMock).not.toHaveBeenCalled();
+    expect(shareOpenMock).not.toHaveBeenCalled();
+  });
+
+  it("opens the upgrade prompt on a stale-entitlement 403 from the export call", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    getRideMock.mockResolvedValueOnce(RIDE);
+    exportGpxMock.mockRejectedValueOnce(
+      new ApiError("Feature unavailable: gpx_export", 403, {
+        message: "Feature unavailable: gpx_export",
+      }),
+    );
+
+    await render(<RideDetailScreen />);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Export ride as GPX")).toBeTruthy(),
+    );
+
+    await fireEvent.press(screen.getByLabelText("Export ride as GPX"));
+
+    await waitFor(() =>
+      expect(screen.getByText("GPX export is a Pro feature.")).toBeTruthy(),
+    );
+    expect(shareOpenMock).not.toHaveBeenCalled();
+    // Must not also fall through to the generic error toast.
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 });

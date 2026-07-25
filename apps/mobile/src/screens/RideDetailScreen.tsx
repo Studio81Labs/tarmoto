@@ -53,7 +53,7 @@ import {
   qualityBrandColor,
   statusFg,
 } from "@/theme/brand";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import type { RideDetail, RideSegment } from "@/types";
 import type {
   HomeStackParamList,
@@ -81,6 +81,8 @@ import {
 } from "./RideScreens.helpers";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
 import { getFormatters } from "@/format";
+import { useEntitlements, useFeature } from "@/hooks/useEntitlements";
+import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -543,6 +545,10 @@ function HistogramRow({
 
 function ShareActions({ ride }: { ride: RideDetail }) {
   const [busy, setBusy] = useState<"share" | "gpx" | null>(null);
+  const { enabled: gpxEnabled, isResolved: gpxResolved } =
+    useFeature("gpx_export");
+  const { tier } = useEntitlements();
+  const [upgradeVisible, setUpgradeVisible] = useState(false);
 
   const handleShare = useCallback(async () => {
     if (busy !== null) return;
@@ -567,6 +573,14 @@ function ShareActions({ ride }: { ride: RideDetail }) {
 
   const handleExportGpx = useCallback(async () => {
     if (busy !== null) return;
+    // Proactive gate: once the entitlement snapshot is resolved (rider is
+    // logged in), a non-entitled rider gets the upgrade prompt instead of
+    // a doomed request. While unresolved the control is disabled below, so
+    // this branch only fires for a resolved, non-entitled rider.
+    if (gpxResolved && !gpxEnabled) {
+      setUpgradeVisible(true);
+      return;
+    }
     setBusy("gpx");
     // Write the GPX bytes to a temp file and hand that to the system
     // share sheet as an attachment. Sharing the XML through the
@@ -591,10 +605,20 @@ function ShareActions({ ride }: { ride: RideDetail }) {
         failOnCancel: false,
       });
     } catch (err) {
-      Alert.alert(
-        translate("Couldn't export"),
-        getUserFacingErrorMessage(err, translate("Unable to export GPX.")),
-      );
+      // Safety net for a stale client-side entitlement snapshot: the
+      // endpoint is server-enforced, so a non-entitled rider can still
+      // reach here (e.g. a downgrade mid-session) and gets a 403 with no
+      // `code` (feature-guard body, not the `FEATURE_LIMIT_EXCEEDED`
+      // limit shape) — show the same upgrade prompt instead of a generic
+      // error toast.
+      if (err instanceof ApiError && err.status === 403) {
+        setUpgradeVisible(true);
+      } else {
+        Alert.alert(
+          translate("Couldn't export"),
+          getUserFacingErrorMessage(err, translate("Unable to export GPX.")),
+        );
+      }
     } finally {
       // Don't delete the file here. `RNShare.open` resolves the moment
       // the sheet is dismissed, but several share targets read the
@@ -606,7 +630,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
       // stale `.gpx` left behind is harmless.
       setBusy(null);
     }
-  }, [busy, ride]);
+  }, [busy, ride, gpxEnabled, gpxResolved]);
 
   return (
     <View style={styles.actionsRow}>
@@ -625,7 +649,7 @@ function ShareActions({ ride }: { ride: RideDetail }) {
       <TouchableOpacity
         style={styles.actionBtn}
         onPress={() => void handleExportGpx()}
-        disabled={busy !== null}
+        disabled={busy !== null || !gpxResolved}
         accessibilityRole="button"
         accessibilityLabel={translate("Export ride as GPX")}
       >
@@ -634,6 +658,13 @@ function ShareActions({ ride }: { ride: RideDetail }) {
           {busy === "gpx" ? translate("Exporting…") : translate("Export GPX")}
         </Text>
       </TouchableOpacity>
+      <UpgradePrompt
+        visible={upgradeVisible}
+        capability={{ feature: "gpx_export" }}
+        currentTier={tier ?? "free"}
+        message={translate("GPX export is a Pro feature.")}
+        onClose={() => setUpgradeVisible(false)}
+      />
     </View>
   );
 }

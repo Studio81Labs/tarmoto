@@ -9,6 +9,7 @@
  * in jest without driving any platform code.
  */
 import React from "react";
+import { Alert } from "react-native";
 import {
   fireEvent,
   render,
@@ -21,6 +22,11 @@ import RNShare from "react-native-share";
 const mockSetUser = jest.fn();
 const mockSetDistanceUnit = jest.fn();
 let mockVoiceNavEnabled = true;
+// Entitled by default so the pre-existing GPX export assertions keep
+// holding once `BulkExportCard` reads `useFeature("gpx_export")` /
+// `useEntitlements()` (both back onto this mocked store) — flipped false
+// in the gate tests below. CSV is never gated, so it has no equivalent.
+let mockGpxEnabled = true;
 
 jest.mock(
   "react-native/Libraries/Components/Touchable/TouchableOpacity",
@@ -67,6 +73,19 @@ jest.mock("@/services/api", () => ({
     exportAllRidesCsv: jest.fn().mockResolvedValue("id,distance\n1,42"),
     updateProfile: jest.fn(),
   },
+  // `BulkExportCard` narrows a stale-entitlement 403 with `err instanceof
+  // ApiError`; the mock must expose a real constructor so `instanceof`
+  // doesn't throw on the rejection built in the 403-net test below.
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
+  },
 }));
 
 jest.mock("@/hooks", () => ({
@@ -95,6 +114,9 @@ jest.mock("@/stores", () => ({
         id: "u1",
         email: "x@example.com",
         display_name: "x",
+        subscription_tier: "free",
+        features: { gpx_export: mockGpxEnabled },
+        limits: {},
         preferences: {
           units: "metric",
           daily_km: 200,
@@ -130,11 +152,12 @@ jest.mock("@/stores", () => ({
 }));
 
 import SettingsScreen from "../SettingsScreen";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockVoiceNavEnabled = true;
+  mockGpxEnabled = true;
 });
 
 describe("SettingsScreen bulk export", () => {
@@ -245,5 +268,50 @@ describe("SettingsScreen bulk export", () => {
     await waitFor(() => {
       expect(RNShare.open).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("opens the upgrade prompt instead of exporting GPX when gpx_export is disabled", async () => {
+    mockGpxEnabled = false;
+
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Export all rides as GPX"));
+
+    await waitFor(() =>
+      expect(screen.getByText("GPX export is a Pro feature.")).toBeTruthy(),
+    );
+    expect(api.exportAllRidesGpx).not.toHaveBeenCalled();
+    expect(RNShare.open).not.toHaveBeenCalled();
+  });
+
+  it("still allows CSV export when gpx_export is disabled", async () => {
+    mockGpxEnabled = false;
+
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Export all rides as CSV"));
+
+    await waitFor(() => {
+      expect(api.exportAllRidesCsv).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("GPX export is a Pro feature.")).toBeNull();
+  });
+
+  it("opens the upgrade prompt on a stale-entitlement 403 from the GPX export call", async () => {
+    const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    (api.exportAllRidesGpx as jest.Mock).mockRejectedValueOnce(
+      new ApiError("Feature unavailable: gpx_export", 403, {
+        message: "Feature unavailable: gpx_export",
+      }),
+    );
+
+    await render(<SettingsScreen />);
+    await fireEvent.press(screen.getByLabelText("Export all rides as GPX"));
+
+    await waitFor(() =>
+      expect(screen.getByText("GPX export is a Pro feature.")).toBeTruthy(),
+    );
+    expect(RNShare.open).not.toHaveBeenCalled();
+    // Must not also fall through to the generic error toast.
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 });
