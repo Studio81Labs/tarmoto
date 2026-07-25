@@ -210,6 +210,17 @@ export function useEntitlements(): {
     queryKey: USERS_ME_QUERY_KEY(userId),
     enabled: userId != null,
     refetchOnWindowFocus: true,
+    // Poll while the tab is active (default: no background wakeups) so the
+    // server-resolved snapshot can't go stale INDEFINITELY on a continuously
+    // focused tab. `/users/me` is the source for CLIENT-enforced entitlements —
+    // the in-browser GPX export (`gpx_export` toggle) and the road-quality zoom
+    // overlay — so without this an operator revoking a flag/limit (removing a
+    // launch override, or a `force_off`) would not take effect until a window
+    // refocus or remount that may never happen while the rider keeps exporting
+    // or panning. Refocus is still handled by `refetchOnWindowFocus`; the map
+    // path additionally resets this query the instant it detects a
+    // `/config/limits` override change (see `useRoadQualityZoomCap`).
+    refetchInterval: 5 * 60_000,
     queryFn: async ({ signal }) => {
       const { data, error } = await api.GET("/api/v1/users/me", { signal });
       if (error || !data) throw new Error("Failed to load entitlements");

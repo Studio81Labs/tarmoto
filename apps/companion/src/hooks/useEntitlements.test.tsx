@@ -134,6 +134,32 @@ describe("useEntitlements", () => {
     expect(result.current.limit).toBeNull();
   });
 
+  it("polls /users/me on an interval so a revoked entitlement can't persist on an active tab", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      getMock.mockImplementation(() => {
+        calls += 1;
+        return Promise.resolve({ data: ME, error: undefined });
+      });
+      renderHook(() => useEntitlements(), { wrapper: withQueryClient() });
+      // Initial fetch.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(calls).toBe(1);
+      // Past the 5-minute active-session poll → the snapshot refetches, so a
+      // client-enforced entitlement (gpx_export, road-quality zoom) can't stay
+      // stale indefinitely after an operator revokes it.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+      });
+      expect(calls).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("useLimit fails closed (0) when the key is missing from a resolved snapshot", async () => {
     // Partial deploy / stale shape: `limits` resolved but lacks the key. Must
     // NOT read as unlimited — fall back to the restrictive shared default.
