@@ -10,10 +10,15 @@ import {
   type SubscriptionTier,
 } from "@tarmoto/shared";
 
-// The road-tile source's real max zoom. The `<VectorSource maxzoom={22}>`
-// in MapScreen is a loose over-zoom setting on the tile source itself —
-// this is the LAYER-level ceiling the entitlement cap clamps against.
-const MOBILE_QUALITY_CEILING = 18;
+// The road-tile source's real max zoom: the backend serves real quality MVT
+// tiles up to z22 with no internal cap (`RoadTileParamsDto` `@Max(22)` in
+// `apps/backend/src/modules/roads/tile-params.dto.ts`), and the
+// `<VectorSource maxzoom={22}>` in MapScreen matches that source max. This
+// is the LAYER-level ceiling the entitlement cap clamps against, so an
+// unlimited (pro/premium, or DARK-launch-seed-resolved) rider's overlay
+// renders to z22 unchanged. The free-tier gate (12) is the actual product
+// lever, not this ceiling.
+const MOBILE_QUALITY_CEILING = 22;
 
 /**
  * The quality `<Layer>`'s `maxzoom` clamped to the rider's resolved

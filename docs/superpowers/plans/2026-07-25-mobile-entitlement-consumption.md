@@ -11,10 +11,10 @@
 ## Global Constraints
 
 - `road_quality_max_zoom`: free = **12**, pro/premium = `null` (unlimited). Fail-closed fallback while unresolved = free cap 12. Unlimited → the platform source ceiling.
-- **Mobile source ceiling = `18`** (the backend road-tile vector source's real max, matching companion's `MapCanvas` `maxzoom: 18`; mobile's current `<VectorSource maxzoom={22}>` is a loose over-zoom setting — the LAYER cap is what matters).
+- **Mobile source ceiling = `22`** (the backend serves real quality MVT tiles to z22 with no internal cap — `RoadTileParamsDto` `@Max(22)` in `apps/backend/src/modules/roads/tile-params.dto.ts` — and mobile's `<VectorSource maxzoom={22}>` matches that real source max; companion's `MapCanvas` `maxzoom: 18` is a DIFFERENT, stricter companion-only ceiling and stays 18). Using 18 on mobile would regress unlimited (pro/premium) riders at z18–22. The free-tier gate (12) is the actual product lever; unlimited riders render to z22 unchanged.
 - The limit feeds the overlay LAYER's `maxzoom` **DIRECTLY** (overlay stops past the cap; **no `+1`**).
 - `gpx_export` 403 = a **feature-guard** 403: body `{ statusCode: 403, error: "Forbidden", message: "Feature unavailable: gpx_export" }` — **NO** machine `code`. (Only the collaborator LIMIT 403 carries `code: "FEATURE_LIMIT_EXCEEDED"`.) So the client's proactive `features.gpx_export` gate is primary; the 403 is a stale-snapshot safety net keyed on status + endpoint.
-- Ships **DARK**: seeds `limit_states(max_trip_collaborators|road_quality_max_zoom, NULL)` (migration 1818) + `gpx_export` force-on mean every gate is inert until go-live; behaviour byte-identical under current data.
+- Ships **DARK**: seeds `limit_states(max_trip_collaborators|road_quality_max_zoom, NULL)` (migration 1818) + `gpx_export` force-on mean every gate is inert until go-live under current data — the free-tier `road_quality_max_zoom` gate (12) is the lever that activates at go-live; unlimited-resolved riders (incl. the DARK seed) render the quality overlay to z22 unchanged throughout.
 - **No backend changes.** No new API endpoints.
 - All new user-facing copy = typed `EnglishMessageKey` entries in `src/i18n/locales/en.ts` (key === value); render through `useTranslation()`.
 - Mobile is always authenticated on these screens — `isResolved` is false only in the pre-login edge; fail closed there.
@@ -485,7 +485,7 @@ Fill in the RN layout using the same styling primitives `ReviewFormModal` uses. 
 
 **Interfaces:** Consumes `useLimit` (Task 2), `clampQualityMaxZoom` (Task 1).
 
-- [ ] **Step 1: Write the failing test** — assert the quality `<Layer>` gets `maxzoom` = the resolved cap. Since MapLibre renders nothing headless, assert the prop via a mock of the maplibre `Layer` (mirror how mobile tests the map; if none exists, mock `@maplibre/maplibre-react-native`'s `Layer`/`VectorSource` to capture props). Cases: free (`road_quality_max_zoom` 12) → Layer `maxzoom={12}`; unlimited (`null`) → `maxzoom={18}`; logged out (unresolved) → `maxzoom={12}` (fail closed).
+- [ ] **Step 1: Write the failing test** — assert the quality `<Layer>` gets `maxzoom` = the resolved cap. Since MapLibre renders nothing headless, assert the prop via a mock of the maplibre `Layer` (mirror how mobile tests the map; if none exists, mock `@maplibre/maplibre-react-native`'s `Layer`/`VectorSource` to capture props). Cases: free (`road_quality_max_zoom` 12) → Layer `maxzoom={12}`; unlimited (`null`) → `maxzoom={22}` (mobile's real tile source max — see Global Constraints); logged out (unresolved) → `maxzoom={12}` (fail closed).
 
 - [ ] **Step 2: Run, verify FAIL.**
 
@@ -495,7 +495,7 @@ Fill in the RN layout using the same styling primitives `ReviewFormModal` uses. 
 import { useLimit } from "@/hooks/useEntitlements";
 import { clampQualityMaxZoom } from "@tarmoto/shared";
 
-const MOBILE_QUALITY_CEILING = 18; // the road-tile source's real max (see plan)
+const MOBILE_QUALITY_CEILING = 22; // the road-tile source's real max (see plan)
 const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } = useLimit(
   "road_quality_max_zoom",
 );

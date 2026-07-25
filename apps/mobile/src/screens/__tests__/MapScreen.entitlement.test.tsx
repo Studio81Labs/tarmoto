@@ -34,7 +34,7 @@ it("clamps to the mobile source ceiling when unlimited", async () => {
     user: { ...baseUser, limits: { road_quality_max_zoom: null } } as never,
   });
   const { result } = await renderHook(() => useQualityLayerMaxZoom());
-  expect(result.current.maxzoom).toBe(18);
+  expect(result.current.maxzoom).toBe(22);
   expect(result.current.visible).toBe(true);
 });
 
@@ -62,7 +62,7 @@ it("reacts to entitlement changes after mount", async () => {
       user: { ...baseUser, limits: { road_quality_max_zoom: null } } as never,
     }),
   );
-  expect(result.current.maxzoom).toBe(18);
+  expect(result.current.maxzoom).toBe(22);
 });
 
 describe("shouldShowQualityUpgradePrompt", () => {
