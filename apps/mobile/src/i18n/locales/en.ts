@@ -299,6 +299,7 @@ export const en = {
   "Codes are 6 characters.": "Codes are 6 characters.",
   Coffee: "Coffee",
   "Collapse {value0} details": "Collapse {value0} details",
+  "Coming soon": "Coming soon",
   Commute: "Commute",
   "Commute check": "Commute check",
   "Compared with your primary ({count, plural, one {# hazard} other {# hazards}}).":
@@ -518,6 +519,7 @@ export const en = {
   "Got an invite code? Ride along with the rest of the group.":
     "Got an invite code? Ride along with the rest of the group.",
   GPX: "GPX",
+  "GPX export is a Pro feature.": "GPX export is a Pro feature.",
   Gravel: "Gravel",
   Great: "Great",
   "Group ride": "Group ride",
@@ -594,6 +596,7 @@ export const en = {
   Leave: "Leave",
   "Leave group ride?": "Leave group ride?",
   Library: "Library",
+  "Limit reached": "Limit reached",
   "Link account": "Link account",
   "Link your Tarmoto account": "Link your Tarmoto account",
   "Listening…": "Listening…",
@@ -1010,6 +1013,8 @@ export const en = {
     "The route generator hasn't produced any days for this trip. Pull to refresh, or go back and try different parameters.",
   "The trip doesn't include this day. It may have been regenerated with a different number of days.":
     "The trip doesn't include this day. It may have been regenerated with a different number of days.",
+  "The trip owner has reached their collaborator limit.":
+    "The trip owner has reached their collaborator limit.",
   "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.":
     "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.",
   "These passes are likely closed when you ride. Plan a detour or check local conditions before departing.":
@@ -1069,6 +1074,8 @@ export const en = {
   Unscored: "Unscored",
   "Unsupported file type. Pick a .gpx or .kml file.":
     "Unsupported file type. Pick a .gpx or .kml file.",
+  "Upgrade required": "Upgrade required",
+  "Upgrade to {tier}": "Upgrade to {tier}",
   "Upload failed — tap × to remove and try again.":
     "Upload failed — tap × to remove and try again.",
   "Uploaded {count, plural, one {# pending ride} other {# pending rides}}.":
@@ -1154,6 +1161,8 @@ export const en = {
     "You're offline — we'll send the report once you're back on a connection.",
   "You're offline — your review is saved locally and will upload when you reconnect.":
     "You're offline — your review is saved locally and will upload when you reconnect.",
+  "You've reached the collaborator limit for this trip.":
+    "You've reached the collaborator limit for this trip.",
   "You've ridden every nearby road we know about.":
     "You've ridden every nearby road we know about.",
   "Your current location": "Your current location",
@@ -1165,6 +1174,8 @@ export const en = {
   "Your Tarmoto password": "Your Tarmoto password",
   "Your usual route looks like the best option right now.":
     "Your usual route looks like the best option right now.",
+  "Zoom in further for full road-quality detail with Pro.":
+    "Zoom in further for full road-quality detail with Pro.",
   "Δ distance": "Δ distance",
   "Δ time": "Δ time",
 } as const;
