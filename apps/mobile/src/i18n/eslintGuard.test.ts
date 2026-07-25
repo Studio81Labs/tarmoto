@@ -141,10 +141,31 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'const view = <Text>{translate("Updated") + formattedTime}</Text>;',
+    'const view = <Text>{`${translate("Updated")} ${formattedTime}`}</Text>;',
+  ])("rejects translated composition inside one JSX expression", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects visible numeric JSX text", () => {
     expect(
       localizationMessages(
         "const view = <Text>01</Text>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible numeric JSX expression literals", () => {
+    expect(
+      localizationMessages(
+        "const view = <Text>{2026}</Text>;",
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);

@@ -120,6 +120,22 @@ function containsIndependentSeparator(node) {
   return false;
 }
 
+function isTranslatedComposition(node) {
+  if (!containsTranslatorCall(node)) return false;
+  if (node.type === "BinaryExpression" && node.operator === "+") {
+    return true;
+  }
+  if (node.type !== "TemplateLiteral") return false;
+  const translatedExpressions = node.expressions.filter(containsTranslatorCall);
+  return (
+    node.quasis.some((quasi) => quasi.value.raw.trim() !== "") ||
+    node.expressions.some(
+      (expression) => !containsTranslatorCall(expression),
+    ) ||
+    translatedExpressions.length > 1
+  );
+}
+
 const noTranslatedFragments = {
   meta: {
     type: "problem",
@@ -149,16 +165,26 @@ const noTranslatedFragments = {
             containsTranslatorCall(child.expression),
         );
         if (translatedChildren.length === 0) return;
+        const composedChildren = translatedChildren.filter((child) =>
+          isTranslatedComposition(child.expression),
+        );
 
         const hasAnotherTextPart = node.children.some(
           (child) =>
             !translatedChildren.includes(child) && isTextualSibling(child),
         );
-        if (!hasAnotherTextPart && translatedChildren.length === 1) return;
+        if (
+          composedChildren.length === 0 &&
+          !hasAnotherTextPart &&
+          translatedChildren.length === 1
+        ) {
+          return;
+        }
         // Compact metric/status rows are deliberately independent atoms. A
         // middle-dot or em-dash separator makes that explicit and keeps the
         // rule focused on grammatical fragments that must be reorderable.
         if (
+          composedChildren.length === 0 &&
           node.children.some(
             (child) =>
               !translatedChildren.includes(child) &&
@@ -193,6 +219,27 @@ const noVisibleNumericJsxText = {
     return {
       JSXText(node) {
         if (/\d/.test(node.value)) {
+          context.report({ node, messageId: "numeric" });
+        }
+      },
+      JSXExpressionContainer(node) {
+        if (
+          node.parent?.type !== "JSXElement" &&
+          node.parent?.type !== "JSXFragment"
+        ) {
+          return;
+        }
+        const expression = node.expression;
+        const isNumericLiteral =
+          expression.type === "Literal" &&
+          (typeof expression.value === "number" ||
+            typeof expression.value === "bigint");
+        const isSignedNumericLiteral =
+          expression.type === "UnaryExpression" &&
+          (expression.operator === "+" || expression.operator === "-") &&
+          expression.argument.type === "Literal" &&
+          typeof expression.argument.value === "number";
+        if (isNumericLiteral || isSignedNumericLiteral) {
           context.report({ node, messageId: "numeric" });
         }
       },

@@ -116,6 +116,34 @@ describe("languagePreferenceSyncMonitor", () => {
     expect(sync).toHaveBeenCalledTimes(2);
   });
 
+  it("coalesces foreground events that arrive before an in-flight failure", async () => {
+    let rejectFirst!: (error: Error) => void;
+    sync
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    start();
+    await Promise.resolve();
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    listener?.("active");
+    listener?.("active");
+    rejectFirst(new Error("offline"));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(999);
+    expect(sync).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
   it("serializes a superseding selection across monitor restarts", async () => {
     let resolveFirst!: () => void;
     sync.mockImplementationOnce(

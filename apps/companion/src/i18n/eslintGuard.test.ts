@@ -130,6 +130,18 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'const view = <p>{t("Updated") + formattedTime}</p>;',
+    'const view = <p>{`${t("Updated")} ${formattedTime}`}</p>;',
+  ])("rejects translated composition inside one JSX expression", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("allows independent translated atoms separated by a middle dot", () => {
     expect(
       localizationMessages(
@@ -143,6 +155,15 @@ describe("companion indirect display-copy lint guard", () => {
     expect(
       localizationMessages(
         "const view = <span>01</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects visible numeric JSX expression literals", () => {
+    expect(
+      localizationMessages(
+        "const view = <span>{2026}</span>;",
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
