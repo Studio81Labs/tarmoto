@@ -280,12 +280,15 @@ describe("mobile indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
-  it("rejects locale-insensitive rider search normalization", () => {
-    expect(
-      localizationMessages(
-        "function matchSearch(value) { return value.toLowerCase(); }",
-        "tarmoto-localization/no-locale-insensitive-search",
-      ),
-    ).not.toHaveLength(0);
-  });
+  it.each(["toLowerCase", "toUpperCase"])(
+    "rejects locale-insensitive rider search normalization via %s",
+    (method) => {
+      expect(
+        localizationMessages(
+          `function matchSearch(value) { return value.${method}(); }`,
+          "tarmoto-localization/no-locale-insensitive-search",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
 });

@@ -287,12 +287,15 @@ describe("companion indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
-  it("rejects locale-insensitive rider search normalization", () => {
-    expect(
-      localizationMessages(
-        "function applySearch(value) { const needle = value.toLowerCase(); return needle; }",
-        "tarmoto-localization/no-locale-insensitive-search",
-      ),
-    ).not.toHaveLength(0);
-  });
+  it.each(["toLowerCase", "toUpperCase"])(
+    "rejects locale-insensitive rider search normalization via %s",
+    (method) => {
+      expect(
+        localizationMessages(
+          `function applySearch(value) { const needle = value.${method}(); return needle; }`,
+          "tarmoto-localization/no-locale-insensitive-search",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
 });

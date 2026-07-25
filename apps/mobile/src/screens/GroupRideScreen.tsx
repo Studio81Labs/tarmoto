@@ -87,6 +87,11 @@ type Mode = "idle" | "active";
 
 const t = brandColorsLight;
 
+function uppercaseGroupRideCode(value: string): string {
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search -- Group ride codes are invariant six-character protocol tokens, not rider-facing language.
+  return value.toUpperCase();
+}
+
 export default function GroupRideScreen() {
   const [mode, setMode] = useState<Mode>("idle");
   const [groupRide, setGroupRide] = useState<GroupRideDetail | null>(null);
@@ -251,7 +256,7 @@ export default function GroupRideScreen() {
   }, [name]);
 
   const handleJoin = useCallback(async () => {
-    const trimmed = joinCode.trim().toUpperCase();
+    const trimmed = uppercaseGroupRideCode(joinCode.trim());
     if (trimmed.length !== 6) {
       setErrorMessage(translate("Codes are 6 characters."));
       return;
@@ -483,7 +488,7 @@ export default function GroupRideScreen() {
               placeholder={translate("ABCDEF")}
               placeholderTextColor={t.mute}
               value={joinCode}
-              onChangeText={(v) => setJoinCode(v.toUpperCase())}
+              onChangeText={(v) => setJoinCode(uppercaseGroupRideCode(v))}
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={6}

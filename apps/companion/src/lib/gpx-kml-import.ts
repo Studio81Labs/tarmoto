@@ -108,11 +108,13 @@ export function importedRouteToTrip(
   };
 
   const now = new Date().toISOString();
+  // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search -- GPX and KML are invariant protocol abbreviations, not localized words.
+  const sourceFormatLabel = route.sourceFormat.toUpperCase();
   return {
     id: `imported-${Date.now()}`,
     name: route.name,
     description: t("Imported from {format} · {distance}", {
-      format: route.sourceFormat.toUpperCase(),
+      format: sourceFormatLabel,
       distance: format.distanceKm(totalDistanceKm),
     }),
     importSourceFormat: route.sourceFormat,

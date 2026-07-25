@@ -337,6 +337,7 @@ function normalizeInvoices(
       const id = stringOr(invoice.id, `invoice-${index + 1}`);
       const date = optionalString(invoice.date);
       const amountMinor = numberOr(invoice.amount_minor, Number.NaN);
+      // eslint-disable-next-line tarmoto-localization/no-locale-insensitive-search -- ISO 4217 currency codes are invariant machine tokens required by Intl.NumberFormat.
       const currency = optionalString(invoice.currency)?.toUpperCase();
       const amountLabel =
         Number.isFinite(amountMinor) && currency

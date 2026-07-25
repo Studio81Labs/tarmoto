@@ -599,7 +599,7 @@ const noLocaleInsensitiveSearch = {
     },
     messages: {
       search:
-        "Rider-facing search and matching must use normalizeForLocaleSearch() with the active locale, not toLowerCase().",
+        "Rider-facing search and matching must use normalizeForLocaleSearch() with the active locale, not unqualified case conversion.",
     },
     schema: [],
   },
@@ -610,11 +610,13 @@ const noLocaleInsensitiveSearch = {
           node.callee.type !== "MemberExpression" ||
           node.callee.computed ||
           node.callee.property.type !== "Identifier" ||
-          node.callee.property.name !== "toLowerCase"
+          !["toLowerCase", "toUpperCase"].includes(
+            node.callee.property.name,
+          )
         ) {
           return;
         }
-        // Deliberately reject every unqualified lower-case conversion in app
+        // Deliberately reject every unqualified case conversion in app
         // production code. Search semantics cannot be inferred reliably from
         // variable/function names. Machine-token normalization is a narrow
         // exception and must carry an explicit ESLint suppression at its call
