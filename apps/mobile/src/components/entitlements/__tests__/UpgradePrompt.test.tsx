@@ -28,7 +28,7 @@ jest.mock("@/services/pushRegistration", () => ({
   unregisterPush: jest.fn(),
 }));
 
-import { render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen } from "@testing-library/react-native";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 
@@ -64,4 +64,52 @@ it("shows the neutral title when no upgrade can lift it (suppressed/override)", 
     />,
   );
   expect(screen.getByText("Limit reached")).toBeTruthy();
+});
+
+it("renders the upgrade CTA as informational-only when onUpgrade is omitted (IAP seam)", async () => {
+  await wrap(
+    <UpgradePrompt
+      visible
+      capability={{ feature: "gpx_export" }}
+      currentTier="free"
+      message="GPX export is a Pro feature."
+      onClose={() => {}}
+    />,
+  );
+  const cta = screen.getByText("Upgrade to Pro");
+  expect(cta).toBeTruthy();
+  expect(screen.getByText("Coming soon")).toBeTruthy();
+  const ctaButton = screen.getByRole("button", { name: "Upgrade to Pro" });
+  expect(ctaButton.props.accessibilityState?.disabled).toBe(true);
+});
+
+it("renders no upgrade CTA when there is no upgrade target", async () => {
+  await wrap(
+    <UpgradePrompt
+      visible
+      capability={{ feature: "gpx_export" }}
+      currentTier="free"
+      message="Owner is at the collaborator limit."
+      onClose={() => {}}
+      suppressUpgrade
+    />,
+  );
+  expect(screen.queryByText(/^Upgrade to /)).toBeNull();
+  expect(screen.getByText("Owner is at the collaborator limit.")).toBeTruthy();
+  expect(screen.getByText("Dismiss")).toBeTruthy();
+});
+
+it("calls onClose when Dismiss is pressed", async () => {
+  const onClose = jest.fn();
+  await wrap(
+    <UpgradePrompt
+      visible
+      capability={{ feature: "gpx_export" }}
+      currentTier="free"
+      message="GPX export is a Pro feature."
+      onClose={onClose}
+    />,
+  );
+  fireEvent.press(screen.getByText("Dismiss"));
+  expect(onClose).toHaveBeenCalledTimes(1);
 });

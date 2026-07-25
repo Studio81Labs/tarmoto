@@ -114,7 +114,7 @@ export function UpgradePrompt({
                   tier: tierLabel(target, translate),
                 })}
                 accessibilityState={{ disabled: !onUpgrade }}
-                onPress={onUpgrade ?? (() => {})}
+                onPress={onUpgrade}
                 disabled={!onUpgrade}
                 style={[
                   styles.primaryButton,
