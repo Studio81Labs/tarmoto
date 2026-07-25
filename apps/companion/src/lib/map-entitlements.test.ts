@@ -7,45 +7,46 @@ import {
 } from "./map-entitlements";
 
 describe("resolveQualityLayerMaxZoom", () => {
-  it("fails closed to the free cap + 1 while unresolved with no known cap (level 12 still visible)", () => {
-    // MapLibre maxzoom is exclusive → cap+1 keeps the entitled level rendering.
+  it("fails closed to the free cap while unresolved with no known cap", () => {
+    // Per the spec the limit feeds maxzoom directly (overlay stops past the
+    // cap) — free rider caps at zoom 12 while unresolved.
     expect(resolveQualityLayerMaxZoom(null, false)).toBe(
-      QUALITY_OVERLAY_FREE_CAP_ZOOM + 1,
+      QUALITY_OVERLAY_FREE_CAP_ZOOM,
     );
     expect(resolveQualityLayerMaxZoom(12, false)).toBe(
-      QUALITY_OVERLAY_FREE_CAP_ZOOM + 1,
+      QUALITY_OVERLAY_FREE_CAP_ZOOM,
     );
   });
 
   it("preserves a STRICTER known cap while unresolved (does not widen to the free cap)", () => {
     // /users/me supplied a below-free cap but /config/limits is failing (or the
     // rider is mid-hydration): keep the stricter finite value, never widen to 12.
-    expect(resolveQualityLayerMaxZoom(5, false)).toBe(6);
-    expect(resolveQualityLayerMaxZoom(0, false)).toBe(1); // cap 0 → only level 0
+    expect(resolveQualityLayerMaxZoom(5, false)).toBe(5);
+    expect(resolveQualityLayerMaxZoom(0, false)).toBe(0); // cap 0 → overlay off
   });
 
   it("does not RAISE above the free cap while unresolved even if a higher limit is known", () => {
     // A known cap above the free tier can't be trusted until fully resolved —
     // clamp to the free cap during the outage (fail closed, never widen).
     expect(resolveQualityLayerMaxZoom(20, false)).toBe(
-      QUALITY_OVERLAY_FREE_CAP_ZOOM + 1,
+      QUALITY_OVERLAY_FREE_CAP_ZOOM,
     );
   });
-  it("returns the render ceiling for a resolved unlimited cap (never hidden)", () => {
+  it("returns the source ceiling (18) for a resolved unlimited cap", () => {
     expect(resolveQualityLayerMaxZoom(null, true)).toBe(
       QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
     );
   });
-  it("returns a resolved finite cap + 1 (exclusive — the capped level stays visible)", () => {
-    expect(resolveQualityLayerMaxZoom(12, true)).toBe(13);
-    expect(resolveQualityLayerMaxZoom(14, true)).toBe(15);
+  it("feeds a resolved finite cap DIRECTLY into maxzoom (overlay stops past the cap)", () => {
+    expect(resolveQualityLayerMaxZoom(12, true)).toBe(12);
+    expect(resolveQualityLayerMaxZoom(14, true)).toBe(14);
   });
 
-  it("clamps a finite cap at/above the MapLibre ceiling (24) so maxzoom stays valid", () => {
-    // MapLibre maxzoom is [0, 24]; the admin DTO allows caps ≥ 24, so cap+1
-    // must not exceed 24.
-    expect(resolveQualityLayerMaxZoom(23, true)).toBe(24);
-    expect(resolveQualityLayerMaxZoom(24, true)).toBe(
+  it("clamps a finite cap at/above the source ceiling (18) so maxzoom stays valid", () => {
+    // Beyond the vector source's max the overlay over-zooms anyway, and the cap
+    // must stay in MapLibre's valid range even if an operator sets it very high.
+    expect(resolveQualityLayerMaxZoom(18, true)).toBe(18);
+    expect(resolveQualityLayerMaxZoom(20, true)).toBe(
       QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM,
     );
     expect(resolveQualityLayerMaxZoom(100, true)).toBe(

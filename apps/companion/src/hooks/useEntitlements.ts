@@ -99,8 +99,15 @@ export function useRoadQualityZoomCap(): {
   // `override` to `undefined`, and the authed branch below falls back to the
   // cached `userLimit` — still unlimited — leaving a signed-in free rider on an
   // active tab with unlimited detail indefinitely (anonymous viewers already
-  // clamp via /config/limits). Detecting the override CHANGE and invalidating
-  // /users/me forces the profile to re-resolve against the new operator state.
+  // clamp via /config/limits). Detecting the override CHANGE forces the profile
+  // to re-resolve against the new operator state.
+  //
+  // We `resetQueries` rather than `invalidateQueries`: invalidate keeps the
+  // stale successful snapshot (`userLimit: null`) in cache and refetches in the
+  // background, so `bothResolved` stays true and the overlay keeps rendering
+  // unlimited until the refetch settles. Reset clears the snapshot, so the
+  // profile reads UNRESOLVED during the refetch and the branches below fail
+  // closed to the free/known cap until the new value lands.
   const queryClient = useQueryClient();
   const lastOverrideRef = useRef<{ value: number | null | undefined } | null>(
     null,
@@ -110,7 +117,7 @@ export function useRoadQualityZoomCap(): {
     const prev = lastOverrideRef.current;
     lastOverrideRef.current = { value: override };
     if (prev !== null && prev.value !== override) {
-      void queryClient.invalidateQueries({
+      void queryClient.resetQueries({
         queryKey: USERS_ME_QUERY_KEY(userId),
       });
     }

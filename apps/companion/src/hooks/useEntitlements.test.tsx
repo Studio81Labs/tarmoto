@@ -352,6 +352,63 @@ describe("useRoadQualityZoomCap", () => {
     await waitFor(() => expect(result.current.limit).toBe(12));
   });
 
+  it("fails closed while /users/me refetches after the override is removed (go-live)", async () => {
+    // Removing the launch override must not keep serving the stale unlimited
+    // profile: the reset makes /users/me UNRESOLVED during its refetch, so the
+    // cap reads fail-closed (free) rather than unlimited until the new value
+    // lands.
+    authState.user = { id: "u1" };
+    sessionState.status = "authenticated";
+    let globalOverride: Record<string, number | null> = {
+      road_quality_max_zoom: null,
+    };
+    let resolveProfile: (() => void) | null = null;
+    let profileCalls = 0;
+    getMock.mockImplementation((path: string) => {
+      if (path === "/api/v1/config/limits") {
+        return Promise.resolve({ data: globalOverride, error: undefined });
+      }
+      profileCalls += 1;
+      if (profileCalls === 1) {
+        return Promise.resolve({
+          data: { ...ME, limits: { road_quality_max_zoom: null } },
+          error: undefined,
+        });
+      }
+      // The post-reset refetch hangs until we release it.
+      return new Promise((res) => {
+        resolveProfile = () =>
+          res({
+            data: { ...ME, limits: { road_quality_max_zoom: 12 } },
+            error: undefined,
+          });
+      });
+    });
+    const client = createTestQueryClient();
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(client),
+    });
+    await waitFor(() => expect(result.current.isResolved).toBe(true));
+    expect(result.current.limit).toBeNull(); // unlimited under launch
+
+    // Operator removes the launch override; the /users/me refetch hangs.
+    globalOverride = {};
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: CONFIG_LIMITS_QUERY_KEY });
+    });
+
+    // The profile was RESET, not just invalidated, so during its (hanging)
+    // refetch the cap reads unresolved — NOT the stale unlimited snapshot.
+    await waitFor(() => expect(result.current.isResolved).toBe(false));
+
+    // Completing the refetch re-resolves to the free cap.
+    await act(async () => {
+      resolveProfile?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.limit).toBe(12));
+  });
+
   it("preserves a finite global override while auth is still hydrating (does not widen to free)", async () => {
     // /config/limits already resolved a restrictive z5 override, but NextAuth is
     // still loading. The cap must reflect z5 (clamped by

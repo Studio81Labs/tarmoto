@@ -223,7 +223,7 @@ describe("MapCanvas", () => {
       for (const h of loadHandlers) h();
     });
     expect(mapStub.addLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 13 }),
+      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 12 }),
     );
   });
 
@@ -242,7 +242,7 @@ describe("MapCanvas", () => {
       for (const h of loadHandlers) h();
     });
     expect(mapStub.addLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 24 }),
+      expect.objectContaining({ id: TARMOTO_QUALITY_LAYER, maxzoom: 18 }),
     );
   });
 
@@ -266,13 +266,13 @@ describe("MapCanvas", () => {
     expect(mapStub.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "tarmoto-segment-selected-glow",
-        maxzoom: 13,
+        maxzoom: 12,
       }),
     );
     expect(mapStub.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "tarmoto-segment-selected-line",
-        maxzoom: 13,
+        maxzoom: 12,
       }),
     );
   });

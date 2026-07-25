@@ -216,9 +216,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   // — and fails closed to the free floor until it resolves.
   const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
     useRoadQualityZoomCap();
-  // MapLibre layer maxzoom is EXCLUSIVE (hidden at zoom >= maxzoom), so this is
-  // one level above the entitlement cap — a free rider still sees the overlay
-  // AT their capped level, and an unlimited rider is never hidden.
+  // Per the rollout spec the limit feeds the overlay layer's maxzoom DIRECTLY,
+  // so MapLibre stops drawing quality past the cap (free → 12, unlimited → the
+  // source ceiling 18); fails closed to the free floor until it resolves.
   const qualityMaxZoom = resolveQualityLayerMaxZoom(
     qualityZoomLimit,
     qualityZoomResolved,

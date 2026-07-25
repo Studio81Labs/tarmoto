@@ -1,20 +1,21 @@
-/** Free-tier `road_quality_max_zoom` cap — the max zoom LEVEL a free rider is
- *  entitled to see the quality overlay at (inclusive). Also the fail-closed
- *  CEILING while entitlements are unresolved — a stricter cap already known
- *  (e.g. a per-user override from a resolved `/users/me`) still wins. */
+/** Free-tier `road_quality_max_zoom` cap. Per the rollout spec the limit feeds
+ *  the overlay layer's `maxzoom` DIRECTLY, so the overlay stops past the cap —
+ *  free riders see quality up to zoom 12. Also the fail-closed ceiling while
+ *  entitlements are unresolved (a stricter known cap still wins). */
 export const QUALITY_OVERLAY_FREE_CAP_ZOOM = 12;
-/** MapLibre's practical zoom ceiling. An unlimited (pro/premium) rider's quality
- *  layers render up to here so the overlay is never hidden by the entitlement
- *  clamp (the vector source's own over-zoom handles tiles past its maxzoom). */
-export const QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM = 24;
+/** The vector source's static max zoom — the pre-entitlement overlay ceiling
+ *  and the maxzoom an UNLIMITED (pro/premium, `null`) rider gets. Also the upper
+ *  clamp for any finite operator override (beyond it the source over-zooms, so
+ *  a higher maxzoom would show no extra data). */
+export const QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM = 18;
 
 /**
- * The EXCLUSIVE MapLibre layer `maxzoom` for the quality-graded layers, from a
- * resolved `road_quality_max_zoom` limit. MapLibre hides a layer at
- * `zoom >= maxzoom`, so to keep the entitled level fully visible the layer
- * maxzoom is ONE level above the entitlement cap:
- *  - finite cap `N` (e.g. free 12) → `N + 1` (level N renders, N+1 does not),
- *  - `null` (pro/premium unlimited) → the render ceiling (never hidden),
+ * The MapLibre layer `maxzoom` for the quality-graded layers, from a resolved
+ * `road_quality_max_zoom` limit. Per the rollout spec the limit feeds `maxzoom`
+ * DIRECTLY (MapLibre stops drawing the overlay past the layer maxzoom, so the
+ * overlay stops AT the cap — no `+1`):
+ *  - finite cap `N` (e.g. free 12) → `N`, clamped to the source ceiling (18),
+ *  - `null` (pro/premium unlimited) → the source ceiling (18),
  *  - unresolved (loading / error / pre-auth) → fail closed WITHOUT widening a
  *    stricter cap we already know: clamp any finite limit already in hand (e.g.
  *    `/users/me` resolved but `/config/limits` is failing, or a signed-in rider
@@ -27,18 +28,16 @@ export function resolveQualityLayerMaxZoom(
   isResolved: boolean,
 ): number {
   if (!isResolved) {
-    const known =
-      limit === null
-        ? QUALITY_OVERLAY_FREE_CAP_ZOOM
-        : Math.min(limit, QUALITY_OVERLAY_FREE_CAP_ZOOM);
-    return Math.min(known + 1, QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM);
+    return limit === null
+      ? QUALITY_OVERLAY_FREE_CAP_ZOOM
+      : Math.min(limit, QUALITY_OVERLAY_FREE_CAP_ZOOM);
   }
-  if (limit === null) return QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM;
-  // `limit + 1` for the exclusive bound, but MapLibre `maxzoom` only accepts
-  // [0, 24] — an operator can set the cap to 24+ (the admin limit DTO allows
-  // it), so clamp to the ceiling rather than emit an invalid value that fails
-  // the map load.
-  return Math.min(limit + 1, QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM);
+  // Unlimited → the source ceiling. A finite cap feeds maxzoom directly, clamped
+  // to that ceiling (beyond it the source over-zooms; it also keeps maxzoom in
+  // MapLibre's valid range even if an operator sets the override very high).
+  return limit === null
+    ? QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM
+    : Math.min(limit, QUALITY_OVERLAY_UNLIMITED_MAX_ZOOM);
 }
 
 /**
