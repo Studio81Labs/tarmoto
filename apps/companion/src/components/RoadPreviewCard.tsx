@@ -227,7 +227,7 @@ export function RoadPreviewCard({
                     <li key={hazard.id} className="flex items-start gap-2">
                       <span aria-hidden="true">{cfg.emoji}</span>
                       <div className="flex-1">
-                        <p className="text-ink">
+                        <p className={SEVERITY_COLOR[hazard.severity]}>
                           {t("{hazard} {severity}", {
                             hazard: t(cfg.label),
                             severity: t(
