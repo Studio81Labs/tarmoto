@@ -89,6 +89,8 @@ import {
   type RegionDrawMode,
 } from "@/components/map/RegionDrawControl";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
+import { useRoadQualityZoomCap } from "@/hooks";
+import { resolveQualityLayerMaxZoom } from "@/lib/map-entitlements";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import {
   buildTripClosureRoutes,
@@ -758,6 +760,20 @@ const TripPlannerMapContent = forwardRef<
   useEffect(() => {
     onOpenSegmentDetailRef.current = onOpenSegmentDetail;
   }, [onOpenSegmentDetail]);
+  // The exclusive zoom above which the quality overlay is hidden. Waypoint
+  // snapping keeps the UNCAPPED hit layer, but tap-for-DETAIL opens the
+  // quality drawer (exact score, provenance, confidence, history), so it must
+  // respect the resolved cap — a capped rider zoomed past it must not pull the
+  // gated detail. Bounced through a ref for the once-captured click closure.
+  const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
+    useRoadQualityZoomCap();
+  const qualityMaxZoomRef = useRef(
+    resolveQualityLayerMaxZoom(qualityZoomLimit, qualityZoomResolved),
+  );
+  qualityMaxZoomRef.current = resolveQualityLayerMaxZoom(
+    qualityZoomLimit,
+    qualityZoomResolved,
+  );
   const dragEnabled = onMoveWaypoint != null;
   const [ready, setReady] = useState(false);
   // Two INDEPENDENT map toggles (design): how the route line is colored,
@@ -1297,8 +1313,13 @@ const TripPlannerMapContent = forwardRef<
       ) {
         return;
       }
-      // Query the UNCAPPED hit layer (not the entitlement-capped quality
-      // overlay) so tap-for-detail keeps working past the free zoom cap.
+      // The hit layer is UNCAPPED for waypoint snapping, but opening the detail
+      // drawer (road-QUALITY intelligence) is entitlement-gated: a capped rider
+      // zoomed past the resolved cap — where the overlay is hidden — must not
+      // pull the exact quality score/provenance/history. Below the cap it opens
+      // as before; past it, tap-for-detail is suppressed (snapping is a separate
+      // handler and stays uncapped).
+      if (map.getZoom() >= qualityMaxZoomRef.current) return;
       const overlayLayers = [
         TARMOTO_ROAD_HIT_LAYER,
         TARMOTO_SURFACE_LAYER,
@@ -1320,6 +1341,8 @@ const TripPlannerMapContent = forwardRef<
       map.on("mouseenter", overlay, () => {
         if (drawRef.current?.getMode() !== "idle") return;
         if (!onOpenSegmentDetailRef.current) return;
+        // No tap-for-detail affordance past the cap (see the click handler).
+        if (map.getZoom() >= qualityMaxZoomRef.current) return;
         map.getCanvas().style.cursor = "pointer";
       });
       map.on("mouseleave", overlay, () => {
