@@ -50,7 +50,7 @@ import {
   mergeHazardsWithInFlightWsArrivals,
 } from "@/lib/hazard-merge";
 import { useRealtimeStore } from "@/stores/realtime";
-import { haversineMeters } from "@tarmoto/shared";
+import { haversineMeters, upgradeTierForLimit } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
@@ -276,10 +276,25 @@ export const QualityMap = forwardRef<QualityMapHandle, Props>(
     // rider — fail closed, never nag in either case. The prompt threshold is
     // the RAW entitlement cap level (finite when `qualityCapFinite`), not the
     // exclusive layer maxzoom.
+    //
+    // The clamp applies to EVERYONE (via MapCanvas), but only PROMPT when an
+    // upgrade could actually raise the cap: `upgradeTierForLimit` returns null
+    // for an operator/per-user OVERRIDE (a cap that differs from the tier
+    // default) and for a rider already on the top qualifying tier. Without this
+    // gate a Pro/Premium rider under a finite override — or an anonymous viewer
+    // under an override like z5 — would hit a dead-end "Limit reached" modal
+    // whose copy wrongly claims Pro adds detail.
     const { tier } = useEntitlements();
     const { limit: qualityZoomLimit, isResolved: qualityZoomResolved } =
       useRoadQualityZoomCap();
-    const qualityCapFinite = qualityZoomResolved && qualityZoomLimit !== null;
+    const qualityCapFinite =
+      qualityZoomResolved &&
+      qualityZoomLimit !== null &&
+      upgradeTierForLimit(
+        "road_quality_max_zoom",
+        tier ?? "free",
+        qualityZoomLimit,
+      ) !== null;
     const qualityCap = qualityZoomLimit ?? 0;
     const [zoomUpgradeOpen, setZoomUpgradeOpen] = useState(false);
     const [zoomUpgradeDismissed, setZoomUpgradeDismissed] = useState(false);

@@ -223,12 +223,23 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     qualityZoomLimit,
     qualityZoomResolved,
   );
-  // The quality layer is added inside the `load` handler below, a closure
-  // captured once at map-init time — bounce the latest cap through a ref so
-  // that closure reads the current value rather than the one from first
-  // render.
-  const qualityMaxZoomRef = useRef(qualityMaxZoom);
-  qualityMaxZoomRef.current = qualityMaxZoom;
+  // A cap AT OR BELOW the layer's floor (`TARMOTO_ROADS_MIN_ZOOM`) has no valid
+  // render range — MapLibre rejects `setLayerZoomRange`/`maxzoom` where
+  // `minzoom >= maxzoom`, which would leave the previous (higher) cap active and
+  // leak quality past the low cap. Represent such caps by HIDING the
+  // quality-graded layers, using a valid placeholder maxzoom so the layers stay
+  // addable and can be restored if the cap later rises above the floor.
+  const qualityRenderable = qualityMaxZoom > TARMOTO_ROADS_MIN_ZOOM;
+  const qualityLayerMaxzoom = qualityRenderable
+    ? qualityMaxZoom
+    : TARMOTO_ROADS_MIN_ZOOM + 1;
+  // The quality layers are added inside the `load` handler below, a closure
+  // captured once at map-init time — bounce the latest values through refs so
+  // that closure reads the current cap rather than the one from first render.
+  const qualityLayerMaxzoomRef = useRef(qualityLayerMaxzoom);
+  qualityLayerMaxzoomRef.current = qualityLayerMaxzoom;
+  const qualityRenderableRef = useRef(qualityRenderable);
+  qualityRenderableRef.current = qualityRenderable;
 
   useEffect(() => {
     colorSchemeRef.current = colorScheme;
@@ -375,11 +386,12 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
-        maxzoom: qualityMaxZoomRef.current,
+        maxzoom: qualityLayerMaxzoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: showQuality ? "visible" : "none",
+          visibility:
+            showQuality && qualityRenderableRef.current ? "visible" : "none",
         },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
@@ -514,13 +526,17 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         // free rider could read a segment's quality colour past the cap by
         // selecting it. The neutral outline above stays uncapped for feedback.
         // See the runtime clamp effect below.
-        maxzoom: qualityMaxZoomRef.current,
+        maxzoom: qualityLayerMaxzoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
           // A filtered-but-visible layer still makes MapLibre fetch its source.
-          // Keep the selected-road layers hidden until a segment is selected.
-          visibility: selectedSegmentId ? "visible" : "none",
+          // Keep the selected-road layers hidden until a segment is selected
+          // (and while the cap is at/below the layer floor).
+          visibility:
+            selectedSegmentId && qualityRenderableRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
@@ -547,11 +563,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         filter: NO_SEGMENT_FILTER,
         minzoom: TARMOTO_ROADS_MIN_ZOOM,
         // Quality-graded selection highlight — same entitlement cap as above.
-        maxzoom: qualityMaxZoomRef.current,
+        maxzoom: qualityLayerMaxzoomRef.current,
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: selectedSegmentId ? "visible" : "none",
+          visibility:
+            selectedSegmentId && qualityRenderableRef.current
+              ? "visible"
+              : "none",
         },
         paint: {
           "line-color": QUALITY_LINE_COLOR,
@@ -613,12 +632,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    setVisibility(map, TARMOTO_QUALITY_LAYER, showQuality);
+    // Hide the quality overlay when the cap is at/below the layer floor — it has
+    // no valid render range, so the alternative (an invalid maxzoom) would leak.
+    setVisibility(map, TARMOTO_QUALITY_LAYER, showQuality && qualityRenderable);
     // The hit target shadows the quality overlay's ON/OFF state (but not its
-    // zoom cap) so pointer interaction is available exactly when the roads are.
+    // zoom cap) so pointer interaction is available exactly when the roads are —
+    // interaction survives the cap, so it is NOT gated on `qualityRenderable`.
     setVisibility(map, TARMOTO_ROAD_HIT_LAYER, showQuality);
     setVisibility(map, TARMOTO_SURFACE_LAYER, showSurface);
-  }, [ready, showQuality, showSurface]);
+  }, [ready, showQuality, showSurface, qualityRenderable]);
 
   // ── quality overlay maxzoom from the road_quality_max_zoom entitlement ──
   // The cap can resolve (or change, e.g. a tier upgrade) after the layers were
@@ -629,6 +651,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // A cap at/below the layer floor has no valid range; the visibility effects
+    // hide these layers instead, so skip `setLayerZoomRange` (MapLibre rejects
+    // `minzoom >= maxzoom`, which would otherwise leave the previous cap active
+    // and leak quality past the low cap).
+    if (!qualityRenderable) return;
     for (const layerId of [
       TARMOTO_QUALITY_LAYER,
       SEGMENT_SELECTED_GLOW_LAYER,
@@ -638,7 +665,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         map.setLayerZoomRange(layerId, TARMOTO_ROADS_MIN_ZOOM, qualityMaxZoom);
       }
     }
-  }, [qualityMaxZoom]);
+  }, [qualityMaxZoom, qualityRenderable]);
 
   // ── selected-segment highlight filter ──
   useEffect(() => {
@@ -647,6 +674,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     const filter: FilterSpecification = selectedSegmentId
       ? ["==", ["get", "id"], selectedSegmentId]
       : NO_SEGMENT_FILTER;
+    const selected = Boolean(selectedSegmentId);
     for (const layer of [
       SEGMENT_SELECTED_OUTLINE_LAYER,
       SEGMENT_SELECTED_GLOW_LAYER,
@@ -654,9 +682,16 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     ]) {
       if (!map.getLayer(layer)) continue;
       map.setFilter(layer, filter);
-      setVisibility(map, layer, Boolean(selectedSegmentId));
+      // The neutral OUTLINE is uncapped, so it shows whenever a segment is
+      // selected. The quality-GRADED glow/line additionally require a valid cap
+      // range — hide them when the cap is at/below the layer floor.
+      const visible =
+        layer === SEGMENT_SELECTED_OUTLINE_LAYER
+          ? selected
+          : selected && qualityRenderable;
+      setVisibility(map, layer, visible);
     }
-  }, [ready, selectedSegmentId]);
+  }, [ready, selectedSegmentId, qualityRenderable]);
 
   // ── paint updates for opacity expressions ──
   useEffect(() => {

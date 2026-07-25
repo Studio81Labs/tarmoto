@@ -465,4 +465,23 @@ describe("upgrade-tier derivation", () => {
     // Free's default is 1; a resolved cap of 0 is an override → no dead-end CTA.
     expect(upgradeTierForLimit("max_active_trips", "free", 0)).toBeNull();
   });
+
+  it("gates the road-quality zoom prompt: upgrade only when a higher tier lifts the cap", () => {
+    // road_quality_max_zoom: free=12, pro=null, premium=null. This is the exact
+    // gate QualityMap uses to decide whether to OPEN the zoom-upgrade modal (the
+    // clamp still applies to everyone regardless).
+    // Free rider at the tier-default cap → Pro lifts it → prompt.
+    expect(upgradeTierForLimit("road_quality_max_zoom", "free", 12)).toBe(
+      "pro",
+    );
+    // Anonymous/Free under an operator override (z5 ≠ free default 12) → no tier
+    // lifts it → no dead-end prompt.
+    expect(upgradeTierForLimit("road_quality_max_zoom", "free", 5)).toBeNull();
+    // Pro/Premium under a finite override → already top-of-stack for the default,
+    // and the override isn't tier-liftable → no prompt.
+    expect(upgradeTierForLimit("road_quality_max_zoom", "pro", 8)).toBeNull();
+    expect(
+      upgradeTierForLimit("road_quality_max_zoom", "premium", 12),
+    ).toBeNull();
+  });
 });
