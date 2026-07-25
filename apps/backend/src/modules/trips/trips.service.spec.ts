@@ -2402,6 +2402,54 @@ describe('TripsService', () => {
       );
     });
 
+    it('re-checks recipient membership UNDER the lock (group-link join won the race)', async () => {
+      // Pre-lock the recipient is NOT a member, but a group-link join lands
+      // before this txn takes the lock. At the cap, a naive path would 403 a
+      // now-member; below the cap it would create a double-counting invite. The
+      // in-lock recheck must preserve the already-member no-op instead.
+      featureResolver.resolveLimitsForUser.mockResolvedValue({
+        max_active_trips: null,
+        max_trip_collaborators: 1,
+      });
+      memberRepo.findOne
+        .mockResolvedValueOnce({ role: 'owner' } as TripMember) // caller
+        .mockResolvedValueOnce(null) // pre-lock recipient — not yet a member
+        .mockResolvedValueOnce({
+          // in-lock recheck — the group-link join committed first
+          trip_id: TRIP_ID,
+          user_id: OTHER_ID,
+          role: 'viewer',
+        } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce({ id: OTHER_ID, email: RECIPIENT } as User);
+      collaboratorCount = 1; // roster at the cap
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+
+      // The recheck ran under the shared lock and short-circuited to the no-op:
+      // no cap 403, no invite write, no email — just the flagged activity.
+      expect(manager.query).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip:collaborators:${TRIP_ID}`],
+      );
+      expect(inviteRepo.insert).not.toHaveBeenCalled();
+      expect(inviteRepo.update).not.toHaveBeenCalled();
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'member_invited',
+        { recipient_email_domain: 'example.com', already_member: true },
+      );
+    });
+
     it('payload only carries the email domain — local-part is dropped to limit PII in the audit log', async () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',

@@ -822,6 +822,7 @@ export class TripsService {
     // fresh code (re-acquiring the lock). What matters is that the code in the
     // email is ALWAYS the code that actually got persisted.
     const role = dto.role ?? 'editor';
+    const recipientUserId = existingUser?.id ?? null;
     // Resolve the owner's cap OUTSIDE the transaction (pool-safety — see
     // resolveCollaboratorLimit). Harmless for a re-invite, which skips the
     // check inside the txn.
@@ -829,43 +830,73 @@ export class TripsService {
       trip.owner_id,
     );
     let personalCode = '';
+    let recipientAlreadyMember: boolean;
     for (let attempt = 0; ; attempt++) {
       personalCode = generateInviteCode();
       try {
-        await this.tripRepo.manager.transaction(async (manager) => {
-          await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-            tripCollaboratorLockKey(tripId),
-          ]);
-          const inviteRepo = manager.getRepository(TripInvite);
-          const existingInvite = await inviteRepo.findOne({
-            where: { trip_id: tripId, email: dto.email },
-          });
-          if (existingInvite) {
-            await inviteRepo.update(
-              { id: existingInvite.id },
-              { role, invite_code: personalCode, invited_by: userId },
-            );
-          } else {
-            await assertWithinCollaboratorLimit(
-              manager,
-              tripId,
-              collaboratorLimit,
-            );
-            await inviteRepo.insert({
-              trip_id: tripId,
-              email: dto.email,
-              role,
-              invite_code: personalCode,
-              invited_by: userId,
+        recipientAlreadyMember = await this.tripRepo.manager.transaction(
+          async (manager) => {
+            await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+              tripCollaboratorLockKey(tripId),
+            ]);
+            // Re-check the recipient's membership UNDER the lock: a group-link
+            // join by this same registered recipient may have landed between
+            // the pre-lock check and now. Creating/refreshing an invite for a
+            // current member would 403 them at the cap and double-count them in
+            // later checks — preserve the pre-lock no-op instead.
+            if (recipientUserId) {
+              const member = await manager.getRepository(TripMember).findOne({
+                where: { trip_id: tripId, user_id: recipientUserId },
+              });
+              if (member) return true;
+            }
+            const inviteRepo = manager.getRepository(TripInvite);
+            const existingInvite = await inviteRepo.findOne({
+              where: { trip_id: tripId, email: dto.email },
             });
-          }
-        });
+            if (existingInvite) {
+              await inviteRepo.update(
+                { id: existingInvite.id },
+                { role, invite_code: personalCode, invited_by: userId },
+              );
+            } else {
+              await assertWithinCollaboratorLimit(
+                manager,
+                tripId,
+                collaboratorLimit,
+              );
+              await inviteRepo.insert({
+                trip_id: tripId,
+                email: dto.email,
+                role,
+                invite_code: personalCode,
+                invited_by: userId,
+              });
+            }
+            return false;
+          },
+        );
         break;
       } catch (err: unknown) {
         // A ForbiddenException (cap exceeded) is not a unique violation, so it
         // propagates immediately rather than looping.
         if (!isUniqueViolation(err) || attempt >= 4) throw err;
       }
+    }
+
+    if (recipientAlreadyMember) {
+      // Same no-op as the pre-lock already-member branch, but for a recipient
+      // who joined (e.g. via the group link) during this request: skip the
+      // email + invite, log, and record the flagged activity.
+      this.logger.log(
+        `Skipped trip-invite email — recipient is already a member ` +
+          `(trip=${tripId}, user=${recipientUserId})`,
+      );
+      await this.activity.recordSafe(tripId, userId, 'member_invited', {
+        recipient_email_domain: emailDomain(dto.email),
+        already_member: true,
+      });
+      return;
     }
 
     const joinUrl = this.buildInviteUrl(tripId, personalCode);
