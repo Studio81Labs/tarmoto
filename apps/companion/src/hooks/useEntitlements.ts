@@ -124,14 +124,18 @@ export function useRoadQualityZoomCap(): {
   }, [authed, globalResolved, override, userId, queryClient]);
 
   // The strictest FINITE cap already known from either source (or null if none
-  // is). Used while UNRESOLVED so hydration clamps to a known operator/user cap
-  // instead of widening to the free-tier fallback (`resolveQualityLayerMaxZoom`
-  // clamps it further to the free cap). `null`/`undefined` — unlimited / no
-  // override — are not finite caps, so they leave the value unknown.
+  // is). Used while UNRESOLVED so hydration — or a background refetch that
+  // failed but left the last-good value CACHED — clamps to the known
+  // operator/user cap instead of widening to the free-tier fallback
+  // (`resolveQualityLayerMaxZoom` clamps it further to the free cap). A finite
+  // `userLimit`/`override` is a known clamp whether or not the latest fetch
+  // succeeded, so this does NOT gate on `*Resolved`: an outage must not weaken
+  // an operator cap we already have. `null`/`undefined` — unlimited / no
+  // override / never loaded — are not finite caps, so they stay unknown.
   const knownWhileUnresolved = ((): number | null => {
     let cap: number | null = null;
-    if (userResolved && typeof userLimit === "number") cap = userLimit;
-    if (globalResolved && typeof override === "number") {
+    if (typeof userLimit === "number") cap = userLimit;
+    if (typeof override === "number") {
       cap = cap === null ? override : Math.min(cap, override);
     }
     return cap;
@@ -164,7 +168,12 @@ export function useRoadQualityZoomCap(): {
   if (status !== "unauthenticated") {
     return { limit: knownWhileUnresolved, isResolved: false };
   }
-  if (!globalResolved) return { limit: null, isResolved: false };
+  // Confirmed anonymous but the public override isn't currently resolved (never
+  // loaded, or a polling/focus refetch failed). Keep a finite cached override
+  // rather than widening to free — an outage must not weaken an operator cap.
+  if (!globalResolved) {
+    return { limit: knownWhileUnresolved, isResolved: false };
+  }
   // Confirmed anonymous: no tier → the registry free/default value, then the
   // global operator override replaces it (undefined = no override → free
   // default).

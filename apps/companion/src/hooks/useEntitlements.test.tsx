@@ -275,6 +275,44 @@ describe("useRoadQualityZoomCap", () => {
     expect(result.current.limit).toBe(12); // free-tier default
   });
 
+  it("keeps a cached finite anonymous override when a later refetch fails (outage can't widen the cap)", async () => {
+    // A z5 override loaded successfully; a later polling/focus refetch fails but
+    // the last-good value is still cached. The cap must stay at z5 rather than
+    // discard the known clamp and widen to the free z12.
+    authState.user = null;
+    sessionState.status = "unauthenticated";
+    let calls = 0;
+    getMock.mockImplementation((path: string) => {
+      if (path !== "/api/v1/config/limits") {
+        return Promise.resolve({
+          data: undefined,
+          error: { message: "no auth" },
+        });
+      }
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve({
+            data: { road_quality_max_zoom: 5 },
+            error: undefined,
+          })
+        : Promise.resolve({ data: undefined, error: { message: "down" } });
+    });
+    const client = createTestQueryClient();
+    const { result } = renderHook(() => useRoadQualityZoomCap(), {
+      wrapper: withQueryClient(client),
+    });
+    await waitFor(() => expect(result.current.limit).toBe(5));
+
+    // Force a refetch that fails; the cached z5 must survive.
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: CONFIG_LIMITS_QUERY_KEY });
+    });
+    await waitFor(() => expect(calls).toBeGreaterThan(1));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(result.current.limit).toBe(5);
+  });
+
   it("is unresolved for an anonymous viewer while the global map errors", async () => {
     authState.user = null;
     sessionState.status = "unauthenticated";
