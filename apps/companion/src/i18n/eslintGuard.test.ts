@@ -142,6 +142,24 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects translated fragments nested in inline JSX", () => {
+    expect(
+      localizationMessages(
+        'const view = <p><em><strong>{t("Updated")}</strong></em> {formattedTime}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows independently translated block children", () => {
+    expect(
+      localizationMessages(
+        'const view = <p><b className="block">{t("Title")}</b>{t("Description")}</p>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("allows independent translated atoms separated by a middle dot", () => {
     expect(
       localizationMessages(

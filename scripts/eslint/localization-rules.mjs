@@ -10,6 +10,13 @@ const INLINE_TEXT_ELEMENTS = new Set([
   "strong",
   "Text",
 ]);
+const FORMATTING_INLINE_ELEMENTS = new Set([
+  "b",
+  "em",
+  "i",
+  "strong",
+  "Text",
+]);
 const TEXT_CONTAINER_ELEMENTS = new Set([
   "a",
   "b",
@@ -74,9 +81,73 @@ function containsTranslatorCall(node) {
   return false;
 }
 
+function staticClassName(openingElement) {
+  const attribute = openingElement.attributes.find(
+    (candidate) =>
+      candidate.type === "JSXAttribute" &&
+      candidate.name.type === "JSXIdentifier" &&
+      candidate.name.name === "className",
+  );
+  const value = attribute?.value;
+  if (!value) return "";
+  if (value.type === "Literal" && typeof value.value === "string") {
+    return value.value;
+  }
+  if (value.type !== "JSXExpressionContainer") return "";
+  const expression = value.expression;
+  if (
+    expression.type === "Literal" &&
+    typeof expression.value === "string"
+  ) {
+    return expression.value;
+  }
+  if (expression.type === "TemplateLiteral") {
+    return expression.quasis.map((quasi) => quasi.value.raw).join(" ");
+  }
+  return "";
+}
+
+function hasLayoutDisplayClass(node) {
+  return (
+    node.type === "JSXElement" &&
+    /(?:^|\s)(?:[a-z0-9-]+:)*(?:block|flex|grid|inline-flex|inline-grid)(?:\s|$)/i.test(
+      staticClassName(node.openingElement),
+    )
+  );
+}
+
+function isFormattingInlineElement(node) {
+  if (node.type !== "JSXElement") return false;
+  const name = jsxElementName(node.openingElement);
+  if (!FORMATTING_INLINE_ELEMENTS.has(name)) return false;
+  // A semantic inline tag can still be deliberately promoted to a layout
+  // row/block. Its translated descendants are independent display atoms, not
+  // fragments of the parent's grammar.
+  return !hasLayoutDisplayClass(node);
+}
+
+function containsTranslatorInInlineJsx(node) {
+  if (node.type === "JSXExpressionContainer") {
+    return containsTranslatorCall(node.expression);
+  }
+  if (!isFormattingInlineElement(node)) {
+    return false;
+  }
+  return node.children.some(containsTranslatorInInlineJsx);
+}
+
+function isTranslatedChild(child) {
+  return (
+    (child.type === "JSXExpressionContainer" &&
+      containsTranslatorCall(child.expression)) ||
+    containsTranslatorInInlineJsx(child)
+  );
+}
+
 function isTextualSibling(child) {
   if (child.type === "JSXText") return child.value.trim() !== "";
   if (child.type === "JSXElement") {
+    if (hasLayoutDisplayClass(child)) return false;
     return (
       INLINE_TEXT_ELEMENTS.has(jsxElementName(child.openingElement)) &&
       child.children.some(isTextualSibling)
@@ -159,14 +230,12 @@ const noTranslatedFragments = {
         ) {
           return;
         }
-        const translatedChildren = node.children.filter(
+        const translatedChildren = node.children.filter(isTranslatedChild);
+        if (translatedChildren.length === 0) return;
+        const composedChildren = translatedChildren.filter(
           (child) =>
             child.type === "JSXExpressionContainer" &&
-            containsTranslatorCall(child.expression),
-        );
-        if (translatedChildren.length === 0) return;
-        const composedChildren = translatedChildren.filter((child) =>
-          isTranslatedComposition(child.expression),
+            isTranslatedComposition(child.expression),
         );
 
         const hasAnotherTextPart = node.children.some(

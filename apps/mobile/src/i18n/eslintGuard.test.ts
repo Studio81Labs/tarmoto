@@ -153,6 +153,15 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects translated fragments nested in inline JSX", () => {
+    expect(
+      localizationMessages(
+        'const view = <Text><Text><Text>{translate("Updated")}</Text></Text> {formattedTime}</Text>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it("rejects visible numeric JSX text", () => {
     expect(
       localizationMessages(
