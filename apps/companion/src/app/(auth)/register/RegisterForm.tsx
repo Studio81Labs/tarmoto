@@ -119,7 +119,6 @@ export function RegisterForm({
               ? `/login?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
               : "/login"
           }
-          aria-label={t("Sign in")}
           className="font-semibold text-ink hover:text-accent hover:underline"
         >
           {t("Already have an account? Sign in")}

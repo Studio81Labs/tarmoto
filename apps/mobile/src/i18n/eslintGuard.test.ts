@@ -150,6 +150,24 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects styled translated fragments inside JSX fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <><Text style={styles.bold}>{translate("Updated")}</Text> {formattedTime}</>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows fragments that group independent translated Text blocks", () => {
+    expect(
+      localizationMessages(
+        'const view = <><Text>{translate("Title")}</Text><Text>{translate("Description")}</Text></>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
   it.each([
     'const view = <Text>{translate("Updated") + formattedTime}</Text>;',
     'const view = <Text>{`${translate("Updated")} ${formattedTime}`}</Text>;',

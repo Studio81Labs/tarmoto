@@ -458,25 +458,47 @@ function translatedFragmentsInGroup(children) {
   return translatedChildren;
 }
 
-function directTranslatedFragmentsInGroup(children) {
+function fragmentTranslatedFragmentsInGroup(children) {
+  const isUnambiguouslyInlineElement = (child) =>
+    isFormattingInlineElement(child) &&
+    jsxElementName(child.openingElement) !== "Text";
   const translatedChildren = children.filter(
     (child) =>
-      child.type === "JSXExpressionContainer" &&
-      !containsJsx(child.expression) &&
-      containsTranslatorCall(child.expression),
+      (child.type === "JSXExpressionContainer" &&
+        !containsJsx(child.expression) &&
+        containsTranslatorCall(child.expression)) ||
+      containsTranslatorInInlineJsx(child),
   );
   if (translatedChildren.length === 0) return [];
-  const composedChildren = translatedChildren.filter((child) =>
-    isTranslatedComposition(child.expression),
-  );
-  const hasAnotherTextPart = children.some(
+  const composedChildren = translatedChildren.filter(
     (child) =>
-      !translatedChildren.includes(child) && isTextualSibling(child),
+      child.type === "JSXExpressionContainer" &&
+      isTranslatedComposition(child.expression),
   );
+  const hasAnotherDirectTextPart = children.some(
+    (child) =>
+      !translatedChildren.includes(child) &&
+      isTextualSibling(child) &&
+      (child.type !== "JSXElement" ||
+        isUnambiguouslyInlineElement(child)),
+  );
+  const directTranslatedChildren = translatedChildren.filter(
+    (child) => child.type === "JSXExpressionContainer",
+  );
+  const translatedInlineChildren = translatedChildren.filter(
+    isUnambiguouslyInlineElement,
+  );
+  // A fragment may group independent formatted elements (especially sibling
+  // React Native <Text> blocks), so nested translated elements alone are not
+  // enough to prove one sentence is being assembled. They do become
+  // fragments when combined with another rendered text part, while multiple
+  // direct translated expressions retain the existing fragment behavior.
   if (
     composedChildren.length === 0 &&
-    !hasAnotherTextPart &&
-    translatedChildren.length === 1
+    !hasAnotherDirectTextPart &&
+    directTranslatedChildren.length +
+      translatedInlineChildren.length <=
+      1
   ) {
     return [];
   }
@@ -526,11 +548,12 @@ const noTranslatedFragments = {
       },
       JSXFragment(node) {
         // A fragment commonly groups independent React Native `<Text>` blocks.
-        // Validate its direct rendered expressions, while named text elements
-        // remain covered by their own JSXElement visits.
+        // Inspect inline formatting recursively when it participates in a
+        // larger text run, while leaving independent named blocks to their own
+        // JSXElement visits.
         reportTranslatedFragments(
           node.children,
-          directTranslatedFragmentsInGroup,
+          fragmentTranslatedFragmentsInGroup,
         );
       },
       JSXAttribute(node) {

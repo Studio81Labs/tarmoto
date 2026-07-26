@@ -83,7 +83,7 @@ describe("auth pages social sign-in", () => {
   it("forwards the callbackUrl from /login to /register so an invitee doesn't lose their invite when they sign up", async () => {
     // Regression for the Codex P2 finding on PR #489: an unauthenticated
     // /trips/join/... visitor lands on /login?callbackUrl=/trips/join/...
-    // and the "Create one" link must carry the same callbackUrl so the
+    // and the registration link must carry the same callbackUrl so the
     // post-signup redirect lands on the invite acceptance page rather
     // than the home page.
     searchParamValues = new URLSearchParams({
@@ -93,7 +93,7 @@ describe("auth pages social sign-in", () => {
     render(<LoginPage />);
 
     const createLink = await screen.findByRole("link", {
-      name: "Create one",
+      name: "Don't have an account? Create one",
     });
     expect(createLink).toHaveAttribute(
       "href",
@@ -107,7 +107,7 @@ describe("auth pages social sign-in", () => {
     render(<LoginPage />);
 
     const createLink = await screen.findByRole("link", {
-      name: "Create one",
+      name: "Don't have an account? Create one",
     });
     expect(createLink).toHaveAttribute("href", "/register");
   });
@@ -119,7 +119,9 @@ describe("auth pages social sign-in", () => {
 
     render(<RegisterPage />);
 
-    const signInLink = await screen.findByRole("link", { name: "Sign in" });
+    const signInLink = await screen.findByRole("link", {
+      name: "Already have an account? Sign in",
+    });
     expect(signInLink).toHaveAttribute(
       "href",
       "/login?callbackUrl=%2Ftrips%2Fjoin%2Fabc-123%2FXYZTOKEN",

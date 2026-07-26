@@ -128,7 +128,6 @@ export function LoginForm({
               ? `/register?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
               : "/register"
           }
-          aria-label={t("Create one")}
           className="font-semibold text-ink hover:text-accent hover:underline"
         >
           {t("Don't have an account? Create one")}
