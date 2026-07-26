@@ -130,6 +130,15 @@ describe("companion indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it("rejects sentences assembled inside JSX fragments", () => {
+    expect(
+      localizationMessages(
+        'const view = <>{t("Updated")} {formattedTime}</>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
   it.each(["div", "li", "td"])(
     "rejects translated fragments in generic <%s> text containers",
     (element) => {

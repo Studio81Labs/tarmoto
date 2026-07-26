@@ -69,6 +69,7 @@ import {
   type RegionalLeaderboards,
   type SeasonalChallenge,
 } from "@/lib/gamification";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 import {
   fetchGamificationSnapshot,
   fetchProgression,
@@ -845,10 +846,13 @@ function ChallengeCard({
       <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-line pt-3 text-[11px] text-fg-mute">
         <span>
           {challenge.reward && (
-            <>
-              {t("Reward ·")}
-              <span className="font-bold text-ink">{challenge.reward}</span>
-            </>
+            <LocalizedStyledValue
+              t={t}
+              messageKey="Reward · {reward}"
+              valueName="reward"
+              formattedValue={challenge.reward}
+              className="font-bold text-ink"
+            />
           )}
         </span>
         {meta && (

@@ -458,6 +458,31 @@ function translatedFragmentsInGroup(children) {
   return translatedChildren;
 }
 
+function directTranslatedFragmentsInGroup(children) {
+  const translatedChildren = children.filter(
+    (child) =>
+      child.type === "JSXExpressionContainer" &&
+      !containsJsx(child.expression) &&
+      containsTranslatorCall(child.expression),
+  );
+  if (translatedChildren.length === 0) return [];
+  const composedChildren = translatedChildren.filter((child) =>
+    isTranslatedComposition(child.expression),
+  );
+  const hasAnotherTextPart = children.some(
+    (child) =>
+      !translatedChildren.includes(child) && isTextualSibling(child),
+  );
+  if (
+    composedChildren.length === 0 &&
+    !hasAnotherTextPart &&
+    translatedChildren.length === 1
+  ) {
+    return [];
+  }
+  return translatedChildren;
+}
+
 const noTranslatedFragments = {
   meta: {
     type: "problem",
@@ -472,6 +497,21 @@ const noTranslatedFragments = {
     schema: [],
   },
   create(context) {
+    const reportTranslatedFragments = (
+      children,
+      fragmentsInGroup = translatedFragmentsInGroup,
+    ) => {
+      // Compact metric/status rows may contain independent atoms separated
+      // by a middle dot, bullet, or em dash. Validate each atom on its own
+      // so a separator cannot hide grammatical fragments on either side.
+      const fragments = separatorDelimitedChildGroups(children).flatMap(
+        fragmentsInGroup,
+      );
+      for (const child of fragments) {
+        context.report({ node: child, messageId: "fragment" });
+      }
+    };
+
     return {
       JSXElement(node) {
         if (
@@ -482,15 +522,16 @@ const noTranslatedFragments = {
         ) {
           return;
         }
-        // Compact metric/status rows may contain independent atoms separated
-        // by a middle dot, bullet, or em dash. Validate each atom on its own
-        // so a separator cannot hide grammatical fragments on either side.
-        const fragments = separatorDelimitedChildGroups(
+        reportTranslatedFragments(node.children);
+      },
+      JSXFragment(node) {
+        // A fragment commonly groups independent React Native `<Text>` blocks.
+        // Validate its direct rendered expressions, while named text elements
+        // remain covered by their own JSXElement visits.
+        reportTranslatedFragments(
           node.children,
-        ).flatMap(translatedFragmentsInGroup);
-        for (const child of fragments) {
-          context.report({ node: child, messageId: "fragment" });
-        }
+          directTranslatedFragmentsInGroup,
+        );
       },
       JSXAttribute(node) {
         if (

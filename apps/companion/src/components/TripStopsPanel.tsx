@@ -17,6 +17,7 @@ import type { RouteStop } from "@/lib/planner/types";
 import type { Trip } from "@/lib/types";
 import { useTripStore } from "@/stores/trip";
 import { useFormat } from "@/format/FormatProvider";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 const CORRIDOR_OPTIONS = [5, 10, 20] as const;
 /** Route-change re-queries are debounced; filter changes apply fast. */
@@ -319,12 +320,13 @@ export function TripStopsPanel({
       <div>
         <Select
           label={
-            <>
-              {t("Minimum stay rating")}
-              <span className="text-fg-faint">
-                {t("(biker hotels & campgrounds)")}
-              </span>
-            </>
+            <LocalizedStyledValue
+              t={t}
+              messageKey="Minimum stay rating {details}"
+              valueName="details"
+              formattedValue={t("(biker hotels & campgrounds)")}
+              className="text-fg-faint"
+            />
           }
           value={minStayRating != null ? String(minStayRating) : ""}
           onChange={(value) =>
