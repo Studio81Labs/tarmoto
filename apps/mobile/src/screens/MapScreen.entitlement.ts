@@ -3,12 +3,119 @@
  * Extracted so the clamp + visibility logic is unit-testable without
  * rendering the full screen (native MapLibre modules, sockets, stores).
  */
+import { useEffect, useState } from "react";
 import { useLimit } from "@/hooks/useEntitlements";
+import { useAuthStore } from "@/stores";
+import { api } from "@/services/api";
+import { hasBootstrapSettled } from "@/services/authBootstrap";
 import {
   clampQualityMaxZoom,
+  resolveLimit,
   upgradeTierForLimit,
+  type GlobalLimitOverrides,
   type SubscriptionTier,
 } from "@tarmoto/shared";
+
+const ROAD_QUALITY_MAX_ZOOM = "road_quality_max_zoom";
+
+// The public `/config/limits` map, cached at module scope so a MapScreen
+// remount (tab switch) serves the last-known value instantly while a fresh
+// fetch revalidates in the background — offline-first, no spinner. `null` until
+// the first successful fetch.
+let cachedGlobalLimits: GlobalLimitOverrides | null = null;
+
+/** Test-only reset for the module-level global-limits cache. */
+export function __resetGlobalLimitsCacheForTest(): void {
+  cachedGlobalLimits = null;
+}
+
+/**
+ * The operator's global override for `road_quality_max_zoom` from the PUBLIC
+ * `/config/limits` map (no auth — resolves for signed-out riders). `override`:
+ * `undefined` = key ABSENT (no override → resolve normally); `null` = explicit
+ * unlimited; a number = an explicit cap. `isResolved` is true once a fetch has
+ * succeeded (serving the module cache across remounts). Best-effort: a failed /
+ * pending fetch with no cache stays unresolved so callers fail closed.
+ */
+function useGlobalQualityZoomOverride(enabled: boolean): {
+  override: number | null | undefined;
+  isResolved: boolean;
+} {
+  const [map, setMap] = useState<GlobalLimitOverrides | null>(
+    cachedGlobalLimits,
+  );
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    // Serve the cache immediately (set above); revalidate in the background so
+    // an operator activating/tightening the cap lands on the next map open
+    // without a reload. A failure keeps the last-known cache (or stays
+    // unresolved if none), never widening the cap on an outage.
+    void api
+      .getConfigLimits()
+      .then((next) => {
+        cachedGlobalLimits = next;
+        if (!cancelled) setMap(next);
+      })
+      .catch(() => {
+        // Fail closed / retain last-known — the next mount retries.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  if (!map) return { override: undefined, isResolved: false };
+  const override = Object.hasOwn(map, ROAD_QUALITY_MAX_ZOOM)
+    ? (map[ROAD_QUALITY_MAX_ZOOM] ?? null)
+    : undefined;
+  return { override, isResolved: true };
+}
+
+/**
+ * The resolved `road_quality_max_zoom` cap for BOTH authenticated riders and
+ * signed-out map users (the map tab + the backend quality tiles are both
+ * public, so anonymous riders are real). Authenticated → the `/users/me`
+ * snapshot (which already folds in the operator's global override server-side).
+ * Confirmed anonymous → resolve from scratch against the PUBLIC `/config/limits`
+ * override: the free-tier default replaced by the operator override. That keeps
+ * the launch-mode `NULL` seed UNLIMITED (dark) for signed-out riders instead of
+ * fail-closing them to the free cap, and post-launch an anonymous rider
+ * resolves to the free-tier cap like any free user.
+ */
+export function useRoadQualityZoomCap(): {
+  limit: number | null;
+  isResolved: boolean;
+} {
+  const user = useAuthStore((s) => s.user);
+  const authed = user != null;
+  // A signed-in rider mid cold-start hydration transiently has `user == null`;
+  // resolving the anonymous cap then could render ABOVE their per-user override
+  // until `/users/me` lands. Only a SETTLED bootstrap with no user is a
+  // confirmed anonymous session (see `hasBootstrapSettled`).
+  const confirmedAnonymous = !authed && hasBootstrapSettled();
+
+  const { limit: userLimit, isResolved: userResolved } = useLimit(
+    ROAD_QUALITY_MAX_ZOOM,
+  );
+  const { override, isResolved: globalResolved } =
+    useGlobalQualityZoomOverride(confirmedAnonymous);
+
+  if (authed) {
+    return { limit: userLimit, isResolved: userResolved };
+  }
+  // Not a confirmed-anonymous session yet (pre-auth hydration) → fail closed.
+  if (!confirmedAnonymous || !globalResolved) {
+    return { limit: null, isResolved: false };
+  }
+  // Confirmed anonymous: no tier → registry free/default, then the operator
+  // global override replaces it (`undefined` = no override → free default).
+  return {
+    limit: resolveLimit(ROAD_QUALITY_MAX_ZOOM, null, undefined, override),
+    isResolved: true,
+  };
+}
 
 // The road-tile source's real max zoom: the backend serves real quality MVT
 // tiles up to z22 with no internal cap (`RoadTileParamsDto` `@Max(22)` in
@@ -33,7 +140,7 @@ export function useQualityLayerMaxZoom(): {
   maxzoom: number;
   visible: boolean;
 } {
-  const { limit, isResolved } = useLimit("road_quality_max_zoom");
+  const { limit, isResolved } = useRoadQualityZoomCap();
   const maxzoom = clampQualityMaxZoom(
     limit,
     isResolved,

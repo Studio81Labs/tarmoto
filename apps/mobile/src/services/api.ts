@@ -17,6 +17,7 @@
 
 import type {
   CalibrationPayload,
+  GlobalLimitOverrides,
   NotificationPreferences,
   RideTagEvent,
 } from "@tarmoto/shared";
@@ -1349,6 +1350,17 @@ class ApiService {
       passes.push(...page);
       if (page.length < pageSize) return passes;
     }
+  }
+
+  /**
+   * The PUBLIC global limit-override map (`GET /config/limits`, no auth). Only
+   * operator overrides appear; a missing key means the limit resolves normally.
+   * The launch-mode source for anonymous surfaces (the road-quality overlay for
+   * signed-out riders), where the auth-scoped `/users/me` snapshot never lands.
+   */
+  async getConfigLimits(): Promise<GlobalLimitOverrides> {
+    const result = await client.GET("/api/v1/config/limits");
+    return unwrap(result);
   }
 
   async checkRouteForPasses(

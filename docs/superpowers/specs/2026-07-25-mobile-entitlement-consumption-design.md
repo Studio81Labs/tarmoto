@@ -19,7 +19,7 @@ Entitlement gating is **not** started on mobile, but the data and plumbing are p
 - Transport: same generated `@tarmoto/openapi-client` (`openapi-fetch`) + `Schemas[]` aliases (`src/types/index.ts`) as the web app. Errors surface as `ApiError` (`src/services/api.ts:117`) with `.status` and `.body`.
 - `@tarmoto/shared` entitlement helpers (`isFeatureEnabled`, `getFeatureLimit`, `upgradeTierForFeature`, `upgradeTierForLimit`, `FEATURE_LIMIT_EXCEEDED`) are importable, currently unused.
 - Typed i18n exists (`src/i18n/`, `useTranslation()`, `translate()`, `EnglishMessageKey`, `src/i18n/locales/en.ts`); an ESLint guard requires user-facing strings go through `t()`.
-- Mobile is **always authenticated** — there is no anonymous/`/config/limits` path, so none of the companion's anonymous-resolution / react-query freshness lattice is needed. `authBootstrap` refresh is the freshness mechanism.
+- Authenticated riders resolve entitlements from the `authBootstrap`-refreshed `/users/me` snapshot (no react-query needed). **Correction (PR #1086):** the map tab is NOT auth-gated and the backend quality tiles are public, so signed-out riders ARE real map users. The road-quality overlay therefore mirrors the companion's anonymous path — a confirmed-anonymous rider (settled bootstrap, no user) resolves `road_quality_max_zoom` from the public `GET /config/limits` global-override map (`useRoadQualityZoomCap` in `MapScreen.entitlement.ts`), so the dark-launch `NULL` seed renders unlimited (z22) for them and a post-launch anonymous rider clamps to the free cap. Other gates (GPX) stay authed-only.
 
 ### Gateable surfaces (all exist, ungated)
 
@@ -108,7 +108,7 @@ export function useLimit(key: LimitFeatureKey): {
 
 - `useFeature` → `features ? isFeatureEnabled(features, key) : false`, `isResolved = features != null`.
 - `useLimit` → `limits ? getFeatureLimit(limits, key) : null` (missing-key falls back to the shared restrictive default per `getFeatureLimit`), `isResolved = limits != null`.
-- **Fail closed** on `!isResolved` (rare — only the pre-login window, where these screens aren't reachable). Simpler than companion because there is no disabled-query / error / anonymous tri-state: the store either has a user (resolved) or the app is logged out.
+- **Fail closed** on `!isResolved`. For the authed gates the store either has a user (resolved) or is mid-hydration/logged out (fail closed). The road-quality overlay additionally has the anonymous path above (PR #1086): a confirmed-anonymous rider resolves via `/config/limits`, failing closed to the free cap while that fetch is pending/failed (offline).
 
 Plus `src/lib/entitlements.ts`:
 

@@ -1,6 +1,21 @@
-import { act, renderHook } from "@testing-library/react-native";
+import { act, renderHook, waitFor } from "@testing-library/react-native";
+
+const mockGetConfigLimits = jest.fn();
+jest.mock("@/services/api", () => ({
+  api: { getConfigLimits: () => mockGetConfigLimits() },
+}));
+
+// Confirmed-anonymous requires a SETTLED bootstrap; default false so the
+// existing logged-out test keeps failing closed, flipped true for the
+// anonymous cases below.
+const mockHasBootstrapSettled = jest.fn(() => false);
+jest.mock("@/services/authBootstrap", () => ({
+  hasBootstrapSettled: () => mockHasBootstrapSettled(),
+}));
+
 import { useAuthStore } from "@/stores";
 import {
+  __resetGlobalLimitsCacheForTest,
   shouldShowQualityUpgradePrompt,
   useQualityLayerMaxZoom,
 } from "../MapScreen.entitlement";
@@ -15,6 +30,12 @@ const baseUser = {
     max_trip_collaborators: 0,
   },
 };
+
+beforeEach(() => {
+  __resetGlobalLimitsCacheForTest();
+  mockGetConfigLimits.mockReset().mockResolvedValue({});
+  mockHasBootstrapSettled.mockReturnValue(false);
+});
 
 afterEach(() => useAuthStore.setState({ user: null }));
 
@@ -42,6 +63,38 @@ it("fails closed to the free cap when logged out / unresolved", async () => {
   const { result } = await renderHook(() => useQualityLayerMaxZoom());
   expect(result.current.maxzoom).toBe(12);
   expect(result.current.visible).toBe(true);
+});
+
+describe("confirmed-anonymous rider (public /config/limits)", () => {
+  beforeEach(() => mockHasBootstrapSettled.mockReturnValue(true));
+
+  it("renders to the ceiling under the dark-launch unlimited override (null)", async () => {
+    // limit_states seeds road_quality_max_zoom = NULL (unlimited) at launch.
+    mockGetConfigLimits.mockResolvedValue({ road_quality_max_zoom: null });
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(result.current.maxzoom).toBe(22));
+  });
+
+  it("applies a finite operator override as a cap", async () => {
+    mockGetConfigLimits.mockResolvedValue({ road_quality_max_zoom: 14 });
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(result.current.maxzoom).toBe(14));
+  });
+
+  it("falls back to the free cap when the override is absent (post go-live)", async () => {
+    // No key → no override → an anonymous rider resolves to the free default.
+    mockGetConfigLimits.mockResolvedValue({});
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalled());
+    expect(result.current.maxzoom).toBe(12);
+  });
+
+  it("fails closed to the free cap while /config/limits is unresolved (offline)", async () => {
+    mockGetConfigLimits.mockRejectedValue(new Error("offline"));
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalled());
+    expect(result.current.maxzoom).toBe(12);
+  });
 });
 
 it("hides the overlay when an operator override clamps the cap to 0", async () => {
