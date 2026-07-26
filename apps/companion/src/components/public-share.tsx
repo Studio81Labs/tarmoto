@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { Card, Mono, TarmotoMark } from "@tarmoto/ui";
 import type { Formatters } from "@tarmoto/shared";
+import { splitCompactMetricDuration } from "@/format/metricTile";
 import type { Translate } from "@/i18n";
 import type { RoutePreview } from "@/lib/ride-detail";
 
@@ -347,22 +348,6 @@ export function ShareCtaLink({
  * the large value style and the second complete measurement uses the compact
  * suffix style. This remains safe for both "4h 12m" and "saa 4 dak 12".
  */
-export function splitDuration(
-  min: number | null,
-  format: Formatters,
-):
-  | { value: string; unit?: never; unitPosition?: never }
-  | { value: string; unit: string; unitPosition: "after" } {
-  if (min == null) return { value: "—" };
-  const total = Math.max(0, Math.round(min));
-  const hours = Math.floor(total / 60);
-  const minutes = total % 60;
-  if (hours === 0 || minutes === 0) {
-    return { value: format.durationCompact(total) };
-  }
-  return {
-    value: format.durationCompact(hours * 60),
-    unit: format.durationCompact(minutes),
-    unitPosition: "after",
-  };
+export function splitDuration(min: number | null, format: Formatters) {
+  return splitCompactMetricDuration(min, format);
 }

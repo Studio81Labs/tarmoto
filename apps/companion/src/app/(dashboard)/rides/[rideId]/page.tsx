@@ -30,6 +30,7 @@ import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
+import { splitRideDetailDuration } from "./ride-detail-format";
 import {
   formatSplitValueUnit,
   kmToMiles,
@@ -225,7 +226,7 @@ export default function RideDetailPage() {
   // metric speed/elevation. The format seam already reads the account's
   // unit preference, so there's no separate `unitSystem` store read here.
   const distance = format.splitDistanceKm(ride.distance_km ?? 0);
-  const duration = splitDuration(ride.duration_min, format);
+  const duration = splitRideDetailDuration(ride.duration_min, format);
   const avgSpeed = format.splitSpeed(ride.avg_speed ?? 0);
   const topSpeed = format.splitSpeed(ride.max_speed ?? 0);
   const ascent = format.splitElevation(ride.elevation_gain ?? 0);
@@ -254,7 +255,7 @@ export default function RideDetailPage() {
       variant: "ink",
       accentNumber: true,
     },
-    { label: t("Duration"), value: duration.value },
+    { label: t("Duration"), ...duration },
     {
       label: t("Avg speed"),
       value: ride.avg_speed != null ? avgSpeed.value : "—",
@@ -835,14 +836,6 @@ function RoadSegments({
       }
     />
   );
-}
-
-/** Duration split into a big value + small unit for the MetricTile. */
-function splitDuration(
-  min: number | null,
-  format: Formatters,
-): { value: string } {
-  return { value: min == null ? "—" : format.durationCompact(min) };
 }
 
 /**
