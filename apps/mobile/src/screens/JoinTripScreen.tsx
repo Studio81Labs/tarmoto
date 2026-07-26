@@ -38,7 +38,6 @@ import {
 import { api } from "@/services/api";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { getUserFacingErrorMessage, t as translate } from "@/i18n";
-import { isFeatureLimitError } from "@/lib/entitlements";
 
 type JoinRoute = RouteProp<TripsStackParamList, "TripJoin">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "TripJoin">;
@@ -78,13 +77,14 @@ export default function JoinTripScreen() {
       // back target should be the list, not this form.
       navigation.replace("TripDetail", { tripId: trimmedId });
     } catch (err) {
-      // The trip owner's max_trip_collaborators cap is enforced
-      // server-side on join and is invisible to the joiner, so there's no
-      // proactive gate — just a friendlier message on the resulting 403.
-      const message = isFeatureLimitError(err)
-        ? translate("The trip owner has reached their collaborator limit.")
-        : getUserFacingErrorMessage(err, translate("Unable to join trip"));
-      setErrorMessage(message);
+      // This endpoint consumes an already-reserved personal invite — the
+      // owner's max_trip_collaborators cap is enforced when the invite is
+      // CREATED (or on the public share-link join), never here, so there's no
+      // FEATURE_LIMIT_EXCEEDED to special-case. A bad/revoked code is a plain
+      // 403 "Invalid trip or invite code".
+      setErrorMessage(
+        getUserFacingErrorMessage(err, translate("Unable to join trip")),
+      );
     } finally {
       setSubmitting(false);
     }

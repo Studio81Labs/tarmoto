@@ -1013,8 +1013,6 @@ export const en = {
     "The route generator hasn't produced any days for this trip. Pull to refresh, or go back and try different parameters.",
   "The trip doesn't include this day. It may have been regenerated with a different number of days.":
     "The trip doesn't include this day. It may have been regenerated with a different number of days.",
-  "The trip owner has reached their collaborator limit.":
-    "The trip owner has reached their collaborator limit.",
   "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.":
     "These contacts get alerted with your location if Tarmoto detects a crash and you don't cancel within 30 seconds.",
   "These passes are likely closed when you ride. Plan a detour or check local conditions before departing.":
