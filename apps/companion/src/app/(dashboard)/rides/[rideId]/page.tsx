@@ -567,6 +567,7 @@ export default function RideDetailPage() {
                       style: "unit",
                       unit: "liter",
                       unitDisplay: "narrow",
+                      minimumFractionDigits: ride.fuel_estimate_l === 0 ? 0 : 1,
                       maximumFractionDigits: 1,
                     })
                   : "—"

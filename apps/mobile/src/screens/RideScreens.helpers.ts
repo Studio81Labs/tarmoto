@@ -115,6 +115,7 @@ export function formatFuelLiters(liters: number | null | undefined): string {
     style: "unit",
     unit: "liter",
     unitDisplay: "narrow",
+    minimumFractionDigits: value === 0 ? 0 : 1,
     maximumFractionDigits: value === 0 ? 0 : 1,
   });
 }

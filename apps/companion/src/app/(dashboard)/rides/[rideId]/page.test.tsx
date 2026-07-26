@@ -175,6 +175,17 @@ describe("RideDetailPage", () => {
     expect(screen.getByText("Forest Run")).toBeInTheDocument();
   });
 
+  it("keeps one decimal for a positive integer fuel estimate", async () => {
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({ fuel_estimate_l: 4 }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    render(<RideDetailPage />);
+
+    expect(await screen.findByText("4.0L")).toBeInTheDocument();
+  });
+
   it("renames the ride via PATCH and reflects the new name", async () => {
     vi.mocked(api.GET).mockResolvedValueOnce({
       data: ride({ name: null }),

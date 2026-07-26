@@ -920,6 +920,7 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
             style: "unit",
             unit: "liter",
             unitDisplay: "narrow",
+            minimumFractionDigits: stats.fuel_estimate_l === 0 ? 0 : 1,
             maximumFractionDigits: 1,
           })}
           deltaValue={stats.fuel_estimate_l - prev.fuel_estimate_l}
