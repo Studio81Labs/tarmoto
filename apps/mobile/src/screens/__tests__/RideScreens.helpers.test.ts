@@ -136,9 +136,9 @@ describe("formatLeanAngle", () => {
 
 describe("formatFuelLiters", () => {
   it("renders one decimal liter", () => {
-    expect(formatFuelLiters(4.234)).toBe("4.2 L");
-    expect(formatFuelLiters(0)).toBe("0 L");
-    expect(formatFuelLiters(Number.NaN)).toBe("0 L");
+    expect(formatFuelLiters(4.234)).toBe("4.2L");
+    expect(formatFuelLiters(0)).toBe("0L");
+    expect(formatFuelLiters(Number.NaN)).toBe("0L");
   });
 });
 

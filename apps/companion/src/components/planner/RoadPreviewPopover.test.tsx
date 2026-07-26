@@ -104,9 +104,9 @@ describe("RoadPreviewPopover", () => {
     // 4.2 km ≈ 2.6 mi — the scale endpoints must convert together with the
     // micro-segment tooltips; a raw "KM" label under mile tooltips would
     // make the chart internally inconsistent.
-    expect(screen.getByText("2.6 MI")).toBeInTheDocument();
-    expect(screen.getByText("0 MI")).toBeInTheDocument();
-    expect(screen.queryByText("4.2 KM")).not.toBeInTheDocument();
+    expect(screen.getByText("2.6 mi")).toBeInTheDocument();
+    expect(screen.getByText("0 mi")).toBeInTheDocument();
+    expect(screen.queryByText("4.2 km")).not.toBeInTheDocument();
     // The heading converts together with the strip — no "4.2 km" title
     // above a miles-labeled chart.
     expect(screen.getByText("Day 1 section · 2.6 mi")).toBeInTheDocument();

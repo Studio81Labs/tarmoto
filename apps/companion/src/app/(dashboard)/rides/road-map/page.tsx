@@ -643,6 +643,7 @@ function RoadMapPageInner() {
             label={t("All-time distance")}
             value={allTimeDistance.value}
             unit={allTimeDistance.unit}
+            unitPosition={allTimeDistance.unitPosition}
           />
 
           {/* 3 + 4 — Coverage/exploration cards: region coverage and the

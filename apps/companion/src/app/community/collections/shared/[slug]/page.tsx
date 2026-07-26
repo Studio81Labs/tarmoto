@@ -90,7 +90,6 @@ export default async function SharedCollectionPage({
   // value with a hardcoded "KM" label would mislabel a miles figure for an
   // imperial viewer (this anonymous share page has no unit toggle of its
   // own, but the viewer's resolved unit preference still applies).
-  const totalDistance = format.splitDistanceKm(totalKm);
 
   return (
     <div className="flex min-h-screen flex-col bg-cream text-ink">
@@ -185,7 +184,7 @@ export default async function SharedCollectionPage({
           <Stamp>{t("Routes")}</Stamp>
           {routes.length > 0 && (
             <Mono className="text-[11px] text-fg-mute">
-              {totalDistance.value} {format.unitLabel("distance")}
+              {format.distanceKm(totalKm)}
             </Mono>
           )}
         </div>

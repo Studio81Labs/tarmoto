@@ -1145,9 +1145,8 @@ function TripCard({
             {distance !== null && (
               <span>
                 <span className="font-bold text-ink">
-                  {format.splitDistanceKm(distance).value}
-                </span>{" "}
-                {format.unitLabel("distance")}
+                  {format.distanceKm(distance)}
+                </span>
               </span>
             )}
             <span>

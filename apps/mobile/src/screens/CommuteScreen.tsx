@@ -916,7 +916,12 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
         />
         <TrendCell
           label={translate("Fuel est.")}
-          value={`${getFormatters().decimal(stats.fuel_estimate_l, 1)} L`}
+          value={getFormatters().number(stats.fuel_estimate_l, {
+            style: "unit",
+            unit: "liter",
+            unitDisplay: "narrow",
+            maximumFractionDigits: 1,
+          })}
           deltaValue={stats.fuel_estimate_l - prev.fuel_estimate_l}
           deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
           neutral

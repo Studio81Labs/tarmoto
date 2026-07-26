@@ -5,6 +5,14 @@ import { MetricTile, type MetricTileProps } from "../MetricTile";
 const invalidNumericProps: MetricTileProps = { label: "Rides", value: 1234 };
 void invalidNumericProps;
 
+// @ts-expect-error Separately rendered units must carry their locale position.
+const invalidUnitProps: MetricTileProps = {
+  label: "Distance",
+  value: "12.5",
+  unit: "km",
+};
+void invalidUnitProps;
+
 test("formats numeric values only through the supplied regional formatter", () => {
   const formatValue = vi.fn(() => "1.234");
 

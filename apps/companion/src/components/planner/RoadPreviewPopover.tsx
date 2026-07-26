@@ -368,14 +368,13 @@ export function RoadPreviewPopover({
                       micro-segment tooltips above (which convert for
                       imperial riders) — derive both from one split call. */}
                   {(() => {
-                    const scaleEnd = format.splitDistanceKm(segment.lengthKm);
                     return (
                       <div className="mt-1.5 flex justify-between">
                         <Mono className="text-[9px] text-fg-mute">
-                          {format.integer(0)} {format.unitLabel("distance")}
+                          {format.distanceKm(0)}
                         </Mono>
                         <Mono className="text-[9px] text-fg-mute">
-                          {scaleEnd.value} {format.unitLabel("distance")}
+                          {format.distanceKm(segment.lengthKm)}
                         </Mono>
                       </div>
                     );

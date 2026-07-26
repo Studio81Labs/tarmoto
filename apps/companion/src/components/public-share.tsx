@@ -341,17 +341,16 @@ export function ShareCtaLink({
   );
 }
 
-/** Split a duration (minutes) into a big value + small unit for a MetricTile. */
+/**
+ * Format a duration for a MetricTile without splitting its localized unit
+ * sequence. A value such as "4h 12m" contains two measurements and locales
+ * may place either unit before its number, so treating the text after the
+ * first ASCII space as one trailing unit is not safe.
+ */
 export function splitDuration(
   min: number | null,
   format: Formatters,
-): {
-  value: string;
-  unit?: string;
-} {
+): { value: string } {
   if (min == null) return { value: "—" };
-  const compact = format.durationCompact(min); // "4h 12m" or "52m"
-  const space = compact.indexOf(" ");
-  if (space < 0) return { value: compact };
-  return { value: compact.slice(0, space), unit: compact.slice(space + 1) };
+  return { value: format.durationCompact(min) };
 }

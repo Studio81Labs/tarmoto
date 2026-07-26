@@ -79,13 +79,13 @@ describe("formatElevationRange", () => {
 
   it("rounds and formats min–max", () => {
     expect(formatElevationRange([412.3, 550.7, 488.1], metric)).toBe(
-      "412 – 551 m",
+      "412 – 551\u00a0m",
     );
   });
 
   it("converts the elevation range for imperial riders", () => {
     expect(formatElevationRange([412.3, 550.7, 488.1], imperial)).toBe(
-      "1,353 – 1,807 ft",
+      "1,353 – 1,807\u00a0ft",
     );
   });
 });

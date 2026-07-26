@@ -1,6 +1,6 @@
 import type { RoutePreviewSegment } from "@/lib/types";
 import type { EnglishMessageKey } from "@/i18n";
-import type { Formatters } from "@tarmoto/shared";
+import { formatSplitValueUnitRange, type Formatters } from "@tarmoto/shared";
 
 /**
  * Build the `d` attribute of an SVG path for a sparkline rendered inside the
@@ -79,7 +79,7 @@ export function formatElevationRange(
   if (!ext) return "—";
   const min = format.splitElevation(ext.min);
   const max = format.splitElevation(ext.max);
-  return `${min.value} – ${max.value} ${max.unit}`;
+  return formatSplitValueUnitRange(min, max);
 }
 
 export function segmentHazardSeverity(

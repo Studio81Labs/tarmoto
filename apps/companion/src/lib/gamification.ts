@@ -20,6 +20,7 @@ import {
   isBadgeKey,
   isChallengeContentKey,
   isChallengeRewardKey,
+  formatSplitValueUnitRange,
   type BadgeKey,
   type ChallengeContentKey,
   type ChallengeRewardKey,
@@ -274,11 +275,7 @@ export function formatMilestoneLabel(
     }
     const current = format.splitDistanceKm(progress.current);
     const target = format.splitDistanceKm(progress.nextThreshold);
-    return t("{current} / {target} {unit}", {
-      current: current.value,
-      target: target.value,
-      unit: target.unit,
-    });
+    return formatSplitValueUnitRange(current, target, " / ");
   }
   const unit = t(MILESTONE_UNITS[metric]);
   if (progress.nextThreshold === null) {

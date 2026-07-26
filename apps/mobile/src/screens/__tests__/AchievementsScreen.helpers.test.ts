@@ -380,7 +380,7 @@ describe("formatChallengeProgress", () => {
 
   it("keeps 1 decimal for floats", () => {
     expect(formatChallengeProgress(12.4, 50, "total_distance")).toBe(
-      "12.4 / 50 km",
+      "12.4 / 50\u00a0km",
     );
   });
 
@@ -392,15 +392,15 @@ describe("formatChallengeProgress", () => {
     });
 
     expect(formatChallengeProgress(100, 200, "total_distance")).toBe(
-      "62.1 / 124.3 mi",
+      "62.1 / 124.3\u00a0mi",
     );
     expect(formatChallengeProgress(100, 200, "total_km")).toBe(
-      "62.1 / 124.3 mi",
+      "62.1 / 124.3\u00a0mi",
     );
     expect(metricUnit("total_distance")).toBe("mi");
     expect(metricUnit("total_km")).toBe("mi");
-    expect(formatChallengeMetric(200, "total_distance")).toBe("124.3 mi");
-    expect(formatChallengeMetric(200, "total_km")).toBe("124.3 mi");
+    expect(formatChallengeMetric(200, "total_distance")).toBe("124.3\u00a0mi");
+    expect(formatChallengeMetric(200, "total_km")).toBe("124.3\u00a0mi");
   });
 
   it("uses the cataloged generic unit for unknown metrics", () => {

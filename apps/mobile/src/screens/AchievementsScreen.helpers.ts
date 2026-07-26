@@ -20,6 +20,8 @@ import {
   isBadgeKey,
   isChallengeContentKey,
   isDistanceChallengeMetric,
+  formatSplitValueUnit,
+  formatSplitValueUnitRange,
   type BadgeKey,
   type ChallengeContentKey,
 } from "@tarmoto/shared";
@@ -392,11 +394,7 @@ export function formatChallengeProgress(
     const format = getFormatters();
     const currentDistance = format.splitDistanceKm(progress);
     const targetDistance = format.splitDistanceKm(target);
-    return translate("{progress} / {target} {unit}", {
-      progress: currentDistance.value,
-      target: targetDistance.value,
-      unit: targetDistance.unit || currentDistance.unit,
-    });
+    return formatSplitValueUnitRange(currentDistance, targetDistance, " / ");
   }
   const isWhole = Number.isInteger(progress) && Number.isInteger(target);
   const unit = metricUnit(metric);
@@ -413,10 +411,7 @@ export function formatChallengeProgress(
 export function formatChallengeMetric(value: number, metric: string): string {
   if (isDistanceChallengeMetric(metric)) {
     const distance = getFormatters().splitDistanceKm(value);
-    return translate("{value0} {value1}", {
-      value0: distance.value,
-      value1: distance.unit,
-    });
+    return formatSplitValueUnit(distance);
   }
   const formatted = Number.isInteger(value)
     ? getFormatters().integer(value)

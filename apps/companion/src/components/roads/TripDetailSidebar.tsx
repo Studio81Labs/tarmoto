@@ -161,7 +161,8 @@ function TripBody({ trip }: { trip: TripDetail }) {
     {
       label: t("Elevation"),
       value: elevationM > 0 ? elevation.value : "—",
-      ...(elevationM > 0 ? { unit: elevation.unit } : {}),
+      unit: elevationM > 0 ? elevation.unit : "",
+      unitPosition: elevation.unitPosition,
       accentNumber: true,
     },
   ];

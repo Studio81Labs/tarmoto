@@ -30,7 +30,11 @@ import { useFormat } from "@/format/FormatProvider";
 import { useDelayedLoading } from "@/hooks/useDelayedLoading";
 import { rideTypeLabel, scoreToQualityTier } from "@/lib/utils";
 import { buildSpeedProfile, formatNumber } from "@/lib/ride-detail";
-import { kmToMiles, type Formatters } from "@tarmoto/shared";
+import {
+  formatSplitValueUnit,
+  kmToMiles,
+  type Formatters,
+} from "@tarmoto/shared";
 import { downloadRideExport } from "@/lib/ride-export";
 import { RideExportMenu } from "../_components/RideExportMenu";
 import { RideRouteMap } from "../_components/RideRouteMap";
@@ -246,19 +250,22 @@ export default function RideDetailPage() {
       label: t("Distance"),
       value: ride.distance_km != null ? distance.value : "—",
       unit: distance.unit,
+      unitPosition: distance.unitPosition,
       variant: "ink",
       accentNumber: true,
     },
-    { label: t("Duration"), value: duration.value, unit: duration.unit },
+    { label: t("Duration"), value: duration.value },
     {
       label: t("Avg speed"),
       value: ride.avg_speed != null ? avgSpeed.value : "—",
       unit: speedUnit,
+      unitPosition: avgSpeed.unitPosition,
     },
     {
       label: t("Top speed"),
       value: ride.max_speed != null ? topSpeed.value : "—",
       unit: speedUnit,
+      unitPosition: topSpeed.unitPosition,
     },
     {
       label: t("Max lean"),
@@ -276,6 +283,7 @@ export default function RideDetailPage() {
       label: t("Ascent"),
       value: ride.elevation_gain != null ? ascent.value : "—",
       unit: ascent.unit,
+      unitPosition: ascent.unitPosition,
       accentNumber: true,
     },
   ];
@@ -456,7 +464,10 @@ export default function RideDetailPage() {
             label={t("Total ascent")}
             value={
               ride.elevation_gain != null
-                ? `+${ascent.value} ${ascent.unit}`
+                ? formatSplitValueUnit({
+                    ...ascent,
+                    value: `+${ascent.value}`,
+                  })
                 : "—"
             }
           />
@@ -464,7 +475,10 @@ export default function RideDetailPage() {
             label={t("Total descent")}
             value={
               ride.elevation_loss != null
-                ? `−${descent.value} ${descent.unit}`
+                ? formatSplitValueUnit({
+                    ...descent,
+                    value: `−${descent.value}`,
+                  })
                 : "—"
             }
           />
@@ -472,7 +486,10 @@ export default function RideDetailPage() {
             label={t("Net change")}
             value={
               netElevation != null
-                ? `${netElevationM! >= 0 ? "+" : "−"}${netElevation.value} ${netElevation.unit}`
+                ? formatSplitValueUnit({
+                    ...netElevation,
+                    value: `${netElevationM! >= 0 ? "+" : "−"}${netElevation.value}`,
+                  })
                 : "—"
             }
           />
@@ -545,7 +562,12 @@ export default function RideDetailPage() {
               label={t("Fuel estimate")}
               value={
                 ride.fuel_estimate_l != null
-                  ? `${formatNumber(ride.fuel_estimate_l, 1, format)} L`
+                  ? format.number(ride.fuel_estimate_l, {
+                      style: "unit",
+                      unit: "liter",
+                      unitDisplay: "narrow",
+                      maximumFractionDigits: 1,
+                    })
                   : "—"
               }
             />
@@ -553,7 +575,7 @@ export default function RideDetailPage() {
               label={t("Elev. descent")}
               value={
                 ride.elevation_loss != null
-                  ? `${descent.value} ${descent.unit}`
+                  ? formatSplitValueUnit(descent)
                   : "—"
               }
             />
@@ -819,12 +841,8 @@ function RoadSegments({
 function splitDuration(
   min: number | null,
   format: Formatters,
-): { value: string; unit: string } {
-  if (min == null) return { value: "—", unit: "" };
-  const compact = format.durationCompact(min); // "4h 12m" or "52m"
-  const space = compact.indexOf(" ");
-  if (space < 0) return { value: compact, unit: "" };
-  return { value: compact.slice(0, space), unit: compact.slice(space + 1) };
+): { value: string } {
+  return { value: min == null ? "—" : format.durationCompact(min) };
 }
 
 /**

@@ -1890,12 +1890,9 @@ function describeActivityAction(
         ? t("changed a rider's role to editor")
         : t("changed a rider's role to viewer");
     default:
-      // A backend release can introduce a new action before the
-      // companion rolls out; keep the sentence structure translatable while
-      // preserving a readable form of the unknown action for the rider.
-      return t("performed {action}", {
-        action: String(entry.action).replace(/_/g, " "),
-      });
+      // Backend releases can introduce an action before this catalog ships.
+      // Never expose that wire token as English-looking rider copy.
+      return t("performed an activity that this app version cannot describe");
   }
 }
 type DayBucket = "today" | "yesterday" | "earlier";

@@ -49,6 +49,7 @@ import {
   computeAllTimeTotals,
   computeCalendarHeatmap,
   computeDistanceSeries,
+  formatDistanceChartValue,
   computeQualityTrend,
   computeYearOverYear,
   computeYearlyTotals,
@@ -247,7 +248,6 @@ export default function StatsPage() {
   // mi. `value` is the converted distance the bars/axis/tooltip read. The
   // format seam already reads the account's unit preference, so `format.units`
   // replaces a separate `unitSystem` store read.
-  const distanceUnit = format.units === "imperial" ? "mi" : "km";
   const toDisplayDistance = (km: number) =>
     format.units === "imperial" ? kmToMiles(km) : km;
   const chartData = series.map((point) => ({
@@ -258,10 +258,11 @@ export default function StatsPage() {
   // "Last 12 months" / windowed chart and its total stay in agreement.
   const seriesTotalKm = series.reduce((acc, p) => acc + p.distanceKm, 0);
   const chartTotal = format.splitDistanceKm(seriesTotalKm);
+  const distanceUnit = chartTotal.unit;
   const distanceTooltip = (value: TooltipValueType | undefined) => {
     const n =
       typeof value === "number" ? value : Number.parseFloat(String(value));
-    return Number.isFinite(n) ? `${format.integer(n)} ${distanceUnit}` : "—";
+    return Number.isFinite(n) ? formatDistanceChartValue(n, format) : "—";
   };
   // YoY values are km on the wire; convert each year's series to the display
   // unit so the chart, axis and tooltip match the unit-aware KPIs/table.
@@ -272,10 +273,7 @@ export default function StatsPage() {
     }
     return next;
   });
-  const formatDistance = (km: number) => {
-    const d = format.splitDistanceKm(km);
-    return `${d.value} ${d.unit}`;
-  };
+  const formatDistance = (km: number) => format.distanceKm(km);
   const yearColumns: DataTableColumn<YearlyTotal>[] = [
     {
       key: "year",

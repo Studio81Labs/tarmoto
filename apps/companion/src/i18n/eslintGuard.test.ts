@@ -81,6 +81,8 @@ describe("companion indirect display-copy lint guard", () => {
     "const view = t('{season}', { season });",
     "const view = t('{status}', { status });",
     "const view = translate('{status}', { status: trip.status });",
+    "const view = t('performed {action}', { action: entry.action });",
+    "const view = t('entered {state}', { state });",
   ])("rejects raw semantic display fallbacks: %s", (source) => {
     expect(guardMessages(source)).not.toHaveLength(0);
   });

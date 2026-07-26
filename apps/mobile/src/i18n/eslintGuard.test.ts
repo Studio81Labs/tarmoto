@@ -72,6 +72,8 @@ describe("mobile indirect display-copy lint guard", () => {
     "const view = translate('{season}', { season });",
     "const view = translate('{status}', { status });",
     "const view = t('{status}', { status: trip.status });",
+    "const view = translate('performed {action}', { action: entry.action });",
+    "const view = translate('entered {state}', { state });",
   ])("rejects raw semantic display fallbacks: %s", (source) => {
     expect(guardMessages(source)).not.toHaveLength(0);
   });
