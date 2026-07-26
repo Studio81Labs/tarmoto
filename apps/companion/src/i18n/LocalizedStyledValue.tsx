@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { EnglishMessageKey, Translate, TranslationValues } from ".";
 
 const STYLED_VALUE_TOKEN = "\uE000";
@@ -26,8 +27,8 @@ export function LocalizedStyledValue({
     ...values,
     [valueName]: STYLED_VALUE_TOKEN,
   });
-  const valueIndex = taggedMessage.indexOf(STYLED_VALUE_TOKEN);
-  if (valueIndex < 0) {
+  const messageParts = taggedMessage.split(STYLED_VALUE_TOKEN);
+  if (messageParts.length === 1) {
     return (
       <>
         {t(messageKey, {
@@ -37,21 +38,20 @@ export function LocalizedStyledValue({
       </>
     );
   }
-  const beforeValue = taggedMessage.slice(0, valueIndex);
-  const afterValue = taggedMessage.slice(
-    valueIndex + STYLED_VALUE_TOKEN.length,
-  );
-  const styledValue =
-    as === "b" ? (
-      <b className={className}>{formattedValue}</b>
-    ) : (
-      <span className={className}>{formattedValue}</span>
-    );
+
   return (
     <>
-      {beforeValue}
-      {styledValue}
-      {afterValue}
+      {messageParts.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 &&
+            (as === "b" ? (
+              <b className={className}>{formattedValue}</b>
+            ) : (
+              <span className={className}>{formattedValue}</span>
+            ))}
+          {part}
+        </Fragment>
+      ))}
     </>
   );
 }
