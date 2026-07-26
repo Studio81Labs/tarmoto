@@ -287,6 +287,23 @@ export function setAuthenticatedUserId(userId: string): void {
 }
 
 /**
+ * Runtime shape guard for the /auth/refresh body — the `openapi-fetch` types
+ * don't validate at runtime, and a 2xx with empty/missing/mistyped tokens would
+ * otherwise persist an unusable session. Requires BOTH tokens to be non-empty
+ * strings (a rotated pair always carries both).
+ */
+function isValidAuthResponse(value: unknown): value is AuthResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const { access_token, refresh_token } = value as Record<string, unknown>;
+  return (
+    typeof access_token === "string" &&
+    access_token.length > 0 &&
+    typeof refresh_token === "string" &&
+    refresh_token.length > 0
+  );
+}
+
+/**
  * Imperative refresh — POSTs the stored refresh token to /auth/refresh
  * via raw fetch (bypassing the typed-client middleware so the call
  * itself can't loop). Persists new tokens on success, clears them on
@@ -330,13 +347,23 @@ async function refreshAccessToken(): Promise<string | null> {
       // has been persisted yet, so a parse failure is like an unusable
       // rejection: clear the still-current session (a concurrent login is
       // protected by the guard) rather than retaining and retrying a broken one.
-      let auth: AuthResponse;
+      let parsed: unknown;
       try {
-        auth = (await res.json()) as AuthResponse;
+        parsed = await res.json();
       } catch {
         if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
         return null;
       }
+      // A syntactically valid body can still be contract-invalid — e.g. empty or
+      // missing token fields. The `as AuthResponse` cast does NO runtime check,
+      // and persisting empty credentials would replace a usable session with an
+      // unusable one. Validate BOTH tokens are non-empty strings before touching
+      // storage; otherwise treat it as a rejection and invalidate.
+      if (!isValidAuthResponse(parsed)) {
+        if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+        return null;
+      }
+      const auth = parsed;
       // Login, registration, or logout may have replaced the session while
       // this refresh was in flight. Never let an old response overwrite (or
       // later clear) the newer rider's credentials.

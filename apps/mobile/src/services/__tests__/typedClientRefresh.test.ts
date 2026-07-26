@@ -174,6 +174,28 @@ describe("typed client token refresh", () => {
     expect(values.get("user_id")).toBeUndefined();
   });
 
+  it.each([
+    ["empty token strings", { access_token: "", refresh_token: "" }],
+    ["missing token fields", { user: { id: "account-a" } }],
+    ["wrongly-typed tokens", { access_token: 123, refresh_token: true }],
+  ])(
+    "clears the session on a contract-invalid 2xx body (%s)",
+    async (_label, body) => {
+      const storage = mockCreateMemoryStorage({
+        access_token: "account-a-access",
+        refresh_token: "account-a-refresh",
+        user_id: "account-a",
+      });
+      __setAuthStorageForTest(storage);
+      jest.spyOn(global, "fetch").mockResolvedValue(refreshResponse(body));
+
+      await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+      // Empty/invalid credentials must NOT replace the usable session.
+      expect(storage.getString("access_token")).toBeUndefined();
+      expect(storage.getString("refresh_token")).toBeUndefined();
+    },
+  );
+
   it("clears the current session's tokens on a genuine rejection (!res.ok)", async () => {
     const storage = mockCreateMemoryStorage({
       access_token: "account-a-access",
