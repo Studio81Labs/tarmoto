@@ -17,7 +17,6 @@ import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
 import { t as translate, type EnglishMessageKey, type Translate } from "@/i18n";
-import { getActiveLocale } from "@/i18n";
 import { getFormatters } from "@/format";
 import {
   localeSearchIncludes,
@@ -110,7 +109,7 @@ const HAZARD_COPY: Record<
 export function matchHazardTypeFromText(
   query: string,
   translateCopy: Translate = translate,
-  locale: string = getActiveLocale(),
+  locale: string = getFormatters().locale,
 ): HazardType | null {
   const normalized = normalizeForLocaleSearch(query, locale);
   if (!normalized) return null;
@@ -148,7 +147,7 @@ export function matchHazardTypeFromText(
 export function buildHazardSearchItems(
   query: string,
   translateCopy: Translate = translate,
-  locale: string = getActiveLocale(),
+  locale: string = getFormatters().locale,
 ): HazardSearchItem[] {
   const normalized = normalizeForLocaleSearch(query, locale);
   if (!normalized) {

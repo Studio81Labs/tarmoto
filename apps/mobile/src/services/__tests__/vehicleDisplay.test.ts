@@ -1,4 +1,6 @@
 import type { LatLng, HazardType } from "@/types";
+import { setActiveFormatContext } from "@/format";
+import { setActiveLocale } from "@/i18n";
 import {
   VehicleDisplayController,
   buildHazardSearchItems,
@@ -111,6 +113,12 @@ describe("VehicleDisplayController", () => {
   let controller: VehicleDisplayController;
 
   beforeEach(() => {
+    setActiveLocale("en");
+    setActiveFormatContext({
+      locale: "en",
+      timeZone: "UTC",
+      units: "metric",
+    });
     bridge = new FakeBridge();
     reports = [];
     controller = new VehicleDisplayController({
@@ -190,6 +198,29 @@ describe("VehicleDisplayController", () => {
       {
         location: { lat: 49.55, lng: 18.15 },
         type: "pothole",
+      },
+    ]);
+  });
+
+  it("uses the regional locale when matching a spoken hazard query", async () => {
+    setActiveFormatContext({
+      locale: "tr",
+      timeZone: "Europe/Istanbul",
+      units: "metric",
+    });
+    controller.sync(makeSnapshot());
+    controller.handleSearchTextChange("İCY");
+
+    const ok = await controller.submitSearchQuery("İCY");
+
+    expect(bridge.updateSearch).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "ice" }),
+    ]);
+    expect(ok).toBe(true);
+    expect(reports).toEqual([
+      {
+        location: { lat: 49.55, lng: 18.15 },
+        type: "ice",
       },
     ]);
   });
