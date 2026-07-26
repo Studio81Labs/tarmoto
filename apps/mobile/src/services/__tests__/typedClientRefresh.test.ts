@@ -102,6 +102,39 @@ describe("typed client token refresh", () => {
     expect(storage.getString("user_id")).toBe("account-b");
   });
 
+  it("keeps the current session's tokens when the refresh request fails transiently (offline)", async () => {
+    const storage = mockCreateMemoryStorage({
+      access_token: "account-a-access",
+      refresh_token: "account-a-refresh",
+      user_id: "account-a",
+    });
+    __setAuthStorageForTest(storage);
+    jest.spyOn(global, "fetch").mockRejectedValue(new Error("network down"));
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    // A dead-zone blip must NOT sign the rider out — the session survives so a
+    // later request retries once connectivity returns.
+    expect(storage.getString("access_token")).toBe("account-a-access");
+    expect(storage.getString("refresh_token")).toBe("account-a-refresh");
+    expect(storage.getString("user_id")).toBe("account-a");
+  });
+
+  it("clears the current session's tokens on a genuine rejection (!res.ok)", async () => {
+    const storage = mockCreateMemoryStorage({
+      access_token: "account-a-access",
+      refresh_token: "account-a-refresh",
+      user_id: "account-a",
+    });
+    __setAuthStorageForTest(storage);
+    jest.spyOn(global, "fetch").mockResolvedValue(refreshResponse({}, false));
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    // A rejected refresh token IS a real sign-out.
+    expect(storage.getString("access_token")).toBeUndefined();
+    expect(storage.getString("refresh_token")).toBeUndefined();
+    expect(storage.getString("user_id")).toBeUndefined();
+  });
+
   it("does not clear a replacement session when the old refresh fails", async () => {
     const storage = mockCreateMemoryStorage({
       access_token: "account-a-access",

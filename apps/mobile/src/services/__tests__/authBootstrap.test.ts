@@ -11,7 +11,6 @@ describe("bootstrapAuth", () => {
     await bootstrapAuth({
       getSessionSnapshot: () => null,
       getCachedProfile: () => null,
-      getCurrentUser: () => null,
       getProfile: jest.fn(),
       cacheProfile: jest.fn(),
       setUser,
@@ -31,7 +30,6 @@ describe("bootstrapAuth", () => {
         userId: fresh.id,
       }),
       getCachedProfile: () => cached,
-      getCurrentUser: () => null,
       getProfile: async () => fresh,
       cacheProfile,
       setUser,
@@ -51,7 +49,6 @@ describe("bootstrapAuth", () => {
         userId: cached.id,
       }),
       getCachedProfile: () => cached,
-      getCurrentUser: () => null,
       getProfile: async () => {
         throw new Error("offline");
       },
@@ -71,7 +68,6 @@ describe("bootstrapAuth", () => {
       getSessionSnapshot: () =>
         authenticated ? { accessToken: "token", userId: "cached" } : null,
       getCachedProfile: () => user("cached"),
-      getCurrentUser: () => null,
       getProfile: async () => {
         authenticated = false;
         throw new Error("unauthorized");
@@ -95,7 +91,6 @@ describe("bootstrapAuth", () => {
     const bootstrap = bootstrapAuth({
       getSessionSnapshot: () => session,
       getCachedProfile: () => null,
-      getCurrentUser: () => null,
       getProfile: () =>
         new Promise<User>((resolve) => {
           resolveProfile = resolve;
@@ -121,11 +116,7 @@ describe("bootstrapAuth", () => {
     const stale = { id: "u1", subscription_tier: "premium" } as User;
     const fresh = { id: "u1", subscription_tier: "free" } as User;
     const session = { accessToken: "token", userId: "u1" };
-
-    let stored: User | null = null;
-    const setUser = jest.fn((u: User | null) => {
-      stored = u;
-    });
+    const setUser = jest.fn();
 
     let resolveStale!: (u: User) => void;
     const stalePending = new Promise<User>((r) => (resolveStale = r));
@@ -135,7 +126,6 @@ describe("bootstrapAuth", () => {
     const deps = (getProfile: () => Promise<User>) => ({
       getSessionSnapshot: () => session,
       getCachedProfile: () => null,
-      getCurrentUser: () => stored,
       getProfile,
       cacheProfile: jest.fn(),
       setUser,
@@ -159,10 +149,7 @@ describe("bootstrapAuth", () => {
     // the generation), then bootstrap resolves BEFORE that refresh settles —
     // superseded, but the store is empty, so bootstrap must still publish.
     const session = { accessToken: "token", userId: "u1" };
-    let stored: User | null = null;
-    const setUser = jest.fn((u: User | null) => {
-      stored = u;
-    });
+    const setUser = jest.fn();
     const cacheProfile = jest.fn();
 
     let resolveBootstrap!: (u: User) => void;
@@ -171,7 +158,6 @@ describe("bootstrapAuth", () => {
     const bootDone = bootstrapAuth({
       getSessionSnapshot: () => session,
       getCachedProfile: () => null,
-      getCurrentUser: () => stored,
       getProfile: () => bootstrapProfile,
       cacheProfile,
       setUser,
@@ -186,7 +172,7 @@ describe("bootstrapAuth", () => {
     const refreshDone = refreshEntitlements({
       getSessionSnapshot: () => session,
       getProfile: () => refreshPending,
-      getCurrentUser: () => stored,
+      getCurrentUser: () => null,
       setUser,
       cacheProfile: jest.fn(),
     });
@@ -288,7 +274,6 @@ describe("refreshEntitlements", () => {
     const bootDone = bootstrapAuth({
       getSessionSnapshot: () => session,
       getCachedProfile: () => null,
-      getCurrentUser: () => null,
       getProfile: () => bootstrapProfile,
       cacheProfile,
       setUser,
@@ -387,6 +372,45 @@ describe("refreshEntitlements", () => {
     resolveFresh(profileResponse({ subscription_tier: "free" }));
     await bDone;
     resolveStale(profileResponse({ subscription_tier: "premium" }));
+    await aDone;
+
+    expect(setUser).toHaveBeenCalledTimes(1);
+    expect((setUser.mock.calls[0][0] as User).subscription_tier).toBe("free");
+  });
+
+  it("publishes an earlier success when the newer overlapping refresh fails (non-empty store)", async () => {
+    // Store already holds a permissive cached snapshot. A (older) fetches the
+    // downgrade; B (newer) supersedes A then FAILS. A's downgrade must still
+    // win — a failed superseder can't strand a valid server response.
+    const cached = profileResponse({ subscription_tier: "premium" });
+    const setUser = jest.fn();
+    const cacheProfile = jest.fn();
+
+    let resolveA!: (u: User) => void;
+    const aPending = new Promise<User>((r) => (resolveA = r));
+    let rejectB!: (e: unknown) => void;
+    const bPending = new Promise<User>((_res, rej) => {
+      rejectB = rej;
+    });
+
+    const aDone = refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: () => aPending,
+      getCurrentUser: () => cached,
+      setUser,
+      cacheProfile,
+    });
+    const bDone = refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: () => bPending,
+      getCurrentUser: () => cached,
+      setUser,
+      cacheProfile: jest.fn(),
+    });
+
+    rejectB(new Error("offline")); // newer refresh fails first
+    await bDone;
+    resolveA(profileResponse({ subscription_tier: "free" })); // older succeeds
     await aDone;
 
     expect(setUser).toHaveBeenCalledTimes(1);

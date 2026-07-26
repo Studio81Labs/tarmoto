@@ -114,7 +114,6 @@ export default function App() {
       getSessionSnapshot: () => api.getAuthSessionSnapshot(),
       getCachedProfile: () => api.getCachedProfile(),
       getProfile: () => api.getProfile(),
-      getCurrentUser: () => useAuthStore.getState().user,
       cacheProfile: (user) => api.cacheProfile(user),
       setUser,
       setLoading,

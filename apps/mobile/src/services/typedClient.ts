@@ -241,8 +241,9 @@ export function clearTokens(): void {
   storage.remove(USER_ID_KEY);
   storage.remove(CACHED_USER_KEY);
   // #279 / #501 — every token-invalidation path (logout, refresh
-  // 4xx, refresh fetch failure / timeout) must also wipe the
-  // cached privacy preferences. Otherwise a different rider
+  // 4xx) must also wipe the cached privacy preferences. (A refresh
+  // network failure / timeout is transient and no longer clears —
+  // see the refresh catch.) Otherwise a different rider
   // signing in on the same device after a silent session
   // invalidation would keep reading the previous rider's
   // `road_data_contribution` until the fire-and-forget refresh
@@ -322,11 +323,12 @@ async function refreshAccessToken(): Promise<string | null> {
       storeTokens(auth);
       return auth.access_token;
     } catch {
-      // Refresh timed out OR network failure — either way the user's
-      // session can't be salvaged here; clear tokens so subsequent
-      // requests fail fast instead of looping. A concurrently replaced
-      // session is still valid and must remain untouched.
-      if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+      // Transient failure (timeout OR network) — NOT an auth rejection. Keep the
+      // stored tokens so an offline rider (a dead zone) stays signed in; the
+      // next request retries once connectivity returns. Clearing here would sign
+      // them out for a blip and, because the entitlements monitor gates on
+      // `isAuthenticated()`, silently stop refreshing too. Only a genuine
+      // rejection (the `!res.ok` branch above) clears the session.
       return null;
     } finally {
       handle.dispose();

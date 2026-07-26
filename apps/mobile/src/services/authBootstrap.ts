@@ -9,8 +9,6 @@ export interface AuthBootstrapDependencies {
   getSessionSnapshot: () => AuthSessionSnapshot | null;
   getCachedProfile: () => User | null;
   getProfile: () => Promise<User>;
-  /** The profile CURRENTLY in the auth store, read at publish time. */
-  getCurrentUser: () => User | null;
   cacheProfile: (user: User) => void;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
@@ -36,36 +34,38 @@ export function isCurrentAuthSession(
   return current.accessToken === initial.accessToken;
 }
 
-// Monotonic generation stamp shared by both `/users/me` publishers here — the
-// cold-start `bootstrapAuth` and the foreground `refreshEntitlements`. When two
-// overlap (a foreground while a prior GET is still in flight), their responses
-// can resolve out of order; without an ordering guard an older, slow response
-// would overwrite a newer downgrade / force-off snapshot and restore
-// client-only access until the next successful refresh. Each call captures the
-// generation it bumped to and refuses to CLOBBER an existing user once a later
-// call has bumped past it: only the latest-STARTED refresh reaches an already
-// populated store. The one exception — shared by both publishers — is an EMPTY
-// store: supersession protects a fresher snapshot from an older one, and an
-// empty store has nothing to protect, so a superseded-but-validated response
-// still establishes the baseline (checked via `getCurrentUser()` at publish
-// time, so it is correct regardless of which request resolves first).
-let latestBootstrapGeneration = 0;
+// Both `/users/me` publishers here — the cold-start `bootstrapAuth` and the
+// foreground `refreshEntitlements` — can overlap (a foreground while a prior GET
+// is still in flight) and resolve out of order. To keep the freshest response
+// authoritative without stranding anything, each call claims a strictly
+// increasing generation at start, and we track the highest generation that has
+// actually PUBLISHED. A resolved response yields only if a LATER generation has
+// already published (never clobber a fresher snapshot). Because the high-water
+// mark rises on PUBLISH — not on claim — a later request that FAILS never
+// supersedes an earlier success, and the check is order-independent (evaluated
+// when each response resolves). An empty store needs no special case: the first
+// success to resolve simply has the highest published generation and
+// establishes the baseline.
+let generationCounter = 0;
+let lastPublishedGeneration = 0;
 
-/** Whether a superseded response must yield: only when the store already holds a
- *  user (a fresher publish we must not clobber). With an empty store the
- *  superseded response establishes the baseline instead of deadlocking. */
-function supersededShouldYield(
-  generation: number,
-  current: User | null,
-): boolean {
-  return generation !== latestBootstrapGeneration && current !== null;
+/** True if a later-generation response has ALREADY published — this (older)
+ *  result must yield rather than clobber the fresher one. */
+function hasNewerPublish(generation: number): boolean {
+  return generation < lastPublishedGeneration;
+}
+
+/** Raise the published high-water mark to this generation. */
+function recordPublish(generation: number): void {
+  if (generation > lastPublishedGeneration)
+    lastPublishedGeneration = generation;
 }
 
 /** Hydrate the persisted rider immediately, then refresh it from the API. */
 export async function bootstrapAuth(
   deps: AuthBootstrapDependencies,
 ): Promise<void> {
-  const generation = ++latestBootstrapGeneration;
+  const generation = ++generationCounter;
   const initialSession = deps.getSessionSnapshot();
   if (!initialSession) {
     deps.setUser(null);
@@ -83,21 +83,22 @@ export async function bootstrapAuth(
       deps.setLoading(false);
       return;
     }
-    // A later refresh started while this was in flight — drop only if it has
-    // already populated the store (don't clobber the fresher snapshot). With an
-    // empty store, publish this validated response as the baseline so a failed
-    // superseding refresh can't strand the app in auth loading.
-    if (supersededShouldYield(generation, deps.getCurrentUser())) {
+    // A later refresh already published a fresher snapshot — don't clobber it.
+    // (A superseding request that failed never raised the mark, so this
+    // baseline still wins and the app never strands in auth loading.)
+    if (hasNewerPublish(generation)) {
       deps.setLoading(false);
       return;
     }
+    recordPublish(generation);
     deps.cacheProfile(profile);
     deps.setUser(profile);
   } catch {
+    // A newer response already published — it owns the outcome; don't let this
+    // older failure override it.
+    if (hasNewerPublish(generation)) return;
     // The 401 refresh path clears invalid tokens. Network-only failures retain
     // the cached profile so an authenticated rider can keep using offline UI.
-    // Superseded failures do nothing — the latest refresh owns the outcome.
-    if (generation !== latestBootstrapGeneration) return;
     if (!deps.getSessionSnapshot()) deps.setUser(null);
     else deps.setLoading(false);
   }
@@ -122,8 +123,8 @@ export interface EntitlementsRefreshDependencies {
  * would overwrite the just-saved field with its stale copy. Reading the live
  * profile at publish time (not fetch time) and overlaying only the entitlement
  * slices preserves any such concurrent edit. Ordering against other refreshes
- * still goes through the shared generation guard; the rider's own PATCH wins on
- * the fields it owns because we never overwrite them.
+ * goes through the shared published high-water mark; the rider's own PATCH wins
+ * on the fields it owns because we never overwrite them.
  *
  * Best-effort: on a NETWORK failure the previous snapshot is retained
  * (offline-first — see `entitlementsRefreshMonitor`). But a 401 whose token
@@ -137,7 +138,7 @@ export interface EntitlementsRefreshDependencies {
 export async function refreshEntitlements(
   deps: EntitlementsRefreshDependencies,
 ): Promise<void> {
-  const generation = ++latestBootstrapGeneration;
+  const generation = ++generationCounter;
   const initialSession = deps.getSessionSnapshot();
   if (!initialSession) return;
 
@@ -147,9 +148,8 @@ export async function refreshEntitlements(
   } catch {
     // A 401 whose token refresh failed clears the session before the GET
     // rejects → sign out. A network blip with the session intact retains
-    // last-known-good (offline-first). No generation manipulation: a stranded
-    // in-flight bootstrap now recovers via the empty-store baseline rule below,
-    // regardless of which request resolves first.
+    // last-known-good (offline-first). A failed refresh never raises the
+    // published mark, so an earlier in-flight success still wins.
     if (!deps.getSessionSnapshot()) deps.setUser(null);
     return;
   }
@@ -162,10 +162,11 @@ export async function refreshEntitlements(
   // mid-refresh — drop rather than clobber the new rider.
   if (current && current.id !== profile.id) return;
 
-  // Superseded by a later refresh — drop only if the store already holds a user
-  // (don't clobber the fresher snapshot). With an EMPTY store, establish the
-  // baseline from this validated response instead of deadlocking.
-  if (supersededShouldYield(generation, current)) return;
+  // A later refresh already published a fresher snapshot — yield. (A superseding
+  // request that failed never raised the mark, so an earlier success like this
+  // one still publishes.)
+  if (hasNewerPublish(generation)) return;
+  recordPublish(generation);
 
   // With a live same-rider profile, overlay ONLY the entitlement slices so a
   // PATCH that landed while the GET was in flight keeps its fields. With no live
