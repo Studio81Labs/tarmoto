@@ -12,7 +12,7 @@ describe("OverviewScreen", () => {
   it("renders the metric values", () => {
     mockUseAdminMetrics.mockReturnValue({
       data: {
-        users: 128,
+        users: 12_800,
         activeRides: 4,
         featureFlags: 0,
         closures: 7,
@@ -22,7 +22,7 @@ describe("OverviewScreen", () => {
       error: null,
     });
     render(<OverviewScreen />);
-    expect(screen.getByText("128")).toBeInTheDocument();
+    expect(screen.getByText("12,800")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
     expect(screen.getByText("Closures")).toBeInTheDocument();
