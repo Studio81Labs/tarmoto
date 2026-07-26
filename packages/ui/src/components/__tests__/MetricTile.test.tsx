@@ -19,3 +19,16 @@ test("renders preformatted values without invoking a numeric formatter", () => {
 
   expect(screen.getByText("1,5 km")).toBeInTheDocument();
 });
+
+test("renders a locale-leading unit in the dedicated unit slot", () => {
+  render(
+    <MetricTile
+      label="Ride time"
+      value="12.5"
+      unit="saa"
+      unitPosition="before"
+    />,
+  );
+
+  expect(screen.getByText("saa").nextElementSibling).toHaveTextContent("12.5");
+});

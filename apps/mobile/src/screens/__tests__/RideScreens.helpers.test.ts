@@ -76,7 +76,11 @@ describe("formatSpeedKmh", () => {
   it("clamps invalid values to 0", () => {
     expect(formatSpeedKmh(-1)).toBe("0 km/h");
     expect(formatSpeedKmh(Number.NaN)).toBe("0 km/h");
-    expect(splitSpeedKmh(Number.NaN)).toEqual({ value: "0", unit: "km/h" });
+    expect(splitSpeedKmh(Number.NaN)).toEqual({
+      value: "0",
+      unit: "km/h",
+      unitPosition: "after",
+    });
   });
 
   it("splits an imperial HUD speed into its converted value and unit", () => {
@@ -86,7 +90,11 @@ describe("formatSpeedKmh", () => {
       units: "imperial",
     });
 
-    expect(splitSpeedKmh(62.4)).toEqual({ value: "38.8", unit: "mph" });
+    expect(splitSpeedKmh(62.4)).toEqual({
+      value: "38.8",
+      unit: "mph",
+      unitPosition: "after",
+    });
   });
 });
 
