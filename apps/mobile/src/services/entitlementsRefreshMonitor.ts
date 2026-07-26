@@ -49,8 +49,8 @@ import { AppState, type AppStateStatus } from "react-native";
 export interface EntitlementsRefreshDeps {
   /** Returns true when the user is signed in. */
   isAuthenticated: () => boolean;
-  /** Re-fetch `/users/me` and republish the entitlement snapshot to the
-   *  auth store (typically re-running `bootstrapAuth`). */
+  /** Re-fetch `/users/me` and merge the entitlement slices into the live
+   *  profile (typically `refreshEntitlements`). */
   refresh: () => Promise<void>;
 }
 

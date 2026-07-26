@@ -17,7 +17,7 @@ import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreference
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
-import { bootstrapAuth } from "@/services/authBootstrap";
+import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
@@ -152,21 +152,21 @@ export default function App() {
   // the server on every foreground rather than enforcing whatever was captured
   // at launch. Without this, an operator removing a launch-mode override,
   // force-disabling a feature, or downgrading a rider mid-session would leave
-  // the stale snapshot in force until the next login. Re-runs the same
-  // account-switch-safe `bootstrapAuth` fetch/validate/publish path; setters
-  // come from `getState()` so the effect stays mount-once.
+  // the stale snapshot in force until the next login. Refreshes ONLY the
+  // entitlement slices (merged into the live profile) so a concurrent
+  // profile/preference PATCH isn't clobbered; setters come from `getState()`
+  // so the effect stays mount-once.
   useEffect(
     () =>
       startEntitlementsRefreshMonitor({
         isAuthenticated: () => api.isAuthenticated(),
         refresh: () =>
-          bootstrapAuth({
+          refreshEntitlements({
             getSessionSnapshot: () => api.getAuthSessionSnapshot(),
-            getCachedProfile: () => api.getCachedProfile(),
             getProfile: () => api.getProfile(),
-            cacheProfile: (profile) => api.cacheProfile(profile),
+            getCurrentUser: () => useAuthStore.getState().user,
             setUser: useAuthStore.getState().setUser,
-            setLoading: useAuthStore.getState().setLoading,
+            cacheProfile: (profile) => api.cacheProfile(profile),
           }),
       }),
     [],

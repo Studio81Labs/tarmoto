@@ -34,12 +34,11 @@ export function isCurrentAuthSession(
   return current.accessToken === initial.accessToken;
 }
 
-// Monotonic generation stamp shared by every `bootstrapAuth` caller (the
-// cold-start effect AND the foreground entitlements refresh monitor). When two
-// refreshes overlap — a foreground transition while a prior `/users/me` is
-// still in flight, or the monitor racing the cold-start bootstrap — their
-// responses can resolve out of order. Without an ordering guard an older, slow
-// response would overwrite a newer downgrade / force-off snapshot and restore
+// Monotonic generation stamp shared by both `/users/me` publishers here — the
+// cold-start `bootstrapAuth` and the foreground `refreshEntitlements`. When two
+// overlap (a foreground while a prior GET is still in flight), their responses
+// can resolve out of order; without an ordering guard an older, slow response
+// would overwrite a newer downgrade / force-off snapshot and restore
 // client-only access until the next successful refresh. Each call captures the
 // generation it bumped to and refuses to publish once a later call has bumped
 // past it: only the latest-STARTED refresh (which read the freshest server
@@ -82,4 +81,65 @@ export async function bootstrapAuth(
     if (!deps.getSessionSnapshot()) deps.setUser(null);
     else deps.setLoading(false);
   }
+}
+
+export interface EntitlementsRefreshDependencies {
+  getSessionSnapshot: () => AuthSessionSnapshot | null;
+  getProfile: () => Promise<User>;
+  /** The profile CURRENTLY in the auth store, read at publish time. */
+  getCurrentUser: () => User | null;
+  setUser: (user: User) => void;
+  cacheProfile: (user: User) => void;
+}
+
+/**
+ * Refresh ONLY the server-controlled entitlement slices (`subscription_tier` /
+ * `features` / `limits`) from `/users/me`, merging them into the CURRENT live
+ * profile. The foreground monitor uses this instead of a full `bootstrapAuth`
+ * because a full re-publish would clobber a concurrent profile/preference
+ * PATCH: if the rider toggles a setting right after resuming and that PATCH
+ * resolves while this GET is still in flight, publishing the whole GET response
+ * would overwrite the just-saved field with its stale copy. Reading the live
+ * profile at publish time (not fetch time) and overlaying only the entitlement
+ * slices preserves any such concurrent edit. Ordering against other refreshes
+ * still goes through the shared generation guard; the rider's own PATCH wins on
+ * the fields it owns because we never overwrite them.
+ *
+ * Best-effort: on a failed GET the previous snapshot is retained (offline-first
+ * — see `entitlementsRefreshMonitor`). Nothing is published if the rider logged
+ * out or switched accounts while the GET was in flight.
+ */
+export async function refreshEntitlements(
+  deps: EntitlementsRefreshDependencies,
+): Promise<void> {
+  const generation = ++latestBootstrapGeneration;
+  const initialSession = deps.getSessionSnapshot();
+  if (!initialSession) return;
+
+  let profile: User;
+  try {
+    profile = await deps.getProfile();
+  } catch {
+    // Retain last known good — a transient blip must not blank entitlements.
+    return;
+  }
+
+  // Superseded by a later refresh, or the session changed under us.
+  if (generation !== latestBootstrapGeneration) return;
+  if (!isCurrentAuthSession(initialSession, deps.getSessionSnapshot(), profile))
+    return;
+
+  // Overlay onto the profile in the store NOW (post-await), so a PATCH that
+  // landed while the GET was in flight keeps its fields. Only the same rider.
+  const current = deps.getCurrentUser();
+  if (!current || current.id !== profile.id) return;
+
+  const merged: User = {
+    ...current,
+    subscription_tier: profile.subscription_tier,
+    features: profile.features,
+    limits: profile.limits,
+  };
+  deps.setUser(merged);
+  deps.cacheProfile(merged);
 }

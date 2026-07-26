@@ -1,4 +1,4 @@
-import { bootstrapAuth } from "../authBootstrap";
+import { bootstrapAuth, refreshEntitlements } from "../authBootstrap";
 import type { User } from "@/types";
 
 function user(id: string): User {
@@ -142,5 +142,131 @@ describe("bootstrapAuth", () => {
 
     expect(setUser).toHaveBeenCalledTimes(1);
     expect(setUser).toHaveBeenCalledWith(fresh);
+  });
+});
+
+describe("refreshEntitlements", () => {
+  const session = { accessToken: "token", userId: "u1" };
+  // A /users/me response — entitlement slices plus an editable field. `over`
+  // is loose so tests can supply partial `features`/`limits` fixtures (the real
+  // DTOs are full objects, but the merge copies whatever it's given).
+  function profileResponse(over: Record<string, unknown> = {}): User {
+    return {
+      id: "u1",
+      email: "u1@example.com",
+      subscription_tier: "free",
+      features: { gpx_export: false },
+      limits: { road_quality_max_zoom: 12 },
+      crash_detection_enabled: false,
+      ...over,
+    } as unknown as User;
+  }
+
+  it("merges only the entitlement slices, preserving a concurrent PATCH's fields", async () => {
+    // The live profile already reflects a preference PATCH that landed while
+    // the GET was in flight (crash detection just toggled ON).
+    const live = profileResponse({
+      crash_detection_enabled: true,
+      subscription_tier: "premium",
+      features: { gpx_export: true },
+      limits: { road_quality_max_zoom: null },
+    });
+    // The GET carries the OLD editable field but the authoritative (downgraded)
+    // entitlements.
+    const fetched = profileResponse({
+      crash_detection_enabled: false,
+      subscription_tier: "free",
+      features: { gpx_export: false },
+      limits: { road_quality_max_zoom: 12 },
+    });
+    const setUser = jest.fn();
+    const cacheProfile = jest.fn();
+
+    await refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: async () => fetched,
+      getCurrentUser: () => live,
+      setUser,
+      cacheProfile,
+    });
+
+    const published = setUser.mock.calls[0][0] as User;
+    // Entitlements taken from the GET…
+    expect(published.subscription_tier).toBe("free");
+    expect(published.features).toEqual({ gpx_export: false });
+    expect(published.limits).toEqual({ road_quality_max_zoom: 12 });
+    // …but the concurrently-PATCHed editable field is NOT clobbered.
+    expect(
+      (published as { crash_detection_enabled?: boolean })
+        .crash_detection_enabled,
+    ).toBe(true);
+    expect(cacheProfile).toHaveBeenCalledWith(published);
+  });
+
+  it("publishes nothing when the rider logged out or switched mid-refresh", async () => {
+    const setUser = jest.fn();
+    await refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: async () => profileResponse(),
+      getCurrentUser: () => null,
+      setUser,
+      cacheProfile: jest.fn(),
+    });
+    expect(setUser).not.toHaveBeenCalled();
+
+    // Different rider now in the store → drop.
+    await refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: async () => profileResponse(),
+      getCurrentUser: () => user("someone-else"),
+      setUser,
+      cacheProfile: jest.fn(),
+    });
+    expect(setUser).not.toHaveBeenCalled();
+  });
+
+  it("retains the snapshot on a failed refresh (offline-first)", async () => {
+    const setUser = jest.fn();
+    const cacheProfile = jest.fn();
+    await refreshEntitlements({
+      getSessionSnapshot: () => session,
+      getProfile: async () => {
+        throw new Error("offline");
+      },
+      getCurrentUser: () => profileResponse(),
+      setUser,
+      cacheProfile,
+    });
+    expect(setUser).not.toHaveBeenCalled();
+    expect(cacheProfile).not.toHaveBeenCalled();
+  });
+
+  it("drops a superseded refresh so an older slice set can't win", async () => {
+    const setUser = jest.fn();
+    const live = profileResponse();
+
+    let resolveStale!: (u: User) => void;
+    const stalePending = new Promise<User>((r) => (resolveStale = r));
+    let resolveFresh!: (u: User) => void;
+    const freshPending = new Promise<User>((r) => (resolveFresh = r));
+
+    const deps = (getProfile: () => Promise<User>) => ({
+      getSessionSnapshot: () => session,
+      getProfile,
+      getCurrentUser: () => live,
+      setUser,
+      cacheProfile: jest.fn(),
+    });
+
+    const aDone = refreshEntitlements(deps(() => stalePending));
+    const bDone = refreshEntitlements(deps(() => freshPending));
+
+    resolveFresh(profileResponse({ subscription_tier: "free" }));
+    await bDone;
+    resolveStale(profileResponse({ subscription_tier: "premium" }));
+    await aDone;
+
+    expect(setUser).toHaveBeenCalledTimes(1);
+    expect((setUser.mock.calls[0][0] as User).subscription_tier).toBe("free");
   });
 });
