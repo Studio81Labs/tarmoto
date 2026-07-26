@@ -29,10 +29,19 @@
  * still-pending launch bootstrap) are made safe by `bootstrapAuth`'s
  * generation guard, which drops a superseded response before it publishes.
  *
- * Failures are swallowed: the previous snapshot stays in place (the gates
- * still fail closed against it), and the next foreground transition tries
- * again. A transient network blip must not blank the rider's session or
- * surface a UI error.
+ * Failures are swallowed and the previous snapshot is retained (last known
+ * good) — a DELIBERATE offline-first choice, not a fail-closed one. Tarmoto
+ * riders are frequently in dead zones, and blanking entitlements on a failed
+ * refresh would strip the road-quality overlay / GPX export in exactly the
+ * remote areas the app exists for. It also keeps the launch (dark) behaviour
+ * byte-identical: every rider currently resolves to unlimited, so a flaky
+ * network must not knock offline riders down to the free caps. A real
+ * downgrade / force-off is still applied deterministically — the success path
+ * (this monitor's foreground refresh + `bootstrapAuth`'s generation guard)
+ * publishes it the moment the server is reachable and responds; only an
+ * unreachable or erroring server delays a revocation, and the next foreground
+ * transition retries. A transient blip must never blank the rider's session
+ * or surface a UI error.
  */
 
 import { AppState, type AppStateStatus } from "react-native";
