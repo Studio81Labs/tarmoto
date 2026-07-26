@@ -167,7 +167,7 @@ git commit -m "refactor(shared): hoist overlay-cap math to clampQualityMaxZoom (
 **Interfaces:**
 
 - Consumes: `useAuthStore` (`apps/mobile/src/stores/index.ts` — `s.user` is `Schemas["UserResponseDto"]` with `subscription_tier`/`features`/`limits`); `@tarmoto/shared` `isFeatureEnabled`/`getFeatureLimit`/`FEATURE_LIMIT_EXCEEDED`; `ApiError` (`apps/mobile/src/services/api.ts`).
-- Produces: `useEntitlements()`, `useFeature(key)`, `useLimit(key)`, `isFeatureLimitError(err)`, `tierLabel(tier, t)`. Consumed by Tasks 3–6.
+- Produces: `useEntitlements()`, `useFeature(key)`, `useLimit(key)`, ~~`isFeatureLimitError(err)`~~ (removed post-review — see Task 6), `tierLabel(tier, t)`. Consumed by Tasks 3–5.
 
 - [ ] **Step 1: Write failing hook tests**
 
@@ -279,6 +279,8 @@ export function useLimit(key: LimitFeatureKey): {
 ```
 
 (Confirm the `ToggleFeatureKey`/`LimitFeatureKey`/`SubscriptionTier` type names are the shared exports; if `SubscriptionTier` isn't exported, derive from `User["subscription_tier"]`.)
+
+> **Post-review note (PR #1086):** `isFeatureLimitError` (Steps 4–5 below) was **removed** — its only consumer was the trip-join gate, which was dropped (Task 6) because no mobile flow can emit `FEATURE_LIMIT_EXCEEDED`. `entitlements.test.ts` instead covers `tierLabel` and `withPreservedEntitlements`.
 
 - [ ] **Step 4: Write failing lib test**
 
@@ -542,33 +544,11 @@ On the quality `<Layer>` (currently `id="tarmoto-quality-lines"`, lines ~530–5
 
 ---
 
-### Task 6: Gate — trip-join 403 (`JoinTripScreen`)
+### Task 6: Gate — trip-join 403 (`JoinTripScreen`) — ❌ REMOVED post-review (PR #1086)
 
-**Files:**
+**This task was dropped.** The premise — that `POST /trips/{id}/join` is server-enforced for `max_trip_collaborators` — is false. That endpoint (mobile's `api.joinTrip`) consumes an **already-reserved** personal invite and never runs a collaborator-limit check; the cap is enforced at invite **creation** (`TripsService.invite`) and on the public share-link join (`POST /trip-shares/{token}/join`), **neither of which mobile calls**. So the endpoint can never emit `FEATURE_LIMIT_EXCEEDED`.
 
-- Modify: `apps/mobile/src/screens/JoinTripScreen.tsx` (the `catch` at ~79–84)
-- Test: `apps/mobile/src/screens/__tests__/JoinTripScreen.test.tsx` (new or extend)
-
-**Interfaces:** Consumes `isFeatureLimitError` (Task 2).
-
-- [ ] **Step 1: Write the failing test** — `api.joinTrip` rejects with `new ApiError("...", 403, { code: FEATURE_LIMIT_EXCEEDED, feature: "max_trip_collaborators", limit: 5, current: 5 })`; assert the error banner shows the owner-cap message (`t("The trip owner has reached their collaborator limit.")`), not the generic API message; and a non-limit error still shows the generic message.
-
-- [ ] **Step 2: Run, verify FAIL.**
-
-- [ ] **Step 3: Implement.** In the `catch (err)` block:
-
-```ts
-const message = isFeatureLimitError(err)
-  ? t("The trip owner has reached their collaborator limit.")
-  : /* existing generic-message extraction */;
-setErrorMessage(message);
-```
-
-(The cap is the OWNER's, invisible to the joiner — no proactive gate, message only. Mirrors the companion `SharedTripJoinCta`.)
-
-- [ ] **Step 4: Run the test — PASS.**
-
-- [ ] **Step 5: Commit** — `feat(mobile): show owner collaborator-cap message on a join 403`.
+Outcome shipped instead: `JoinTripScreen`'s `catch` uses **generic error handling only** (a bad/revoked code is a plain 403 "Invalid trip or invite code"), and the `isFeatureLimitError` helper referenced by Task 2 was **removed** (no mobile flow emits the cap). The `"The trip owner has reached their collaborator limit."` catalog key was removed as orphaned.
 
 ---
 

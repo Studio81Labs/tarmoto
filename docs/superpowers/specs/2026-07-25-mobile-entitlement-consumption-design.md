@@ -23,13 +23,15 @@ Entitlement gating is **not** started on mobile, but the data and plumbing are p
 
 ### Gateable surfaces (all exist, ungated)
 
-| Surface                    | File(s)                                                                                                                                                                          | Key                                            | Enforcement                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
-| Road-quality overlay zoom  | `screens/MapScreen.tsx` (MapLibre `<VectorSource>`/`<Layer>`)                                                                                                                    | `road_quality_max_zoom` (limit)                | **Client-only** (the overlay clamp)                                       |
-| GPX export (single + bulk) | `screens/RideDetailScreen.tsx`, `screens/SettingsScreen.tsx` (`BulkExportCard`) → `api.exportRideGpx` / `api.exportAllRidesGpx` (`GET /rides/{id}/gpx`, `GET /rides/export.gpx`) | `gpx_export` (toggle)                          | **Server-enforced** (backend 403s a non-entitled rider); client gate = UX |
-| Trip join                  | `screens/JoinTripScreen.tsx` → `api.joinTrip` (`POST /trips/{id}/join`)                                                                                                          | `max_trip_collaborators` (limit, owner-scoped) | **Server-enforced**; client = graceful 403                                |
+| Surface                    | File(s)                                                                                                                                                                          | Key                             | Enforcement                                                               |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
+| Road-quality overlay zoom  | `screens/MapScreen.tsx` (MapLibre `<VectorSource>`/`<Layer>`)                                                                                                                    | `road_quality_max_zoom` (limit) | **Client-only** (the overlay clamp)                                       |
+| GPX export (single + bulk) | `screens/RideDetailScreen.tsx`, `screens/SettingsScreen.tsx` (`BulkExportCard`) → `api.exportRideGpx` / `api.exportAllRidesGpx` (`GET /rides/{id}/gpx`, `GET /rides/export.gpx`) | `gpx_export` (toggle)           | **Server-enforced** (backend 403s a non-entitled rider); client gate = UX |
+| Trip join                  | ~~`screens/JoinTripScreen.tsx`~~ — **gate removed post-review** (see correction below)                                                                                           | ~~`max_trip_collaborators`~~    | **No mobile gate** — endpoint can't emit the cap                          |
 
-Mobile `MapScreen` has **no** road-segment tap-for-detail (only overlay toggles + fun-zone press), so the companion's Explore/planner selection-gate work does **not** apply — the road-quality gate is purely the maxzoom clamp. No owner-side "generate invite" UI exists on mobile, so the collaborator surface is only the joiner's 403.
+Mobile `MapScreen` has **no** road-segment tap-for-detail (only overlay toggles + fun-zone press), so the companion's Explore/planner selection-gate work does **not** apply — the road-quality gate is purely the maxzoom clamp.
+
+> **Correction (post-review, PR #1086):** the trip-join gate below was **dropped**. `POST /trips/{id}/join` (mobile's `api.joinTrip`) consumes an **already-reserved** personal invite and never runs a collaborator-limit check — the `max_trip_collaborators` cap is enforced at invite **creation** (`TripsService.invite`) and on the public share-link join (`POST /trip-shares/{token}/join`), **neither of which mobile calls**. So that endpoint can never emit `FEATURE_LIMIT_EXCEEDED`; JoinTripScreen uses plain generic error handling, and the `isFeatureLimitError` helper was removed (no mobile flow emits the cap). §6, the join acceptance criterion, and the `isFeatureLimitError` references below are superseded by this note.
 
 **Global constraints (verbatim values):**
 
@@ -135,9 +137,9 @@ Port the companion component to RN (`Modal` + the mobile UI kit + `useTranslatio
 - Proactive: when resolved-and-`!gpxEnabled`, the export action opens `<UpgradePrompt capability={{feature:"gpx_export"}}>` instead of exporting. While unresolved (pre-login edge), fail closed (disabled). On the bulk-export card, gate the GPX option only (CSV stays free).
 - 403 safety net: since `/rides/*.gpx` is server-enforced, wrap `exportRideGpx`/`exportAllRidesGpx` calls so a `FEATURE_LIMIT_EXCEEDED`/`gpx_export` 403 (or the feature-guard 403) surfaces the upgrade prompt rather than a generic error — the backend is authoritative.
 
-### 6. Gate — trip join 403 (`JoinTripScreen.tsx`)
+### 6. Gate — trip join 403 (`JoinTripScreen.tsx`) — ❌ REMOVED
 
-- The cap belongs to the trip OWNER; the joiner can't see it, so there is no proactive gate — only graceful handling. In the `catch`, when `isFeatureLimitError(err)` (`max_trip_collaborators`), set the error banner to a clear owner-cap message ("The trip owner has reached their collaborator limit.") instead of the generic API message — mirroring the companion `SharedTripJoinCta`.
+- **Dropped post-review** (see the Correction above). `POST /trips/{id}/join` consumes a pre-reserved invite and cannot emit `FEATURE_LIMIT_EXCEEDED`, so there is no mobile join gate. `JoinTripScreen`'s `catch` uses generic error handling only; a bad/revoked code is a plain 403 "Invalid trip or invite code".
 
 ### 7. i18n
 
@@ -149,11 +151,10 @@ Mobile uses the existing test setup (Jest/RN Testing Library; see `screens/__tes
 
 - `useEntitlements`/`useFeature`/`useLimit`: reads tier/feature/limit off a mocked auth store; fail-closed when no user.
 - `resolveQualityLayerMaxZoom` (shared): free→12, unlimited→ceiling, unresolved→free/stricter-known, finite override preserved (extend the shared spec).
-- `isFeatureLimitError`: true only on 403 + `code === FEATURE_LIMIT_EXCEEDED`.
 - `<UpgradePrompt>`: neutral vs upgrade title from `suppressUpgrade`/target; informational (no live purchase) CTA state.
 - MapScreen: the quality `<Layer>` receives `maxzoom = resolved cap` (12 free / ceiling unlimited); hidden for a degenerate cap. (Assert props/config — MapLibre renders nothing in a headless test, mirroring the companion MapCanvas idiom.)
 - GPX gate: `!gpx_export` opens the prompt (no export); enabled → exports; 403 → prompt.
-- Join: `FEATURE_LIMIT_EXCEEDED` → owner-cap banner message.
+- ~~Join: `FEATURE_LIMIT_EXCEEDED` → owner-cap banner message.~~ (gate removed — see Correction; `isFeatureLimitError` removed)
 
 ## Open items to resolve during planning
 
