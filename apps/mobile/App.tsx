@@ -156,10 +156,19 @@ export default function App() {
   // entitlement slices (merged into the live profile) so a concurrent
   // profile/preference PATCH isn't clobbered; setters come from `getState()`
   // so the effect stays mount-once.
+  //
+  // Serialize behind the cold-start bootstrap: while `isLoading` is true the
+  // launch `bootstrapAuth` (full `/users/me`) hasn't published yet, and an
+  // entitlement-only refresh that raced ahead would merge fresh entitlements
+  // onto the STALE cached profile — leaving cross-device display-name /
+  // language / preference changes stale, since later refreshes only touch
+  // entitlements. Waiting for the baseline means bootstrap hydrates every field
+  // first; refreshes then update entitlements on a fresh profile.
   useEffect(
     () =>
       startEntitlementsRefreshMonitor({
-        isAuthenticated: () => api.isAuthenticated(),
+        isAuthenticated: () =>
+          api.isAuthenticated() && !useAuthStore.getState().isLoading,
         refresh: () =>
           refreshEntitlements({
             getSessionSnapshot: () => api.getAuthSessionSnapshot(),

@@ -4,6 +4,7 @@ import App from "../../App";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
+import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
@@ -114,6 +115,34 @@ describe("App auth locale hydration", () => {
       uiLocaleOverride: null,
       pendingUiLocaleSync: null,
     });
+  });
+
+  it("gates the entitlement refresh behind the cold-start bootstrap (isLoading)", async () => {
+    await render(<App />);
+    const deps = jest
+      .mocked(startEntitlementsRefreshMonitor)
+      .mock.calls.at(-1)?.[0];
+    expect(deps).toBeDefined();
+
+    jest.mocked(api.isAuthenticated).mockReturnValue(true);
+
+    // Cold start still loading → don't refresh yet; the launch bootstrap owns
+    // the full-profile hydrate, and an entitlement-only refresh would merge
+    // onto the stale cached profile.
+    await act(() => {
+      useAuthStore.setState({ isLoading: true });
+    });
+    expect(deps?.isAuthenticated()).toBe(false);
+
+    // Bootstrap settled → refreshes may proceed.
+    await act(() => {
+      useAuthStore.setState({ isLoading: false });
+    });
+    expect(deps?.isAuthenticated()).toBe(true);
+
+    // Signed out → never.
+    jest.mocked(api.isAuthenticated).mockReturnValue(false);
+    expect(deps?.isAuthenticated()).toBe(false);
   });
 
   it("starts commute alerts only after the authenticated locale renders", async () => {
