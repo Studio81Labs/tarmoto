@@ -4,10 +4,10 @@
  * rendering the full screen (native MapLibre modules, sockets, stores).
  */
 import { useEffect, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { useLimit } from "@/hooks/useEntitlements";
 import { useAuthStore } from "@/stores";
 import { api } from "@/services/api";
-import { hasBootstrapSettled } from "@/services/authBootstrap";
 import {
   clampQualityMaxZoom,
   resolveLimit,
@@ -48,21 +48,33 @@ function useGlobalQualityZoomOverride(enabled: boolean): {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    // Serve the cache immediately (set above); revalidate in the background so
-    // an operator activating/tightening the cap lands on the next map open
-    // without a reload. A failure keeps the last-known cache (or stays
-    // unresolved if none), never widening the cap on an outage.
-    void api
-      .getConfigLimits()
-      .then((next) => {
-        cachedGlobalLimits = next;
-        if (!cancelled) setMap(next);
-      })
-      .catch(() => {
-        // Fail closed / retain last-known — the next mount retries.
-      });
+    const revalidate = () => {
+      // Serve the cache immediately (set above); revalidate so an operator
+      // activating/tightening the cap lands without a reload. A failure keeps
+      // the last-known cache (or stays unresolved if none), never widening the
+      // cap on an outage.
+      void api
+        .getConfigLimits()
+        .then((next) => {
+          cachedGlobalLimits = next;
+          if (!cancelled) setMap(next);
+        })
+        .catch(() => {
+          // Fail closed / retain last-known — the next revalidate retries.
+        });
+    };
+    // On mount AND on every foreground: React Navigation keeps the Map tab
+    // mounted across background/foreground and the root entitlement monitor
+    // skips anonymous sessions, so without this an operator removing the
+    // launch override would never reach a long-lived anonymous map.
+    revalidate();
+    const onChange = (next: AppStateStatus) => {
+      if (next === "active") revalidate();
+    };
+    const sub = AppState.addEventListener("change", onChange);
     return () => {
       cancelled = true;
+      sub.remove();
     };
   }, [enabled]);
 
@@ -89,12 +101,17 @@ export function useRoadQualityZoomCap(): {
   isResolved: boolean;
 } {
   const user = useAuthStore((s) => s.user);
+  // Subscribe to settlement REACTIVELY: a MapScreen mounted before a sessionless
+  // cold-start bootstrap finishes must re-render when it settles (settlement
+  // leaves `user` null, so subscribing to `user` alone would miss it) — only
+  // then does the anonymous branch fetch `/config/limits`.
+  const bootstrapSettled = useAuthStore((s) => s.bootstrapSettled);
   const authed = user != null;
   // A signed-in rider mid cold-start hydration transiently has `user == null`;
   // resolving the anonymous cap then could render ABOVE their per-user override
   // until `/users/me` lands. Only a SETTLED bootstrap with no user is a
-  // confirmed anonymous session (see `hasBootstrapSettled`).
-  const confirmedAnonymous = !authed && hasBootstrapSettled();
+  // confirmed anonymous session.
+  const confirmedAnonymous = !authed && bootstrapSettled;
 
   const { limit: userLimit, isResolved: userResolved } = useLimit(
     ROAD_QUALITY_MAX_ZOOM,

@@ -12,6 +12,9 @@ export interface AuthBootstrapDependencies {
   cacheProfile: (user: User) => void;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
+  /** Marks the cold-start bootstrap as SETTLED (reactive store flag). Called on
+   *  every terminal path so a screen gated on settlement re-renders. */
+  markSettled: () => void;
 }
 
 export function isCurrentAuthSession(
@@ -61,24 +64,15 @@ function recordPublish(generation: number): void {
     lastPublishedGeneration = generation;
 }
 
-// True once the cold-start `bootstrapAuth` has SETTLED — published its full
-// `/users/me`, failed, or found no session. The foreground entitlements refresh
-// serialises behind this so it can't race the baseline and merge fresh
-// entitlements onto a not-yet-refreshed cached profile. Deliberately NOT
-// `isLoading`: the optimistic `setUser(cached)` clears that early (for instant
-// offline display) well before the baseline request lands, so `isLoading` goes
-// false during the very window we must still hold the refresh back.
-let bootstrapSettled = false;
-
-/** Whether the cold-start baseline (`bootstrapAuth`) has finished. */
-export function hasBootstrapSettled(): boolean {
-  return bootstrapSettled;
-}
-
-/** Test-only: reset the settled flag between cases (module state persists). */
-export function __resetBootstrapSettledForTest(): void {
-  bootstrapSettled = false;
-}
+// Settlement is tracked as REACTIVE store state (`useAuthStore.bootstrapSettled`)
+// so a screen that mounted before a sessionless bootstrap finished re-renders
+// when it settles. `bootstrapAuth` marks it via the injected `markSettled` dep
+// (kept dependency-injected so this module needn't import the store — that
+// would drag the store's MMKV init into every `api` consumer). React components
+// subscribe to `useAuthStore((s) => s.bootstrapSettled)`; non-React callers read
+// `useAuthStore.getState().bootstrapSettled` at the call site. Deliberately
+// distinct from `isLoading`, which the optimistic `setUser(cached)` clears early
+// (instant offline display) before the baseline request lands.
 
 /** Hydrate the persisted rider immediately, then refresh it from the API. */
 export async function bootstrapAuth(
@@ -128,8 +122,8 @@ export async function bootstrapAuth(
     }
   } finally {
     // Every terminal path (no session, publish, discard, failure) settles the
-    // baseline — the foreground refresh may now proceed.
-    bootstrapSettled = true;
+    // baseline — reactive, so a settlement-gated screen re-renders.
+    deps.markSettled();
   }
 }
 

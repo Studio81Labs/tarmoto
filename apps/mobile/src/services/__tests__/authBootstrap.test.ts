@@ -1,9 +1,5 @@
-import {
-  __resetBootstrapSettledForTest,
-  bootstrapAuth,
-  hasBootstrapSettled,
-  refreshEntitlements,
-} from "../authBootstrap";
+import { bootstrapAuth, refreshEntitlements } from "../authBootstrap";
+import { useAuthStore } from "@/stores";
 import type { User } from "@/types";
 
 function user(id: string): User {
@@ -20,6 +16,7 @@ describe("bootstrapAuth", () => {
       cacheProfile: jest.fn(),
       setUser,
       setLoading: jest.fn(),
+      markSettled: jest.fn(),
     });
     expect(setUser).toHaveBeenCalledWith(null);
   });
@@ -39,6 +36,7 @@ describe("bootstrapAuth", () => {
       cacheProfile,
       setUser,
       setLoading: jest.fn(),
+      markSettled: jest.fn(),
     });
     expect(setUser.mock.calls).toEqual([[cached], [fresh]]);
     expect(cacheProfile).toHaveBeenCalledWith(fresh);
@@ -60,6 +58,7 @@ describe("bootstrapAuth", () => {
       cacheProfile: jest.fn(),
       setUser,
       setLoading,
+      markSettled: jest.fn(),
     });
     expect(setUser).toHaveBeenCalledTimes(1);
     expect(setUser).toHaveBeenCalledWith(cached);
@@ -80,6 +79,7 @@ describe("bootstrapAuth", () => {
       cacheProfile: jest.fn(),
       setUser,
       setLoading: jest.fn(),
+      markSettled: jest.fn(),
     });
     expect(setUser).toHaveBeenLastCalledWith(null);
   });
@@ -103,6 +103,7 @@ describe("bootstrapAuth", () => {
       cacheProfile,
       setUser,
       setLoading,
+      markSettled: jest.fn(),
     });
 
     session = { accessToken: "account-b-token", userId: "account-b" };
@@ -135,6 +136,7 @@ describe("bootstrapAuth", () => {
       cacheProfile: jest.fn(),
       setUser,
       setLoading: jest.fn(),
+      markSettled: jest.fn(),
     });
 
     const aDone = bootstrapAuth(deps(() => stalePending));
@@ -167,6 +169,7 @@ describe("bootstrapAuth", () => {
       cacheProfile,
       setUser,
       setLoading: jest.fn(),
+      markSettled: jest.fn(),
     });
 
     // A refresh starts (supersedes bootstrap) and stays in flight.
@@ -195,27 +198,33 @@ describe("bootstrapAuth", () => {
   });
 });
 
-describe("hasBootstrapSettled", () => {
-  it("is false while the baseline is in flight and true once it settles", async () => {
-    __resetBootstrapSettledForTest();
+describe("bootstrap settlement", () => {
+  it("marks settled (reactive store flag) only once the baseline resolves", async () => {
+    useAuthStore.setState({ bootstrapSettled: false });
+    const markSettled = jest.fn(() =>
+      useAuthStore.getState().markBootstrapSettled(),
+    );
     let resolveProfile!: (u: User) => void;
     const pending = new Promise<User>((r) => (resolveProfile = r));
 
     const done = bootstrapAuth({
       getSessionSnapshot: () => ({ accessToken: "t", userId: "u1" }),
       // Cached hydrate clears isLoading immediately (for instant display) — but
-      // must NOT flip the settled flag while /users/me is still pending.
+      // must NOT settle while /users/me is still pending.
       getCachedProfile: () => user("u1"),
       getProfile: () => pending,
       cacheProfile: jest.fn(),
       setUser: jest.fn(),
       setLoading: jest.fn(),
+      markSettled,
     });
 
-    expect(hasBootstrapSettled()).toBe(false);
+    expect(markSettled).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().bootstrapSettled).toBe(false);
     resolveProfile(user("u1"));
     await done;
-    expect(hasBootstrapSettled()).toBe(true);
+    expect(markSettled).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().bootstrapSettled).toBe(true);
   });
 });
 
@@ -307,6 +316,7 @@ describe("refreshEntitlements", () => {
       cacheProfile,
       setUser,
       setLoading: jest.fn(),
+      markSettled: jest.fn(),
     });
 
     // Foreground refresh: supersedes bootstrap, then fails (session intact).

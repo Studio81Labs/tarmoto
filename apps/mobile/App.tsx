@@ -17,11 +17,7 @@ import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreference
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
-import {
-  bootstrapAuth,
-  hasBootstrapSettled,
-  refreshEntitlements,
-} from "@/services/authBootstrap";
+import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
@@ -121,6 +117,7 @@ export default function App() {
       cacheProfile: (user) => api.cacheProfile(user),
       setUser,
       setLoading,
+      markSettled: () => useAuthStore.getState().markBootstrapSettled(),
     });
   }, [setLoading, setUser]);
 
@@ -165,14 +162,16 @@ export default function App() {
   // (full `/users/me`) settles, an entitlement-only refresh that raced ahead
   // would merge fresh entitlements onto the STALE cached profile — leaving
   // cross-device display-name / language / preference changes stale, since
-  // later refreshes only touch entitlements. Gate on `hasBootstrapSettled()`,
-  // NOT `isLoading`: the optimistic `setUser(cached)` clears `isLoading` early
-  // (for instant offline display) while the baseline is still in flight, so
-  // `isLoading` would open the gate during the very window we must hold it shut.
+  // later refreshes only touch entitlements. Gate on the store's
+  // `bootstrapSettled`, NOT `isLoading`: the optimistic `setUser(cached)` clears
+  // `isLoading` early (for instant offline display) while the baseline is still
+  // in flight, so `isLoading` would open the gate during the very window we must
+  // hold it shut.
   useEffect(
     () =>
       startEntitlementsRefreshMonitor({
-        isAuthenticated: () => api.isAuthenticated() && hasBootstrapSettled(),
+        isAuthenticated: () =>
+          api.isAuthenticated() && useAuthStore.getState().bootstrapSettled,
         refresh: () =>
           refreshEntitlements({
             getSessionSnapshot: () => api.getAuthSessionSnapshot(),

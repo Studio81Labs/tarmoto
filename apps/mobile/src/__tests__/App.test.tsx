@@ -5,7 +5,6 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
-import { hasBootstrapSettled } from "@/services/authBootstrap";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
@@ -45,7 +44,6 @@ jest.mock("@/i18n/I18nProvider", () => ({
 
 jest.mock("@/services/authBootstrap", () => ({
   bootstrapAuth: jest.fn(),
-  hasBootstrapSettled: jest.fn(() => true),
 }));
 
 jest.mock("@/services/api", () => ({
@@ -111,6 +109,7 @@ describe("App auth locale hydration", () => {
       user: null,
       isAuthenticated: false,
       isLoading: true,
+      bootstrapSettled: false,
     });
     usePreferencesStore.getState().setDistanceUnit("metric");
     usePreferencesStore.setState({
@@ -132,11 +131,15 @@ describe("App auth locale hydration", () => {
     // cleared isLoading, but the full /users/me is still in flight. An
     // entitlement-only refresh here would merge onto the stale cached profile,
     // so hold it back.
-    jest.mocked(hasBootstrapSettled).mockReturnValue(false);
+    await act(async () => {
+      useAuthStore.setState({ bootstrapSettled: false });
+    });
     expect(deps?.isAuthenticated()).toBe(false);
 
     // Baseline settled → refreshes may proceed.
-    jest.mocked(hasBootstrapSettled).mockReturnValue(true);
+    await act(async () => {
+      useAuthStore.setState({ bootstrapSettled: true });
+    });
     expect(deps?.isAuthenticated()).toBe(true);
 
     // Signed out → never.

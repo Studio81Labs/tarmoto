@@ -1,16 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
+import { AppState, type AppStateStatus } from "react-native";
 
 const mockGetConfigLimits = jest.fn();
 jest.mock("@/services/api", () => ({
   api: { getConfigLimits: () => mockGetConfigLimits() },
-}));
-
-// Confirmed-anonymous requires a SETTLED bootstrap; default false so the
-// existing logged-out test keeps failing closed, flipped true for the
-// anonymous cases below.
-const mockHasBootstrapSettled = jest.fn(() => false);
-jest.mock("@/services/authBootstrap", () => ({
-  hasBootstrapSettled: () => mockHasBootstrapSettled(),
 }));
 
 import { useAuthStore } from "@/stores";
@@ -34,10 +27,12 @@ const baseUser = {
 beforeEach(() => {
   __resetGlobalLimitsCacheForTest();
   mockGetConfigLimits.mockReset().mockResolvedValue({});
-  mockHasBootstrapSettled.mockReturnValue(false);
+  // Confirmed-anonymous requires a SETTLED bootstrap; default false so the
+  // logged-out test keeps failing closed, flipped true for the anonymous cases.
+  useAuthStore.setState({ user: null, bootstrapSettled: false });
 });
 
-afterEach(() => useAuthStore.setState({ user: null }));
+afterEach(() => useAuthStore.setState({ user: null, bootstrapSettled: false }));
 
 // `renderHook` is async in the installed @testing-library/react-native
 // (14.x) — see useEntitlements.test.ts for the same `await renderHook(...)`
@@ -66,7 +61,7 @@ it("fails closed to the free cap when logged out / unresolved", async () => {
 });
 
 describe("confirmed-anonymous rider (public /config/limits)", () => {
-  beforeEach(() => mockHasBootstrapSettled.mockReturnValue(true));
+  beforeEach(() => useAuthStore.setState({ bootstrapSettled: true }));
 
   it("renders to the ceiling under the dark-launch unlimited override (null)", async () => {
     // limit_states seeds road_quality_max_zoom = NULL (unlimited) at launch.
@@ -94,6 +89,48 @@ describe("confirmed-anonymous rider (public /config/limits)", () => {
     const { result } = await renderHook(() => useQualityLayerMaxZoom());
     await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalled());
     expect(result.current.maxzoom).toBe(12);
+  });
+
+  it("REACTS to settlement flipping false→true (screen mounted before bootstrap settled)", async () => {
+    // The screen mounts before a sessionless bootstrap finishes: settlement is
+    // false, so it fails closed to 12 and does NOT fetch. When bootstrap settles
+    // (leaving user null), the reactive store subscription must re-render and
+    // trigger the /config/limits fetch → z22 under the dark override.
+    useAuthStore.setState({ bootstrapSettled: false });
+    mockGetConfigLimits.mockResolvedValue({ road_quality_max_zoom: null });
+
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    expect(result.current.maxzoom).toBe(12);
+    expect(mockGetConfigLimits).not.toHaveBeenCalled();
+
+    await act(async () => {
+      useAuthStore.setState({ bootstrapSettled: true });
+    });
+    await waitFor(() => expect(result.current.maxzoom).toBe(22));
+    expect(mockGetConfigLimits).toHaveBeenCalled();
+  });
+
+  it("revalidates /config/limits on a foreground transition", async () => {
+    const listeners: Array<(s: AppStateStatus) => void> = [];
+    const spy = jest
+      .spyOn(AppState, "addEventListener")
+      .mockImplementation(
+        (event: string, listener: (s: AppStateStatus) => void) => {
+          if (event === "change") listeners.push(listener);
+          return { remove: jest.fn() } as never;
+        },
+      );
+    mockGetConfigLimits.mockResolvedValue({ road_quality_max_zoom: null });
+    await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(1));
+
+    // An operator tightens the cap; a foreground transition must pick it up.
+    mockGetConfigLimits.mockResolvedValue({ road_quality_max_zoom: 12 });
+    await act(async () => {
+      listeners.forEach((l) => l("active"));
+    });
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(2));
+    spy.mockRestore();
   });
 });
 
