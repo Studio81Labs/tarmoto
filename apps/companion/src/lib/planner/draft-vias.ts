@@ -16,7 +16,8 @@ export interface DraftZone {
 export interface DraftVia {
   lat: number;
   lng: number;
-  name: string;
+  /** Source-owned place/zone name. Generated roles remain semantic. */
+  name?: string;
 }
 
 /** Highest-scoring zones worth threading into a single draft. */
@@ -155,7 +156,7 @@ export function draftViasThroughZones(
         ? [
             {
               ...centroid,
-              name: zone.name ?? "Fun Zone",
+              name: zone.name?.trim() || undefined,
               alongAxis:
                 (centroid.lng - start.lng) * axisLng +
                 (centroid.lat - start.lat) * axisLat,
@@ -164,5 +165,9 @@ export function draftViasThroughZones(
         : [];
     })
     .sort((a, b) => a.alongAxis - b.alongAxis)
-    .map(({ lat, lng, name }) => ({ lat, lng, name }));
+    .map(({ lat, lng, name }) => ({
+      lat,
+      lng,
+      ...(name ? { name } : {}),
+    }));
 }

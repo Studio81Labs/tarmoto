@@ -1213,10 +1213,10 @@ export function createPlannerApi(): PlannerApi {
         summary: measured.summary,
         reachedTargetKm:
           measured.raw.distance_km >= target * DRAFT_TARGET_TOLERANCE,
-        vias: [
-          ...zoneVias,
-          { lat: turn.lat, lng: turn.lng, name: "Turnaround" },
-        ],
+        // The turnaround is a semantic via, not English rider data. Leaving
+        // its name absent lets the display layer localize the role (and the
+        // planner may replace it with a reverse-geocoded place name).
+        vias: [...zoneVias, { lat: turn.lat, lng: turn.lng }],
       };
     },
 

@@ -9,7 +9,7 @@
     "ios:setup": "bash ../../scripts/mobile/setup-ios.sh",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:i18n": "jest --runInBand src/i18n/index.test.ts src/i18n/eslintGuard.test.ts src/i18n/locales/catalog.test.ts src/i18n/__tests__/deviceLocale.test.ts src/format/index.test.ts src/format/FormatProvider.test.tsx src/services/__tests__/languagePreferenceSyncMonitor.test.ts src/services/__tests__/displayPreferencesSyncMonitor.test.ts src/services/__tests__/vehicleDisplay.test.ts src/services/__tests__/navigation.test.ts src/__tests__/App.test.tsx",
+    "test:i18n": "jest --runInBand src/i18n/index.test.ts src/i18n/eslintGuard.test.ts src/i18n/locales/catalog.test.ts src/i18n/__tests__/deviceLocale.test.ts src/format/index.test.ts src/format/FormatProvider.test.tsx src/services/__tests__/languagePreferenceSyncMonitor.test.ts src/services/__tests__/displayPreferencesSyncMonitor.test.ts src/services/__tests__/vehicleDisplay.test.ts src/services/__tests__/navigation.test.ts src/screens/__tests__/GroupRideScreen.helpers.test.ts src/__tests__/App.test.tsx",
     "test": "jest",
     "firebase:prepare:android": "bash ../../scripts/mobile/prepare-firebase-config.sh android optional",
     "firebase:prepare:ios": "bash ../../scripts/mobile/prepare-firebase-config.sh ios optional",
