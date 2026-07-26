@@ -84,6 +84,7 @@ const COLLECTION_VALUE_PRESERVING_METHODS = new Set([
   "toSpliced",
   "with",
 ]);
+const RENDERED_COLLECTION_TRANSFORM_METHODS = new Set(["flatMap", "map"]);
 const INLINE_TEXT_ELEMENTS = new Set([
   "a",
   "b",
@@ -269,6 +270,45 @@ function unwrapTransparentExpression(node) {
     current = current.expression;
   }
   return current;
+}
+
+function callbackReturnExpressions(callback) {
+  if (
+    callback?.type !== "ArrowFunctionExpression" &&
+    callback?.type !== "FunctionExpression"
+  ) {
+    return [];
+  }
+  if (callback.body.type !== "BlockStatement") {
+    return [callback.body];
+  }
+
+  const returns = [];
+  const visit = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (
+      node !== callback &&
+      (node.type === "ArrowFunctionExpression" ||
+        node.type === "FunctionExpression" ||
+        node.type === "FunctionDeclaration")
+    ) {
+      return;
+    }
+    if (node.type === "ReturnStatement") {
+      if (node.argument) returns.push(node.argument);
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "parent" || key === "loc" || key === "range") continue;
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+      } else {
+        visit(value);
+      }
+    }
+  };
+  visit(callback.body);
+  return returns;
 }
 
 function mappedCallbackPreservesValues(callback) {
@@ -521,6 +561,12 @@ function isTranslatedComposition(node) {
         methodName === "map" &&
         mappedCallbackPreservesValues(node.arguments[0]) &&
         isTranslatedComposition(node.callee.object)) ||
+      (node.callee.type === "MemberExpression" &&
+        methodName !== null &&
+        RENDERED_COLLECTION_TRANSFORM_METHODS.has(methodName) &&
+        callbackReturnExpressions(node.arguments[0]).some(
+          isTranslatedComposition,
+        )) ||
       (renderableArguments.length > 1 &&
         renderableArguments.some(containsTranslatorCall)) ||
       node.arguments.some(
@@ -539,6 +585,22 @@ function separatorDelimitedChildGroups(children) {
     if (
       !isTranslatedChild(child) &&
       containsIndependentSeparator(child)
+    ) {
+      groups.push([]);
+      continue;
+    }
+    groups[groups.length - 1].push(child);
+  }
+  return groups;
+}
+
+function layoutContainerTextRuns(children) {
+  const groups = [[]];
+  for (const child of children) {
+    if (
+      child.type === "JSXElement" ||
+      (child.type === "JSXExpressionContainer" &&
+        containsJsx(child.expression))
     ) {
       groups.push([]);
       continue;
@@ -651,12 +713,16 @@ const noTranslatedFragments = {
         if (
           !TEXT_CONTAINER_ELEMENTS.has(
             jsxElementName(node.openingElement),
-          ) ||
-          hasLayoutDisplayClass(node)
+          )
         ) {
           return;
         }
-        reportTranslatedFragments(node.children);
+        const textRuns = hasLayoutDisplayClass(node)
+          ? layoutContainerTextRuns(node.children)
+          : [node.children];
+        textRuns.forEach((children) =>
+          reportTranslatedFragments(children),
+        );
       },
       JSXFragment(node) {
         // A fragment commonly groups independent React Native `<Text>` blocks.
@@ -806,6 +872,12 @@ const noVisibleNumericJsxText = {
         if (isKnownNumericDisplayCall(node)) return false;
         const methodName = memberCallName(node);
         return (
+          (node.callee.type === "MemberExpression" &&
+            methodName !== null &&
+            RENDERED_COLLECTION_TRANSFORM_METHODS.has(methodName) &&
+            callbackReturnExpressions(node.arguments[0]).some(
+              containsUnformattedNumericLiteral,
+            )) ||
           (node.callee.type === "MemberExpression" &&
             methodName !== null &&
             (NUMERIC_RECEIVER_DISPLAY_METHODS.has(methodName) ||

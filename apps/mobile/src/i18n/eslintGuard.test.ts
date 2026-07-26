@@ -226,6 +226,21 @@ describe("mobile indirect display-copy lint guard", () => {
     ).not.toHaveLength(0);
   });
 
+  it.each([
+    'const view = <Text>{items.map((item) => translate("Updated") + item.time)}</Text>;',
+    'const view = <Text>{items.flatMap((item) => { return `${translate("Updated")} ${item.time}`; })}</Text>;',
+  ])(
+    "rejects translated composition returned by rendered callbacks",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
+
   it("rejects translated composition in accessibility attributes", () => {
     expect(
       localizationMessages(
@@ -366,6 +381,18 @@ describe("mobile indirect display-copy lint guard", () => {
     expect(
       localizationMessages(
         "const view = <Text>{[2026].filter(Boolean)}</Text>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <Text>{items.map((_, index) => index + 1)}</Text>;",
+    "const view = <Text>{items.flatMap((_, index) => { return index + 1; })}</Text>;",
+  ])("rejects numeric values returned by rendered callbacks", (source) => {
+    expect(
+      localizationMessages(
+        source,
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);

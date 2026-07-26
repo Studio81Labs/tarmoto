@@ -169,6 +169,24 @@ describe("companion indirect display-copy lint guard", () => {
     },
   );
 
+  it("rejects translated fragments in flex text runs", () => {
+    expect(
+      localizationMessages(
+        'const view = <div className="flex">{t("Updated")} {formattedTime}</div>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows independent translated elements inside flex layouts", () => {
+    expect(
+      localizationMessages(
+        'const view = <div className="flex"><span>{t("Title")}</span><span>{t("Description")}</span></div>;',
+        "tarmoto-localization/no-translated-fragments",
+      ),
+    ).toHaveLength(0);
+  });
+
   it.each([
     'const view = <p>{t("Updated") + formattedTime}</p>;',
     'const view = <p>{`${t("Updated")} ${formattedTime}`}</p>;',
@@ -226,6 +244,21 @@ describe("companion indirect display-copy lint guard", () => {
       ),
     ).not.toHaveLength(0);
   });
+
+  it.each([
+    'const view = <p>{items.map((item) => t("Updated") + item.time)}</p>;',
+    'const view = <p>{items.flatMap((item) => { return `${t("Updated")} ${item.time}`; })}</p>;',
+  ])(
+    "rejects translated composition returned by rendered callbacks",
+    (source) => {
+      expect(
+        localizationMessages(
+          source,
+          "tarmoto-localization/no-translated-fragments",
+        ),
+      ).not.toHaveLength(0);
+    },
+  );
 
   it("rejects translated composition in accessibility attributes", () => {
     expect(
@@ -376,6 +409,18 @@ describe("companion indirect display-copy lint guard", () => {
     expect(
       localizationMessages(
         "const view = <span>{[2026].filter(Boolean)}</span>;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <span>{items.map((_, index) => index + 1)}</span>;",
+    "const view = <span>{items.flatMap((_, index) => { return index + 1; })}</span>;",
+  ])("rejects numeric values returned by rendered callbacks", (source) => {
+    expect(
+      localizationMessages(
+        source,
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
