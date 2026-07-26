@@ -1,9 +1,9 @@
 /**
- * Foreground entitlements refresh monitor (PR #1086 — Codex P1).
- * Asserts the cold-start behaviour, the AppState 'active' subscription,
- * and the auth-gate that skips refreshes when the rider is signed out —
- * so the client-enforced gates re-check the server instead of enforcing
- * the launch-time snapshot indefinitely.
+ * Foreground entitlements refresh monitor (PR #1086 — Codex P1). The
+ * monitor is foreground-only — launch is covered by the cold-start
+ * `bootstrapAuth`, so firing here too would just race it. Asserts it does
+ * NOT refresh on mount, refreshes on each `AppState` 'active' transition,
+ * re-checks auth each time, and stays subscribed through failures.
  */
 
 import { AppState, type AppStateStatus } from "react-native";
@@ -39,23 +39,20 @@ describe("entitlementsRefreshMonitor (PR #1086)", () => {
   });
 
   function flush(): Promise<void> {
-    // Two ticks because the cold-start refresh chain is
+    // Two ticks because the refresh chain is
     // `void refreshIfAuthenticated → await refresh()`.
     return new Promise((resolve) => setImmediate(resolve)).then(
       () => new Promise((resolve) => setImmediate(resolve)),
     );
   }
 
-  it("refreshes on cold start when authenticated", async () => {
+  function foreground(): void {
+    listeners.forEach((l) => l("active"));
+  }
+
+  it("does NOT refresh on mount (launch is covered by bootstrapAuth)", async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     startEntitlementsRefreshMonitor({ isAuthenticated: () => true, refresh });
-    await flush();
-    expect(refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not refresh on cold start when signed out", async () => {
-    const refresh = jest.fn().mockResolvedValue(undefined);
-    startEntitlementsRefreshMonitor({ isAuthenticated: () => false, refresh });
     await flush();
     expect(refresh).not.toHaveBeenCalled();
   });
@@ -63,32 +60,37 @@ describe("entitlementsRefreshMonitor (PR #1086)", () => {
   it("refreshes on every foreground transition", async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     startEntitlementsRefreshMonitor({ isAuthenticated: () => true, refresh });
-    await flush();
-    refresh.mockClear();
 
     listeners.forEach((l) => l("background"));
-    listeners.forEach((l) => l("active"));
+    foreground();
     await flush();
     expect(refresh).toHaveBeenCalledTimes(1);
 
     listeners.forEach((l) => l("inactive"));
-    listeners.forEach((l) => l("active"));
+    foreground();
     await flush();
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not refresh on foreground when signed out", async () => {
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    startEntitlementsRefreshMonitor({ isAuthenticated: () => false, refresh });
+    foreground();
+    await flush();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("re-checks auth on each foreground (a rider who signed out is skipped)", async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     let authed = true;
-    startEntitlementsRefreshMonitor({
-      isAuthenticated: () => authed,
-      refresh,
-    });
+    startEntitlementsRefreshMonitor({ isAuthenticated: () => authed, refresh });
+
+    foreground();
     await flush();
     expect(refresh).toHaveBeenCalledTimes(1);
 
     authed = false;
-    listeners.forEach((l) => l("active"));
+    foreground();
     await flush();
     expect(refresh).toHaveBeenCalledTimes(1);
   });
@@ -96,8 +98,6 @@ describe("entitlementsRefreshMonitor (PR #1086)", () => {
   it("ignores non-active transitions", async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     startEntitlementsRefreshMonitor({ isAuthenticated: () => true, refresh });
-    await flush();
-    refresh.mockClear();
 
     listeners.forEach((l) => l("background"));
     listeners.forEach((l) => l("inactive"));
@@ -108,8 +108,14 @@ describe("entitlementsRefreshMonitor (PR #1086)", () => {
   it("swallows refresh failures so the monitor stays subscribed", async () => {
     const refresh = jest.fn().mockRejectedValue(new Error("network down"));
     startEntitlementsRefreshMonitor({ isAuthenticated: () => true, refresh });
+
+    foreground();
     await flush();
-    listeners.forEach((l) => l("active"));
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    // The next foreground transition still fires — a transient failure must
+    // not tear down the listener.
+    foreground();
     await flush();
     expect(refresh).toHaveBeenCalledTimes(2);
   });
@@ -120,11 +126,9 @@ describe("entitlementsRefreshMonitor (PR #1086)", () => {
       isAuthenticated: () => true,
       refresh,
     });
-    await flush();
-    refresh.mockClear();
 
     stop();
-    listeners.forEach((l) => l("active"));
+    foreground();
     await flush();
     expect(refresh).not.toHaveBeenCalled();
   });

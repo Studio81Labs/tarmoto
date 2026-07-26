@@ -34,10 +34,23 @@ export function isCurrentAuthSession(
   return current.accessToken === initial.accessToken;
 }
 
+// Monotonic generation stamp shared by every `bootstrapAuth` caller (the
+// cold-start effect AND the foreground entitlements refresh monitor). When two
+// refreshes overlap — a foreground transition while a prior `/users/me` is
+// still in flight, or the monitor racing the cold-start bootstrap — their
+// responses can resolve out of order. Without an ordering guard an older, slow
+// response would overwrite a newer downgrade / force-off snapshot and restore
+// client-only access until the next successful refresh. Each call captures the
+// generation it bumped to and refuses to publish once a later call has bumped
+// past it: only the latest-STARTED refresh (which read the freshest server
+// state) ever reaches the auth store.
+let latestBootstrapGeneration = 0;
+
 /** Hydrate the persisted rider immediately, then refresh it from the API. */
 export async function bootstrapAuth(
   deps: AuthBootstrapDependencies,
 ): Promise<void> {
+  const generation = ++latestBootstrapGeneration;
   const initialSession = deps.getSessionSnapshot();
   if (!initialSession) {
     deps.setUser(null);
@@ -49,6 +62,10 @@ export async function bootstrapAuth(
 
   try {
     const profile = await deps.getProfile();
+    // A later refresh started while this one was in flight — its response
+    // reflects newer server state, so drop this (possibly stale) one rather
+    // than letting an out-of-order resolve clobber the fresher snapshot.
+    if (generation !== latestBootstrapGeneration) return;
     if (
       !isCurrentAuthSession(initialSession, deps.getSessionSnapshot(), profile)
     ) {
@@ -60,6 +77,8 @@ export async function bootstrapAuth(
   } catch {
     // The 401 refresh path clears invalid tokens. Network-only failures retain
     // the cached profile so an authenticated rider can keep using offline UI.
+    // Superseded failures do nothing — the latest refresh owns the outcome.
+    if (generation !== latestBootstrapGeneration) return;
     if (!deps.getSessionSnapshot()) deps.setUser(null);
     else deps.setLoading(false);
   }

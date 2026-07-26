@@ -108,4 +108,39 @@ describe("bootstrapAuth", () => {
     expect(setUser).not.toHaveBeenCalled();
     expect(setLoading).toHaveBeenCalledWith(false);
   });
+
+  it("drops a superseded refresh so an out-of-order resolve can't clobber a newer snapshot", async () => {
+    // A (older) reads the stale unlimited snapshot slowly; B (newer, started
+    // after A) reads the fresh downgrade and resolves first. A's late response
+    // must not overwrite B's.
+    const stale = { id: "u1", subscription_tier: "premium" } as User;
+    const fresh = { id: "u1", subscription_tier: "free" } as User;
+    const setUser = jest.fn();
+    const session = { accessToken: "token", userId: "u1" };
+
+    let resolveStale!: (u: User) => void;
+    const stalePending = new Promise<User>((r) => (resolveStale = r));
+    let resolveFresh!: (u: User) => void;
+    const freshPending = new Promise<User>((r) => (resolveFresh = r));
+
+    const deps = (getProfile: () => Promise<User>) => ({
+      getSessionSnapshot: () => session,
+      getCachedProfile: () => null,
+      getProfile,
+      cacheProfile: jest.fn(),
+      setUser,
+      setLoading: jest.fn(),
+    });
+
+    const aDone = bootstrapAuth(deps(() => stalePending));
+    const bDone = bootstrapAuth(deps(() => freshPending));
+
+    resolveFresh(fresh);
+    await bDone;
+    resolveStale(stale);
+    await aDone;
+
+    expect(setUser).toHaveBeenCalledTimes(1);
+    expect(setUser).toHaveBeenCalledWith(fresh);
+  });
 });

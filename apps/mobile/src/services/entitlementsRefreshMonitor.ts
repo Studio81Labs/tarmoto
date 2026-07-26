@@ -13,16 +13,21 @@
  * is a client-enforced monetization boundary, so it must re-check the
  * server the same way the `road_data_contribution` privacy gate does.
  *
- * Strategy mirrors `privacyRefreshMonitor`:
+ * Strategy mirrors `privacyRefreshMonitor`, minus the cold-start fire:
  *
- *   1. On `start()` — fire one refresh immediately (cold start). The
- *      cold-start `bootstrapAuth` also runs, but this keeps the monitor
- *      self-contained and idempotent.
+ *   1. Foreground-only. The app's cold-start `bootstrapAuth` already
+ *      refreshes at launch, so firing here too would just race that same
+ *      request (two overlapping `/users/me` calls); this monitor only adds
+ *      the ongoing foreground behaviour on top of that launch refresh.
  *   2. Subscribe to `AppState` 'active' transitions and refresh on each
  *      foreground (covers a rider resumed from background after an
  *      operator-side change).
  *   3. Skip refreshes when the rider isn't authenticated so a logged-out
  *      app doesn't churn against `/users/me`.
+ *
+ * Overlapping refreshes (two quick foregrounds, or a foreground during the
+ * still-pending launch bootstrap) are made safe by `bootstrapAuth`'s
+ * generation guard, which drops a superseded response before it publishes.
  *
  * Failures are swallowed: the previous snapshot stays in place (the gates
  * still fail closed against it), and the next foreground transition tries
@@ -52,10 +57,6 @@ export function startEntitlementsRefreshMonitor(
   // Drop a prior subscription (e.g. from a hot reload) so we don't
   // accumulate duplicate handlers.
   stopEntitlementsRefreshMonitor();
-
-  // Cold-start refresh. Fire-and-forget — caller is a mount effect and
-  // can't await us. `refreshIfAuthenticated` no-ops for a logged-out app.
-  void refreshIfAuthenticated(deps);
 
   const onChange = (next: AppStateStatus) => {
     if (next === "active") {
