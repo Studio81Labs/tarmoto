@@ -88,7 +88,7 @@ export interface EntitlementsRefreshDependencies {
   getProfile: () => Promise<User>;
   /** The profile CURRENTLY in the auth store, read at publish time. */
   getCurrentUser: () => User | null;
-  setUser: (user: User) => void;
+  setUser: (user: User | null) => void;
   cacheProfile: (user: User) => void;
 }
 
@@ -105,9 +105,14 @@ export interface EntitlementsRefreshDependencies {
  * still goes through the shared generation guard; the rider's own PATCH wins on
  * the fields it owns because we never overwrite them.
  *
- * Best-effort: on a failed GET the previous snapshot is retained (offline-first
- * — see `entitlementsRefreshMonitor`). Nothing is published if the rider logged
- * out or switched accounts while the GET was in flight.
+ * Best-effort: on a NETWORK failure the previous snapshot is retained
+ * (offline-first — see `entitlementsRefreshMonitor`). But a 401 whose token
+ * refresh fails clears the session (`clearTokens`) before the GET rejects; in
+ * that case we publish `null` so navigation and the monitor both see the rider
+ * as signed out — otherwise the stale user lingers, `isAuthenticated()` is
+ * false so the monitor stops refreshing, and the app is stuck on protected
+ * screens until restart. Nothing is published if the rider logged out or
+ * switched accounts while the GET was in flight.
  */
 export async function refreshEntitlements(
   deps: EntitlementsRefreshDependencies,
@@ -120,7 +125,14 @@ export async function refreshEntitlements(
   try {
     profile = await deps.getProfile();
   } catch {
-    // Retain last known good — a transient blip must not blank entitlements.
+    // Session gone (401 → tokens cleared) → sign out; session intact (network
+    // blip) → retain last known good. Skip if a later refresh superseded us.
+    if (
+      generation === latestBootstrapGeneration &&
+      !deps.getSessionSnapshot()
+    ) {
+      deps.setUser(null);
+    }
     return;
   }
 

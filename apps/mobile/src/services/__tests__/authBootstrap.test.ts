@@ -225,11 +225,11 @@ describe("refreshEntitlements", () => {
     expect(setUser).not.toHaveBeenCalled();
   });
 
-  it("retains the snapshot on a failed refresh (offline-first)", async () => {
+  it("retains the snapshot on a NETWORK failure with the session intact (offline-first)", async () => {
     const setUser = jest.fn();
     const cacheProfile = jest.fn();
     await refreshEntitlements({
-      getSessionSnapshot: () => session,
+      getSessionSnapshot: () => session, // session still present
       getProfile: async () => {
         throw new Error("offline");
       },
@@ -239,6 +239,23 @@ describe("refreshEntitlements", () => {
     });
     expect(setUser).not.toHaveBeenCalled();
     expect(cacheProfile).not.toHaveBeenCalled();
+  });
+
+  it("signs out when a failed refresh cleared the session (401 → tokens gone)", async () => {
+    const setUser = jest.fn();
+    // The 401 refresh path clears tokens before the GET rejects.
+    let live: typeof session | null = session;
+    await refreshEntitlements({
+      getSessionSnapshot: () => live,
+      getProfile: async () => {
+        live = null;
+        throw new Error("401");
+      },
+      getCurrentUser: () => profileResponse(),
+      setUser,
+      cacheProfile: jest.fn(),
+    });
+    expect(setUser).toHaveBeenCalledWith(null);
   });
 
   it("drops a superseded refresh so an older slice set can't win", async () => {

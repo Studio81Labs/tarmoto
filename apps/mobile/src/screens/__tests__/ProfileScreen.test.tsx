@@ -89,22 +89,19 @@ const mockAuthState: {
   },
 };
 
-jest.mock("@/stores", () => ({
-  useAuthStore: (
-    selector: (state: {
-      user: typeof mockAuthState.user;
-      setUser: typeof mockSetUser;
-      applyProfileUpdate: typeof mockApplyProfileUpdate;
-      logout: typeof mockLogout;
-    }) => unknown,
-  ) =>
-    selector({
-      user: mockAuthState.user,
-      setUser: mockSetUser,
-      applyProfileUpdate: mockApplyProfileUpdate,
-      logout: mockLogout,
-    }),
-}));
+jest.mock("@/stores", () => {
+  const snapshot = () => ({
+    user: mockAuthState.user,
+    setUser: mockSetUser,
+    applyProfileUpdate: mockApplyProfileUpdate,
+    logout: mockLogout,
+  });
+  const useAuthStore = (selector: (state: unknown) => unknown) =>
+    selector(snapshot());
+  // The avatar-rollback path reads the live store via getState().
+  useAuthStore.getState = snapshot;
+  return { useAuthStore };
+});
 
 jest.mock("@/services/api", () => ({
   api: {

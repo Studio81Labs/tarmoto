@@ -1,6 +1,7 @@
 const mockPatch = jest.fn();
 const mockPost = jest.fn();
 const mockSetCachedUser = jest.fn();
+const mockGetCachedUser = jest.fn(() => null as unknown);
 let mockSession: { accessToken: string; userId: string | null } | null = null;
 
 jest.mock("../typedClient", () => ({
@@ -14,7 +15,7 @@ jest.mock("../typedClient", () => ({
   clearTokens: jest.fn(),
   getAccessToken: () => mockSession?.accessToken ?? null,
   getAuthenticatedUserId: () => mockSession?.userId ?? null,
-  getCachedUser: jest.fn(() => null),
+  getCachedUser: () => mockGetCachedUser(),
   isAuthenticated: () => mockSession !== null,
   setCachedUser: (...args: unknown[]) => mockSetCachedUser(...args),
   setAuthenticatedUserId: jest.fn(),
@@ -55,6 +56,7 @@ describe("profile cache session guards", () => {
     mockPatch.mockReset();
     mockPost.mockReset();
     mockSetCachedUser.mockReset();
+    mockGetCachedUser.mockReset().mockReturnValue(null);
   });
 
   it("does not cache a profile update after an account switch", async () => {
@@ -89,5 +91,39 @@ describe("profile cache session guards", () => {
       api.updateProfile({ display_name: "Account A" }),
     ).resolves.toEqual(accountA);
     expect(mockSetCachedUser).toHaveBeenCalledWith(accountA);
+  });
+
+  it("preserves the cached entitlement slices when caching a profile update", async () => {
+    // The persisted cache holds fresh (downgraded) entitlements — kept current
+    // by the entitlement refresh path.
+    mockGetCachedUser.mockReturnValue({
+      id: "account-a",
+      subscription_tier: "free",
+      features: { gpx_export: false },
+      limits: { road_quality_max_zoom: 12 },
+    } as unknown);
+    // The PATCH response still carries the pre-downgrade (permissive) snapshot.
+    mockPatch.mockResolvedValue(
+      success({
+        id: "account-a",
+        subscription_tier: "premium",
+        features: { gpx_export: true },
+        limits: { road_quality_max_zoom: null },
+        display_name: "New",
+      } as unknown as User),
+    );
+
+    await api.updateProfile({ display_name: "New" });
+
+    const cached = mockSetCachedUser.mock.calls.at(-1)?.[0] as Record<
+      string,
+      unknown
+    >;
+    // MMKV must NOT persist the stale permissive entitlements…
+    expect(cached.subscription_tier).toBe("free");
+    expect(cached.features).toEqual({ gpx_export: false });
+    expect(cached.limits).toEqual({ road_quality_max_zoom: 12 });
+    // …but keeps the incoming editable field.
+    expect(cached.display_name).toBe("New");
   });
 });

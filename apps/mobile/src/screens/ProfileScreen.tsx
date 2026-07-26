@@ -173,7 +173,18 @@ export default function ProfileScreen() {
       // exposes it, so reloading keeps both surfaces aligned.
       void load("refresh");
     } catch (err) {
-      if (previousUser) setUser(previousUser);
+      // Undo ONLY the optimistic avatar change, restoring it onto the CURRENT
+      // profile — a full revert to `previousUser` would also roll back a
+      // downgrade a foreground refresh may have published during the upload,
+      // re-enabling client-only entitlements.
+      if (previousUser) {
+        const current = useAuthStore.getState().user;
+        setUser(
+          current && current.id === previousUser.id
+            ? { ...current, avatar_url: previousUser.avatar_url }
+            : previousUser,
+        );
+      }
       setAvatarError(
         getUserFacingErrorMessage(err, translate("Could not upload avatar.")),
       );

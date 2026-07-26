@@ -110,6 +110,7 @@ import {
   type AuthSessionSnapshot,
 } from "./authBootstrap";
 import { t } from "@/i18n";
+import { withPreservedEntitlements } from "@/lib/entitlements";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -410,7 +411,7 @@ class ApiService {
       sessionAtStart &&
       isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
     ) {
-      setCachedUser(user);
+      setCachedUser(withPreservedEntitlements(getCachedUser(), user));
     }
     return user;
   }
@@ -516,7 +517,7 @@ class ApiService {
       sessionAtStart &&
       isCurrentAuthSession(sessionAtStart, this.getAuthSessionSnapshot(), user)
     ) {
-      setCachedUser(user);
+      setCachedUser(withPreservedEntitlements(getCachedUser(), user));
     }
     return user;
   }
