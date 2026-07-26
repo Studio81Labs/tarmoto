@@ -19,6 +19,7 @@ import { plannerApi } from "@/lib/planner/api";
 import type { Trip, TripParameters, TripSummary, Waypoint } from "@/lib/types";
 import { usePlannerRouting } from "@/hooks/usePlannerRouting";
 import { FEATURE_LIMIT_EXCEEDED } from "@tarmoto/shared";
+import { insertDraftedVias } from "./page.helpers";
 
 // Entitlements: a fixed free tier is enough for the upgrade-modal safety-net
 // test below — the tier/limit resolution itself is covered by useEntitlements'
@@ -764,6 +765,44 @@ describe("TripPlannerPage", () => {
       }),
     );
   });
+
+  it.each(["draft", "loop"] as const)(
+    "preserves source provenance and omits generated names at the %s insertion boundary",
+    (idPrefix) => {
+      const insertWaypoint = vi.fn();
+
+      insertDraftedVias(
+        [
+          { lat: 46.52, lng: 10.45, name: "Via 1" },
+          { lat: 46.56, lng: 10.5 },
+        ],
+        1,
+        idPrefix,
+        insertWaypoint,
+        1_722_000_000_000,
+      );
+
+      expect(insertWaypoint).toHaveBeenNthCalledWith(1, 1, {
+        id: `${idPrefix}-1722000000000-0`,
+        name: "Via 1",
+        nameIsSource: true,
+        location: { lat: 46.52, lng: 10.45 },
+        type: "via",
+      });
+      expect(insertWaypoint).toHaveBeenNthCalledWith(
+        2,
+        1,
+        expect.objectContaining({
+          id: `${idPrefix}-1722000000000-1`,
+          location: { lat: 46.56, lng: 10.5 },
+          type: "via",
+        }),
+      );
+      const unnamedWaypoint = insertWaypoint.mock.calls[1]![1];
+      expect(unnamedWaypoint).not.toHaveProperty("name");
+      expect(unnamedWaypoint).not.toHaveProperty("nameIsSource");
+    },
+  );
 
   it("shares whole-route conditions with the map and a day-scoped copy with the sidebar", () => {
     render(<TripPlannerPage />);
