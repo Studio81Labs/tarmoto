@@ -85,6 +85,7 @@ import {
   isLegacyGeneratedWaypointName,
   waypointDisplayName,
 } from "@/lib/planner/labels";
+import { insertDraftedVias } from "./page.helpers";
 import {
   buildPrefsSummary,
   DEFAULT_ROAD_PREFERENCE,
@@ -2349,14 +2350,12 @@ export default function TripPlannerPage() {
           for (const waypoint of routeDay!.waypoints) {
             if (waypoint.type === "via") store.removeWaypointById(waypoint.id);
           }
-          result.vias.forEach((via, index) => {
-            useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
-              id: `draft-${Date.now()}-${index}`,
-              name: via.name,
-              location: { lat: via.lat, lng: via.lng },
-              type: "via",
-            });
-          });
+          insertDraftedVias(
+            result.vias,
+            selectedDayIndex,
+            "draft",
+            useTripStore.getState().insertWaypointBeforeEnd,
+          );
           fitAfterRouteRef.current = true;
         }
         if (!result.inflated && result.reachedTargetKm) {
@@ -2470,14 +2469,12 @@ export default function TripPlannerPage() {
             renameWaypoint(finish.id, startWp.name ?? t("Back at start"));
           }
         }
-        result.vias.forEach((via, index) => {
-          useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
-            id: `loop-${Date.now()}-${index}`,
-            name: via.name,
-            location: { lat: via.lat, lng: via.lng },
-            type: "via",
-          });
-        });
+        insertDraftedVias(
+          result.vias,
+          selectedDayIndex,
+          "loop",
+          useTripStore.getState().insertWaypointBeforeEnd,
+        );
         fitAfterRouteRef.current = true;
         const draftedDistance = format.distanceKm(result.summary.distanceKm);
         if (result.reachedTargetKm) {

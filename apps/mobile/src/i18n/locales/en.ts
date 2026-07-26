@@ -531,6 +531,8 @@ export const en = {
   "Group ride has ended": "Group ride has ended",
   "Group ride not found or access denied":
     "Group ride not found or access denied",
+  "The live group ride connection had a problem. Try again.":
+    "The live group ride connection had a problem. Try again.",
   "Guest house": "Guest house",
   Hazard: "Hazard",
   "Hazard reported: {hazard}": "Hazard reported: {hazard}",

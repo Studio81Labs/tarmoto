@@ -399,7 +399,7 @@ export interface DraftRoundtripResult {
    * The loop's shape as waypoints (turnaround + Fun-Zone vias, travel
    * order) — apply to the trip so live routing redraws the same loop.
    */
-  vias: Array<{ lat: number; lng: number; name: string }>;
+  vias: Array<{ lat: number; lng: number; name?: string }>;
 }
 
 /** Inputs for {@link PlannerApi.draftRoute} (revision 2 §F). */
@@ -422,5 +422,5 @@ export interface DraftRouteResult {
   reachedTargetKm: boolean;
   /** Fun-Zone vias the draft threaded, in travel order — apply these to
    * the trip so live routing redraws the same line. */
-  vias: Array<{ lat: number; lng: number; name: string }>;
+  vias: Array<{ lat: number; lng: number; name?: string }>;
 }

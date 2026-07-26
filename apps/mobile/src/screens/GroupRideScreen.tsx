@@ -55,7 +55,7 @@ import {
 import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { APP_MAP_STYLE_URL } from "./MapScreen.helpers";
-import { translateTerminalGroupRideError } from "./GroupRideScreen.helpers";
+import { resolveGroupRideError } from "./GroupRideScreen.helpers";
 import { formatSpeedKmh } from "./RideScreens.helpers";
 import { useAuthStore, useRideStore } from "@/stores";
 import type {
@@ -197,17 +197,16 @@ export default function GroupRideScreen() {
     // and leaving the rider on a stuck "active" screen with just an
     // error banner means they have to tap Leave to recover. Detect
     // those messages and run the same teardown as `handleEnded`.
-    // Anything else (transient network blip, throttle complaint) is
-    // surfaced as an inline error banner without ripping the screen
-    // down.
+    // Anything else (transient network blip, throttle complaint) is surfaced
+    // through cataloged generic copy without exposing gateway diagnostics.
     const handleError = (msg: string): void => {
-      const terminalMessage = translateTerminalGroupRideError(msg);
-      if (terminalMessage !== null) {
-        Alert.alert(translate("Group ride"), terminalMessage);
+      const error = resolveGroupRideError(msg);
+      if (error.terminal) {
+        Alert.alert(translate("Group ride"), error.displayText);
         teardownToIdle();
         return;
       }
-      setErrorMessage(msg);
+      setErrorMessage(error.displayText);
     };
 
     groupRideSocket.connect(groupRide.id, {

@@ -8,11 +8,30 @@ const TERMINAL_GROUP_RIDE_ERROR_KEYS = {
 
 type TerminalGroupRideError = keyof typeof TERMINAL_GROUP_RIDE_ERROR_KEYS;
 
-/** Translate fixed terminal gateway errors; unknown errors remain inline. */
-export function translateTerminalGroupRideError(
+export interface GroupRideErrorPresentation {
+  displayText: string;
+  terminal: boolean;
+}
+
+/**
+ * Keep gateway diagnostics out of rider-facing copy. Known terminal messages
+ * retain their specific behavior; every other server/socket message collapses
+ * to one cataloged transient fallback.
+ */
+export function resolveGroupRideError(
   message: string,
   t: Translate = translate,
-): string | null {
-  if (!Object.hasOwn(TERMINAL_GROUP_RIDE_ERROR_KEYS, message)) return null;
-  return t(TERMINAL_GROUP_RIDE_ERROR_KEYS[message as TerminalGroupRideError]);
+): GroupRideErrorPresentation {
+  if (Object.hasOwn(TERMINAL_GROUP_RIDE_ERROR_KEYS, message)) {
+    return {
+      displayText: t(
+        TERMINAL_GROUP_RIDE_ERROR_KEYS[message as TerminalGroupRideError],
+      ),
+      terminal: true,
+    };
+  }
+  return {
+    displayText: t("The live group ride connection had a problem. Try again."),
+    terminal: false,
+  };
 }

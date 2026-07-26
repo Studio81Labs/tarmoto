@@ -1195,7 +1195,7 @@ describe("plannerApi.draftRoundtrip (revision 3 §E)", () => {
     expect(turn.lng).toBeGreaterThan(start.lng);
     expect(Math.abs(turn.lat - start.lat)).toBeLessThan(0.05);
     expect(result.reachedTargetKm).toBe(true);
-    expect(result.vias.at(-1)).toMatchObject({ name: "Turnaround" });
+    expect(result.vias.at(-1)).not.toHaveProperty("name");
   });
 
   it("measures the loop under the sidebar avoids, dialog preference winning", async () => {
@@ -1281,7 +1281,7 @@ describe("plannerApi.draftRoundtrip (revision 3 §E)", () => {
     });
 
     expect(zonesMock).toHaveBeenCalledWith([14, 48, 16, 50], undefined);
-    expect(result.vias.map((v) => v.name)).toEqual(["Zone z1", "Turnaround"]);
+    expect(result.vias.map((v) => v.name)).toEqual(["Zone z1", undefined]);
     // Zone vias anchor the shape — no re-scaling second call.
     expect(routeMock).toHaveBeenCalledTimes(1);
   });
