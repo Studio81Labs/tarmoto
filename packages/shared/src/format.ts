@@ -107,6 +107,8 @@ export interface FormatContext {
 export interface SplitValueUnit {
   value: string;
   unit: string;
+  /** Where Intl places the unit relative to the numeric value for this locale. */
+  unitPosition: "before" | "after";
 }
 
 export type DisplayUnitKind = "distance" | "speed" | "elevation";
@@ -178,6 +180,12 @@ export interface Formatters {
   speed(kmh: number): string;
   elevation(m: number): string;
   temperature(c: number): string;
+  /** Split an Intl unit value while retaining locale-specific unit placement. */
+  splitUnit(
+    value: number,
+    unit: string,
+    options?: Intl.NumberFormatOptions,
+  ): SplitValueUnit;
   splitDistanceKm(km: number): SplitValueUnit;
   splitSpeed(kmh: number): SplitValueUnit;
   splitElevation(m: number): SplitValueUnit;
@@ -343,7 +351,7 @@ export function createFormatters(ctx: FormatContext): Formatters {
   const splitUnitNumber = (
     value: number,
     unit: string,
-    options: Intl.NumberFormatOptions,
+    options: Intl.NumberFormatOptions = {},
   ): SplitValueUnit => {
     const parts = getNumberFormat(locale, {
       style: "unit",
@@ -351,6 +359,13 @@ export function createFormatters(ctx: FormatContext): Formatters {
       unitDisplay: "short",
       ...options,
     }).formatToParts(value);
+    const unitIndex = parts.findIndex((part) => part.type === "unit");
+    const valueIndex = parts.findIndex(
+      (part) =>
+        part.type === "integer" ||
+        part.type === "nan" ||
+        part.type === "infinity",
+    );
     return {
       value: parts
         .filter((part) => part.type !== "unit")
@@ -362,6 +377,10 @@ export function createFormatters(ctx: FormatContext): Formatters {
         .map((part) => part.value)
         .join("")
         .trim(),
+      unitPosition:
+        unitIndex >= 0 && valueIndex >= 0 && unitIndex < valueIndex
+          ? "before"
+          : "after",
     };
   };
 
@@ -514,6 +533,7 @@ export function createFormatters(ctx: FormatContext): Formatters {
             maximumFractionDigits: 1,
           })
         : unitNumber(c, "celsius", { maximumFractionDigits: 1 }),
+    splitUnit: splitUnitNumber,
     splitDistanceKm: (km) =>
       units === "imperial"
         ? splitUnitNumber(kmToMiles(km), "mile", { maximumFractionDigits: 1 })

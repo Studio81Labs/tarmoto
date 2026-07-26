@@ -7,6 +7,7 @@ import {
   setActiveLocale,
   tDynamic,
   translate,
+  translateKnownLabel,
 } from ".";
 import { en, mobileCatalogs, type EnglishMessageKey } from "./locales";
 
@@ -77,6 +78,12 @@ describe("mobile i18n", () => {
 
   it("keeps the deliberate dynamic-key fallback", () => {
     expect(tDynamic("runtime server copy")).toBe("runtime server copy");
+  });
+
+  it("catalogs constrained wire values and hides unknown tokens", () => {
+    const labels = { known: "Home" } as const;
+    expect(translateKnownLabel("known", labels)).toBe("Home");
+    expect(translateKnownLabel("future", labels)).toBe("Unknown");
   });
 
   it("pluralizes count-bearing labels", () => {

@@ -17,7 +17,12 @@ import {
 import type { LineLayerSpecification } from "@maplibre/maplibre-react-native";
 
 import type { IconName } from "@/components/Icon";
-import { translate, type EnglishMessageKey, type Translate } from "@/i18n";
+import {
+  translate,
+  translateKnownLabel,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
 import { getFormatters } from "@/format";
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
@@ -158,8 +163,7 @@ export function surfaceLabel(
     dirt: "Dirt",
     unknown: "Unknown",
   };
-  const label = labels[surface as SurfaceType];
-  return label ? translate(label) : surface;
+  return translateKnownLabel(surface, labels);
 }
 
 /**

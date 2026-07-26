@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap, MapGeoJSONFeature } from "maplibre-gl";
 import {
+  basemapPlaceCategoryDisplay,
   basemapPlaceCategoryLabel,
   basemapPlaceMapsUrl,
   getBasemapPoiLayerIds,
@@ -89,11 +90,14 @@ describe("readBasemapPlace", () => {
     });
   });
 
-  it("leaves categoryKey null for an unrecognised subclass (title-cased fallback)", () => {
+  it("keeps unknown source text for search but catalogs the display fallback", () => {
     const place = readBasemapPlace(
       poiFeature({ name: "Odd", subclass: "helipad" }),
     );
-    expect(place).toMatchObject({ category: "Helipad", categoryKey: null });
+    expect(place).toMatchObject({ category: "Helipad", categoryKey: "Place" });
+    expect(basemapPlaceCategoryDisplay(place!, (key) => `xx:${key}`)).toBe(
+      "xx:Place",
+    );
   });
 
   it("projects an unnamed POI with an empty name (category becomes the title)", () => {

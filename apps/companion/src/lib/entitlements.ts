@@ -1,18 +1,19 @@
 import { ApiError } from "@/lib/api";
+import type { EnglishMessageKey } from "@/i18n";
 import {
   FEATURE_LIMIT_EXCEEDED,
   type LimitFeatureKey,
   type SubscriptionTier,
 } from "@tarmoto/shared";
 
-const TIER_LABEL: Record<SubscriptionTier, string> = {
+const TIER_LABEL: Record<SubscriptionTier, EnglishMessageKey> = {
   free: "Free",
   pro: "Pro",
   premium: "Premium",
 };
 
-/** Display name for a subscription tier (English-only until i18n covers it). */
-export function tierLabel(tier: SubscriptionTier): string {
+/** Catalog key for a subscription tier. */
+export function tierLabel(tier: SubscriptionTier): EnglishMessageKey {
   return TIER_LABEL[tier];
 }
 

@@ -17,6 +17,8 @@ const variantClass: Record<MetricTileVariant, string> = {
 interface MetricTileBaseProps {
   label: string;
   unit?: string;
+  /** Locale-specific placement for the separately styled unit. */
+  unitPosition?: "before" | "after";
   /** Optional secondary text under the value ("+18% vs March"). */
   delta?: ReactNode;
   variant?: MetricTileVariant;
@@ -50,6 +52,7 @@ export function MetricTile(props: MetricTileProps) {
     label,
     value,
     unit,
+    unitPosition = "after",
     delta,
     variant = "default",
     accentNumber = false,
@@ -62,6 +65,20 @@ export function MetricTile(props: MetricTileProps) {
           props as MetricTileBaseProps & MetricTileNumericValueProps
         ).formatValue(props.value)
       : props.value;
+  const unitNode = unit ? (
+    // Source `.metric .u` carries no letter-spacing — adding any
+    // tracking pushes the uppercase unit out of alignment with
+    // the canonical 11 px mono rendering used on every KPI brick
+    // (§12) and inside the road-preview meta strip (§13).
+    <div
+      className={cn(
+        "font-mono text-[11px] uppercase",
+        inverted ? "text-fg-on-dark-dim" : "text-fg-dim",
+      )}
+    >
+      {unit}
+    </div>
+  ) : null;
   return (
     <div
       className={cn(
@@ -79,6 +96,7 @@ export function MetricTile(props: MetricTileProps) {
         {label}
       </div>
       <div className="mt-2 flex items-baseline gap-1.5">
+        {unitPosition === "before" && unitNode}
         <div
           className={cn(
             "font-sans text-[36px] font-extrabold leading-none tracking-[-1px]",
@@ -87,20 +105,7 @@ export function MetricTile(props: MetricTileProps) {
         >
           {displayValue}
         </div>
-        {unit && (
-          // Source `.metric .u` carries no letter-spacing — adding any
-          // tracking pushes the uppercase unit out of alignment with
-          // the canonical 11 px mono rendering used on every KPI brick
-          // (§12) and inside the road-preview meta strip (§13).
-          <div
-            className={cn(
-              "font-mono text-[11px] uppercase",
-              inverted ? "text-fg-on-dark-dim" : "text-fg-dim",
-            )}
-          >
-            {unit}
-          </div>
-        )}
+        {unitPosition === "after" && unitNode}
       </div>
       {delta && (
         <div

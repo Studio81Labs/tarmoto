@@ -2,7 +2,10 @@ export const achievements = {
   "Could not load leaderboards.": "Could not load leaderboards.",
   Achievements: "Achievements",
   "Active challenges": "Active challenges",
+  "Alpine Spring": "Alpine Spring",
   "Badge details unavailable.": "Badge details unavailable.",
+  "Chase the thaw across Europe's reopening passes.":
+    "Chase the thaw across Europe's reopening passes.",
   "Complete a {distance} ride": "Complete a {distance} ride",
   "Could not load achievements": "Could not load achievements",
   "Community challenge": "Community challenge",
@@ -33,6 +36,8 @@ export const achievements = {
   "Reach this goal before the challenge ends.":
     "Reach this goal before the challenge ends.",
   "Ride {distance}": "Ride {distance}",
+  "Ride 1,500 km featuring at least 10 alpine passes before the season closes in June.":
+    "Ride 1,500 km featuring at least 10 alpine passes before the season closes in June.",
   "Regular Rider": "Regular Rider",
   Rank: "Rank",
   "Region scope": "Region scope",

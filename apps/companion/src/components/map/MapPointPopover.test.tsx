@@ -48,11 +48,20 @@ describe("MapPointPopover", () => {
       expect(
         screen.getByText(/OpenStreetMap contributors/i),
       ).toBeInTheDocument();
+      expect(screen.getByText("Fuel · OpenStreetMap")).toBeInTheDocument();
       expect(
         screen.getByRole("link", { name: /google maps/i }),
       ).toBeInTheDocument();
       // No route actions without an actions prop.
       expect(screen.queryByRole("button", { name: /add as via/i })).toBeNull();
+    });
+
+    it("renders Foursquare provenance as cataloged brand copy", () => {
+      renderPopover({
+        kind: "poi",
+        poi: { ...poi, source: "fsq" },
+      });
+      expect(screen.getByText("Fuel · Foursquare")).toBeInTheDocument();
     });
 
     it("renders route actions when provided (editable)", () => {

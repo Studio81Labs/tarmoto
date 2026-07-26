@@ -90,6 +90,13 @@ export const CLOSURE_REASON_LABELS = {
   other: "Other",
 } as const satisfies Record<string, EnglishMessageKey>;
 
+export const SEASON_LABELS = {
+  spring: "Spring",
+  summer: "Summer",
+  autumn: "Autumn",
+  winter: "Winter",
+} as const satisfies Record<string, EnglishMessageKey>;
+
 export const SUBSCRIPTION_STATUS_LABELS = {
   active: "Active",
   trialing: "Trialing",
