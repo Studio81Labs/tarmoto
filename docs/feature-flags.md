@@ -4,11 +4,15 @@ Version 1.0 | July 2026 | Source of truth for the entitlement + operator-switch 
 
 Tiers: **Free** ⊂ **Pro** (€29.99/yr) ⊂ **Premium** (€49.99/yr)
 
-> **Status:** this catalog is the target vocabulary. The live registry
-> (`packages/shared/src/feature-flags.ts`) currently implements a subset —
-> see [§6 Implementation status](#6-implementation-status--reconciliation)
-> for exactly what ships today vs. what is planned, and where the live
-> architecture intentionally differs from the sketch in §5.
+> **Status:** this catalog is the target vocabulary. The full vocabulary is in
+> the live registry (`packages/shared/src/feature-flags.ts`), but only a subset
+> is **enforced** — as of mobile #1086, 6 entitlements gate end-to-end
+> (`gpx_export`, `commuter_mode`, `group_rides`, `max_active_trips`,
+> `max_trip_collaborators`, `road_quality_max_zoom`) and both clients consume the
+> snapshot; the rest is inert registry vocabulary. It still ships **dark** (launch
+> overrides force everyone unlimited). See
+> [§6 Implementation status](#6-implementation-status--reconciliation) for the
+> exact ships-today vs. planned split and the go-live flip.
 
 ## Resolution model
 
@@ -166,17 +170,31 @@ The live system (shipped in [#1032](https://github.com/Studio81Labs/tarmoto/pull
 **Phase 1 — all §1 flags + §2 limits are in the registry** (merged, #1034):
 
 - **Flags (22):** the full §1 vocabulary — 11 Free, 6 Pro, 5 Premium. `full_road_quality_zoom` renamed to `road_quality_full_zoom`; `unlimited_trip_planning` retired (superseded by the `max_active_trips` limit).
-- **Limits (6):** the full §2 set. Only `max_active_trips` (Free = 1) is **enforced** today — across every trip mint + completed→open promotion path. The other five are defined vocabulary with no enforcement yet.
+- **Limits (6):** the full §2 set in the registry.
 
 **Phase 2 — the system-switch mechanism + admin surface** (see §6.1): the `kind: "system"` registry kind, all 14 `sys_*` keys, `resolveSystemSwitch`/`getSystemSwitches`, and the `/admin/system-switches` operator surface. No `sys_*` switch stops its subsystem yet (per-switch enforcement is a follow-up); no migration or seed (default-on).
 
 - Migration `1814-AlignFeatureFlagCatalog` is a faithful key rename: it moves the launch-mode `force_on` row (and any per-user override) from `full_road_quality_zoom` to `road_quality_full_zoom`, preserving each row's state. The retired `unlimited_trip_planning` override rows are left in place as inert orphans (the resolver ignores keys outside the registry) so a rollback can't lose operator state. The newly-added flags/limits carry **no override rows and no launch seed** — they are inert registry vocabulary until a feature is wired to them.
-- Existing launch-mode dark-ship posture is unchanged (`max_active_trips = NULL`; several Pro/Premium flags seeded `force_on`) until monetization goes live. Clients still do not consume the snapshot for gating — that remains the next workstream.
+
+**Phase 3 — enforcement + client consumption for the first tranche** (companion #1082, mobile #1086). **6 entitlements now gate end-to-end:**
+
+| Key                      | Kind             | Enforcement                                                                                                |
+| ------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `gpx_export`             | toggle (Pro)     | server 403 on `/rides/*.gpx` + client gate (companion & mobile, incl. client-only planned-trip GPX)        |
+| `commuter_mode`          | toggle (Pro)     | server — whole `/commute/*` controller                                                                     |
+| `group_rides`            | toggle (Premium) | server — `/group-rides` create/join/detail + sockets                                                       |
+| `max_active_trips`       | limit (Free 1)   | server — every trip mint + completed→open promotion (`assertCanMintOpenTrip`)                              |
+| `max_trip_collaborators` | limit (Free 0)   | server — invite creation + public share-link join (advisory-locked)                                        |
+| `road_quality_max_zoom`  | limit (Free 12)  | **client-only** overlay `maxzoom` clamp — companion + mobile, incl. signed-out riders via `/config/limits` |
+
+- **Clients now consume the snapshot.** Companion and mobile read `features`/`limits` off `/users/me` (+ the public `/config/*` fast path for anonymous surfaces) and gate/upsell. This closes the "clients do not consume" gap noted in earlier drafts.
+- **Still dark:** the launch-mode global overrides (`force_on` on the seeded flags, `NULL`/unlimited on the seeded limits) sit ABOVE the tier grant, so every rider currently resolves unlimited regardless of tier. Clearing those overrides (admin) is what makes tier differentiation bite; it needs no client change.
 
 ### 6.3 Remaining to reach this catalog
 
-- **Per-feature / per-switch enforcement:** defining a flag, limit, or system switch does not gate a feature until a guard/limit check is wired. Most §1 flags gate features that are currently ungated (e.g. `crash_detection`, `carplay_android_auto`); among limits, only `max_active_trips` is enforced; and no `sys_*` switch yet stops its subsystem. Wiring each is a per-feature follow-up.
-- **Client consumption:** UI gating/upsell reading the `features`/`limits` snapshot (+ the `/config/*` kill-switch fast path).
+- **Enforcement for the rest of §1/§2 — the bulk is still unwired.** Only the 6 above gate. Paid features with NO gate yet: `offline_maps` / `max_offline_regions`, `advanced_ride_stats`, `road_quality_full_zoom` (the boolean; the paired `road_quality_max_zoom` limit _is_ enforced, so the zoom capability is gated — the toggle is upsell-copy only), `collaborative_trips` (the boolean; capability is gated via `max_trip_collaborators`), `priority_hazard_alerts`, `advanced_analytics`, `api_access`, `garmin_export`, `max_group_ride_members` (capability gated via the `group_rides` toggle). Several of these features are not fully built yet. Most §1 _free_ flags (e.g. `crash_detection`, `carplay_android_auto`) also gate currently-ungated features — kill-switch wiring, not tier gating.
+- **Per-switch enforcement:** no `sys_*` switch yet stops its subsystem — each is a per-subsystem follow-up.
+- **Go-live flip (ops, not code):** clear the launch-mode `launch_tier` gift AND the global `force_on`/limit overrides so tier differentiation activates; wire the registration → tier-selection → **payment** flow (Stripe checkout + webhook exist; in-app tier-selection UI + re-pointed `TARMOTO_STRIPE_*_PRICE_ID` are the pending billing work).
 - **Marketing / `PLAN_CATALOG` copy** and any launch-mode seeding decisions land with the enforcement PR for the relevant capability.
 
 ---
