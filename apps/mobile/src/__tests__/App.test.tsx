@@ -69,6 +69,10 @@ jest.mock("@/services/privacyRefreshMonitor", () => ({
   startPrivacyRefreshMonitor: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/services/entitlementsRefreshMonitor", () => ({
+  startEntitlementsRefreshMonitor: jest.fn(() => jest.fn()),
+}));
+
 jest.mock("@/services/timezoneSyncMonitor", () => ({
   startTimezoneSyncMonitor: jest.fn(() => jest.fn()),
 }));

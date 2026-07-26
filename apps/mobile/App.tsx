@@ -11,6 +11,7 @@ import RootNavigator from "@/navigation/RootNavigator";
 import { api } from "@/services/api";
 import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startPrivacyRefreshMonitor } from "@/services/privacyRefreshMonitor";
+import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
 import { startTimezoneSyncMonitor } from "@/services/timezoneSyncMonitor";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
@@ -142,6 +143,31 @@ export default function App() {
       startPrivacyRefreshMonitor({
         isAuthenticated: () => api.isAuthenticated(),
         refresh: () => api.refreshPrivacyPreferences(),
+      }),
+    [],
+  );
+
+  // Keep the cached entitlement snapshot (tier / features / limits) fresh so
+  // the client-enforced gates (road-quality overlay zoom, GPX export) re-check
+  // the server on every foreground rather than enforcing whatever was captured
+  // at launch. Without this, an operator removing a launch-mode override,
+  // force-disabling a feature, or downgrading a rider mid-session would leave
+  // the stale snapshot in force until the next login. Re-runs the same
+  // account-switch-safe `bootstrapAuth` fetch/validate/publish path; setters
+  // come from `getState()` so the effect stays mount-once.
+  useEffect(
+    () =>
+      startEntitlementsRefreshMonitor({
+        isAuthenticated: () => api.isAuthenticated(),
+        refresh: () =>
+          bootstrapAuth({
+            getSessionSnapshot: () => api.getAuthSessionSnapshot(),
+            getCachedProfile: () => api.getCachedProfile(),
+            getProfile: () => api.getProfile(),
+            cacheProfile: (profile) => api.cacheProfile(profile),
+            setUser: useAuthStore.getState().setUser,
+            setLoading: useAuthStore.getState().setLoading,
+          }),
       }),
     [],
   );
