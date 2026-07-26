@@ -28,7 +28,7 @@ import {
 } from "@tarmoto/shared";
 import type { components } from "@tarmoto/openapi-client";
 import { api, ApiError } from "@/lib/api";
-import { t as englishTranslate, type Translate } from "@/i18n";
+import type { Translate } from "@/i18n";
 
 export { formatJoinedLabel, initialsFromName };
 export type { PublicProfile };
@@ -76,7 +76,7 @@ export class RiderProfileFetchError extends Error {
  */
 export async function fetchPublicProfile(
   riderId: string,
-  options: { signal?: AbortSignal; translate?: Translate } = {},
+  options: { signal?: AbortSignal; translate: Translate },
 ): Promise<PublicProfile> {
   const result = await api.GET("/api/v1/users/{userId}/profile", {
     params: { path: { userId: riderId } },
@@ -91,13 +91,13 @@ export async function fetchPublicProfile(
       throw new RiderProfileNotFoundError(riderId);
     }
     throw new RiderProfileFetchError(
-      (options.translate ?? englishTranslate)("Could not load rider profile"),
+      options.translate("Could not load rider profile"),
       status,
     );
   }
   if (!result.data) {
     throw new RiderProfileFetchError(
-      (options.translate ?? englishTranslate)("Could not load rider profile"),
+      options.translate("Could not load rider profile"),
       result.response?.status ?? 0,
     );
   }
@@ -134,7 +134,7 @@ export async function fetchPublicBadges(
  */
 export async function followRider(
   riderId: string,
-  t: Translate = englishTranslate,
+  t: Translate,
 ): Promise<void> {
   const result = await api.POST("/api/v1/users/{userId}/follow", {
     params: { path: { userId: riderId } },
@@ -147,7 +147,7 @@ export async function followRider(
 
 export async function unfollowRider(
   riderId: string,
-  t: Translate = englishTranslate,
+  t: Translate,
 ): Promise<void> {
   const result = await api.DELETE("/api/v1/users/{userId}/follow", {
     params: { path: { userId: riderId } },

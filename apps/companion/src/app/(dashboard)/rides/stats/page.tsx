@@ -601,7 +601,6 @@ function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
       label: t("Avg per ride"),
       value: totals.totalRides === 0 ? "0" : avgPerRide.value,
       unit: avgPerRide.unit,
-      formatValue: format.integer,
     },
   ];
   return (

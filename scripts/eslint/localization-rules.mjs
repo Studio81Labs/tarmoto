@@ -28,7 +28,33 @@ const NUMERIC_RECEIVER_DISPLAY_METHODS = new Set([
   "toString",
   "valueOf",
 ]);
-const STANDALONE_REGIONAL_NUMERIC_FORMATTERS = new Set(["formatCount"]);
+const STANDALONE_REGIONAL_NUMERIC_FORMATTERS = new Set([
+  "formatCount",
+  "formatCurveCount",
+  "formatDistanceMeters",
+  "formatDurationMinutes",
+  "formatElevation",
+  "formatKm",
+  "formatNavigationDistanceM",
+  "formatNumber",
+  "formatRoadLength",
+  "formatRoadQuality",
+  "curvinessLabel",
+  "qualityLabel",
+  "qualityProvenanceLabel",
+  "reviewRatingStars",
+]);
+const NUMERIC_DISPLAY_REFERENCE_SUFFIX =
+  /(Amount|amount|Count|count|Day|day|Days|days|Followers|followers|Following|following|Index|index|Length|length|Maneuver|maneuver|Maneuvers|maneuvers|Page|page|Percent|percent|Quantity|quantity|Rank|rank|Rating|rating|Score|score|Total|total|Year|year)$/;
+const NUMERIC_DISPLAY_REFERENCE_PREFIX = /^(count|remaining|total)(?:[A-Z_]|$)/;
+const NUMERIC_VALUE_COMPONENT = /(Cell|Kpi|Metric|Stat|Tile)$/;
+
+function isNumericDisplayReferenceName(name) {
+  return (
+    NUMERIC_DISPLAY_REFERENCE_SUFFIX.test(name) ||
+    NUMERIC_DISPLAY_REFERENCE_PREFIX.test(name)
+  );
+}
 const REGIONAL_FORMATTER_METHODS = new Set([
   "calendarDate",
   "calendarDateRange",
@@ -141,7 +167,10 @@ const TEXTUAL_JSX_ATTRIBUTES = new Set([
   "ariaLabel",
   "body",
   "cancelText",
+  "caption",
   "confirmText",
+  "content",
+  "delta",
   "description",
   "emptyText",
   "headerTitle",
@@ -217,11 +246,7 @@ function isTranslatorCall(node) {
 function translatorKeyHasUnformattedNumericLiteral(node) {
   if (!isTranslatorCall(node)) return false;
   const key = node.arguments[0];
-  if (
-    !key ||
-    key.type !== "Literal" ||
-    typeof key.value !== "string"
-  ) {
+  if (!key || key.type !== "Literal" || typeof key.value !== "string") {
     return false;
   }
   // ICU argument identifiers may themselves contain digits (`value0`), but
@@ -385,10 +410,7 @@ function staticClassName(openingElement) {
   }
   if (value.type !== "JSXExpressionContainer") return "";
   const expression = value.expression;
-  if (
-    expression.type === "Literal" &&
-    typeof expression.value === "string"
-  ) {
+  if (expression.type === "Literal" && typeof expression.value === "string") {
     return expression.value;
   }
   if (expression.type === "TemplateLiteral") {
@@ -419,8 +441,7 @@ function isFormattingInlineElement(node) {
 function containsTranslatorInInlineJsx(node) {
   if (node.type === "JSXExpressionContainer") {
     return (
-      !containsJsx(node.expression) &&
-      containsTranslatorCall(node.expression)
+      !containsJsx(node.expression) && containsTranslatorCall(node.expression)
     );
   }
   if (!isFormattingInlineElement(node)) {
@@ -491,8 +512,9 @@ function isTranslatedComposition(node) {
     return true;
   }
   if (node.type === "TemplateLiteral") {
-    const translatedExpressions =
-      node.expressions.filter(containsTranslatorCall);
+    const translatedExpressions = node.expressions.filter(
+      containsTranslatorCall,
+    );
     return (
       node.quasis.some((quasi) => quasi.value.raw.trim() !== "") ||
       node.expressions.some(
@@ -509,8 +531,7 @@ function isTranslatedComposition(node) {
   }
   if (node.type === "LogicalExpression") {
     return (
-      isTranslatedComposition(node.left) ||
-      isTranslatedComposition(node.right)
+      isTranslatedComposition(node.left) || isTranslatedComposition(node.right)
     );
   }
   if (
@@ -582,10 +603,7 @@ function isTranslatedComposition(node) {
 function separatorDelimitedChildGroups(children) {
   const groups = [[]];
   for (const child of children) {
-    if (
-      !isTranslatedChild(child) &&
-      containsIndependentSeparator(child)
-    ) {
+    if (!isTranslatedChild(child) && containsIndependentSeparator(child)) {
       groups.push([]);
       continue;
     }
@@ -599,8 +617,7 @@ function layoutContainerTextRuns(children) {
   for (const child of children) {
     if (
       child.type === "JSXElement" ||
-      (child.type === "JSXExpressionContainer" &&
-        containsJsx(child.expression))
+      (child.type === "JSXExpressionContainer" && containsJsx(child.expression))
     ) {
       groups.push([]);
       continue;
@@ -619,8 +636,7 @@ function translatedFragmentsInGroup(children) {
       isTranslatedComposition(child.expression),
   );
   const hasAnotherTextPart = children.some(
-    (child) =>
-      !translatedChildren.includes(child) && isTextualSibling(child),
+    (child) => !translatedChildren.includes(child) && isTextualSibling(child),
   );
   if (
     composedChildren.length === 0 &&
@@ -653,8 +669,7 @@ function fragmentTranslatedFragmentsInGroup(children) {
     (child) =>
       !translatedChildren.includes(child) &&
       isTextualSibling(child) &&
-      (child.type !== "JSXElement" ||
-        isUnambiguouslyInlineElement(child)),
+      (child.type !== "JSXElement" || isUnambiguouslyInlineElement(child)),
   );
   const directTranslatedChildren = translatedChildren.filter(
     (child) => child.type === "JSXExpressionContainer",
@@ -670,9 +685,7 @@ function fragmentTranslatedFragmentsInGroup(children) {
   if (
     composedChildren.length === 0 &&
     !hasAnotherDirectTextPart &&
-    directTranslatedChildren.length +
-      translatedInlineChildren.length <=
-      1
+    directTranslatedChildren.length + translatedInlineChildren.length <= 1
   ) {
     return [];
   }
@@ -700,9 +713,8 @@ const noTranslatedFragments = {
       // Compact metric/status rows may contain independent atoms separated
       // by a middle dot, bullet, or em dash. Validate each atom on its own
       // so a separator cannot hide grammatical fragments on either side.
-      const fragments = separatorDelimitedChildGroups(children).flatMap(
-        fragmentsInGroup,
-      );
+      const fragments =
+        separatorDelimitedChildGroups(children).flatMap(fragmentsInGroup);
       for (const child of fragments) {
         context.report({ node: child, messageId: "fragment" });
       }
@@ -710,19 +722,13 @@ const noTranslatedFragments = {
 
     return {
       JSXElement(node) {
-        if (
-          !TEXT_CONTAINER_ELEMENTS.has(
-            jsxElementName(node.openingElement),
-          )
-        ) {
+        if (!TEXT_CONTAINER_ELEMENTS.has(jsxElementName(node.openingElement))) {
           return;
         }
         const textRuns = hasLayoutDisplayClass(node)
           ? layoutContainerTextRuns(node.children)
           : [node.children];
-        textRuns.forEach((children) =>
-          reportTranslatedFragments(children),
-        );
+        textRuns.forEach((children) => reportTranslatedFragments(children));
       },
       JSXFragment(node) {
         // A fragment commonly groups independent React Native `<Text>` blocks.
@@ -796,6 +802,25 @@ const noVisibleNumericJsxText = {
 
     const containsUnformattedNumericLiteral = (node) => {
       if (!node || node.type === "JSXEmptyExpression") return false;
+      if (
+        node.type === "Identifier" &&
+        isNumericDisplayReferenceName(node.name)
+      ) {
+        return true;
+      }
+      if (node.type === "MemberExpression") {
+        const propertyName =
+          !node.computed && node.property.type === "Identifier"
+            ? node.property.name
+            : node.computed &&
+                node.property.type === "Literal" &&
+                typeof node.property.value === "string"
+              ? node.property.value
+              : null;
+        return (
+          propertyName !== null && isNumericDisplayReferenceName(propertyName)
+        );
+      }
       if (node.type === "Literal") {
         return (
           typeof node.value === "number" ||
@@ -856,8 +881,7 @@ const noVisibleNumericJsxText = {
         return (
           node.quasis.some((quasi) =>
             /\d/.test(quasi.value.cooked ?? quasi.value.raw),
-          ) ||
-          node.expressions.some(containsUnformattedNumericLiteral)
+          ) || node.expressions.some(containsUnformattedNumericLiteral)
         );
       }
       if (
@@ -900,10 +924,34 @@ const noVisibleNumericJsxText = {
         }
       },
       JSXExpressionContainer(node) {
+        const attribute =
+          node.parent?.type === "JSXAttribute" ? node.parent : null;
+        const attributeName =
+          attribute?.name.type === "JSXIdentifier" ? attribute.name.name : null;
+        const componentName =
+          attribute?.parent?.type === "JSXOpeningElement"
+            ? jsxElementName(attribute.parent)
+            : null;
+        const hasExplicitFormatValue =
+          attribute?.parent?.type === "JSXOpeningElement" &&
+          attribute.parent.attributes.some(
+            (candidate) =>
+              candidate.type === "JSXAttribute" &&
+              candidate.name.type === "JSXIdentifier" &&
+              candidate.name.name === "formatValue",
+          );
+        const isDisplayValueAttribute =
+          attributeName === "value" &&
+          componentName !== null &&
+          NUMERIC_VALUE_COMPONENT.test(componentName) &&
+          !hasExplicitFormatValue;
+        const isNumericTextualAttribute =
+          isTextualJsxAttribute(node.parent) && attributeName !== "delta";
         if (
           node.parent?.type !== "JSXElement" &&
           node.parent?.type !== "JSXFragment" &&
-          !isTextualJsxAttribute(node.parent)
+          !isNumericTextualAttribute &&
+          !isDisplayValueAttribute
         ) {
           return;
         }

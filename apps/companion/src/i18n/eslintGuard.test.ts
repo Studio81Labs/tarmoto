@@ -49,6 +49,13 @@ function localizationMessages(source: string, rule: string) {
 
 describe("companion indirect display-copy lint guard", () => {
   it.each([
+    "function helper(t: Translate = englishTranslate) { return t('Ready'); }",
+    "interface Options { translate?: Translate }",
+  ])("rejects optional companion translator dependencies: %s", (source) => {
+    expect(guardMessages(source)).not.toHaveLength(0);
+  });
+
+  it.each([
     'const actionLabel = active ? "Subscribe" : "Manage";',
     "const fallbackName = `Ride on ${date}`;",
     "const displayName = name ?? `Ride on ${date}`;",
@@ -75,6 +82,14 @@ describe("companion indirect display-copy lint guard", () => {
   it("rejects directly rendered numeric display values", () => {
     expect(
       guardMessages("const view = <span>{entry.rank}</span>;"),
+    ).not.toHaveLength(0);
+  });
+
+  it("rejects uncataloged copy in secondary display props", () => {
+    expect(
+      guardMessages(
+        "const view = <MetricTile delta={`${missingCount} unavailable`} />;",
+      ),
     ).not.toHaveLength(0);
   });
 
@@ -321,6 +336,28 @@ describe("companion indirect display-copy lint guard", () => {
         "tarmoto-localization/no-visible-numeric-jsx-text",
       ),
     ).not.toHaveLength(0);
+  });
+
+  it.each([
+    "const view = <Stat value={`${segment.curvinessScore}`} />;",
+    "const view = <HeroStat value={rank == null ? '—' : `#${rank}`} />;",
+    "const view = <Button>{count > 0 ? ` ${count}` : ''}</Button>;",
+  ])("rejects unformatted numeric references in display output", (source) => {
+    expect(
+      localizationMessages(
+        source,
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric display references passed through a regional formatter", () => {
+    expect(
+      localizationMessages(
+        "const view = <Stat value={format.integer(segment.curvinessScore)} />;",
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
   });
 
   it.each([

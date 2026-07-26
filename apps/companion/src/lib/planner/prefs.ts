@@ -1,5 +1,5 @@
 import type { SurfaceType, TripParameters } from "@/lib/types";
-import { t, type EnglishMessageKey, type Translate } from "@/i18n";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 
 /** All rider-selectable surfaces (companion vocabulary — no "unknown"). */
 export const SURFACE_VALUES: readonly SurfaceType[] = [
@@ -201,7 +201,7 @@ const SURFACE_SUMMARY_LABELS: Partial<Record<SurfaceType, EnglishMessageKey>> =
  */
 export function buildPrefsSummary(
   prefs: UserRoutePrefs,
-  translate: Translate = t,
+  translate: Translate,
 ): string {
   const parts: string[] = [
     translate(ROAD_PREFERENCE_LABELS[prefs.roadPreference]),

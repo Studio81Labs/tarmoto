@@ -1,5 +1,5 @@
 import type { Trip } from "@/lib/types";
-import { t as translate, type Translate } from "@/i18n";
+import type { Translate } from "@/i18n";
 
 /**
  * Payload sent to `tripsApi.create` when duplicating a trip. The backend
@@ -31,8 +31,8 @@ export interface DuplicateTripContext {
 
 export function duplicateTripPayload(
   trip: Trip,
-  context: DuplicateTripContext = { isOwner: true },
-  t: Translate = translate,
+  context: DuplicateTripContext,
+  t: Translate,
 ): TripDuplicatePayload {
   const payload: TripDuplicatePayload = {
     name: nextCopyName(trip.name, t),
@@ -75,7 +75,7 @@ export function duplicateTripPayload(
  * Exposed for unit tests and so the UI can show the same name optimistically
  * before the backend round-trip.
  */
-export function nextCopyName(name: string, t: Translate = translate): string {
+export function nextCopyName(name: string, t: Translate): string {
   const base = name.replace(/\s+\(copy(?:\s+\d+)?\)$/i, "").trim() || t("Trip");
   return t("{name} (copy)", { name: base });
 }

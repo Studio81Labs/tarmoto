@@ -1,5 +1,5 @@
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
-import { t as englishTranslate, type Translate } from "@/i18n";
+import type { Translate } from "@/i18n";
 import { waypointDisplayName } from "@/lib/planner/labels";
 
 /**
@@ -12,11 +12,7 @@ import { waypointDisplayName } from "@/lib/planner/labels";
 const GPX_CREATOR = "Tarmoto Companion";
 const GPX_XMLNS = "http://www.topografix.com/GPX/1/1";
 
-export function tripToGpx(
-  trip: Trip,
-  now: Date = new Date(),
-  t: Translate = englishTranslate,
-): string {
+export function tripToGpx(trip: Trip, now: Date, t: Translate): string {
   const parts: string[] = [];
   parts.push('<?xml version="1.0" encoding="UTF-8"?>');
   parts.push(

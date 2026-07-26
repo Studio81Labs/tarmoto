@@ -4,6 +4,10 @@ import { dayFinishWaypoint, useTripStore } from "./trip";
 import type { RouteResponse } from "@/lib/api";
 import type { RouteSegment } from "@/lib/planner/types";
 import type { TripParameters } from "@/lib/types";
+import { createFormatters } from "@tarmoto/shared";
+import { t } from "@/i18n";
+
+const testFormat = createFormatters({ locale: "en", units: "metric" });
 
 describe("useTripStore planner editing", () => {
   beforeEach(() => {
@@ -2745,11 +2749,18 @@ describe("useTripStore split lifecycle (addendum)", () => {
   function plansFor(totalKm = 600) {
     const day = useTripStore.getState().activeTrip!.days[0]!;
     const segments = deriveDayQualitySegments(day);
-    return splitIntoDays(segments, {
-      dailyKmTarget: 250,
-      forcedDays: null,
-      totalTimeMin: totalKm,
-    });
+    return splitIntoDays(
+      segments,
+      {
+        dailyKmTarget: 250,
+        forcedDays: null,
+        totalTimeMin: totalKm,
+      },
+      [],
+      [],
+      testFormat,
+      t,
+    );
   }
 
   it("planningMode: defaults single; applySplit opts into multiday; leaving multiday drops the split", () => {

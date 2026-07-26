@@ -1,16 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  fetchGamificationSnapshot,
-  fetchMeProfile,
-  fetchProgression,
-  fetchRegionalLeaderboards,
+  fetchGamificationSnapshot as fetchGamificationSnapshotWithTranslate,
+  fetchMeProfile as fetchMeProfileWithTranslate,
+  fetchProgression as fetchProgressionWithTranslate,
+  fetchRegionalLeaderboards as fetchRegionalLeaderboardsWithTranslate,
   GamificationFetchError,
-  joinChallenge,
+  joinChallenge as joinChallengeWithTranslate,
 } from "../gamification-fetch";
 import { api } from "@/lib/api";
 import { createFormatters } from "@tarmoto/shared";
+import { t } from "@/i18n";
 
 const format = createFormatters({ locale: "en", units: "metric" });
+const joinChallenge = (challengeId: string) =>
+  joinChallengeWithTranslate(challengeId, { translate: t });
+const fetchMeProfile = () => fetchMeProfileWithTranslate({ translate: t });
+const fetchProgression = () => fetchProgressionWithTranslate({ translate: t });
+const fetchGamificationSnapshot = (
+  userId: string,
+  options: Omit<
+    Parameters<typeof fetchGamificationSnapshotWithTranslate>[1],
+    "translate"
+  >,
+) =>
+  fetchGamificationSnapshotWithTranslate(userId, { ...options, translate: t });
+const fetchRegionalLeaderboards = (
+  options: Omit<
+    Parameters<typeof fetchRegionalLeaderboardsWithTranslate>[0],
+    "translate"
+  > = {},
+) => fetchRegionalLeaderboardsWithTranslate({ ...options, translate: t });
 
 const ME_PROFILE_RESPONSE = {
   joined_at: "2024-04-13T10:00:00.000Z",

@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Trip } from "@/lib/types";
-import { tripFileName, tripToGpx } from "../trip-export";
+import {
+  tripFileName,
+  tripToGpx as tripToGpxWithTranslate,
+} from "../trip-export";
+import { t as englishTranslate, type Translate } from "@/i18n";
+
+const tripToGpx = (
+  trip: Trip,
+  now = new Date(),
+  translate: Translate = englishTranslate,
+) => tripToGpxWithTranslate(trip, now, translate);
 
 function minimalTrip(overrides: Partial<Trip> = {}): Trip {
   return {

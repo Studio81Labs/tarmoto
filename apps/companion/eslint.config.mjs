@@ -20,6 +20,22 @@ import { localizationPlugin } from "../../scripts/eslint/localization-rules.mjs"
 // locale-formatting additions) rather than relying on the broad block. A
 // single shared array keeps the two copies from drifting out of sync.
 const restrictedSyntaxSelectors = [
+  // Companion helpers can execute during concurrent server renders, where a
+  // module-default English translator is not request-safe. Make translation
+  // dependencies explicit so omitted call-site context is a compile/lint
+  // failure instead of a silent English fallback.
+  {
+    selector:
+      ":matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > AssignmentPattern[left.typeAnnotation.typeAnnotation.typeName.name='Translate']",
+    message:
+      "Translate parameters must be required. Pass the request/provider-bound translator explicitly.",
+  },
+  {
+    selector:
+      "TSPropertySignature[optional=true][key.name=/^(t|translate)$/]:has(TSTypeReference[typeName.name='Translate'])",
+    message:
+      "Translate options must be required. Pass the request/provider-bound translator explicitly.",
+  },
   // A client component must read its request-provided locale from context.
   // Importing a module-level translator bypasses the provider and previously
   // made concurrent server renders share mutable locale state.
@@ -285,43 +301,43 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > Literal[value=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > Literal[value=/[A-Za-z]{2,}/]",
     message:
       "Wrap rider-facing prop copy with t()/tDynamic, or document a deliberate non-translatable value.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > Literal[value=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > Literal[value=/[A-Za-z]{2,}/]",
     message:
       "Wrap rider-facing prop copy with t()/tDynamic, or document a deliberate non-translatable value.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
     message:
       "Replace rider-facing prop templates with one ICU catalog message and named values.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] ConditionalExpression > Literal[value=/[A-Za-z]{2,}/]",
     message:
       "Wrap every rider-facing conditional prop branch with t()/tDynamic.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] ConditionalExpression > TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
     message:
       "Replace conditional rider-facing prop templates with one ICU catalog message.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel|accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > BinaryExpression Literal[value=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel|accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > BinaryExpression Literal[value=/[A-Za-z]{2,}/]",
     message:
       "Replace concatenated rider-facing prop copy with one ICU catalog message and named values.",
   },
   {
     selector:
-      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel|accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|confirmText|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > BinaryExpression TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
+      "JSXAttribute[name.name=/^(label|title|alt|placeholder|aria-label|ariaLabel|accessibilityHint|accessibilityLabel|actionLabel|body|cancelText|caption|confirmText|content|delta|description|emptyText|headerTitle|headline|helpText|message|subtitle|tabBarLabel|text)$/] > JSXExpressionContainer > BinaryExpression TemplateLiteral > TemplateElement[value.raw=/[A-Za-z]{2,}/]",
     message:
       "Replace concatenated rider-facing prop templates with one ICU catalog message.",
   },
@@ -417,8 +433,7 @@ const restrictedSyntaxSelectors = [
   {
     selector:
       "JSXOpeningElement[name.name=/^(Area|Bar|Line)$/] JSXAttribute[name.name='name'] > Literal[value=/[A-Za-z]{2,}/]",
-    message:
-      "Translate chart series names before passing them to Recharts.",
+    message: "Translate chart series names before passing them to Recharts.",
   },
   {
     selector:

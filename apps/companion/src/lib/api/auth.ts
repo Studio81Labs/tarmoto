@@ -1,4 +1,4 @@
-import { t as englishTranslate, type Translate } from "@/i18n";
+import type { Translate } from "@/i18n";
 import { api, ApiError, openApiData } from "./client";
 
 // ── Auth helpers ──
@@ -14,7 +14,7 @@ export async function registerUser(
   email: string,
   password: string,
   displayName: string,
-  t: Translate = englishTranslate,
+  t: Translate,
 ) {
   try {
     const { data } = await openApiData(

@@ -13,7 +13,7 @@ import {
 import type { QualityBand, RouteSegment } from "@/lib/planner/types";
 import { waypointDisplayName } from "@/lib/planner/labels";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
-import { t as translate, type Translate } from "@/i18n";
+import type { Translate } from "@/i18n";
 
 export type PlannerBbox = [number, number, number, number];
 
@@ -291,9 +291,9 @@ export function plannerSegmentMidpoint(
 
 export function buildTripPlannerWaypointCollection(
   trip: Trip | null,
-  selectedDayNumber?: number,
-  focusSelectedDay?: boolean,
-  t: Translate = translate,
+  selectedDayNumber: number | undefined,
+  focusSelectedDay: boolean | undefined,
+  t: Translate,
 ): FeatureCollection<Point, WaypointProperties> {
   if (!trip) return emptyPointCollection();
 

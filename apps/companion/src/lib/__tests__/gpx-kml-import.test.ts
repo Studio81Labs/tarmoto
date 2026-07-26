@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   importErrorMessage,
-  importedRouteToTrip,
+  importedRouteToTrip as importedRouteToTripWithTranslate,
   parseImportedRoute,
   pointsDistanceKm,
 } from "../gpx-kml-import";
 import { createFormatters } from "@tarmoto/shared";
+import { t as englishTranslate, type Translate } from "@/i18n";
+
+const defaultFormat = createFormatters({ locale: "en", units: "metric" });
+const importedRouteToTrip = (
+  route: Parameters<typeof importedRouteToTripWithTranslate>[0],
+  format = defaultFormat,
+  translate: Translate = englishTranslate,
+) => importedRouteToTripWithTranslate(route, format, translate);
 
 const GPX_TRACK = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Garmin BaseCamp" xmlns="http://www.topografix.com/GPX/1/1">
