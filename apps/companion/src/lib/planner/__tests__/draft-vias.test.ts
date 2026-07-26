@@ -70,7 +70,7 @@ describe("draftViasThroughZones", () => {
     expect(vias).toHaveLength(MAX_DRAFT_VIAS);
   });
 
-  it("labels unnamed zones and skips unusable boundaries", () => {
+  it("keeps unnamed zones semantic and skips unusable boundaries", () => {
     const vias = draftViasThroughZones(
       [
         zone("a", 5, { lat: 49, lng: 15 }),
@@ -80,7 +80,7 @@ describe("draftViasThroughZones", () => {
       finish,
     );
     expect(vias).toHaveLength(1);
-    expect(vias[0]!.name).toBe("Fun Zone");
+    expect(vias[0]).not.toHaveProperty("name");
   });
 
   it("returns nothing for no zones", () => {

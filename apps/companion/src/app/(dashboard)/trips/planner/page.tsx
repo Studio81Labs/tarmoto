@@ -2352,7 +2352,9 @@ export default function TripPlannerPage() {
           result.vias.forEach((via, index) => {
             useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
               id: `draft-${Date.now()}-${index}`,
-              name: via.name,
+              ...(via.name
+                ? { name: via.name, nameIsSource: true as const }
+                : {}),
               location: { lat: via.lat, lng: via.lng },
               type: "via",
             });
@@ -2473,7 +2475,9 @@ export default function TripPlannerPage() {
         result.vias.forEach((via, index) => {
           useTripStore.getState().insertWaypointBeforeEnd(selectedDayIndex, {
             id: `loop-${Date.now()}-${index}`,
-            name: via.name,
+            ...(via.name
+              ? { name: via.name, nameIsSource: true as const }
+              : {}),
             location: { lat: via.lat, lng: via.lng },
             type: "via",
           });
