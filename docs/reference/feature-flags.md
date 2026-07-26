@@ -41,25 +41,28 @@ limit check is wired.
 
 **Enforced toggles:**
 
-| Key             | Tiers        | Gated surface                                                                                                       |
-| --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `gpx_export`    | pro, premium | `GET /rides/export.gpx` + `GET /rides/:rideId/gpx`                                                                  |
-| `commuter_mode` | pro, premium | the whole `/commute/*` controller                                                                                   |
-| `group_rides`   | premium      | `/group-rides` create/join/detail + the socket rooms; `leave`/`end` stay open so a revoked rider can still clean up |
+| Key             | Tiers        | Gated surface                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gpx_export`    | pro, premium | **Backend (server-enforced):** `GET /rides/export.gpx` + `GET /rides/:rideId/gpx`. **Mobile:** recorded-ride export (`RideDetailScreen` / `SettingsScreen` bulk — proactive client gate + 403 safety net on those endpoints, owner-only) and **planned-trip GPX** (`TripDetailScreen` — rendered client-side, **NO server guard**, so client gate is the only enforcement). **Companion:** planned-trip GPX (`TripExportButton` — client-side) |
+| `commuter_mode` | pro, premium | the whole `/commute/*` controller                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `group_rides`   | premium      | `/group-rides` create/join/detail + the socket rooms; `leave`/`end` stay open so a revoked rider can still clean up                                                                                                                                                                                                                                                                                                                            |
 
 **Enforced limits:**
 
-| Key                      | Free | Pro/Premium                | Gated surface                                                                                                                                                                                      |
-| ------------------------ | ---- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_active_trips`       | `1`  | `null` (∞)                 | trip create / import / duplicate / clone + every completed→open promotion (`TripsService.assertCanMintOpenTrip`)                                                                                   |
-| `max_trip_collaborators` | `0`  | `5` pro / `null` ∞ premium | trip collaborator invites (`TripsService.assertCanAddCollaborator`) + public group-link joins (`TripSharesService.joinByToken`, serialised per-trip under an advisory lock)                        |
-| `road_quality_max_zoom`  | `12` | `null` (∞)                 | companion road-quality overlay zoom clamp on `/explore` + planner — client-side (`resolveQualityLayerMaxZoom` / `MapCanvas` maxzoom), fed by the public `/config/limits` map for anonymous viewers |
+| Key                      | Free | Pro/Premium                | Gated surface                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------ | ---- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `max_active_trips`       | `1`  | `null` (∞)                 | trip create / import / duplicate / clone + every completed→open promotion (`TripsService.assertCanMintOpenTrip`)                                                                                                                                                                                                                                                  |
+| `max_trip_collaborators` | `0`  | `5` pro / `null` ∞ premium | trip collaborator invites (`TripsService.assertCanAddCollaborator`) + public group-link joins (`TripSharesService.joinByToken`, serialised per-trip under an advisory lock)                                                                                                                                                                                       |
+| `road_quality_max_zoom`  | `12` | `null` (∞)                 | Road-quality overlay zoom clamp — **client-side on both platforms** (the shared `clampQualityMaxZoom` fed to the MapLibre layer `maxzoom`): **companion** `/explore` + planner (`resolveQualityLayerMaxZoom` / `MapCanvas`, `/config/limits` map for anonymous viewers) and **mobile** `MapScreen` overlay (source ceiling `18`). No backend endpoint enforces it |
 
 All other catalog keys (the remaining 19 toggles + 3 limits) resolve into
 the snapshot but have no enforcement yet. `commuter_mode` is not on the
 pricing card but is a Pro-tier feature per the product spec §Monetization.
 `road_quality_max_zoom` is the one limit enforced on the client (the overlay
-ceiling) rather than by a backend endpoint.
+ceiling) rather than by a backend endpoint — on **both** companion and mobile.
+`gpx_export` is server-enforced for recorded rides but is a **client-only**
+gate for planned-trip GPX (companion `TripExportButton`, mobile
+`TripDetailScreen`), which is generated in-app with no backend round trip.
 
 ## Resolution precedence
 
