@@ -61,46 +61,75 @@ function recordPublish(generation: number): void {
     lastPublishedGeneration = generation;
 }
 
+// True once the cold-start `bootstrapAuth` has SETTLED — published its full
+// `/users/me`, failed, or found no session. The foreground entitlements refresh
+// serialises behind this so it can't race the baseline and merge fresh
+// entitlements onto a not-yet-refreshed cached profile. Deliberately NOT
+// `isLoading`: the optimistic `setUser(cached)` clears that early (for instant
+// offline display) well before the baseline request lands, so `isLoading` goes
+// false during the very window we must still hold the refresh back.
+let bootstrapSettled = false;
+
+/** Whether the cold-start baseline (`bootstrapAuth`) has finished. */
+export function hasBootstrapSettled(): boolean {
+  return bootstrapSettled;
+}
+
+/** Test-only: reset the settled flag between cases (module state persists). */
+export function __resetBootstrapSettledForTest(): void {
+  bootstrapSettled = false;
+}
+
 /** Hydrate the persisted rider immediately, then refresh it from the API. */
 export async function bootstrapAuth(
   deps: AuthBootstrapDependencies,
 ): Promise<void> {
-  const generation = ++generationCounter;
-  const initialSession = deps.getSessionSnapshot();
-  if (!initialSession) {
-    deps.setUser(null);
-    return;
-  }
-
-  const cached = deps.getCachedProfile();
-  if (cached) deps.setUser(cached);
-
   try {
-    const profile = await deps.getProfile();
-    if (
-      !isCurrentAuthSession(initialSession, deps.getSessionSnapshot(), profile)
-    ) {
-      deps.setLoading(false);
+    const generation = ++generationCounter;
+    const initialSession = deps.getSessionSnapshot();
+    if (!initialSession) {
+      deps.setUser(null);
       return;
     }
-    // A later refresh already published a fresher snapshot — don't clobber it.
-    // (A superseding request that failed never raised the mark, so this
-    // baseline still wins and the app never strands in auth loading.)
-    if (hasNewerPublish(generation)) {
-      deps.setLoading(false);
-      return;
+
+    const cached = deps.getCachedProfile();
+    if (cached) deps.setUser(cached);
+
+    try {
+      const profile = await deps.getProfile();
+      if (
+        !isCurrentAuthSession(
+          initialSession,
+          deps.getSessionSnapshot(),
+          profile,
+        )
+      ) {
+        deps.setLoading(false);
+        return;
+      }
+      // A later refresh already published a fresher snapshot — don't clobber it.
+      // (A superseding request that failed never raised the mark, so this
+      // baseline still wins and the app never strands in auth loading.)
+      if (hasNewerPublish(generation)) {
+        deps.setLoading(false);
+        return;
+      }
+      recordPublish(generation);
+      deps.cacheProfile(profile);
+      deps.setUser(profile);
+    } catch {
+      // A newer response already published — it owns the outcome; don't let this
+      // older failure override it.
+      if (hasNewerPublish(generation)) return;
+      // The 401 refresh path clears invalid tokens. Network-only failures retain
+      // the cached profile so an authenticated rider can keep using offline UI.
+      if (!deps.getSessionSnapshot()) deps.setUser(null);
+      else deps.setLoading(false);
     }
-    recordPublish(generation);
-    deps.cacheProfile(profile);
-    deps.setUser(profile);
-  } catch {
-    // A newer response already published — it owns the outcome; don't let this
-    // older failure override it.
-    if (hasNewerPublish(generation)) return;
-    // The 401 refresh path clears invalid tokens. Network-only failures retain
-    // the cached profile so an authenticated rider can keep using offline UI.
-    if (!deps.getSessionSnapshot()) deps.setUser(null);
-    else deps.setLoading(false);
+  } finally {
+    // Every terminal path (no session, publish, discard, failure) settles the
+    // baseline — the foreground refresh may now proceed.
+    bootstrapSettled = true;
   }
 }
 

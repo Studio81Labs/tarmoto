@@ -5,6 +5,7 @@ import { startCommuteHazardMonitor } from "@/services/commuteHazardNotifier";
 import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { startEntitlementsRefreshMonitor } from "@/services/entitlementsRefreshMonitor";
+import { hasBootstrapSettled } from "@/services/authBootstrap";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { getFormatters } from "@/format";
@@ -44,6 +45,7 @@ jest.mock("@/i18n/I18nProvider", () => ({
 
 jest.mock("@/services/authBootstrap", () => ({
   bootstrapAuth: jest.fn(),
+  hasBootstrapSettled: jest.fn(() => true),
 }));
 
 jest.mock("@/services/api", () => ({
@@ -117,7 +119,7 @@ describe("App auth locale hydration", () => {
     });
   });
 
-  it("gates the entitlement refresh behind the cold-start bootstrap (isLoading)", async () => {
+  it("gates the entitlement refresh behind the cold-start bootstrap settling", async () => {
     await render(<App />);
     const deps = jest
       .mocked(startEntitlementsRefreshMonitor)
@@ -126,18 +128,15 @@ describe("App auth locale hydration", () => {
 
     jest.mocked(api.isAuthenticated).mockReturnValue(true);
 
-    // Cold start still loading → don't refresh yet; the launch bootstrap owns
-    // the full-profile hydrate, and an entitlement-only refresh would merge
-    // onto the stale cached profile.
-    await act(() => {
-      useAuthStore.setState({ isLoading: true });
-    });
+    // Baseline not settled yet — the optimistic setUser(cached) has already
+    // cleared isLoading, but the full /users/me is still in flight. An
+    // entitlement-only refresh here would merge onto the stale cached profile,
+    // so hold it back.
+    jest.mocked(hasBootstrapSettled).mockReturnValue(false);
     expect(deps?.isAuthenticated()).toBe(false);
 
-    // Bootstrap settled → refreshes may proceed.
-    await act(() => {
-      useAuthStore.setState({ isLoading: false });
-    });
+    // Baseline settled → refreshes may proceed.
+    jest.mocked(hasBootstrapSettled).mockReturnValue(true);
     expect(deps?.isAuthenticated()).toBe(true);
 
     // Signed out → never.

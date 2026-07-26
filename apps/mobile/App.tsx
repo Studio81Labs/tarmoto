@@ -17,7 +17,11 @@ import { startDisplayPreferencesSyncMonitor } from "@/services/displayPreference
 import type { DeviceDisplayPreferences } from "@/services/displayPreferencesSyncMonitor";
 import { startLanguagePreferenceSyncMonitor } from "@/services/languagePreferenceSyncMonitor";
 import { brandColorsLight } from "@/theme/brand";
-import { bootstrapAuth, refreshEntitlements } from "@/services/authBootstrap";
+import {
+  bootstrapAuth,
+  hasBootstrapSettled,
+  refreshEntitlements,
+} from "@/services/authBootstrap";
 import { useAuthStore, usePreferencesStore } from "@/stores";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import {
@@ -157,18 +161,18 @@ export default function App() {
   // profile/preference PATCH isn't clobbered; setters come from `getState()`
   // so the effect stays mount-once.
   //
-  // Serialize behind the cold-start bootstrap: while `isLoading` is true the
-  // launch `bootstrapAuth` (full `/users/me`) hasn't published yet, and an
-  // entitlement-only refresh that raced ahead would merge fresh entitlements
-  // onto the STALE cached profile — leaving cross-device display-name /
-  // language / preference changes stale, since later refreshes only touch
-  // entitlements. Waiting for the baseline means bootstrap hydrates every field
-  // first; refreshes then update entitlements on a fresh profile.
+  // Serialize behind the cold-start bootstrap: until the launch `bootstrapAuth`
+  // (full `/users/me`) settles, an entitlement-only refresh that raced ahead
+  // would merge fresh entitlements onto the STALE cached profile — leaving
+  // cross-device display-name / language / preference changes stale, since
+  // later refreshes only touch entitlements. Gate on `hasBootstrapSettled()`,
+  // NOT `isLoading`: the optimistic `setUser(cached)` clears `isLoading` early
+  // (for instant offline display) while the baseline is still in flight, so
+  // `isLoading` would open the gate during the very window we must hold it shut.
   useEffect(
     () =>
       startEntitlementsRefreshMonitor({
-        isAuthenticated: () =>
-          api.isAuthenticated() && !useAuthStore.getState().isLoading,
+        isAuthenticated: () => api.isAuthenticated() && hasBootstrapSettled(),
         refresh: () =>
           refreshEntitlements({
             getSessionSnapshot: () => api.getAuthSessionSnapshot(),

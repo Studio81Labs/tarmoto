@@ -1,4 +1,9 @@
-import { bootstrapAuth, refreshEntitlements } from "../authBootstrap";
+import {
+  __resetBootstrapSettledForTest,
+  bootstrapAuth,
+  hasBootstrapSettled,
+  refreshEntitlements,
+} from "../authBootstrap";
 import type { User } from "@/types";
 
 function user(id: string): User {
@@ -187,6 +192,30 @@ describe("bootstrapAuth", () => {
     rejectRefresh(new Error("offline"));
     await refreshDone;
     expect(setUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("hasBootstrapSettled", () => {
+  it("is false while the baseline is in flight and true once it settles", async () => {
+    __resetBootstrapSettledForTest();
+    let resolveProfile!: (u: User) => void;
+    const pending = new Promise<User>((r) => (resolveProfile = r));
+
+    const done = bootstrapAuth({
+      getSessionSnapshot: () => ({ accessToken: "t", userId: "u1" }),
+      // Cached hydrate clears isLoading immediately (for instant display) — but
+      // must NOT flip the settled flag while /users/me is still pending.
+      getCachedProfile: () => user("u1"),
+      getProfile: () => pending,
+      cacheProfile: jest.fn(),
+      setUser: jest.fn(),
+      setLoading: jest.fn(),
+    });
+
+    expect(hasBootstrapSettled()).toBe(false);
+    resolveProfile(user("u1"));
+    await done;
+    expect(hasBootstrapSettled()).toBe(true);
   });
 });
 
