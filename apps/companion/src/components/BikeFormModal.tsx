@@ -16,6 +16,7 @@ import {
   validateBikeForm,
 } from "@/lib/bikes";
 import type { Bike } from "@/lib/types";
+import { useFormat } from "@/format/FormatProvider";
 interface BikeFormModalProps {
   open: boolean;
   mode: "add" | "edit";
@@ -31,6 +32,7 @@ export function BikeFormModal({
   onSubmit,
 }: BikeFormModalProps) {
   const t = useTranslation();
+  const format = useFormat();
   const [values, setValues] = useState<BikeFormValues>(EMPTY_BIKE_FORM);
   const [errors, setErrors] = useState<BikeFormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ export function BikeFormModal({
             value={values.year}
             onChange={(v) => setField("year", v)}
             error={errors.year}
-            placeholder={t("2024")}
+            placeholder={format.integer(2024)}
             inputMode="numeric"
             maxLength={4}
           />

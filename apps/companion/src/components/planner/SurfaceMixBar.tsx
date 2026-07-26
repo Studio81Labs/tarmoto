@@ -6,8 +6,7 @@ import type { RouteQualitySummary } from "@/lib/planner/types";
 import { SURFACE_LABELS } from "@/lib/utils";
 import { useFormat } from "@/format/FormatProvider";
 import type { Translate } from "@/i18n";
-
-const SURFACE_PERCENT_TOKEN = "\uE000";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 export function SurfaceLegendLabel({
   formattedValue,
@@ -18,34 +17,16 @@ export function SurfaceLegendLabel({
   surface: string;
   t: Translate;
 }) {
-  // Format one complete catalog message first so translations can reorder the
-  // percentage and surface label. The sentinel marks the percentage's final
-  // translated position without relying on its text being unique.
-  const message = t("{percent} {surface}", {
-    percent: SURFACE_PERCENT_TOKEN,
-    surface,
-  });
-  const percentIndex = message.indexOf(SURFACE_PERCENT_TOKEN);
-  if (percentIndex < 0) {
-    return (
-      <>
-        {t("{percent} {surface}", {
-          percent: formattedValue,
-          surface,
-        })}
-      </>
-    );
-  }
-  const beforePercent = message.slice(0, percentIndex);
-  const afterPercent = message.slice(
-    percentIndex + SURFACE_PERCENT_TOKEN.length,
-  );
   return (
-    <>
-      {beforePercent}
-      <b className="font-bold text-ink">{formattedValue}</b>
-      {afterPercent}
-    </>
+    <LocalizedStyledValue
+      t={t}
+      messageKey="{percent} {surface}"
+      values={{ surface }}
+      valueName="percent"
+      formattedValue={formattedValue}
+      className="font-bold text-ink"
+      as="b"
+    />
   );
 }
 

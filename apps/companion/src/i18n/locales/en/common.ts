@@ -49,7 +49,6 @@ export const common = {
   "1Y": "1Y",
   "1 year": "1 year",
   "2 years": "2 years",
-  "2024": "2024",
   "3M": "3M",
   "3 months": "3 months",
   "3 stars or better": "3 stars or better",
@@ -531,6 +530,7 @@ export const common = {
   "No one’s ridden this yet —": "No one’s ridden this yet —",
   "No one’s ridden this yet — be the first to map it.":
     "No one’s ridden this yet — be the first to map it.",
+  "No one’s ridden this yet — {action}": "No one’s ridden this yet — {action}",
   "No overnight stays matched the current filters.":
     "No overnight stays matched the current filters.",
   "No preview": "No preview",
@@ -1091,6 +1091,8 @@ export const common = {
   "your dashboard": "your dashboard",
   "{count, plural, one {# PASS} other {# PASSES}}":
     "{count, plural, one {# PASS} other {# PASSES}}",
+  "{count, plural, one {{formattedCount} PASS} other {{formattedCount} PASSES}}":
+    "{count, plural, one {{formattedCount} PASS} other {{formattedCount} PASSES}}",
   "§ {number}": "§ {number}",
   "{status} {count}": "{status} {count}",
   "{status} {time}": "{status} {time}",

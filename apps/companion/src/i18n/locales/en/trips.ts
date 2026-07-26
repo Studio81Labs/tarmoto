@@ -326,6 +326,8 @@ export const trips = {
   UPDATED: "UPDATED",
   "{count, plural, one {# DAY} other {# DAYS}}":
     "{count, plural, one {# DAY} other {# DAYS}}",
+  "{count, plural, one {{formattedCount} DAY} other {{formattedCount} DAYS}}":
+    "{count, plural, one {{formattedCount} DAY} other {{formattedCount} DAYS}}",
   "You're no longer a member of this trip.":
     "You're no longer a member of this trip.",
   "Couldn't leave the trip. Try again.": "Couldn't leave the trip. Try again.",

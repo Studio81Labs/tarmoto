@@ -33,6 +33,7 @@ import {
   translateKnownLabel,
 } from "@/i18n/domainLabels";
 import { formatRelativeTimeLabel } from "@tarmoto/shared";
+import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 
 export type SegmentDetailPanelState =
   | { status: "idle" }
@@ -55,8 +56,6 @@ interface SegmentDetailSidebarProps {
   anchor?: "container" | "viewport";
 }
 
-const HAZARD_SEVERITY_TOKEN = "\uE000";
-
 export function HazardSeverityLabel({
   hazard,
   severity,
@@ -66,30 +65,15 @@ export function HazardSeverityLabel({
   severity: string;
   t: Translate;
 }) {
-  // Format the complete catalog message first so translators retain control
-  // over order and punctuation. A private-use sentinel lets us decorate the
-  // severity after formatting without guessing where its translated text
-  // occurs (it may also be part of the hazard name).
-  const message = t("{hazard} {severity}", {
-    hazard,
-    severity: HAZARD_SEVERITY_TOKEN,
-  });
-  const severityIndex = message.indexOf(HAZARD_SEVERITY_TOKEN);
-  if (severityIndex < 0) {
-    return <>{t("{hazard} {severity}", { hazard, severity })}</>;
-  }
-  const beforeSeverity = message.slice(0, severityIndex);
-  const afterSeverity = message.slice(
-    severityIndex + HAZARD_SEVERITY_TOKEN.length,
-  );
   return (
-    <>
-      {beforeSeverity}
-      <span className="text-[10px] uppercase tracking-wider text-fg-dim">
-        {severity}
-      </span>
-      {afterSeverity}
-    </>
+    <LocalizedStyledValue
+      t={t}
+      messageKey="{hazard} {severity}"
+      values={{ hazard }}
+      valueName="severity"
+      formattedValue={severity}
+      className="text-[10px] uppercase tracking-wider text-fg-dim"
+    />
   );
 }
 

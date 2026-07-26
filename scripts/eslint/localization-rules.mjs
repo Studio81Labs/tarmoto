@@ -181,6 +181,23 @@ function isTranslatorCall(node) {
   );
 }
 
+function translatorKeyHasUnformattedNumericLiteral(node) {
+  if (!isTranslatorCall(node)) return false;
+  const key = node.arguments[0];
+  if (
+    !key ||
+    key.type !== "Literal" ||
+    typeof key.value !== "string"
+  ) {
+    return false;
+  }
+  // ICU argument identifiers may themselves contain digits (`value0`), but
+  // those values flow through IntlMessageFormat. Reject digit-only catalog
+  // keys: catalog lookup alone cannot turn their ASCII glyphs into the active
+  // regional numeral system.
+  return /^\d+$/.test(key.value.trim());
+}
+
 function memberCallName(node) {
   if (node.type !== "CallExpression") return null;
   const callee = node.callee;
@@ -504,7 +521,9 @@ const noVisibleNumericJsxText = {
   },
   create(context) {
     const isKnownNumericDisplayCall = (node) => {
-      if (isTranslatorCall(node)) return true;
+      if (isTranslatorCall(node)) {
+        return !translatorKeyHasUnformattedNumericLiteral(node);
+      }
       const callee = node.callee;
       if (
         callee.type === "Identifier" &&

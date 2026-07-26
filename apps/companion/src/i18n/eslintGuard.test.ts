@@ -269,6 +269,24 @@ describe("companion indirect display-copy lint guard", () => {
     ).toHaveLength(0);
   });
 
+  it("rejects numeric literals hidden in translator keys", () => {
+    expect(
+      localizationMessages(
+        'const view = <input placeholder={t("2024")} />;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).not.toHaveLength(0);
+  });
+
+  it("allows numeric ICU values in translator calls", () => {
+    expect(
+      localizationMessages(
+        'const view = <span>{t("{year}", { year: 2024 })}</span>;',
+        "tarmoto-localization/no-visible-numeric-jsx-text",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects numeric literals passed to non-formatter calls", () => {
     expect(
       localizationMessages(
