@@ -69,6 +69,7 @@ import {
   type RegionalLeaderboards,
   type SeasonalChallenge,
 } from "@/lib/gamification";
+import { SEASON_LABELS, translateKnownLabel } from "@/i18n/domainLabels";
 import { LocalizedStyledValue } from "@/i18n/LocalizedStyledValue";
 import {
   fetchGamificationSnapshot,
@@ -658,6 +659,8 @@ function SeasonalBanner({
   const t = useTranslation();
   const fraction = seasonalProgress(seasonal);
   const daysLeft = formatDaysRemaining(seasonal.endsAt, new Date(), t);
+  const unit =
+    seasonal.unit === "km" ? format.splitDistanceKm(1).unit : t(seasonal.unit);
   return (
     <section
       aria-label={t("Seasonal challenge")}
@@ -672,12 +675,14 @@ function SeasonalBanner({
       <div className="relative">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-accent">
           <Sparkles size={14} />
-          {t("Seasonal \u00B7 {season}", { season: seasonal.season })}
+          {t("Seasonal \u00B7 {season}", {
+            season: translateKnownLabel(seasonal.season, SEASON_LABELS, t),
+          })}
         </div>
-        <h2 className="mt-2 text-2xl font-bold text-ink">{seasonal.name}</h2>
-        <p className="mt-1 text-sm text-ink">{seasonal.tagline}</p>
+        <h2 className="mt-2 text-2xl font-bold text-ink">{t(seasonal.name)}</h2>
+        <p className="mt-1 text-sm text-ink">{t(seasonal.tagline)}</p>
         <p className="mt-2 text-xs text-fg-dim max-w-xl">
-          {seasonal.description}
+          {t(seasonal.description)}
         </p>
 
         <div className="mt-5 flex flex-col gap-2 max-w-md">
@@ -685,7 +690,11 @@ function SeasonalBanner({
             <span className="tabular-nums">
               {seasonal.unit === "km"
                 ? `${format.splitDistanceKm(seasonal.current).value} / ${format.distanceKm(seasonal.target)}`
-                : `${format.integer(seasonal.current)} / ${format.integer(seasonal.target)} ${seasonal.unit}`}
+                : t("{current} / {target} {unit}", {
+                    current: format.integer(seasonal.current),
+                    target: format.integer(seasonal.target),
+                    unit,
+                  })}
             </span>
             <span className="text-fg-dim">{daysLeft}</span>
           </div>
@@ -1121,7 +1130,7 @@ function RegionalLeaderboardTable({
         <span role="columnheader">{t("Rider")}</span>
         <span role="columnheader" className="text-right">
           {/* The distance dimension's rows convert — its header must too. */}
-          {dim.unit === "km" ? format.splitDistanceKm(1).unit : dim.unit}
+          {dim.unit === "km" ? format.splitDistanceKm(1).unit : t(dim.unit)}
         </span>
       </div>
       <div>
@@ -1155,7 +1164,7 @@ function RegionalLeaderboardRow({
   format,
 }: {
   entry: RegionalLeaderboardEntry;
-  unit: string;
+  unit: EnglishMessageKey;
   outsideTop?: boolean;
   zebra?: boolean;
   format: Formatters;
@@ -1221,7 +1230,10 @@ function RegionalLeaderboardRow({
       >
         {unit === "km"
           ? format.distanceKm(entry.value)
-          : `${format.integer(entry.value)} ${unit}`}
+          : t("{value} {unit}", {
+              value: format.integer(entry.value),
+              unit: t(unit),
+            })}
       </span>
     </Link>
   );

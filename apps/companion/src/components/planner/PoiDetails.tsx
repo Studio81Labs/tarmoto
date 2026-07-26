@@ -127,7 +127,7 @@ export function hasPoiDetails(d: PoiDetailFields): boolean {
 
 // Mirrors PassesPanel's status colours + labels so a pass reads consistently
 // across the planner: the passes list, the map legend, and this POI popover.
-// The labels match PassesPanel's untranslated STATUS_LABEL by design.
+// Both surfaces share the cataloged PASS_STATUS_LABELS map.
 const PASS_STATUS_DOT: Record<PassStatus, string> = {
   open: "bg-[#1f8a5b]",
   closed: "bg-quality-q1",

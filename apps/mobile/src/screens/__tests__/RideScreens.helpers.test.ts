@@ -152,6 +152,10 @@ describe("surfaceLabel / surfaceIcon", () => {
     expect(surfaceLabel(undefined)).toBe("Unknown");
   });
 
+  it("hides unknown future surface tokens behind cataloged copy", () => {
+    expect(surfaceLabel("chip_seal")).toBe("Unknown");
+  });
+
   it("returns a non-empty icon name for every known surface", () => {
     for (const s of [
       "asphalt",

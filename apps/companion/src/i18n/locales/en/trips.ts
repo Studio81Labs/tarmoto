@@ -228,6 +228,7 @@ export const trips = {
   "a viewer": "a viewer",
   accommodation: "accommodation",
   "an editor": "an editor",
+  "the owner": "the owner",
   "e.g. Summer 2026 Alps": "e.g. Summer 2026 Alps",
   fuel: "fuel",
   rest: "rest",

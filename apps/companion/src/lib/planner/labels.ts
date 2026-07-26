@@ -1,5 +1,5 @@
 import type { EnglishMessageKey, Translate } from "@/i18n";
-import type { Poi, PoiCategory } from "@/lib/planner/types";
+import type { Poi, PoiCategory, PoiSource } from "@/lib/planner/types";
 import type { Waypoint } from "@/lib/types";
 
 /**
@@ -31,11 +31,22 @@ const POI_CATEGORY_LABELS = {
   twisty_highlight: "Twisty highlight",
 } satisfies Record<PoiCategory, EnglishMessageKey>;
 
+const POI_SOURCE_LABELS = {
+  osm: "OpenStreetMap",
+  fsq: "Foursquare",
+  passes: "Mountain passes",
+  tarmoto: "Tarmoto",
+} satisfies Record<PoiSource, EnglishMessageKey>;
+
 export function poiCategoryDisplayName(
   category: PoiCategory,
   t: Translate,
 ): string {
   return t(POI_CATEGORY_LABELS[category]);
+}
+
+export function poiSourceDisplayName(source: PoiSource, t: Translate): string {
+  return t(POI_SOURCE_LABELS[source]);
 }
 
 export function isLegacyGeneratedWaypointName(

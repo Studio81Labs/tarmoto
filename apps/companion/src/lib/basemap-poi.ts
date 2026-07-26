@@ -19,16 +19,16 @@ export interface BasemapPlace {
   name: string;
   /**
    * Friendly category label in English, e.g. "Parking", "Picnic area". Used
-   * for the Google Maps search query and as the display fallback for an
-   * unrecognised OSM subclass. Rendered copy prefers `categoryKey` via `t()`.
+   * only for the Google Maps search query. Rider-facing copy always resolves
+   * `categoryKey` through the catalog.
    */
   category: string;
   /**
-   * Catalog key for the category when it maps to a known OSM class/subclass,
-   * or null for an unrecognised subclass (title-cased raw OSM data, which has
-   * no catalog entry). The popover renders `t(categoryKey)` when set.
+   * Catalog key for the rider-facing category. Unrecognised subclasses use
+   * the generic "Place" key while `category` retains the source token for the
+   * external map search.
    */
-  categoryKey: EnglishMessageKey | null;
+  categoryKey: EnglishMessageKey;
   lng: number;
   lat: number;
   /** Google Maps link built from the name + coordinates. */
@@ -101,9 +101,8 @@ function titleCase(value: string): string {
 }
 
 /**
- * English category label for an OSM poi feature's class/subclass — the maps
- * search query and the display fallback when the subclass is unrecognised.
- * For rendered copy, prefer `basemapPlaceCategoryKey` + `t()`.
+ * English category label for an OSM poi feature's class/subclass, used only
+ * to enrich the external maps search query. Never render this value directly.
  */
 export function basemapPlaceCategoryLabel(
   klass: string | undefined,
@@ -118,33 +117,27 @@ export function basemapPlaceCategoryLabel(
 }
 
 /**
- * Catalog key for an OSM poi feature's category, or null when the subclass is
- * unrecognised (a title-cased raw OSM value with no catalog entry). The empty
- * class/subclass case maps to the translatable "Place" fallback.
+ * Catalog key for an OSM poi feature's rider-facing category. Unknown source
+ * tokens deliberately degrade to the translatable "Place" fallback.
  */
 export function basemapPlaceCategoryKey(
   klass: string | undefined,
   subclass: string | undefined,
-): EnglishMessageKey | null {
+): EnglishMessageKey {
   const key = subclass || klass || "";
-  return (
-    LABEL_OVERRIDES[key] ??
-    LABEL_OVERRIDES[klass ?? ""] ??
-    (key ? null : "Place")
-  );
+  return LABEL_OVERRIDES[key] ?? LABEL_OVERRIDES[klass ?? ""] ?? "Place";
 }
 
 /**
- * The rider-facing category label for a basemap place — the translated catalog
- * label when the OSM subclass is recognised, else the title-cased English
- * fallback. The single source of truth for both the popover and the planner
- * consumers that persist a waypoint name, so a saved stop matches the card.
+ * The rider-facing category label for a basemap place. The single source of
+ * truth for both the popover and the planner consumers that persist a waypoint
+ * name, so unknown OSM tokens cannot become English-only saved data.
  */
 export function basemapPlaceCategoryDisplay(
   place: BasemapPlace,
   t: Translate,
 ): string {
-  return place.categoryKey ? t(place.categoryKey) : place.category;
+  return t(place.categoryKey);
 }
 
 /**

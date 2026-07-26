@@ -13,7 +13,7 @@ import type {
   UnriddenSegment,
 } from "@/types";
 import { UNSCORED_COLOR } from "@/theme/brand";
-import { translate, type EnglishMessageKey } from "@/i18n";
+import { translate, translateKnownLabel, type EnglishMessageKey } from "@/i18n";
 import { getFormatters } from "@/format";
 import {
   challengeContentKeyForMetric,
@@ -38,10 +38,9 @@ const TIER_LABELS: Record<BadgeTier, EnglishMessageKey> = {
   gold: "Gold",
 };
 
-/** Cataloged badge-tier label with a forward-compatible raw fallback. */
+/** Cataloged badge-tier label with a safe fallback for future wire values. */
 export function tierLabel(tier: string): string {
-  const key = TIER_LABELS[tier as BadgeTier];
-  return key ? translate(key) : tier;
+  return translateKnownLabel(tier, TIER_LABELS);
 }
 
 const BADGE_COPY: Record<

@@ -128,6 +128,17 @@ describe("TripInviteJoinPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("catalogs the contract-valid owner role with complete grammar", async () => {
+    vi.mocked(tripsApi.getInvitePreview).mockResolvedValue(
+      previewResponse({ role: "owner" }),
+    );
+    render(<TripInviteJoinPage />);
+
+    await screen.findByText(
+      /Jane Rider invited you to collaborate as the owner/i,
+    );
+  });
+
   it("surfaces an actionable error when the invite is invalid/revoked (404)", async () => {
     vi.mocked(tripsApi.getInvitePreview).mockRejectedValue(
       new ApiError("Invite not found", 404, {}),

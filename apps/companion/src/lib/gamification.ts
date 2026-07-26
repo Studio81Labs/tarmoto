@@ -94,7 +94,8 @@ export interface RegionalLeaderboardEntry {
 
 export interface RegionalDimensionLeaderboard {
   dimension: LeaderboardDimensionKey;
-  unit: string;
+  /** Catalog key derived from the semantic dimension, never raw API copy. */
+  unit: EnglishMessageKey;
   entries: RegionalLeaderboardEntry[];
   /**
    * Signed-in rider's row even when outside the top N. Null when the rider
@@ -136,15 +137,15 @@ export interface MilestoneProgress {
 
 export interface SeasonalChallenge {
   id: string;
-  name: string;
-  tagline: string;
-  description: string;
+  name: EnglishMessageKey;
+  tagline: EnglishMessageKey;
+  description: EnglishMessageKey;
   season: "spring" | "summer" | "autumn" | "winter";
   startsAt: string;
   endsAt: string;
   current: number;
   target: number;
-  unit: string;
+  unit: "km" | "roads" | "reports" | "rides" | "reviews" | "units";
 }
 
 /**
@@ -856,11 +857,23 @@ const DIMENSION_LABELS: Record<LeaderboardDimensionKey, EnglishMessageKey> = {
   hazards_reported: "Hazards reported",
 };
 
+const DIMENSION_UNITS: Record<LeaderboardDimensionKey, EnglishMessageKey> = {
+  total_distance_km: "km",
+  roads_discovered: "roads",
+  hazards_reported: "reports",
+};
+
 export function labelForDimension(
   dim: LeaderboardDimensionKey,
   t: Translate,
 ): string {
   return t(DIMENSION_LABELS[dim]);
+}
+
+export function unitForLeaderboardDimension(
+  dimension: string,
+): EnglishMessageKey {
+  return DIMENSION_UNITS[dimension as LeaderboardDimensionKey] ?? "units";
 }
 
 export function mapRegionalLeaderboardEntry(
@@ -881,9 +894,10 @@ export function mapDimensionLeaderboard(
   dto: RegionalDimensionLeaderboardDto,
   currentUserId: string | null,
 ): RegionalDimensionLeaderboard {
+  const dimension = dto.dimension as LeaderboardDimensionKey;
   return {
-    dimension: dto.dimension as LeaderboardDimensionKey,
-    unit: dto.unit,
+    dimension,
+    unit: unitForLeaderboardDimension(dimension),
     entries: dto.entries.map((e) =>
       mapRegionalLeaderboardEntry(e, currentUserId),
     ),

@@ -589,8 +589,13 @@ function TotalsGrid({ totals, windowLabel, format }: TotalsGridProps) {
     },
     {
       label: t("Total hours"),
-      value: format.decimal(totals.totalHours, 1),
-      unit: "h",
+      value: format.number(totals.totalHours, {
+        style: "unit",
+        unit: "hour",
+        unitDisplay: "narrow",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }),
     },
     {
       label: t("Riding days"),

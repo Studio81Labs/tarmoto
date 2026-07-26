@@ -598,7 +598,7 @@ export default function TripListPage() {
               message={t("{used} of {max} trips used on the {tier} plan.", {
                 used: openTripCount,
                 max: maxActiveTrips,
-                tier: tierLabel(tier),
+                tier: t(tierLabel(tier)),
               })}
             />
           </div>
@@ -747,7 +747,7 @@ export default function TripListPage() {
           }}
           currentTier={tier}
           message={t("You've reached your trip limit on the {tier} plan.", {
-            tier: tierLabel(tier),
+            tier: t(tierLabel(tier)),
           })}
           onClose={() => setUpgradeModalOpen(false)}
         />

@@ -15,7 +15,12 @@ import type { RoutePoint } from "@/lib/ride-detail";
 import { TripRouteOverview } from "@/components/TripRouteOverview";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuthStore } from "@/stores/auth";
-import { getUserFacingErrorMessage, type Translate } from "@/i18n";
+import {
+  getUserFacingErrorMessage,
+  type EnglishMessageKey,
+  type Translate,
+} from "@/i18n";
+import { translateKnownLabel } from "@/i18n/domainLabels";
 
 type JoinState =
   | { kind: "loading" }
@@ -204,9 +209,12 @@ function toRouteLines(lines: number[][][]): RoutePoint[][] {
 }
 
 function roleLabel(role: TripInvitePreview["role"], t: Translate): string {
-  if (role === "editor") return t("an editor");
-  if (role === "viewer") return t("a viewer");
-  return role;
+  const labels = {
+    owner: "the owner",
+    editor: "an editor",
+    viewer: "a viewer",
+  } as const satisfies Record<TripInvitePreview["role"], EnglishMessageKey>;
+  return translateKnownLabel(role, labels, t);
 }
 
 function messageForError(err: unknown, t: Translate): string {

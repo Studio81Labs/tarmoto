@@ -335,6 +335,7 @@ export const common = {
   "Follow collection": "Follow collection",
   Following: "Following",
   "Food & drinks": "Food & drinks",
+  Foursquare: "Foursquare",
   "For group organisers and power users.":
     "For group organisers and power users.",
   Forever: "Forever",
@@ -1267,6 +1268,7 @@ export const common = {
   "{unit} MAPPED": "{unit} MAPPED",
   "{value} {unit} PEAK": "{value} {unit} PEAK",
   "{value} {unit} TOTAL": "{value} {unit} TOTAL",
+  "{value} {unit}": "{value} {unit}",
   "{value} {unit} total": "{value} {unit} total",
   "{percent} explored": "{percent} explored",
   Active: "Active",

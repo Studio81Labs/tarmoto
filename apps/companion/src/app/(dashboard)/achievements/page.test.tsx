@@ -54,7 +54,7 @@ function snapshot(): GamificationSnapshot {
 function emptyDimension(rank: number | null) {
   return {
     dimension: "total_distance_km" as const,
-    unit: "km",
+    unit: "km" as const,
     entries: [],
     me:
       rank != null
