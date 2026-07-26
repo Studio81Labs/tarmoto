@@ -3,10 +3,29 @@ import {
   rawBreakTargetKms,
   routePointsWithKm,
   snapWindowKm,
-  splitIntoDays,
+  splitIntoDays as splitIntoDaysWithTranslate,
 } from "../day-splitter";
 import type { PlannerPoi, PoiCategory, RouteSegment } from "../types";
-import type { Translate } from "@/i18n";
+import { createFormatters } from "@tarmoto/shared";
+import { t as englishTranslate, type Translate } from "@/i18n";
+
+const defaultFormat = createFormatters({ locale: "en", units: "metric" });
+const splitIntoDays = (
+  segments: RouteSegment[],
+  options: Parameters<typeof splitIntoDaysWithTranslate>[1],
+  overnightTowns: PlannerPoi[] = [],
+  pinnedBreakKms: number[] = [],
+  format = defaultFormat,
+  translate: Translate = englishTranslate,
+) =>
+  splitIntoDaysWithTranslate(
+    segments,
+    options,
+    overnightTowns,
+    pinnedBreakKms,
+    format,
+    translate,
+  );
 
 /** ~1 degree of latitude in km for the haversine radius used repo-wide. */
 const KM_PER_DEG_LAT = 111.194926;

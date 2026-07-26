@@ -1,6 +1,10 @@
-import { shareRoadMap } from "./road-map-share";
+import { shareRoadMap as shareRoadMapWithTranslate } from "./road-map-share";
 import { mapSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import { t } from "@/i18n";
+
+const shareRoadMap = (title: string, snapshot: Record<string, unknown>) =>
+  shareRoadMapWithTranslate(title, snapshot, t);
 
 vi.mock("@/lib/api", () => ({
   mapSharesApi: {

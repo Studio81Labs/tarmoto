@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { duplicateTripPayload, nextCopyName } from "../trip-duplicate";
+import {
+  duplicateTripPayload as duplicateTripPayloadWithTranslate,
+  nextCopyName as nextCopyNameWithTranslate,
+  type DuplicateTripContext,
+} from "../trip-duplicate";
 import type { Trip } from "../types";
-import type { Translate } from "@/i18n";
+import { t as englishTranslate, type Translate } from "@/i18n";
+
+const nextCopyName = (name: string, translate: Translate = englishTranslate) =>
+  nextCopyNameWithTranslate(name, translate);
+const duplicateTripPayload = (
+  trip: Trip,
+  context: DuplicateTripContext = { isOwner: true },
+  translate: Translate = englishTranslate,
+) => duplicateTripPayloadWithTranslate(trip, context, translate);
 
 function makeTrip(overrides: Partial<Trip> = {}): Trip {
   return {

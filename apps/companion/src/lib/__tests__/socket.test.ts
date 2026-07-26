@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { t } from "@/i18n";
 
 type SocketHandler = (...args: unknown[]) => void;
 
@@ -79,6 +80,15 @@ vi.mock("socket.io-client", () => ({
   io: (url: string, opts?: { auth?: { token: string } }) => ioMock(url, opts),
 }));
 
+async function loadSocket() {
+  const socketModule = await import("../socket");
+  return {
+    ...socketModule,
+    connectSocket: (token: string | null) =>
+      socketModule.connectSocket(token, t),
+  };
+}
+
 describe("lib/socket", () => {
   beforeEach(() => {
     fake = createFakeSocket();
@@ -86,7 +96,7 @@ describe("lib/socket", () => {
   });
 
   afterEach(async () => {
-    const { __resetSocketForTests } = await import("../socket");
+    const { __resetSocketForTests } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
     __resetSocketForTests();
     useRealtimeStore.getState().reset();
@@ -94,7 +104,7 @@ describe("lib/socket", () => {
   });
 
   it("connects to the /events namespace with auth token and flips status to connected", async () => {
-    const { connectSocket } = await import("../socket");
+    const { connectSocket } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     connectSocket("jwt-abc");
@@ -111,7 +121,7 @@ describe("lib/socket", () => {
   });
 
   it("reuses the existing socket when the token is unchanged", async () => {
-    const { connectSocket } = await import("../socket");
+    const { connectSocket } = await loadSocket();
     const first = connectSocket("token-1");
     const second = connectSocket("token-1");
     expect(first).toBe(second);
@@ -119,7 +129,7 @@ describe("lib/socket", () => {
   });
 
   it("reconnects with the new token on token change", async () => {
-    const { connectSocket } = await import("../socket");
+    const { connectSocket } = await loadSocket();
 
     connectSocket("token-1");
     const secondFake = createFakeSocket();
@@ -131,7 +141,7 @@ describe("lib/socket", () => {
   });
 
   it("stays in 'connecting' during reconnect attempts (active=true)", async () => {
-    const { connectSocket } = await import("../socket");
+    const { connectSocket } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     connectSocket(null);
@@ -152,7 +162,7 @@ describe("lib/socket", () => {
   });
 
   it("transitions to 'disconnected' when the server denies the connection (active=false)", async () => {
-    const { connectSocket } = await import("../socket");
+    const { connectSocket } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     connectSocket(null);
@@ -166,7 +176,7 @@ describe("lib/socket", () => {
   });
 
   it("does not set lastError when the disconnect was client-initiated", async () => {
-    const { connectSocket, disconnectSocket } = await import("../socket");
+    const { connectSocket, disconnectSocket } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     connectSocket(null);
@@ -178,7 +188,7 @@ describe("lib/socket", () => {
   });
 
   it("subscribeHazards emits the correct event payload", async () => {
-    const { connectSocket, subscribeHazards } = await import("../socket");
+    const { connectSocket, subscribeHazards } = await loadSocket();
     connectSocket(null);
     subscribeHazards(49.82, 18.26, 5000);
 
@@ -189,7 +199,7 @@ describe("lib/socket", () => {
   });
 
   it("onHazardNew invokes the callback for hazard:new events and unsubscribes cleanly", async () => {
-    const { connectSocket, onHazardNew } = await import("../socket");
+    const { connectSocket, onHazardNew } = await loadSocket();
     connectSocket(null);
 
     const received: unknown[] = [];
@@ -204,7 +214,7 @@ describe("lib/socket", () => {
   });
 
   it("re-attaches persistent listeners when the socket is recreated on token change", async () => {
-    const { connectSocket, onHazardNew } = await import("../socket");
+    const { connectSocket, onHazardNew } = await loadSocket();
 
     connectSocket("token-1");
     const received: unknown[] = [];
@@ -220,7 +230,7 @@ describe("lib/socket", () => {
   });
 
   it("clears lastError on intentional (re)connect so stale errors don't persist", async () => {
-    const { connectSocket } = await import("../socket");
+    const { connectSocket } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     useRealtimeStore.getState().setError("auth failed");
@@ -230,7 +240,7 @@ describe("lib/socket", () => {
   });
 
   it("clears lastError on explicit disconnectSocket", async () => {
-    const { connectSocket, disconnectSocket } = await import("../socket");
+    const { connectSocket, disconnectSocket } = await loadSocket();
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     connectSocket(null);
@@ -241,7 +251,7 @@ describe("lib/socket", () => {
   });
 
   it("unsubscribe detaches from the current socket after a reconnect", async () => {
-    const { connectSocket, onHazardNew } = await import("../socket");
+    const { connectSocket, onHazardNew } = await loadSocket();
 
     connectSocket("token-1");
     const received: unknown[] = [];
@@ -259,8 +269,7 @@ describe("lib/socket", () => {
   });
 
   it("disconnectSocket detaches persistent listeners from the old socket", async () => {
-    const { connectSocket, onHazardNew, disconnectSocket } =
-      await import("../socket");
+    const { connectSocket, onHazardNew, disconnectSocket } = await loadSocket();
 
     connectSocket(null);
     const received: unknown[] = [];
@@ -277,7 +286,7 @@ describe("lib/socket", () => {
 
   it("subscribeTrip / unsubscribeTrip emit the expected payloads", async () => {
     const { connectSocket, subscribeTrip, unsubscribeTrip } =
-      await import("../socket");
+      await loadSocket();
     connectSocket("token-1");
 
     subscribeTrip("trip-99");
@@ -294,7 +303,7 @@ describe("lib/socket", () => {
   });
 
   it("emitTripCursor sends the cursor payload", async () => {
-    const { connectSocket, emitTripCursor } = await import("../socket");
+    const { connectSocket, emitTripCursor } = await loadSocket();
     connectSocket(null);
     emitTripCursor("trip-99", 49.1, 16.75);
 
@@ -314,7 +323,7 @@ describe("lib/socket", () => {
       onTripSuggestionVoted,
       onTripSuggestionResolved,
       onTripActivity,
-    } = await import("../socket");
+    } = await loadSocket();
 
     connectSocket(null);
     const seen: {
@@ -367,8 +376,7 @@ describe("lib/socket", () => {
   });
 
   it("trip listeners survive a token-change reconnect", async () => {
-    const { connectSocket, onTripSuggestionCreated } =
-      await import("../socket");
+    const { connectSocket, onTripSuggestionCreated } = await loadSocket();
 
     connectSocket("token-1");
     const seen: unknown[] = [];
@@ -383,7 +391,7 @@ describe("lib/socket", () => {
   });
 
   it("replays trip-room subscriptions on a transport-level reconnect", async () => {
-    const { connectSocket, subscribeTrip } = await import("../socket");
+    const { connectSocket, subscribeTrip } = await loadSocket();
 
     connectSocket("token-1");
     fake.trigger("connect"); // initial connect
@@ -402,7 +410,7 @@ describe("lib/socket", () => {
   });
 
   it("replays trip-room subscriptions across a token-change socket replacement", async () => {
-    const { connectSocket, subscribeTrip } = await import("../socket");
+    const { connectSocket, subscribeTrip } = await loadSocket();
 
     connectSocket("token-1");
     subscribeTrip("trip-abc");
@@ -420,7 +428,7 @@ describe("lib/socket", () => {
 
   it("does not replay trip subscriptions after an explicit unsubscribeTrip", async () => {
     const { connectSocket, subscribeTrip, unsubscribeTrip } =
-      await import("../socket");
+      await loadSocket();
 
     connectSocket("token-1");
     subscribeTrip("trip-x");
@@ -446,7 +454,7 @@ describe("lib/socket", () => {
     // re-subscribes on `serverTripId` change, which doesn't fire
     // during a token refresh.
     const { connectSocket, disconnectSocket, subscribeTrip } =
-      await import("../socket");
+      await loadSocket();
 
     connectSocket("token-1");
     subscribeTrip("trip-keep-me");

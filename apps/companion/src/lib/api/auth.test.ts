@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerUser } from "./auth";
 import { api, ApiError } from "./client";
+import { t } from "@/i18n";
 
 vi.mock("./client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./client")>();
@@ -22,7 +23,12 @@ describe("registerUser", () => {
       response: new Response(null, { status: 409 }),
     } as Awaited<ReturnType<typeof api.POST>>);
 
-    const request = registerUser("taken@example.com", "StrongPass1!", "Rider");
+    const request = registerUser(
+      "taken@example.com",
+      "StrongPass1!",
+      "Rider",
+      t,
+    );
 
     await expect(request).rejects.toMatchObject({
       name: "ApiError",

@@ -1,8 +1,4 @@
-import {
-  getUserFacingErrorMessage,
-  t as englishTranslate,
-  type Translate,
-} from "@/i18n";
+import { getUserFacingErrorMessage, type Translate } from "@/i18n";
 import { mapSharesApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
@@ -19,7 +15,7 @@ import { toast } from "@/lib/toast";
 export async function shareRoadMap(
   title: string,
   snapshot: Record<string, unknown>,
-  t: Translate = englishTranslate,
+  t: Translate,
 ): Promise<void> {
   // Capability check first: with neither Web Share nor the async Clipboard
   // API there's no way to hand the URL back, so bail BEFORE persisting and

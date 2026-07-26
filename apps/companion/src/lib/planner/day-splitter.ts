@@ -1,10 +1,5 @@
-import {
-  createFormatters,
-  DEFAULT_FORMAT_LOCALE,
-  haversineKm,
-  type Formatters,
-} from "@tarmoto/shared";
-import { t as translate, type Translate } from "@/i18n";
+import { haversineKm, type Formatters } from "@tarmoto/shared";
+import type { Translate } from "@/i18n";
 import { deriveFlaggedSections, surfaceMixToPercents } from "./api";
 import type {
   DayPlan,
@@ -48,11 +43,6 @@ interface TownOnRoute {
   alongKm: number;
   offRouteKm: number;
 }
-
-const DEFAULT_FORMATTERS = createFormatters({
-  locale: DEFAULT_FORMAT_LOCALE,
-  units: "metric",
-});
 
 /** Flatten segment geometries into one polyline with cumulative km. */
 export function routePointsWithKm(segments: RouteSegment[]): RoutePoint[] {
@@ -258,10 +248,10 @@ export function rawBreakTargetKms(
 export function splitIntoDays(
   segments: RouteSegment[],
   opts: SplitOptions,
-  overnightTowns: PlannerPoi[] = [],
-  pinnedBreakKms: number[] = [],
-  format: Formatters = DEFAULT_FORMATTERS,
-  t: Translate = translate,
+  overnightTowns: PlannerPoi[],
+  pinnedBreakKms: number[],
+  format: Formatters,
+  t: Translate,
 ): DayPlan[] {
   if (segments.length === 0) return [];
   const route = routePointsWithKm(segments);

@@ -59,8 +59,7 @@ export function RideKpiCards({
 
   // The KPI brick is the shared `MetricTile` (§12). First tile is the
   // ink + accent "proudest metric"; the rest are default cream tiles.
-  // Numeric values are passed raw so MetricTile applies locale grouping;
-  // avg quality keeps a fixed 1-decimal, locale-formatted string.
+  // Values are formatted through the active regional seam before rendering.
   const tiles: MetricTileProps[] = [
     {
       label: t("Distance"),
@@ -71,7 +70,7 @@ export function RideKpiCards({
     },
     {
       label: t("Ride time"),
-      value: has ? rideTime.value : DASH,
+      value: has ? format.integer(rideTime.value) : DASH,
       unit: rideTime.unit,
     },
     {
@@ -79,7 +78,7 @@ export function RideKpiCards({
       // discoveries (a road repeated in the window still counts), so the
       // sublabel reads RIDDEN rather than overstating DISCOVERED.
       label: t("Roads"),
-      value: has ? stats.new_roads : DASH,
+      value: has ? format.integer(stats.new_roads) : DASH,
       unit: t("RIDDEN"),
     },
     {
@@ -96,7 +95,7 @@ export function RideKpiCards({
     <div className="mb-[18px]">
       <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         {tiles.map((tile) => (
-          <MetricTile key={tile.label} formatValue={format.integer} {...tile} />
+          <MetricTile key={tile.label} {...tile} />
         ))}
       </div>
       {error && (

@@ -1,7 +1,5 @@
 import type * as GeoJSON from "geojson";
 import {
-  createFormatters,
-  DEFAULT_FORMAT_LOCALE,
   parseImportedRoute as sharedParseImportedRoute,
   pointsDistanceKm as sharedPointsDistanceKm,
   type ImportedRoute,
@@ -12,7 +10,7 @@ import {
 } from "@tarmoto/shared";
 import type { RoutePreviewSegment, Trip, Waypoint } from "@/lib/types";
 import { scoreToTier } from "@/lib/utils";
-import { t as translate, type EnglishMessageKey, type Translate } from "@/i18n";
+import type { EnglishMessageKey, Translate } from "@/i18n";
 
 /**
  * GPX/KML import (US-38 / US-20). Parses files exported from Garmin,
@@ -87,11 +85,8 @@ function toRad(deg: number): number {
  */
 export function importedRouteToTrip(
   route: ImportedRoute,
-  format: Formatters = createFormatters({
-    locale: DEFAULT_FORMAT_LOCALE,
-    units: "metric",
-  }),
-  t: Translate = translate,
+  format: Formatters,
+  t: Translate,
 ): Trip {
   const segments = buildPreviewSegments(route);
   const totalDistanceKm = segments.reduce((s, seg) => s + seg.distanceKm, 0);

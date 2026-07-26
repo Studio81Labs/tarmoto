@@ -9,6 +9,7 @@ import {
   fetchActiveChallenges,
   fetchChallengeDetail,
 } from "./gamification-fetch";
+import type { Translate } from "@/i18n";
 
 export type SuggestedRider = components["schemas"]["SuggestedRiderDto"];
 
@@ -42,10 +43,11 @@ export interface ActiveChallengeCard {
  */
 export async function fetchActiveChallengeCard(
   now = new Date(),
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  t: Translate,
 ): Promise<ActiveChallengeCard | null> {
   const challenges = await fetchActiveChallenges(
-    signal !== undefined ? { signal } : {},
+    signal !== undefined ? { signal, translate: t } : { translate: t },
   );
   if (challenges.length === 0) return null;
   // Soonest to end so the card reflects the most time-pressured goal.
@@ -54,7 +56,7 @@ export async function fetchActiveChallengeCard(
   )[0]!;
   const detail = await fetchChallengeDetail(
     next.id,
-    signal !== undefined ? { signal } : {},
+    signal !== undefined ? { signal, translate: t } : { translate: t },
   );
   const endMs = new Date(next.ends_at).getTime();
   const daysLeft = Math.max(0, Math.ceil((endMs - now.getTime()) / 86_400_000));
