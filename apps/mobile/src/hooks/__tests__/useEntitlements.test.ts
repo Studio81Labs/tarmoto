@@ -48,3 +48,31 @@ it("useLimit reads the resolved numeric cap (null = unlimited)", async () => {
   );
   expect(result.current.limit).toBeNull();
 });
+
+// A legacy cached profile serialized before the entitlement fields existed
+// hydrates as a non-null user with `features`/`limits` undefined. Treating that
+// as resolved would read the absent snapshot as unlimited (limit null → z22),
+// leaking the client-only overlay. Resolution must derive from the snapshot.
+it("useLimit fails closed when the cached snapshot lacks `limits`", async () => {
+  const legacyUser = { id: "u1", subscription_tier: "free" };
+  useAuthStore.setState({ user: legacyUser as never });
+  const { result } = await renderHook(() => useLimit("road_quality_max_zoom"));
+  expect(result.current.isResolved).toBe(false);
+  expect(result.current.limit).toBeNull();
+});
+
+it("useFeature fails closed when the cached snapshot lacks `features`", async () => {
+  const legacyUser = { id: "u1", subscription_tier: "pro" };
+  useAuthStore.setState({ user: legacyUser as never });
+  const { result } = await renderHook(() => useFeature("gpx_export"));
+  expect(result.current.isResolved).toBe(false);
+  expect(result.current.enabled).toBe(false);
+});
+
+it("useEntitlements is unresolved unless both snapshot slices are present", async () => {
+  useAuthStore.setState({
+    user: { ...baseUser, limits: undefined } as never,
+  });
+  const { result } = await renderHook(() => useEntitlements());
+  expect(result.current.isResolved).toBe(false);
+});
