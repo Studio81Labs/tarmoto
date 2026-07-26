@@ -339,6 +339,47 @@ describe("ProfileScreen", () => {
     expect(lastCall.avatar_url).toBe("https://cdn.example.com/u/1.png");
   });
 
+  it("optimistic write uses the live store, not the pre-picker snapshot", async () => {
+    // The native picker awaits; a foreground refresh publishes a downgrade
+    // while it's open. The optimistic setUser must build on the LIVE (fresh)
+    // store — changing only avatar_url — not resurrect the pre-picker profile.
+    mockedCapture.mockImplementation(async () => {
+      // Simulate the refresh landing during the picker await.
+      mockAuthState.user = {
+        ...mockAuthState.user!,
+        // A downgrade published mid-picker.
+        subscription_tier: "free",
+        features: { gpx_export: false },
+      } as never;
+      return {
+        status: "captured",
+        photo: { uri: "file:///tmp/avatar.jpg" },
+        source: "library",
+      } as never;
+    });
+    mockedApi.uploadAvatar.mockResolvedValue({
+      id: "user-1",
+      avatar_url: "https://cdn.example.com/u/1.png",
+    } as never);
+
+    await render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+    await act(async () => {
+      await fireEvent.press(screen.getByLabelText("Change avatar"));
+    });
+
+    // The optimistic setUser carries the DOWNGRADED entitlements from the live
+    // store plus the new avatar — not the pre-picker premium snapshot.
+    const optimistic = mockSetUser.mock.calls.at(0)?.[0] as {
+      avatar_url: string;
+      subscription_tier: string;
+      features: { gpx_export: boolean };
+    };
+    expect(optimistic.avatar_url).toBe("file:///tmp/avatar.jpg");
+    expect(optimistic.subscription_tier).toBe("free");
+    expect(optimistic.features.gpx_export).toBe(false);
+  });
+
   it("reverts the optimistic avatar when upload fails", async () => {
     mockedCapture.mockResolvedValue({
       status: "captured",
