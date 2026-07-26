@@ -54,7 +54,6 @@ import {
   type PressEventWithFeatures,
   UserLocation,
   type ViewStateChangeEvent,
-  VectorSource,
 } from "@maplibre/maplibre-react-native";
 import { Icon } from "@/components/Icon";
 import { useNavigation } from "@react-navigation/native";
@@ -76,6 +75,7 @@ import {
   shouldShowQualityUpgradePrompt,
   useQualityLayerMaxZoom,
 } from "./MapScreen.entitlement";
+import { QualityOverlaySource } from "./MapScreen.qualityOverlay";
 import { useEntitlements, useLimit } from "@/hooks/useEntitlements";
 import { UpgradePrompt } from "@/components/entitlements/UpgradePrompt";
 // The brand quality ramp is imported so the legend swatches mirror the
@@ -556,32 +556,14 @@ export default function MapScreen() {
           }}
         />
         <UserLocation animated />
-        {showQualityOverlay && qualityMaxZoomVisible ? (
-          // `key` includes the offline source so MapLibre fully remounts the
-          // VectorSource when we swap between the backend URL and a cached
-          // `file://` template. Keeping the same `id` across templates would
-          // leave the native side pointing at the old tile URL even after
-          // React updated the prop. `qualityMaxZoomVisible` is false only on
-          // a degenerate operator override (cap clamped to 0) — the source's
-          // own `maxzoom={22}` is a loose over-zoom setting left untouched;
-          // the entitlement cap clamps the LAYER's `maxzoom` instead.
-          <VectorSource
-            key={`quality-${offlineSource?.regionId ?? "online"}`}
-            id="tarmoto-quality"
-            tiles={[tileUrl]}
-            minzoom={0}
-            maxzoom={22}
-          >
-            <Layer
-              type="line"
-              id="tarmoto-quality-lines"
-              source="tarmoto-quality"
-              source-layer="quality"
-              maxzoom={qualityMaxZoom}
-              {...qualityStyle}
-            />
-          </VectorSource>
-        ) : null}
+        <QualityOverlaySource
+          show={showQualityOverlay}
+          visible={qualityMaxZoomVisible}
+          regionKey={offlineSource?.regionId ?? "online"}
+          tileUrl={tileUrl}
+          maxzoom={qualityMaxZoom}
+          style={qualityStyle}
+        />
 
         {showPassesOverlay && passes.length > 0 ? (
           <GeoJSONSource

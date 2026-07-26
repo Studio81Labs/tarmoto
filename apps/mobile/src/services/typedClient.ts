@@ -305,16 +305,31 @@ async function refreshAccessToken(): Promise<string | null> {
   inflightRefresh = (async () => {
     const handle = withTimeout(undefined, REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-        signal: handle.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+          signal: handle.signal,
+        });
+      } catch {
+        // ONLY a transient fetch failure (timeout OR network) reaches here —
+        // NOT an auth rejection. Keep the stored tokens so an offline rider (a
+        // dead zone) stays signed in; the next request retries once
+        // connectivity returns. Clearing would sign them out for a blip and,
+        // because the entitlements monitor gates on `isAuthenticated()`,
+        // silently stop refreshing too.
+        return null;
+      }
       if (!res.ok) {
         if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
         return null;
       }
+      // The server accepted the refresh. A failure past here means the response
+      // body is malformed or persistence half-wrote — the session is unusable
+      // or mixed, so invalidate it (below) rather than retaining and silently
+      // retrying a broken session on every later authenticated call.
       const auth = (await res.json()) as AuthResponse;
       // Login, registration, or logout may have replaced the session while
       // this refresh was in flight. Never let an old response overwrite (or
@@ -323,12 +338,10 @@ async function refreshAccessToken(): Promise<string | null> {
       storeTokens(auth);
       return auth.access_token;
     } catch {
-      // Transient failure (timeout OR network) — NOT an auth rejection. Keep the
-      // stored tokens so an offline rider (a dead zone) stays signed in; the
-      // next request retries once connectivity returns. Clearing here would sign
-      // them out for a blip and, because the entitlements monitor gates on
-      // `isAuthenticated()`, silently stop refreshing too. Only a genuine
-      // rejection (the `!res.ok` branch above) clears the session.
+      // Response parse (`res.json()`) or persistence (`storeTokens()`) failure
+      // after a 2xx — the session can't be salvaged. Clear it (if still current)
+      // so we sign out cleanly instead of retrying an unusable/mixed session.
+      if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
       return null;
     } finally {
       handle.dispose();

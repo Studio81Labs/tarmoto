@@ -119,6 +119,27 @@ describe("typed client token refresh", () => {
     expect(storage.getString("user_id")).toBe("account-a");
   });
 
+  it("clears the session on a malformed 2xx refresh body (unusable response)", async () => {
+    const storage = mockCreateMemoryStorage({
+      access_token: "account-a-access",
+      refresh_token: "account-a-refresh",
+      user_id: "account-a",
+    });
+    __setAuthStorageForTest(storage);
+    // 2xx but the body can't be parsed — NOT a transient fetch failure, so it
+    // must invalidate rather than retain-and-retry.
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new Error("Unexpected token < in JSON");
+      },
+    } as unknown as Response);
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    expect(storage.getString("access_token")).toBeUndefined();
+    expect(storage.getString("refresh_token")).toBeUndefined();
+  });
+
   it("clears the current session's tokens on a genuine rejection (!res.ok)", async () => {
     const storage = mockCreateMemoryStorage({
       access_token: "account-a-access",
