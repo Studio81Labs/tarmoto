@@ -174,6 +174,46 @@ describe("confirmed-anonymous rider (public /config/limits)", () => {
     expect(result.current.maxzoom).not.toBe(22);
     spy.mockRestore();
   });
+
+  it("publishes an earlier success when a later overlapping revalidation fails", async () => {
+    const listeners: Array<(s: AppStateStatus) => void> = [];
+    const spy = jest
+      .spyOn(AppState, "addEventListener")
+      .mockImplementation(
+        (event: string, listener: (s: AppStateStatus) => void) => {
+          if (event === "change") listeners.push(listener);
+          return { remove: jest.fn() } as never;
+        },
+      );
+
+    // Mount fetch (A) reads the dark-launch unlimited override but resolves
+    // SLOWLY; the foreground fetch (B) FAILS. B must not suppress A's success.
+    let resolveA!: (v: GlobalLimitOverrides) => void;
+    const aPending = new Promise<GlobalLimitOverrides>((r) => (resolveA = r));
+    let rejectB!: (e: unknown) => void;
+    const bPending = new Promise<GlobalLimitOverrides>((_r, rej) => {
+      rejectB = rej;
+    });
+    mockGetConfigLimits
+      .mockReturnValueOnce(aPending)
+      .mockReturnValueOnce(bPending);
+
+    const { result } = await renderHook(() => useQualityLayerMaxZoom());
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      listeners.forEach((l) => l("active")); // starts B (newer)
+    });
+    await waitFor(() => expect(mockGetConfigLimits).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      rejectB(new Error("offline")); // newer fetch fails first
+    });
+    await act(async () => {
+      resolveA({ road_quality_max_zoom: null }); // earlier success resolves last
+    });
+    await waitFor(() => expect(result.current.maxzoom).toBe(22));
+    spy.mockRestore();
+  });
 });
 
 it("hides the overlay when an operator override clamps the cap to 0", async () => {

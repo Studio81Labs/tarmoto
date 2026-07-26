@@ -2,7 +2,11 @@ const mockPatch = jest.fn();
 const mockPost = jest.fn();
 const mockSetCachedUser = jest.fn();
 const mockGetCachedUser = jest.fn(() => null as unknown);
-let mockSession: { accessToken: string; userId: string | null } | null = null;
+let mockSession: {
+  accessToken: string;
+  userId: string | null;
+  epoch?: number;
+} | null = null;
 
 jest.mock("../typedClient", () => ({
   client: {
@@ -15,6 +19,7 @@ jest.mock("../typedClient", () => ({
   clearTokens: jest.fn(),
   getAccessToken: () => mockSession?.accessToken ?? null,
   getAuthenticatedUserId: () => mockSession?.userId ?? null,
+  getSessionEpoch: () => mockSession?.epoch ?? 0,
   getCachedUser: () => mockGetCachedUser(),
   isAuthenticated: () => mockSession !== null,
   setCachedUser: (...args: unknown[]) => mockSetCachedUser(...args),
@@ -52,11 +57,32 @@ function deferred<T>() {
 
 describe("profile cache session guards", () => {
   beforeEach(() => {
-    mockSession = { accessToken: "account-a-token", userId: "account-a" };
+    mockSession = {
+      accessToken: "account-a-token",
+      userId: "account-a",
+      epoch: 1,
+    };
     mockPatch.mockReset();
     mockPost.mockReset();
     mockSetCachedUser.mockReset();
     mockGetCachedUser.mockReset().mockReturnValue(null);
+  });
+
+  it("does not cache an update that spanned a logout→login to the same account", async () => {
+    const response = deferred<ReturnType<typeof success<User>>>();
+    mockPatch.mockReturnValue(response.promise);
+
+    const update = api.updateProfile({ display_name: "Account A" });
+    // Same account, but a logout→login bumped the session epoch mid-request.
+    mockSession = {
+      accessToken: "account-a-token-2",
+      userId: "account-a",
+      epoch: 3,
+    };
+    response.resolve(success(user("account-a")));
+
+    await expect(update).resolves.toEqual(user("account-a"));
+    expect(mockSetCachedUser).not.toHaveBeenCalled();
   });
 
   it("does not cache a profile update after an account switch", async () => {

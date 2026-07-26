@@ -1,10 +1,35 @@
-import { bootstrapAuth, refreshEntitlements } from "../authBootstrap";
+import {
+  bootstrapAuth,
+  isCurrentAuthSession,
+  refreshEntitlements,
+} from "../authBootstrap";
 import { useAuthStore } from "@/stores";
 import type { User } from "@/types";
 
 function user(id: string): User {
   return { id, email: id + "@example.com" } as User;
 }
+
+describe("isCurrentAuthSession", () => {
+  const profile = user("account-a");
+
+  it("accepts the same incarnation (unchanged epoch, matching user)", () => {
+    const initial = { accessToken: "a1", userId: "account-a", epoch: 3 };
+    const current = { accessToken: "a2", userId: "account-a", epoch: 3 }; // rotated token, same epoch
+    expect(isCurrentAuthSession(initial, current, profile)).toBe(true);
+  });
+
+  it("rejects a response that spanned a logout→login to the SAME account (epoch bumped)", () => {
+    const initial = { accessToken: "a1", userId: "account-a", epoch: 3 };
+    const current = { accessToken: "a9", userId: "account-a", epoch: 5 }; // re-login → new epoch
+    expect(isCurrentAuthSession(initial, current, profile)).toBe(false);
+  });
+
+  it("rejects when the session is gone (current null)", () => {
+    const initial = { accessToken: "a1", userId: "account-a", epoch: 3 };
+    expect(isCurrentAuthSession(initial, null, profile)).toBe(false);
+  });
+});
 
 describe("bootstrapAuth", () => {
   it("ends loading as signed out when no token exists", async () => {
@@ -30,6 +55,7 @@ describe("bootstrapAuth", () => {
       getSessionSnapshot: () => ({
         accessToken: "token",
         userId: fresh.id,
+        epoch: 0,
       }),
       getCachedProfile: () => cached,
       getProfile: async () => fresh,
@@ -50,6 +76,7 @@ describe("bootstrapAuth", () => {
       getSessionSnapshot: () => ({
         accessToken: "token",
         userId: cached.id,
+        epoch: 0,
       }),
       getCachedProfile: () => cached,
       getProfile: async () => {
@@ -70,7 +97,9 @@ describe("bootstrapAuth", () => {
     const setUser = jest.fn();
     await bootstrapAuth({
       getSessionSnapshot: () =>
-        authenticated ? { accessToken: "token", userId: "cached" } : null,
+        authenticated
+          ? { accessToken: "token", userId: "cached", epoch: 0 }
+          : null,
       getCachedProfile: () => user("cached"),
       getProfile: async () => {
         authenticated = false;
@@ -88,6 +117,7 @@ describe("bootstrapAuth", () => {
     let session = {
       accessToken: "account-a-token",
       userId: null as string | null,
+      epoch: 0,
     };
     let resolveProfile!: (profile: User) => void;
     const cacheProfile = jest.fn();
@@ -106,7 +136,7 @@ describe("bootstrapAuth", () => {
       markSettled: jest.fn(),
     });
 
-    session = { accessToken: "account-b-token", userId: "account-b" };
+    session = { accessToken: "account-b-token", userId: "account-b", epoch: 0 };
     resolveProfile(user("account-a"));
     await bootstrap;
 
@@ -121,7 +151,7 @@ describe("bootstrapAuth", () => {
     // must not overwrite B's (the store is non-empty by the time A resolves).
     const stale = { id: "u1", subscription_tier: "premium" } as User;
     const fresh = { id: "u1", subscription_tier: "free" } as User;
-    const session = { accessToken: "token", userId: "u1" };
+    const session = { accessToken: "token", userId: "u1", epoch: 0 };
     const setUser = jest.fn();
 
     let resolveStale!: (u: User) => void;
@@ -155,7 +185,7 @@ describe("bootstrapAuth", () => {
     // Codex order: cold start, no cache. A foreground refresh starts (bumping
     // the generation), then bootstrap resolves BEFORE that refresh settles —
     // superseded, but the store is empty, so bootstrap must still publish.
-    const session = { accessToken: "token", userId: "u1" };
+    const session = { accessToken: "token", userId: "u1", epoch: 0 };
     const setUser = jest.fn();
     const cacheProfile = jest.fn();
 
@@ -208,7 +238,7 @@ describe("bootstrap settlement", () => {
     const pending = new Promise<User>((r) => (resolveProfile = r));
 
     const done = bootstrapAuth({
-      getSessionSnapshot: () => ({ accessToken: "t", userId: "u1" }),
+      getSessionSnapshot: () => ({ accessToken: "t", userId: "u1", epoch: 0 }),
       // Cached hydrate clears isLoading immediately (for instant display) — but
       // must NOT settle while /users/me is still pending.
       getCachedProfile: () => user("u1"),
@@ -229,7 +259,7 @@ describe("bootstrap settlement", () => {
 });
 
 describe("refreshEntitlements", () => {
-  const session = { accessToken: "token", userId: "u1" };
+  const session = { accessToken: "token", userId: "u1", epoch: 0 };
   // A /users/me response — entitlement slices plus an editable field. `over`
   // is loose so tests can supply partial `features`/`limits` fixtures (the real
   // DTOs are full objects, but the merge copies whatever it's given).

@@ -76,6 +76,7 @@ import {
   clearTokens,
   getAccessToken,
   getAuthenticatedUserId,
+  getSessionEpoch,
   getCachedUser,
   isAuthenticated as hasAccessToken,
   setCachedUser,
@@ -322,6 +323,7 @@ class ApiService {
     return {
       accessToken,
       userId: getAuthenticatedUserId(),
+      epoch: getSessionEpoch(),
     };
   }
 

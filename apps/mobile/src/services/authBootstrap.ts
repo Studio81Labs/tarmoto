@@ -3,6 +3,10 @@ import type { User } from "@/types";
 export interface AuthSessionSnapshot {
   accessToken: string;
   userId: string | null;
+  /** Session incarnation — changes on login/logout, stable across token
+   *  rotation (see typedClient `sessionEpoch`). Distinguishes a re-login to the
+   *  same account (which userId alone can't). */
+  epoch: number;
 }
 
 export interface AuthBootstrapDependencies {
@@ -23,6 +27,12 @@ export function isCurrentAuthSession(
   profile: User,
 ): boolean {
   if (!current) return false;
+
+  // A logout→login (even to the SAME account) starts a new session incarnation.
+  // userId alone can't detect it, so reject a response that spanned the boundary
+  // before it clobbers the fresher login snapshot. The epoch is stable across
+  // token rotation, so a normal in-flight refresh is unaffected.
+  if (current.epoch !== initial.epoch) return false;
 
   if (initial.userId) {
     return current.userId === initial.userId && profile.id === initial.userId;

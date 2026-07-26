@@ -25,17 +25,20 @@ const ROAD_QUALITY_MAX_ZOOM = "road_quality_max_zoom";
 let cachedGlobalLimits: GlobalLimitOverrides | null = null;
 
 // Overlapping revalidations (mount + a foreground transition) can resolve out
-// of order; without a guard an earlier fetch carrying the stale launch-mode
-// `null` override could resolve LAST and restore unlimited z22 after an operator
-// tightened the cap. Each fetch claims a strictly increasing generation and
-// publishes only if it's still the latest started — the freshest response wins
-// regardless of resolve order (same high-water rule as `authBootstrap`).
+// of order. Each fetch claims a strictly increasing generation, and we track the
+// highest generation that actually PUBLISHED. A response publishes only if no
+// LATER generation has already published — the freshest response wins regardless
+// of resolve order. Crucially the mark rises on PUBLISH, not on claim, so a
+// later request that FAILS never suppresses an earlier success (same high-water
+// rule as `authBootstrap`).
 let configLimitsGeneration = 0;
+let lastPublishedConfigGeneration = 0;
 
-/** Test-only reset for the module-level global-limits cache + generation. */
+/** Test-only reset for the module-level global-limits cache + generations. */
 export function __resetGlobalLimitsCacheForTest(): void {
   cachedGlobalLimits = null;
   configLimitsGeneration = 0;
+  lastPublishedConfigGeneration = 0;
 }
 
 /**
@@ -66,10 +69,11 @@ function useGlobalQualityZoomOverride(enabled: boolean): {
       void api
         .getConfigLimits()
         .then((next) => {
-          // A later revalidation started while this was in flight — its response
-          // is fresher, so drop this (possibly stale) one rather than letting an
-          // out-of-order resolve restore an old override.
-          if (generation !== configLimitsGeneration) return;
+          // A later revalidation already published a fresher map — drop this
+          // (older) one. A later request that FAILED never raised the mark, so
+          // this success still publishes rather than being suppressed by it.
+          if (generation < lastPublishedConfigGeneration) return;
+          lastPublishedConfigGeneration = generation;
           cachedGlobalLimits = next;
           if (!cancelled) setMap(next);
         })

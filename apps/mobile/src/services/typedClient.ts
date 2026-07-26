@@ -149,6 +149,20 @@ function asTimeoutErrorIfFired(
 
 let inflightRefresh: Promise<string | null> | null = null;
 
+// Session incarnation counter. Bumped on login/register (`storeTokens` with a
+// user) and logout / 401-invalidation (`clearTokens`), but NOT on access-token
+// rotation (a refresh response carries no user), so it's stable across rotation
+// yet changes across a logout→login even to the SAME account. Folded into the
+// auth-session snapshot so a `/users/me` publisher that spanned a re-login is
+// rejected — its captured epoch no longer matches — instead of clobbering the
+// fresher login snapshot with a stale one.
+let sessionEpoch = 0;
+
+/** Current session incarnation — see `sessionEpoch`. */
+export function getSessionEpoch(): number {
+  return sessionEpoch;
+}
+
 interface StoredAuthSession {
   accessToken: string | null;
   refreshToken: string;
@@ -232,6 +246,11 @@ export function storeTokens(auth: AuthResponse): void {
   // identifier the privacy-cache snapshot relies on.
   if (incomingUserId) {
     setCachedUser(auth.user);
+    // A response carrying a user is a login/register — a NEW session
+    // incarnation. Bump the epoch (see `sessionEpoch`). A refresh (no user)
+    // rotates the access token WITHOUT bumping, so an in-flight `/users/me`
+    // survives rotation but not a re-login.
+    sessionEpoch += 1;
   }
 }
 
@@ -240,6 +259,9 @@ export function clearTokens(): void {
   storage.remove(REFRESH_TOKEN_KEY);
   storage.remove(USER_ID_KEY);
   storage.remove(CACHED_USER_KEY);
+  // Logout / 401-invalidation ends the session incarnation — bump so an
+  // in-flight publisher started before this can't publish into the next.
+  sessionEpoch += 1;
   // #279 / #501 — every token-invalidation path (logout, refresh
   // 4xx) must also wipe the cached privacy preferences. (A refresh
   // network failure / timeout is transient and no longer clears —
