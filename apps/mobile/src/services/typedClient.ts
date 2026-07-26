@@ -326,21 +326,36 @@ async function refreshAccessToken(): Promise<string | null> {
         if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
         return null;
       }
-      // The server accepted the refresh. A failure past here means the response
-      // body is malformed or persistence half-wrote — the session is unusable
-      // or mixed, so invalidate it (below) rather than retaining and silently
-      // retrying a broken session on every later authenticated call.
-      const auth = (await res.json()) as AuthResponse;
+      // The server accepted the refresh, but the body may be malformed. Nothing
+      // has been persisted yet, so a parse failure is like an unusable
+      // rejection: clear the still-current session (a concurrent login is
+      // protected by the guard) rather than retaining and retrying a broken one.
+      let auth: AuthResponse;
+      try {
+        auth = (await res.json()) as AuthResponse;
+      } catch {
+        if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
+        return null;
+      }
       // Login, registration, or logout may have replaced the session while
       // this refresh was in flight. Never let an old response overwrite (or
       // later clear) the newer rider's credentials.
       if (!isStoredSessionCurrent(sessionAtStart)) return null;
-      storeTokens(auth);
+      try {
+        storeTokens(auth);
+      } catch {
+        // A partial write of THIS session (storeTokens is synchronous, so no
+        // concurrent login could have interleaved after the check above) — the
+        // stored state is now mixed (e.g. new access, old refresh) and would
+        // fail renewal forever. `isStoredSessionCurrent` no longer matches the
+        // pre-write snapshot, so clear UNCONDITIONALLY to sign out cleanly
+        // rather than leaving inconsistent credentials behind.
+        clearTokens();
+        return null;
+      }
       return auth.access_token;
     } catch {
-      // Response parse (`res.json()`) or persistence (`storeTokens()`) failure
-      // after a 2xx — the session can't be salvaged. Clear it (if still current)
-      // so we sign out cleanly instead of retrying an unusable/mixed session.
+      // Any residual unexpected failure — invalidate the still-current session.
       if (isStoredSessionCurrent(sessionAtStart)) clearTokens();
       return null;
     } finally {

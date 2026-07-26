@@ -16,18 +16,30 @@ import type { User } from "@/types";
  * store's current slices keeps entitlements owned by the refresh path alone.
  *
  * With no current user (first publish establishes the baseline) the incoming
- * profile is returned unchanged.
+ * profile is returned unchanged. A slice is preserved only when the current
+ * user actually HAS it: an upgraded install's cached profile can predate the
+ * `features`/`limits` fields (they're `undefined` at runtime despite the DTO
+ * typing them required), and clobbering the incoming response's COMPLETE
+ * snapshot with those legacy `undefined`s would leave an entitled rider stuck
+ * fail-closed. Fall back to the incoming (server-computed) slice in that case.
  */
 export function withPreservedEntitlements(
   current: User | null,
   incoming: User,
 ): User {
   if (!current) return incoming;
+  // The DTO types these as required, but a legacy cached profile may lack them
+  // at runtime — read through an optional view so the `??` fallbacks are honest.
+  const cur = current as {
+    subscription_tier?: User["subscription_tier"];
+    features?: User["features"];
+    limits?: User["limits"];
+  };
   return {
     ...incoming,
-    subscription_tier: current.subscription_tier,
-    features: current.features,
-    limits: current.limits,
+    subscription_tier: cur.subscription_tier ?? incoming.subscription_tier,
+    features: cur.features ?? incoming.features,
+    limits: cur.limits ?? incoming.limits,
   };
 }
 

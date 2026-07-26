@@ -140,6 +140,40 @@ describe("typed client token refresh", () => {
     expect(storage.getString("refresh_token")).toBeUndefined();
   });
 
+  it("clears a partially written session when storeTokens fails mid-write", async () => {
+    const values = new Map<string, string>([
+      ["access_token", "old-access"],
+      ["refresh_token", "old-refresh"],
+      ["user_id", "account-a"],
+    ]);
+    const storage = {
+      getString: (k: string) => values.get(k),
+      // storeTokens writes access first, then refresh — throw on the refresh
+      // write to leave a mixed new-access/old-refresh state (the partial-write
+      // bug). `isStoredSessionCurrent` no longer matches the pre-write snapshot.
+      set: (k: string, v: string) => {
+        if (k === "refresh_token") throw new Error("mmkv write failed");
+        values.set(k, v);
+      },
+      remove: (k: string) => {
+        values.delete(k);
+      },
+    };
+    __setAuthStorageForTest(storage);
+    jest.spyOn(global, "fetch").mockResolvedValue(
+      refreshResponse({
+        access_token: "new-access",
+        refresh_token: "new-refresh",
+      }),
+    );
+
+    await expect(__refreshAccessTokenForTest()).resolves.toBeNull();
+    // The mixed session is cleared entirely rather than left inconsistent.
+    expect(values.get("access_token")).toBeUndefined();
+    expect(values.get("refresh_token")).toBeUndefined();
+    expect(values.get("user_id")).toBeUndefined();
+  });
+
   it("clears the current session's tokens on a genuine rejection (!res.ok)", async () => {
     const storage = mockCreateMemoryStorage({
       access_token: "account-a-access",

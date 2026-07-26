@@ -55,4 +55,23 @@ describe("withPreservedEntitlements", () => {
     const incoming = { id: "u1", subscription_tier: "pro" } as unknown as User;
     expect(withPreservedEntitlements(null, incoming)).toBe(incoming);
   });
+
+  it("takes the incoming slices when the current profile lacks them (legacy cache)", () => {
+    // An upgraded install's cached profile predates features/limits.
+    const legacy = { id: "u1", display_name: "Old" } as unknown as User;
+    const incoming = {
+      id: "u1",
+      subscription_tier: "pro",
+      features: { gpx_export: true },
+      limits: { road_quality_max_zoom: null },
+      display_name: "New",
+    } as unknown as User;
+
+    const merged = withPreservedEntitlements(legacy, incoming);
+    // Legacy undefined slices must NOT clobber the incoming complete snapshot.
+    expect(merged.subscription_tier).toBe("pro");
+    expect(merged.features).toEqual({ gpx_export: true });
+    expect(merged.limits).toEqual({ road_quality_max_zoom: null });
+    expect((merged as { display_name?: string }).display_name).toBe("New");
+  });
 });
