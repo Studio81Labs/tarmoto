@@ -149,13 +149,14 @@ function asTimeoutErrorIfFired(
 
 let inflightRefresh: Promise<string | null> | null = null;
 
-// Session incarnation counter. Bumped on login/register (`storeTokens` with a
-// user) and logout / 401-invalidation (`clearTokens`), but NOT on access-token
-// rotation (a refresh response carries no user), so it's stable across rotation
-// yet changes across a logout→login even to the SAME account. Folded into the
-// auth-session snapshot so a `/users/me` publisher that spanned a re-login is
-// rejected — its captured epoch no longer matches — instead of clobbering the
-// fresher login snapshot with a stale one.
+// Session incarnation counter. Bumped on login/register (`storeTokens` called
+// with `{ newSession: true }`) and logout / 401-invalidation (`clearTokens`),
+// but NOT on access-token rotation — the backend returns the same `user` shape
+// on refresh, so rotation is told apart by the CALLER, not the body. Stable
+// across rotation yet changes across a logout→login even to the SAME account.
+// Folded into the auth-session snapshot so a `/users/me` publisher that spanned
+// a re-login is rejected — its captured epoch no longer matches — instead of
+// clobbering the fresher login snapshot with a stale one.
 let sessionEpoch = 0;
 
 /** Current session incarnation — see `sessionEpoch`. */
@@ -212,7 +213,17 @@ function getRefreshToken(): string | null {
   return storage.getString(REFRESH_TOKEN_KEY) ?? null;
 }
 
-export function storeTokens(auth: AuthResponse): void {
+/**
+ * Persist an auth token pair. `newSession` distinguishes a login/register (a
+ * NEW session incarnation) from an access-token-ROTATION refresh — the caller
+ * must say which, because the backend returns the SAME rich `user` shape on
+ * login, register, AND refresh (`toUserResponse`), so the response body can't be
+ * used to tell them apart.
+ */
+export function storeTokens(
+  auth: AuthResponse,
+  options?: { newSession?: boolean },
+): void {
   // #279 / #501 — when the rider switching paths land here without
   // a prior `clearTokens()` (e.g. `LinkAccountScreen` going
   // straight from one bearer to another), wipe the cached privacy
@@ -224,11 +235,8 @@ export function storeTokens(auth: AuthResponse): void {
   // case where `USER_ID_KEY` is empty on an upgraded install but
   // the privacy cache survived from a pre-upgrade refresh — also
   // a stale-cache leak (Codex follow-up review on PR #513
-  // r3212954097). Compared by user id so the normal access-token-
-  // rotation path (same user, refresh middleware issuing a new
-  // pair without `auth.user`) does NOT churn the cache:
-  // `incomingUserId` is null on that path, so the outer `if`
-  // never fires.
+  // r3212954097). Compared by user id, so a normal access-token
+  // rotation (same rider) never churns the cache.
   const incomingUserId = auth.user?.id ?? null;
   if (incomingUserId) {
     const persistedUserId = storage.getString(USER_ID_KEY) ?? null;
@@ -239,17 +247,17 @@ export function storeTokens(auth: AuthResponse): void {
 
   storage.set(ACCESS_TOKEN_KEY, auth.access_token);
   storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
-  // The /auth/refresh response is typed as AuthResponse but the
-  // access-token-rotation path may not include `user`. Only update
-  // the persisted user id when the response actually carries one,
-  // so a refresh-without-user doesn't clobber the stable session
-  // identifier the privacy-cache snapshot relies on.
+  // The backend hands back the rich profile on login / register / refresh
+  // alike, so update the persisted user id + cache whenever a user is present.
   if (incomingUserId) {
     setCachedUser(auth.user);
-    // A response carrying a user is a login/register — a NEW session
-    // incarnation. Bump the epoch (see `sessionEpoch`). A refresh (no user)
-    // rotates the access token WITHOUT bumping, so an in-flight `/users/me`
-    // survives rotation but not a re-login.
+  }
+  // Bump the session epoch ONLY for a login/register (an explicit new session).
+  // A refresh ALSO carries a user but is a token rotation, so the caller passes
+  // `newSession` — the epoch stays stable across rotation, letting an in-flight
+  // `/users/me` survive it, while a re-login (even same account) advances it and
+  // rejects a response that spanned the boundary. See `sessionEpoch`.
+  if (options?.newSession) {
     sessionEpoch += 1;
   }
 }

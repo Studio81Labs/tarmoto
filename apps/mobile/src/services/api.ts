@@ -198,7 +198,7 @@ class ApiService {
       );
     }
     const data = unwrap(result);
-    storeTokens(data);
+    storeTokens(data, { newSession: true });
     void registerForPush(this.pushApi());
     // Fire-and-forget so a transient privacy fetch failure can't
     // block sign-up; the cache stays on canonical defaults until
@@ -223,7 +223,7 @@ class ApiService {
       );
     }
     const data = unwrap(result);
-    storeTokens(data);
+    storeTokens(data, { newSession: true });
     void registerForPush(this.pushApi());
     // See `register` — same fire-and-forget pull so the sensor
     // uploader's `road_data_contribution` gate has fresh data

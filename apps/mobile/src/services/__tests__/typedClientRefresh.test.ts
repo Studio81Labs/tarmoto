@@ -13,7 +13,16 @@ jest.mock("@/config", () => ({
 import {
   __refreshAccessTokenForTest,
   __setAuthStorageForTest,
+  getSessionEpoch,
+  storeTokens,
 } from "../typedClient";
+import type { Schemas } from "@/types";
+
+// The backend hands back the SAME rich profile on login / register / refresh
+// (toUserResponse), so a realistic refresh body carries `user` — the fixture
+// used to omit it, masking that the epoch must be gated on the CALLER, not the
+// body.
+const RICH_USER = { id: "account-a" } as Schemas["UserResponseDto"];
 
 interface MemoryStorage {
   getString(key: string): string | undefined;
@@ -61,10 +70,12 @@ describe("typed client token refresh", () => {
       user_id: "account-a",
     });
     __setAuthStorageForTest(storage);
+    const epochBefore = getSessionEpoch();
     jest.spyOn(global, "fetch").mockResolvedValue(
       refreshResponse({
         access_token: "account-a-new-access",
         refresh_token: "account-a-new-refresh",
+        user: RICH_USER,
       }),
     );
 
@@ -74,6 +85,30 @@ describe("typed client token refresh", () => {
     expect(storage.getString("access_token")).toBe("account-a-new-access");
     expect(storage.getString("refresh_token")).toBe("account-a-new-refresh");
     expect(storage.getString("user_id")).toBe("account-a");
+    // A rotation carries `user` but must NOT advance the epoch — else an
+    // in-flight /users/me across a normal 1h token expiry would be rejected.
+    expect(getSessionEpoch()).toBe(epochBefore);
+  });
+
+  it("advances the session epoch only for a login/register, not a refresh", async () => {
+    const storage = mockCreateMemoryStorage({ user_id: "account-a" });
+    __setAuthStorageForTest(storage);
+    const before = getSessionEpoch();
+
+    // A refresh (caller omits newSession) does NOT bump.
+    storeTokens({
+      access_token: "a1",
+      refresh_token: "r1",
+      user: RICH_USER,
+    } as never);
+    expect(getSessionEpoch()).toBe(before);
+
+    // A login (newSession) DOES bump.
+    storeTokens(
+      { access_token: "a2", refresh_token: "r2", user: RICH_USER } as never,
+      { newSession: true },
+    );
+    expect(getSessionEpoch()).toBe(before + 1);
   });
 
   it("does not overwrite a replacement session with an old refresh", async () => {
