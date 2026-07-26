@@ -32,6 +32,12 @@ const restrictedSyntaxSelectors = [
   },
   {
     selector:
+      ":matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression) > Identifier[optional=true][typeAnnotation.typeAnnotation.typeName.name='Translate']",
+    message:
+      "Translate parameters must be required. Pass the request/provider-bound translator explicitly.",
+  },
+  {
+    selector:
       "TSPropertySignature[optional=true][key.name=/^(t|translate)$/]:has(TSTypeReference[typeName.name='Translate'])",
     message:
       "Translate options must be required. Pass the request/provider-bound translator explicitly.",

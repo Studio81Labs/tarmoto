@@ -945,8 +945,7 @@ const noVisibleNumericJsxText = {
           componentName !== null &&
           NUMERIC_VALUE_COMPONENT.test(componentName) &&
           !hasExplicitFormatValue;
-        const isNumericTextualAttribute =
-          isTextualJsxAttribute(node.parent) && attributeName !== "delta";
+        const isNumericTextualAttribute = isTextualJsxAttribute(node.parent);
         if (
           node.parent?.type !== "JSXElement" &&
           node.parent?.type !== "JSXFragment" &&

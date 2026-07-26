@@ -307,6 +307,7 @@ describe("mobile indirect display-copy lint guard", () => {
     "const view = <Stat value={`${remainingManeuvers}`} />;",
     "const view = <Metric value={`${trip.num_days}`} />;",
     "const view = <Text>{count > 0 ? ` ${count}` : ''}</Text>;",
+    "const view = <Metric delta={missingCount} />;",
   ])("rejects unformatted numeric references in display output", (source) => {
     expect(
       localizationMessages(

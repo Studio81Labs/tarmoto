@@ -50,6 +50,7 @@ function localizationMessages(source: string, rule: string) {
 describe("companion indirect display-copy lint guard", () => {
   it.each([
     "function helper(t: Translate = englishTranslate) { return t('Ready'); }",
+    "function helper(t?: Translate) { return t?.('Ready'); }",
     "interface Options { translate?: Translate }",
   ])("rejects optional companion translator dependencies: %s", (source) => {
     expect(guardMessages(source)).not.toHaveLength(0);
@@ -342,6 +343,7 @@ describe("companion indirect display-copy lint guard", () => {
     "const view = <Stat value={`${segment.curvinessScore}`} />;",
     "const view = <HeroStat value={rank == null ? '—' : `#${rank}`} />;",
     "const view = <Button>{count > 0 ? ` ${count}` : ''}</Button>;",
+    "const view = <MetricTile delta={missingCount} />;",
   ])("rejects unformatted numeric references in display output", (source) => {
     expect(
       localizationMessages(
